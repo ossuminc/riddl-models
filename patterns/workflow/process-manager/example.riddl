@@ -1,0 +1,118 @@
+// Process Manager Example: Order Fulfillment
+
+domain Commerce is {
+  context Fulfillment is {
+    type OrderId is Id(Order)
+    type FulfillmentId is Id(FulfillmentProcess)
+
+    entity Order is { ??? }
+    entity InventoryService is { ??? }
+    entity WarehouseService is { ??? }
+    entity PackingStation is { ??? }
+    entity ShippingService is { ??? }
+    entity PaymentService is { ??? }
+
+    // Commands the process manager issues
+    command CheckInventory is { orderId: OrderId }
+    command StartPicking is { orderId: OrderId }
+    command StartPacking is { orderId: OrderId }
+    command CreateShipment is { orderId: OrderId }
+    command RefundPayment is { orderId: OrderId }
+    command CancelPicking is { orderId: OrderId }
+    command ReleaseInventory is { orderId: OrderId }
+
+    // Events the process manager reacts to
+    event OrderPlaced is { orderId: OrderId }
+    event PaymentReceived is { orderId: OrderId }
+    event InventoryReserved is { orderId: OrderId }
+    event InventoryUnavailable is { orderId: OrderId }
+    event PickingCompleted is { orderId: OrderId }
+    event PackingCompleted is { orderId: OrderId }
+    event DeliveryConfirmed is { orderId: OrderId }
+    event OrderCancelled is { orderId: OrderId }
+
+    // Events the process manager emits
+    event FulfillmentCompleted is { orderId: OrderId }
+    event FulfillmentFailed is { orderId: OrderId }
+    event FulfillmentCancelled is { orderId: OrderId }
+
+    entity FulfillmentProcess is {
+      briefly "Coordinates order fulfillment from placement to delivery"
+
+      type FulfillmentState is one of {
+        AwaitingPayment,
+        AwaitingInventory,
+        Picking,
+        Packing,
+        Shipped,
+        Delivered,
+        Failed,
+        Cancelled
+      }
+
+      type TrackingState is {
+        fulfillmentId: FulfillmentId,
+        orderId: OrderId,
+        currentState: FulfillmentState,
+        startedAt: TimeStamp,
+        lastUpdatedAt: TimeStamp
+      }
+
+      state Tracking of FulfillmentProcess.TrackingState is {
+        handler FulfillmentHandler is {
+          on event OrderPlaced {
+            "Start fulfillment when order is placed"
+            set field FulfillmentProcess.TrackingState.currentState to
+              "FulfillmentState.AwaitingPayment"
+          }
+          on event PaymentReceived {
+            "Payment received - check inventory"
+            set field FulfillmentProcess.TrackingState.currentState to
+              "FulfillmentState.AwaitingInventory"
+            send command CheckInventory to entity InventoryService
+          }
+          on event InventoryReserved {
+            "Inventory available - start picking"
+            set field FulfillmentProcess.TrackingState.currentState to
+              "FulfillmentState.Picking"
+            send command StartPicking to entity WarehouseService
+          }
+          on event PickingCompleted {
+            "Picking complete - start packing"
+            set field FulfillmentProcess.TrackingState.currentState to
+              "FulfillmentState.Packing"
+            send command StartPacking to entity PackingStation
+          }
+          on event PackingCompleted {
+            "Packing complete - ship"
+            set field FulfillmentProcess.TrackingState.currentState to
+              "FulfillmentState.Shipped"
+            send command CreateShipment to entity ShippingService
+          }
+          on event DeliveryConfirmed {
+            "Delivery confirmed"
+            set field FulfillmentProcess.TrackingState.currentState to
+              "FulfillmentState.Delivered"
+            send event FulfillmentCompleted to outlet FulfillmentProcess.Events
+          }
+          on event InventoryUnavailable {
+            "Handle inventory failure"
+            set field FulfillmentProcess.TrackingState.currentState to
+              "FulfillmentState.Failed"
+            send command RefundPayment to entity PaymentService
+            send event FulfillmentFailed to outlet FulfillmentProcess.Events
+          }
+          on event OrderCancelled {
+            "Handle cancellation"
+            set field FulfillmentProcess.TrackingState.currentState to
+              "FulfillmentState.Cancelled"
+            send event FulfillmentCancelled to outlet FulfillmentProcess.Events
+          }
+        }
+      }
+
+      outlet Events is event FulfillmentCompleted |
+        event FulfillmentFailed | event FulfillmentCancelled
+    }
+  }
+}
