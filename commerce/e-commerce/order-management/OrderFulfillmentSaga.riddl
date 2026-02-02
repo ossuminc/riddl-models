@@ -1,0 +1,91 @@
+// Order Management - Order Fulfillment Saga
+// Orchestrates the complete order lifecycle with compensation
+
+saga OrderFulfillmentSaga is {
+
+  requires {
+    orderId is OrderId
+    customerId is CustomerId
+    items is many OrderItemRecord
+    total is Money
+    paymentMethod is PaymentMethod
+    shippingAddress is Address
+  }
+
+  returns {
+    success is Boolean
+    shipmentId is optional ShipmentId
+    trackingNumber is optional TrackingNumber
+    errorReason is optional String(1, 500)
+  }
+
+  step StepProcessPayment is {
+    prompt "Submit payment request to PaymentGateway context"
+    prompt "Wait for payment confirmation or failure"
+    tell command PaymentGateway.ProcessPayment to context PaymentGateway
+  } reverted by {
+    prompt "Request refund from PaymentGateway"
+    tell command PaymentGateway.RefundPayment to context PaymentGateway
+  } with {
+    briefly "Process customer payment"
+    described by {
+      | Submits the payment to the external payment gateway.
+      | If payment fails, the saga terminates with failure.
+      | If later steps fail, the payment is refunded.
+    }
+  }
+
+  step StepAllocateInventory is {
+    prompt "Request inventory allocation from InventoryService"
+    prompt "Reserve stock for all order items"
+    tell command InventoryService.AllocateStock to context InventoryService
+  } reverted by {
+    prompt "Release reserved inventory back to available stock"
+    tell command InventoryService.ReleaseStock to context InventoryService
+  } with {
+    briefly "Reserve inventory for order items"
+    described by {
+      | Reserves inventory for each item in the order.
+      | If allocation fails, payment is refunded and saga terminates.
+      | If later steps fail, inventory is released.
+    }
+  }
+
+  step StepCreateShipment is {
+    prompt "Create shipment request with ShippingCarrier"
+    prompt "Obtain tracking number and estimated delivery"
+    tell command ShippingCarrier.CreateShipment to context ShippingCarrier
+  } reverted by {
+    prompt "Cancel the shipment with the carrier if not yet picked up"
+    tell command ShippingCarrier.CancelShipment to context ShippingCarrier
+  } with {
+    briefly "Create shipment with carrier"
+    described by {
+      | Creates a shipment with the shipping carrier.
+      | If shipment creation fails, inventory is released and payment refunded.
+    }
+  }
+
+  step StepNotifyCustomer is {
+    prompt "Send order confirmation and tracking info to customer"
+    tell command CustomerService.SendOrderConfirmation to context CustomerService
+  } reverted by {
+    prompt "Send order cancellation notification to customer"
+    tell command CustomerService.SendOrderCancellation to context CustomerService
+  } with {
+    briefly "Send confirmation to customer"
+    described by {
+      | Notifies the customer that their order is confirmed and shipping.
+      | If this fails, it's logged but doesn't fail the order.
+    }
+  }
+
+} with {
+  briefly "Orchestrates order fulfillment workflow"
+  described by {
+    | The OrderFulfillmentSaga coordinates the complete order processing
+    | workflow including payment, inventory allocation, shipment creation,
+    | and customer notification. Each step has compensation logic to handle
+    | failures gracefully and maintain system consistency.
+  }
+}

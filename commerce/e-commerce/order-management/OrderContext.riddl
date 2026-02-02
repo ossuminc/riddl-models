@@ -1,0 +1,177 @@
+// Order Management - Order Context
+// The primary bounded context for order lifecycle management
+
+context OrderContext is {
+
+  include "types.riddl"
+  include "Order.riddl"
+  include "Shipment.riddl"
+  include "Return.riddl"
+  include "OrderFulfillmentSaga.riddl"
+
+  // Adaptors for external system integration
+  adaptor PaymentAdapter from context PaymentGateway is {
+    handler InboundPayments is {
+      on event PaymentGateway.PaymentSucceeded {
+        tell command ConfirmPayment to entity Order
+      }
+      on event PaymentGateway.PaymentFailed {
+        prompt "Log payment failure and notify order processing"
+        error "Payment failed for order"
+      }
+      on event PaymentGateway.RefundCompleted {
+        prompt "Update return status with refund confirmation"
+      }
+    } with {
+      briefly "Handles payment events from gateway"
+      described by "Processes inbound payment status events and routes to Order entity."
+    }
+  } with {
+    briefly "Translates payment gateway events"
+    described by {
+      | Receives payment status events from the external PaymentGateway
+      | and translates them into commands for the Order entity.
+    }
+  }
+
+  adaptor InventoryAdapter from context InventoryService is {
+    handler InboundInventory is {
+      on event InventoryService.StockAllocated {
+        tell command AllocateInventory to entity Order
+      }
+      on event InventoryService.StockAllocationFailed {
+        prompt "Handle inventory shortage - may need to cancel or partial fulfill"
+        error "Inventory allocation failed"
+      }
+    } with {
+      briefly "Handles inventory events"
+      described by "Processes inventory allocation results from warehouse system."
+    }
+  } with {
+    briefly "Translates inventory service events"
+    described by {
+      | Receives stock allocation events from the InventoryService
+      | and updates order status accordingly.
+    }
+  }
+
+  adaptor ShippingAdapter from context ShippingCarrier is {
+    handler InboundShipping is {
+      on event ShippingCarrier.ShipmentCreatedByCarrier {
+        tell command Shipment.InitShipment to entity Shipment
+      }
+      on event ShippingCarrier.ShipmentPickedUp {
+        tell command UpdateTracking to entity Shipment
+      }
+      on event ShippingCarrier.ShipmentInTransit {
+        tell command UpdateTracking to entity Shipment
+      }
+      on event ShippingCarrier.ShipmentDeliveredByCarrier {
+        tell command MarkDelivered to entity Shipment
+        tell command DeliverOrder to entity Order
+      }
+    } with {
+      briefly "Handles shipping carrier events"
+      described by "Processes carrier tracking webhooks and updates shipment status."
+    }
+  } with {
+    briefly "Translates shipping carrier events"
+    described by {
+      | Receives tracking updates from shipping carriers via webhooks
+      | and updates both Shipment and Order entities.
+    }
+  }
+
+  // Repository for order persistence
+  repository OrderRepository is {
+    schema OrderData is relational
+      of orders as Order
+      of shipments as Shipment
+      of returns as Return
+      link orderShipments as field Order.orderId to field Shipment.orderId
+      link orderReturns as field Order.orderId to field Return.orderId
+      index on field Order.customerId
+
+    handler OrderPersistence is {
+      on event Order.OrderPlaced {
+        prompt "Persist new order to database"
+      }
+      on event Order.PaymentConfirmed {
+        prompt "Update order with payment confirmation"
+      }
+      on event Order.OrderShipped {
+        prompt "Update order status and link shipment"
+      }
+      on event Order.OrderDelivered {
+        prompt "Update order to delivered status"
+      }
+      on event Order.OrderCancelled {
+        prompt "Update order to cancelled status"
+      }
+      on event Return.ReturnRequested {
+        prompt "Create return record linked to order"
+      }
+      on event Return.RefundProcessed {
+        prompt "Update order with refund information"
+      }
+    } with {
+      briefly "Persists order events to storage"
+      described by "Handles all event-driven persistence operations for orders."
+    }
+  } with {
+    briefly "Persistent storage for order data"
+    described by {
+      | The OrderRepository provides persistent storage for orders,
+      | shipments, and returns with appropriate indexes for query
+      | performance on common access patterns.
+    }
+  }
+
+  // Projector for order analytics
+  projector OrderAnalytics is {
+    updates repository OrderRepository
+
+    record DailyOrderMetrics is {
+      date is Date with { briefly "Date" described by "The date for these metrics." }
+      orderCount is Natural with { briefly "Orders" described by "Number of orders." }
+      totalRevenue is Money with { briefly "Revenue" described by "Total revenue." }
+      averageOrderValue is Money with { briefly "AOV" described by "Average order value." }
+      cancellationCount is Natural with { briefly "Cancellations" described by "Orders cancelled." }
+      refundCount is Natural with { briefly "Refunds" described by "Refunds processed." }
+      refundTotal is Money with { briefly "Refund total" described by "Total refunded." }
+    } with {
+      briefly "Daily aggregated order metrics"
+      described by "Aggregated order statistics for a single day."
+    }
+
+    handler AnalyticsHandler is {
+      on event Order.OrderPlaced {
+        prompt "Update daily order counts and revenue metrics"
+      }
+      on event Order.OrderCancelled {
+        prompt "Update cancellation rate metrics"
+      }
+      on event Return.RefundProcessed {
+        prompt "Update refund metrics and return rates"
+      }
+    } with {
+      briefly "Projects order events for analytics"
+      described by "Processes order events to maintain aggregate metrics."
+    }
+  } with {
+    briefly "Projects order events for reporting"
+    described by {
+      | Maintains aggregated views of order data for dashboards
+      | and business intelligence reporting.
+    }
+  }
+
+} with {
+  briefly "Bounded context for order management"
+  described by {
+    | The OrderContext is the primary bounded context for the Order
+    | Management domain. It contains all entities, sagas, and
+    | integrations needed to manage the complete order lifecycle
+    | from placement through delivery or return.
+  }
+}

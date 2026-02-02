@@ -1,0 +1,255 @@
+// Order Management - External Contexts
+// These represent external systems that Order Management integrates with
+
+context PaymentGateway is {
+
+  type PaymentAmount is Decimal(10, 2)
+    with { briefly "Payment amount in dollars" }
+
+  command ProcessPayment is {
+    orderId is UUID
+    amount is PaymentAmount
+    paymentMethod is PaymentMethod
+    customerId is CustomerId
+  } with { briefly "Process a payment transaction" }
+
+  command RefundPayment is {
+    transactionId is String(1, 100)
+    amount is PaymentAmount
+    reason is String(1, 500)
+  } with { briefly "Refund a previous payment" }
+
+  event PaymentSucceeded is {
+    transactionId is String(1, 100)
+    orderId is UUID
+    amount is PaymentAmount
+    processedAt is TimeStamp
+  } with { briefly "Payment was successfully processed" }
+
+  event PaymentFailed is {
+    orderId is UUID
+    reason is String(1, 500)
+    failedAt is TimeStamp
+  } with { briefly "Payment processing failed" }
+
+  event RefundCompleted is {
+    transactionId is String(1, 100)
+    amount is PaymentAmount
+    refundedAt is TimeStamp
+  } with { briefly "Refund was processed" }
+
+  handler PaymentHandler is {
+    on command ProcessPayment {
+      tell event PaymentSucceeded to context PaymentGateway
+    }
+    on command RefundPayment {
+      tell event RefundCompleted to context PaymentGateway
+    }
+  } with { briefly "Handles payment commands" }
+
+} with {
+  briefly "External payment processing service"
+  option is external
+  described by {
+    | The PaymentGateway context represents an external payment
+    | processor (e.g., Stripe, Square, PayPal) that handles
+    | credit card processing, refunds, and payment validation.
+  }
+}
+
+context InventoryService is {
+
+  command AllocateStock is {
+    orderId is UUID
+    items is many {
+      productId is ProductId
+      sku is SKU
+      quantity is Quantity
+    }
+  } with { briefly "Reserve inventory for an order" }
+
+  command ReleaseStock is {
+    orderId is UUID
+    items is many {
+      productId is ProductId
+      sku is SKU
+      quantity is Quantity
+    }
+  } with { briefly "Release previously reserved inventory" }
+
+  event StockAllocated is {
+    orderId is UUID
+    allItemsAllocated is Boolean
+    allocatedAt is TimeStamp
+  } with { briefly "Inventory was allocated" }
+
+  event StockAllocationFailed is {
+    orderId is UUID
+    unavailableItems is many {
+      productId is ProductId
+      requestedQuantity is Quantity
+      availableQuantity is Quantity
+    }
+    failedAt is TimeStamp
+  } with { briefly "Inventory allocation failed" }
+
+  event StockReleased is {
+    orderId is UUID
+    releasedAt is TimeStamp
+  } with { briefly "Reserved inventory was released" }
+
+  handler InventoryHandler is {
+    on command AllocateStock {
+      tell event StockAllocated to context InventoryService
+    }
+    on command ReleaseStock {
+      tell event StockReleased to context InventoryService
+    }
+  } with { briefly "Handles inventory commands" }
+
+} with {
+  briefly "External inventory management service"
+  option is external
+  described by {
+    | The InventoryService context represents the external inventory
+    | management system that tracks stock levels, handles allocation,
+    | and manages warehouse operations.
+  }
+}
+
+context ShippingCarrier is {
+
+  command CreateShipment is {
+    orderId is UUID
+    carrier is CarrierCode
+    shippingAddress is Address
+    items is many {
+      productId is ProductId
+      quantity is Quantity
+      weight is optional Real
+    }
+  } with { briefly "Create a shipment with carrier" }
+
+  command CancelShipment is {
+    shipmentId is ShipmentId
+    reason is String(1, 500)
+  } with { briefly "Cancel a pending shipment" }
+
+  event ShipmentCreatedByCarrier is {
+    shipmentId is ShipmentId
+    orderId is UUID
+    trackingNumber is TrackingNumber
+    estimatedDelivery is optional Date
+    createdAt is TimeStamp
+  } with { briefly "Shipment was created with carrier" }
+
+  event ShipmentPickedUp is {
+    shipmentId is ShipmentId
+    pickedUpAt is TimeStamp
+  } with { briefly "Carrier picked up the shipment" }
+
+  event ShipmentInTransit is {
+    shipmentId is ShipmentId
+    location is String(1, 200)
+    updatedAt is TimeStamp
+  } with { briefly "Shipment is in transit" }
+
+  event ShipmentDeliveredByCarrier is {
+    shipmentId is ShipmentId
+    deliveredAt is TimeStamp
+    signedBy is optional String(1, 100)
+  } with { briefly "Shipment was delivered" }
+
+  event ShipmentCancelled is {
+    shipmentId is ShipmentId
+    cancelledAt is TimeStamp
+  } with { briefly "Shipment was cancelled" }
+
+  handler ShippingHandler is {
+    on command CreateShipment {
+      tell event ShipmentCreatedByCarrier to context ShippingCarrier
+    }
+    on command CancelShipment {
+      tell event ShipmentCancelled to context ShippingCarrier
+    }
+  } with { briefly "Handles shipping commands" }
+
+} with {
+  briefly "External shipping carrier integration"
+  option is external
+  described by {
+    | The ShippingCarrier context represents integration with
+    | shipping carriers (UPS, FedEx, USPS, etc.) for creating
+    | shipments, obtaining tracking numbers, and receiving
+    | delivery status updates via webhooks.
+  }
+}
+
+context CustomerService is {
+
+  command SendOrderConfirmation is {
+    orderId is UUID
+    customerId is CustomerId
+    orderDetails is {
+      items is many OrderItemRecord
+      total is Money
+      trackingNumber is optional TrackingNumber
+    }
+  } with { briefly "Send order confirmation to customer" }
+
+  command SendOrderCancellation is {
+    orderId is UUID
+    customerId is CustomerId
+    reason is String(1, 500)
+  } with { briefly "Send cancellation notice to customer" }
+
+  command SendShippingUpdate is {
+    orderId is UUID
+    customerId is CustomerId
+    trackingNumber is TrackingNumber
+    status is String(1, 100)
+  } with { briefly "Send shipping status update" }
+
+  command CreateSupportTicket is {
+    orderId is UUID
+    customerId is CustomerId
+    issue is String(1, 1000)
+    priority is String(1, 20)
+  } with { briefly "Create a support ticket for order issue" }
+
+  event NotificationSent is {
+    customerId is CustomerId
+    notificationType is String(1, 50)
+    sentAt is TimeStamp
+  } with { briefly "Notification was sent to customer" }
+
+  event SupportTicketCreated is {
+    ticketId is UUID
+    orderId is UUID
+    createdAt is TimeStamp
+  } with { briefly "Support ticket was created" }
+
+  handler CustomerServiceHandler is {
+    on command SendOrderConfirmation {
+      tell event NotificationSent to context CustomerService
+    }
+    on command SendOrderCancellation {
+      tell event NotificationSent to context CustomerService
+    }
+    on command SendShippingUpdate {
+      tell event NotificationSent to context CustomerService
+    }
+    on command CreateSupportTicket {
+      tell event SupportTicketCreated to context CustomerService
+    }
+  } with { briefly "Handles customer communication commands" }
+
+} with {
+  briefly "External customer service system"
+  option is external
+  described by {
+    | The CustomerService context represents the external customer
+    | communication and support system that handles notifications,
+    | email/SMS alerts, and support ticket management.
+  }
+}
