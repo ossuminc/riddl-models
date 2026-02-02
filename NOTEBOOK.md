@@ -7,48 +7,56 @@ Development journal for active work on the riddl-models repository.
 ## Current Status
 
 **Date**: 2026-02-01
-**Phase**: Model Generation - First Model Complete
+**Phase**: Model Generation - Sectors 1 & 2 Complete
 
-Successfully created and validated the first domain model (order-management)
-as a proof of concept. The model compiles cleanly with riddlc, demonstrating
-correct RIDDL syntax patterns for the remaining 155 models.
+Progress: **17 of 172 models** completed (10% complete)
+- Commerce sector: 10 models - COMPLETE
+- Construction sector: 7 models - COMPLETE
+- 155 models remaining across 16 sectors
 
 **Validation**: Use `riddlc from <config>.conf validate` for all models.
+**riddlc location**: `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
 ---
 
 ## Completed Work
 
-### 2026-02-01: Order Management Model (Proof of Concept)
+### 2026-02-01: Commerce & Construction Sectors (17 Models)
 
-Created complete order-management model at `commerce/e-commerce/order-management/`:
+Completed all models for the first two sectors with full validation:
 
-**Files created:**
-- `order-management.conf` - riddlc configuration
-- `order-management.riddl` - Domain entry point with author, users, epics
-- `types.riddl` - Shared types (OrderId, Money, Address, PaymentMethod, etc.)
-- `Order.riddl` - Order entity with 5 states, commands, events, handler
-- `Shipment.riddl` - Shipment tracking entity with 3 states
-- `Return.riddl` - Return/refund entity with 5 states
-- `OrderFulfillmentSaga.riddl` - 4-step saga with compensation
-- `OrderContext.riddl` - Main context with adaptors, repository, projector
-- `external-contexts.riddl` - 4 external contexts (PaymentGateway, etc.)
+**Commerce Sector (10 models):**
+- `e-commerce/order-management` - Order lifecycle with fulfillment saga
+- `e-commerce/product-catalog` - Product catalog with categories
+- `e-commerce/shopping-cart` - Cart management and checkout
+- `marketplace/vendor-management` - Vendor onboarding and management
+- `marketplace/order-orchestration` - Multi-vendor order coordination
+- `retail/inventory-management` - Stock tracking and replenishment
+- `retail/point-of-sale` - POS transactions and cash management
+- `retail/store-operations` - Store opening/closing, staff management
+- `wholesale/distribution` - Wholesale order distribution
+- `wholesale/trade-credit` - Credit accounts and collections
 
-**Key learnings documented in CLAUDE.md:**
-- `described by` syntax: use quoted strings OR multi-line with `}` on own line
-- Naming collisions: enum values vs state names need different names
-- External contexts: use `option is external` in `with` block
-- Messaging: `tell event/command X to entity Y`
+**Construction Sector (7 models):**
+- `field-operations/equipment-tracking` - Equipment lifecycle and GPS
+- `field-operations/job-site-management` - Daily reports, safety, crews
+- `project-management/bid-management` - RFP response and bid evaluation
+- `project-management/construction-project` - Project planning and tracking
+- `project-management/subcontractor-management` - Subcontractor relationships
+- `real-estate/property-management` - Leasing and maintenance
+- `real-estate/transaction-management` - Purchase/sale transactions
+
+**Key syntax patterns established:**
+- Enumeration values: simple identifiers (no individual `with {}` blocks)
+- Handler clauses: `on command X { ... }` (no `is` required in v1.2.1+)
+- External contexts: `option is external` in `with` block
 - State transitions: `morph entity X to state Y with command Z`
-
-**Validation result:** 0 errors, only informational warnings for:
-- Missing metadata on some fields (external-contexts.riddl, epic steps)
-- Unused types (RefundStatus, ReturnStatus, DailyOrderMetrics)
+- Entity messaging: `tell event/command X to entity Y`
+- Collection syntax: `many optional Type` (not `optional many`)
 
 ### 2026-02-01: MCP Server Configuration
 
 - Tested RIDDL comprehension with vending machine example
-- Identified gaps: missing `with` metadata syntax, other constructs
 - Created `.mcp.json` for local riddl-mcp server at `localhost:8080/mcp/v1`
 - Server provides RIDDL syntax guidance and validation tools
 
@@ -56,52 +64,69 @@ Created complete order-management model at `commerce/e-commerce/order-management
 
 - Added README.md files to all 156 model directories
 - Each README includes: scope, key concepts table, related patterns
-- Committed in 3 cohesive groups:
-  1. Project configuration (CLAUDE.md, build.sbt, etc.)
-  2. Patterns and schemas (27 files)
-  3. Domain model ontology (246 files)
-- Updated .gitignore to exclude .idea/, .bsp/, target/
 - Pushed all commits to origin/main
 
 ### 2026-01-29: Repository Structure Setup
 
-- Created CLAUDE.md with project documentation
-- Created NOTEBOOK.md (this file)
-- Enhanced README.md with project overview
+- Created CLAUDE.md, NOTEBOOK.md, enhanced README.md
 - Created 18 top-level sector directories with READMEs
-- Created patterns/ directory with 5 pattern categories
-- Created schemas/ directory with model-metadata.schema.json
+- Created patterns/ and schemas/ directories
 - Created build.sbt with RIDDL validation infrastructure
-- Created RiddlValidationTest that validates all .riddl files on `sbt test`
 
 ---
 
 ## Active Work
 
-### In Progress: Commit Order Management Model
+### In Progress: Generate Remaining Domain Models
 
-Files to commit in cohesive batches:
-1. Configuration and entry point files
-2. Type definitions and entity files
-3. Context and external system files
+155 models remaining across 16 sectors. Work through systematically:
+
+| Sector | Subsectors | Models | Status |
+|--------|------------|--------|--------|
+| commerce | 4 | 10 | COMPLETE |
+| construction | 3 | 7 | COMPLETE |
+| education | 3 | 6 | pending |
+| engineering | 3 | 6 | pending |
+| entertainment | 4 | 10 | pending |
+| finance | 3 | 9 | pending |
+| government | 3 | 7 | pending |
+| healthcare | 5 | 16 | pending |
+| hospitality | 4 | 12 | pending |
+| insurance | 3 | 4 | pending |
+| investment | 3 | 6 | pending |
+| logistics | 3 | 8 | pending |
+| manufacturing | 5 | 14 | pending |
+| marketing | 3 | 6 | pending |
+| natural-resources | 4 | 8 | pending |
+| professional-services | 3 | 6 | pending |
+| technology | 3 | 9 | pending |
+| telecommunications | 3 | 6 | pending |
+| transportation | 4 | 11 | pending |
+| utilities | 4 | 8 | pending |
+
+Each model created with:
+- `.conf` file for riddlc
+- Main `.riddl` domain file
+- `types.riddl` for shared types
+- Entity file(s) with states and handlers
+- `Context.riddl` for bounded context
+- `external-contexts.riddl` for integrations
 
 ---
 
 ## Next Steps
 
-1. **Commit Order Management Model** (in progress)
-   - Batch commits for the 10 new files
-
-2. **Generate Remaining Models**
-   - Use order-management as template
+1. **Continue Model Generation**
+   - Next sector: education
    - Work through sectors systematically
    - Validate each with riddlc before committing
+   - Commit each model separately (not pushed yet)
 
-3. **Fix Pattern Example Files**
-   - Update with correct syntax
-   - Validate all examples pass `sbt test`
+2. **User Review**
+   - User to review all commits before push
+   - 17 model commits pending review
 
-4. **CI Integration**
+3. **CI Integration** (future)
    - Add GitHub Actions workflow for validation
    - Ensure PRs must pass validation
 
@@ -111,30 +136,28 @@ Files to commit in cohesive batches:
 
 ### Model File Structure (2026-02-01)
 
-Each model should be broken into separate files:
+Each model broken into separate files:
 - `model.conf` - riddlc configuration pointing to main file
 - `model.riddl` - Domain definition with includes
 - `types.riddl` - Shared type definitions
-- `*.riddl` - One file per entity/saga
+- `Entity.riddl` - One file per entity
 - `Context.riddl` - Main bounded context with adaptors
 - `external-contexts.riddl` - External systems with `option is external`
 
-This structure improves readability and allows focused editing.
+### RIDDL Syntax Notes (2026-02-01)
+
+Important syntax findings during model generation:
+- Enum values cannot have individual `with { briefly ... }` blocks
+- Handler `on` clauses work with or without `is` in v1.2.1+
+- Identifier minimum length is 3 characters (e.g., `VA` → `VALoan`)
+- User/enum name collisions trigger warnings (use distinct names)
 
 ### Validation Approach (2026-01-29)
 
-Used test-based validation rather than custom sbt task because:
-- sbt build definitions use Scala 2.12, can't easily use riddl-lib
-- ScalaTest provides clear per-file test results
-- Works with standard `sbt test` workflow
-- Template files are automatically skipped via placeholder detection
-
-### Directory Structure (2026-01-29)
-
-- 18 top-level sectors based on NAICS alignment
-- 3-level hierarchy: sector → subsector → model
-- Each sector has README.md explaining scope
-- Complexity tiers (starter/standard/enterprise) via metadata
+Test-based validation using riddlc directly:
+- Works with `riddlc from model.conf validate`
+- Clear error messages for syntax issues
+- Usage warnings are informational (not errors)
 
 ---
 
@@ -148,5 +171,5 @@ Used test-based validation rather than custom sbt task because:
 
 - sbt uses Scala 2.12 for build definitions (documented in ossuminc/CLAUDE.md)
 - Project source code uses Scala 3.3.7 with `-new-syntax` flag
-- Use `given`/`then`/`end` syntax in test files, not Scala 2 style
-- riddlc path: `riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
+- riddlc path: `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
+- Version 1.2.1+ required for validation
