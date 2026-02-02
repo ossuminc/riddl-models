@@ -6,13 +6,12 @@ Development journal for active work on the riddl-models repository.
 
 ## Current Status
 
-**Date**: 2026-02-01
-**Phase**: Model Generation - Sectors 1 & 2 Complete
+**Date**: 2026-02-02
+**Phase**: Model Generation - Major Progress
 
-Progress: **17 of 172 models** completed (10% complete)
-- Commerce sector: 10 models - COMPLETE
-- Construction sector: 7 models - COMPLETE
-- 155 models remaining across 16 sectors
+Progress: **85 of 172 models** completed (49% complete)
+- 85 domain models created, validated, and committed
+- 87 models remaining across various sectors
 
 **Validation**: Use `riddlc from <config>.conf validate` for all models.
 **riddlc location**: `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
@@ -21,114 +20,164 @@ Progress: **17 of 172 models** completed (10% complete)
 
 ## Completed Work
 
+### 2026-02-02: Continued Model Generation (68 Models)
+
+Continued systematic generation across multiple sectors:
+
+**Government Sector (7 models):**
+- `regulatory/licensing` - Professional/business license management
+- `public-safety/emergency-dispatch` - 911 emergency dispatch
+- `public-safety/records-management` - Law enforcement records
+- `citizen-services/case-management` - Citizen service requests
+- `citizen-services/benefits-administration` - Benefits programs
+- `citizen-services/permit-management` - Building permits
+
+**Professional Services (1 model):**
+- `accounting/client-accounting` - Accounting engagement management
+
+**Technology Sector (4 models):**
+- `saas/usage-metering` - SaaS usage tracking and billing
+- `saas/subscription-management` - Subscription lifecycle
+- `saas/tenant-provisioning` - Multi-tenant provisioning
+- `devops/ci-cd-pipeline` - CI/CD pipeline orchestration
+- `devops/infrastructure-as-code` - IaC deployment
+- `devops/observability` - Monitoring and alerting
+
+**Finance Sector (9 models):**
+- `banking/account-management` - Bank account operations
+- `banking/loan-origination` - Loan application processing
+- `banking/credit-decisioning` - Credit risk evaluation
+- `payments/payment-processing` - Payment transactions
+- `payments/merchant-acquiring` - Merchant onboarding
+- `payments/digital-wallet` - Digital wallet operations
+- `payments/fund-transfer` - Money transfers
+- `trading/order-management` - Trading order execution
+- `trading/trade-settlement` - Trade settlement
+
+**Healthcare Sector (5 models):**
+- `hospitals/patient-registration` - Patient intake
+- `hospitals/appointment-scheduling` - Appointment management
+- `clinical/clinical-encounter` - Clinical documentation
+- `clinical/care-coordination` - Care team coordination
+- `payer/claims-adjudication` - Claims processing
+
+**Insurance Sector (2 models):**
+- `property-casualty/policy-management` - P&C policy lifecycle
+- `property-casualty/claims-adjudication` - Claims processing
+
+**Manufacturing Sector (2 models):**
+- `maintenance/work-order-management` - Work order processing
+- `discrete/inventory-management` - Inventory tracking
+
+**Transportation Sector (11 models):**
+- `passenger/ride-sharing` - Ride-sharing operations
+- `passenger/airline-reservations` - Flight bookings
+- `passenger/transit-operations` - Public transit
+- `freight/freight-forwarding` - Freight logistics
+- `freight/intermodal` - Intermodal transport
+- `freight/customs-brokerage` - Customs clearance
+- `fleet/fleet-management` - Fleet operations
+- `fleet/route-optimization` - Route planning
+- `maritime/port-operations` - Port logistics
+- `maritime/vessel-management` - Vessel tracking
+
+**Hospitality Sector (8 models):**
+- `lodging/hotel-reservations` - Hotel bookings
+- `lodging/guest-services` - Guest management
+- `lodging/property-management` - Property operations
+- `food-service/restaurant-operations` - Restaurant management
+- `food-service/catering-management` - Catering services
+- `travel/tour-operations` - Tour packages
+- `travel/car-rental` - Vehicle rentals
+- `events/venue-management` - Venue operations
+- `events/event-registration` - Event ticketing
+
+**Entertainment Sector (5 models):**
+- `media/content-management` - Media content
+- `media/streaming-platform` - Streaming services
+- `gaming/matchmaking` - Game matchmaking
+- `gaming/game-economy` - Virtual economies
+- `marketing/advertising-delivery` - Ad serving
+
+**Education Sector (6 models):**
+- `academic/course-management` - Course catalog
+- `academic/learning-management` - LMS
+- `academic/student-information` - Student records
+- `certification/credentialing` - Certification tracking
+- `corporate-training/competency-management` - Skills tracking
+- `corporate-training/training-administration` - Training programs
+
+**Engineering Sector (6 models):**
+- `consulting/engagement-management` - Consulting engagements
+- `consulting/knowledge-management` - Knowledge base
+- `product-development/plm-integration` - PLM systems
+- `product-development/prototype-management` - Prototyping
+- `product-development/design-review` - Design reviews
+- `project-engineering/engineering-project` - Engineering projects
+
+**Investment Sector (1 model):**
+- `venture-capital/deal-flow` - Deal pipeline management
+
 ### 2026-02-01: Commerce & Construction Sectors (17 Models)
 
-Completed all models for the first two sectors with full validation:
+Completed all models for the first two sectors:
 
 **Commerce Sector (10 models):**
 - `e-commerce/order-management` - Order lifecycle with fulfillment saga
 - `e-commerce/product-catalog` - Product catalog with categories
 - `e-commerce/shopping-cart` - Cart management and checkout
-- `marketplace/vendor-management` - Vendor onboarding and management
-- `marketplace/order-orchestration` - Multi-vendor order coordination
-- `retail/inventory-management` - Stock tracking and replenishment
-- `retail/point-of-sale` - POS transactions and cash management
-- `retail/store-operations` - Store opening/closing, staff management
-- `wholesale/distribution` - Wholesale order distribution
-- `wholesale/trade-credit` - Credit accounts and collections
+- `marketplace/vendor-management` - Vendor onboarding
+- `marketplace/order-orchestration` - Multi-vendor orders
+- `retail/inventory-management` - Stock tracking
+- `retail/point-of-sale` - POS transactions
+- `retail/store-operations` - Store management
+- `wholesale/distribution` - Wholesale distribution
+- `wholesale/trade-credit` - Credit management
 
 **Construction Sector (7 models):**
-- `field-operations/equipment-tracking` - Equipment lifecycle and GPS
-- `field-operations/job-site-management` - Daily reports, safety, crews
-- `project-management/bid-management` - RFP response and bid evaluation
-- `project-management/construction-project` - Project planning and tracking
-- `project-management/subcontractor-management` - Subcontractor relationships
-- `real-estate/property-management` - Leasing and maintenance
-- `real-estate/transaction-management` - Purchase/sale transactions
-
-**Key syntax patterns established:**
-- Enumeration values: simple identifiers (no individual `with {}` blocks)
-- Handler clauses: `on command X { ... }` (no `is` required in v1.2.1+)
-- External contexts: `option is external` in `with` block
-- State transitions: `morph entity X to state Y with command Z`
-- Entity messaging: `tell event/command X to entity Y`
-- Collection syntax: `many optional Type` (not `optional many`)
-
-### 2026-02-01: MCP Server Configuration
-
-- Tested RIDDL comprehension with vending machine example
-- Created `.mcp.json` for local riddl-mcp server at `localhost:8080/mcp/v1`
-- Server provides RIDDL syntax guidance and validation tools
-
-### 2026-02-01: Complete README Documentation
-
-- Added README.md files to all 156 model directories
-- Each README includes: scope, key concepts table, related patterns
-- Pushed all commits to origin/main
-
-### 2026-01-29: Repository Structure Setup
-
-- Created CLAUDE.md, NOTEBOOK.md, enhanced README.md
-- Created 18 top-level sector directories with READMEs
-- Created patterns/ and schemas/ directories
-- Created build.sbt with RIDDL validation infrastructure
+- `field-operations/equipment-tracking` - Equipment lifecycle
+- `field-operations/job-site-management` - Site operations
+- `project-management/bid-management` - Bid processing
+- `project-management/construction-project` - Project tracking
+- `project-management/subcontractor-management` - Subcontractor relations
+- `real-estate/property-management` - Property leasing
+- `real-estate/transaction-management` - Real estate transactions
 
 ---
 
 ## Active Work
 
-### In Progress: Generate Remaining Domain Models
+### Pending: Fix Author Emails
 
-155 models remaining across 16 sectors. Work through systematically:
+Some early models may have incorrect author email `support@ossum.ai` instead
+of the correct `support@ossuminc.com`. Need to audit and fix.
 
-| Sector | Subsectors | Models | Status |
-|--------|------------|--------|--------|
-| commerce | 4 | 10 | COMPLETE |
-| construction | 3 | 7 | COMPLETE |
-| education | 3 | 6 | pending |
-| engineering | 3 | 6 | pending |
-| entertainment | 4 | 10 | pending |
-| finance | 3 | 9 | pending |
-| government | 3 | 7 | pending |
-| healthcare | 5 | 16 | pending |
-| hospitality | 4 | 12 | pending |
-| insurance | 3 | 4 | pending |
-| investment | 3 | 6 | pending |
-| logistics | 3 | 8 | pending |
-| manufacturing | 5 | 14 | pending |
-| marketing | 3 | 6 | pending |
-| natural-resources | 4 | 8 | pending |
-| professional-services | 3 | 6 | pending |
-| technology | 3 | 9 | pending |
-| telecommunications | 3 | 6 | pending |
-| transportation | 4 | 11 | pending |
-| utilities | 4 | 8 | pending |
+### Pending: Generate Remaining Domain Models
 
-Each model created with:
-- `.conf` file for riddlc
-- Main `.riddl` domain file
-- `types.riddl` for shared types
-- Entity file(s) with states and handlers
-- `Context.riddl` for bounded context
-- `external-contexts.riddl` for integrations
+87 models remaining. Continue systematic generation:
 
----
-
-## Next Steps
-
-1. **Continue Model Generation**
-   - Next sector: education
-   - Work through sectors systematically
-   - Validate each with riddlc before committing
-   - Commit each model separately (not pushed yet)
-
-2. **User Review**
-   - User to review all commits before push
-   - 17 model commits pending review
-
-3. **CI Integration** (future)
-   - Add GitHub Actions workflow for validation
-   - Ensure PRs must pass validation
+| Sector | Status |
+|--------|--------|
+| commerce | COMPLETE (10) |
+| construction | COMPLETE (7) |
+| education | COMPLETE (6) |
+| engineering | COMPLETE (6) |
+| entertainment | PARTIAL (5 of 10) |
+| finance | COMPLETE (9) |
+| government | COMPLETE (7) |
+| healthcare | PARTIAL (5 of 16) |
+| hospitality | PARTIAL (8 of 12) |
+| insurance | PARTIAL (2 of 4) |
+| investment | PARTIAL (1 of 6) |
+| logistics | pending (8) |
+| manufacturing | PARTIAL (2 of 14) |
+| marketing | PARTIAL (1 of 6) |
+| natural-resources | pending (8) |
+| professional-services | PARTIAL (1 of 6) |
+| technology | PARTIAL (6 of 9) |
+| telecommunications | pending (6) |
+| transportation | COMPLETE (11) |
+| utilities | pending (8) |
 
 ---
 
@@ -136,12 +185,12 @@ Each model created with:
 
 ### Model File Structure (2026-02-01)
 
-Each model broken into separate files:
+Each model uses 6 files:
 - `model.conf` - riddlc configuration pointing to main file
 - `model.riddl` - Domain definition with includes
 - `types.riddl` - Shared type definitions
 - `Entity.riddl` - One file per entity
-- `Context.riddl` - Main bounded context with adaptors
+- `Context.riddl` - Main bounded context with repository/projector
 - `external-contexts.riddl` - External systems with `option is external`
 
 ### RIDDL Syntax Notes (2026-02-01)
@@ -149,15 +198,22 @@ Each model broken into separate files:
 Important syntax findings during model generation:
 - Enum values cannot have individual `with { briefly ... }` blocks
 - Handler `on` clauses work with or without `is` in v1.2.1+
-- Identifier minimum length is 3 characters (e.g., `VA` → `VALoan`)
+- Identifier minimum length is 3 characters (e.g., `VA` -> `VALoan`)
 - User/enum name collisions trigger warnings (use distinct names)
+- Collection syntax: `many optional Type` (not `optional many`)
+- External contexts: `option is external` in `with` block
+- State transitions: `morph entity X to state Y with command Z`
+- Entity messaging: `tell event X to entity Y`
 
-### Validation Approach (2026-01-29)
+### Author Block Pattern (2026-02-02)
 
-Test-based validation using riddlc directly:
-- Works with `riddlc from model.conf validate`
-- Clear error messages for syntax issues
-- Usage warnings are informational (not errors)
+Standard author block for all models:
+```riddl
+author OssumInc is {
+  name is "Ossum Inc."
+  email is "support@ossuminc.com"
+}
+```
 
 ---
 
@@ -169,7 +225,6 @@ Test-based validation using riddlc directly:
 
 ## Notes
 
-- sbt uses Scala 2.12 for build definitions (documented in ossuminc/CLAUDE.md)
-- Project source code uses Scala 3.3.7 with `-new-syntax` flag
 - riddlc path: `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 - Version 1.2.1+ required for validation
+- All models validated with only `???` placeholder warnings (no errors)
