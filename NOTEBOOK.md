@@ -7,22 +7,50 @@ Development journal for active work on the riddl-models repository.
 ## Current Status
 
 **Date**: 2026-02-01
-**Phase**: Documentation Complete - RIDDL Content Blocked
+**Phase**: Model Generation - First Model Complete
 
-The repository structure, validation infrastructure, and all README documentation
-are complete and pushed to origin. **RIDDL content work remains blocked** waiting
-for the improved EBNF grammar and riddlc validation.
+Successfully created and validated the first domain model (order-management)
+as a proof of concept. The model compiles cleanly with riddlc, demonstrating
+correct RIDDL syntax patterns for the remaining 155 models.
 
-Summary of structure:
-- 20 sector directories with READMEs
-- 70 subsector directories with READMEs
-- 156 model directories with READMEs
-- 27 pattern template files with documentation
-- Validation test infrastructure ready
+**Validation**: Use `riddlc from <config>.conf validate` for all models.
 
 ---
 
 ## Completed Work
+
+### 2026-02-01: Order Management Model (Proof of Concept)
+
+Created complete order-management model at `commerce/e-commerce/order-management/`:
+
+**Files created:**
+- `order-management.conf` - riddlc configuration
+- `order-management.riddl` - Domain entry point with author, users, epics
+- `types.riddl` - Shared types (OrderId, Money, Address, PaymentMethod, etc.)
+- `Order.riddl` - Order entity with 5 states, commands, events, handler
+- `Shipment.riddl` - Shipment tracking entity with 3 states
+- `Return.riddl` - Return/refund entity with 5 states
+- `OrderFulfillmentSaga.riddl` - 4-step saga with compensation
+- `OrderContext.riddl` - Main context with adaptors, repository, projector
+- `external-contexts.riddl` - 4 external contexts (PaymentGateway, etc.)
+
+**Key learnings documented in CLAUDE.md:**
+- `described by` syntax: use quoted strings OR multi-line with `}` on own line
+- Naming collisions: enum values vs state names need different names
+- External contexts: use `option is external` in `with` block
+- Messaging: `tell event/command X to entity Y`
+- State transitions: `morph entity X to state Y with command Z`
+
+**Validation result:** 0 errors, only informational warnings for:
+- Missing metadata on some fields (external-contexts.riddl, epic steps)
+- Unused types (RefundStatus, ReturnStatus, DailyOrderMetrics)
+
+### 2026-02-01: MCP Server Configuration
+
+- Tested RIDDL comprehension with vending machine example
+- Identified gaps: missing `with` metadata syntax, other constructs
+- Created `.mcp.json` for local riddl-mcp server at `localhost:8080/mcp/v1`
+- Server provides RIDDL syntax guidance and validation tools
 
 ### 2026-02-01: Complete README Documentation
 
@@ -46,54 +74,52 @@ Summary of structure:
 - Created build.sbt with RIDDL validation infrastructure
 - Created RiddlValidationTest that validates all .riddl files on `sbt test`
 
-### Validation Infrastructure
-
-The build now includes:
-- `sbt test` / `sbt validate` - Validates all RIDDL files
-- Template files with `{Placeholders}` are automatically skipped
-- Uses riddl-lib 1.1.1 for validation
-- Catches syntax and semantic errors
-
 ---
 
 ## Active Work
 
-### BLOCKED: Fix Pattern RIDDL Files
+### In Progress: Commit Order Management Model
 
-The pattern example files have RIDDL syntax errors and need to be fixed.
-**Waiting for**: EBNF grammar update being done in another thread.
-
-Files to fix:
-- `patterns/entity/event-sourced/example.riddl`
-- `patterns/entity/aggregate-root/example.riddl`
-- `patterns/saga/distributed-transaction/example.riddl`
-- `patterns/projection/read-model/example.riddl`
-- `patterns/workflow/process-manager/example.riddl`
+Files to commit in cohesive batches:
+1. Configuration and entry point files
+2. Type definitions and entity files
+3. Context and external system files
 
 ---
 
 ## Next Steps
 
-**All content work blocked on EBNF grammar completion.**
+1. **Commit Order Management Model** (in progress)
+   - Batch commits for the 10 new files
 
-Once unblocked:
+2. **Generate Remaining Models**
+   - Use order-management as template
+   - Work through sectors systematically
+   - Validate each with riddlc before committing
 
-1. **Fix Pattern Example Files**
-   - Update examples with correct RIDDL syntax
+3. **Fix Pattern Example Files**
+   - Update with correct syntax
    - Validate all examples pass `sbt test`
 
-2. **Create Real Domain Models**
-   - Write complete, validated RIDDL models (not placeholders)
-   - Start with commerce/e-commerce/shopping-cart as reference example
-   - Each model must validate with riddlc before committing
-
-3. **CI Integration**
+4. **CI Integration**
    - Add GitHub Actions workflow for validation
    - Ensure PRs must pass validation
 
 ---
 
 ## Design Decisions
+
+### Model File Structure (2026-02-01)
+
+Each model should be broken into separate files:
+- `model.conf` - riddlc configuration pointing to main file
+- `model.riddl` - Domain definition with includes
+- `types.riddl` - Shared type definitions
+- `*.riddl` - One file per entity/saga
+- `Context.riddl` - Main bounded context with adaptors
+- `external-contexts.riddl` - External systems with `option is external`
+
+This structure improves readability and allows focused editing.
 
 ### Validation Approach (2026-01-29)
 
@@ -114,10 +140,7 @@ Used test-based validation rather than custom sbt task because:
 
 ## Blockers
 
-- **EBNF Grammar Update**: All RIDDL content (patterns and domain models) requires
-  the improved EBNF grammar to be complete. Models must validate with riddlc -
-  we don't want placeholder content, only real validated models. Work is being
-  done in a separate session. (2026-01-30: Delayed due to Scala compiler issues.)
+- **None currently**
 
 ---
 
@@ -126,3 +149,4 @@ Used test-based validation rather than custom sbt task because:
 - sbt uses Scala 2.12 for build definitions (documented in ossuminc/CLAUDE.md)
 - Project source code uses Scala 3.3.7 with `-new-syntax` flag
 - Use `given`/`then`/`end` syntax in test files, not Scala 2 style
+- riddlc path: `riddl/riddlc/jvm/target/universal/stage/bin/riddlc`

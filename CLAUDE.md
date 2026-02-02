@@ -3,6 +3,10 @@
 This file provides stable reference documentation for Claude Code when working
 with the riddl-models repository.
 
+**Important**: Read ../CLAUDE.md for general protocols and instructions on
+working on Ossum Inc. project which are described in that file; this is one of
+them.
+
 ## Project Overview
 
 **riddl-models** is the canonical repository for example RIDDL models and
@@ -164,7 +168,7 @@ Each pattern includes:
 
 ### RIDDL Style
 
-Follow the idioms documented in the mcp-server:
+Follow these idioms when writing RIDDL:
 
 1. **Use `is` keyword** for readability: `entity Order is { }`
 2. **Use `???` for placeholders** - empty bodies not allowed
@@ -174,11 +178,105 @@ Follow the idioms documented in the mcp-server:
 6. **Use explicit states** - avoid flag-based state machines
 7. **Type IDs as `{Name}Id`** - `type OrderId is Id(Order)`
 
+### RIDDL Syntax Reference
+
+**Description Syntax** - Three valid forms for `described by`:
+
+```riddl
+// Form 1: Simple quoted string (best for short descriptions)
+described by "A short description."
+
+// Form 2: Multiple quoted strings in braces
+described by { "Line one." "Line two." "Line three." }
+
+// Form 3: Markdown with pipe character (MUST have } on separate line)
+described by {
+  | Markdown line one.
+  | Markdown line two.
+}
+```
+
+**CRITICAL**: The `|` character consumes everything to end of line including
+any `}` on the same line. This is WRONG: `described by { | Text here. }`
+
+**Naming Collision Avoidance**:
+- Enum values and state names in the same scope cannot match
+- Use suffixes like `State` or `Status` to disambiguate
+- Example: enum `DeliveryFailed` vs state `DeliveryFailedState`
+
+**External Contexts**:
+- Mark external bounded contexts with `option is external` in the `with` block
+- NOT inside the context body
+
+```riddl
+context PaymentGateway is {
+  // events and types only, no handlers
+} with {
+  option is external
+  briefly "External payment processing system"
+}
+```
+
+**Messaging**:
+- Use `tell event X to entity Y` for entity-to-entity messaging
+- Use `tell command X to entity Y` for command dispatch
+- `send to outlet` is only for streamlet flows
+
+**State Transitions**:
+- Use `morph entity X to state Y with command Z` for state changes
+- The `with command` provides the data source for the new state
+
 ### Directory Naming
 
 - Sectors: `kebab-case` (e.g., `natural-resources`)
 - Subsectors: `kebab-case` (e.g., `oil-gas`)
 - Models: `kebab-case` (e.g., `well-management`)
+
+---
+
+## Validation with riddlc
+
+**Use `riddlc` directly for validation** - it handles includes properly and
+provides clear error messages. The MCP server can still be used for other
+purposes like querying grammar, idioms, and patterns.
+
+### Setup
+
+Each model directory should have a `.conf` file:
+
+```hocon
+validate {
+  input-file = "model-name.riddl"
+}
+```
+
+### Validation Command
+
+```bash
+# From the model directory
+/path/to/riddlc from model-name.conf validate
+```
+
+The riddlc binary is typically at:
+`riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
+
+### Model File Structure
+
+Break models into separate files using `include`:
+
+```
+model-directory/
+├── model-name.conf           # riddlc configuration
+├── model-name.riddl          # Domain entry point with includes
+├── types.riddl               # Shared types
+├── Entity1.riddl             # Entity definitions
+├── Entity2.riddl
+├── Context.riddl             # Main bounded context
+├── external-contexts.riddl   # External systems (option is external)
+└── README.md
+```
+
+The main `.riddl` file uses `include "filename.riddl"` to compose the model.
 
 ---
 
@@ -188,19 +286,26 @@ Follow the idioms documented in the mcp-server:
 
 1. Choose the appropriate sector and subsector
 2. Create a directory: `sector/subsector/model-name/`
-3. Add the RIDDL file: `model-name.riddl`
-4. Add README.md explaining the model's purpose
-5. Optionally add metadata: `model-name.metadata.json`
+3. Create the configuration file: `model-name.conf`
+4. Add the main RIDDL file: `model-name.riddl`
+5. Break into separate files using `include` for types, entities, contexts
+6. Add README.md explaining the model's purpose
+7. Validate with `riddlc from model-name.conf validate`
+8. Optionally add metadata: `model-name.metadata.json`
 
 ### Model Quality Checklist
 
+- [ ] Has `model-name.conf` for riddlc validation
 - [ ] All definitions have `briefly` descriptions
+- [ ] All definitions have `described by` for longer descriptions
 - [ ] Commands use imperative naming
 - [ ] Events use past tense naming
 - [ ] States are explicit (not flag-based)
+- [ ] No naming collisions between enum values and state names
 - [ ] Handlers have implementation or `???`
 - [ ] Types are domain-specific (not generic `String`)
 - [ ] Sagas have compensation logic
+- [ ] Validates with `riddlc` (0 errors)
 
 ---
 
