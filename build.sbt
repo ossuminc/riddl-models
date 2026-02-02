@@ -5,7 +5,7 @@ Global / onChangedBuildSource := ReloadOnSourceChanges
 
 enablePlugins(OssumIncPlugin)
 
-lazy val riddlVersion = "1.1.1"
+lazy val riddlVersion = "1.2.1"
 
 lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
   .configure(With.typical)  // Sets up Scala 3.3.x and resolvers
