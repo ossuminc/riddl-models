@@ -1,0 +1,193 @@
+// Hospital Admission/Discharge - Admission Context
+
+context AdmissionContext is {
+
+  include "types.riddl"
+  include "Admission.riddl"
+
+  // Repository for admission persistence
+  repository AdmissionRepository is {
+    schema AdmissionData is relational
+      of admissions as Admission
+      index on field Admission.admissionId
+      index on field Admission.patientId
+
+    handler AdmissionPersistence is {
+      on event Admission.AdmissionCreated {
+        prompt "Store new admission record"
+      }
+      on event Admission.BedAssigned {
+        prompt "Update admission with bed assignment"
+      }
+      on event Admission.TransferRequested {
+        prompt "Store transfer request"
+      }
+      on event Admission.PatientTransferred {
+        prompt "Update bed assignment and transfer history"
+      }
+      on event Admission.ConditionUpdated {
+        prompt "Update patient condition"
+      }
+      on event Admission.DischargeInitiated {
+        prompt "Store discharge order"
+      }
+      on event Admission.DischargeCompleted {
+        prompt "Update admission to discharged status"
+      }
+    } with {
+      briefly "Persists admission events"
+      described by "Handles event-driven persistence for admissions."
+    }
+  } with {
+    briefly "Admission data persistence"
+    described by {
+      | The AdmissionRepository provides persistent storage for
+      | admission records, bed assignments, and transfers.
+    }
+  }
+
+  // Repository for bed census
+  repository BedCensusRepository is {
+    schema BedCensusData is relational
+      of beds as BedAssignment
+      index on field BedAssignment.bedId
+      index on field BedAssignment.unitId
+
+    handler BedCensusPersistence is {
+      on event Admission.BedAssigned {
+        prompt "Mark bed as occupied"
+      }
+      on event Admission.PatientTransferred {
+        prompt "Update bed occupancy for both old and new beds"
+      }
+      on event Admission.DischargeCompleted {
+        prompt "Mark bed as available for housekeeping"
+      }
+    } with {
+      briefly "Maintains bed census"
+      described by "Tracks real-time bed occupancy status."
+    }
+  } with {
+    briefly "Bed census persistence"
+    described by {
+      | The BedCensusRepository tracks current bed occupancy
+      | and availability across all hospital units.
+    }
+  }
+
+  // Projector for bed occupancy metrics
+  projector BedOccupancyProjector is {
+    updates repository BedCensusRepository
+
+    record OccupancyStats is {
+      unitId is UnitId with { briefly "Unit" described by "Hospital unit." }
+      unitName is String(1, 100) with { briefly "Name" described by "Unit name." }
+      totalBeds is Natural with { briefly "Total" described by "Total beds in unit." }
+      occupiedBeds is Natural with { briefly "Occupied" described by "Currently occupied." }
+      availableBeds is Natural with { briefly "Available" described by "Available for assignment." }
+      pendingClean is Natural with { briefly "Pending clean" described by "Awaiting housekeeping." }
+      occupancyRate is Decimal(5, 4) with { briefly "Rate" described by "Occupancy percentage." }
+      asOfTime is TimeStamp with { briefly "As of" described by "Snapshot time." }
+    } with {
+      briefly "Occupancy statistics"
+      described by "Real-time bed occupancy metrics by unit."
+    }
+
+    handler OccupancyHandler is {
+      on event Admission.BedAssigned {
+        prompt "Increment occupied beds for unit"
+      }
+      on event Admission.PatientTransferred {
+        prompt "Update occupancy for both source and destination units"
+      }
+      on event Admission.DischargeCompleted {
+        prompt "Decrement occupied beds and increment pending clean"
+      }
+    } with {
+      briefly "Maintains occupancy metrics"
+      described by "Projects bed events into occupancy statistics."
+    }
+  } with {
+    briefly "Bed occupancy projections"
+    described by "Maintains real-time bed occupancy analytics."
+  }
+
+  // Projector for length of stay analytics
+  projector LengthOfStayProjector is {
+    updates repository AdmissionRepository
+
+    record LOSStats is {
+      unitId is optional UnitId with { briefly "Unit" described by "Hospital unit filter." }
+      admissionType is optional AdmissionType with { briefly "Type" described by "Admission type filter." }
+      averageLOS is Decimal(6, 2) with { briefly "Avg LOS" described by "Average length of stay in days." }
+      medianLOS is Decimal(6, 2) with { briefly "Median LOS" described by "Median length of stay." }
+      minLOS is Natural with { briefly "Min" described by "Shortest stay." }
+      maxLOS is Natural with { briefly "Max" described by "Longest stay." }
+      totalDischarges is Natural with { briefly "Discharges" described by "Total discharges in period." }
+      periodStart is Date with { briefly "Start" described by "Period start date." }
+      periodEnd is Date with { briefly "End" described by "Period end date." }
+    } with {
+      briefly "Length of stay statistics"
+      described by "Aggregated length of stay metrics."
+    }
+
+    handler LOSHandler is {
+      on event Admission.DischargeCompleted {
+        prompt "Update length of stay statistics"
+      }
+    } with {
+      briefly "Maintains LOS analytics"
+      described by "Projects discharge events into LOS metrics."
+    }
+  } with {
+    briefly "Length of stay projections"
+    described by "Maintains length of stay analytics for quality reporting."
+  }
+
+  // Projector for throughput metrics
+  projector ThroughputProjector is {
+    updates repository AdmissionRepository
+
+    record ThroughputStats is {
+      periodDate is Date with { briefly "Date" described by "Statistics date." }
+      admissions is Natural with { briefly "Admissions" described by "New admissions." }
+      discharges is Natural with { briefly "Discharges" described by "Total discharges." }
+      transfers is Natural with { briefly "Transfers" described by "Inter-unit transfers." }
+      emergencyAdmits is Natural with { briefly "Emergency" described by "Emergency admissions." }
+      electiveAdmits is Natural with { briefly "Elective" described by "Elective admissions." }
+      averageTimeToAssignment is Duration with { briefly "Time to bed" described by "Average time to bed assignment." }
+      averageDischargeTime is Duration with { briefly "Discharge time" described by "Average discharge processing time." }
+    } with {
+      briefly "Throughput statistics"
+      described by "Daily patient flow metrics."
+    }
+
+    handler ThroughputHandler is {
+      on event Admission.AdmissionCreated {
+        prompt "Increment admission count by type"
+      }
+      on event Admission.BedAssigned {
+        prompt "Calculate time to bed assignment"
+      }
+      on event Admission.PatientTransferred {
+        prompt "Increment transfer count"
+      }
+      on event Admission.DischargeCompleted {
+        prompt "Increment discharge count and calculate processing time"
+      }
+    } with {
+      briefly "Maintains throughput metrics"
+      described by "Projects events into throughput analytics."
+    }
+  } with {
+    briefly "Throughput projections"
+    described by "Maintains daily patient flow and throughput metrics."
+  }
+
+} with {
+  briefly "Bounded context for hospital admissions"
+  described by {
+    | The AdmissionContext is the bounded context for
+    | patient admissions, bed management, and discharges.
+  }
+}
