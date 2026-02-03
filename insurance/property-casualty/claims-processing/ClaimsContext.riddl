@@ -1,0 +1,337 @@
+// Claims Processing Bounded Context
+
+context ClaimsContext is {
+
+  include "types.riddl"
+  include "Claim.riddl"
+
+  // Adaptors for external system integration
+  adaptor PolicyAdapter from context PolicyService is {
+    handler InboundPolicy is {
+      on event PolicyService.PolicyDetailsRetrieved {
+        prompt "Update claim with policy coverage details"
+      }
+      on event PolicyService.CoverageVerified {
+        prompt "Record coverage verification result on claim"
+      }
+    } with {
+      briefly "Handles policy events from policy service"
+      described by "Processes inbound policy and coverage events for claims."
+    }
+  } with {
+    briefly "Translates policy service events"
+    described by {
+      | Receives policy and coverage events from the external PolicyService
+      | and applies them to claim processing.
+    }
+  }
+
+  adaptor PaymentAdapter from context PaymentService is {
+    handler InboundPayments is {
+      on event PaymentService.PaymentProcessed {
+        tell command IssuePay to entity Claim
+      }
+      on event PaymentService.PaymentVoided {
+        prompt "Handle voided payment - may require reissue"
+      }
+    } with {
+      briefly "Handles payment events from payment service"
+      described by "Processes payment confirmation events for claims."
+    }
+  } with {
+    briefly "Translates payment service events"
+    described by {
+      | Receives payment processing events from the external PaymentService
+      | and updates claim payment status.
+    }
+  }
+
+  adaptor FraudAdapter from context FraudDetection is {
+    handler InboundFraud is {
+      on event FraudDetection.FraudAnalysisComplete {
+        prompt "Apply fraud risk score to claim and route if high risk"
+      }
+      on event FraudDetection.SIUReferralAccepted {
+        prompt "Mark claim as under special investigation"
+      }
+      on event FraudDetection.SIUInvestigationClosed {
+        prompt "Apply SIU findings to claim for decision"
+      }
+    } with {
+      briefly "Handles fraud detection events"
+      described by "Processes fraud analysis and investigation events for claims."
+    }
+  } with {
+    briefly "Translates fraud detection events"
+    described by {
+      | Receives fraud detection events and SIU investigation updates
+      | to apply to claim processing decisions.
+    }
+  }
+
+  // Repository for claims persistence
+  repository ClaimRepository is {
+    schema ClaimData is relational
+      of claims as Claim
+      index on field Claim.claimInfo.policyId
+      index on field Claim.assignedAdjuster
+
+    handler ClaimPersistence is {
+      on event Claim.ClaimFiled {
+        prompt "Persist new claim to database"
+      }
+      on event Claim.AdjusterAssigned {
+        prompt "Update claim with adjuster assignment"
+      }
+      on event Claim.InvestigationUpdated {
+        prompt "Append investigation notes to claim history"
+      }
+      on event Claim.ReserveEstablished {
+        prompt "Update claim reserves and financial exposure"
+      }
+      on event Claim.ClaimApproved {
+        prompt "Update claim with approval details"
+      }
+      on event Claim.PaymentIssued {
+        prompt "Record payment and update paid amounts"
+      }
+      on event Claim.ClaimDenied {
+        prompt "Update claim with denial details"
+      }
+      on event Claim.ClaimClosed {
+        prompt "Mark claim as closed with final status"
+      }
+    } with {
+      briefly "Persists claim events to storage"
+      described by "Handles all event-driven persistence operations for claims."
+    }
+
+    handler ClaimQueries is {
+      on query FindClaimById {
+        prompt "Retrieve claim by its identifier"
+      }
+      on query FindClaimsByPolicy {
+        prompt "Find all claims for a specific policy"
+      }
+      on query FindClaimsByAdjuster {
+        prompt "Find claims assigned to an adjuster"
+      }
+      on query FindClaimsByStatus {
+        prompt "Find claims in a specific status"
+      }
+      on query FindOpenClaims {
+        prompt "Find all claims not in closed status"
+      }
+    } with {
+      briefly "Query handler for claim repository"
+      described by {
+        | Provides query capabilities for retrieving claim data
+        | based on various search criteria.
+      }
+    }
+  } with {
+    briefly "Persistent storage for claims"
+    described by {
+      | The ClaimRepository provides persistent storage for claim
+      | aggregates with indexes for efficient queries by policy,
+      | adjuster, and status.
+    }
+  }
+
+  // Projector for loss ratio analytics
+  projector LossRatioProjector is {
+    updates repository ClaimRepository
+
+    record LossRatioMetric is {
+      periodStart is Date with {
+        briefly "Period start"
+        described by "Start date of the measurement period."
+      }
+      periodEnd is Date with {
+        briefly "Period end"
+        described by "End date of the measurement period."
+      }
+      policyType is String(1, 50) with {
+        briefly "Policy type"
+        described by "Type of policy being measured."
+      }
+      earnedPremium is Decimal(14, 2) with {
+        briefly "Earned premium"
+        described by "Total premium earned during the period."
+      }
+      incurredLosses is Decimal(14, 2) with {
+        briefly "Incurred losses"
+        described by "Total losses incurred including reserves."
+      }
+      lossRatio is Decimal(5, 4) with {
+        briefly "Loss ratio"
+        described by "Ratio of incurred losses to earned premium."
+      }
+      claimCount is Integer with {
+        briefly "Claim count"
+        described by "Number of claims in the period."
+      }
+      averageClaimSize is Decimal(12, 2) with {
+        briefly "Average claim size"
+        described by "Average incurred amount per claim."
+      }
+    } with {
+      briefly "Calculated loss ratio metrics"
+      described by {
+        | Aggregated financial metrics showing the ratio of claims
+        | losses to earned premiums for a given period and policy type.
+      }
+    }
+
+    handler LossRatioHandler is {
+      on event Claim.ClaimFiled {
+        prompt "Increment claim counts for loss calculation"
+      }
+      on event Claim.ReserveEstablished {
+        prompt "Update incurred losses with reserve amounts"
+      }
+      on event Claim.PaymentIssued {
+        prompt "Record actual paid amounts to loss calculations"
+      }
+      on event Claim.ClaimClosed {
+        prompt "Finalize claim in loss calculations"
+      }
+    } with {
+      briefly "Event handler for loss ratio projection"
+      described by {
+        | Consumes claim events to maintain real-time loss ratio
+        | calculations and financial metrics.
+      }
+    }
+  } with {
+    briefly "Projector for loss ratio analytics"
+    described by {
+      | Maintains aggregated loss ratio metrics by consuming claim
+      | lifecycle events. Provides key financial indicators for
+      | underwriting and actuarial analysis.
+    }
+  }
+
+  // Projector for cycle time metrics
+  projector CycleTimeProjector is {
+    updates repository ClaimRepository
+
+    record CycleTimeMetric is {
+      periodStart is Date with {
+        briefly "Period start"
+        described by "Start date of the measurement period."
+      }
+      periodEnd is Date with {
+        briefly "Period end"
+        described by "End date of the measurement period."
+      }
+      lossType is LossType with {
+        briefly "Loss type"
+        described by "Type of loss being measured."
+      }
+      averageDaysToAssign is Decimal(5, 2) with {
+        briefly "Days to assign"
+        described by "Average days from filing to adjuster assignment."
+      }
+      averageDaysToReserve is Decimal(5, 2) with {
+        briefly "Days to reserve"
+        described by "Average days from filing to reserve establishment."
+      }
+      averageDaysToClose is Decimal(6, 2) with {
+        briefly "Days to close"
+        described by "Average days from filing to closure."
+      }
+      averageTouchCount is Decimal(5, 2) with {
+        briefly "Touch count"
+        described by "Average number of activities per claim."
+      }
+      claimVolume is Integer with {
+        briefly "Claim volume"
+        described by "Number of claims in the period."
+      }
+    } with {
+      briefly "Claims processing cycle time metrics"
+      described by {
+        | Operational metrics tracking the time and effort required
+        | to process claims through various lifecycle stages.
+      }
+    }
+
+    record ClaimCycleTracking is {
+      claimId is ClaimId with {
+        briefly "Claim identifier"
+        described by "The claim being tracked."
+      }
+      lossType is LossType with {
+        briefly "Loss type"
+        described by "Type of loss for the claim."
+      }
+      filedAt is TimeStamp with {
+        briefly "Filed at"
+        described by "When the claim was filed."
+      }
+      assignedAt is optional TimeStamp with {
+        briefly "Assigned at"
+        described by "When adjuster was assigned."
+      }
+      reserveSetAt is optional TimeStamp with {
+        briefly "Reserve set at"
+        described by "When reserves were established."
+      }
+      closedAt is optional TimeStamp with {
+        briefly "Closed at"
+        described by "When the claim was closed."
+      }
+      touchCount is Integer with {
+        briefly "Touch count"
+        described by "Number of activities on the claim."
+      }
+    } with {
+      briefly "Individual claim cycle tracking"
+      described by {
+        | Tracks timing milestones for individual claims to
+        | calculate aggregate cycle time metrics.
+      }
+    }
+
+    handler CycleTimeHandler is {
+      on event Claim.ClaimFiled {
+        prompt "Start tracking claim cycle time"
+      }
+      on event Claim.AdjusterAssigned {
+        prompt "Record assignment timing milestone"
+      }
+      on event Claim.ReserveEstablished {
+        prompt "Record reserve timing milestone"
+      }
+      on event Claim.InvestigationUpdated {
+        prompt "Increment touch count for workload tracking"
+      }
+      on event Claim.ClaimClosed {
+        prompt "Finalize cycle time and update aggregates"
+      }
+    } with {
+      briefly "Event handler for cycle time projection"
+      described by {
+        | Consumes claim events to track processing times and
+        | calculate operational efficiency metrics.
+      }
+    }
+  } with {
+    briefly "Projector for claims processing efficiency metrics"
+    described by {
+      | Tracks and aggregates claims processing cycle times and
+      | activity metrics. Provides operational KPIs for process
+      | improvement and staffing decisions.
+    }
+  }
+
+} with {
+  briefly "Bounded context for claims processing operations"
+  described by {
+    | The ClaimsContext encapsulates all claims processing capabilities
+    | including the Claim aggregate, persistence repository, and analytics
+    | projections. It defines the boundary within which claims terminology
+    | and rules have consistent meaning.
+  }
+}
