@@ -1,0 +1,233 @@
+// Drug Supply Chain - DrugSupplyContext
+// Bounded context for pharmaceutical supply chain management
+
+context DrugSupplyContext is {
+
+  include "types.riddl"
+  include "DrugBatch.riddl"
+
+  // Repository for batch persistence
+  repository BatchRepository is {
+    schema BatchSchema is relational
+      of batches as DrugBatch
+      index on field DrugBatch.batchId
+      index on field DrugBatch.lotNumber
+
+    handler BatchPersistence is {
+      on event DrugBatch.BatchManufactured {
+        prompt "Persist new batch to database"
+      }
+      on event DrugBatch.UnitsSerialized {
+        prompt "Update batch with serialization data"
+      }
+      on event DrugBatch.ProductShipped {
+        prompt "Update batch status and shipment info"
+      }
+      on event DrugBatch.ShipmentReceived {
+        prompt "Update batch with receipt confirmation"
+      }
+      on event DrugBatch.BatchPlacedOnHold {
+        prompt "Update batch to quality hold status"
+      }
+      on event DrugBatch.BatchReleased {
+        prompt "Update batch to released status"
+      }
+      on event DrugBatch.RecallInitiated {
+        prompt "Update batch to recalled status"
+      }
+    } with {
+      briefly "Persists batch events to storage"
+      described by "Handles all event-driven persistence operations for batches."
+    }
+  } with {
+    briefly "Batch persistence repository"
+    described by {
+      | Repository for persisting and querying manufacturing batch
+      | records with appropriate indexes for common access patterns.
+    }
+  }
+
+  // Repository for serialization data
+  repository SerializationRepository is {
+    schema SerializationSchema is relational
+      of serializations as SerializationInfo
+      index on field SerializationInfo.serialNumber
+      index on field SerializationInfo.gtinCode
+
+    handler SerializationPersistence is {
+      on event DrugBatch.UnitsSerialized {
+        prompt "Store serialization records for units"
+      }
+      on event DrugBatch.ProductShipped {
+        prompt "Update serialization location data"
+      }
+      on event DrugBatch.ShipmentReceived {
+        prompt "Update serialization receipt status"
+      }
+    } with {
+      briefly "Persists serialization events"
+      described by "Handles persistence for serialization records."
+    }
+  } with {
+    briefly "Serialization data repository"
+    described by {
+      | Repository for persisting and querying DSCSA-compliant
+      | serialization records with lookup by serial number and GTIN.
+    }
+  }
+
+  // Projector for serialization metrics
+  projector SerializationMetricsProjector is {
+    updates repository SerializationRepository
+
+    record SerializationMetrics is {
+      productGtin is GTINCode with {
+        briefly "Product GTIN"
+        described by "The product being tracked."
+      }
+      totalSerialized is Natural with {
+        briefly "Total serialized"
+        described by "Total units serialized."
+      }
+      totalShipped is Natural with {
+        briefly "Total shipped"
+        described by "Total units shipped."
+      }
+      totalReceived is Natural with {
+        briefly "Total received"
+        described by "Total units received."
+      }
+      totalVerified is Natural with {
+        briefly "Total verified"
+        described by "Total units verified."
+      }
+      suspectCount is Natural with {
+        briefly "Suspect count"
+        described by "Units flagged as suspect."
+      }
+      lastUpdated is TimeStamp with {
+        briefly "Last updated"
+        described by "When metrics were last updated."
+      }
+    } with {
+      briefly "Serialization metrics record"
+      described by "Aggregated metrics for serialization activity by product."
+    }
+
+    handler MetricsHandler is {
+      on event DrugBatch.UnitsSerialized {
+        prompt "Update serialization count"
+      }
+      on event DrugBatch.ProductShipped {
+        prompt "Update shipment count"
+      }
+      on event DrugBatch.ShipmentReceived {
+        prompt "Update receipt count"
+      }
+      on event DrugBatch.AuthenticityVerified {
+        prompt "Update verification and suspect counts"
+      }
+    } with {
+      briefly "Metrics projection handler"
+      described by "Maintains running metrics for serialization activity."
+    }
+  } with {
+    briefly "Serialization metrics projector"
+    described by {
+      | CQRS read model that maintains aggregated serialization metrics
+      | for reporting and analytics, tracking counts of serialized,
+      | shipped, received, and verified units by product.
+    }
+  }
+
+  // Projector for traceability dashboard
+  projector TraceabilityDashboardProjector is {
+    updates repository BatchRepository
+
+    record TraceabilityDashboard is {
+      batchId is BatchId with {
+        briefly "Batch identifier"
+        described by "The batch being tracked."
+      }
+      productName is String(1, 100) with {
+        briefly "Product name"
+        described by "Name of the product."
+      }
+      currentStatus is BatchStatus with {
+        briefly "Current status"
+        described by "Current batch status."
+      }
+      currentLocation is String(1, 100) with {
+        briefly "Current location"
+        described by "Current facility location."
+      }
+      totalUnits is Natural with {
+        briefly "Total units"
+        described by "Total units in batch."
+      }
+      unitsInTransit is Natural with {
+        briefly "In transit"
+        described by "Units currently in transit."
+      }
+      unitsDelivered is Natural with {
+        briefly "Delivered"
+        described by "Units successfully delivered."
+      }
+      unitsRecalled is Natural with {
+        briefly "Recalled"
+        described by "Units under recall."
+      }
+      chainOfCustody is many TraceabilityRecord with {
+        briefly "Chain of custody"
+        described by "Complete custody chain."
+      }
+      lastEvent is String(1, 100) with {
+        briefly "Last event"
+        described by "Most recent event type."
+      }
+      lastEventTimestamp is TimeStamp with {
+        briefly "Last event time"
+        described by "When last event occurred."
+      }
+    } with {
+      briefly "Traceability dashboard record"
+      described by {
+        | Comprehensive traceability view for a drug batch showing
+        | current status, location, and complete chain of custody.
+      }
+    }
+
+    handler DashboardHandler is {
+      on event DrugBatch.BatchManufactured {
+        prompt "Initialize dashboard on manufacture"
+      }
+      on event DrugBatch.ProductShipped {
+        prompt "Update dashboard on shipment"
+      }
+      on event DrugBatch.ShipmentReceived {
+        prompt "Update dashboard on receipt"
+      }
+      on event DrugBatch.RecallInitiated {
+        prompt "Update dashboard on recall"
+      }
+    } with {
+      briefly "Dashboard projection handler"
+      described by "Maintains traceability dashboard data from domain events."
+    }
+  } with {
+    briefly "Traceability dashboard projector"
+    described by {
+      | CQRS read model providing a comprehensive traceability view
+      | for regulatory reporting and supply chain visibility dashboards.
+    }
+  }
+
+} with {
+  briefly "Drug supply chain bounded context"
+  described by {
+    | Core bounded context for pharmaceutical supply chain management,
+    | encompassing batch tracking, DSCSA-compliant serialization,
+    | distribution management, and regulatory traceability for life
+    | sciences applications.
+  }
+}
