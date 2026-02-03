@@ -1,0 +1,186 @@
+// Equipment Maintenance - Maintenance Context
+// The primary bounded context for equipment maintenance management
+
+context MaintenanceContext is {
+
+  include "types.riddl"
+  include "MaintenanceOrder.riddl"
+
+  // Adaptors for external system integration
+  adaptor EquipmentAdapter from context EquipmentRegistry is {
+    handler InboundEquipment is {
+      on event EquipmentRegistry.EquipmentStatusChanged {
+        prompt "Update maintenance schedule based on equipment status change"
+      }
+      on event EquipmentRegistry.MaintenanceScheduleUpdated {
+        prompt "Create preventive maintenance orders from updated schedule"
+      }
+    } with {
+      briefly "Handles equipment registry events"
+      described by "Processes equipment status changes and schedule updates."
+    }
+  } with {
+    briefly "Translates equipment registry events"
+    described by {
+      | Receives equipment master data events from the external EquipmentRegistry
+      | and creates or updates maintenance orders accordingly.
+    }
+  }
+
+  adaptor InventoryAdapter from context SparePartsInventory is {
+    handler InboundInventory is {
+      on event SparePartsInventory.PartsReserved {
+        prompt "Update order with parts reservation confirmation"
+      }
+      on event SparePartsInventory.PartsReservationFailed {
+        prompt "Notify planner of parts shortage and suggest alternatives"
+        error "Parts reservation failed for maintenance order"
+      }
+      on event SparePartsInventory.PartsConsumed {
+        tell command RecordSpareUsage to entity MaintenanceOrder
+      }
+    } with {
+      briefly "Handles spare parts inventory events"
+      described by "Processes parts availability and consumption events."
+    }
+  } with {
+    briefly "Translates spare parts inventory events"
+    described by {
+      | Receives parts reservation and consumption events from the
+      | SparePartsInventory and updates maintenance orders accordingly.
+    }
+  }
+
+  adaptor ProductionAdapter from context ProductionSchedule is {
+    handler InboundProduction is {
+      on event ProductionSchedule.MaintenanceWindowApproved {
+        prompt "Update maintenance order with approved schedule window"
+      }
+      on event ProductionSchedule.MaintenanceWindowRejected {
+        prompt "Reschedule maintenance order for alternative window"
+      }
+      on event ProductionSchedule.EquipmentNeededUrgently {
+        prompt "Expedite in-progress maintenance or defer non-critical work"
+      }
+    } with {
+      briefly "Handles production schedule events"
+      described by "Processes maintenance window approvals and production priorities."
+    }
+  } with {
+    briefly "Translates production schedule events"
+    described by {
+      | Receives maintenance window coordination events from Production
+      | Schedule to align maintenance activities with production needs.
+    }
+  }
+
+  // Repository for maintenance persistence
+  repository MaintenanceRepository is {
+    schema MaintenanceData is relational
+      of maintenanceOrders as MaintenanceOrder
+      index on field MaintenanceOrder.equipmentId
+      index on field MaintenanceOrder.scheduledDate
+      index on field MaintenanceOrder.maintenanceType
+
+    handler MaintenancePersistence is {
+      on event MaintenanceOrder.MaintenanceOrderCreated {
+        prompt "Persist new maintenance order to database"
+      }
+      on event MaintenanceOrder.TechnicianAssigned {
+        prompt "Update order with technician assignment"
+      }
+      on event MaintenanceOrder.MaintenanceStarted {
+        prompt "Update order status and start labor tracking"
+      }
+      on event MaintenanceOrder.SpareUsageRecorded {
+        prompt "Record spare parts usage on order"
+      }
+      on event MaintenanceOrder.MaintenanceCompleted {
+        prompt "Update order to completed with final metrics"
+      }
+      on event MaintenanceOrder.OrderCancelled {
+        prompt "Update order to cancelled status"
+      }
+    } with {
+      briefly "Persists maintenance events to storage"
+      described by "Handles all event-driven persistence operations for maintenance orders."
+    }
+  } with {
+    briefly "Persistent storage for maintenance data"
+    described by {
+      | The MaintenanceRepository provides persistent storage for maintenance
+      | orders with appropriate indexes for common query patterns including
+      | by equipment, date, and maintenance type.
+    }
+  }
+
+  // Projector for maintenance metrics
+  projector MaintenanceMetrics is {
+    updates repository MaintenanceRepository
+
+    record EquipmentReliabilityMetrics is {
+      equipmentId is EquipmentId with { briefly "Equipment ID" described by "Equipment being tracked." }
+      equipmentName is String(1, 200) with { briefly "Equipment name" described by "Equipment name for display." }
+      mtbf is Decimal(10, 2) with { briefly "MTBF (hours)" described by "Mean Time Between Failures in hours." }
+      mttr is Decimal(10, 2) with { briefly "MTTR (hours)" described by "Mean Time To Repair in hours." }
+      availability is Decimal(5, 2) with { briefly "Availability (%)" described by "Equipment availability percentage." }
+      failureCount is Natural with { briefly "Failure count" described by "Total number of failures in period." }
+      plannedDowntimeHours is Decimal(10, 2) with { briefly "Planned downtime" described by "Hours of planned downtime." }
+      unplannedDowntimeHours is Decimal(10, 2) with { briefly "Unplanned downtime" described by "Hours of unplanned downtime." }
+      totalMaintenanceCost is Decimal(12, 2) with { briefly "Total cost" described by "Total maintenance cost for period." }
+      periodStart is Date with { briefly "Period start" described by "Start of measurement period." }
+      periodEnd is Date with { briefly "Period end" described by "End of measurement period." }
+    } with {
+      briefly "Equipment reliability metrics"
+      described by "Aggregated reliability statistics for a single piece of equipment."
+    }
+
+    record MaintenanceWorkMetrics is {
+      period is Date with { briefly "Period" described by "Date for these metrics." }
+      totalOrders is Natural with { briefly "Total orders" described by "Total maintenance orders." }
+      preventiveCount is Natural with { briefly "Preventive" described by "Preventive maintenance orders." }
+      correctiveCount is Natural with { briefly "Corrective" described by "Corrective maintenance orders." }
+      predictiveCount is Natural with { briefly "Predictive" described by "Predictive maintenance orders." }
+      emergencyCount is Natural with { briefly "Emergency" described by "Emergency maintenance orders." }
+      completedOnTime is Natural with { briefly "On time" described by "Orders completed on schedule." }
+      averageCompletionTime is Decimal(10, 2) with { briefly "Avg completion" described by "Average completion time in hours." }
+      totalLaborHours is Decimal(10, 2) with { briefly "Labor hours" described by "Total labor hours expended." }
+      totalPartsCost is Decimal(12, 2) with { briefly "Parts cost" described by "Total spare parts cost." }
+      totalLaborCost is Decimal(12, 2) with { briefly "Labor cost" described by "Total labor cost." }
+    } with {
+      briefly "Daily maintenance work metrics"
+      described by "Aggregated maintenance work statistics for a day."
+    }
+
+    handler MetricsHandler is {
+      on event MaintenanceOrder.MaintenanceOrderCreated {
+        prompt "Update order counts by type"
+      }
+      on event MaintenanceOrder.MaintenanceCompleted {
+        prompt "Calculate completion metrics and update MTBF/MTTR"
+      }
+      on event MaintenanceOrder.SpareUsageRecorded {
+        prompt "Update parts cost metrics"
+      }
+    } with {
+      briefly "Projects maintenance events for metrics"
+      described by "Processes maintenance events to maintain aggregate metrics."
+    }
+  } with {
+    briefly "Projects maintenance events for reporting"
+    described by {
+      | Maintains aggregated views of maintenance data for dashboards
+      | and reliability analysis including MTBF, MTTR, and availability
+      | calculations for each piece of equipment.
+    }
+  }
+
+} with {
+  briefly "Bounded context for equipment maintenance"
+  described by {
+    | The MaintenanceContext is the primary bounded context for the Equipment
+    | Maintenance domain. It contains all entities, repositories, and
+    | integrations needed to manage the complete maintenance lifecycle
+    | from order creation through completion and metrics analysis.
+  }
+}
