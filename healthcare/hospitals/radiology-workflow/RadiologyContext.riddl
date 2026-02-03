@@ -1,0 +1,392 @@
+// RadiologyContext - Main Bounded Context
+// Contains the primary entities, repositories, and projectors for radiology workflow
+
+context RadiologyContext is {
+
+  include "types.riddl"
+  include "ImagingExam.riddl"
+
+  // ==========================================================================
+  // Repository
+  // ==========================================================================
+
+  repository ExamRepository is {
+
+    // Exam queries
+    query FindExamById is { examId is ExamId } with {
+      briefly "Find exam by identifier"
+      described by "Retrieves a single imaging exam by its unique identifier."
+    }
+
+    query FindExamsByPatient is {
+      patientId is PatientId,
+      startDate is Date?,
+      endDate is Date?
+    } with {
+      briefly "Find exams for a patient"
+      described by {
+        | Retrieves all imaging exams for a patient within optional
+        | date range.
+      }
+    }
+
+    query FindExamsByStatus is {
+      status is ExamStatus,
+      modalityType is ModalityType?,
+      limit is Integer
+    } with {
+      briefly "Find exams by status"
+      described by {
+        | Retrieves exams in a specific workflow status, optionally
+        | filtered by modality type.
+      }
+    }
+
+    query FindScheduledExams is {
+      startDateTime is TimeStamp,
+      endDateTime is TimeStamp,
+      modalityId is ModalityId?
+    } with {
+      briefly "Find scheduled exams in time range"
+      described by {
+        | Retrieves exams scheduled within a time window for worklist
+        | and capacity planning.
+      }
+    }
+
+    // Study queries
+    query FindStudyById is { studyId is StudyId } with {
+      briefly "Find study by identifier"
+      described by "Retrieves DICOM study metadata by study ID."
+    }
+
+    query FindStudiesByPatient is {
+      patientId is PatientId,
+      modalityType is ModalityType?,
+      startDate is Date?,
+      endDate is Date?
+    } with {
+      briefly "Find studies for a patient"
+      described by "Retrieves study history for a patient for comparison views."
+    }
+
+    query FindPriorStudies is {
+      patientId is PatientId,
+      bodyPart is String,
+      limit is Integer
+    } with {
+      briefly "Find prior studies of same body part"
+      described by {
+        | Retrieves relevant prior studies for comparison during
+        | interpretation.
+      }
+    }
+
+    // Report queries
+    query FindReportById is { reportId is ReportId } with {
+      briefly "Find report by identifier"
+      described by "Retrieves a radiology report by its unique identifier."
+    }
+
+    query FindReportsByRadiologist is {
+      radiologistId is PhysicianId,
+      status is ReportStatus?,
+      startDate is Date?,
+      endDate is Date?
+    } with {
+      briefly "Find reports by radiologist"
+      described by {
+        | Retrieves reports created by a specific radiologist for
+        | productivity tracking.
+      }
+    }
+
+    query FindPendingReports is {
+      radiologistId is PhysicianId?,
+      priority is ExamPriority?,
+      limit is Integer
+    } with {
+      briefly "Find reports awaiting signature"
+      described by "Retrieves draft reports in the interpretation queue."
+    }
+
+    query FindCriticalFindings is {
+      startDate is Date,
+      endDate is Date,
+      acknowledged is Boolean?
+    } with {
+      briefly "Find critical findings"
+      described by {
+        | Retrieves critical findings for compliance reporting and
+        | follow-up tracking.
+      }
+    }
+
+    handler ExamRepositoryHandler is {
+      on query FindExamById is {
+        prompt "Retrieve exam from event-sourced store"
+      }
+      on query FindExamsByPatient is {
+        prompt "Query exams by patient with date filtering"
+      }
+      on query FindExamsByStatus is {
+        prompt "Query exams by workflow status"
+      }
+      on query FindScheduledExams is {
+        prompt "Query scheduled exams for worklist"
+      }
+      on query FindStudyById is {
+        prompt "Retrieve study metadata"
+      }
+      on query FindStudiesByPatient is {
+        prompt "Query patient study history"
+      }
+      on query FindPriorStudies is {
+        prompt "Find relevant prior studies for comparison"
+      }
+      on query FindReportById is {
+        prompt "Retrieve radiology report"
+      }
+      on query FindReportsByRadiologist is {
+        prompt "Query reports by interpreting radiologist"
+      }
+      on query FindPendingReports is {
+        prompt "Query interpretation worklist"
+      }
+      on query FindCriticalFindings is {
+        prompt "Query critical findings for compliance"
+      }
+      on other is {
+        error "Unknown repository query"
+      }
+    } with {
+      briefly "Handles repository queries"
+      described by {
+        | Processes all exam, study, and report queries against the
+        | event-sourced data store.
+      }
+    }
+
+  } with {
+    briefly "Repository for exams, studies, and reports"
+    described by {
+      | Provides query capabilities for imaging exams, DICOM studies, and
+      | radiology reports. Supports worklist generation, patient history
+      | retrieval, and compliance reporting for critical findings.
+    }
+  }
+
+  // ==========================================================================
+  // Projectors
+  // ==========================================================================
+
+  projector TurnaroundTimeProjector is {
+
+    record TurnaroundTimeRecord is {
+      examId is ExamId,
+      modalityType is ModalityType,
+      priority is ExamPriority,
+      orderToScheduleMinutes is Integer?,
+      scheduleToAcquisitionMinutes is Integer?,
+      acquisitionToInterpretationMinutes is Integer?,
+      interpretationToFinalMinutes is Integer?,
+      totalTurnaroundMinutes is Integer?,
+      metSLA is Boolean?
+    } with {
+      briefly "Turnaround time metrics record"
+      described by {
+        | Stores calculated turnaround durations for each workflow
+        | phase for performance analysis.
+      }
+    }
+
+    handler TurnaroundTimeHandler is {
+      on event ExamOrdered is {
+        prompt "Record exam creation timestamp"
+      }
+      on event ExamScheduled is {
+        prompt "Calculate order-to-schedule duration"
+      }
+      on event AcquisitionCompleted is {
+        prompt "Calculate schedule-to-acquisition duration"
+      }
+      on event DraftReportCreated is {
+        prompt "Calculate acquisition-to-interpretation duration"
+      }
+      on event ReportFinalized is {
+        prompt "Calculate interpretation-to-final and total turnaround"
+      }
+      on other is {
+        prompt "Ignore other events"
+      }
+    } with {
+      briefly "Projects turnaround time metrics"
+      described by {
+        | Calculates and stores duration between workflow milestones
+        | for performance tracking and SLA compliance.
+      }
+    }
+
+  } with {
+    briefly "Turnaround time metrics projector"
+    described by {
+      | Projects imaging exam events into turnaround time metrics. Tracks
+      | duration between each workflow phase to support operational dashboards,
+      | SLA monitoring, and quality improvement initiatives.
+    }
+  }
+
+  projector ModalityUtilizationProjector is {
+
+    record UtilizationRecord is {
+      modalityId is ModalityId,
+      modalityType is ModalityType,
+      date is Date,
+      hour is Integer,
+      scheduledCount is Integer,
+      completedCount is Integer,
+      cancelledCount is Integer,
+      totalAcquisitionMinutes is Integer,
+      availableMinutes is Integer
+    } with {
+      briefly "Hourly modality utilization record"
+      described by {
+        | Stores hourly utilization metrics for capacity planning
+        | and equipment optimization.
+      }
+    }
+
+    handler UtilizationHandler is {
+      on event ExamScheduled is {
+        prompt "Increment scheduled count for modality and time slot"
+      }
+      on event AcquisitionStarted is {
+        prompt "Record acquisition start time"
+      }
+      on event AcquisitionCompleted is {
+        prompt "Calculate acquisition duration and update utilization"
+      }
+      on other is {
+        prompt "Ignore other events"
+      }
+    } with {
+      briefly "Projects modality utilization"
+      described by {
+        | Aggregates exam events into hourly utilization metrics
+        | per modality for capacity analysis.
+      }
+    }
+
+  } with {
+    briefly "Modality utilization projector"
+    described by {
+      | Projects exam acquisition events into modality utilization metrics.
+      | Tracks scheduled vs completed exams, acquisition durations, and
+      | equipment availability to support capacity planning and resource
+      | optimization.
+    }
+  }
+
+  projector CriticalFindingProjector is {
+
+    record CriticalFindingRecord is {
+      findingId is String,
+      examId is ExamId,
+      severity is CriticalFindingSeverity,
+      identifiedAt is TimeStamp,
+      communicatedAt is TimeStamp?,
+      communicationDelayMinutes is Integer?,
+      acknowledged is Boolean,
+      radiologistId is PhysicianId,
+      orderingPhysicianId is PhysicianId
+    } with {
+      briefly "Critical finding tracking record"
+      described by {
+        | Stores critical finding events with communication timing
+        | for compliance reporting.
+      }
+    }
+
+    handler CriticalFindingHandler is {
+      on event CriticalFindingReported is {
+        prompt "Record critical finding with identification time"
+      }
+      on other is {
+        prompt "Ignore non-critical finding events"
+      }
+    } with {
+      briefly "Projects critical findings"
+      described by {
+        | Tracks critical finding identification and communication
+        | for ACR compliance monitoring.
+      }
+    }
+
+  } with {
+    briefly "Critical finding compliance projector"
+    described by {
+      | Projects critical finding events for compliance monitoring. Tracks
+      | time from identification to physician notification to ensure adherence
+      | to ACR Practice Parameter for communication of diagnostic imaging
+      | findings.
+    }
+  }
+
+  projector RadiologistProductivityProjector is {
+
+    record ProductivityRecord is {
+      radiologistId is PhysicianId,
+      date is Date,
+      reportsCreated is Integer,
+      reportsFinalized is Integer,
+      totalRVUs is Number,
+      averageReportTimeMinutes is Integer,
+      criticalFindingsReported is Integer
+    } with {
+      briefly "Daily radiologist productivity record"
+      described by {
+        | Stores daily productivity metrics per radiologist for
+        | workload management and performance tracking.
+      }
+    }
+
+    handler ProductivityHandler is {
+      on event DraftReportCreated is {
+        prompt "Increment reports created count"
+      }
+      on event ReportFinalized is {
+        prompt "Increment finalized count and calculate RVUs"
+      }
+      on event CriticalFindingReported is {
+        prompt "Increment critical findings count"
+      }
+      on other is {
+        prompt "Ignore other events"
+      }
+    } with {
+      briefly "Projects radiologist productivity"
+      described by {
+        | Aggregates report events into daily productivity metrics
+        | per radiologist.
+      }
+    }
+
+  } with {
+    briefly "Radiologist productivity projector"
+    described by {
+      | Projects report events into radiologist productivity metrics. Tracks
+      | report volumes, RVUs, and critical findings per radiologist per day
+      | for workload balancing and performance management.
+    }
+  }
+
+} with {
+  briefly "Primary bounded context for radiology workflow"
+  described by {
+    | The RadiologyContext contains the core domain model for radiology
+    | operations including the ImagingExam aggregate, repositories for
+    | querying exams/studies/reports, and projectors for operational
+    | analytics. It coordinates with external systems (PACS, RIS, Speech
+    | Recognition) through defined integration points.
+  }
+}
