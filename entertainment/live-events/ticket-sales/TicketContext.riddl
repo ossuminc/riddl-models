@@ -1,0 +1,285 @@
+// Ticket Sales - Ticket Context
+// The primary bounded context for ticket sales management
+
+context TicketContext is {
+
+  include "types.riddl"
+  include "Ticket.riddl"
+
+  // Adaptors for external system integration
+  adaptor PaymentAdapter from context PaymentGateway is {
+    handler InboundPayments is {
+      on event PaymentGateway.PaymentSucceeded {
+        tell command PurchaseTicket to entity Ticket
+      }
+      on event PaymentGateway.PaymentFailed {
+        prompt "Log payment failure and release reservation"
+        tell command CancelReservation to entity Ticket
+        error "Payment failed for ticket reservation"
+      }
+      on event PaymentGateway.RefundCompleted {
+        prompt "Update ticket status with refund confirmation"
+      }
+    } with {
+      briefly "Handles payment events from gateway"
+      described by "Processes inbound payment status events and routes to Ticket entity."
+    }
+  } with {
+    briefly "Translates payment gateway events"
+    described by {
+      | Receives payment status events from the external PaymentGateway
+      | and translates them into commands for the Ticket entity.
+    }
+  }
+
+  adaptor VenueAdapter from context VenueManagement is {
+    handler InboundVenue is {
+      on event VenueManagement.SeatingChartUpdated {
+        prompt "Sync seat inventory with updated venue layout"
+      }
+      on event VenueManagement.VenueCapacityChanged {
+        prompt "Adjust available ticket inventory based on capacity change"
+      }
+    } with {
+      briefly "Handles venue management events"
+      described by "Processes venue updates that affect ticket inventory."
+    }
+  } with {
+    briefly "Translates venue management events"
+    described by {
+      | Receives venue updates from the VenueManagement context
+      | and adjusts ticket inventory accordingly.
+    }
+  }
+
+  adaptor MarketingAdapter to context MarketingService is {
+    handler OutboundMarketing is {
+      on event Ticket.EventCreated {
+        tell command MarketingService.AnnounceEvent to context MarketingService
+      }
+      on event Ticket.TicketsReleased {
+        tell command MarketingService.NotifySubscribers to context MarketingService
+      }
+      on event Ticket.TicketPurchased {
+        tell command MarketingService.SendConfirmation to context MarketingService
+      }
+      on event Ticket.TicketTransferred {
+        tell command MarketingService.NotifyTransfer to context MarketingService
+      }
+    } with {
+      briefly "Sends events to marketing service"
+      described by "Routes ticket events to marketing for notifications and campaigns."
+    }
+  } with {
+    briefly "Translates events for marketing"
+    described by {
+      | Sends relevant ticket events to the MarketingService context
+      | for email notifications, announcements, and campaigns.
+    }
+  }
+
+  // Repository for ticket persistence
+  repository TicketRepository is {
+    schema TicketData is relational
+      of tickets as Ticket
+      index on field Ticket.eventId
+      index on field Ticket.buyerId
+      index on field Ticket.seatId
+
+    handler TicketPersistence is {
+      on event Ticket.EventCreated {
+        prompt "Persist new event and initialize ticket inventory"
+      }
+      on event Ticket.TicketsReleased {
+        prompt "Update ticket availability status for released inventory"
+      }
+      on event Ticket.TicketReserved {
+        prompt "Mark ticket as reserved with expiration"
+      }
+      on event Ticket.TicketPurchased {
+        prompt "Update ticket with purchase details and buyer"
+      }
+      on event Ticket.TicketTransferred {
+        prompt "Update ticket ownership and add transfer record"
+      }
+      on event Ticket.TicketRefunded {
+        prompt "Mark ticket as refunded and return to inventory"
+      }
+      on event Ticket.ReservationCancelled {
+        prompt "Return ticket to available inventory"
+      }
+      on event Ticket.TicketScanned {
+        prompt "Mark ticket as used for entry"
+      }
+    } with {
+      briefly "Persists ticket events to storage"
+      described by "Handles all event-driven persistence operations for tickets."
+    }
+  } with {
+    briefly "Persistent storage for ticket data"
+    described by {
+      | The TicketRepository provides persistent storage for tickets
+      | with indexes optimized for common query patterns by event,
+      | buyer, and seat.
+    }
+  }
+
+  // Projector for sales metrics
+  projector SalesMetrics is {
+    updates repository TicketRepository
+
+    record EventSalesMetrics is {
+      eventId is EventId with {
+        briefly "Event identifier"
+        described by "The event these metrics are for."
+      }
+      totalCapacity is Natural with {
+        briefly "Total capacity"
+        described by "Total tickets available for the event."
+      }
+      ticketsSold is Natural with {
+        briefly "Tickets sold"
+        described by "Number of tickets sold."
+      }
+      ticketsReserved is Natural with {
+        briefly "Tickets reserved"
+        described by "Currently reserved tickets."
+      }
+      ticketsAvailable is Natural with {
+        briefly "Tickets available"
+        described by "Remaining available tickets."
+      }
+      ticketsRefunded is Natural with {
+        briefly "Tickets refunded"
+        described by "Number of refunded tickets."
+      }
+      grossRevenue is Money with {
+        briefly "Gross revenue"
+        described by "Total revenue from ticket sales."
+      }
+      netRevenue is Money with {
+        briefly "Net revenue"
+        described by "Revenue minus refunds."
+      }
+      averageTicketPrice is Money with {
+        briefly "Average price"
+        described by "Average price per ticket sold."
+      }
+      salesByTier is many {
+        tierName is String(1, 50) with {
+          briefly "Tier"
+          described by "Pricing tier name."
+        }
+        sold is Natural with {
+          briefly "Sold"
+          described by "Tickets sold in this tier."
+        }
+        revenue is Money with {
+          briefly "Revenue"
+          described by "Revenue from this tier."
+        }
+      } with {
+        briefly "Sales by tier"
+        described by "Breakdown of sales by pricing tier."
+      }
+      lastUpdated is TimeStamp with {
+        briefly "Updated"
+        described by "When metrics were last calculated."
+      }
+    } with {
+      briefly "Aggregated sales metrics for an event"
+      described by "Real-time sales statistics for a single event."
+    }
+
+    record DailySalesMetrics is {
+      date is Date with {
+        briefly "Date"
+        described by "The date for these metrics."
+      }
+      totalTicketsSold is Natural with {
+        briefly "Tickets sold"
+        described by "Total tickets sold this day."
+      }
+      totalRevenue is Money with {
+        briefly "Revenue"
+        described by "Total revenue for the day."
+      }
+      ticketsByEvent is many {
+        eventId is EventId with {
+          briefly "Event"
+          described by "Event identifier."
+        }
+        eventName is String(1, 200) with {
+          briefly "Name"
+          described by "Event name."
+        }
+        ticketsSold is Natural with {
+          briefly "Sold"
+          described by "Tickets sold for this event."
+        }
+        revenue is Money with {
+          briefly "Revenue"
+          described by "Revenue for this event."
+        }
+      } with {
+        briefly "Daily sales by event"
+        described by "Breakdown of daily sales by event."
+      }
+      refundsProcessed is Natural with {
+        briefly "Refunds"
+        described by "Number of refunds processed."
+      }
+      refundTotal is Money with {
+        briefly "Refund total"
+        described by "Total amount refunded."
+      }
+      transfersCompleted is Natural with {
+        briefly "Transfers"
+        described by "Number of ticket transfers."
+      }
+    } with {
+      briefly "Daily aggregated sales metrics"
+      described by "Aggregated sales statistics for a single day."
+    }
+
+    handler SalesMetricsHandler is {
+      on event Ticket.TicketPurchased {
+        prompt "Update event sales counts and revenue totals"
+        prompt "Update daily sales aggregates"
+        prompt "Recalculate average ticket price"
+      }
+      on event Ticket.TicketRefunded {
+        prompt "Decrement sales counts and adjust revenue"
+        prompt "Increment refund metrics"
+      }
+      on event Ticket.TicketTransferred {
+        prompt "Increment transfer count for daily metrics"
+      }
+      on event Ticket.EventCreated {
+        prompt "Initialize event sales metrics with zero values"
+      }
+      on event Ticket.TicketsReleased {
+        prompt "Update available ticket count for event"
+      }
+    } with {
+      briefly "Projects ticket events for sales analytics"
+      described by "Maintains real-time sales metrics from ticket events."
+    }
+  } with {
+    briefly "Projects ticket events for sales reporting"
+    described by {
+      | Maintains aggregated views of sales data for dashboards,
+      | promoter reporting, and business intelligence. Tracks
+      | sales velocity, revenue, and inventory levels in real-time.
+    }
+  }
+
+} with {
+  briefly "Bounded context for ticket sales"
+  described by {
+    | The TicketContext is the primary bounded context for the Ticket
+    | Sales domain. It contains the Ticket entity, repository for
+    | persistence, projector for analytics, and adaptors for
+    | integration with payment, venue, and marketing systems.
+  }
+}
