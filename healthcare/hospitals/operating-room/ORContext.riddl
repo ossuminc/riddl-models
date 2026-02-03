@@ -1,0 +1,264 @@
+// Operating Room Management - OR Context
+
+context ORContext is {
+
+  include "types.riddl"
+  include "SurgicalCase.riddl"
+
+  // Repository for surgical case persistence
+  repository SurgicalCaseRepository is {
+    schema SurgicalCaseData is relational
+      of cases as SurgicalCase
+      index on field SurgicalCase.caseId
+      index on field SurgicalCase.patientId
+      index on field SurgicalCase.primarySurgeonId
+
+    handler SurgicalCasePersistence is {
+      on event SurgicalCase.CaseScheduled {
+        prompt "Store new surgical case record"
+      }
+      on event SurgicalCase.CaseConfirmed {
+        prompt "Update case with team and preference card"
+      }
+      on event SurgicalCase.PreOpStarted {
+        prompt "Update case with pre-op arrival time"
+      }
+      on event SurgicalCase.PatientInOR {
+        prompt "Update case with in-room time"
+      }
+      on event SurgicalCase.SurgeryStarted {
+        prompt "Update case with procedure start time"
+      }
+      on event SurgicalCase.SurgeryCompleted {
+        prompt "Update case with procedure end and outcomes"
+      }
+      on event SurgicalCase.InRecovery {
+        prompt "Update case with PACU arrival time"
+      }
+      on event SurgicalCase.DischargedFromPACU {
+        prompt "Update case to completed status"
+      }
+      on event SurgicalCase.CaseCancelled {
+        prompt "Update case to cancelled status"
+      }
+    } with {
+      briefly "Persists surgical case events"
+      described by "Handles event-driven persistence for surgical cases."
+    }
+  } with {
+    briefly "Surgical case persistence"
+    described by {
+      | The SurgicalCaseRepository provides persistent storage for
+      | surgical case records and timing milestones.
+    }
+  }
+
+  // Repository for OR schedule
+  repository ORScheduleRepository is {
+    schema ORScheduleData is relational
+      of schedules as RoomAssignment
+      index on field RoomAssignment.roomId
+      index on field RoomAssignment.assignedDate
+      index on field RoomAssignment.caseId
+
+    handler SchedulePersistence is {
+      on event SurgicalCase.CaseScheduled {
+        prompt "Create room assignment for scheduled case"
+      }
+      on event SurgicalCase.CaseCancelled {
+        prompt "Remove room assignment for cancelled case"
+      }
+    } with {
+      briefly "Persists OR schedule"
+      described by "Maintains operating room schedule assignments."
+    }
+  } with {
+    briefly "OR schedule persistence"
+    described by {
+      | The ORScheduleRepository tracks room assignments and
+      | the daily operating room schedule.
+    }
+  }
+
+  // Projector for OR utilization metrics
+  projector ORUtilizationProjector is {
+    updates repository ORScheduleRepository
+
+    record UtilizationStats is {
+      roomId is RoomId with { briefly "Room" described by "Operating room." }
+      roomName is String(1, 50) with { briefly "Name" described by "Room name." }
+      periodDate is Date with { briefly "Date" described by "Statistics date." }
+      scheduledMinutes is Natural with { briefly "Scheduled" described by "Total scheduled minutes." }
+      actualMinutes is Natural with { briefly "Actual" described by "Actual utilized minutes." }
+      availableMinutes is Natural with { briefly "Available" described by "Total available minutes." }
+      utilizationRate is Decimal(5, 4) with { briefly "Rate" described by "Utilization percentage." }
+      casesScheduled is Natural with { briefly "Cases scheduled" described by "Number of cases scheduled." }
+      casesCompleted is Natural with { briefly "Cases completed" described by "Number of cases completed." }
+      casesCancelled is Natural with { briefly "Cancelled" described by "Number cancelled same day." }
+    } with {
+      briefly "Utilization statistics"
+      described by "Operating room utilization metrics by room and date."
+    }
+
+    handler UtilizationHandler is {
+      on event SurgicalCase.CaseScheduled {
+        prompt "Update scheduled minutes for room"
+      }
+      on event SurgicalCase.SurgeryCompleted {
+        prompt "Update actual minutes and cases completed"
+      }
+      on event SurgicalCase.CaseCancelled {
+        prompt "Update cancellation count if same day"
+      }
+    } with {
+      briefly "Maintains utilization metrics"
+      described by "Projects case events into utilization statistics."
+    }
+  } with {
+    briefly "OR utilization projections"
+    described by "Maintains real-time operating room utilization analytics."
+  }
+
+  // Projector for case duration analytics
+  projector CaseDurationProjector is {
+    updates repository SurgicalCaseRepository
+
+    record DurationStats is {
+      procedureId is ProcedureId with { briefly "Procedure" described by "Procedure type." }
+      procedureName is String(1, 500) with { briefly "Name" described by "Procedure name." }
+      surgeonId is optional SurgeonId with { briefly "Surgeon" described by "Surgeon filter." }
+      averageDuration is Duration with { briefly "Avg duration" described by "Average procedure time." }
+      medianDuration is Duration with { briefly "Median" described by "Median procedure time." }
+      minDuration is Duration with { briefly "Min" described by "Shortest procedure." }
+      maxDuration is Duration with { briefly "Max" described by "Longest procedure." }
+      standardDeviation is Decimal(8, 2) with { briefly "Std dev" described by "Duration variability." }
+      caseCount is Natural with { briefly "Cases" described by "Number of cases analyzed." }
+      periodStart is Date with { briefly "Start" described by "Analysis period start." }
+      periodEnd is Date with { briefly "End" described by "Analysis period end." }
+    } with {
+      briefly "Duration statistics"
+      described by "Surgical procedure duration analytics."
+    }
+
+    handler DurationHandler is {
+      on event SurgicalCase.SurgeryCompleted {
+        prompt "Update duration statistics for procedure and surgeon"
+      }
+    } with {
+      briefly "Maintains duration metrics"
+      described by "Projects surgery completion into duration analytics."
+    }
+  } with {
+    briefly "Case duration projections"
+    described by "Maintains surgical procedure duration analytics for scheduling accuracy."
+  }
+
+  // Projector for turnover time analytics
+  projector TurnoverTimeProjector is {
+    updates repository ORScheduleRepository
+
+    record TurnoverStats is {
+      roomId is RoomId with { briefly "Room" described by "Operating room." }
+      periodDate is Date with { briefly "Date" described by "Statistics date." }
+      averageTurnoverMinutes is Natural with { briefly "Avg turnover" described by "Average turnover time." }
+      medianTurnoverMinutes is Natural with { briefly "Median" described by "Median turnover time." }
+      targetTurnoverMinutes is Natural with { briefly "Target" described by "Target turnover time." }
+      turnoversOnTarget is Natural with { briefly "On target" described by "Turnovers meeting target." }
+      turnoversDelayed is Natural with { briefly "Delayed" described by "Turnovers exceeding target." }
+      totalTurnovers is Natural with { briefly "Total" described by "Total turnovers." }
+      delayMinutesTotal is Natural with { briefly "Delay total" described by "Total delay minutes." }
+      commonDelayReasons is many String(1, 200) with { briefly "Delay reasons" described by "Most common delay causes." }
+    } with {
+      briefly "Turnover statistics"
+      described by "Room turnover time metrics."
+    }
+
+    handler TurnoverHandler is {
+      on event SurgicalCase.PatientInOR {
+        prompt "Calculate turnover time from previous case"
+      }
+      on event SurgicalCase.SurgeryCompleted {
+        prompt "Record case end for next turnover calculation"
+      }
+    } with {
+      briefly "Maintains turnover metrics"
+      described by "Projects case events into turnover analytics."
+    }
+  } with {
+    briefly "Turnover time projections"
+    described by "Maintains room turnover time analytics for efficiency improvement."
+  }
+
+  // Projector for cancellation analytics
+  projector CancellationRateProjector is {
+    updates repository SurgicalCaseRepository
+
+    record CancellationStats is {
+      periodStart is Date with { briefly "Start" described by "Period start date." }
+      periodEnd is Date with { briefly "End" described by "Period end date." }
+      totalScheduled is Natural with { briefly "Scheduled" described by "Total cases scheduled." }
+      totalCancelled is Natural with { briefly "Cancelled" described by "Total cancellations." }
+      cancellationRate is Decimal(5, 4) with { briefly "Rate" described by "Cancellation percentage." }
+      sameDayCancellations is Natural with { briefly "Same day" described by "Same-day cancellations." }
+      byReason is many String(1, 200) with { briefly "By reason" described by "Cancellations by reason." }
+      bySurgeon is many String(1, 200) with { briefly "By surgeon" described by "Cancellations by surgeon." }
+      byServiceLine is many String(1, 200) with { briefly "By service" described by "Cancellations by service line." }
+      preventableCancellations is Natural with { briefly "Preventable" described by "Potentially preventable cancellations." }
+    } with {
+      briefly "Cancellation statistics"
+      described by "Surgical case cancellation analytics."
+    }
+
+    handler CancellationHandler is {
+      on event SurgicalCase.CaseScheduled {
+        prompt "Increment scheduled cases count"
+      }
+      on event SurgicalCase.CaseCancelled {
+        prompt "Update cancellation statistics by reason and timing"
+      }
+    } with {
+      briefly "Maintains cancellation metrics"
+      described by "Projects cancellation events into analytics."
+    }
+  } with {
+    briefly "Cancellation rate projections"
+    described by "Maintains surgical cancellation analytics for quality improvement."
+  }
+
+  // Projector for first case on-time starts
+  projector FirstCaseStartProjector is {
+    updates repository ORScheduleRepository
+
+    record FirstCaseStats is {
+      roomId is RoomId with { briefly "Room" described by "Operating room." }
+      periodDate is Date with { briefly "Date" described by "Statistics date." }
+      scheduledStartTime is Time with { briefly "Scheduled" described by "Scheduled start time." }
+      actualStartTime is Time with { briefly "Actual" described by "Actual start time." }
+      delayMinutes is Integer with { briefly "Delay" described by "Minutes delayed (negative is early)." }
+      onTimeStart is Boolean with { briefly "On time" described by "Started within 5 minutes of scheduled." }
+      delayReason is optional String(1, 500) with { briefly "Reason" described by "Cause of delay if any." }
+    } with {
+      briefly "First case start statistics"
+      described by "First case on-time start metrics."
+    }
+
+    handler FirstCaseHandler is {
+      on event SurgicalCase.SurgeryStarted {
+        prompt "Compare actual start to scheduled for first case of day"
+      }
+    } with {
+      briefly "Maintains first case metrics"
+      described by "Projects surgery starts into first case analytics."
+    }
+  } with {
+    briefly "First case on-time projections"
+    described by "Maintains first case on-time start analytics."
+  }
+
+} with {
+  briefly "Bounded context for operating room management"
+  described by {
+    | The ORContext is the bounded context for surgical case
+    | scheduling, perioperative workflow, and OR analytics.
+  }
+}
