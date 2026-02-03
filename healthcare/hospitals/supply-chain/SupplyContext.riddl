@@ -1,0 +1,218 @@
+// Supply Context - the main bounded context for hospital supply chain
+
+context SupplyContext is {
+
+  include "SupplyOrder.riddl"
+
+  // ==========================================================================
+  // Repository
+  // ==========================================================================
+
+  repository InventoryRepository is {
+
+    query GetItemById is { itemId is ItemId } with {
+      briefly "Retrieve item by ID"
+      described by "Fetches a single supply item by its unique identifier."
+    }
+
+    query GetParLevels is { locationCode is String } with {
+      briefly "Get par levels for a location"
+      described by "Retrieves all par level configurations for a specific storage location."
+    }
+
+    query GetInventoryPosition is {
+      itemId is ItemId,
+      locationCode is String
+    } with {
+      briefly "Get current inventory position"
+      described by "Retrieves the current stock position for an item at a location."
+    }
+
+    query GetIssuanceHistory is {
+      departmentCode is String,
+      startDate is Date,
+      endDate is Date
+    } with {
+      briefly "Get issuance history for a department"
+      described by "Retrieves historical issuance records for a department within a date range."
+    }
+
+    query GetItemsBelowParLevel is { locationCode is String } with {
+      briefly "Find items needing reorder"
+      described by "Identifies all items at a location where current quantity is below reorder point."
+    }
+
+    query GetPurchaseOrderById is { purchaseOrderId is PurchaseOrderId } with {
+      briefly "Retrieve purchase order by ID"
+      described by "Fetches a single purchase order by its unique identifier."
+    }
+
+    query GetPendingRequisitions is { approverCode is String? } with {
+      briefly "Get requisitions awaiting approval"
+      described by "Retrieves requisitions in pending approval status for review."
+    }
+
+    query GetOpenOrders is {
+      vendorId is String?,
+      startDate is Date?,
+      endDate is Date?
+    } with {
+      briefly "Get open purchase orders"
+      described by "Retrieves purchase orders that have not been fully received."
+    }
+
+    handler InventoryRepositoryHandler is {
+      on query GetItemById is {
+        prompt "Retrieve item from item master"
+      }
+      on query GetParLevels is {
+        prompt "Query par levels by location"
+      }
+      on query GetInventoryPosition is {
+        prompt "Calculate current position from events"
+      }
+      on query GetIssuanceHistory is {
+        prompt "Query issuance events for department"
+      }
+      on query GetItemsBelowParLevel is {
+        prompt "Find items where on-hand is below reorder point"
+      }
+      on query GetPurchaseOrderById is {
+        prompt "Retrieve purchase order from event store"
+      }
+      on query GetPendingRequisitions is {
+        prompt "Query requisitions in pending approval state"
+      }
+      on query GetOpenOrders is {
+        prompt "Query orders not in closed state"
+      }
+      on other is {
+        error "Unknown repository query"
+      }
+    } with {
+      briefly "Query handler for inventory data"
+      described by {
+        | Handles queries for inventory data including item lookups,
+        | par level retrieval, current positions, and historical issuance
+        | records. Supports the various inventory management workflows.
+      }
+    }
+
+  } with {
+    briefly "Repository for inventory data persistence"
+    described by {
+      | The InventoryRepository manages persistent storage and retrieval
+      | of inventory-related data including the item catalog, par level
+      | configurations, current inventory positions, and issuance history.
+      | It supports both transactional updates and analytical queries.
+    }
+  }
+
+  // ==========================================================================
+  // Projector
+  // ==========================================================================
+
+  projector InventoryMetricsProjector is {
+
+    record MetricsSummary is {
+      locationCode is String,
+      totalItemCount is Integer,
+      itemsBelowParLevel is Integer,
+      itemsAtZero is Integer,
+      totalInventoryValue is Decimal(12, 2),
+      pendingOrdersCount is Integer,
+      pendingOrdersValue is Decimal(12, 2),
+      averageDaysOnHand is Decimal(12, 2),
+      stockoutIncidents is Integer,
+      lastUpdated is DateTime
+    } with {
+      briefly "Summary metrics for inventory management"
+      described by {
+        | Aggregated metrics providing a dashboard view of inventory health
+        | at a location. Includes counts of problem items, financial totals,
+        | and key performance indicators for supply chain effectiveness.
+      }
+    }
+
+    record TurnoverMetrics is {
+      itemId is ItemId,
+      periodStart is Date,
+      periodEnd is Date,
+      beginningQuantity is Integer,
+      endingQuantity is Integer,
+      totalIssued is Integer,
+      totalReceived is Integer,
+      turnoverRate is Decimal(12, 2),
+      daysOfSupply is Decimal(10, 2)
+    } with {
+      briefly "Inventory turnover metrics per item"
+      described by {
+        | Turnover metrics for a specific item over a time period. Used to
+        | analyze inventory efficiency, identify slow-moving stock, and
+        | optimize par level settings.
+      }
+    }
+
+    record VendorPerformance is {
+      vendorId is String,
+      vendorName is String,
+      totalOrders is Integer,
+      onTimeDeliveryRate is Decimal(12, 2),
+      accurateShipmentRate is Decimal(12, 2),
+      averageLeadTimeDays is Decimal(12, 2),
+      totalSpend is Decimal(12, 2),
+      lastOrderDate is Date
+    } with {
+      briefly "Vendor delivery performance metrics"
+      described by {
+        | Performance metrics for a vendor including on-time delivery rate,
+        | shipment accuracy, and average lead time. Used for vendor evaluation
+        | and selection decisions.
+      }
+    }
+
+    handler MetricsHandler is {
+      on event ShipmentReceived is {
+        prompt "Update inventory position and vendor metrics"
+      }
+      on event SuppliesIssued is {
+        prompt "Update inventory position and turnover metrics"
+      }
+      on event OrderPlaced is {
+        prompt "Update pending order metrics"
+      }
+      on event RequisitionCreated is {
+        prompt "Update requisition counts"
+      }
+      on other is {
+        prompt "Ignore other events"
+      }
+    } with {
+      briefly "Event handler for metrics projection"
+      described by {
+        | Processes supply chain events to maintain real-time inventory
+        | metrics. Updates positions, calculates turnover rates, and
+        | tracks vendor performance based on actual transactions.
+      }
+    }
+
+  } with {
+    briefly "Projector for inventory analytics and dashboards"
+    described by {
+      | The InventoryMetricsProjector consumes supply chain events to
+      | build and maintain analytical views of inventory data. It provides
+      | real-time metrics for dashboards, alerts for low-stock conditions,
+      | and historical analysis for inventory optimization.
+    }
+  }
+
+} with {
+  briefly "Bounded context for hospital supply chain operations"
+  described by {
+    | The SupplyContext is the primary bounded context for hospital supply
+    | chain management. It encompasses procurement, receiving, storage,
+    | and issuance of medical supplies. The context maintains inventory
+    | accuracy, supports par-level based automatic reordering, and provides
+    | metrics for supply chain optimization.
+  }
+}

@@ -1,0 +1,331 @@
+// External bounded contexts that integrate with the supply chain
+
+context VendorCatalog is {
+
+  type VendorInfo is {
+    vendorId is String,
+    vendorName is String,
+    contactEmail is String,
+    contactPhone is String,
+    address is String,
+    contractNumber is String,
+    contractExpirationDate is Date,
+    paymentTerms is String,
+    minimumOrderAmount is Decimal(12, 2)
+  } with {
+    briefly "Vendor master information"
+    described by {
+      | Information about a vendor including contact details, contract
+      | terms, and ordering requirements. Used for vendor selection and
+      | purchase order creation.
+    }
+  }
+
+  type CatalogItem is {
+    vendorItemNumber is String,
+    vendorId is String,
+    hospitalItemId is ItemId,
+    description is String,
+    unitOfMeasure is String,
+    unitPrice is Decimal(12, 2),
+    packQuantity is Integer,
+    leadTimeDays is Integer,
+    minimumOrderQuantity is Integer,
+    isContracted is Boolean,
+    lastPriceUpdate is Date
+  } with {
+    briefly "Vendor catalog item with pricing"
+    described by {
+      | An item in a vendor's catalog mapped to the hospital's item master.
+      | Includes current pricing, lead time, and ordering constraints.
+      | Contracted items have negotiated pricing guarantees.
+    }
+  }
+
+  event PriceChanged is {
+    vendorId is String,
+    vendorItemNumber is String,
+    oldPrice is Decimal(12, 2),
+    newPrice is Decimal(12, 2),
+    effectiveDate is Date
+  } with {
+    briefly "Vendor has changed item pricing"
+    described by {
+      | Notification that a vendor has updated pricing for an item.
+      | Used to update internal cost estimates and trigger contract
+      | compliance reviews if applicable.
+    }
+  }
+
+  event CatalogUpdated is {
+    vendorId is String,
+    itemsAdded is Integer,
+    itemsRemoved is Integer,
+    itemsModified is Integer,
+    updateDate is DateTime
+  } with {
+    briefly "Vendor catalog has been refreshed"
+    described by {
+      | Notification that a vendor's catalog has been synchronized.
+      | Summarizes changes for review by procurement staff.
+    }
+  }
+
+  command LookupVendorItem is {
+    vendorId is String,
+    vendorItemNumber is String
+  } with {
+    briefly "Look up item in vendor catalog"
+    described by "Retrieves current pricing and availability for a vendor item."
+  }
+
+  command SubmitPurchaseOrder is {
+    purchaseOrderId is PurchaseOrderId,
+    vendorId is String,
+    lines is PurchaseOrderLine+,
+    deliveryAddress is String,
+    requestedDeliveryDate is Date
+  } with {
+    briefly "Submit purchase order to vendor"
+    described by "Transmits a purchase order to the vendor system for fulfillment."
+  }
+
+} with {
+  option is external
+  briefly "External vendor catalog and pricing system"
+  described by {
+    | The VendorCatalog context represents external vendor management
+    | systems that maintain product catalogs, pricing, and availability.
+    | The hospital supply chain integrates with these systems to look up
+    | items, get current pricing, and transmit purchase orders. This is
+    | typically a third-party procurement platform or vendor EDI connection.
+  }
+}
+
+context FinanceAP is {
+
+  type Invoice is {
+    invoiceId is String,
+    vendorId is String,
+    invoiceDate is Date,
+    dueDate is Date,
+    purchaseOrderId is PurchaseOrderId,
+    invoiceAmount is Decimal(12, 2),
+    status is String
+  } with {
+    briefly "Vendor invoice for payment"
+    described by {
+      | An invoice received from a vendor for goods delivered. Must be
+      | matched against purchase order and receipt before payment.
+    }
+  }
+
+  type ThreeWayMatch is {
+    matchId is String,
+    purchaseOrderId is PurchaseOrderId,
+    receiptId is ReceiptId,
+    invoiceId is String,
+    poAmount is Decimal(12, 2),
+    receiptAmount is Decimal(12, 2),
+    invoiceAmount is Decimal(12, 2),
+    matchStatus is String,
+    varianceAmount is Decimal(12, 2)
+  } with {
+    briefly "Three-way match for invoice approval"
+    described by {
+      | The three-way match compares purchase order, receipt, and invoice
+      | to ensure they agree before authorizing payment. Variances beyond
+      | tolerance require manual review.
+    }
+  }
+
+  event InvoiceReceived is {
+    invoiceId is String,
+    vendorId is String,
+    purchaseOrderId is PurchaseOrderId,
+    invoiceAmount is Decimal(12, 2),
+    invoiceDate is Date
+  } with {
+    briefly "Invoice received from vendor"
+    described by {
+      | Notification that an invoice has been received and is ready for
+      | matching against purchase order and receipt.
+    }
+  }
+
+  event PaymentScheduled is {
+    invoiceId is String,
+    vendorId is String,
+    paymentAmount is Decimal(12, 2),
+    scheduledPaymentDate is Date
+  } with {
+    briefly "Payment has been scheduled for an invoice"
+    described by {
+      | Notification that an invoice has passed three-way match and
+      | payment has been scheduled according to payment terms.
+    }
+  }
+
+  event MatchException is {
+    matchId is String,
+    purchaseOrderId is PurchaseOrderId,
+    invoiceId is String,
+    exceptionType is String,
+    varianceAmount is Decimal(12, 2)
+  } with {
+    briefly "Three-way match exception requiring review"
+    described by {
+      | Notification that a three-way match failed due to price or quantity
+      | variance. Requires manual review and resolution before payment.
+    }
+  }
+
+  command NotifyReceipt is {
+    receiptId is ReceiptId,
+    purchaseOrderId is PurchaseOrderId,
+    receivedAmount is Decimal(12, 2),
+    receivedDate is DateTime
+  } with {
+    briefly "Notify finance of goods receipt"
+    described by "Sends receipt notification to trigger three-way match process."
+  }
+
+  command ResolveMatchException is {
+    matchId is String,
+    resolution is String,
+    resolvedBy is String
+  } with {
+    briefly "Resolve a three-way match exception"
+    described by "Records resolution of a matching variance for payment processing."
+  }
+
+} with {
+  option is external
+  briefly "External accounts payable and finance system"
+  described by {
+    | The FinanceAP context represents the hospital's accounts payable
+    | system which handles vendor invoices, three-way matching, and
+    | payment processing. The supply chain sends receipt notifications
+    | to trigger invoice matching and receives payment status updates
+    | for vendor relationship management.
+  }
+}
+
+context ClinicalUsage is {
+
+  type UsageRequest is {
+    requestId is String,
+    departmentCode is String,
+    departmentName is String,
+    requestingUnit is String,
+    requestedBy is String,
+    patientContext is String,
+    items is IssueRequest*,
+    priority is String,
+    neededByDate is DateTime
+  } with {
+    briefly "Clinical department supply request"
+    described by {
+      | A request from a clinical department for supplies. May be associated
+      | with a specific patient procedure or general unit restocking. Priority
+      | levels determine fulfillment urgency.
+    }
+  }
+
+  type UsagePattern is {
+    departmentCode is String,
+    itemId is ItemId,
+    averageDaily is Decimal(12, 2),
+    peakDaily is Decimal(12, 2),
+    seasonalFactors is String,
+    trendDirection is String
+  } with {
+    briefly "Historical usage pattern for forecasting"
+    described by {
+      | Statistical summary of item usage by a department. Used for demand
+      | forecasting and par level optimization. Includes seasonality and
+      | trend information.
+    }
+  }
+
+  event SupplyRequested is {
+    requestId is String,
+    departmentCode is String,
+    itemId is ItemId,
+    quantityRequested is Integer,
+    priority is String,
+    requestedDate is DateTime
+  } with {
+    briefly "Clinical department has requested supplies"
+    described by {
+      | Notification that a clinical area needs supplies. Triggers the
+      | picking and delivery workflow in the warehouse.
+    }
+  }
+
+  event SupplyConsumed is {
+    consumptionId is String,
+    departmentCode is String,
+    itemId is ItemId,
+    quantityConsumed is Integer,
+    consumptionDate is DateTime,
+    patientId is String,
+    procedureCode is String
+  } with {
+    briefly "Supplies have been consumed in patient care"
+    described by {
+      | Notification that supplies have been used in patient care. Used
+      | for charge capture, usage analysis, and automated replenishment
+      | triggers.
+    }
+  }
+
+  event ParLevelBreach is {
+    departmentCode is String,
+    locationCode is String,
+    itemId is ItemId,
+    currentQuantity is Integer,
+    parLevel is Integer,
+    breachType is String
+  } with {
+    briefly "Stock level has fallen below par at point of use"
+    described by {
+      | Alert that inventory at a clinical point-of-use location has
+      | fallen below the established par level. Triggers automatic
+      | replenishment request.
+    }
+  }
+
+  command RequestSupplies is {
+    requestId is String,
+    departmentCode is String,
+    requestedBy is String,
+    items is IssueRequest+,
+    priority is String
+  } with {
+    briefly "Submit supply request from clinical area"
+    described by "Creates a request for supplies from a clinical department."
+  }
+
+  command ReportConsumption is {
+    departmentCode is String,
+    itemId is ItemId,
+    quantityConsumed is Integer,
+    patientId is String?,
+    procedureCode is String?
+  } with {
+    briefly "Report supply consumption"
+    described by "Records supplies used in patient care for tracking and billing."
+  }
+
+} with {
+  option is external
+  briefly "External clinical usage and consumption tracking system"
+  described by {
+    | The ClinicalUsage context represents systems that track how supplies
+    | are requested and consumed in clinical departments. This includes
+    | point-of-use inventory systems, procedure supply tracking, and
+    | patient charge capture. The supply chain receives demand signals
+    | and usage data to optimize inventory levels and automate replenishment.
+  }
+}
