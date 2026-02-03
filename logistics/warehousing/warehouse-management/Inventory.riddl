@@ -1,0 +1,280 @@
+// Inventory Entity - Manages inventory items at specific warehouse locations
+
+entity Inventory is {
+
+  option is event-sourced
+  option is aggregate
+
+  // Commands
+  command ReceiveInventory is {
+    inventoryId: InventoryId,
+    productId: ProductId,
+    locationId: LocationId,
+    quantity: Integer,
+    unitOfMeasure: UnitOfMeasure,
+    lotNumber: String(0, 50),
+    expirationDate: Date?,
+    shipmentId: ShipmentId,
+    receivedBy: String(1, 100)
+  } briefly "Receive new inventory into the warehouse"
+    described by "Records the receipt of inventory from an inbound shipment into a specific location."
+
+  command AdjustInventory is {
+    inventoryId: InventoryId,
+    adjustmentQuantity: Integer,
+    reason: String(1, 500),
+    adjustedBy: String(1, 100)
+  } briefly "Adjust inventory quantity"
+    described by "Adjusts inventory quantity up or down to correct discrepancies found during counts."
+
+  command ReserveInventory is {
+    inventoryId: InventoryId,
+    quantity: Integer,
+    orderId: String(1, 50)
+  } briefly "Reserve inventory for an order"
+    described by "Reserves a quantity of inventory for a specific customer order, making it unavailable for other orders."
+
+  command ReleaseReservation is {
+    inventoryId: InventoryId,
+    quantity: Integer,
+    orderId: String(1, 50)
+  } briefly "Release previously reserved inventory"
+    described by "Releases reserved inventory back to available status when an order is cancelled or modified."
+
+  command TransferInventory is {
+    inventoryId: InventoryId,
+    fromLocationId: LocationId,
+    toLocationId: LocationId,
+    quantity: Integer,
+    transferredBy: String(1, 100)
+  } briefly "Transfer inventory between locations"
+    described by "Moves inventory from one warehouse location to another for optimization or picking preparation."
+
+  command UpdateLocation is {
+    inventoryId: InventoryId,
+    newLocationId: LocationId,
+    movedBy: String(1, 100)
+  } briefly "Update the storage location of inventory"
+    described by "Changes the recorded location of inventory after physical movement within the warehouse."
+
+  command ShipInventory is {
+    inventoryId: InventoryId,
+    quantity: Integer,
+    orderId: String(1, 50),
+    shipmentId: ShipmentId,
+    shippedBy: String(1, 100)
+  } briefly "Ship inventory out of the warehouse"
+    described by "Records the shipment of inventory out of the warehouse to fulfill a customer order."
+
+  command QuarantineInventory is {
+    inventoryId: InventoryId,
+    reason: String(1, 500),
+    quarantinedBy: String(1, 100)
+  } briefly "Place inventory in quarantine status"
+    described by "Moves inventory to quarantine status for quality inspection or investigation."
+
+  command ReleaseFromQuarantine is {
+    inventoryId: InventoryId,
+    disposition: InventoryStatus,
+    releasedBy: String(1, 100),
+    notes: String(0, 500)
+  } briefly "Release inventory from quarantine"
+    described by "Releases inventory from quarantine, setting it to available, damaged, or other appropriate status."
+
+  // Events
+  event InventoryReceived is {
+    inventoryId: InventoryId,
+    productId: ProductId,
+    locationId: LocationId,
+    quantity: Integer,
+    unitOfMeasure: UnitOfMeasure,
+    lotNumber: String(0, 50),
+    expirationDate: Date?,
+    shipmentId: ShipmentId,
+    receivedBy: String(1, 100),
+    timestamp: TimeStamp
+  } briefly "Inventory was received into warehouse"
+    described by "Indicates that new inventory has been received and recorded at a specific location."
+
+  event InventoryAdjusted is {
+    inventoryId: InventoryId,
+    previousQuantity: Integer,
+    newQuantity: Integer,
+    adjustmentQuantity: Integer,
+    reason: String(1, 500),
+    adjustedBy: String(1, 100),
+    timestamp: TimeStamp
+  } briefly "Inventory quantity was adjusted"
+    described by "Records an inventory adjustment with the before and after quantities and reason."
+
+  event InventoryReserved is {
+    inventoryId: InventoryId,
+    quantity: Integer,
+    orderId: String(1, 50),
+    timestamp: TimeStamp
+  } briefly "Inventory was reserved for an order"
+    described by "Indicates that inventory has been reserved and is no longer available for other orders."
+
+  event ReservationReleased is {
+    inventoryId: InventoryId,
+    quantity: Integer,
+    orderId: String(1, 50),
+    timestamp: TimeStamp
+  } briefly "Inventory reservation was released"
+    described by "Indicates that previously reserved inventory has been released back to available status."
+
+  event InventoryTransferred is {
+    inventoryId: InventoryId,
+    fromLocationId: LocationId,
+    toLocationId: LocationId,
+    quantity: Integer,
+    transferredBy: String(1, 100),
+    timestamp: TimeStamp
+  } briefly "Inventory was transferred between locations"
+    described by "Records the movement of inventory from one location to another within the warehouse."
+
+  event LocationUpdated is {
+    inventoryId: InventoryId,
+    previousLocationId: LocationId,
+    newLocationId: LocationId,
+    movedBy: String(1, 100),
+    timestamp: TimeStamp
+  } briefly "Inventory location was updated"
+    described by "Records a change in the storage location of an inventory record."
+
+  event InventoryShipped is {
+    inventoryId: InventoryId,
+    quantity: Integer,
+    orderId: String(1, 50),
+    shipmentId: ShipmentId,
+    shippedBy: String(1, 100),
+    timestamp: TimeStamp
+  } briefly "Inventory was shipped from warehouse"
+    described by "Indicates that inventory has left the warehouse as part of an outbound shipment."
+
+  event InventoryQuarantined is {
+    inventoryId: InventoryId,
+    reason: String(1, 500),
+    quarantinedBy: String(1, 100),
+    timestamp: TimeStamp
+  } briefly "Inventory was placed in quarantine"
+    described by "Records that inventory has been placed in quarantine status for quality review."
+
+  event InventoryReleasedFromQuarantine is {
+    inventoryId: InventoryId,
+    disposition: InventoryStatus,
+    releasedBy: String(1, 100),
+    notes: String(0, 500),
+    timestamp: TimeStamp
+  } briefly "Inventory was released from quarantine"
+    described by "Records the release of inventory from quarantine with its resulting status."
+
+  // States
+  state EmptyInventoryState of Inventory.EmptyInventoryStateType is {
+    handler EmptyInventoryHandler is {
+      on command ReceiveInventory {
+        send event InventoryReceived to outlet InventoryEvents.Outlet
+        morph entity Inventory to state ActiveInventoryState with command ReceiveInventory
+      }
+    } briefly "Handles commands when inventory slot is empty"
+      described by "Processes the initial receipt of inventory into an empty inventory record."
+  } briefly "State when no inventory exists at this location"
+    described by "Represents an inventory record that has been created but has no quantity yet."
+
+  state ActiveInventoryState of Inventory.ActiveInventoryStateType is {
+    handler ActiveInventoryHandler is {
+      on command ReceiveInventory {
+        send event InventoryReceived to outlet InventoryEvents.Outlet
+      }
+      on command AdjustInventory {
+        send event InventoryAdjusted to outlet InventoryEvents.Outlet
+      }
+      on command ReserveInventory {
+        send event InventoryReserved to outlet InventoryEvents.Outlet
+      }
+      on command ReleaseReservation {
+        send event ReservationReleased to outlet InventoryEvents.Outlet
+      }
+      on command TransferInventory {
+        send event InventoryTransferred to outlet InventoryEvents.Outlet
+      }
+      on command UpdateLocation {
+        send event LocationUpdated to outlet InventoryEvents.Outlet
+      }
+      on command ShipInventory {
+        send event InventoryShipped to outlet InventoryEvents.Outlet
+      }
+      on command QuarantineInventory {
+        send event InventoryQuarantined to outlet InventoryEvents.Outlet
+        morph entity Inventory to state QuarantineInventoryState with command QuarantineInventory
+      }
+    } briefly "Handles commands when inventory is active"
+      described by "Processes all standard inventory operations for active inventory records."
+  } briefly "State when inventory is actively managed"
+    described by "Represents inventory that is available for normal warehouse operations."
+
+  state QuarantineInventoryState of Inventory.QuarantineInventoryStateType is {
+    handler QuarantineInventoryHandler is {
+      on command ReleaseFromQuarantine {
+        send event InventoryReleasedFromQuarantine to outlet InventoryEvents.Outlet
+        morph entity Inventory to state ActiveInventoryState with command ReleaseFromQuarantine
+      }
+    } briefly "Handles commands when inventory is quarantined"
+      described by "Processes quarantine release commands for held inventory."
+  } briefly "State when inventory is held in quarantine"
+    described by "Represents inventory that is being held for quality inspection or investigation."
+
+  // State types
+  type EmptyInventoryStateType is {
+    inventoryId: InventoryId,
+    createdAt: TimeStamp
+  } briefly "Data for empty inventory state"
+    described by "Minimal data for an inventory record awaiting its first receipt."
+
+  type ActiveInventoryStateType is {
+    inventoryId: InventoryId,
+    productId: ProductId,
+    locationId: LocationId,
+    quantity: Integer,
+    reservedQuantity: Integer,
+    unitOfMeasure: UnitOfMeasure,
+    status: InventoryStatus,
+    lotNumber: String(0, 50),
+    expirationDate: Date?,
+    lastUpdated: TimeStamp
+  } briefly "Data for active inventory state"
+    described by "Complete inventory record data for active inventory operations."
+
+  type QuarantineInventoryStateType is {
+    inventoryId: InventoryId,
+    productId: ProductId,
+    locationId: LocationId,
+    quantity: Integer,
+    unitOfMeasure: UnitOfMeasure,
+    quarantineReason: String(1, 500),
+    quarantinedAt: TimeStamp,
+    quarantinedBy: String(1, 100)
+  } briefly "Data for quarantined inventory state"
+    described by "Inventory record data including quarantine-specific information."
+
+  // Outlet for publishing events
+  outlet InventoryEvents is type InventoryEventRecord
+    briefly "Publishes inventory events for downstream processing"
+    described by "Event stream for inventory changes consumed by projectors and external systems."
+
+  type InventoryEventRecord is {
+    eventType: String(1, 50),
+    inventoryId: InventoryId,
+    timestamp: TimeStamp,
+    payload: String(1, 5000)
+  } briefly "Wrapper for inventory events on the outlet"
+    described by "Standardized event record format for the inventory event stream."
+
+} briefly "Manages inventory items at warehouse locations"
+  described by {
+    | The Inventory entity is the core aggregate for warehouse inventory management.
+    | It tracks quantities, locations, and status of inventory items using event
+    | sourcing to maintain a complete audit trail of all inventory movements and
+    | changes. The entity supports reservation for orders, transfers between
+    | locations, and quarantine handling for quality management.
+  }
