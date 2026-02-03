@@ -1,0 +1,275 @@
+// Billing Account Entity for Usage Billing Domain
+
+entity BillingAccount is {
+
+  option is aggregate
+  option event-sourced
+
+  // === Commands ===
+
+  command CreateAccount is {
+    accountId: AccountId,
+    customer: CustomerInfo,
+    ratePlanId: RatePlanId,
+    paymentMethod: PaymentMethod
+  } briefly "Create a new billing account"
+    described by "Establishes a new customer billing account with initial settings."
+
+  command UpdateCustomerInfo is {
+    accountId: AccountId,
+    customer: CustomerInfo
+  } briefly "Update customer contact information"
+    described by "Modifies the customer details associated with the account."
+
+  command ChangeRatePlan is {
+    accountId: AccountId,
+    newRatePlanId: RatePlanId,
+    effectiveDate: Date
+  } briefly "Change the rate plan for the account"
+    described by "Switches the customer to a different pricing plan."
+
+  command RecordUsage is {
+    accountId: AccountId,
+    usageRecord: UsageRecord
+  } briefly "Record a usage event for the account"
+    described by "Adds a metered usage record to be rated and billed."
+
+  command GenerateInvoice is {
+    accountId: AccountId,
+    billingPeriodStart: Date,
+    billingPeriodEnd: Date
+  } briefly "Generate an invoice for a billing period"
+    described by "Creates an invoice aggregating usage and charges for the period."
+
+  command ApplyPayment is {
+    accountId: AccountId,
+    payment: PaymentRecord
+  } briefly "Apply a payment to the account"
+    described by "Records a payment received against an outstanding invoice."
+
+  command ApplyCredit is {
+    accountId: AccountId,
+    amount: MonetaryAmount,
+    reason: String,
+    invoiceId: InvoiceId?
+  } briefly "Apply a credit adjustment to the account"
+    described by "Adds a credit to the account balance, optionally against a specific invoice."
+
+  command SuspendAccount is {
+    accountId: AccountId,
+    reason: String
+  } briefly "Suspend the billing account"
+    described by "Suspends the account, typically due to non-payment."
+
+  command ReactivateAccount is {
+    accountId: AccountId
+  } briefly "Reactivate a suspended account"
+    described by "Restores an account to active status after issue resolution."
+
+  command CloseAccount is {
+    accountId: AccountId,
+    reason: String,
+    finalBillDate: Date
+  } briefly "Close the billing account"
+    described by "Permanently closes the account and generates a final bill."
+
+  // === Events ===
+
+  event AccountCreated is {
+    accountId: AccountId,
+    customer: CustomerInfo,
+    ratePlanId: RatePlanId,
+    paymentMethod: PaymentMethod,
+    createdAt: DateTime
+  } briefly "Billing account was created"
+    described by "Indicates a new billing account has been established."
+
+  event CustomerInfoUpdated is {
+    accountId: AccountId,
+    customer: CustomerInfo,
+    updatedAt: DateTime
+  } briefly "Customer information was updated"
+    described by "Indicates customer contact details have been modified."
+
+  event RatePlanChanged is {
+    accountId: AccountId,
+    previousPlanId: RatePlanId,
+    newPlanId: RatePlanId,
+    effectiveDate: Date
+  } briefly "Rate plan was changed"
+    described by "Indicates the customer has been moved to a different pricing plan."
+
+  event UsageRecorded is {
+    accountId: AccountId,
+    usageRecord: UsageRecord,
+    recordedAt: DateTime
+  } briefly "Usage event was recorded"
+    described by "Indicates a metered usage event has been captured for billing."
+
+  event InvoiceGenerated is {
+    accountId: AccountId,
+    invoice: Invoice,
+    generatedAt: DateTime
+  } briefly "Invoice was generated"
+    described by "Indicates an invoice has been created for the billing period."
+
+  event PaymentApplied is {
+    accountId: AccountId,
+    payment: PaymentRecord,
+    newBalance: MonetaryAmount
+  } briefly "Payment was applied"
+    described by "Indicates a payment has been received and applied to the account."
+
+  event CreditApplied is {
+    accountId: AccountId,
+    amount: MonetaryAmount,
+    reason: String,
+    invoiceId: InvoiceId?,
+    newBalance: MonetaryAmount
+  } briefly "Credit was applied"
+    described by "Indicates a credit adjustment has been made to the account."
+
+  event AccountSuspended is {
+    accountId: AccountId,
+    reason: String,
+    suspendedAt: DateTime
+  } briefly "Account was suspended"
+    described by "Indicates the account has been suspended."
+
+  event AccountReactivated is {
+    accountId: AccountId,
+    reactivatedAt: DateTime
+  } briefly "Account was reactivated"
+    described by "Indicates a suspended account has been restored to active status."
+
+  event AccountClosed is {
+    accountId: AccountId,
+    reason: String,
+    closedAt: DateTime,
+    finalBalance: MonetaryAmount
+  } briefly "Account was closed"
+    described by "Indicates the account has been permanently closed."
+
+  // === States ===
+
+  state PendingActivation of BillingAccount is {
+    accountId: AccountId,
+    customer: CustomerInfo,
+    ratePlanId: RatePlanId,
+    paymentMethod: PaymentMethod,
+    createdAt: DateTime
+  } briefly "Account pending activation"
+    described by "Initial state when account is created but not yet active."
+
+  state Active of BillingAccount is {
+    accountId: AccountId,
+    customer: CustomerInfo,
+    ratePlanId: RatePlanId,
+    paymentMethod: PaymentMethod,
+    currentBalance: MonetaryAmount,
+    unbilledUsage: many UsageRecord,
+    invoices: many Invoice,
+    payments: many PaymentRecord,
+    activatedAt: DateTime
+  } briefly "Account is active and can incur usage"
+    described by {
+      | The normal operating state where the customer can use services,
+      | usage is being tracked, and invoices can be generated.
+    }
+
+  state Suspended of BillingAccount is {
+    accountId: AccountId,
+    customer: CustomerInfo,
+    ratePlanId: RatePlanId,
+    paymentMethod: PaymentMethod,
+    currentBalance: MonetaryAmount,
+    unbilledUsage: many UsageRecord,
+    invoices: many Invoice,
+    payments: many PaymentRecord,
+    suspendedAt: DateTime,
+    suspensionReason: String
+  } briefly "Account is suspended"
+    described by {
+      | The account is blocked from incurring new usage, typically due to
+      | non-payment or policy violations. Existing balances remain due.
+    }
+
+  state Closed of BillingAccount is {
+    accountId: AccountId,
+    customer: CustomerInfo,
+    closedAt: DateTime,
+    closureReason: String,
+    finalBalance: MonetaryAmount,
+    invoiceHistory: many Invoice,
+    paymentHistory: many PaymentRecord
+  } briefly "Account is permanently closed"
+    described by "Terminal state after account closure with historical records retained."
+
+  // === Handler ===
+
+  handler BillingAccountHandler is {
+    on command CreateAccount {
+      send event AccountCreated to outlet BillingContext.AccountEvents
+    } briefly "Handle account creation"
+      described by "Creates a new billing account and emits the creation event."
+
+    on command UpdateCustomerInfo {
+      send event CustomerInfoUpdated to outlet BillingContext.AccountEvents
+    } briefly "Handle customer info update"
+      described by "Updates customer details and emits the update event."
+
+    on command ChangeRatePlan {
+      send event RatePlanChanged to outlet BillingContext.AccountEvents
+    } briefly "Handle rate plan change"
+      described by "Changes the rate plan and emits the change event."
+
+    on command RecordUsage {
+      send event UsageRecorded to outlet BillingContext.AccountEvents
+    } briefly "Handle usage recording"
+      described by "Records usage for billing and emits the usage event."
+
+    on command GenerateInvoice {
+      send event InvoiceGenerated to outlet BillingContext.AccountEvents
+    } briefly "Handle invoice generation"
+      described by "Generates an invoice for the billing period."
+
+    on command ApplyPayment {
+      send event PaymentApplied to outlet BillingContext.AccountEvents
+    } briefly "Handle payment application"
+      described by "Applies payment to the account balance."
+
+    on command ApplyCredit {
+      send event CreditApplied to outlet BillingContext.AccountEvents
+    } briefly "Handle credit application"
+      described by "Applies a credit adjustment to the account."
+
+    on command SuspendAccount {
+      morph entity BillingAccount to state Suspended with command SuspendAccount
+      send event AccountSuspended to outlet BillingContext.AccountEvents
+    } briefly "Handle account suspension"
+      described by "Suspends the account and emits the suspension event."
+
+    on command ReactivateAccount {
+      morph entity BillingAccount to state Active with command ReactivateAccount
+      send event AccountReactivated to outlet BillingContext.AccountEvents
+    } briefly "Handle account reactivation"
+      described by "Reactivates a suspended account."
+
+    on command CloseAccount {
+      morph entity BillingContext.BillingAccount to state Closed with command CloseAccount
+      send event AccountClosed to outlet BillingContext.AccountEvents
+    } briefly "Handle account closure"
+      described by "Closes the account permanently."
+  } briefly "Command handler for BillingAccount entity"
+    described by {
+      | Processes all commands for the BillingAccount entity, managing state
+      | transitions and emitting appropriate events for downstream processing.
+    }
+
+} briefly "Billing account aggregate root"
+  described by {
+    | The BillingAccount entity is the aggregate root for customer billing.
+    | It maintains account status, tracks unbilled usage, manages invoices,
+    | and records payments. It follows event sourcing patterns for full
+    | auditability of all billing activities.
+  }
