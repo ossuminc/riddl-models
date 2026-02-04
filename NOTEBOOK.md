@@ -9,9 +9,8 @@ Development journal for active work on the riddl-models repository.
 **Date**: 2026-02-03
 **Phase**: Model Generation - Near Complete
 
-Progress: **174 of 175 models** generated (99% complete)
-- 174 domain models created on disk
-- 32 models generated but uncommitted (from crashed session)
+Progress: **174 of 175 models** generated and committed (99% complete)
+- 174 domain models created, validated, and committed
 - 1 model remaining: `engineering/project-engineering/design-review`
 
 **Validation**: Use `riddlc from <config>.conf validate` for all models.
@@ -20,6 +19,16 @@ Progress: **174 of 175 models** generated (99% complete)
 ---
 
 ## Completed Work
+
+### 2026-02-03: Session Recovery - Committed 32 Crash-Orphaned Models
+
+Previous session crashed after generating 32 models that were never
+committed. This session recovered those models by:
+1. Scanning all leaf directories for README-only (incomplete) models
+2. Discovering all 32 were actually generated on disk but uncommitted
+3. Committing all 32 in a single recovery commit
+4. Found 1 previously-untracked incomplete model:
+   `engineering/project-engineering/design-review` (README only)
 
 ### 2026-02-03: Continued Model Generation (55 New Models)
 
@@ -231,50 +240,12 @@ Completed all models for the first two sectors:
 
 ## Active Work
 
-### Priority 1: Commit 32 Uncommitted Models
-
-The crashed session generated 32 models that are on disk but never
-committed. These need to be staged and committed:
-
-- `entertainment/live-events/production-management`
-- `entertainment/live-events/ticketing`
-- `entertainment/sports/athlete-management`
-- `entertainment/sports/league-management`
-- `investment/asset-management/client-reporting`
-- `investment/asset-management/investment-portfolio`
-- `investment/private-equity/portfolio-operations`
-- `investment/venture-capital/fund-administration`
-- `investment/venture-capital/portfolio-management`
-- `logistics/fulfillment/order-fulfillment`
-- `logistics/supply-chain/supplier-management`
-- `logistics/warehousing/inventory-control`
-- `marketing/advertising/ad-operations`
-- `marketing/advertising/media-buying`
-- `marketing/analytics/attribution`
-- `marketing/analytics/audience-management`
-- `marketing/campaigns/marketing-automation`
-- `natural-resources/agriculture/farm-management`
-- `natural-resources/agriculture/livestock-management`
-- `natural-resources/forestry/harvest-planning`
-- `natural-resources/forestry/log-tracking`
-- `natural-resources/mining/mineral-tracking`
-- `natural-resources/oil-gas/pipeline-operations`
-- `professional-services/accounting/audit-management`
-- `professional-services/hr-services/benefits-administration`
-- `professional-services/hr-services/recruiting`
-- `professional-services/legal/contract-lifecycle`
-- `professional-services/legal/matter-management`
-- `telecommunications/billing/usage-rating`
-- `utilities/electric/outage-management`
-- `utilities/metering/billing-settlement`
-- `utilities/water/water-utility`
-
-### Priority 2: Generate Last Remaining Model
+### Priority 1: Generate Last Remaining Model
 
 1 model directory has only a README.md (no .riddl files):
 - [ ] `engineering/project-engineering/design-review`
 
-### Priority 3: Fix Author Emails
+### Priority 2: Fix Author Emails
 
 Some early models may have incorrect author email `support@ossum.ai`
 instead of the correct `support@ossuminc.com`. Need to audit and fix.
@@ -287,22 +258,22 @@ instead of the correct `support@ossuminc.com`. Need to audit and fix.
 | construction | COMPLETE (7) |
 | education | COMPLETE (6) |
 | engineering | 6 of 7 (design-review needs generation) |
-| entertainment | COMPLETE (11) - 4 uncommitted |
+| entertainment | COMPLETE (11) |
 | finance | COMPLETE (9) |
 | government | COMPLETE (7) |
 | healthcare | COMPLETE (16) |
 | hospitality | COMPLETE (11) |
 | insurance | COMPLETE (5) |
-| investment | COMPLETE (9) - 5 uncommitted |
-| logistics | COMPLETE (11) - 3 uncommitted |
+| investment | COMPLETE (9) |
+| logistics | COMPLETE (11) |
 | manufacturing | COMPLETE (11) |
-| marketing | COMPLETE (11) - 5 uncommitted |
-| natural-resources | COMPLETE (10) - 6 uncommitted |
-| professional-services | COMPLETE (8) - 5 uncommitted |
+| marketing | COMPLETE (11) |
+| natural-resources | COMPLETE (10) |
+| professional-services | COMPLETE (8) |
 | technology | COMPLETE (12) |
-| telecommunications | COMPLETE (9) - 1 uncommitted |
+| telecommunications | COMPLETE (9) |
 | transportation | COMPLETE (9) |
-| utilities | COMPLETE (7) - 3 uncommitted |
+| utilities | COMPLETE (7) |
 
 ---
 
