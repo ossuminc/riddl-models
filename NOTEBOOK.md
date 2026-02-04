@@ -7,18 +7,27 @@ Development journal for active work on the riddl-models repository.
 ## Current Status
 
 **Date**: 2026-02-03
-**Phase**: Model Generation - Near Complete
+**Phase**: Model Generation - COMPLETE
 
-Progress: **174 of 175 models** generated and committed (99% complete)
-- 174 domain models created, validated, and committed
-- 1 model remaining: `engineering/project-engineering/design-review`
+Progress: **175 of 175 models** generated, validated, and committed (100%)
+- All 20 sectors complete
+- All models pushed to origin/main
 
 **Validation**: Use `riddlc from <config>.conf validate` for all models.
-**riddlc location**: `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
+**riddlc location**: `riddlc` (Homebrew) or
+`../riddl/riddlc/jvm/target/universal/stage/bin/riddlc` (staged build)
 
 ---
 
 ## Completed Work
+
+### 2026-02-03: Generated Final Model (design-review)
+
+Generated `engineering/project-engineering/design-review` -- the last
+remaining model (175 of 175). Covers submittal management, review
+assignment/routing, comment collection and resolution, revision tracking,
+approval workflow, and design milestone sign-off. Validated with riddlc
+(0 errors, only expected usage warnings for external contexts).
 
 ### 2026-02-03: Session Recovery - Committed 32 Crash-Orphaned Models
 
@@ -240,40 +249,37 @@ Completed all models for the first two sectors:
 
 ## Active Work
 
-### Priority 1: Generate Last Remaining Model
+### Priority 1: Fix Author Emails
 
-1 model directory has only a README.md (no .riddl files):
-- [ ] `engineering/project-engineering/design-review`
-
-### Priority 2: Fix Author Emails
-
-Some early models may have incorrect author email `support@ossum.ai`
+Some early models have incorrect author email `support@ossum.ai`
 instead of the correct `support@ossuminc.com`. Need to audit and fix.
 
 ### Sector Completion Status
 
-| Sector | Status |
+All 20 sectors complete (175 models total):
+
+| Sector | Models |
 |--------|--------|
-| commerce | COMPLETE (10) |
-| construction | COMPLETE (7) |
-| education | COMPLETE (6) |
-| engineering | 6 of 7 (design-review needs generation) |
-| entertainment | COMPLETE (11) |
-| finance | COMPLETE (9) |
-| government | COMPLETE (7) |
-| healthcare | COMPLETE (16) |
-| hospitality | COMPLETE (11) |
-| insurance | COMPLETE (5) |
-| investment | COMPLETE (9) |
-| logistics | COMPLETE (11) |
-| manufacturing | COMPLETE (11) |
-| marketing | COMPLETE (11) |
-| natural-resources | COMPLETE (10) |
-| professional-services | COMPLETE (8) |
-| technology | COMPLETE (12) |
-| telecommunications | COMPLETE (9) |
-| transportation | COMPLETE (9) |
-| utilities | COMPLETE (7) |
+| commerce | 10 |
+| construction | 7 |
+| education | 6 |
+| engineering | 7 |
+| entertainment | 11 |
+| finance | 9 |
+| government | 7 |
+| healthcare | 16 |
+| hospitality | 11 |
+| insurance | 5 |
+| investment | 9 |
+| logistics | 11 |
+| manufacturing | 11 |
+| marketing | 11 |
+| natural-resources | 10 |
+| professional-services | 8 |
+| technology | 12 |
+| telecommunications | 9 |
+| transportation | 9 |
+| utilities | 7 |
 
 ---
 

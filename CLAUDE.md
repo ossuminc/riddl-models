@@ -259,16 +259,15 @@ riddlc from model-name.conf validate
 
 ### riddlc Location
 
-The riddlc binary is at (relative to riddl-models):
+riddlc is available via Homebrew:
+```bash
+brew install ossuminc/tap/riddlc
+```
+
+It can also be found as a staged binary from the riddl build at:
 `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Full path from ossuminc directory:
-`/Users/reid/Code/ossuminc/riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
-
 Use version 1.2.1+ for validation.
-
-**Note**: A Homebrew installer is planned but not yet available. For now, use
-the staged binary from the riddl build.
 
 ### Model File Structure
 
