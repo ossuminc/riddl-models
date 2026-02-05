@@ -6,20 +6,52 @@ Development journal for active work on the riddl-models repository.
 
 ## Current Status
 
-**Date**: 2026-02-03
-**Phase**: Model Generation - COMPLETE
+**Date**: 2026-02-04
+**Phase**: Validation Complete
 
-Progress: **175 of 175 models** generated, validated, and committed (100%)
-- All 20 sectors complete
-- All models pushed to origin/main
+Progress: **186 of 186 models** pass riddlc validation with 0 errors
+- All models validated with riddlc 1.2.3
+- Commit: b498ecd "Fix riddlc validation errors across all 186 models"
 
-**Validation**: Use `riddlc from <config>.conf validate` for all models.
-**riddlc location**: `riddlc` (Homebrew) or
-`../riddl/riddlc/jvm/target/universal/stage/bin/riddlc` (staged build)
+**Next step**: Add riddl-models to riddl CI workflow (see TASK file)
 
 ---
 
 ## Completed Work
+
+### 2026-02-04: Fixed ALL Validation Errors (45 Models)
+
+Previously 45/186 models failed `riddlc validate`. All now pass with 0 errors.
+
+**Fixes by category:**
+
+1. **briefly/described outside with{}** (4 models) - Wrapped in `with {}`
+   blocks for author, user, epic, case, domain, context, entity definitions
+
+2. **Ambiguous path references** (25 models) - Renamed epic cases with
+   UseCase suffix, renamed conflicting enum values with Status/Role/Outcome
+   suffix, fully qualified cross-context command references
+
+3. **Unresolved EmailAddress** (8 models) - Added `type EmailAddress is
+   String(5, 254)` to models that referenced it
+
+4. **Unresolved Year type** (5 models) - Added `type Year is Integer`
+
+5. **Decimal fractional part** (3 models) - Changed `Decimal(x, 0)` to
+   `Decimal(x, 2)` for positive fractional part
+
+6. **Complex multi-error models** (4 models) - fund-accounting,
+   warehouse-management, prescription-management, case-management required
+   structural changes: projector records, state definitions, handler syntax,
+   outlet removal, step syntax fixes
+
+**Key patterns discovered:**
+- Epic cases cannot share names with entity commands
+- Enum values cannot share names with events/commands/users
+- `on command X` cannot use qualified paths like `Entity.Command`
+- `outlet` is only valid in streamlets, not entities/contexts
+- Bare strings invalid in handlers; use comments instead
+- `wants to "..."` should be `wants "to ..."`
 
 ### 2026-02-04: Fixed Author Emails (57 models)
 
@@ -257,12 +289,11 @@ Completed all models for the first two sectors:
 
 ## Active Work
 
-No active work items. All 175 models generated, validated, and
-author emails corrected.
+No active work items. All 186 models validated.
 
 ### Sector Completion Status
 
-All 20 sectors complete (175 models total):
+All 20 sectors complete (186 models total):
 
 | Sector | Models |
 |--------|--------|
@@ -301,17 +332,19 @@ Each model uses 6 files:
 - `Context.riddl` - Main bounded context with repository/projector
 - `external-contexts.riddl` - External systems with `option is external`
 
-### RIDDL Syntax Notes (2026-02-01)
+### RIDDL Syntax Notes (2026-02-04)
 
-Important syntax findings during model generation:
-- Enum values cannot have individual `with { briefly ... }` blocks
-- Handler `on` clauses work with or without `is` in v1.2.1+
-- Identifier minimum length is 3 characters (e.g., `VA` -> `VALoan`)
-- User/enum name collisions trigger warnings (use distinct names)
-- Collection syntax: `many optional Type` (not `optional many`)
-- External contexts: `option is external` in `with` block
-- State transitions: `morph entity X to state Y with command Z`
-- Entity messaging: `tell event X to entity Y`
+Important syntax findings during validation fix work:
+- `briefly`/`described by` must be inside `with {}` blocks
+- Epic cases cannot share names with entity commands (use UseCase suffix)
+- Enum values cannot share names with events/commands/users
+- `on command X` cannot use qualified paths (no `Entity.Command`)
+- `outlet` only valid in streamlets, not entities/contexts
+- Bare strings invalid in handlers; use comments or `???`
+- `wants to "..."` should be `wants "to ..."`
+- `Decimal(x, y)` requires y > 0 (positive fractional part)
+- State syntax: `state X of TypeName with {}` (no `is {}` body)
+- Handlers belong at entity level, not nested in states
 
 ### Author Block Pattern (2026-02-02)
 
@@ -333,6 +366,7 @@ author OssumInc is {
 
 ## Notes
 
-- riddlc path: `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
-- Version 1.2.1+ required for validation
-- All models validated with only `???` placeholder warnings (no errors)
+- riddlc path: `riddlc` (Homebrew) or staged build
+- Version 1.2.3+ required for validation
+- All 186 models validated with 0 errors
+- Reference model: `finance/banking/account-management/`
