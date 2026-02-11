@@ -2,6 +2,10 @@
 
 Skills tracking, assessments, and development planning.
 
+## NAICS Code
+
+**611430** - Professional and Management Development Training
+
 ## Scope
 
 This model covers competency management, including:

@@ -2,6 +2,10 @@
 
 Customer shopping cart management for e-commerce.
 
+## NAICS Code
+
+**454110** - Electronic Shopping and Mail-Order Houses
+
 ## Overview
 
 This model manages the customer's shopping cart throughout their browsing

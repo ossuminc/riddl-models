@@ -2,6 +2,10 @@
 
 CDR mediation, rating, and billing calculation.
 
+## NAICS Code
+
+**517311** - Wired Telecommunications Carriers
+
 ## Scope
 
 This model covers usage rating operations, including:

@@ -2,6 +2,10 @@
 
 VC opportunity pipeline management.
 
+## NAICS Code
+
+**523910** - Miscellaneous Intermediation
+
 ## Overview
 
 This model manages the venture capital deal pipeline from sourcing through

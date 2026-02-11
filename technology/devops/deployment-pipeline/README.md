@@ -2,6 +2,10 @@
 
 CI/CD automation and release management.
 
+## NAICS Code
+
+**541512** - Computer Systems Design Services
+
 ## Overview
 
 This model orchestrates build, test, and deployment automation for

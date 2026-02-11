@@ -2,6 +2,10 @@
 
 Submittal management, approvals, and revision tracking.
 
+## NAICS Code
+
+**541330** - Engineering Services
+
 ## Scope
 
 This model covers design review operations, including:

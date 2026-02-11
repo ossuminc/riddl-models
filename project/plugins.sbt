@@ -1,5 +1,5 @@
 // Ossum Inc SBT plugin for standardized build configuration
-addSbtPlugin("com.ossuminc" % "sbt-ossuminc" % "1.2.5")
+addSbtPlugin("com.ossuminc" % "sbt-ossuminc" % "1.3.0")
 
 // Credentials for GitHub Packages
 credentials ++= {

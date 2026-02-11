@@ -2,6 +2,10 @@
 
 Rate application, invoice generation, and payment processing.
 
+## NAICS Code
+
+**221100** - Electric Power Generation, Transmission and Distribution
+
 ## Scope
 
 This model covers utility billing operations, including:

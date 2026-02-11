@@ -2,6 +2,10 @@
 
 Drilling, completion, and production operations.
 
+## NAICS Code
+
+**211120** - Crude Petroleum Extraction
+
 ## Scope
 
 This model covers well lifecycle management, including:

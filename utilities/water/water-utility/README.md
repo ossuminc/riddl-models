@@ -2,6 +2,10 @@
 
 Water treatment, distribution, and billing operations.
 
+## NAICS Code
+
+**221310** - Water Supply and Irrigation Systems
+
 ## Scope
 
 This model covers water utility operations, including:

@@ -2,6 +2,10 @@
 
 Container management and multi-mode freight coordination.
 
+## NAICS Code
+
+**488510** - Freight Transportation Arrangement
+
 ## Scope
 
 This model covers intermodal operations, including:

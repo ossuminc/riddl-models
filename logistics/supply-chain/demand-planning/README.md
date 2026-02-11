@@ -2,6 +2,10 @@
 
 Forecasting, planning, and inventory allocation.
 
+## NAICS Code
+
+**541614** - Process and Logistics Consulting Services
+
 ## Scope
 
 This model covers demand planning operations, including:

@@ -2,6 +2,10 @@
 
 RMA, inspection, and disposition for returned goods.
 
+## NAICS Code
+
+**493110** - General Warehousing and Storage
+
 ## Scope
 
 This model covers returns processing, including:

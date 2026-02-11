@@ -2,6 +2,10 @@
 
 Subcontractor contracts, compliance, and payment processing.
 
+## NAICS Code
+
+**236200** - Nonresidential Building Construction
+
 ## Scope
 
 This model covers subcontractor operations, including:

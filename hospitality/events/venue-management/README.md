@@ -2,6 +2,10 @@
 
 Event space booking, configuration, and logistics.
 
+## NAICS Code
+
+**711310** - Promoters of Performing Arts, Sports, and Similar Events
+
 ## Scope
 
 This model covers venue operations, including:

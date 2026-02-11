@@ -2,6 +2,10 @@
 
 Loan application and underwriting.
 
+## NAICS Code
+
+**522110** - Commercial Banking
+
 ## Overview
 
 This model handles loan applications from submission through approval,

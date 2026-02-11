@@ -2,6 +2,10 @@
 
 Laboratory test ordering and results.
 
+## NAICS Code
+
+**622110** - General Medical and Surgical Hospitals
+
 ## Overview
 
 This model manages laboratory orders including order entry, specimen

@@ -2,6 +2,10 @@
 
 Multi-tier wholesale distribution.
 
+## NAICS Code
+
+**423000** - Merchant Wholesalers, Durable Goods
+
 ## Overview
 
 This model manages wholesale distribution networks including distributor

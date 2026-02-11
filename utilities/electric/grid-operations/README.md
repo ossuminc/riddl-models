@@ -2,6 +2,10 @@
 
 Electric generation, transmission, and distribution management.
 
+## NAICS Code
+
+**221121** - Electric Bulk Power Transmission and Control
+
 ## Scope
 
 This model covers grid operations, including:

@@ -2,6 +2,10 @@
 
 Equipment acquisition, depreciation, and disposal.
 
+## NAICS Code
+
+**811310** - Commercial and Industrial Machinery Repair
+
 ## Scope
 
 This model covers asset lifecycle management, including:

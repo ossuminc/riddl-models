@@ -2,6 +2,10 @@
 
 Lease administration, tenant services, and maintenance.
 
+## NAICS Code
+
+**531311** - Residential Property Managers
+
 ## Scope
 
 This model covers property management operations, including:

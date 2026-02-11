@@ -2,6 +2,10 @@
 
 Enterprise training programs, enrollment, and completion tracking.
 
+## NAICS Code
+
+**611430** - Professional and Management Development Training
+
 ## Scope
 
 This model covers corporate training operations, including:

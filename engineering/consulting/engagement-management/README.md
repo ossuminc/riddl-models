@@ -2,6 +2,10 @@
 
 SOW management, resource allocation, and client billing.
 
+## NAICS Code
+
+**541330** - Engineering Services
+
 ## Scope
 
 This model covers consulting engagement operations, including:

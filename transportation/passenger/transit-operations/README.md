@@ -2,6 +2,10 @@
 
 Public transportation routes, schedules, and real-time tracking.
 
+## NAICS Code
+
+**485110** - Urban Transit Systems
+
 ## Scope
 
 This model covers public transit operations, including:

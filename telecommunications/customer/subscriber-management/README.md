@@ -2,6 +2,10 @@
 
 Account, plan, and device management for telecom subscribers.
 
+## NAICS Code
+
+**517311** - Wired Telecommunications Carriers
+
 ## Scope
 
 This model covers subscriber management, including:

@@ -2,6 +2,10 @@
 
 Sports league administration, scheduling, and standings.
 
+## NAICS Code
+
+**711211** - Sports Teams and Clubs
+
 ## Scope
 
 This model covers league operations, including:

@@ -2,6 +2,10 @@
 
 Herd tracking, health management, and movement recording.
 
+## NAICS Code
+
+**112000** - Animal Production and Aquaculture
+
 ## Scope
 
 This model covers livestock operations, including:

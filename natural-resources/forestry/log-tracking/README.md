@@ -2,6 +2,10 @@
 
 Log scaling, transport, and mill delivery.
 
+## NAICS Code
+
+**113310** - Logging
+
 ## Scope
 
 This model covers log tracking operations, including:

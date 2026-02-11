@@ -2,6 +2,10 @@
 
 Mine planning, extraction, and processing operations.
 
+## NAICS Code
+
+**212000** - Mining (except Oil and Gas)
+
 ## Scope
 
 This model covers mining operations, including:

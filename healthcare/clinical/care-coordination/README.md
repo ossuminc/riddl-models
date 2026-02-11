@@ -2,6 +2,10 @@
 
 Referrals and care team communication.
 
+## NAICS Code
+
+**621111** - Offices of Physicians
+
 ## Overview
 
 This model manages care coordination including referrals, care plans,

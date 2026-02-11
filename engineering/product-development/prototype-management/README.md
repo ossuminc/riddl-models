@@ -2,6 +2,10 @@
 
 Prototype builds, testing, and iteration tracking.
 
+## NAICS Code
+
+**541330** - Engineering Services
+
 ## Scope
 
 This model covers prototype management, including:

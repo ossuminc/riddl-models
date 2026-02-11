@@ -2,6 +2,10 @@
 
 Construction equipment fleet, utilization, and maintenance.
 
+## NAICS Code
+
+**238000** - Specialty Trade Contractors
+
 ## Scope
 
 This model covers equipment operations, including:

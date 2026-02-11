@@ -2,6 +2,10 @@
 
 Student enrollment, records, and transcript management.
 
+## NAICS Code
+
+**611310** - Colleges, Universities, and Professional Schools
+
 ## Scope
 
 This model covers student information operations, including:

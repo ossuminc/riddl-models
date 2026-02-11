@@ -2,6 +2,10 @@
 
 Health claims processing and payment.
 
+## NAICS Code
+
+**524114** - Direct Health and Medical Insurance Carriers
+
 ## Overview
 
 This model manages health claims from submission through payment including

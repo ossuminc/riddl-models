@@ -2,6 +2,10 @@
 
 Inspections, specifications, and quality holds.
 
+## NAICS Code
+
+**325000** - Chemical Manufacturing
+
 ## Scope
 
 This model covers quality control operations, including:

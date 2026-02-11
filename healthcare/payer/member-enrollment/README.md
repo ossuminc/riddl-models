@@ -2,6 +2,10 @@
 
 Health plan enrollment and eligibility.
 
+## NAICS Code
+
+**524114** - Direct Health and Medical Insurance Carriers
+
 ## Overview
 
 This model manages member enrollment including plan selection, eligibility

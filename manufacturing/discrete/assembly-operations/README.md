@@ -2,6 +2,10 @@
 
 Work instructions, assembly tracking, and production execution.
 
+## NAICS Code
+
+**332000** - Fabricated Metal Product Manufacturing
+
 ## Scope
 
 This model covers assembly operations, including:

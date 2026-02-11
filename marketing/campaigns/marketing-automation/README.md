@@ -2,6 +2,10 @@
 
 Customer journeys, triggers, and personalization.
 
+## NAICS Code
+
+**541810** - Advertising Agencies
+
 ## Scope
 
 This model covers marketing automation, including:

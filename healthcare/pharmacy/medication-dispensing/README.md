@@ -4,6 +4,10 @@ This RIDDL domain model represents the complete medication dispensing workflow
 in a pharmacy setting, from prescription receipt through patient pickup or
 return to stock.
 
+## NAICS Code
+
+**446110** - Pharmacies and Drug Retailers
+
 ## Overview
 
 The Medication Dispensing domain models the operational workflow of a retail

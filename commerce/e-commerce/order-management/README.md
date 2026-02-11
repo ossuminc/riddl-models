@@ -2,6 +2,10 @@
 
 Order lifecycle from placement through fulfillment.
 
+## NAICS Code
+
+**454110** - Electronic Shopping and Mail-Order Houses
+
 ## Overview
 
 This model tracks orders from initial placement through payment, fulfillment,

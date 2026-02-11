@@ -2,6 +2,10 @@
 
 Surgery scheduling and management.
 
+## NAICS Code
+
+**622110** - General Medical and Surgical Hospitals
+
 ## Overview
 
 This model manages operating room scheduling, case management, and

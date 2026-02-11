@@ -2,6 +2,10 @@
 
 Customer banking accounts and transactions.
 
+## NAICS Code
+
+**522110** - Commercial Banking
+
 ## Overview
 
 This model manages deposit accounts, balances, and transaction history for

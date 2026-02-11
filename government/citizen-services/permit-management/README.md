@@ -2,6 +2,10 @@
 
 Government permit applications, reviews, and issuance.
 
+## NAICS Code
+
+**926150** - Regulation, Licensing, and Inspection of Miscellaneous Commercial Sectors
+
 ## Scope
 
 This model covers permit operations, including:

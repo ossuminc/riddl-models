@@ -2,6 +2,10 @@
 
 Study management and data collection.
 
+## NAICS Code
+
+**541714** - Research and Development in Biotechnology
+
 ## Overview
 
 This model manages clinical trials including study design, site management,

@@ -2,6 +2,10 @@
 
 Expertise directory, lessons learned, and knowledge sharing.
 
+## NAICS Code
+
+**541330** - Engineering Services
+
 ## Scope
 
 This model covers knowledge management, including:

@@ -2,6 +2,10 @@
 
 Import/export classification, compliance, and clearance.
 
+## NAICS Code
+
+**488510** - Freight Transportation Arrangement
+
 ## Scope
 
 This model covers customs brokerage operations, including:

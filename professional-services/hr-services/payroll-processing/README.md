@@ -2,6 +2,10 @@
 
 Time capture, pay calculation, and disbursement.
 
+## NAICS Code
+
+**541214** - Payroll Services
+
 ## Scope
 
 This model covers payroll operations, including:

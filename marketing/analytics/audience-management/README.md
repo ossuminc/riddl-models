@@ -2,6 +2,10 @@
 
 Customer segments, targeting, and activation.
 
+## NAICS Code
+
+**541910** - Marketing Research and Public Opinion Polling
+
 ## Scope
 
 This model covers audience management, including:

@@ -2,6 +2,10 @@
 
 P&C claims handling and settlement.
 
+## NAICS Code
+
+**524126** - Direct Property and Casualty Insurance Carriers
+
 ## Overview
 
 This model manages insurance claims from first notice through settlement

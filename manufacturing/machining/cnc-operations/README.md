@@ -2,6 +2,10 @@
 
 CNC program management, tooling, and cycle tracking.
 
+## NAICS Code
+
+**332710** - Machine Shops
+
 ## Scope
 
 This model covers CNC operations, including:

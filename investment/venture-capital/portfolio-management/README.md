@@ -2,6 +2,10 @@
 
 Portfolio company monitoring and support.
 
+## NAICS Code
+
+**523910** - Miscellaneous Intermediation
+
 ## Overview
 
 This model tracks portfolio company performance, board participation,

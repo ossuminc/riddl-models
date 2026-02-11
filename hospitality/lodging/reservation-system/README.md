@@ -2,6 +2,10 @@
 
 Booking and availability management.
 
+## NAICS Code
+
+**721110** - Hotels and Motels
+
 ## Overview
 
 This model manages hotel reservations including availability, booking,

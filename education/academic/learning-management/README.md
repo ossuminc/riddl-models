@@ -2,6 +2,10 @@
 
 Course content delivery, assignments, and grading.
 
+## NAICS Code
+
+**611310** - Colleges, Universities, and Professional Schools
+
 ## Scope
 
 This model covers learning management operations, including:

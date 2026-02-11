@@ -2,6 +2,10 @@
 
 Leakage detection, reconciliation, and revenue protection.
 
+## NAICS Code
+
+**517311** - Wired Telecommunications Carriers
+
 ## Scope
 
 This model covers revenue assurance operations, including:

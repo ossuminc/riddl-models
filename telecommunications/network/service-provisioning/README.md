@@ -2,6 +2,10 @@
 
 Order, configure, and activate telecom services.
 
+## NAICS Code
+
+**517311** - Wired Telecommunications Carriers
+
 ## Scope
 
 This model covers service provisioning operations, including:

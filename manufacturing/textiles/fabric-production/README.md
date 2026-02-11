@@ -2,6 +2,10 @@
 
 Weaving, dyeing, and finishing operations.
 
+## NAICS Code
+
+**313000** - Textile Mills
+
 ## Scope
 
 This model covers fabric production, including:

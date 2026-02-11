@@ -2,6 +2,10 @@
 
 Ore grades, stockpiles, and shipment tracking.
 
+## NAICS Code
+
+**212000** - Mining (except Oil and Gas)
+
 ## Scope
 
 This model covers mineral tracking operations, including:

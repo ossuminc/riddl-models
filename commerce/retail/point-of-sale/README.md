@@ -2,6 +2,10 @@
 
 In-store transaction processing.
 
+## NAICS Code
+
+**452000** - General Merchandise Retailers
+
 ## Overview
 
 This model handles retail checkout transactions including item scanning,

@@ -2,6 +2,10 @@
 
 B2B payment terms and credit management.
 
+## NAICS Code
+
+**423000** - Merchant Wholesalers, Durable Goods
+
 ## Overview
 
 This model manages trade credit for business customers including credit

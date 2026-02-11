@@ -2,6 +2,10 @@
 
 Player matching, lobbies, and game session management.
 
+## NAICS Code
+
+**511210** - Software Publishers
+
 ## Scope
 
 This model covers matchmaking operations, including:

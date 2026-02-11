@@ -2,6 +2,10 @@
 
 Attendee registration, ticketing, and check-in for events and conferences.
 
+## NAICS Code
+
+**711310** - Promoters of Performing Arts, Sports, and Similar Events
+
 ## Scope
 
 This model covers event registration operations, including:

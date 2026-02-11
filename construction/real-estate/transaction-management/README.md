@@ -2,6 +2,10 @@
 
 Real estate listings, offers, and closings.
 
+## NAICS Code
+
+**531210** - Offices of Real Estate Agents and Brokers
+
 ## Scope
 
 This model covers real estate transaction operations, including:

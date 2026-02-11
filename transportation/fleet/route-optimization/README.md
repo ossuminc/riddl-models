@@ -2,6 +2,10 @@
 
 Delivery planning, dispatch, and real-time tracking.
 
+## NAICS Code
+
+**484000** - Truck Transportation
+
 ## Scope
 
 This model covers route planning operations, including:

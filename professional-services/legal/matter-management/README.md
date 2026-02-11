@@ -2,6 +2,10 @@
 
 Legal case tracking, tasks, and deadlines.
 
+## NAICS Code
+
+**541110** - Offices of Lawyers
+
 ## Scope
 
 This model covers legal matter management, including:

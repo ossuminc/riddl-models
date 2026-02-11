@@ -2,6 +2,10 @@
 
 Flight booking, inventory management, and passenger services.
 
+## NAICS Code
+
+**481111** - Scheduled Passenger Air Transportation
+
 ## Scope
 
 This model covers airline reservation operations, including:

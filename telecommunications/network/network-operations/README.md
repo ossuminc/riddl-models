@@ -2,6 +2,10 @@
 
 Monitoring, fault management, and performance tracking.
 
+## NAICS Code
+
+**517311** - Wired Telecommunications Carriers
+
 ## Scope
 
 This model covers network operations, including:

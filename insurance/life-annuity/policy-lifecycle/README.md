@@ -2,6 +2,10 @@
 
 Life insurance policy administration.
 
+## NAICS Code
+
+**524113** - Direct Life Insurance Carriers
+
 ## Overview
 
 This model manages life insurance and annuity contracts from application

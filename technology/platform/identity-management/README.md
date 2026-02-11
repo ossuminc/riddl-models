@@ -2,6 +2,10 @@
 
 Authentication, authorization, and SSO.
 
+## NAICS Code
+
+**511210** - Software Publishers
+
 ## Overview
 
 This model manages user identities, authentication methods, authorization

@@ -2,6 +2,10 @@
 
 Project scope, milestones, and deliverables management.
 
+## NAICS Code
+
+**541330** - Engineering Services
+
 ## Scope
 
 This model covers engineering project management, including:

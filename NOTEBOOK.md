@@ -6,18 +6,52 @@ Development journal for active work on the riddl-models repository.
 
 ## Current Status
 
-**Date**: 2026-02-04
-**Phase**: Validation Complete
+**Date**: 2026-02-11
+**Phase**: Build Integration Complete
 
-Progress: **186 of 186 models** pass riddlc validation with 0 errors
-- All models validated with riddlc 1.2.3
-- Commit: b498ecd "Fix riddlc validation errors across all 186 models"
-
-**Next step**: Add riddl-models to riddl CI workflow (see TASK file)
+- **186 models** validated with riddlc 1.7.0 via `sbt compile`
+- All 186 model READMEs have NAICS codes
+- `sbt compile` auto-downloads riddlc and validates all models (~6s)
 
 ---
 
 ## Completed Work
+
+### 2026-02-11: NAICS Codes + sbt Validation Integration
+
+**Task 1: NAICS Codes in all READMEs**
+
+Added `## NAICS Code` section to all 186 model READMEs with the
+closest NAICS industry classification code. The repository uses BLS
+sector/subsector decomposition which doesn't perfectly map to NAICS,
+so codes are approximate best-fit matches (4-6 digit codes).
+
+- 157 existing READMEs updated with NAICS code sections
+- 29 missing READMEs created from scratch (read .riddl files to
+  derive content, included NAICS codes)
+- NAICS codes sourced from naics.com and census.gov references
+
+**Task 2: sbt compile validates all RIDDL models**
+
+Rewrote `build.sbt` to integrate riddlc validation into the build:
+
+- `downloadRiddlc` task: Downloads and caches riddlc binary from
+  GitHub releases (platform-aware: macOS ARM64, Linux x86_64, or
+  JVM universal). Cached in `.riddlc/{version}/bin/riddlc`.
+- `riddlcValidateAll` task: Finds all 186 `.conf` files and runs
+  `riddlc from <conf> validate` on each. Reports failures with
+  error details.
+- Wired into `Compile / compile` so `sbt compile` triggers
+  validation automatically.
+- Command aliases: `sbt validate` and `sbt v`.
+- All 186 models pass with riddlc 1.7.0 in ~6 seconds.
+
+Research notes:
+- Evaluated sbt-riddl plugin (exists in riddl repo) — functional
+  but only handles one `.conf` per project, not suitable for 186.
+- riddlc 1.7.0 native binaries available (~4MB macOS ARM64 zip).
+- Zip structure uses `bin/riddlc` (not root-level binary).
+- Added `.riddlc/` to `.gitignore`.
 
 ### 2026-02-04: Fixed ALL Validation Errors (45 Models)
 
@@ -289,7 +323,7 @@ Completed all models for the first two sectors:
 
 ## Active Work
 
-No active work items. All 186 models validated.
+No active work items.
 
 ### Sector Completion Status
 
@@ -366,7 +400,7 @@ author OssumInc is {
 
 ## Notes
 
-- riddlc path: `riddlc` (Homebrew) or staged build
-- Version 1.2.3+ required for validation
-- All 186 models validated with 0 errors
+- riddlc: auto-downloaded by `sbt compile` (version in `build.sbt`)
+- Also available via Homebrew or staged build
+- riddlc 1.7.0 validates all 186 models in ~6 seconds
 - Reference model: `finance/banking/account-management/`

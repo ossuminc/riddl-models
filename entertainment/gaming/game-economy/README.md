@@ -2,6 +2,10 @@
 
 Virtual currency, items, and player trading systems.
 
+## NAICS Code
+
+**511210** - Software Publishers
+
 ## Scope
 
 This model covers game economy operations, including:

@@ -1,5 +1,9 @@
 # Nursing Workflow Domain Model
 
+## NAICS Code
+
+**622110** - General Medical and Surgical Hospitals
+
 ## Overview
 
 The Nursing Workflow domain models hospital nursing operations including shift

@@ -2,6 +2,10 @@
 
 Digital asset management, metadata, and rights tracking.
 
+## NAICS Code
+
+**512110** - Motion Picture and Video Production
+
 ## Scope
 
 This model covers content management operations, including:

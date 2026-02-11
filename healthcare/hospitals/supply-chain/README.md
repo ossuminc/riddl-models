@@ -3,6 +3,10 @@
 A RIDDL domain model for hospital medical supply procurement, inventory
 management, and distribution.
 
+## NAICS Code
+
+**622110** - General Medical and Surgical Hospitals
+
 ## Overview
 
 This model covers the end-to-end flow of medical supplies from vendors through

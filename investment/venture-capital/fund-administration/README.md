@@ -2,6 +2,10 @@
 
 VC fund operations and LP reporting.
 
+## NAICS Code
+
+**523910** - Miscellaneous Intermediation
+
 ## Overview
 
 This model manages fund administration including capital calls,

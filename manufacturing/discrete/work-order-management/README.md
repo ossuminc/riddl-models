@@ -2,6 +2,10 @@
 
 Production scheduling, execution, and completion tracking.
 
+## NAICS Code
+
+**332000** - Fabricated Metal Product Manufacturing
+
 ## Scope
 
 This model covers work order operations, including:

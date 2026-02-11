@@ -2,6 +2,10 @@
 
 Stored value and P2P payments.
 
+## NAICS Code
+
+**522320** - Financial Transactions Processing
+
 ## Overview
 
 This model manages digital wallet balances, funding sources, and

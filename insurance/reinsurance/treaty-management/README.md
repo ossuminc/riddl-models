@@ -2,6 +2,10 @@
 
 Reinsurance contract administration.
 
+## NAICS Code
+
+**524130** - Reinsurance Carriers
+
 ## Overview
 
 This model manages reinsurance treaties including placement, cession

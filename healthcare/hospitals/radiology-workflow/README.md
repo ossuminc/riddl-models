@@ -2,6 +2,10 @@
 
 Imaging orders and interpretation.
 
+## NAICS Code
+
+**622110** - General Medical and Surgical Hospitals
+
 ## Overview
 
 This model manages radiology workflow including order scheduling, image

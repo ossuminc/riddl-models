@@ -2,6 +2,10 @@
 
 Subscription management, playback, and content recommendations.
 
+## NAICS Code
+
+**515210** - Cable and Other Subscription Programming
+
 ## Scope
 
 This model covers streaming platform operations, including:

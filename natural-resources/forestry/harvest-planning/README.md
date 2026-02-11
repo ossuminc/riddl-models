@@ -2,6 +2,10 @@
 
 Timber inventory, cutting plans, and harvest scheduling.
 
+## NAICS Code
+
+**113310** - Logging
+
 ## Scope
 
 This model covers harvest planning operations, including:

@@ -2,6 +2,10 @@
 
 Cut, sew, trim operations for garment production.
 
+## NAICS Code
+
+**315000** - Apparel Manufacturing
+
 ## Scope
 
 This model covers apparel manufacturing, including:

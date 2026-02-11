@@ -2,6 +2,10 @@
 
 Store-level stock management.
 
+## NAICS Code
+
+**452000** - General Merchandise Retailers
+
 ## Overview
 
 This model tracks inventory at the store level including receiving, stock

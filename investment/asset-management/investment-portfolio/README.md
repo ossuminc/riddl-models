@@ -2,6 +2,10 @@
 
 Holdings and portfolio management.
 
+## NAICS Code
+
+**523920** - Portfolio Management and Investment Advice
+
 ## Overview
 
 This model manages investment portfolios including holdings, allocations,

@@ -2,6 +2,10 @@
 
 Player contracts, performance tracking, and transfers.
 
+## NAICS Code
+
+**711211** - Sports Teams and Clubs
+
 ## Scope
 
 This model covers athlete management operations, including:

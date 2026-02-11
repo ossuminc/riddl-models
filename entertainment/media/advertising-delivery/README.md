@@ -2,6 +2,10 @@
 
 Ad serving, targeting, and measurement for digital media.
 
+## NAICS Code
+
+**515210** - Cable and Other Subscription Programming
+
 ## Scope
 
 This model covers ad delivery operations, including:

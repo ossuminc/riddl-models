@@ -2,6 +2,10 @@
 
 Employee benefits enrollment and claims management.
 
+## NAICS Code
+
+**524292** - Third Party Administration of Insurance and Pension Funds
+
 ## Scope
 
 This model covers benefits administration, including:

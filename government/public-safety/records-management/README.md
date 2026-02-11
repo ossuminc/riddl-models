@@ -2,6 +2,10 @@
 
 Evidence, reports, and document retention for public safety.
 
+## NAICS Code
+
+**922190** - Other Justice, Public Order, and Safety Activities
+
 ## Scope
 
 This model covers public safety records, including:

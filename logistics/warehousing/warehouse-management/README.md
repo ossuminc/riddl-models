@@ -2,6 +2,10 @@
 
 Receiving, putaway, picking, and shipping operations.
 
+## NAICS Code
+
+**493110** - General Warehousing and Storage
+
 ## Scope
 
 This model covers warehouse operations, including:

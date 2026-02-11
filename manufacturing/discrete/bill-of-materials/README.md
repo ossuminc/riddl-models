@@ -2,6 +2,10 @@
 
 BOM structure, versioning, and cost rollup.
 
+## NAICS Code
+
+**332000** - Fabricated Metal Product Manufacturing
+
 ## Scope
 
 This model covers BOM management, including:

@@ -2,6 +2,10 @@
 
 Money movement between accounts.
 
+## NAICS Code
+
+**522110** - Commercial Banking
+
 ## Overview
 
 This model handles internal and external fund transfers including ACH,

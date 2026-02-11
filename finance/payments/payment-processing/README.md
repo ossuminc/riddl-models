@@ -2,6 +2,10 @@
 
 Transaction authorization and capture.
 
+## NAICS Code
+
+**522320** - Financial Transactions Processing
+
 ## Overview
 
 This model handles payment transactions from authorization through

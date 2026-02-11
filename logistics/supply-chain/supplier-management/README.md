@@ -2,6 +2,10 @@
 
 Supplier onboarding, performance, and risk management.
 
+## NAICS Code
+
+**541614** - Process and Logistics Consulting Services
+
 ## Scope
 
 This model covers supplier management, including:

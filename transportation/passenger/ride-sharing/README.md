@@ -2,6 +2,10 @@
 
 On-demand ride matching, dispatch, and payment processing.
 
+## NAICS Code
+
+**485310** - Taxi and Ridesharing Services
+
 ## Scope
 
 This model covers ride-sharing operations, including:

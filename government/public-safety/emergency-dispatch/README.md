@@ -2,6 +2,10 @@
 
 Computer-Aided Dispatch (CAD) for emergency services.
 
+## NAICS Code
+
+**922160** - Fire Protection
+
 ## Scope
 
 This model covers emergency dispatch operations, including:

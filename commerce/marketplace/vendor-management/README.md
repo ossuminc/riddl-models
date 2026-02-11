@@ -2,6 +2,10 @@
 
 Marketplace seller onboarding and management.
 
+## NAICS Code
+
+**454110** - Electronic Shopping and Mail-Order Houses
+
 ## Overview
 
 This model manages marketplace vendors including onboarding, verification,

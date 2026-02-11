@@ -2,6 +2,10 @@
 
 SaaS subscription lifecycle and billing cycles.
 
+## NAICS Code
+
+**511210** - Software Publishers
+
 ## Overview
 
 This model manages subscription plans, billing cycles, upgrades, downgrades,

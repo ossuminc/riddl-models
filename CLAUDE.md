@@ -100,10 +100,22 @@ Each model directory contains:
 
 ```
 commerce/e-commerce/shopping-cart/
-├── shopping-cart.riddl           # The RIDDL model
+├── shopping-cart.conf            # riddlc configuration
+├── shopping-cart.riddl           # The RIDDL model (domain entry point)
+├── types.riddl                   # Shared types
+├── Cart.riddl                    # Entity definitions
+├── CartContext.riddl             # Main bounded context
+├── external-contexts.riddl       # External systems
 ├── shopping-cart.metadata.json   # Model metadata (optional)
 └── README.md                     # Human-readable explanation
 ```
+
+### NAICS Codes in READMEs
+
+Every model README includes a `## NAICS Code` section near the top
+with the closest NAICS industry classification code. The repository
+uses BLS sector/subsector decomposition which doesn't map perfectly
+to NAICS, so codes are approximate best-fit matches.
 
 ### Metadata Schema
 
@@ -236,21 +248,42 @@ context PaymentGateway is {
 
 ## Validation with riddlc
 
-**Use `riddlc` directly for validation** - it handles includes properly and
-provides clear error messages. The MCP server can still be used for other
-purposes like querying grammar, idioms, and patterns.
+**Validation is integrated into `sbt compile`** — running `sbt compile`
+automatically downloads riddlc and validates all 186 models. The MCP
+server can still be used for querying grammar, idioms, and patterns.
 
-### Setup
+### sbt Validation (Primary Method)
 
-Each model directory should have a `.conf` file:
+The build defines two custom tasks in `build.sbt`:
+
+- **`downloadRiddlc`** — Downloads and caches the riddlc binary from
+  GitHub releases. Detects platform (macOS ARM64, Linux x86_64, or
+  JVM universal) and caches in `.riddlc/{version}/bin/riddlc`.
+- **`riddlcValidateAll`** — Finds all `.conf` files (excluding
+  `patterns/`, `target/`, `project/`, `.riddlc/`) and runs
+  `riddlc from <conf> validate` on each. Reports failures with
+  details.
+
+```bash
+sbt compile           # Downloads riddlc + validates all + compiles
+sbt riddlcValidateAll # Validate only (no compile)
+sbt validate          # Alias for riddlcValidateAll
+sbt v                 # Short alias
+```
+
+The riddlc binary is cached in `.riddlc/` (gitignored). To update
+riddlc, change `riddlcVersion` in `build.sbt` and re-run — the new
+version will be downloaded automatically.
+
+### Manual Validation
+
+Each model directory has a `.conf` file:
 
 ```hocon
 validate {
   input-file = "model-name.riddl"
 }
 ```
-
-### Validation Command
 
 ```bash
 # From the model directory
@@ -259,17 +292,15 @@ riddlc from model-name.conf validate
 
 ### riddlc Location
 
-riddlc is available via Homebrew:
-```bash
-brew install ossuminc/tap/riddlc
-```
+riddlc is available via:
+- **sbt** (automatic): `.riddlc/{version}/bin/riddlc` (downloaded
+  by `downloadRiddlc` task)
+- **Homebrew**: `brew install ossuminc/tap/riddlc`
+- **Staged build**: `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-It can also be found as a staged binary from the riddl build at:
-`../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
+Current version: **1.7.0** (set via `riddlcVersion` in `build.sbt`).
 
-Use version 1.2.1+ for validation.
-
-### Model File Structure
+### Model Include Structure
 
 Break models into separate files using `include`:
 
@@ -285,7 +316,8 @@ model-directory/
 └── README.md
 ```
 
-The main `.riddl` file uses `include "filename.riddl"` to compose the model.
+The main `.riddl` file uses `include "filename.riddl"` to compose
+the model.
 
 ---
 
@@ -341,8 +373,11 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 ## Version Compatibility
 
-| riddl-models | RIDDL Compiler | MCP Server |
-|--------------|----------------|------------|
-| 1.0.x | 1.0.x | 0.3.x |
+| Component | Version | Notes |
+|-----------|---------|-------|
+| riddlc | 1.7.0 | Set in `build.sbt` `riddlcVersion` |
+| riddl-lib | 1.3.1 | Test dependency for Scala validation |
+| sbt-ossuminc | 1.3.0 | Build plugin |
 
-Models are validated against the RIDDL grammar using the latest stable compiler.
+Models are validated against the RIDDL grammar using riddlc, both
+via `sbt compile` (automatic) and in the existing Scala test suite.

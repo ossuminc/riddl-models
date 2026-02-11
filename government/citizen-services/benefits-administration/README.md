@@ -2,6 +2,10 @@
 
 Government benefits eligibility, enrollment, and payments.
 
+## NAICS Code
+
+**923130** - Administration of Human Resource Programs
+
 ## Scope
 
 This model covers benefits programs, including:

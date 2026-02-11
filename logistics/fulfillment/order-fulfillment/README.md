@@ -2,6 +2,10 @@
 
 Pick, pack, and ship workflow for customer orders.
 
+## NAICS Code
+
+**493110** - General Warehousing and Storage
+
 ## Scope
 
 This model covers order fulfillment operations, including:

@@ -2,6 +2,10 @@
 
 Marketing campaign planning, execution, and optimization.
 
+## NAICS Code
+
+**541810** - Advertising Agencies
+
 ## Scope
 
 This model covers campaign management operations, including:

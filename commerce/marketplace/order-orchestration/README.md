@@ -2,6 +2,10 @@
 
 Multi-vendor order splitting and coordination.
 
+## NAICS Code
+
+**454110** - Electronic Shopping and Mail-Order Houses
+
 ## Overview
 
 This model handles marketplace orders that span multiple vendors, splitting

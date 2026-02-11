@@ -2,6 +2,10 @@
 
 Media planning, purchasing, and trafficking.
 
+## NAICS Code
+
+**541830** - Media Buying Agencies
+
 ## Scope
 
 This model covers media buying operations, including:

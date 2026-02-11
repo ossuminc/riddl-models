@@ -2,6 +2,10 @@
 
 Event catering operations from booking through delivery.
 
+## NAICS Code
+
+**722320** - Caterers
+
 ## Scope
 
 This model covers catering business operations, including:

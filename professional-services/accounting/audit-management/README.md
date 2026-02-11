@@ -2,6 +2,10 @@
 
 Audit planning, testing, and reporting.
 
+## NAICS Code
+
+**541211** - Offices of Certified Public Accountants
+
 ## Scope
 
 This model covers audit engagement operations, including:

@@ -3,6 +3,10 @@
 Network equipment inventory and lifecycle management for telecommunications
 providers.
 
+## NAICS Code
+
+**517311** - Wired Telecommunications Carriers
+
 ## Overview
 
 This domain model covers the complete lifecycle of network equipment from

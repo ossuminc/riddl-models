@@ -2,6 +2,10 @@
 
 Concierge and amenity management.
 
+## NAICS Code
+
+**721110** - Hotels and Motels
+
 ## Overview
 
 This model manages guest services including requests, amenities,

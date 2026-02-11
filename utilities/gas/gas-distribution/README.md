@@ -2,6 +2,10 @@
 
 Natural gas metering, pressure management, and safety operations.
 
+## NAICS Code
+
+**221210** - Natural Gas Distribution
+
 ## Scope
 
 This model covers gas distribution operations, including:

@@ -2,6 +2,10 @@
 
 Client engagement, workpapers, and service delivery.
 
+## NAICS Code
+
+**541211** - Offices of Certified Public Accountants
+
 ## Scope
 
 This model covers client accounting operations, including:

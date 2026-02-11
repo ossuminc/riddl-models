@@ -2,6 +2,10 @@
 
 Field, crop, and input management for agricultural operations.
 
+## NAICS Code
+
+**111000** - Crop Production
+
 ## Scope
 
 This model covers farm management operations, including:

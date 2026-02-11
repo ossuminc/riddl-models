@@ -2,6 +2,10 @@
 
 Provider scheduling and booking.
 
+## NAICS Code
+
+**621111** - Offices of Physicians
+
 ## Overview
 
 This model manages appointment scheduling including provider availability,

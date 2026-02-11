@@ -2,6 +2,10 @@
 
 Power outage detection, dispatch, and restoration.
 
+## NAICS Code
+
+**221122** - Electric Power Distribution
+
 ## Scope
 
 This model covers outage management operations, including:

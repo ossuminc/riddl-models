@@ -2,6 +2,10 @@
 
 Room status and housekeeping.
 
+## NAICS Code
+
+**721110** - Hotels and Motels
+
 ## Overview
 
 This model manages hotel property operations including room status,

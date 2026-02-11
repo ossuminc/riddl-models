@@ -2,6 +2,10 @@
 
 Flow management, custody transfer, and scheduling.
 
+## NAICS Code
+
+**486110** - Pipeline Transportation of Crude Oil
+
 ## Scope
 
 This model covers pipeline operations, including:

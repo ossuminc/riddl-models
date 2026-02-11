@@ -2,6 +2,10 @@
 
 Vehicle fleet management and rental operations.
 
+## NAICS Code
+
+**532111** - Passenger Car Rental
+
 ## Scope
 
 This model covers car rental operations, including:

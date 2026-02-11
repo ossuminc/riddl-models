@@ -2,6 +2,10 @@
 
 New customer onboarding and environment setup.
 
+## NAICS Code
+
+**511210** - Software Publishers
+
 ## Overview
 
 This model handles provisioning of new SaaS tenants including environment

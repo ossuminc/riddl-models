@@ -2,6 +2,10 @@
 
 Recipe management, batch execution, and genealogy.
 
+## NAICS Code
+
+**325000** - Chemical Manufacturing
+
 ## Scope
 
 This model covers batch processing operations, including:

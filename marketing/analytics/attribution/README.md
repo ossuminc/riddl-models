@@ -2,6 +2,10 @@
 
 Multi-touch attribution and conversion tracking.
 
+## NAICS Code
+
+**541910** - Marketing Research and Public Opinion Polling
+
 ## Scope
 
 This model covers marketing attribution, including:

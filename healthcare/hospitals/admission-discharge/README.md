@@ -2,6 +2,10 @@
 
 Patient flow and bed management.
 
+## NAICS Code
+
+**622110** - General Medical and Surgical Hospitals
+
 ## Overview
 
 This model manages inpatient flow including admissions, transfers between

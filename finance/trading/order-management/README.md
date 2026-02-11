@@ -2,6 +2,10 @@
 
 Securities order lifecycle.
 
+## NAICS Code
+
+**523150** - Investment Banking and Securities Intermediation
+
 ## Overview
 
 This model manages trading orders from entry through execution including

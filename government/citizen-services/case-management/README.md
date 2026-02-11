@@ -2,6 +2,10 @@
 
 Citizen case intake, investigation, and resolution.
 
+## NAICS Code
+
+**921190** - Other General Government Support
+
 ## Scope
 
 This model covers government case management, including:

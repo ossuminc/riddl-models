@@ -2,6 +2,10 @@
 
 Daily logs, inspections, and safety operations.
 
+## NAICS Code
+
+**238000** - Specialty Trade Contractors
+
 ## Scope
 
 This model covers job site operations, including:

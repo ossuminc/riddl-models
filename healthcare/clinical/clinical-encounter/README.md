@@ -2,6 +2,10 @@
 
 Visit documentation and orders.
 
+## NAICS Code
+
+**621111** - Offices of Physicians
+
 ## Overview
 
 This model manages clinical encounters including documentation, diagnoses,

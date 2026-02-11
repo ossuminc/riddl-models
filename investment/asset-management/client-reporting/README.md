@@ -2,6 +2,10 @@
 
 Investment statements and communications.
 
+## NAICS Code
+
+**523920** - Portfolio Management and Investment Advice
+
 ## Overview
 
 This model generates client reports including statements, performance

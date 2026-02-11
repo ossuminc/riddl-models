@@ -2,6 +2,10 @@
 
 Table and order management.
 
+## NAICS Code
+
+**722511** - Full-Service Restaurants
+
 ## Overview
 
 This model manages restaurant operations including table management,

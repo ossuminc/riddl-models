@@ -2,6 +2,10 @@
 
 Shipment booking, documentation, and cargo tracking.
 
+## NAICS Code
+
+**488510** - Freight Transportation Arrangement
+
 ## Scope
 
 This model covers freight forwarding operations, including:

@@ -2,6 +2,10 @@
 
 Merchant onboarding and settlement.
 
+## NAICS Code
+
+**522320** - Financial Transactions Processing
+
 ## Overview
 
 This model manages merchant relationships from onboarding through

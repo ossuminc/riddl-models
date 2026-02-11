@@ -2,6 +2,10 @@
 
 PE portfolio company management.
 
+## NAICS Code
+
+**523910** - Miscellaneous Intermediation
+
 ## Overview
 
 This model manages portfolio company operations including value creation

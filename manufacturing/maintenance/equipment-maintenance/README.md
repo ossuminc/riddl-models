@@ -2,6 +2,10 @@
 
 Preventive, corrective, and condition-based maintenance.
 
+## NAICS Code
+
+**811310** - Commercial and Industrial Machinery Repair
+
 ## Scope
 
 This model covers equipment maintenance, including:

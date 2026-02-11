@@ -2,6 +2,10 @@
 
 Patient demographics and intake.
 
+## NAICS Code
+
+**621111** - Offices of Physicians
+
 ## Overview
 
 This model manages patient registration including demographics, insurance

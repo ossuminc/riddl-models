@@ -2,6 +2,10 @@
 
 Tolerances, metrology, and certification for high-precision parts.
 
+## NAICS Code
+
+**332710** - Machine Shops
+
 ## Scope
 
 This model covers precision manufacturing, including:

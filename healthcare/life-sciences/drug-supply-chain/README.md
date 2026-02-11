@@ -2,6 +2,10 @@
 
 Pharmaceutical manufacturing and distribution.
 
+## NAICS Code
+
+**325411** - Medicinal and Botanical Manufacturing
+
 ## Overview
 
 This model manages pharmaceutical supply chain including manufacturing,

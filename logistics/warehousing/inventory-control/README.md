@@ -2,6 +2,10 @@
 
 Cycle counts, adjustments, and inventory transfers.
 
+## NAICS Code
+
+**493110** - General Warehousing and Storage
+
 ## Scope
 
 This model covers inventory control operations, including:

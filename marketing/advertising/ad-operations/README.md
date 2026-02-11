@@ -2,6 +2,10 @@
 
 Creative management, targeting, and campaign reporting.
 
+## NAICS Code
+
+**541810** - Advertising Agencies
+
 ## Scope
 
 This model covers ad operations, including:

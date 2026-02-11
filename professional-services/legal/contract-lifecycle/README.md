@@ -2,6 +2,10 @@
 
 Contract drafting, negotiation, and execution.
 
+## NAICS Code
+
+**541110** - Offices of Lawyers
+
 ## Scope
 
 This model covers contract management, including:

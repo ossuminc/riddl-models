@@ -2,6 +2,10 @@
 
 P&C policy lifecycle management.
 
+## NAICS Code
+
+**524126** - Direct Property and Casualty Insurance Carriers
+
 ## Overview
 
 This model manages insurance policies from quote through renewal including

@@ -2,6 +2,10 @@
 
 Terminal and cargo handling at maritime ports.
 
+## NAICS Code
+
+**488310** - Port and Harbor Operations
+
 ## Scope
 
 This model covers port terminal operations, including:

@@ -2,6 +2,10 @@
 
 Tour packaging, itinerary management, and guide coordination.
 
+## NAICS Code
+
+**561510** - Travel Agencies
+
 ## Scope
 
 This model covers tour operator functions, including:

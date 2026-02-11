@@ -2,6 +2,10 @@
 
 Rx intake and refill processing.
 
+## NAICS Code
+
+**446110** - Pharmacies and Drug Retailers
+
 ## Overview
 
 This model manages prescriptions including intake, verification, refill

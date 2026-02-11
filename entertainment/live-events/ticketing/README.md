@@ -2,6 +2,10 @@
 
 Event ticket sales, seating, and access control.
 
+## NAICS Code
+
+**711310** - Promoters of Performing Arts and Similar Events
+
 ## Scope
 
 This model covers ticketing operations, including:

@@ -2,6 +2,10 @@
 
 Daily store management and staffing.
 
+## NAICS Code
+
+**452000** - General Merchandise Retailers
+
 ## Overview
 
 This model handles store operational activities including opening/closing,

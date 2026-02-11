@@ -2,6 +2,10 @@
 
 Professional certification exams, issuance, and renewals.
 
+## NAICS Code
+
+**611710** - Educational Support Services
+
 ## Scope
 
 This model covers credentialing operations, including:

@@ -2,6 +2,10 @@
 
 Ship operations, voyage planning, and crew management.
 
+## NAICS Code
+
+**483000** - Water Transportation
+
 ## Scope
 
 This model covers vessel operations, including:

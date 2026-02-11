@@ -2,6 +2,10 @@
 
 Course catalog, scheduling, and registration.
 
+## NAICS Code
+
+**611310** - Colleges, Universities, and Professional Schools
+
 ## Scope
 
 This model covers course administration, including:

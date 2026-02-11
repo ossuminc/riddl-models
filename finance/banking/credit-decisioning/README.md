@@ -2,6 +2,10 @@
 
 Risk scoring and credit limit determination.
 
+## NAICS Code
+
+**522110** - Commercial Banking
+
 ## Overview
 
 This model evaluates creditworthiness and determines appropriate credit

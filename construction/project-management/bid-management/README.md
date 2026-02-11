@@ -2,6 +2,10 @@
 
 RFP response, estimating, and contract awards.
 
+## NAICS Code
+
+**236200** - Nonresidential Building Construction
+
 ## Scope
 
 This model covers bid management operations, including:

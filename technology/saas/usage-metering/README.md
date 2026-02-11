@@ -2,6 +2,10 @@
 
 Consumption tracking for usage-based billing.
 
+## NAICS Code
+
+**511210** - Software Publishers
+
 ## Overview
 
 This model tracks product usage for consumption-based pricing including

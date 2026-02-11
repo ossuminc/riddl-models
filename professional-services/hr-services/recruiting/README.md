@@ -2,6 +2,10 @@
 
 Job requisitions, candidate management, and hiring.
 
+## NAICS Code
+
+**561311** - Employment Placement Agencies
+
 ## Scope
 
 This model covers recruiting operations, including:

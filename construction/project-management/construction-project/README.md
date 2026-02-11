@@ -2,6 +2,10 @@
 
 Project planning, scheduling, and cost control.
 
+## NAICS Code
+
+**236200** - Nonresidential Building Construction
+
 ## Scope
 
 This model covers construction project management, including:

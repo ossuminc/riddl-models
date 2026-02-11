@@ -2,6 +2,10 @@
 
 Show production, crew scheduling, and equipment coordination.
 
+## NAICS Code
+
+**711310** - Promoters of Performing Arts and Similar Events
+
 ## Scope
 
 This model covers event production operations, including:

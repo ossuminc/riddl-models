@@ -2,6 +2,10 @@
 
 Advanced Metering Infrastructure (AMI) and usage analytics.
 
+## NAICS Code
+
+**221100** - Electric Power Generation, Transmission and Distribution
+
 ## Scope
 
 This model covers smart metering operations, including:

@@ -2,6 +2,10 @@
 
 Product listings, categories, and merchandising.
 
+## NAICS Code
+
+**454110** - Electronic Shopping and Mail-Order Houses
+
 ## Overview
 
 This model manages the product catalog including product information,

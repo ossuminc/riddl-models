@@ -2,6 +2,10 @@
 
 Post-trade clearing and settlement.
 
+## NAICS Code
+
+**523150** - Investment Banking and Securities Intermediation
+
 ## Overview
 
 This model handles post-trade processing including confirmation, clearing,

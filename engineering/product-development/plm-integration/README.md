@@ -2,6 +2,10 @@
 
 CAD integration, BOM management, and engineering change.
 
+## NAICS Code
+
+**541330** - Engineering Services
+
 ## Scope
 
 This model covers PLM integration, including:

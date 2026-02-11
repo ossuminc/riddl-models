@@ -2,6 +2,10 @@
 
 Vehicle and driver administration for commercial fleets.
 
+## NAICS Code
+
+**484000** - Truck Transportation
+
 ## Scope
 
 This model covers fleet administration, including:

@@ -2,6 +2,10 @@
 
 Professional and business license applications and renewals.
 
+## NAICS Code
+
+**926150** - Regulation, Licensing, and Inspection of Miscellaneous Commercial Sectors
+
 ## Scope
 
 This model covers licensing operations, including:
