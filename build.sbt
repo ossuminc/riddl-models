@@ -7,8 +7,7 @@ Global / onChangedBuildSource := ReloadOnSourceChanges
 
 enablePlugins(OssumIncPlugin)
 
-lazy val riddlLibVersion = "1.3.1"
-lazy val riddlcVersion = "1.7.0"
+lazy val riddlVersion = "1.8.0"
 
 // Custom task keys
 lazy val downloadRiddlc = taskKey[File](
@@ -24,7 +23,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
   .settings(
     description := "Library of RIDDL models and reusable patterns",
     libraryDependencies ++= Seq(
-      "com.ossuminc" %% "riddl-lib" % riddlLibVersion % Test,
+      "com.ossuminc" %% "riddl-lib" % riddlVersion % Test,
       "org.scalatest" %% "scalatest" % "3.2.19" % Test
     ),
     // Make the base directory available as a system property for the test
@@ -36,7 +35,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
 
     downloadRiddlc := {
       val log = streams.value.log
-      val cacheDir = baseDirectory.value / ".riddlc" / riddlcVersion
+      val cacheDir = baseDirectory.value / ".riddlc" / riddlVersion
       val osName = sys.props.getOrElse("os.name", "").toLowerCase
       val osArch = sys.props.getOrElse("os.arch", "").toLowerCase
 
@@ -55,17 +54,17 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       val binary = cacheDir / "bin" / "riddlc"
 
       if (!binary.exists()) {
-        log.info(s"Downloading riddlc $riddlcVersion ($assetName)...")
+        log.info(s"Downloading riddlc $riddlVersion ($assetName)...")
         IO.createDirectory(cacheDir)
         val zipFile = cacheDir / assetName
         val url =
-          s"https://github.com/ossuminc/riddl/releases/download/$riddlcVersion/$assetName"
+          s"https://github.com/ossuminc/riddl/releases/download/$riddlVersion/$assetName"
         Process(Seq("curl", "-fSL", "-o", zipFile.getAbsolutePath, url)).!!
         IO.unzip(zipFile, cacheDir)
         binary.setExecutable(true)
         IO.delete(zipFile)
         log.info(
-          s"riddlc $riddlcVersion installed to ${binary.getAbsolutePath}"
+          s"riddlc $riddlVersion installed to ${binary.getAbsolutePath}"
         )
       }
 
@@ -85,7 +84,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
         --- (base / ".riddlc" ** "*.conf")).get.sorted
 
       log.info(
-        s"Validating ${confFiles.size} RIDDL models with riddlc $riddlcVersion..."
+        s"Validating ${confFiles.size} RIDDL models with riddlc $riddlVersion..."
       )
 
       var failures = List.empty[(String, String)]
