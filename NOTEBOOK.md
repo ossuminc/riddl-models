@@ -6,16 +6,53 @@ Development journal for active work on the riddl-models repository.
 
 ## Current Status
 
-**Date**: 2026-02-11
-**Phase**: Build Integration Complete
+**Date**: 2026-02-12
+**Phase**: Warning-Free Validation
 
-- **186 models** validated with riddlc 1.7.0 via `sbt compile`
+- **186 models** validated with riddlc 1.8.0 via `sbt compile`
+  — zero warnings, zero errors
 - All 186 model READMEs have NAICS codes
-- `sbt compile` auto-downloads riddlc and validates all models (~6s)
+- `sbt compile` auto-downloads riddlc and validates all models (~8s)
 
 ---
 
 ## Completed Work
+
+### 2026-02-12: Fix All riddlc 1.8.0 Amber Warnings
+
+Upgraded from riddlc 1.7.0 to 1.8.0 and resolved all ~1760 amber-level
+warnings across 180 models (630 files changed, 2950 insertions, 1729
+deletions).
+
+**Three categories of warnings resolved:**
+
+1. **Field overloading (~1700 warnings)** — Same field name used with
+   different types within a context scope. Fixed by renaming fields
+   with semantic prefixes:
+   - `status` → `orderStatus`, `paymentStatus`, `seasonStatus`, etc.
+   - `amount` → `paymentAmount`, `refundAmount`, `captureAmount`, etc.
+   - `reason` → `cancellationReason`, `holdReason`, etc.
+   - `endDate`/`startDate` → `filterEndDate`, `campaignEndDate`, etc.
+   - Optional vs non-optional conflicts → `updatedCompletedAt`,
+     `currentBooking`, `assignedDriver`, etc.
+   - `many T` vs `many optional T` → `scheduledMatches`, etc.
+
+2. **Repository handlers (~30 warnings)** — Repositories had
+   `on event Entity.EventCreated` which should be
+   `on command Entity.CreateEntity` (repositories handle commands).
+
+3. **Adaptor handlers (~30 warnings)** — "to" adaptors referenced
+   source entity events instead of target context commands (e.g.
+   `on event Cart.CartCheckedOut` →
+   `on command OrderService.CreateOrder`).
+
+Also updated build.sbt to unify `riddlLibVersion`/`riddlcVersion`
+into single `riddlVersion = "1.8.0"`.
+
+**Process:** Used a Python script for mechanical repository handler
+fixes across 157 models, then 10 parallel Claude agents to fix
+remaining field overloading, adaptor, and edge-case warnings across
+all 20 sectors. Final validation sweep confirmed 186/186 pass.
 
 ### 2026-02-11: NAICS Codes + sbt Validation Integration
 
@@ -323,7 +360,8 @@ Completed all models for the first two sectors:
 
 ## Active Work
 
-No active work items.
+No active work items. All 186 models pass riddlc 1.8.0 with zero
+warnings and zero errors.
 
 ### Sector Completion Status
 
@@ -402,5 +440,5 @@ author OssumInc is {
 
 - riddlc: auto-downloaded by `sbt compile` (version in `build.sbt`)
 - Also available via Homebrew or staged build
-- riddlc 1.7.0 validates all 186 models in ~6 seconds
+- riddlc 1.8.0 validates all 186 models in ~8 seconds
 - Reference model: `finance/banking/account-management/`

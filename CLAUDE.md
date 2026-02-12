@@ -216,6 +216,32 @@ any `}` on the same line. This is WRONG: `described by { | Text here. }`
 - Use suffixes like `State` or `Status` to disambiguate
 - Example: enum `DeliveryFailed` vs state `DeliveryFailedState`
 
+**Field Overloading (riddlc 1.8.0+)**:
+- The same field name cannot appear with different types across a
+  context scope (including `Type` vs `optional Type`, `many Type`
+  vs `many optional Type`)
+- Fix by renaming with semantic prefixes:
+  - `status` → `orderStatus`, `paymentStatus`, etc.
+  - `amount` → `paymentAmount`, `refundAmount`, etc.
+  - `reason` → `cancellationReason`, `holdReason`, etc.
+  - Query filter fields → `filterStatus`, `filterEndDate`, etc.
+  - Optional variants in state → `updatedCompletedAt`,
+    `currentBooking`, `assignedDriver`, etc.
+
+**Repository Handlers**:
+- Repositories handle **commands**, not events
+- Use `on command Entity.CreateEntity`, NOT `on event`
+- Event-to-command name mapping: `EntityCreated` → `CreateEntity`,
+  `EntityUpdated` → `UpdateEntity`, etc.
+
+**"to" Adaptor Handlers**:
+- Must reference the **target** context's command types
+- Use `on command TargetContext.CommandName`, NOT source events
+
+**Projector Handlers**:
+- Projectors handle **events** to build read models
+- Do NOT use `on command` or `on query` in projector handlers
+
 **External Contexts**:
 - Mark external bounded contexts with `option is external` in the `with` block
 - NOT inside the context body
@@ -272,7 +298,7 @@ sbt v                 # Short alias
 ```
 
 The riddlc binary is cached in `.riddlc/` (gitignored). To update
-riddlc, change `riddlcVersion` in `build.sbt` and re-run — the new
+riddlc, change `riddlVersion` in `build.sbt` and re-run — the new
 version will be downloaded automatically.
 
 ### Manual Validation
@@ -375,8 +401,8 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 1.7.0 | Set in `build.sbt` `riddlcVersion` |
-| riddl-lib | 1.3.1 | Test dependency for Scala validation |
+| riddlc | 1.8.0 | Set in `build.sbt` `riddlVersion` |
+| riddl-lib | 1.8.0 | Test dependency for Scala validation |
 | sbt-ossuminc | 1.3.0 | Build plugin |
 
 Models are validated against the RIDDL grammar using riddlc, both
