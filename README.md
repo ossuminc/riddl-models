@@ -36,6 +36,18 @@ riddl-models/
 └── professional-services/ # Legal, Accounting, HR
 ```
 
+## NAICS Industry Index
+
+All 187 models are classified by
+[NAICS](https://www.census.gov/naics/) code, covering 61 unique
+industry codes across 20 sectors.
+
+- **[NAICS.md](NAICS.md)** - Human-readable index organized by
+  NAICS sector hierarchy (2-digit sector, 3-digit subsector, full
+  industry code)
+- **[NAICS.json](NAICS.json)** - Machine-readable JSON mapping
+  NAICS codes to model paths, for use by websites and tooling
+
 ## Quick Start
 
 ### Using a Model
