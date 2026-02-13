@@ -43,6 +43,12 @@ to generate Binary AST (.bast) files for all models.
    output has known limitations (riddlc 1.8.2 bug). BAST generation
    itself is reliable.
 
+5. **Bug report** — Wrote detailed `unbastify-bug-report.md`
+   documenting two distinct bugs (deserialization crash on 2 models,
+   lossy round-trip on others) with full reproduction steps, failing
+   model analysis, and structural feature inventory. Moved to
+   `../riddl/unbastify-bug-report.md` for the riddl team.
+
 ### 2026-02-12: Fix All riddlc 1.8.0 Amber Warnings
 
 Upgraded from riddlc 1.7.0 to 1.8.0 and resolved all ~1760 amber-level
