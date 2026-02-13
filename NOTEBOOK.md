@@ -6,17 +6,42 @@ Development journal for active work on the riddl-models repository.
 
 ## Current Status
 
-**Date**: 2026-02-12
-**Phase**: Warning-Free Validation
+**Date**: 2026-02-13
+**Phase**: BAST Generation Complete
 
-- **186 models** validated with riddlc 1.8.0 via `sbt compile`
+- **187 models** validated with riddlc 1.8.2 via `sbt compile`
   — zero warnings, zero errors
-- All 186 model READMEs have NAICS codes
+- **187 .bast files** generated via `sbt bastify` (~4s)
+- All model READMEs have NAICS codes
 - `sbt compile` auto-downloads riddlc and validates all models (~8s)
+- Build task implementations extracted to `project/RiddlcTasks.scala`
 
 ---
 
 ## Completed Work
+
+### 2026-02-13: Update to riddlc 1.8.2 + BAST Generation
+
+Upgraded from riddlc 1.8.0 to 1.8.2 and added `sbt bastify` command
+to generate Binary AST (.bast) files for all models.
+
+**Changes:**
+
+1. **Build refactor** — Extracted task implementations from `build.sbt`
+   to `project/RiddlcTasks.scala` (Scala 2.12). `build.sbt` now
+   declares task keys and wires them to `RiddlcTasks` methods.
+
+2. **riddlc 1.8.2 upgrade** — Updated `riddlVersion` from `1.8.0` to
+   `1.8.2`. All 187 models validate cleanly (no new warnings).
+
+3. **bastify task** — Added `riddlcBastifyAll` task with aliases
+   `bastify` and `b`. Extracts `input-file` from each model's `.conf`
+   and runs `riddlc bastify <file>`. Generated 187 .bast files (~4s).
+
+4. **Round-trip verification** — Spot-checked 7 models with
+   `riddlc unbastify`. 5/7 deserialized successfully but unbastified
+   output has known limitations (riddlc 1.8.2 bug). BAST generation
+   itself is reliable.
 
 ### 2026-02-12: Fix All riddlc 1.8.0 Amber Warnings
 
@@ -360,8 +385,8 @@ Completed all models for the first two sectors:
 
 ## Active Work
 
-No active work items. All 186 models pass riddlc 1.8.0 with zero
-warnings and zero errors.
+No active work items. All 187 models pass riddlc 1.8.2 with zero
+warnings and zero errors. All 187 .bast files generated.
 
 ### Sector Completion Status
 
@@ -440,5 +465,7 @@ author OssumInc is {
 
 - riddlc: auto-downloaded by `sbt compile` (version in `build.sbt`)
 - Also available via Homebrew or staged build
-- riddlc 1.8.0 validates all 186 models in ~8 seconds
+- riddlc 1.8.2 validates all 187 models in ~8 seconds
+- `sbt bastify` generates 187 .bast files in ~4 seconds
 - Reference model: `finance/banking/account-management/`
+- Build task implementations in `project/RiddlcTasks.scala`

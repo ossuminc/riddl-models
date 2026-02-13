@@ -1,13 +1,11 @@
 import com.ossuminc.sbt.OssumIncPlugin
 import sbt.Keys._
 
-import scala.sys.process._
-
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
 enablePlugins(OssumIncPlugin)
 
-lazy val riddlVersion = "1.8.0"
+lazy val riddlVersion = "1.8.2"
 
 // Custom task keys
 lazy val downloadRiddlc = taskKey[File](
@@ -15,6 +13,9 @@ lazy val downloadRiddlc = taskKey[File](
 )
 lazy val riddlcValidateAll = taskKey[Unit](
   "Validate all RIDDL models using riddlc"
+)
+lazy val riddlcBastifyAll = taskKey[Unit](
+  "Generate .bast files for all RIDDL models using riddlc bastify"
 )
 
 lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
@@ -31,99 +32,32 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       s"-Driddl.models.basedir=${baseDirectory.value.getAbsolutePath}",
     Test / fork := true,
 
-    // --- riddlc download and validation ---
+    // --- riddlc tasks ---
 
     downloadRiddlc := {
-      val log = streams.value.log
-      val cacheDir = baseDirectory.value / ".riddlc" / riddlVersion
-      val osName = sys.props.getOrElse("os.name", "").toLowerCase
-      val osArch = sys.props.getOrElse("os.arch", "").toLowerCase
-
-      val assetName = {
-        if (osName.contains("mac") &&
-            (osArch.contains("aarch64") || osArch.contains("arm64"))) {
-          "riddlc-macos-arm64.zip"
-        } else if (osName.contains("linux") &&
-                   (osArch.contains("amd64") || osArch.contains("x86_64"))) {
-          "riddlc-linux-x86_64.zip"
-        } else {
-          "riddlc.zip" // JVM universal package (requires Java)
-        }
-      }
-
-      val binary = cacheDir / "bin" / "riddlc"
-
-      if (!binary.exists()) {
-        log.info(s"Downloading riddlc $riddlVersion ($assetName)...")
-        IO.createDirectory(cacheDir)
-        val zipFile = cacheDir / assetName
-        val url =
-          s"https://github.com/ossuminc/riddl/releases/download/$riddlVersion/$assetName"
-        Process(Seq("curl", "-fSL", "-o", zipFile.getAbsolutePath, url)).!!
-        IO.unzip(zipFile, cacheDir)
-        binary.setExecutable(true)
-        IO.delete(zipFile)
-        log.info(
-          s"riddlc $riddlVersion installed to ${binary.getAbsolutePath}"
-        )
-      }
-
-      binary
+      RiddlcTasks.downloadRiddlc(
+        baseDirectory.value,
+        riddlVersion,
+        streams.value.log
+      )
     },
 
     riddlcValidateAll := {
-      val log = streams.value.log
-      val binary = downloadRiddlc.value
-      val base = baseDirectory.value
-
-      // Find all .conf files, excluding non-model directories
-      val confFiles = ((base ** "*.conf")
-        --- (base / "patterns" ** "*.conf")
-        --- (base / "target" ** "*.conf")
-        --- (base / "project" ** "*.conf")
-        --- (base / ".riddlc" ** "*.conf")).get.sorted
-
-      log.info(
-        s"Validating ${confFiles.size} RIDDL models with riddlc $riddlVersion..."
+      RiddlcTasks.validateAll(
+        downloadRiddlc.value,
+        baseDirectory.value,
+        riddlVersion,
+        streams.value.log
       )
+    },
 
-      var failures = List.empty[(String, String)]
-      confFiles.foreach { conf =>
-        val relPath = base.toPath.relativize(conf.toPath).toString
-        val errOutput = new StringBuilder
-        val outOutput = new StringBuilder
-        val logger = ProcessLogger(
-          out => outOutput.append(out).append("\n"),
-          err => errOutput.append(err).append("\n")
-        )
-        val exitCode = Process(
-          Seq(binary.getAbsolutePath, "from", conf.getAbsolutePath, "validate"),
-          conf.getParentFile
-        ).!(logger)
-
-        if (exitCode != 0) {
-          val detail = if (errOutput.nonEmpty) errOutput.toString.trim
-                       else outOutput.toString.trim
-          failures = (relPath, detail) :: failures
-          log.error(s"  FAILED: $relPath")
-        } else {
-          log.info(s"  OK: $relPath")
-        }
-      }
-
-      if (failures.nonEmpty) {
-        log.error("")
-        log.error(s"${failures.size} model(s) failed validation:")
-        failures.reverse.foreach { case (path, detail) =>
-          log.error(s"--- $path ---")
-          if (detail.nonEmpty) { log.error(detail) }
-        }
-        sys.error(
-          s"${failures.size} of ${confFiles.size} models failed riddlc validation"
-        )
-      } else {
-        log.info(s"All ${confFiles.size} models validated successfully.")
-      }
+    riddlcBastifyAll := {
+      RiddlcTasks.bastifyAll(
+        downloadRiddlc.value,
+        baseDirectory.value,
+        riddlVersion,
+        streams.value.log
+      )
     },
 
     // Wire validation into compile
@@ -136,3 +70,5 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
 // Command aliases
 addCommandAlias("validate", "riddlcValidateAll")
 addCommandAlias("v", "riddlcValidateAll")
+addCommandAlias("bastify", "riddlcBastifyAll")
+addCommandAlias("b", "riddlcBastifyAll")
