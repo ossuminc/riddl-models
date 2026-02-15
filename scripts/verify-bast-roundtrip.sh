@@ -13,10 +13,12 @@
 #
 # Three checks per model:
 #   1. Unbastify: .bast → single .riddl (catches deserialization bugs)
-#   2. Binary round-trip: re-bastify unbastified .riddl, compare .bast
-#      files byte-for-byte (catches lossy serialization)
-#   3. Source round-trip: prettify+flatten both original and unbastified
-#      .riddl, diff them (catches semantic content loss)
+#   2. Binary round-trip (apples-to-apples): prettify+flatten the
+#      original multi-file model to a single .riddl, bastify that,
+#      then compare against the bastified unbastified .riddl. Both
+#      come from a single-file source so .bast should be identical.
+#   3. Source round-trip: prettify+flatten both original and
+#      unbastified .riddl, diff them (catches semantic content loss)
 
 set -euo pipefail
 
@@ -140,50 +142,90 @@ for conf in "${CONF_FILES[@]}"; do
     fi
   fi
 
-  # --- Check 2: Binary round-trip (re-bastify and compare) ---
+  # --- Check 2: Binary round-trip (apples-to-apples) ---
+  # Prettify+flatten the original → single .riddl. Copy both that
+  # and the unbastified .riddl into a shared dir with the same
+  # filename, then bastify each. The .bast format embeds the full
+  # file path, so both must be bastified from the same path to get
+  # comparable output.
   if [[ "$failed" == false ]]; then
-    rebast_dir="$work_dir/rebastified"
-    mkdir -p "$rebast_dir"
+    orig_flat_dir="$work_dir/orig-flat"
+    mkdir -p "$orig_flat_dir"
 
-    # Re-bastify the unbastified .riddl
-    if ! rebast_output=$("$RIDDLC" bastify "$unbast_riddl" 2>&1); then
-      failed=true
-      fail_reasons="re-bastify error: $rebast_output"
+    # Flatten original multi-file model to single .riddl
+    if ! flat_output=$("$RIDDLC" prettify "$riddl_file" \
+         -o "$orig_flat_dir" --single-file true 2>&1); then
+      echo "  WARN: $rel_path — prettify original failed, skipping Check 2"
     else
-      # The re-bastified .bast will be next to the unbastified .riddl
-      rebast_bast="${unbast_riddl%.riddl}.bast"
-      if [[ ! -f "$rebast_bast" ]]; then
-        failed=true
-        fail_reasons="re-bastify produced no .bast file"
-      elif ! cmp -s "$bast_file" "$rebast_bast"; then
-        orig_size=$(stat -f%z "$bast_file" 2>/dev/null \
-          || stat -c%s "$bast_file")
-        new_size=$(stat -f%z "$rebast_bast" 2>/dev/null \
-          || stat -c%s "$rebast_bast")
-        failed=true
-        fail_reasons="binary mismatch: original=${orig_size}B, "\
-"re-bastified=${new_size}B"
+      orig_flat_raw="$(find "$orig_flat_dir" -name "*.riddl" -type f \
+        | head -1 || true)"
+
+      # Keep a copy with the original name for Check 3
+      if [[ -n "$orig_flat_raw" ]] && [[ -f "$orig_flat_raw" ]]; then
+        orig_flat="$orig_flat_dir/$input_file"
+        if [[ "$orig_flat_raw" != "$orig_flat" ]]; then
+          mv "$orig_flat_raw" "$orig_flat"
+        fi
+      fi
+
+      if [[ -n "${orig_flat:-}" ]] && [[ -f "${orig_flat:-}" ]]; then
+        # Bastify both from the EXACT same path so the embedded
+        # path in .bast is identical. Copy one file in, bastify,
+        # save the .bast, then replace with the other and bastify.
+        bast_cmp_dir="$work_dir/bast-compare"
+        mkdir -p "$bast_cmp_dir"
+        bast_cmp_riddl="$bast_cmp_dir/$input_file"
+        bast_cmp_bast="$bast_cmp_dir/${input_file%.riddl}.bast"
+
+        # Bastify flattened original
+        cp "$orig_flat" "$bast_cmp_riddl"
+        if ! flat_bast_output=$("$RIDDLC" bastify \
+             "$bast_cmp_riddl" 2>&1); then
+          failed=true
+          fail_reasons="bastify flattened original error: $flat_bast_output"
+        else
+          flat_bast="$bast_cmp_dir/flat.bast"
+          mv "$bast_cmp_bast" "$flat_bast"
+
+          # Bastify unbastified from same path
+          cp "$unbast_riddl" "$bast_cmp_riddl"
+          if ! unbast_bast_output=$("$RIDDLC" bastify \
+               "$bast_cmp_riddl" 2>&1); then
+            failed=true
+            fail_reasons="re-bastify error: $unbast_bast_output"
+          else
+            unbast_bast="$bast_cmp_dir/unbast.bast"
+            mv "$bast_cmp_bast" "$unbast_bast"
+
+            if [[ ! -f "$flat_bast" ]]; then
+              failed=true
+              fail_reasons="bastify flattened original produced no .bast"
+            elif [[ ! -f "$unbast_bast" ]]; then
+              failed=true
+              fail_reasons="re-bastify produced no .bast file"
+            elif ! cmp -s "$flat_bast" "$unbast_bast"; then
+              flat_size=$(stat -f%z "$flat_bast" 2>/dev/null \
+                || stat -c%s "$flat_bast")
+              unbast_size=$(stat -f%z "$unbast_bast" 2>/dev/null \
+                || stat -c%s "$unbast_bast")
+              failed=true
+              fail_reasons="binary mismatch: flattened=${flat_size}B, "\
+"unbastified=${unbast_size}B"
+            fi
+          fi
+        fi
       fi
     fi
   fi
 
   # --- Check 3: Source round-trip (prettify --single-file) ---
+  # Prettify both original and unbastified to single files, then
+  # compare both the .riddl text AND the .bast generated from each.
   if [[ "$failed" == false ]]; then
-    orig_pretty_dir="$work_dir/orig-pretty"
     unbast_pretty_dir="$work_dir/unbast-pretty"
-    mkdir -p "$orig_pretty_dir" "$unbast_pretty_dir"
+    mkdir -p "$unbast_pretty_dir"
 
-    # Prettify original (multi-file → single flattened file)
-    orig_pretty_ok=true
-    if ! pretty_output=$("$RIDDLC" prettify "$riddl_file" \
-         -o "$orig_pretty_dir" --single-file true 2>&1); then
-      # prettify failure is not necessarily a round-trip bug —
-      # could be a prettify limitation. Warn but don't fail.
-      echo "  WARN: $rel_path — prettify original failed: $pretty_output"
-      orig_pretty_ok=false
-    fi
-
-    # Prettify unbastified
+    # We already have orig_flat from Check 2. Prettify unbastified.
     unbast_pretty_ok=true
     if ! pretty_output=$("$RIDDLC" prettify "$unbast_riddl" \
          -o "$unbast_pretty_dir" --single-file true 2>&1); then
@@ -191,21 +233,75 @@ for conf in "${CONF_FILES[@]}"; do
       unbast_pretty_ok=false
     fi
 
-    # Compare if both succeeded
-    if [[ "$orig_pretty_ok" == true ]] \
+    # Compare if both flattened files exist
+    if [[ -n "${orig_flat:-}" ]] && [[ -f "${orig_flat:-}" ]] \
        && [[ "$unbast_pretty_ok" == true ]]; then
-      orig_flat="$(find "$orig_pretty_dir" -name "*.riddl" -type f \
-        | head -1 || true)"
-      unbast_flat="$(find "$unbast_pretty_dir" -name "*.riddl" -type f \
+      unbast_flat_raw="$(find "$unbast_pretty_dir" -name "*.riddl" -type f \
         | head -1 || true)"
 
-      if [[ -n "$orig_flat" ]] && [[ -n "$unbast_flat" ]]; then
+      # Rename to match original filename for .bast comparison
+      unbast_flat=""
+      if [[ -n "$unbast_flat_raw" ]] && [[ -f "$unbast_flat_raw" ]]; then
+        unbast_flat="$unbast_pretty_dir/$input_file"
+        if [[ "$unbast_flat_raw" != "$unbast_flat" ]]; then
+          mv "$unbast_flat_raw" "$unbast_flat"
+        fi
+      fi
+
+      if [[ -n "$unbast_flat" ]] && [[ -f "$unbast_flat" ]]; then
+        # Compare .riddl text
         if ! diff_output=$(diff -u "$orig_flat" "$unbast_flat" 2>&1); then
           diff_lines=$(echo "$diff_output" | wc -l | tr -d ' ')
           failed=true
           fail_reasons="prettify diff: $diff_lines lines differ"
-          # Save diff for inspection
           echo "$diff_output" > "$work_dir/prettify.diff"
+        fi
+
+        # Compare .bast from both prettified single files.
+        # Bastify from the exact same path for comparable output.
+        if [[ "$failed" == false ]]; then
+          pretty_cmp_dir="$work_dir/pretty-bast-compare"
+          mkdir -p "$pretty_cmp_dir"
+          pretty_cmp_riddl="$pretty_cmp_dir/$input_file"
+          pretty_cmp_bast="$pretty_cmp_dir/${input_file%.riddl}.bast"
+
+          # Bastify prettified original
+          cp "$orig_flat" "$pretty_cmp_riddl"
+          orig_flat_bast_ok=true
+          if ! bast_output=$("$RIDDLC" bastify \
+               "$pretty_cmp_riddl" 2>&1); then
+            echo "  WARN: $rel_path — bastify prettified original failed"
+            orig_flat_bast_ok=false
+          else
+            mv "$pretty_cmp_bast" "$pretty_cmp_dir/orig.bast"
+          fi
+
+          # Bastify prettified unbastified from same path
+          cp "$unbast_flat" "$pretty_cmp_riddl"
+          unbast_flat_bast_ok=true
+          if ! bast_output=$("$RIDDLC" bastify \
+               "$pretty_cmp_riddl" 2>&1); then
+            echo "  WARN: $rel_path — bastify prettified unbastified failed"
+            unbast_flat_bast_ok=false
+          else
+            mv "$pretty_cmp_bast" "$pretty_cmp_dir/unbast.bast"
+          fi
+
+          if [[ "$orig_flat_bast_ok" == true ]] \
+             && [[ "$unbast_flat_bast_ok" == true ]]; then
+            if [[ -f "$pretty_cmp_dir/orig.bast" ]] \
+               && [[ -f "$pretty_cmp_dir/unbast.bast" ]] \
+               && ! cmp -s "$pretty_cmp_dir/orig.bast" \
+                    "$pretty_cmp_dir/unbast.bast"; then
+              orig_fb_size=$(stat -f%z "$pretty_cmp_dir/orig.bast" \
+                2>/dev/null || stat -c%s "$pretty_cmp_dir/orig.bast")
+              unbast_fb_size=$(stat -f%z "$pretty_cmp_dir/unbast.bast" \
+                2>/dev/null || stat -c%s "$pretty_cmp_dir/unbast.bast")
+              failed=true
+              fail_reasons="prettified .bast mismatch: "\
+"orig=${orig_fb_size}B, unbast=${unbast_fb_size}B"
+            fi
+          fi
         fi
       fi
     fi

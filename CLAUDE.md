@@ -323,11 +323,9 @@ To regenerate all .bast files after model changes:
 sbt bastify           # Regenerates all 187 .bast files (~4s)
 ```
 
-**Note**: `riddlc unbastify` (round-trip back to .riddl) has known
-bugs in riddlc 1.10.0 — all 187 models fail round-trip (the
-unbastified .riddl output has 13 distinct syntax violations and
-cannot be re-parsed). This is a riddlc tool issue, not a problem
-with the .bast files themselves. See `../riddl/unbastify-bug-report.md`.
+**Round-trip verified**: All 187 models pass full round-trip
+verification with riddlc 1.10.2 (unbastify, binary comparison,
+and prettify+flatten source diff).
 
 ### BAST Round-Trip Verification
 
@@ -341,9 +339,12 @@ any riddlc upgrade or .bast format change:
 
 Three checks per model:
 1. **Unbastify** — .bast → .riddl (catches deserialization bugs)
-2. **Binary round-trip** — re-bastify, compare .bast byte-for-byte
+2. **Binary round-trip** — prettify+flatten original to single
+   file, bastify that and the unbastified .riddl from the same
+   path, compare .bast byte-for-byte
 3. **Source round-trip** — prettify+flatten both original and
-   unbastified .riddl, diff them (catches semantic loss)
+   unbastified .riddl, diff text AND compare bastified output
+   (catches semantic loss)
 
 ### Manual Validation
 
@@ -368,7 +369,7 @@ riddlc is available via:
 - **Homebrew**: `brew install ossuminc/tap/riddlc`
 - **Staged build**: `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **1.10.0** (set via `riddlVersion` in `build.sbt`).
+Current version: **1.10.2** (set via `riddlVersion` in `build.sbt`).
 
 ### Model Include Structure
 
@@ -445,8 +446,8 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 1.10.0 | Set in `build.sbt` `riddlVersion` |
-| riddl-lib | 1.10.0 | Test dependency for Scala validation |
+| riddlc | 1.10.2 | Set in `build.sbt` `riddlVersion` |
+| riddl-lib | 1.10.2 | Test dependency for Scala validation |
 | sbt-ossuminc | 1.3.0 | Build plugin |
 
 Models are validated against the RIDDL grammar using riddlc, both
