@@ -5,7 +5,7 @@ Global / onChangedBuildSource := ReloadOnSourceChanges
 
 enablePlugins(OssumIncPlugin)
 
-lazy val riddlVersion = "1.8.2"
+lazy val riddlVersion = "1.10.0"
 
 // Custom task keys
 lazy val downloadRiddlc = taskKey[File](

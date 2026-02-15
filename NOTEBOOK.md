@@ -6,19 +6,46 @@ Development journal for active work on the riddl-models repository.
 
 ## Current Status
 
-**Date**: 2026-02-13
-**Phase**: BAST Generation Complete
+**Date**: 2026-02-14
+**Phase**: riddlc 1.10.0 Upgrade Complete
 
-- **187 models** validated with riddlc 1.8.2 via `sbt compile`
-  — zero warnings, zero errors
-- **187 .bast files** generated via `sbt bastify` (~4s)
+- **187 models** validated with riddlc 1.10.0 — zero warnings,
+  zero errors
+- **187 .bast files** regenerated in 1.10.0 format via `sbt bastify`
+- Round-trip verification script at `scripts/verify-bast-roundtrip.sh`
+- Unbastify has 13 known bug categories (all 187 fail round-trip);
+  bug report filed at `../riddl/unbastify-bug-report.md`
 - All model READMEs have NAICS codes
-- `sbt compile` auto-downloads riddlc and validates all models (~8s)
-- Build task implementations extracted to `project/RiddlcTasks.scala`
+- `sbt compile` auto-downloads riddlc and validates all models
+- Build task implementations in `project/RiddlcTasks.scala`
 
 ---
 
 ## Completed Work
+
+### 2026-02-14: Upgrade to riddlc 1.10.0 + Round-Trip Verification
+
+Upgraded from riddlc 1.8.2 to 1.10.0 (new .bast format) and added
+a reusable round-trip verification script.
+
+**Changes:**
+
+1. **riddlc 1.10.0 upgrade** — Updated `riddlVersion` in `build.sbt`.
+   All 187 models validate cleanly (no new warnings). 1.9.0 was
+   botched; 1.10.0 is mostly .bast format changes.
+
+2. **Regenerated all 187 .bast files** in the new 1.10.0 format.
+
+3. **Round-trip verification script** — Created
+   `scripts/verify-bast-roundtrip.sh` that tests bastify→unbastify
+   round-trip with three checks: unbastify, binary comparison
+   (re-bastify), and source comparison (prettify --single-file diff).
+
+4. **Unbastify bug report** — Ran verification on all 187 models;
+   all fail at Check 2 (re-bastify). Identified 13 distinct syntax
+   violations in the unbastified output. Wrote comprehensive bug
+   report at `../riddl/unbastify-bug-report.md` with examples and
+   reproduction steps for each violation.
 
 ### 2026-02-13: Update to riddlc 1.8.2 + BAST Generation
 
@@ -391,8 +418,9 @@ Completed all models for the first two sectors:
 
 ## Active Work
 
-No active work items. All 187 models pass riddlc 1.8.2 with zero
-warnings and zero errors. All 187 .bast files generated.
+No active work items. All 187 models pass riddlc 1.10.0 with zero
+warnings and zero errors. All 187 .bast files regenerated in
+1.10.0 format.
 
 ### Sector Completion Status
 
@@ -471,7 +499,8 @@ author OssumInc is {
 
 - riddlc: auto-downloaded by `sbt compile` (version in `build.sbt`)
 - Also available via Homebrew or staged build
-- riddlc 1.8.2 validates all 187 models in ~8 seconds
+- riddlc 1.10.0 validates all 187 models in ~8 seconds
 - `sbt bastify` generates 187 .bast files in ~4 seconds
+- `./scripts/verify-bast-roundtrip.sh` tests unbastify round-trip
 - Reference model: `finance/banking/account-management/`
 - Build task implementations in `project/RiddlcTasks.scala`

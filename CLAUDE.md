@@ -324,9 +324,26 @@ sbt bastify           # Regenerates all 187 .bast files (~4s)
 ```
 
 **Note**: `riddlc unbastify` (round-trip back to .riddl) has known
-limitations in riddlc 1.8.2 — some models fail deserialization and
-the output may not re-validate. This is a riddlc tool issue, not a
-problem with the .bast files themselves.
+bugs in riddlc 1.10.0 — all 187 models fail round-trip (the
+unbastified .riddl output has 13 distinct syntax violations and
+cannot be re-parsed). This is a riddlc tool issue, not a problem
+with the .bast files themselves. See `../riddl/unbastify-bug-report.md`.
+
+### BAST Round-Trip Verification
+
+A reusable script verifies .bast round-trip fidelity. Run after
+any riddlc upgrade or .bast format change:
+
+```bash
+./scripts/verify-bast-roundtrip.sh      # all 187 models
+./scripts/verify-bast-roundtrip.sh 10   # first 10 (spot check)
+```
+
+Three checks per model:
+1. **Unbastify** — .bast → .riddl (catches deserialization bugs)
+2. **Binary round-trip** — re-bastify, compare .bast byte-for-byte
+3. **Source round-trip** — prettify+flatten both original and
+   unbastified .riddl, diff them (catches semantic loss)
 
 ### Manual Validation
 
@@ -351,7 +368,7 @@ riddlc is available via:
 - **Homebrew**: `brew install ossuminc/tap/riddlc`
 - **Staged build**: `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **1.8.2** (set via `riddlVersion` in `build.sbt`).
+Current version: **1.10.0** (set via `riddlVersion` in `build.sbt`).
 
 ### Model Include Structure
 
@@ -428,8 +445,8 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 1.8.2 | Set in `build.sbt` `riddlVersion` |
-| riddl-lib | 1.8.2 | Test dependency for Scala validation |
+| riddlc | 1.10.0 | Set in `build.sbt` `riddlVersion` |
+| riddl-lib | 1.10.0 | Test dependency for Scala validation |
 | sbt-ossuminc | 1.3.0 | Build plugin |
 
 Models are validated against the RIDDL grammar using riddlc, both
