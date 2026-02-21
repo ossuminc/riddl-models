@@ -1,22 +1,11 @@
 import com.ossuminc.sbt.OssumIncPlugin
+import com.ossuminc.riddl.sbt.plugin.RiddlSbtPlugin
 import sbt.Keys._
 
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
 enablePlugins(OssumIncPlugin)
-
-lazy val riddlVersion = "1.10.2"
-
-// Custom task keys
-lazy val downloadRiddlc = taskKey[File](
-  "Download and cache the riddlc binary from GitHub releases"
-)
-lazy val riddlcValidateAll = taskKey[Unit](
-  "Validate all RIDDL models using riddlc"
-)
-lazy val riddlcBastifyAll = taskKey[Unit](
-  "Generate .bast files for all RIDDL models using riddlc bastify"
-)
+enablePlugins(RiddlSbtPlugin)
 
 lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
   .configure(With.typical)  // Sets up Scala 3.3.x and resolvers
@@ -24,7 +13,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
   .settings(
     description := "Library of RIDDL models and reusable patterns",
     libraryDependencies ++= Seq(
-      "com.ossuminc" %% "riddl-lib" % riddlVersion % Test,
+      "com.ossuminc" %% "riddl-lib" % "1.13.1" % Test,
       "org.scalatest" %% "scalatest" % "3.2.19" % Test
     ),
     // Make the base directory available as a system property for the test
@@ -32,43 +21,15 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       s"-Driddl.models.basedir=${baseDirectory.value.getAbsolutePath}",
     Test / fork := true,
 
-    // --- riddlc tasks ---
-
-    downloadRiddlc := {
-      RiddlcTasks.downloadRiddlc(
-        baseDirectory.value,
-        riddlVersion,
-        streams.value.log
-      )
-    },
-
-    riddlcValidateAll := {
-      RiddlcTasks.validateAll(
-        downloadRiddlc.value,
-        baseDirectory.value,
-        riddlVersion,
-        streams.value.log
-      )
-    },
-
-    riddlcBastifyAll := {
-      RiddlcTasks.bastifyAll(
-        downloadRiddlc.value,
-        baseDirectory.value,
-        riddlVersion,
-        streams.value.log
-      )
-    },
-
-    // Wire validation into compile
-    Compile / compile := {
-      riddlcValidateAll.value
-      (Compile / compile).value
-    }
+    // --- sbt-riddl configuration ---
+    riddlcVersion := "1.13.1",
+    riddlcSourceDir := baseDirectory.value,
+    riddlcConfExclusions := Seq("patterns"),
+    riddlcValidateOnCompile := true,
+    riddlcOptions := Seq("--show-times", "--no-ansi-messages")
   )
 
-// Command aliases
-addCommandAlias("validate", "riddlcValidateAll")
-addCommandAlias("v", "riddlcValidateAll")
-addCommandAlias("bastify", "riddlcBastifyAll")
-addCommandAlias("b", "riddlcBastifyAll")
+// Command aliases (plugin provides validate, bastify, prettify)
+addCommandAlias("v", "riddlcValidate")
+addCommandAlias("b", "riddlcBastify")
+addCommandAlias("r", "riddlcPrettify")
