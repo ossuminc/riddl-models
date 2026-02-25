@@ -15,21 +15,64 @@ to the task file and note completion in this notebook.
 
 ## Current Status
 
-**Date**: 2026-02-15
-**Phase**: riddlc 1.10.2 — Full Round-Trip Verified
+**Date**: 2026-02-21
+**Phase**: riddlc 1.13.1 — sbt-riddl Plugin + Prettified Models
 
-- **187 models** validated with riddlc 1.10.2 — zero warnings,
-  zero errors
-- **187 .bast files** regenerated, all pass full round-trip
-  verification (unbastify + binary comparison + prettify diff)
-- Round-trip verification script at `scripts/verify-bast-roundtrip.sh`
+- **187 models** validated with riddlc 1.13.1 — zero errors
+- All models reformatted via `riddlc prettify` to canonical syntax
+  (colon fields, `Type?` optionals, `described as` markdown,
+  `is` on handlers, no commas between fields)
+- Build uses **sbt-riddl plugin** (replaced custom RiddlcTasks.scala)
+- `.bast` files removed from tracking (regenerate with `sbt b`)
 - All model READMEs have NAICS codes
 - `sbt compile` auto-downloads riddlc and validates all models
-- Build task implementations in `project/RiddlcTasks.scala`
 
 ---
 
 ## Completed Work
+
+### 2026-02-21: Upgrade to riddlc 1.13.1 + sbt-riddl + Prettify
+
+Upgraded from riddlc 1.10.2 to 1.13.1 and adopted the sbt-riddl
+plugin, replacing custom `project/RiddlcTasks.scala`. Reformatted
+all 187 models using `riddlc prettify`.
+
+**Changes:**
+
+1. **sbt-riddl plugin** — Added `com.ossuminc:sbt-riddl:1.13.1`
+   to `project/plugins.sbt`. Provides `riddlcValidate`,
+   `riddlcBastify`, `riddlcPrettify`, `riddlcParse`, `riddlcInfo`.
+   Replaces all custom task implementations.
+
+2. **Simplified build.sbt** — Removed custom task keys and
+   `RiddlcTasks` wiring. Plugin configured with:
+   - `riddlcSourceDir := baseDirectory.value` (scan repo root)
+   - `riddlcConfExclusions := Seq("patterns")`
+   - `riddlcValidateOnCompile := true`
+   - Command aliases: `v`, `b`, `r`
+
+3. **Deleted `project/RiddlcTasks.scala`** — All functionality
+   now provided by the plugin.
+
+4. **Reformatted all 187 models** — `sbt riddlcPrettify` applied
+   canonical RIDDL syntax:
+   - `fieldName: Type` (colon syntax, was `fieldName is Type`)
+   - `Type?` (postfix optional, was `optional Type`)
+   - `described as { |text }` (markdown, was `described by "text"`)
+   - `on command X is {` (added `is` keyword)
+   - No commas between aggregate fields
+   - Consistent indentation and blank line separation
+
+5. **Removed .bast files** — 187 `.bast` files deleted from
+   tracking. They had already been deleted in working tree since
+   1.10.2; this commit makes it official. Regenerate with `sbt b`.
+
+6. **Prettify bug reporting** — Filed and resolved three bugs
+   during the upgrade process (1.12.0–1.12.3):
+   - Commas inserted between fields (fixed 1.12.1)
+   - `} with {` split across lines (fixed 1.12.1)
+   - Include paths not relative to containing file (fixed 1.12.3)
+   - ANSI codes in version check (fixed 1.13.1)
 
 ### 2026-02-15: Upgrade to riddlc 1.10.2 + Full Round-Trip Verified
 
@@ -435,8 +478,8 @@ Completed all models for the first two sectors:
 
 ## Active Work
 
-No active work items. All 187 models pass riddlc 1.10.2 with zero
-warnings and zero errors. All 187 pass full round-trip verification.
+No active work items. All 187 models pass riddlc 1.13.1 validation
+and have been reformatted to canonical RIDDL syntax.
 
 ### Sector Completion Status
 
@@ -513,10 +556,10 @@ author OssumInc is {
 
 ## Notes
 
-- riddlc: auto-downloaded by `sbt compile` (version in `build.sbt`)
+- riddlc: auto-downloaded by sbt-riddl plugin to `~/.cache/riddlc/`
 - Also available via Homebrew or staged build
-- riddlc 1.10.2 validates all 187 models in ~8 seconds
-- `sbt bastify` generates 187 .bast files in ~4 seconds
-- `./scripts/verify-bast-roundtrip.sh` — 187/187 pass round-trip
+- riddlc 1.13.1 validates all 187 models in ~8 seconds
+- `sbt r` reformats all 187 models in ~6 seconds
+- `./scripts/verify-bast-roundtrip.sh` — round-trip verification
 - Reference model: `finance/banking/account-management/`
-- Build task implementations in `project/RiddlcTasks.scala`
+- Build integration via `com.ossuminc:sbt-riddl` plugin

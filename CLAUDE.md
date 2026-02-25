@@ -181,7 +181,8 @@ Each pattern includes:
 
 ### RIDDL Style
 
-Follow these idioms when writing RIDDL:
+Follow these idioms when writing RIDDL (canonical form as of
+riddlc 1.13.1 prettify):
 
 1. **Use `is` keyword** for readability: `entity Order is { }`
 2. **Use `???` for placeholders** - empty bodies not allowed
@@ -190,27 +191,28 @@ Follow these idioms when writing RIDDL:
 5. **Always add `briefly`** descriptions
 6. **Use explicit states** - avoid flag-based state machines
 7. **Type IDs as `{Name}Id`** - `type OrderId is Id(Order)`
+8. **Colon field syntax** - `fieldName: Type` (not `fieldName
+   is Type`)
+9. **Postfix optional** - `Type?` (not `optional Type`)
+10. **Markdown descriptions** - `described as { |text }` (not
+    `described by "text"`)
+11. **No commas** between aggregate fields
 
 ### RIDDL Syntax Reference
 
-**Description Syntax** - Three valid forms for `described by`:
+**Description Syntax** — canonical form uses `described as` with
+markdown pipe syntax:
 
 ```riddl
-// Form 1: Simple quoted string (best for short descriptions)
-described by "A short description."
-
-// Form 2: Multiple quoted strings in braces
-described by { "Line one." "Line two." "Line three." }
-
-// Form 3: Markdown with pipe character (MUST have } on separate line)
-described by {
-  | Markdown line one.
-  | Markdown line two.
+described as {
+  |Markdown text here.
+  |Second line of description.
 }
 ```
 
-**CRITICAL**: The `|` character consumes everything to end of line including
-any `}` on the same line. This is WRONG: `described by { | Text here. }`
+**CRITICAL**: The `|` character consumes everything to end of
+line including any `}` on the same line. The `}` must be on its
+own line.
 
 **Naming Collision Avoidance**:
 - Enum values and state names in the same scope cannot match
@@ -279,36 +281,32 @@ context PaymentGateway is {
 automatically downloads riddlc and validates all 187 models. The MCP
 server can still be used for querying grammar, idioms, and patterns.
 
-### sbt Tasks (Primary Method)
+### sbt Tasks (via sbt-riddl Plugin)
 
-The build defines custom tasks in `build.sbt` with implementations
-in `project/RiddlcTasks.scala`:
+The build uses the **sbt-riddl** plugin (`com.ossuminc:sbt-riddl`)
+which provides all riddlc integration. Configuration in `build.sbt`:
 
-- **`downloadRiddlc`** — Downloads and caches the riddlc binary from
-  GitHub releases. Detects platform (macOS ARM64, Linux x86_64, or
-  JVM universal) and caches in `.riddlc/{version}/bin/riddlc`.
-- **`riddlcValidateAll`** — Finds all `.conf` files (excluding
-  `patterns/`, `target/`, `project/`, `.riddlc/`) and runs
-  `riddlc from <conf> validate` on each. Reports failures with
-  details.
-- **`riddlcBastifyAll`** — Finds all `.conf` files, extracts the
-  `input-file` value, and runs `riddlc bastify <input-file>` for
-  each model. Generates `.bast` (Binary AST) files next to the
-  source `.riddl` files. NOT wired into compile (run manually).
+- `riddlcVersion` — Version of riddlc to download (currently 1.13.1)
+- `riddlcSourceDir` — Set to `baseDirectory.value` (repo root) so
+  the plugin scans all sector directories for `.conf` files
+- `riddlcConfExclusions` — Excludes `patterns/` from scanning
+- `riddlcValidateOnCompile` — Wires validation into `sbt compile`
 
 ```bash
 sbt compile           # Downloads riddlc + validates all + compiles
-sbt riddlcValidateAll # Validate only (no compile)
-sbt validate          # Alias for riddlcValidateAll
+sbt riddlcValidate    # Validate all models
 sbt v                 # Short alias
-sbt riddlcBastifyAll  # Generate .bast for all models
-sbt bastify           # Alias for riddlcBastifyAll
+sbt riddlcBastify     # Generate .bast for all models
 sbt b                 # Short alias
+sbt riddlcPrettify    # Reformat all models with prettify
+sbt r                 # Short alias
+sbt riddlcParse       # Parse-only (no validation)
+sbt riddlcInfo        # Show riddlc build info
 ```
 
-The riddlc binary is cached in `.riddlc/` (gitignored). To update
-riddlc, change `riddlVersion` in `build.sbt` and re-run — the new
-version will be downloaded automatically.
+The riddlc binary is cached in `~/.cache/riddlc/` (shared across
+projects). To update riddlc, change `riddlcVersion` in `build.sbt`
+and re-run — the new version downloads automatically.
 
 ### BAST Files
 
@@ -364,12 +362,14 @@ riddlc from model-name.conf validate
 ### riddlc Location
 
 riddlc is available via:
-- **sbt** (automatic): `.riddlc/{version}/bin/riddlc` (downloaded
-  by `downloadRiddlc` task)
+- **sbt** (automatic): `~/.cache/riddlc/{version}/bin/riddlc`
+  (downloaded by sbt-riddl plugin)
 - **Homebrew**: `brew install ossuminc/tap/riddlc`
-- **Staged build**: `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
+- **Staged build**:
+  `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **1.10.2** (set via `riddlVersion` in `build.sbt`).
+Current version: **1.13.1** (set via `riddlcVersion` in
+`build.sbt`).
 
 ### Model Include Structure
 
@@ -446,9 +446,10 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 1.10.2 | Set in `build.sbt` `riddlVersion` |
-| riddl-lib | 1.10.2 | Test dependency for Scala validation |
-| sbt-ossuminc | 1.3.0 | Build plugin |
+| riddlc | 1.13.1 | Set in `build.sbt` `riddlcVersion` |
+| sbt-riddl | 1.13.1 | Plugin in `project/plugins.sbt` |
+| riddl-lib | 1.13.1 | Test dependency for Scala validation |
+| sbt-ossuminc | 1.3.5 | Build plugin |
 
 Models are validated against the RIDDL grammar using riddlc, both
 via `sbt compile` (automatic) and in the existing Scala test suite.
