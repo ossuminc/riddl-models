@@ -478,8 +478,14 @@ Completed all models for the first two sectors:
 
 ## Active Work
 
-No active work items. All 187 models pass riddlc 1.13.1 validation
-and have been reformatted to canonical RIDDL syntax.
+### Pending: Upgrade sbt-riddl to 1.13.2
+
+The sbt-riddl plugin has a fix in progress (in the `riddl` repo) to
+eliminate the `InterruptedException` stack trace that appears when
+running `riddlcValidate` or `riddlcBastify`. The fix replaces
+`.!(logger)` with `ProcessIO(_.close(), ...)` to avoid piping stdin
+to riddlc subprocesses. This will ship as riddlc/sbt-riddl 1.13.2.
+Once published, update `project/plugins.sbt` to use the new version.
 
 ### Sector Completion Status
 
