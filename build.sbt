@@ -13,7 +13,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
   .settings(
     description := "Library of RIDDL models and reusable patterns",
     libraryDependencies ++= Seq(
-      "com.ossuminc" %% "riddl-lib" % "1.13.1" % Test,
+      "com.ossuminc" %% "riddl-lib" % "1.13.2" % Test,
       "org.scalatest" %% "scalatest" % "3.2.19" % Test
     ),
     // Make the base directory available as a system property for the test
