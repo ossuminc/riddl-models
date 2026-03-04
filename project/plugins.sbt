@@ -2,7 +2,7 @@
 addSbtPlugin("com.ossuminc" % "sbt-ossuminc" % "1.3.5")
 
 // RIDDL compiler sbt plugin (validate, bastify, prettify, etc.)
-addSbtPlugin("com.ossuminc" % "sbt-riddl" % "1.13.2")
+addSbtPlugin("com.ossuminc" % "sbt-riddl" % "1.13.4")
 
 // Credentials for GitHub Packages
 credentials ++= {
