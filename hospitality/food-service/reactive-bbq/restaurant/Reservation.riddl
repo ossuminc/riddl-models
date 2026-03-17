@@ -285,22 +285,63 @@ entity Reservation is {
   state ActiveReservation of type Reservation.ReservationStateData
   handler ReservationHandler is {
     on command MakeReservation is {
-      morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.ActiveReservation with command MakeReservation
+      morph entity FrontOfHouse.Reservation to state
+        FrontOfHouse.Reservation.ActiveReservation
+          with command MakeReservation
+      set field FrontOfHouse.Reservation.reservationStatus to
+        "Requested"
+      do "validate MakeReservation.partySize is between 1 and 20"
+      do "validate MakeReservation.reservationTime is in the
+        future and within the 30-day booking window"
+      do "query ReservationRepository for conflicting
+        reservations at MakeReservation.reservationTime with
+        sufficient table capacity for MakeReservation.partySize"
       tell event ReservationMade to entity FrontOfHouse.Reservation
     }
     on command ConfirmReservation is {
-      tell event ReservationConfirmed to entity FrontOfHouse.Reservation
+      when "reservation is in Requested status" then
+        set field FrontOfHouse.Reservation.reservationStatus to
+          "Confirmed"
+        set field FrontOfHouse.Reservation.assignedTable to
+          "confirmedTable from command"
+        tell event ReservationConfirmed to entity
+          FrontOfHouse.Reservation
+      else
+        error "reservation must be in Requested status to confirm"
+      end
     }
     on command CancelReservation is {
-      tell event ReservationCancelled to entity FrontOfHouse.Reservation
+      when "reservation is not already Seated or Completed" then
+        set field FrontOfHouse.Reservation.reservationStatus to
+          "Cancelled"
+        tell event ReservationCancelled to entity
+          FrontOfHouse.Reservation
+      else
+        error "cannot cancel a reservation that is already seated
+          or completed"
+      end
     }
     on command SeatParty is {
-      tell event PartySeated to entity FrontOfHouse.Reservation
+      when "reservation is Confirmed" then
+        set field FrontOfHouse.Reservation.reservationStatus to
+          "Seated"
+        set field FrontOfHouse.Reservation.actualSeatedAt to
+          "seatedAt from command"
+        tell event PartySeated to entity FrontOfHouse.Reservation
+        do "construct CreateOrder with new TableOrderId,
+          tableNumber = SeatParty.seatedTable, serverId from
+          host assignment"
+        tell command CreateOrder to entity FrontOfHouse.TableOrder
+      else
+        error "reservation must be Confirmed before seating"
+      end
     }
   } with {
     briefly "Reservation command handler"
     described as {
-      |Processes reservation lifecycle commands.
+      |Processes reservation lifecycle commands including
+      |validation, status transitions, and triggering table
+      |order creation when a party is seated.
     }
   }
 } with {

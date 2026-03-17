@@ -447,31 +447,105 @@ entity DeliveryOrder is {
   state ActiveDelivery of type DeliveryOrder.DeliveryStateData
   handler DeliveryHandler is {
     on command CreateDelivery is {
-      morph entity Restaurant.Delivery.DeliveryOrder to state Restaurant.Delivery.DeliveryOrder.ActiveDelivery with command CreateDelivery
-      tell event DeliveryCreated to entity Restaurant.Delivery.DeliveryOrder
+      morph entity Delivery.DeliveryOrder to state
+        Delivery.DeliveryOrder.ActiveDelivery
+          with command CreateDelivery
+      set field Delivery.DeliveryOrder.deliveryStatus to
+        "DeliveryPending"
+      tell event DeliveryCreated to entity
+        Delivery.DeliveryOrder
+      do "query available drivers by GeoLocation proximity to
+        restaurant and select nearest with status = available"
     }
     on command AssignDriver is {
-      tell event DriverAssigned to entity Restaurant.Delivery.DeliveryOrder
+      set field Delivery.DeliveryOrder.assignedDriverId to
+        "driverId from command"
+      set field Delivery.DeliveryOrder.assignedDriverName to
+        "driverName from command"
+      set field Delivery.DeliveryOrder.deliveryStatus to
+        "DriverAssignedStatus"
+      tell event DriverAssigned to entity
+        Delivery.DeliveryOrder
+      tell command SendPushNotification to entity
+        Restaurant.NotificationService
     }
     on command DispatchDriver is {
-      tell event DriverDispatched to entity Restaurant.Delivery.DeliveryOrder
+      set field Delivery.DeliveryOrder.deliveryStatus to
+        "InTransit"
+      set field Delivery.DeliveryOrder.actualDispatchedAt to
+        "dispatchedAt from command"
+      tell event DriverDispatched to entity
+        Delivery.DeliveryOrder
+      tell command SendPushNotification to entity
+        Restaurant.NotificationService
     }
     on command RecordDeliveryLocation is {
-      tell event DeliveryLocationRecorded to entity Restaurant.Delivery.DeliveryOrder
+      set field Delivery.DeliveryOrder.lastKnownLocation to
+        "driverLocation from command"
+      tell event DeliveryLocationRecorded to entity
+        Delivery.DeliveryOrder
     }
     on command ConfirmDelivery is {
-      tell event DeliveryConfirmed to entity Restaurant.Delivery.DeliveryOrder
+      set field Delivery.DeliveryOrder.deliveryStatus to
+        "Delivered"
+      set field Delivery.DeliveryOrder.actualConfirmedAt to
+        "confirmedAt from command"
+      tell event DeliveryConfirmed to entity
+        Delivery.DeliveryOrder
+      tell command SendPushNotification to entity
+        Restaurant.NotificationService
     }
     on command RecordDeliveryPayment is {
-      tell event DeliveryPaymentRecorded to entity Restaurant.Delivery.DeliveryOrder
+      tell event DeliveryPaymentRecorded to entity
+        Delivery.DeliveryOrder
     }
     on command ReportDeliveryIssue is {
-      tell event DeliveryIssueReported to entity Restaurant.Delivery.DeliveryOrder
+      tell event DeliveryIssueReported to entity
+        Delivery.DeliveryOrder
+      match "issueType" {
+        case "AddressNotFound" {
+          tell command SendPushNotification to entity
+            Restaurant.NotificationService
+        }
+        case "CustomerUnavailable" {
+          tell command SendPushNotification to entity
+            Restaurant.NotificationService
+          do "schedule DeliveryStatus transition to
+            DeliveryFailed after 10-minute timeout if no
+            customer response"
+        }
+        case "FoodDamaged" {
+          tell command SendPushNotification to entity
+            Restaurant.NotificationService
+          do "construct ReceiveTicket replacement order from
+            DeliveryStateData.sourceOnlineOrderId and send to
+            Kitchen.KitchenTicket"
+        }
+        case "VehicleBreakdown" {
+          set field Delivery.DeliveryOrder.deliveryStatus to
+            "DeliveryPending"
+          do "query available drivers by GeoLocation proximity
+            excluding current DeliveryStateData
+            .assignedDriverId"
+        }
+        case "TrafficDelay" {
+          tell command SendPushNotification to entity
+            Restaurant.NotificationService
+        }
+        default {
+          tell command SendPushNotification to entity
+            Restaurant.NotificationService
+        }
+      }
     }
   } with {
     briefly "Delivery command handler"
     described as {
-      |Processes delivery lifecycle commands.
+      |Processes delivery lifecycle commands including driver
+      |assignment, GPS tracking, customer notifications, and
+      |issue handling with specific responses per issue type.
+      |Designed for offline resilience so drivers can cache
+      |details and sync when connectivity resumes.
     }
   }
 } with {

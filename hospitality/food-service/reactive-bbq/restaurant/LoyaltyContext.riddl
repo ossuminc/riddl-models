@@ -11,24 +11,49 @@ context Loyalty is {
 
     handler LoyaltyAccountPersistence is {
       on command LoyaltyAccount.EnrollCustomer is {
-        prompt "Store new loyalty account"
+        tell event LoyaltyAccount.CustomerEnrolled to entity
+          Loyalty.LoyaltyAccount
+        do "insert row into LoyaltyAccountData.accounts with
+          loyaltyAccountId, loyaltyCustomerId,
+          customerDisplayName, customerEmail,
+          loyaltyAccountStatus = LoyaltyActive, pointBalance
+          = 0, lifetimePoints = 0, enrolledAt = current
+          timestamp"
       }
       on command LoyaltyAccount.AccruePoints is {
-        prompt "Record point accrual"
+        tell event LoyaltyAccount.PointsAccrued to entity
+          Loyalty.LoyaltyAccount
+        do "update LoyaltyAccountData.accounts set pointBalance
+          = pointBalance + accrualPoints, lifetimePoints =
+          lifetimePoints + accrualPoints where
+          loyaltyAccountId matches"
       }
       on command LoyaltyAccount.RedeemPoints is {
-        prompt "Record point redemption"
+        tell event LoyaltyAccount.PointsRedeemed to entity
+          Loyalty.LoyaltyAccount
+        do "update LoyaltyAccountData.accounts set pointBalance
+          = pointBalance - redemptionPoints where
+          loyaltyAccountId matches"
       }
       on command LoyaltyAccount.SuspendAccount is {
-        prompt "Mark account as suspended"
+        tell event LoyaltyAccount.AccountSuspended to entity
+          Loyalty.LoyaltyAccount
+        do "update LoyaltyAccountData.accounts set
+          loyaltyAccountStatus = LoyaltySuspended where
+          loyaltyAccountId matches"
       }
       on command LoyaltyAccount.ReactivateAccount is {
-        prompt "Mark account as reactivated"
+        tell event LoyaltyAccount.AccountReactivated to entity
+          Loyalty.LoyaltyAccount
+        do "update LoyaltyAccountData.accounts set
+          loyaltyAccountStatus = LoyaltyActive where
+          loyaltyAccountId matches"
       }
     } with {
       briefly "Loyalty account persistence"
       described as {
-        |Persists loyalty account commands.
+        |Persists loyalty account events to the accounts table
+        |and updates the current state projection.
       }
     }
   } with {
@@ -37,15 +62,25 @@ context Loyalty is {
       |Stores and retrieves loyalty account data.
     }
   }
-  adaptor FromPayment from context Restaurant.FrontOfHouse is { 
+  adaptor FromPayment from context Restaurant.FrontOfHouse is {
     handler DineInLoyaltyIntake is {
       on event Restaurant.FrontOfHouse.TableOrder.PaymentProcessed is {
-        prompt "Accrue loyalty points from dine-in payment"
+        let pointsEarned = "event.orderPayment.paymentAmount
+          truncated to integer as accrualPoints"
+        when "loyalty account exists for table association" then
+          do "construct AccruePoints with loyaltyAccountId
+            looked up by table association, accrualPoints =
+            pointsEarned, accrualReason = dine-in purchase,
+            accrualOrderRef = event.tableOrderId"
+          tell command AccruePoints to entity
+            Loyalty.LoyaltyAccount
+        end
       }
     } with {
       briefly "Dine-in loyalty intake"
       described as {
-        |Accrues points from dine-in payments.
+        |Accrues points from dine-in payments by calculating
+        |points and forwarding to the loyalty account entity.
       }
     }
   } with {
@@ -54,15 +89,26 @@ context Loyalty is {
       |Receives dine-in payment events for loyalty accrual.
     }
   }
-  adaptor FromOnlinePayment from context Restaurant.OnlineOrdering is { 
+  adaptor FromOnlinePayment from context Restaurant.OnlineOrdering is {
     handler OnlineLoyaltyIntake is {
       on event Restaurant.OnlineOrdering.OnlineOrder.OnlinePaymentProcessed is {
-        prompt "Accrue loyalty points from online payment"
+        let pointsEarned = "event.onlinePayment
+          .onlinePaymentAmount truncated to integer as
+          accrualPoints"
+        when "loyalty account exists for event.customerId" then
+          do "construct AccruePoints with loyaltyAccountId
+            looked up by event.customerId, accrualPoints =
+            pointsEarned, accrualReason = online purchase,
+            accrualOrderRef = event.onlineOrderId"
+          tell command AccruePoints to entity
+            Loyalty.LoyaltyAccount
+        end
       }
     } with {
       briefly "Online loyalty intake"
       described as {
-        |Accrues points from online payments.
+        |Accrues points from online payments by calculating
+        |points and forwarding to the loyalty account entity.
       }
     }
   } with {

@@ -11,27 +11,56 @@ context OnlineOrdering is {
 
     handler OnlineOrderPersistence is {
       on command OnlineOrder.BrowseMenu is {
-        prompt "Create new online order session"
+        tell event OnlineOrder.MenuBrowsed to entity
+          OnlineOrdering.OnlineOrder
+        do "insert row into OnlineOrderData.onlineOrders with
+          onlineOrderId, customerId, onlineOrderStatus =
+          Browsing, createdAt = browsedAt"
       }
       on command OnlineOrder.AddToCart is {
-        prompt "Add item to cart"
+        tell event OnlineOrder.ItemAddedToCart to entity
+          OnlineOrdering.OnlineOrder
+        do "append cartItem to orderCartItems array in
+          OnlineOrderData.onlineOrders where onlineOrderId
+          matches"
       }
       on command OnlineOrder.RemoveFromCart is {
-        prompt "Remove item from cart"
+        tell event OnlineOrder.ItemRemovedFromCart to entity
+          OnlineOrdering.OnlineOrder
+        do "remove CartItem with removedCartItemId from
+          orderCartItems array in OnlineOrderData.onlineOrders
+          where onlineOrderId matches"
       }
       on command OnlineOrder.SelectFulfillment is {
-        prompt "Store fulfillment selection"
+        tell event OnlineOrder.FulfillmentSelected to entity
+          OnlineOrdering.OnlineOrder
+        do "update OnlineOrderData.onlineOrders set
+          selectedFulfillment = fulfillmentType,
+          selectedDeliveryAddress = deliveryAddress,
+          onlineOrderStatus = FulfillmentChosen where
+          onlineOrderId matches"
       }
       on command OnlineOrder.SubmitOnlineOrder is {
-        prompt "Mark order as submitted"
+        tell event OnlineOrder.OnlineOrderSubmitted to entity
+          OnlineOrdering.OnlineOrder
+        do "update OnlineOrderData.onlineOrders set
+          onlineOrderStatus = OnlineSubmitted,
+          actualOnlineSubmittedAt = onlineSubmittedAt where
+          onlineOrderId matches"
       }
       on command OnlineOrder.ProcessOnlinePayment is {
-        prompt "Record payment"
+        tell event OnlineOrder.OnlinePaymentProcessed to entity
+          OnlineOrdering.OnlineOrder
+        do "update OnlineOrderData.onlineOrders set
+          processedOnlinePayment = onlinePayment,
+          onlineOrderStatus = OnlinePaid where onlineOrderId
+          matches"
       }
     } with {
       briefly "Online order persistence"
       described as {
-        |Persists online order commands.
+        |Persists online order events to the onlineOrders table
+        |and updates the current state projection.
       }
     }
   } with {
@@ -40,10 +69,32 @@ context OnlineOrdering is {
       |Stores and retrieves online order data.
     }
   }
-  adaptor ToKitchen to context Restaurant.Kitchen is { 
+  flow OnlineOrderPipeline is {
+    inlet SubmittedOnlineOrders is type OnlineOrderEvent
+    outlet KitchenOrders is type KitchenTicketEvent
+  } with {
+    briefly "Online order pipeline"
+    described as {
+      |Processes submitted online orders in FIFO order,
+      |converting cart items to kitchen tickets. Ensures
+      |online orders are queued fairly alongside dine-in
+      |orders during peak hours.
+    }
+  }
+  adaptor ToKitchen to context Restaurant.Kitchen is {
     handler OnlineKitchenRouting is {
       on command Restaurant.Kitchen.KitchenTicket.ReceiveTicket is {
-        prompt "Convert submitted online order into kitchen ticket"
+        do "map each OnlineOrderSubmitted.orderCartItems CartItem
+          to TicketItem with ticketMenuItemId = cartMenuItemId,
+          ticketItemName = cartItemName, ticketItemQuantity =
+          cartItemQuantity, ticketItemNotes = cartItemNotes,
+          ticketItemReady = false"
+        do "construct ReceiveTicket with new KitchenTicketId,
+          sourceOrderId = event.onlineOrderId, ticketSource =
+          Online, ticketItems = mapped list, receivedAt =
+          current timestamp"
+        tell command ReceiveTicket to entity
+          Kitchen.KitchenTicket
       }
     } with {
       briefly "Kitchen routing"
@@ -60,7 +111,14 @@ context OnlineOrdering is {
   adaptor ToDelivery to context Restaurant.Delivery is { 
     handler DeliveryRouting is {
       on command Restaurant.Delivery.DeliveryOrder.CreateDelivery is {
-        prompt "Create delivery when delivery fulfillment is selected"
+        do "construct CreateDelivery with new DeliveryId,
+          sourceOnlineOrderId = event.onlineOrderId,
+          deliveryCustomerName from customer profile,
+          deliveryCustomerPhone from customer profile,
+          deliveryDestination = event.deliveryAddress,
+          requestedDeliveryTime = event.requestedTime"
+        tell command CreateDelivery to entity
+          Delivery.DeliveryOrder
       }
     } with {
       briefly "Delivery routing"
@@ -79,7 +137,14 @@ context OnlineOrdering is {
   adaptor ToLoyalty to context Restaurant.Loyalty is { 
     handler OnlineLoyaltyRouting is {
       on command Restaurant.Loyalty.LoyaltyAccount.AccruePoints is {
-        prompt "Send online payment event to loyalty for point accrual"
+        let pointsEarned = "OnlinePaymentProcessed.onlinePayment
+          .onlinePaymentAmount truncated to integer as
+          accrualPoints"
+        do "construct AccruePoints with loyaltyAccountId looked
+          up by event.customerId, accrualPoints = pointsEarned,
+          accrualReason = online purchase, accrualOrderRef =
+          OnlinePaymentProcessed.onlineOrderId"
+        tell command AccruePoints to entity Loyalty.LoyaltyAccount
       }
     } with {
       briefly "Loyalty routing"
@@ -91,6 +156,17 @@ context OnlineOrdering is {
     briefly "Loyalty adaptor"
     described as {
       |Sends online payment events to loyalty context.
+    }
+  }
+  connector OnlineToKitchen is {
+    from outlet OnlineOrdering.OnlineOrderPipeline.KitchenOrders to
+      inlet Kitchen.TicketQueue.IncomingTickets
+  } with {
+    briefly "Online to kitchen connector"
+    described as {
+      |Wires online orders from the order pipeline to the
+      |kitchen ticket queue, merging with dine-in orders for
+      |unified kitchen processing.
     }
   }
 } with {

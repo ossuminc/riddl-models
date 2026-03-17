@@ -381,31 +381,82 @@ entity TableOrder is {
   state ActiveOrder of type TableOrder.TableOrderStateData
   handler TableOrderHandler is {
     on command CreateOrder is {
-      morph entity FrontOfHouse.TableOrder to state FrontOfHouse.TableOrder.ActiveOrder with command CreateOrder
+      morph entity FrontOfHouse.TableOrder to state
+        FrontOfHouse.TableOrder.ActiveOrder with command CreateOrder
+      set field FrontOfHouse.TableOrder.orderStatus to "DraftStatus"
       tell event OrderCreated to entity FrontOfHouse.TableOrder
     }
     on command AddItem is {
+      do "append AddItem.addedItem to
+        TableOrderStateData.orderItems"
       tell event ItemAdded to entity FrontOfHouse.TableOrder
     }
     on command RemoveItem is {
-      tell event ItemRemoved to entity FrontOfHouse.TableOrder
+      when "order is in DraftStatus" then
+        do "remove OrderLine from TableOrderStateData.orderItems
+          where orderLineItem.itemCode = RemoveItem
+          .removedMenuItemId"
+        tell event ItemRemoved to entity FrontOfHouse.TableOrder
+      else
+        error "items can only be removed from orders in Draft
+          status"
+      end
     }
     on command SubmitOrder is {
+      set field FrontOfHouse.TableOrder.orderStatus to
+        "SubmittedStatus"
+      set field FrontOfHouse.TableOrder.actualSubmittedAt to
+        "submittedAt from command"
       tell event OrderSubmitted to entity FrontOfHouse.TableOrder
+      send event OrderSubmitted to outlet
+        FrontOfHouse.OrderSplitter.SubmittedOrders
+      when "TableOrderStateData.orderItems contains food
+        category items" then
+        tell command ReceiveTicket to entity
+          Kitchen.KitchenTicket
+      end
+      when "TableOrderStateData.orderItems contains drink
+        category items" then
+        tell command ReceiveDrinkOrder to entity
+          Bar.DrinkOrder
+      end
     }
     on command PresentBill is {
+      do "sum TableOrderStateData.orderItems applying
+        orderLineItem.itemPrice * orderLineQuantity for each
+        OrderLine to compute presentedBillTotal"
+      set field FrontOfHouse.TableOrder.presentedBillTotal to
+        "computed presentedBillTotal"
+      set field FrontOfHouse.TableOrder.orderStatus to
+        "BillPresentedStatus"
       tell event BillPresented to entity FrontOfHouse.TableOrder
     }
     on command ProcessPayment is {
-      tell event PaymentProcessed to entity FrontOfHouse.TableOrder
+      tell command AuthorizePayment to entity
+        Restaurant.PaymentGateway
+      set field FrontOfHouse.TableOrder.processedPayment to
+        "payment info from command"
+      set field FrontOfHouse.TableOrder.orderStatus to
+        "PaymentCompleteStatus"
+      tell event PaymentProcessed to entity
+        FrontOfHouse.TableOrder
+      tell command AccruePoints to entity
+        Loyalty.LoyaltyAccount
     }
     on command CloseOrder is {
+      set field FrontOfHouse.TableOrder.orderStatus to
+        "ClosedStatus"
+      set field FrontOfHouse.TableOrder.actualClosedAt to
+        "closedAt from command"
       tell event OrderClosed to entity FrontOfHouse.TableOrder
     }
   } with {
     briefly "Table order command handler"
     described as {
-      |Processes table order lifecycle commands.
+      |Processes table order lifecycle commands including item
+      |management, order splitting to kitchen and bar, payment
+      |processing through the external gateway, and loyalty
+      |point accrual on completed payments.
     }
   }
 } with {

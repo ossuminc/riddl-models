@@ -349,28 +349,60 @@ entity KitchenTicket is {
   state ActiveTicket of type KitchenTicket.KitchenTicketStateData
   handler KitchenTicketHandler is {
     on command ReceiveTicket is {
-      morph entity Kitchen.KitchenTicket to state Kitchen.KitchenTicket.ActiveTicket with command ReceiveTicket
+      morph entity Kitchen.KitchenTicket to state
+        Kitchen.KitchenTicket.ActiveTicket with command ReceiveTicket
+      set field Kitchen.KitchenTicket.ticketStatus to "Received"
       tell event TicketReceived to entity Kitchen.KitchenTicket
     }
     on command AssignStation is {
+      set field Kitchen.KitchenTicket.currentStation to
+        "assignedStation from command"
+      set field Kitchen.KitchenTicket.ticketStatus to "Assigned"
       tell event StationAssigned to entity Kitchen.KitchenTicket
     }
     on command StartPreparation is {
-      tell event PreparationStarted to entity Kitchen.KitchenTicket
+      set field Kitchen.KitchenTicket.ticketStatus to
+        "InPreparation"
+      set field Kitchen.KitchenTicket.actualPreparationStartedAt
+        to "startedAt from command"
+      tell event PreparationStarted to entity
+        Kitchen.KitchenTicket
     }
     on command MarkItemReady is {
+      do "set KitchenTicketStateData.ticketItems[
+        MarkItemReady.readyMenuItemId].ticketItemReady = true"
       tell event ItemMarkedReady to entity Kitchen.KitchenTicket
+      when "all KitchenTicketStateData.ticketItems have
+        ticketItemReady = true" then
+        set field Kitchen.KitchenTicket.ticketStatus to
+          "ItemsReady"
+      end
     }
     on command ApproveTicket is {
-      tell event TicketApproved to entity Kitchen.KitchenTicket
+      when "ticket status is ItemsReady" then
+        set field Kitchen.KitchenTicket.ticketStatus to "Approved"
+        set field Kitchen.KitchenTicket.ticketApprovedAt to
+          "approvedAt from command"
+        tell event TicketApproved to entity Kitchen.KitchenTicket
+        tell command NotifyServer to entity Kitchen.KitchenTicket
+      else
+        error "ticket must have all items ready before approval"
+      end
     }
     on command NotifyServer is {
+      set field Kitchen.KitchenTicket.ticketStatus to
+        "ServerNotifiedTicket"
       tell event ServerNotified to entity Kitchen.KitchenTicket
+      tell command SendPushNotification to entity
+        Restaurant.NotificationService
     }
   } with {
     briefly "Kitchen ticket command handler"
     described as {
-      |Processes kitchen ticket lifecycle commands.
+      |Processes kitchen ticket lifecycle commands including
+      |station assignment, item-level preparation tracking,
+      |chef quality approval, and server push notification.
+      |Event sourcing ensures tickets survive system crashes.
     }
   }
 } with {

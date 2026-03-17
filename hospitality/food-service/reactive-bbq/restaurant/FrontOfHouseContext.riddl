@@ -12,21 +12,38 @@ context FrontOfHouse is {
 
     handler ReservationPersistence is {
       on command Reservation.MakeReservation is {
-        prompt "Store new reservation"
+        tell event Reservation.ReservationMade to entity
+          FrontOfHouse.Reservation
+        do "insert row into ReservationData.reservations with
+          reservationId, guestName, guestPhone, partySize,
+          reservationTime, and reservationStatus = Requested"
       }
       on command Reservation.ConfirmReservation is {
-        prompt "Update reservation to confirmed"
+        tell event Reservation.ReservationConfirmed to entity
+          FrontOfHouse.Reservation
+        do "update ReservationData.reservations set
+          reservationStatus = Confirmed, assignedTable =
+          confirmedTable where reservationId matches"
       }
       on command Reservation.CancelReservation is {
-        prompt "Update reservation to cancelled"
+        tell event Reservation.ReservationCancelled to entity
+          FrontOfHouse.Reservation
+        do "update ReservationData.reservations set
+          reservationStatus = Cancelled where reservationId
+          matches"
       }
       on command Reservation.SeatParty is {
-        prompt "Update reservation to seated"
+        tell event Reservation.PartySeated to entity
+          FrontOfHouse.Reservation
+        do "update ReservationData.reservations set
+          reservationStatus = Seated, actualSeatedAt =
+          seatedAt where reservationId matches"
       }
     } with {
       briefly "Reservation persistence"
       described as {
-        |Persists reservation commands.
+        |Persists reservation events to the reservations table
+        |and updates the current state projection.
       }
     }
   } with {
@@ -43,27 +60,51 @@ context FrontOfHouse is {
 
     handler TableOrderPersistence is {
       on command TableOrder.CreateOrder is {
-        prompt "Store new table order"
+        tell event TableOrder.OrderCreated to entity
+          FrontOfHouse.TableOrder
+        do "insert row into TableOrderData.orders with
+          tableOrderId, tableNumber, serverId, and
+          orderStatus = DraftStatus"
       }
       on command TableOrder.AddItem is {
-        prompt "Add item to order"
+        tell event TableOrder.ItemAdded to entity
+          FrontOfHouse.TableOrder
+        do "append addedItem OrderLine to orderItems array
+          in TableOrderData.orders where tableOrderId matches"
       }
       on command TableOrder.RemoveItem is {
-        prompt "Remove item from order"
+        tell event TableOrder.ItemRemoved to entity
+          FrontOfHouse.TableOrder
+        do "remove OrderLine with removedMenuItemId from
+          orderItems array in TableOrderData.orders where
+          tableOrderId matches"
       }
       on command TableOrder.SubmitOrder is {
-        prompt "Mark order as submitted"
+        tell event TableOrder.OrderSubmitted to entity
+          FrontOfHouse.TableOrder
+        do "update TableOrderData.orders set orderStatus =
+          SubmittedStatus, actualSubmittedAt = submittedAt
+          where tableOrderId matches"
       }
       on command TableOrder.ProcessPayment is {
-        prompt "Record payment"
+        tell event TableOrder.PaymentProcessed to entity
+          FrontOfHouse.TableOrder
+        do "update TableOrderData.orders set processedPayment
+          = orderPayment, orderStatus = PaymentCompleteStatus
+          where tableOrderId matches"
       }
       on command TableOrder.CloseOrder is {
-        prompt "Mark order as closed"
+        tell event TableOrder.OrderClosed to entity
+          FrontOfHouse.TableOrder
+        do "update TableOrderData.orders set orderStatus =
+          ClosedStatus, actualClosedAt = closedAt where
+          tableOrderId matches"
       }
     } with {
       briefly "Order persistence"
       described as {
-        |Persists table order commands.
+        |Persists table order events to the orders table
+        |and updates the current state projection.
       }
     }
   } with {
@@ -118,21 +159,32 @@ context FrontOfHouse is {
     }
     handler ReservationBoardHandler is {
       on event Reservation.ReservationMade is {
-        prompt "Add reservation to board"
+        do "insert ReservationBoardEntry with reservationId =
+          event.reservationId, guestName = event.guestName,
+          partySize = event.partySize, reservationTime =
+          event.reservationTime, reservationStatus = Requested,
+          assignedTable = none"
       }
       on event Reservation.ReservationConfirmed is {
-        prompt "Update board entry to confirmed"
+        do "update ReservationBoardEntry set reservationStatus
+          = Confirmed, assignedTable = event.confirmedTable
+          where reservationId = event.reservationId"
       }
       on event Reservation.ReservationCancelled is {
-        prompt "Remove cancelled reservation from board"
+        do "delete ReservationBoardEntry where reservationId =
+          event.reservationId"
       }
       on event Reservation.PartySeated is {
-        prompt "Update board entry to seated"
+        do "update ReservationBoardEntry set reservationStatus
+          = Seated, assignedTable = event.seatedTable where
+          reservationId = event.reservationId"
       }
     } with {
       briefly "Board event handler"
       described as {
-        |Projects reservation events onto the board.
+        |Projects reservation events onto the real-time board
+        |displayed at the host station, replacing the paper
+        |backup system.
       }
     }
   } with {
@@ -142,15 +194,44 @@ context FrontOfHouse is {
       | the host's paper backup system.
     }
   }
-  adaptor ToKitchen to context Restaurant.Kitchen is { 
+  split OrderSplitter is {
+    inlet SubmittedOrders is type OrderEvent
+    outlet FoodOrders is type KitchenTicketEvent
+    outlet DrinkOrders is type DrinkOrderEvent
+  } with {
+    briefly "Order splitter streamlet"
+    described as {
+      |Splits submitted table orders into separate food and
+      |drink streams. Food items flow to the kitchen context
+      |and drink items flow to the bar context, ensuring
+      |ordered processing during peak hours.
+    }
+  }
+  adaptor ToKitchen to context Restaurant.Kitchen is {
     handler KitchenRouting is {
       on command Restaurant.Kitchen.KitchenTicket.ReceiveTicket is {
-        prompt "Route food items from submitted order to kitchen"
+        do "filter OrderSubmitted.orderItems where
+          orderLineItem.itemCategory is not drink to produce
+          food-only OrderLine list"
+        do "map each food OrderLine to TicketItem with
+          ticketMenuItemId = orderLineItem.itemCode,
+          ticketItemName = orderLineItem.itemName,
+          ticketItemQuantity = orderLineQuantity,
+          ticketItemNotes = orderLineNotes,
+          ticketItemReady = false"
+        do "construct ReceiveTicket command with new
+          KitchenTicketId, sourceOrderId =
+          OrderSubmitted.tableOrderId, ticketSource = DineIn,
+          ticketItems = mapped TicketItem list, receivedAt =
+          current timestamp"
+        tell command ReceiveTicket to entity
+          Kitchen.KitchenTicket
       }
     } with {
       briefly "Kitchen routing"
       described as {
-        |Routes food items to kitchen context.
+        |Routes food items to kitchen context, transforming
+        |order lines into kitchen ticket format.
       }
     }
   } with {
@@ -159,15 +240,28 @@ context FrontOfHouse is {
       |Sends submitted food orders to the kitchen.
     }
   }
-  adaptor ToBar to context Restaurant.Bar is { 
+  adaptor ToBar to context Restaurant.Bar is {
     handler BarRouting is {
       on command Restaurant.Bar.DrinkOrder.ReceiveDrinkOrder is {
-        prompt "Route drink items from submitted order to bar"
+        do "filter OrderSubmitted.orderItems where
+          orderLineItem.itemCategory is drink to produce
+          drink-only OrderLine list"
+        do "map each drink OrderLine to DrinkItem with
+          drinkName = orderLineItem.itemName,
+          drinkQuantity = orderLineQuantity,
+          drinkNotes = orderLineNotes"
+        do "construct ReceiveDrinkOrder command with new
+          DrinkOrderId, sourceOrderId =
+          OrderSubmitted.tableOrderId, drinkTableNumber =
+          OrderSubmitted.tableNumber, drinkItems = mapped
+          DrinkItem list, drinkReceivedAt = current timestamp"
+        tell command ReceiveDrinkOrder to entity Bar.DrinkOrder
       }
     } with {
       briefly "Bar routing"
       described as {
-        |Routes drink items to bar context.
+        |Routes drink items to bar context, transforming
+        |order lines into drink order format.
       }
     }
   } with {
@@ -176,21 +270,49 @@ context FrontOfHouse is {
       |Sends submitted drink orders to the bar.
     }
   }
-  adaptor ToLoyalty to context Restaurant.Loyalty is { 
+  adaptor ToLoyalty to context Restaurant.Loyalty is {
     handler LoyaltyRouting is {
       on command Restaurant.Loyalty.LoyaltyAccount.AccruePoints is {
-        prompt "Send payment event to loyalty for point accrual"
+        let pointsEarned = "PaymentProcessed.orderPayment.paymentAmount
+          truncated to integer as accrualPoints"
+        do "construct AccruePoints command with loyaltyAccountId
+          looked up by table association, accrualPoints =
+          pointsEarned, accrualReason = dine-in purchase,
+          accrualOrderRef = PaymentProcessed.tableOrderId"
+        tell command AccruePoints to entity
+          Loyalty.LoyaltyAccount
       }
     } with {
       briefly "Loyalty routing"
       described as {
-        |Routes payment events for loyalty accrual.
+        |Routes payment events for loyalty accrual, calculating
+        |points from payment amounts.
       }
     }
   } with {
     briefly "Loyalty adaptor"
     described as {
       |Sends payment events to the loyalty context.
+    }
+  }
+  connector OrderToKitchen is {
+    from outlet FrontOfHouse.OrderSplitter.FoodOrders to
+      inlet Kitchen.TicketQueue.IncomingTickets
+  } with {
+    briefly "Order to kitchen connector"
+    described as {
+      |Wires food items from the order splitter to the kitchen
+      |ticket queue for ordered processing.
+    }
+  }
+  connector OrderToBar is {
+    from outlet FrontOfHouse.OrderSplitter.DrinkOrders to
+      inlet Bar.DrinkOrderQueue.IncomingDrinks
+  } with {
+    briefly "Order to bar connector"
+    described as {
+      |Wires drink items from the order splitter to the bar
+      |drink order queue for ordered processing.
     }
   }
 } with {

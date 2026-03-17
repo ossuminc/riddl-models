@@ -10,24 +10,47 @@ context Bar is {
 
     handler DrinkOrderPersistence is {
       on command DrinkOrder.ReceiveDrinkOrder is {
-        prompt "Store new drink order"
+        tell event DrinkOrder.DrinkOrderReceived to entity
+          Bar.DrinkOrder
+        do "insert row into DrinkOrderData.drinkOrders with
+          drinkOrderId, sourceOrderId, drinkTableNumber,
+          drinkItems, drinkOrderStatus = DrinkReceived,
+          drinkReceivedAt"
       }
       on command DrinkOrder.PrepareDrink is {
-        prompt "Mark drink preparation started"
+        tell event DrinkOrder.DrinkPrepared to entity
+          Bar.DrinkOrder
+        do "update DrinkOrderData.drinkOrders set
+          drinkOrderStatus = DrinkInPreparation where
+          drinkOrderId matches"
       }
       on command DrinkOrder.MarkDrinkReady is {
-        prompt "Mark drinks as ready"
+        tell event DrinkOrder.DrinkMarkedReady to entity
+          Bar.DrinkOrder
+        do "update DrinkOrderData.drinkOrders set
+          drinkOrderStatus = DrinkReady, actualDrinkReadyAt
+          = drinkReadyAt where drinkOrderId matches"
       }
       on command DrinkOrder.NotifyServerDrinksReady is {
-        prompt "Record server notification"
+        tell event DrinkOrder.ServerNotifiedDrinksReady to
+          entity Bar.DrinkOrder
+        do "update DrinkOrderData.drinkOrders set
+          drinkOrderStatus = DrinkDelivered where drinkOrderId
+          matches"
       }
       on command DrinkOrder.CompleteDrinkOrder is {
-        prompt "Mark drink order completed"
+        tell event DrinkOrder.DrinkOrderCompleted to entity
+          Bar.DrinkOrder
+        do "update DrinkOrderData.drinkOrders set
+          drinkOrderStatus = DrinkCompleted,
+          actualDrinkCompletedAt = drinkCompletedAt where
+          drinkOrderId matches"
       }
     } with {
       briefly "Drink order persistence"
       described as {
-        |Persists drink order commands.
+        |Persists drink order events to the drinkOrders table
+        |and updates the current state projection.
       }
     }
   } with {
@@ -36,15 +59,39 @@ context Bar is {
       |Stores and retrieves drink order data.
     }
   }
-  adaptor FromFrontOfHouse from context Restaurant.FrontOfHouse is { 
+  sink DrinkOrderQueue is {
+    inlet IncomingDrinks is type DrinkOrderEvent
+  } with {
+    briefly "Drink order queue"
+    described as {
+      |Receives incoming drink orders in FIFO order, ensuring
+      |drinks are prepared in the sequence received. Provides
+      |backpressure during peak bar hours.
+    }
+  }
+  adaptor FromFrontOfHouse from context Restaurant.FrontOfHouse is {
     handler DrinkIntake is {
       on event Restaurant.FrontOfHouse.TableOrder.OrderSubmitted is {
-        prompt "Extract drink items from submitted order and create drink order"
+        do "filter event.orderItems where
+          orderLineItem.itemCategory is drink"
+        when "filtered drink items list is not empty" then
+          do "map each drink OrderLine to DrinkItem with
+            drinkName = orderLineItem.itemName,
+            drinkQuantity = orderLineQuantity,
+            drinkNotes = orderLineNotes"
+          do "construct ReceiveDrinkOrder with new DrinkOrderId,
+            sourceOrderId = event.tableOrderId,
+            drinkTableNumber = event.tableNumber,
+            drinkItems = mapped list, drinkReceivedAt =
+            current timestamp"
+          tell command ReceiveDrinkOrder to entity Bar.DrinkOrder
+        end
       }
     } with {
       briefly "Drink intake"
       described as {
-        |Extracts drink items from table orders.
+        |Extracts drink items from table orders and creates
+        |bar drink orders with table number for notification.
       }
     }
   } with {

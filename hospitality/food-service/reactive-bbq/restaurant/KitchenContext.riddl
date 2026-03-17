@@ -11,27 +11,51 @@ context Kitchen is {
 
     handler KitchenTicketPersistence is {
       on command KitchenTicket.ReceiveTicket is {
-        prompt "Store new kitchen ticket"
+        tell event KitchenTicket.TicketReceived to entity
+          Kitchen.KitchenTicket
+        do "insert row into KitchenTicketData.tickets with
+          kitchenTicketId, sourceOrderId, ticketSource,
+          ticketItems, ticketStatus = Received, receivedAt"
       }
       on command KitchenTicket.AssignStation is {
-        prompt "Update ticket with station assignment"
+        tell event KitchenTicket.StationAssigned to entity
+          Kitchen.KitchenTicket
+        do "update KitchenTicketData.tickets set currentStation
+          = assignedStation, ticketStatus = Assigned where
+          kitchenTicketId matches"
       }
       on command KitchenTicket.StartPreparation is {
-        prompt "Mark ticket preparation started"
+        tell event KitchenTicket.PreparationStarted to entity
+          Kitchen.KitchenTicket
+        do "update KitchenTicketData.tickets set ticketStatus =
+          InPreparation, actualPreparationStartedAt = startedAt
+          where kitchenTicketId matches"
       }
       on command KitchenTicket.MarkItemReady is {
-        prompt "Update item readiness on ticket"
+        tell event KitchenTicket.ItemMarkedReady to entity
+          Kitchen.KitchenTicket
+        do "update KitchenTicketData.tickets set
+          ticketItems[readyMenuItemId].ticketItemReady = true
+          where kitchenTicketId matches"
       }
       on command KitchenTicket.ApproveTicket is {
-        prompt "Mark ticket as approved"
+        tell event KitchenTicket.TicketApproved to entity
+          Kitchen.KitchenTicket
+        do "update KitchenTicketData.tickets set ticketStatus =
+          Approved, ticketApprovedAt = approvedAt where
+          kitchenTicketId matches"
       }
       on command KitchenTicket.NotifyServer is {
-        prompt "Mark server notified"
+        tell event KitchenTicket.ServerNotified to entity
+          Kitchen.KitchenTicket
+        do "update KitchenTicketData.tickets set ticketStatus =
+          ServerNotifiedTicket where kitchenTicketId matches"
       }
     } with {
       briefly "Kitchen ticket persistence"
       described as {
-        |Persists kitchen ticket commands.
+        |Persists kitchen ticket events to the tickets table
+        |and updates the current state projection.
       }
     }
   } with {
@@ -86,27 +110,43 @@ context Kitchen is {
     }
     handler KitchenDisplayHandler is {
       on event KitchenTicket.TicketReceived is {
-        prompt "Add ticket to kitchen display"
+        do "insert KitchenDisplayEntry with kitchenTicketId =
+          event.kitchenTicketId, ticketSource =
+          event.ticketSource, ticketItems = event.ticketItems,
+          ticketStatus = Received, displayStation = none,
+          receivedAt = event.receivedAt"
       }
       on event KitchenTicket.StationAssigned is {
-        prompt "Update display with station assignment"
+        do "update KitchenDisplayEntry set displayStation =
+          event.assignedStation, ticketStatus = Assigned
+          where kitchenTicketId = event.kitchenTicketId"
       }
       on event KitchenTicket.PreparationStarted is {
-        prompt "Update display to show preparation in progress"
+        do "update KitchenDisplayEntry set ticketStatus =
+          InPreparation where kitchenTicketId =
+          event.kitchenTicketId"
       }
       on event KitchenTicket.ItemMarkedReady is {
-        prompt "Update item readiness on display"
+        do "update KitchenDisplayEntry set
+          ticketItems[event.readyMenuItemId].ticketItemReady
+          = true where kitchenTicketId =
+          event.kitchenTicketId"
       }
       on event KitchenTicket.TicketApproved is {
-        prompt "Mark ticket as approved on display"
+        do "update KitchenDisplayEntry set ticketStatus =
+          Approved where kitchenTicketId =
+          event.kitchenTicketId"
       }
       on event KitchenTicket.ServerNotified is {
-        prompt "Remove completed ticket from active display"
+        do "delete KitchenDisplayEntry where kitchenTicketId =
+          event.kitchenTicketId"
       }
     } with {
       briefly "Kitchen display handler"
       described as {
-        |Projects ticket events onto the kitchen display.
+        |Projects ticket events onto the real-time kitchen
+        |display screen, replacing handwritten tickets and
+        |preventing order loss during peak hours.
       }
     }
   } with {
@@ -117,38 +157,75 @@ context Kitchen is {
       | Replaces handwritten tickets and prevents order loss.
     }
   }
-  adaptor FromFrontOfHouse from context Restaurant.FrontOfHouse is { 
+  flow TicketQueue is {
+    inlet IncomingTickets is type KitchenTicketEvent
+    outlet DisplayTickets is type KitchenTicketEvent
+  } with {
+    briefly "Kitchen ticket queue"
+    described as {
+      |Processes incoming kitchen tickets in FIFO order,
+      |ensuring tickets are handled in the sequence received.
+      |Prevents ticket loss during peak hours by providing
+      |backpressure when the kitchen is at capacity.
+    }
+  }
+  adaptor FromFrontOfHouse from context Restaurant.FrontOfHouse is {
     handler FrontOfHouseIntake is {
       on event Restaurant.FrontOfHouse.TableOrder.OrderSubmitted is {
-        prompt "Convert submitted dine-in order into kitchen ticket"
+        do "filter event.orderItems where
+          orderLineItem.itemCategory is not drink"
+        do "map each food OrderLine to TicketItem with
+          ticketMenuItemId = orderLineItem.itemCode,
+          ticketItemName = orderLineItem.itemName,
+          ticketItemQuantity = orderLineQuantity,
+          ticketItemNotes = orderLineNotes,
+          ticketItemReady = false"
+        do "construct ReceiveTicket with new KitchenTicketId,
+          sourceOrderId = event.tableOrderId, ticketSource =
+          DineIn, ticketItems = mapped list, receivedAt =
+          current timestamp"
+        tell command ReceiveTicket to entity Kitchen.KitchenTicket
       }
     } with {
       briefly "FOH intake"
       described as {
-        |Converts dine-in orders to kitchen tickets.
+        |Converts dine-in orders to kitchen tickets with
+        |DineIn source marker for display routing.
       }
     }
   } with {
     briefly "Front of house adaptor"
     described as {
-      |Receives submitted dine-in orders.
+      |Receives submitted dine-in orders and converts them
+      |to kitchen tickets.
     }
   }
-  adaptor FromOnlineOrdering from context Restaurant.OnlineOrdering is { 
+  adaptor FromOnlineOrdering from context Restaurant.OnlineOrdering is {
     handler OnlineIntake is {
       on event Restaurant.OnlineOrdering.OnlineOrder.OnlineOrderSubmitted is {
-        prompt "Convert submitted online order into kitchen ticket"
+        do "map each event.orderCartItems CartItem to TicketItem
+          with ticketMenuItemId = cartMenuItemId, ticketItemName
+          = cartItemName, ticketItemQuantity = cartItemQuantity,
+          ticketItemNotes = cartItemNotes, ticketItemReady =
+          false"
+        do "construct ReceiveTicket with new KitchenTicketId,
+          sourceOrderId = event.onlineOrderId, ticketSource =
+          Online, ticketItems = mapped list, receivedAt =
+          current timestamp"
+        tell command ReceiveTicket to entity Kitchen.KitchenTicket
       }
     } with {
       briefly "Online intake"
       described as {
-        |Converts online orders to kitchen tickets.
+        |Converts online orders to kitchen tickets with Online
+        |source marker for fulfillment routing.
       }
     }
   } with {
     briefly "Online ordering adaptor"
     described as {
-      |Receives submitted online orders.
+      |Receives submitted online orders and converts them
+      |to kitchen tickets.
     }
   }
 } with {

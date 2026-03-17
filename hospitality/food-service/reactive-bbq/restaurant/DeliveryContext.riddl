@@ -11,30 +11,58 @@ context Delivery is {
 
     handler DeliveryPersistence is {
       on command DeliveryOrder.CreateDelivery is {
-        prompt "Store new delivery"
+        tell event DeliveryOrder.DeliveryCreated to entity
+          Delivery.DeliveryOrder
+        do "insert row into DeliveryData.deliveries with
+          deliveryId, sourceOnlineOrderId, deliveryCustomerName,
+          deliveryCustomerPhone, deliveryDestination,
+          deliveryStatus = DeliveryPending, createdAt"
       }
       on command DeliveryOrder.AssignDriver is {
-        prompt "Record driver assignment"
+        tell event DeliveryOrder.DriverAssigned to entity
+          Delivery.DeliveryOrder
+        do "update DeliveryData.deliveries set assignedDriverId
+          = driverId, assignedDriverName = driverName,
+          deliveryStatus = DriverAssignedStatus where
+          deliveryId matches"
       }
       on command DeliveryOrder.DispatchDriver is {
-        prompt "Mark delivery as dispatched"
+        tell event DeliveryOrder.DriverDispatched to entity
+          Delivery.DeliveryOrder
+        do "update DeliveryData.deliveries set deliveryStatus =
+          InTransit, actualDispatchedAt = dispatchedAt where
+          deliveryId matches"
       }
       on command DeliveryOrder.RecordDeliveryLocation is {
-        prompt "Store driver location update"
+        tell event DeliveryOrder.DeliveryLocationRecorded to
+          entity Delivery.DeliveryOrder
+        do "update DeliveryData.deliveries set lastKnownLocation
+          = driverLocation where deliveryId matches"
       }
       on command DeliveryOrder.ConfirmDelivery is {
-        prompt "Mark delivery as confirmed"
+        tell event DeliveryOrder.DeliveryConfirmed to entity
+          Delivery.DeliveryOrder
+        do "update DeliveryData.deliveries set deliveryStatus =
+          Delivered, actualConfirmedAt = confirmedAt where
+          deliveryId matches"
       }
       on command DeliveryOrder.RecordDeliveryPayment is {
-        prompt "Record delivery payment"
+        tell event DeliveryOrder.DeliveryPaymentRecorded to
+          entity Delivery.DeliveryOrder
+        do "update DeliveryData.deliveries set deliveryTip =
+          deliveryTip where deliveryId matches"
       }
       on command DeliveryOrder.ReportDeliveryIssue is {
-        prompt "Store delivery issue report"
+        tell event DeliveryOrder.DeliveryIssueReported to entity
+          Delivery.DeliveryOrder
+        do "update DeliveryData.deliveries with issueType and
+          issueDescription where deliveryId matches"
       }
     } with {
       briefly "Delivery persistence"
       described as {
-        |Persists delivery commands.
+        |Persists delivery events to the deliveries table
+        |and updates the current state projection.
       }
     }
   } with {
@@ -43,15 +71,25 @@ context Delivery is {
       |Stores and retrieves delivery data.
     }
   }
-  adaptor FromOnlineOrdering from context Restaurant.OnlineOrdering is { 
+  adaptor FromOnlineOrdering from context Restaurant.OnlineOrdering is {
     handler OnlineDeliveryIntake is {
       on event Restaurant.OnlineOrdering.OnlineOrder.FulfillmentSelected is {
-        prompt "Create delivery when delivery fulfillment is selected"
+        when "event.fulfillmentType is DeliveryFulfillment" then
+          do "construct CreateDelivery with new DeliveryId,
+            sourceOnlineOrderId = event.onlineOrderId,
+            deliveryCustomerName from customer profile,
+            deliveryCustomerPhone from customer profile,
+            deliveryDestination = event.deliveryAddress,
+            requestedDeliveryTime = event.requestedTime"
+          tell command CreateDelivery to entity
+            Delivery.DeliveryOrder
+        end
       }
     } with {
       briefly "Online delivery intake"
       described as {
-        |Creates deliveries from online orders.
+        |Creates deliveries from online orders when delivery
+        |fulfillment is selected.
       }
     }
   } with {
