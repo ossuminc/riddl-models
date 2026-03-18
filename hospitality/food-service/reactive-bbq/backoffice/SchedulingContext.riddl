@@ -8,25 +8,46 @@ context Scheduling is {
         index on field Shift.shiftId
         index on field Shift.shiftDate
         index on field Shift.employeeId
-
+      with {
+      briefly "Shift data schema"
+      described as {
+        |Relational schema for persisting shift state with
+        |indexes on shift identifier, date, and employee.
+      }
+    }
     handler ShiftPersistence is {
       on command Shift.CreateShift is {
-        prompt "Store new shift"
+        tell event Shift.ShiftCreated to entity Scheduling.Shift
+        do "insert row into ShiftData.shifts with shiftId,
+          shiftDate, shiftStart, shiftEnd, shiftRole, and
+          shiftStatus = Open"
       }
       on command Shift.AssignEmployee is {
-        prompt "Record employee assignment"
+        tell event Shift.EmployeeAssigned to entity Scheduling.Shift
+        do "update ShiftData.shifts set assignedEmployeeId =
+          employeeId, assignedEmployeeName = employeeName where
+          shiftId matches"
       }
       on command Shift.SwapShift is {
-        prompt "Record shift swap"
+        tell event Shift.ShiftSwapped to entity Scheduling.Shift
+        do "update ShiftData.shifts set assignedEmployeeId =
+          replacementEmployeeId, assignedEmployeeName =
+          replacementName where shiftId matches"
       }
       on command Shift.ClockIn is {
-        prompt "Record clock-in"
+        tell event Shift.ClockedIn to entity Scheduling.Shift
+        do "update ShiftData.shifts set actualClockedInAt =
+          clockedInAt where shiftId matches"
       }
       on command Shift.ClockOut is {
-        prompt "Record clock-out"
+        tell event Shift.ClockedOut to entity Scheduling.Shift
+        do "update ShiftData.shifts set actualClockedOutAt =
+          clockedOutAt where shiftId matches"
       }
       on command Shift.CancelShift is {
-        prompt "Mark shift as cancelled"
+        tell event Shift.ShiftCancelled to entity Scheduling.Shift
+        do "update ShiftData.shifts set shiftStatus = Cancelled
+          where shiftId matches"
       }
     } with {
       briefly "Shift persistence"
@@ -38,6 +59,38 @@ context Scheduling is {
     briefly "Shift repository"
     described as {
       |Stores and retrieves shift data.
+    }
+  }
+  sink EmployeeUpdateSink is {
+    inlet IncomingEmployeeUpdates is type HREvent
+    handler EmployeeUpdateHandler is {
+      on event HRSystem.EmployeeDataSynced is {
+        do "update local employee roster with synced data
+          from EmployeeDataSynced.hrEmployeeId for shift
+          assignment validation"
+      }
+    } with {
+      briefly "Employee update handler"
+      described as {
+        |Processes employee data sync events to keep the
+        |scheduling roster current.
+      }
+    }
+  } with {
+    briefly "Employee update sink"
+    described as {
+      |Receives employee data updates from the external HR
+      |system for shift assignment validation.
+    }
+  }
+  connector HRToScheduling is {
+    from outlet HRSystem.HREventSource.EmployeeUpdates to
+      inlet Scheduling.EmployeeUpdateSink.IncomingEmployeeUpdates
+  } with {
+    option is persistent
+    briefly "HR to scheduling connector"
+    described as {
+      |Wires HR employee updates to the scheduling context.
     }
   }
 } with {

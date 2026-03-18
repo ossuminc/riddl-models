@@ -46,10 +46,17 @@ context Reporting is {
     }
     handler SalesReportHandler is {
       on event Restaurant.FrontOfHouse.TableOrder.PaymentProcessed is {
-        prompt "Record dine-in sale in report"
+        let entry: SalesReportEntry = "new SalesReportEntry from event"
+        do "upsert SalesReportEntry for current reportDate:
+          increment orderCount, add PaymentProcessed
+          .orderPayment amount to totalRevenue and
+          dineInRevenue, recalculate averageOrderValue"
       }
       on event Restaurant.OnlineOrdering.OnlineOrder.OnlinePaymentProcessed is {
-        prompt "Record online sale in report"
+        do "upsert SalesReportEntry for current reportDate:
+          increment orderCount, add OnlinePaymentProcessed
+          .onlinePayment amount to totalRevenue and
+          onlineRevenue, recalculate averageOrderValue"
       }
     } with {
       briefly "Sales report handler"
@@ -105,13 +112,21 @@ context Reporting is {
     }
     handler LaborReportHandler is {
       on event BackOffice.Scheduling.Shift.ClockedIn is {
-        prompt "Record shift start in labor report"
+        let entry: LaborReportEntry = "new LaborReportEntry from event"
+        do "upsert LaborReportEntry for current
+          laborReportDate: record shift start from
+          ClockedIn.clockedInAt"
       }
       on event BackOffice.Scheduling.Shift.ClockedOut is {
-        prompt "Record shift end and calculate hours"
+        do "upsert LaborReportEntry for current
+          laborReportDate: increment shiftsCompleted, add
+          hours between ClockedIn and ClockedOut
+          .clockedOutAt to totalHoursWorked, recalculate
+          averageShiftDuration"
       }
       on event BackOffice.Scheduling.Shift.ShiftCancelled is {
-        prompt "Record shift cancellation"
+        do "upsert LaborReportEntry for current
+          laborReportDate: increment shiftsCancelled"
       }
     } with {
       briefly "Labor report handler"
@@ -165,13 +180,24 @@ context Reporting is {
     }
     handler InventoryReportHandler is {
       on event BackOffice.Inventory.InventoryItem.StockReceived is {
-        prompt "Update inventory report with receipt"
+        let entry: InventoryReportEntry = "new InventoryReportEntry from event"
+        do "upsert InventoryReportEntry for current
+          inventoryReportDate: update totalItemsTracked,
+          recalculate totalStockValue from
+          StockReceived.newStockLevel, update lowStockItems
+          and outOfStockItems counts"
       }
       on event BackOffice.Inventory.InventoryItem.StockConsumed is {
-        prompt "Update inventory report with consumption"
+        do "upsert InventoryReportEntry for current
+          inventoryReportDate: recalculate totalStockValue
+          from StockConsumed.remainingStockLevel, update
+          lowStockItems and outOfStockItems counts"
       }
       on event BackOffice.Inventory.InventoryItem.StockAdjusted is {
-        prompt "Update inventory report with adjustment"
+        do "upsert InventoryReportEntry for current
+          inventoryReportDate: recalculate totalStockValue
+          from StockAdjusted.adjustedStockLevel, update
+          lowStockItems and outOfStockItems counts"
       }
     } with {
       briefly "Inventory report handler"
@@ -183,6 +209,39 @@ context Reporting is {
     briefly "Inventory report projector"
     described as {
       |Builds inventory reports from stock events.
+    }
+  }
+  sink AccountingConfirmSink is {
+    inlet IncomingPostingResults is type AccountingEvent
+    handler AccountingConfirmHandler is {
+      on event AccountingSystem.TransactionPosted is {
+        do "log accounting confirmation for
+          TransactionPosted.accountingTransactionId posted
+          at TransactionPosted.postedAt for reconciliation"
+      }
+    } with {
+      briefly "Accounting confirmation handler"
+      described as {
+        |Processes transaction posting confirmations from
+        |the accounting system for reconciliation.
+      }
+    }
+  } with {
+    briefly "Accounting confirmation sink"
+    described as {
+      |Receives transaction posting confirmations from the
+      |external accounting system.
+    }
+  }
+  connector AccountingToReporting is {
+    from outlet
+      AccountingSystem.AccountingEventSource.PostingResults to
+      inlet Reporting.AccountingConfirmSink.IncomingPostingResults
+  } with {
+    option is persistent
+    briefly "Accounting to reporting connector"
+    described as {
+      |Wires accounting posting confirmations to reporting.
     }
   }
 } with {

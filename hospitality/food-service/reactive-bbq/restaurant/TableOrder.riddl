@@ -379,11 +379,19 @@ entity TableOrder is {
     }
   }
   state ActiveOrder of type TableOrder.TableOrderStateData
+    with {
+    briefly "Active order state"
+    described as {
+      |The primary state of a dine-in table order from
+      |creation through item management, billing, payment,
+      |and closing.
+    }
+  }
   handler TableOrderHandler is {
     on command CreateOrder is {
       morph entity FrontOfHouse.TableOrder to state
         FrontOfHouse.TableOrder.ActiveOrder with command CreateOrder
-      set field FrontOfHouse.TableOrder.orderStatus to "DraftStatus"
+      set field TableOrder.ActiveOrder.orderStatus to "DraftStatus"
       tell event OrderCreated to entity FrontOfHouse.TableOrder
     }
     on command AddItem is {
@@ -403,9 +411,9 @@ entity TableOrder is {
       end
     }
     on command SubmitOrder is {
-      set field FrontOfHouse.TableOrder.orderStatus to
+      set field TableOrder.ActiveOrder.orderStatus to
         "SubmittedStatus"
-      set field FrontOfHouse.TableOrder.actualSubmittedAt to
+      set field TableOrder.ActiveOrder.actualSubmittedAt to
         "submittedAt from command"
       tell event OrderSubmitted to entity FrontOfHouse.TableOrder
       send event OrderSubmitted to outlet
@@ -425,30 +433,31 @@ entity TableOrder is {
       do "sum TableOrderStateData.orderItems applying
         orderLineItem.itemPrice * orderLineQuantity for each
         OrderLine to compute presentedBillTotal"
-      set field FrontOfHouse.TableOrder.presentedBillTotal to
+      set field TableOrder.ActiveOrder.presentedBillTotal to
         "computed presentedBillTotal"
-      set field FrontOfHouse.TableOrder.orderStatus to
+      set field TableOrder.ActiveOrder.orderStatus to
         "BillPresentedStatus"
       tell event BillPresented to entity FrontOfHouse.TableOrder
     }
     on command ProcessPayment is {
-      tell command AuthorizePayment to entity
-        Restaurant.PaymentGateway
-      set field FrontOfHouse.TableOrder.processedPayment to
+      set field TableOrder.ActiveOrder.processedPayment to
         "payment info from command"
-      set field FrontOfHouse.TableOrder.orderStatus to
+      set field TableOrder.ActiveOrder.orderStatus to
         "PaymentCompleteStatus"
       tell event PaymentProcessed to entity
         FrontOfHouse.TableOrder
-      tell command AccruePoints to entity
-        Loyalty.LoyaltyAccount
+      do "PaymentProcessed event triggers PaymentGateway
+        authorization via streaming topology and Loyalty
+        point accrual via ToLoyalty adaptor"
     }
     on command CloseOrder is {
-      set field FrontOfHouse.TableOrder.orderStatus to
+      set field TableOrder.ActiveOrder.orderStatus to
         "ClosedStatus"
-      set field FrontOfHouse.TableOrder.actualClosedAt to
+      set field TableOrder.ActiveOrder.actualClosedAt to
         "closedAt from command"
       tell event OrderClosed to entity FrontOfHouse.TableOrder
+      do "OrderClosed event triggers accounting transaction
+        posting via streaming topology"
     }
   } with {
     briefly "Table order command handler"

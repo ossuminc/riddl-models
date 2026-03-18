@@ -8,7 +8,13 @@ context Kitchen is {
         index on field KitchenTicket.kitchenTicketId
         index on field KitchenTicket.ticketStatus
         index on field KitchenTicket.assignedStation
-
+      with {
+      briefly "Kitchen ticket data schema"
+      described as {
+        |Relational schema for persisting kitchen ticket
+        |state with indexes on ticket, status, and station.
+      }
+    }
     handler KitchenTicketPersistence is {
       on command KitchenTicket.ReceiveTicket is {
         tell event KitchenTicket.TicketReceived to entity
@@ -110,6 +116,7 @@ context Kitchen is {
     }
     handler KitchenDisplayHandler is {
       on event KitchenTicket.TicketReceived is {
+        let entry: KitchenDisplayEntry = "new KitchenDisplayEntry from event"
         do "insert KitchenDisplayEntry with kitchenTicketId =
           event.kitchenTicketId, ticketSource =
           event.ticketSource, ticketItems = event.ticketItems,
@@ -160,6 +167,17 @@ context Kitchen is {
   flow TicketQueue is {
     inlet IncomingTickets is type KitchenTicketEvent
     outlet DisplayTickets is type KitchenTicketEvent
+    handler TicketQueueHandler is {
+      on event KitchenTicket.TicketReceived is {
+        send event KitchenTicket.TicketReceived to outlet DisplayTickets
+      }
+    } with {
+      briefly "Ticket queue handler"
+      described as {
+        |Forwards incoming tickets to the display in FIFO
+        |order with backpressure during peak hours.
+      }
+    }
   } with {
     briefly "Kitchen ticket queue"
     described as {
@@ -167,6 +185,37 @@ context Kitchen is {
       |ensuring tickets are handled in the sequence received.
       |Prevents ticket loss during peak hours by providing
       |backpressure when the kitchen is at capacity.
+    }
+  }
+  sink TicketDisplaySink is {
+    inlet DisplayedTickets is type KitchenTicketEvent
+    handler TicketDisplayHandler is {
+      on event KitchenTicket.TicketReceived is {
+        do "render ticket on kitchen display screen"
+      }
+    } with {
+      briefly "Ticket display handler"
+      described as {
+        |Renders received ticket events on the kitchen
+        |display screen for staff visibility.
+      }
+    }
+  } with {
+    briefly "Ticket display sink"
+    described as {
+      |Consumes processed kitchen ticket events from the
+      |ticket queue and renders them on the kitchen display
+      |screen for staff visibility.
+    }
+  }
+  connector QueueToDisplay is {
+    from outlet Kitchen.TicketQueue.DisplayTickets to
+      inlet Kitchen.TicketDisplaySink.DisplayedTickets
+  } with {
+    briefly "Queue to display connector"
+    described as {
+      |Wires processed tickets from the queue to the display
+      |sink for rendering on the kitchen screen.
     }
   }
   adaptor FromFrontOfHouse from context Restaurant.FrontOfHouse is {

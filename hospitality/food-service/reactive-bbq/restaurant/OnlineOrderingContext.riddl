@@ -8,7 +8,13 @@ context OnlineOrdering is {
         index on field OnlineOrder.onlineOrderId
         index on field OnlineOrder.customerId
         index on field OnlineOrder.onlineOrderStatus
-
+      with {
+      briefly "Online order data schema"
+      described as {
+        |Relational schema for persisting online order state
+        |with indexes on order, customer, and status.
+      }
+    }
     handler OnlineOrderPersistence is {
       on command OnlineOrder.BrowseMenu is {
         tell event OnlineOrder.MenuBrowsed to entity
@@ -69,9 +75,45 @@ context OnlineOrdering is {
       |Stores and retrieves online order data.
     }
   }
+  source OnlineOrderEventSource is {
+    outlet SubmittedOnlineOrderEvents is type OnlineOrderEvent
+    handler OnlineOrderEventEmitter is {
+      on event OnlineOrder.OnlineOrderSubmitted is {
+        send event OnlineOrder.OnlineOrderSubmitted to
+          outlet SubmittedOnlineOrderEvents
+      }
+    } with {
+      briefly "Online order event emitter"
+      described as {
+        |Emits online order submission events into the
+        |streaming topology for kitchen routing.
+      }
+    }
+  } with {
+    briefly "Online order event source"
+    described as {
+      |Emits online order submission events from the
+      |OnlineOrder entity into the streaming topology for
+      |kitchen routing.
+    }
+  }
   flow OnlineOrderPipeline is {
     inlet SubmittedOnlineOrders is type OnlineOrderEvent
     outlet KitchenOrders is type KitchenTicketEvent
+    handler OnlineOrderPipelineHandler is {
+      on event OnlineOrder.OnlineOrderSubmitted is {
+        do "convert online order cart items to kitchen ticket
+          format and forward to kitchen queue"
+        send event OnlineOrder.OnlineOrderSubmitted to
+          outlet KitchenOrders
+      }
+    } with {
+      briefly "Online order pipeline handler"
+      described as {
+        |Converts online orders to kitchen tickets and
+        |merges with dine-in orders for unified processing.
+      }
+    }
   } with {
     briefly "Online order pipeline"
     described as {
@@ -158,10 +200,22 @@ context OnlineOrdering is {
       |Sends online payment events to loyalty context.
     }
   }
+  connector OnlineSourceToPipeline is {
+    from outlet
+      OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
+      to inlet OnlineOrdering.OnlineOrderPipeline.SubmittedOnlineOrders
+  } with {
+    briefly "Source to pipeline connector"
+    described as {
+      |Wires online order events from the source into the
+      |order pipeline for kitchen routing.
+    }
+  }
   connector OnlineToKitchen is {
     from outlet OnlineOrdering.OnlineOrderPipeline.KitchenOrders to
       inlet Kitchen.TicketQueue.IncomingTickets
   } with {
+    option is persistent
     briefly "Online to kitchen connector"
     described as {
       |Wires online orders from the order pipeline to the

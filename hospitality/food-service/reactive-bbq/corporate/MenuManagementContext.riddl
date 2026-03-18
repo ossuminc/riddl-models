@@ -9,19 +9,40 @@ context MenuManagement is {
         index on field MenuItem.menuItemId
         index on field MenuItem.menuItemCategory
         index on field MenuItem.menuItemLifecycle
-
+      with {
+      briefly "Menu item data schema"
+      described as {
+        |Relational schema for persisting menu item state
+        |with indexes on item, category, and lifecycle.
+      }
+    }
     handler MenuItemPersistence is {
       on command MenuItem.CreateMenuItem is {
-        prompt "Store new menu item"
+        tell event MenuItem.MenuItemCreated to entity
+          MenuManagement.MenuItem
+        do "insert row into MenuItemData.menuItems with
+          menuItemId, menuItemName, menuItemCategory,
+          menuItemDescription, recipe, pricing, and
+          menuItemLifecycle = Draft"
       }
       on command MenuItem.UpdateMenuItem is {
-        prompt "Update menu item details"
+        tell event MenuItem.MenuItemUpdated to entity
+          MenuManagement.MenuItem
+        do "update MenuItemData.menuItems set updatedName,
+          updatedDescription, updatedRecipe where menuItemId
+          matches"
       }
       on command MenuItem.SetPrice is {
-        prompt "Update menu item pricing"
+        tell event MenuItem.PriceSet to entity
+          MenuManagement.MenuItem
+        do "update MenuItemData.menuItems set pricing =
+          updatedPricing where menuItemId matches"
       }
       on command MenuItem.RetireMenuItem is {
-        prompt "Mark menu item as retired"
+        tell event MenuItem.MenuItemRetired to entity
+          MenuManagement.MenuItem
+        do "update MenuItemData.menuItems set menuItemLifecycle
+          = Retired where menuItemId matches"
       }
     } with {
       briefly "Menu item persistence"
@@ -40,22 +61,47 @@ context MenuManagement is {
       of releases as type MenuRelease
         index on field MenuRelease.menuReleaseId
         index on field MenuRelease.menuReleaseStatus
-
+      with {
+      briefly "Menu release data schema"
+      described as {
+        |Relational schema for persisting menu release state
+        |with indexes on release identifier and status.
+      }
+    }
     handler MenuReleasePersistence is {
       on command MenuRelease.CreateMenuRelease is {
-        prompt "Store new menu release"
+        tell event MenuRelease.MenuReleaseCreated to entity
+          MenuManagement.MenuRelease
+        do "insert row into MenuReleaseData.releases with
+          menuReleaseId, releaseName, releaseDescription,
+          effectiveDate, and menuReleaseStatus = Draft"
       }
       on command MenuRelease.AddItemToRelease is {
-        prompt "Add item to release"
+        tell event MenuRelease.ItemAddedToRelease to entity
+          MenuManagement.MenuRelease
+        do "append releaseMenuItemId to releaseItems in
+          MenuReleaseData.releases where menuReleaseId matches"
       }
       on command MenuRelease.FinalizeRelease is {
-        prompt "Mark release as finalized"
+        tell event MenuRelease.ReleaseFinalized to entity
+          MenuManagement.MenuRelease
+        do "update MenuReleaseData.releases set
+          menuReleaseStatus = Finalized where menuReleaseId
+          matches"
       }
       on command MenuRelease.PublishRelease is {
-        prompt "Mark release as published"
+        tell event MenuRelease.ReleasePublished to entity
+          MenuManagement.MenuRelease
+        do "update MenuReleaseData.releases set
+          menuReleaseStatus = Published, actualPublishedAt =
+          publishedAt where menuReleaseId matches"
       }
       on command MenuRelease.RollbackRelease is {
-        prompt "Mark release as rolled back"
+        tell event MenuRelease.ReleaseRolledBack to entity
+          MenuManagement.MenuRelease
+        do "update MenuReleaseData.releases set
+          menuReleaseStatus = RolledBack where menuReleaseId
+          matches"
       }
     } with {
       briefly "Menu release persistence"
@@ -69,10 +115,75 @@ context MenuManagement is {
       |Stores and retrieves menu release data.
     }
   }
-  adaptor ToRestaurants to context Restaurant.FrontOfHouse is { 
+  sink PrintConfirmSink is {
+    inlet IncomingPrintResults is type PrintingEvent
+    handler PrintConfirmHandler is {
+      on event PrintingService.MenusPrinted is {
+        do "log print job completion for
+          MenusPrinted.printJobId completed at
+          MenusPrinted.printedAt"
+      }
+    } with {
+      briefly "Print confirmation handler"
+      described as {
+        |Processes print job completion confirmations.
+      }
+    }
+  } with {
+    briefly "Print confirmation sink"
+    described as {
+      |Receives print completion events from the external
+      |printing service.
+    }
+  }
+  sink PhotoConfirmSink is {
+    inlet IncomingShootResults is type PhotographyEvent
+    handler PhotoConfirmHandler is {
+      on event PhotographyService.PhotoShootCompleted is {
+        do "update menu item images from completed photo
+          shoot PhotoShootCompleted.shootId completed at
+          PhotoShootCompleted.completedAt"
+      }
+    } with {
+      briefly "Photo confirmation handler"
+      described as {
+        |Processes photo shoot completions and updates
+        |menu item images.
+      }
+    }
+  } with {
+    briefly "Photo confirmation sink"
+    described as {
+      |Receives photo shoot completion events from the
+      |external photography service.
+    }
+  }
+  connector PrintingToMenu is {
+    from outlet PrintingService.PrintingEventSource.PrintResults
+      to inlet MenuManagement.PrintConfirmSink.IncomingPrintResults
+  } with {
+    option is persistent
+    briefly "Printing to menu connector"
+    described as {
+      |Wires printing completion events to menu management.
+    }
+  }
+  connector PhotographyToMenu is {
+    from outlet
+      PhotographyService.PhotographyEventSource.ShootResults to
+      inlet MenuManagement.PhotoConfirmSink.IncomingShootResults
+  } with {
+    option is persistent
+    briefly "Photography to menu connector"
+    described as {
+      |Wires photo shoot completions to menu management.
+    }
+  }
+  adaptor ToRestaurants to context Restaurant.FrontOfHouse is {
     handler MenuDistribution is {
       on command Restaurant.FrontOfHouse.TableOrder.CreateOrder is {
-        prompt "Distribute published menu updates to restaurant locations"
+        do "distribute published menu updates to restaurant
+          locations"
       }
     } with {
       briefly "Menu distribution"

@@ -9,7 +9,13 @@ context FrontOfHouse is {
         index on field Reservation.reservationId
         index on field Reservation.guestName
         index on field Reservation.reservationTime
-
+      with {
+      briefly "Reservation data schema"
+      described as {
+        |Relational schema for persisting reservation state
+        |with indexes on identifier, guest name, and time.
+      }
+    }
     handler ReservationPersistence is {
       on command Reservation.MakeReservation is {
         tell event Reservation.ReservationMade to entity
@@ -57,7 +63,13 @@ context FrontOfHouse is {
       of orders as type TableOrder
         index on field TableOrder.tableOrderId
         index on field TableOrder.tableNumber
-
+      with {
+      briefly "Table order data schema"
+      described as {
+        |Relational schema for persisting table order state
+        |with indexes on order identifier and table number.
+      }
+    }
     handler TableOrderPersistence is {
       on command TableOrder.CreateOrder is {
         tell event TableOrder.OrderCreated to entity
@@ -159,6 +171,7 @@ context FrontOfHouse is {
     }
     handler ReservationBoardHandler is {
       on event Reservation.ReservationMade is {
+        let entry: ReservationBoardEntry = "new ReservationBoardEntry from event"
         do "insert ReservationBoardEntry with reservationId =
           event.reservationId, guestName = event.guestName,
           partySize = event.partySize, reservationTime =
@@ -166,6 +179,7 @@ context FrontOfHouse is {
           assignedTable = none"
       }
       on event Reservation.ReservationConfirmed is {
+        let entry: ReservationBoardEntry = "updated ReservationBoardEntry from event"
         do "update ReservationBoardEntry set reservationStatus
           = Confirmed, assignedTable = event.confirmedTable
           where reservationId = event.reservationId"
@@ -194,10 +208,42 @@ context FrontOfHouse is {
       | the host's paper backup system.
     }
   }
+  source OrderEventSource is {
+    outlet SubmittedOrderEvents is type OrderEvent
+    handler OrderEventEmitter is {
+      on event TableOrder.OrderSubmitted is {
+        send event TableOrder.OrderSubmitted to outlet SubmittedOrderEvents
+      }
+    } with {
+      briefly "Order event emitter"
+      described as {
+        |Emits order submission events to the streaming
+        |topology when orders are submitted.
+      }
+    }
+  } with {
+    briefly "Order event source"
+    described as {
+      |Emits order submission events from the TableOrder entity
+      |into the streaming topology for kitchen and bar routing.
+    }
+  }
   split OrderSplitter is {
     inlet SubmittedOrders is type OrderEvent
     outlet FoodOrders is type KitchenTicketEvent
     outlet DrinkOrders is type DrinkOrderEvent
+    handler OrderSplitHandler is {
+      on event TableOrder.OrderSubmitted is {
+        send event TableOrder.OrderSubmitted to outlet FoodOrders
+        send event TableOrder.OrderSubmitted to outlet DrinkOrders
+      }
+    } with {
+      briefly "Order split handler"
+      described as {
+        |Routes food items to the kitchen outlet and drink
+        |items to the bar outlet.
+      }
+    }
   } with {
     briefly "Order splitter streamlet"
     described as {
@@ -295,10 +341,96 @@ context FrontOfHouse is {
       |Sends payment events to the loyalty context.
     }
   }
+  sink PaymentResultSink is {
+    inlet IncomingPaymentResults is type PaymentGatewayEvent
+    handler PaymentResultHandler is {
+      on event PaymentGateway.PaymentAuthorized is {
+        do "match PaymentAuthorized.paymentGatewayTransactionId
+          to pending TableOrder by payment reference and
+          trigger payment capture via PaymentGateway
+          streaming topology"
+      }
+      on event PaymentGateway.PaymentCaptured is {
+        do "mark payment as fully settled for the matching
+          TableOrder using PaymentCaptured
+          .captureTransactionId"
+      }
+    } with {
+      briefly "Payment result handler"
+      described as {
+        |Processes asynchronous payment gateway responses,
+        |capturing authorized payments and confirming
+        |settlement back to the originating table order.
+      }
+    }
+  } with {
+    briefly "Payment result sink"
+    described as {
+      |Receives payment authorization and capture results
+      |from the external payment gateway for two-phase
+      |payment processing.
+    }
+  }
+  sink NotificationAckSink is {
+    inlet NotificationAcks is type NotificationEvent
+    handler NotificationAckHandler is {
+      on event NotificationService.PushNotificationSent is {
+        do "log notification delivery confirmation for
+          PushNotificationSent.notificationRecipient at
+          PushNotificationSent.sentAt for audit trail"
+      }
+    } with {
+      briefly "Notification acknowledgment handler"
+      described as {
+        |Logs push notification delivery confirmations
+        |for audit trail.
+      }
+    }
+  } with {
+    briefly "Notification acknowledgment sink"
+    described as {
+      |Receives delivery confirmation events from the
+      |external push notification service.
+    }
+  }
+  connector PaymentGatewayToFOH is {
+    from outlet PaymentGateway.PaymentEventSource.PaymentResults
+      to inlet FrontOfHouse.PaymentResultSink.IncomingPaymentResults
+  } with {
+    option is persistent
+    briefly "Payment gateway connector"
+    described as {
+      |Wires payment gateway events to the front of house
+      |for two-phase payment processing.
+    }
+  }
+  connector NotificationToFOH is {
+    from outlet
+      NotificationService.NotificationEventSource.NotificationResults
+      to inlet FrontOfHouse.NotificationAckSink.NotificationAcks
+  } with {
+    option is persistent
+    briefly "Notification connector"
+    described as {
+      |Wires notification delivery confirmations to the
+      |front of house for audit logging.
+    }
+  }
+  connector SourceToSplitter is {
+    from outlet FrontOfHouse.OrderEventSource.SubmittedOrderEvents
+      to inlet FrontOfHouse.OrderSplitter.SubmittedOrders
+  } with {
+    briefly "Source to splitter connector"
+    described as {
+      |Wires order events from the source into the order
+      |splitter for kitchen and bar routing.
+    }
+  }
   connector OrderToKitchen is {
     from outlet FrontOfHouse.OrderSplitter.FoodOrders to
       inlet Kitchen.TicketQueue.IncomingTickets
   } with {
+    option is persistent
     briefly "Order to kitchen connector"
     described as {
       |Wires food items from the order splitter to the kitchen
@@ -309,6 +441,7 @@ context FrontOfHouse is {
     from outlet FrontOfHouse.OrderSplitter.DrinkOrders to
       inlet Bar.DrinkOrderQueue.IncomingDrinks
   } with {
+    option is persistent
     briefly "Order to bar connector"
     described as {
       |Wires drink items from the order splitter to the bar
