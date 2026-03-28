@@ -182,7 +182,7 @@ Each pattern includes:
 ### RIDDL Style
 
 Follow these idioms when writing RIDDL (canonical form as of
-riddlc 1.13.1 prettify):
+riddlc 1.16.5 prettify):
 
 1. **Use `is` keyword** for readability: `entity Order is { }`
 2. **Use `???` for placeholders** - empty bodies not allowed
@@ -286,7 +286,7 @@ server can still be used for querying grammar, idioms, and patterns.
 The build uses the **sbt-riddl** plugin (`com.ossuminc:sbt-riddl`)
 which provides all riddlc integration. Configuration in `build.sbt`:
 
-- `riddlcVersion` — Version of riddlc to download (currently 1.13.1)
+- `riddlcVersion` — Version of riddlc to download (currently 1.16.5)
 - `riddlcSourceDir` — Set to `baseDirectory.value` (repo root) so
   the plugin scans all sector directories for `.conf` files
 - `riddlcConfExclusions` — Excludes `patterns/` from scanning
@@ -368,7 +368,7 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **1.13.1** (set via `riddlcVersion` in
+Current version: **1.16.5** (set via `riddlcVersion` in
 `build.sbt`).
 
 ### Model Include Structure
@@ -446,9 +446,9 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 1.13.1 | Set in `build.sbt` `riddlcVersion` |
-| sbt-riddl | 1.13.1 | Plugin in `project/plugins.sbt` |
-| riddl-lib | 1.13.1 | Test dependency for Scala validation |
+| riddlc | 1.16.5 | Set in `build.sbt` `riddlcVersion` |
+| sbt-riddl | 1.16.5 | Plugin in `project/plugins.sbt` |
+| riddl-lib | 1.16.5 | Test dependency for Scala validation |
 | sbt-ossuminc | 1.3.5 | Build plugin |
 
 Models are validated against the RIDDL grammar using riddlc, both

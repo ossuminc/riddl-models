@@ -9,7 +9,8 @@ enablePlugins(RiddlSbtPlugin)
 
 lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
   .configure(With.typical)  // Sets up Scala 3.3.x and resolvers
-  .configure(With.noPublishing, With.Git, With.DynVer, With.noMiMa, riddlc())
+  .configure(With.noPublishing, With.Git, With.DynVer, With.noMiMa,
+    riddlc(sourceDir = ".", validateOnCompile = false))
   .settings(
     // Make the base directory available as a system property for the test
     Test / javaOptions +=
