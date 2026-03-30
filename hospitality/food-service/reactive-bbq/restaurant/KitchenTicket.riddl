@@ -285,7 +285,7 @@ entity KitchenTicket is {
     }
   }
   // ---- State ----
-  record KitchenTicketStateData is  {
+  record KitchenTicketData is {
     kitchenTicketId: KitchenTicketId with {
       briefly "ID"
       described as {
@@ -308,12 +308,6 @@ entity KitchenTicket is {
       briefly "Items"
       described as {
         |Items on the ticket.
-      }
-    }
-    ticketStatus: TicketStatus with {
-      briefly "Status"
-      described as {
-        |Current ticket status.
       }
     }
     currentStation: StationName? with {
@@ -343,63 +337,103 @@ entity KitchenTicket is {
   } with {
     briefly "Kitchen ticket state data"
     described as {
-      |Full state of a kitchen ticket.
+      |Full state of a kitchen ticket. Shared across all
+      |lifecycle states as a superset record.
     }
   }
-  state ActiveTicket of type KitchenTicket.KitchenTicketStateData
-    with {
-    briefly "Active ticket state"
+  state Received of type KitchenTicket.KitchenTicketData with {
+    briefly "Ticket received"
     described as {
-      |The primary state of a kitchen ticket from receipt
-      |through station assignment, preparation, approval,
-      |and server notification.
+      |Initial state when a ticket arrives from an order.
+      |Awaiting station assignment.
+    }
+  }
+  state Assigned of type KitchenTicket.KitchenTicketData with {
+    briefly "Station assigned"
+    described as {
+      |Ticket has been assigned to a kitchen station.
+      |Awaiting start of preparation.
+    }
+  }
+  state InPreparation of type KitchenTicket.KitchenTicketData
+    with {
+    briefly "In preparation"
+    described as {
+      |Station is actively preparing the items on this
+      |ticket. Individual items are marked ready as they
+      |are completed.
+    }
+  }
+  state ItemsReady of type KitchenTicket.KitchenTicketData with {
+    briefly "All items ready"
+    described as {
+      |All items on the ticket have been prepared.
+      |Awaiting chef quality approval.
+    }
+  }
+  state Approved of type KitchenTicket.KitchenTicketData with {
+    briefly "Chef approved"
+    described as {
+      |Chef has approved the completed ticket for serving.
+      |Server notification is being sent.
+    }
+  }
+  state ServerNotifiedState of type KitchenTicket.KitchenTicketData
+    with {
+    briefly "Server notified"
+    described as {
+      |Server has been notified that the order is ready
+      |for pickup. Terminal state.
     }
   }
   handler KitchenTicketHandler is {
     on command ReceiveTicket is {
       morph entity Kitchen.KitchenTicket to state
-        Kitchen.KitchenTicket.ActiveTicket with command ReceiveTicket
-      set field KitchenTicket.ActiveTicket.ticketStatus to "Received"
+        Kitchen.KitchenTicket.Received
+          with command ReceiveTicket
       tell event TicketReceived to entity Kitchen.KitchenTicket
     }
     on command AssignStation is {
-      set field KitchenTicket.ActiveTicket.currentStation to
+      morph entity Kitchen.KitchenTicket to state
+        Kitchen.KitchenTicket.Assigned
+          with command AssignStation
+      set field KitchenTicket.Assigned.currentStation to
         "assignedStation from command"
-      set field KitchenTicket.ActiveTicket.ticketStatus to "Assigned"
       tell event StationAssigned to entity Kitchen.KitchenTicket
     }
     on command StartPreparation is {
-      set field KitchenTicket.ActiveTicket.ticketStatus to
-        "InPreparation"
-      set field KitchenTicket.ActiveTicket.actualPreparationStartedAt
+      morph entity Kitchen.KitchenTicket to state
+        Kitchen.KitchenTicket.InPreparation
+          with command StartPreparation
+      set field KitchenTicket.InPreparation.actualPreparationStartedAt
         to "startedAt from command"
       tell event PreparationStarted to entity
         Kitchen.KitchenTicket
     }
     on command MarkItemReady is {
-      do "set KitchenTicketStateData.ticketItems[
+      do "set KitchenTicketData.ticketItems[
         MarkItemReady.readyMenuItemId].ticketItemReady = true"
       tell event ItemMarkedReady to entity Kitchen.KitchenTicket
-      when "all KitchenTicketStateData.ticketItems have
+      when "all KitchenTicketData.ticketItems have
         ticketItemReady = true" then
-        set field KitchenTicket.ActiveTicket.ticketStatus to
-          "ItemsReady"
+        morph entity Kitchen.KitchenTicket to state
+          Kitchen.KitchenTicket.ItemsReady
+            with command MarkItemReady
       end
     }
     on command ApproveTicket is {
-      when "ticket status is ItemsReady" then
-        set field KitchenTicket.ActiveTicket.ticketStatus to "Approved"
-        set field KitchenTicket.ActiveTicket.ticketApprovedAt to
-          "approvedAt from command"
-        tell event TicketApproved to entity Kitchen.KitchenTicket
-        tell command NotifyServer to entity Kitchen.KitchenTicket
-      else
-        error "ticket must have all items ready before approval"
-      end
+      morph entity Kitchen.KitchenTicket to state
+        Kitchen.KitchenTicket.Approved
+          with command ApproveTicket
+      set field KitchenTicket.Approved.ticketApprovedAt to
+        "approvedAt from command"
+      tell event TicketApproved to entity Kitchen.KitchenTicket
+      tell command NotifyServer to entity Kitchen.KitchenTicket
     }
     on command NotifyServer is {
-      set field KitchenTicket.ActiveTicket.ticketStatus to
-        "ServerNotifiedTicket"
+      morph entity Kitchen.KitchenTicket to state
+        Kitchen.KitchenTicket.ServerNotifiedState
+          with command NotifyServer
       tell event ServerNotified to entity Kitchen.KitchenTicket
       do "ServerNotified event triggers push notification to
         server via NotificationService streaming topology"
@@ -407,10 +441,11 @@ entity KitchenTicket is {
   } with {
     briefly "Kitchen ticket command handler"
     described as {
-      |Processes kitchen ticket lifecycle commands including
-      |station assignment, item-level preparation tracking,
-      |chef quality approval, and server push notification.
-      |Event sourcing ensures tickets survive system crashes.
+      |Processes kitchen ticket lifecycle commands with
+      |explicit state transitions: Received → Assigned →
+      |InPreparation → ItemsReady → Approved → ServerNotified.
+      |MarkItemReady conditionally transitions to ItemsReady
+      |when all items are complete.
     }
   }
 } with {

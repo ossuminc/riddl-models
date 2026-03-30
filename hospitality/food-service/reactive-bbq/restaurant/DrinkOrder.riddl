@@ -236,7 +236,7 @@ entity DrinkOrder is {
     }
   }
   // ---- State ----
-  record DrinkOrderStateData is  {
+  record DrinkOrderData is {
     drinkOrderId: DrinkOrderId with {
       briefly "ID"
       described as {
@@ -261,12 +261,6 @@ entity DrinkOrder is {
         |Drinks in the order.
       }
     }
-    drinkOrderStatus: DrinkOrderStatus with {
-      briefly "Status"
-      described as {
-        |Current drink order status.
-      }
-    }
     drinkReceivedAt: TimeStamp with {
       briefly "Received at"
       described as {
@@ -288,42 +282,70 @@ entity DrinkOrder is {
   } with {
     briefly "Drink order state data"
     described as {
-      |Full state of a drink order.
+      |Full state of a drink order. Shared across all
+      |lifecycle states as a superset record.
     }
   }
-  state ActiveDrinkOrder of type DrinkOrder.DrinkOrderStateData
-    with {
-    briefly "Active drink order state"
+  state Received of type DrinkOrder.DrinkOrderData with {
+    briefly "Drink order received"
     described as {
-      |The primary state of a drink order from receipt
-      |through preparation, readiness notification, and
-      |delivery to the table.
+      |Initial state when a drink order arrives at the bar
+      |from a table order submission.
+    }
+  }
+  state InPreparation of type DrinkOrder.DrinkOrderData with {
+    briefly "Drink in preparation"
+    described as {
+      |Bartender is actively preparing the drinks.
+    }
+  }
+  state Ready of type DrinkOrder.DrinkOrderData with {
+    briefly "Drinks ready"
+    described as {
+      |Drinks are prepared and waiting for server pickup.
+    }
+  }
+  state Delivered of type DrinkOrder.DrinkOrderData with {
+    briefly "Drinks delivered"
+    described as {
+      |Server has been notified and drinks are on the way
+      |to the table.
+    }
+  }
+  state Completed of type DrinkOrder.DrinkOrderData with {
+    briefly "Drink order completed"
+    described as {
+      |Drinks have been delivered to the table and the
+      |drink order is finalized.
     }
   }
   handler DrinkOrderHandler is {
     on command ReceiveDrinkOrder is {
       morph entity Bar.DrinkOrder to state
-        Bar.DrinkOrder.ActiveDrinkOrder
+        Bar.DrinkOrder.Received
           with command ReceiveDrinkOrder
-      set field DrinkOrder.ActiveDrinkOrder.drinkOrderStatus to "DrinkReceived"
       tell event DrinkOrderReceived to entity Bar.DrinkOrder
     }
     on command PrepareDrink is {
-      set field DrinkOrder.ActiveDrinkOrder.drinkOrderStatus to
-        "DrinkInPreparation"
+      morph entity Bar.DrinkOrder to state
+        Bar.DrinkOrder.InPreparation
+          with command PrepareDrink
       tell event DrinkPrepared to entity Bar.DrinkOrder
     }
     on command MarkDrinkReady is {
-      set field DrinkOrder.ActiveDrinkOrder.drinkOrderStatus to "DrinkReady"
-      set field DrinkOrder.ActiveDrinkOrder.actualDrinkReadyAt to
+      morph entity Bar.DrinkOrder to state
+        Bar.DrinkOrder.Ready
+          with command MarkDrinkReady
+      set field DrinkOrder.Ready.actualDrinkReadyAt to
         "drinkReadyAt from command"
       tell event DrinkMarkedReady to entity Bar.DrinkOrder
       tell command NotifyServerDrinksReady to entity
         Bar.DrinkOrder
     }
     on command NotifyServerDrinksReady is {
-      set field DrinkOrder.ActiveDrinkOrder.drinkOrderStatus to
-        "DrinkDelivered"
+      morph entity Bar.DrinkOrder to state
+        Bar.DrinkOrder.Delivered
+          with command NotifyServerDrinksReady
       tell event ServerNotifiedDrinksReady to entity
         Bar.DrinkOrder
       do "ServerNotifiedDrinksReady event triggers push
@@ -331,18 +353,20 @@ entity DrinkOrder is {
         streaming topology"
     }
     on command CompleteDrinkOrder is {
-      set field DrinkOrder.ActiveDrinkOrder.drinkOrderStatus to
-        "DrinkCompleted"
-      set field DrinkOrder.ActiveDrinkOrder.actualDrinkCompletedAt to
+      morph entity Bar.DrinkOrder to state
+        Bar.DrinkOrder.Completed
+          with command CompleteDrinkOrder
+      set field DrinkOrder.Completed.actualDrinkCompletedAt to
         "drinkCompletedAt from command"
       tell event DrinkOrderCompleted to entity Bar.DrinkOrder
     }
   } with {
     briefly "Drink order command handler"
     described as {
-      |Processes drink order lifecycle commands including
-      |preparation tracking and push notification to servers
-      |when drinks are ready, solving the melting-ice problem.
+      |Processes drink order lifecycle commands with explicit
+      |state transitions: Received → InPreparation → Ready →
+      |Delivered → Completed. Push notifications to servers
+      |when drinks are ready solve the melting-ice problem.
     }
   }
 } with {

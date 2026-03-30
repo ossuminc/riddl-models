@@ -140,6 +140,42 @@ entity TableOrder is {
       |Close the order after payment.
     }
   }
+  command MarkOrderInPreparation is {
+    tableOrderId: TableOrderId with {
+      briefly "ID"
+      described as {
+        |Order being prepared.
+      }
+    }
+  } with {
+    briefly "Mark order in preparation"
+    described as {
+      |Mark the order as actively being prepared by
+      |kitchen and bar. Triggered by adaptor from Kitchen
+      |context.
+    }
+  }
+  command MarkOrderReadyToServe is {
+    tableOrderId: TableOrderId with {
+      briefly "ID"
+      described as {
+        |Order that is ready.
+      }
+    }
+    readyAt: TimeStamp with {
+      briefly "Ready at"
+      described as {
+        |When all items became ready.
+      }
+    }
+  } with {
+    briefly "Mark order ready to serve"
+    described as {
+      |Mark the order as ready for serving. Triggered by
+      |adaptor from Kitchen and Bar contexts when all items
+      |are complete.
+    }
+  }
   // ---- Events ----
   event OrderCreated is  {
     tableOrderId: TableOrderId with {
@@ -310,8 +346,42 @@ entity TableOrder is {
       |Emitted when the order is closed after payment.
     }
   }
+  event OrderMarkedInPreparation is {
+    tableOrderId: TableOrderId with {
+      briefly "ID"
+      described as {
+        |Order identifier.
+      }
+    }
+  } with {
+    briefly "Order in preparation"
+    described as {
+      |Emitted when the kitchen or bar begins preparing
+      |the order.
+    }
+  }
+  event OrderMarkedReadyToServe is {
+    tableOrderId: TableOrderId with {
+      briefly "ID"
+      described as {
+        |Order identifier.
+      }
+    }
+    readyAt: TimeStamp with {
+      briefly "Ready at"
+      described as {
+        |When all items were ready.
+      }
+    }
+  } with {
+    briefly "Order ready to serve"
+    described as {
+      |Emitted when all items for the order are ready
+      |for serving.
+    }
+  }
   // ---- State ----
-  record TableOrderStateData is  {
+  record TableOrderData is {
     tableOrderId: TableOrderId with {
       briefly "ID"
       described as {
@@ -334,12 +404,6 @@ entity TableOrder is {
       briefly "Items"
       described as {
         |Items in the order.
-      }
-    }
-    orderStatus: OrderStatus with {
-      briefly "Status"
-      described as {
-        |Current order status.
       }
     }
     presentedBillTotal: Decimal(10,2)? with {
@@ -366,6 +430,12 @@ entity TableOrder is {
         |When the order was submitted.
       }
     }
+    readyAt: TimeStamp? with {
+      briefly "Ready at"
+      described as {
+        |When all items were ready to serve.
+      }
+    }
     actualClosedAt: TimeStamp? with {
       briefly "Closed at"
       described as {
@@ -375,75 +445,129 @@ entity TableOrder is {
   } with {
     briefly "Table order state data"
     described as {
-      |Full state of a table order.
+      |Full state of a table order. Shared across all
+      |lifecycle states as a superset record.
     }
   }
-  state ActiveOrder of type TableOrder.TableOrderStateData
-    with {
-    briefly "Active order state"
+  state Draft of type TableOrder.TableOrderData with {
+    briefly "Draft order"
     described as {
-      |The primary state of a dine-in table order from
-      |creation through item management, billing, payment,
-      |and closing.
+      |Order is being composed. Items can be added or
+      |removed before submission.
+    }
+  }
+  state Submitted of type TableOrder.TableOrderData with {
+    briefly "Order submitted"
+    described as {
+      |Order has been submitted to kitchen and bar for
+      |preparation. Items are frozen.
+    }
+  }
+  state InPreparation of type TableOrder.TableOrderData with {
+    briefly "In preparation"
+    described as {
+      |Kitchen and bar are actively preparing the items.
+    }
+  }
+  state ReadyToServe of type TableOrder.TableOrderData with {
+    briefly "Ready to serve"
+    described as {
+      |All items are ready and waiting for the server to
+      |deliver them to the table.
+    }
+  }
+  state BillPresentedState of type TableOrder.TableOrderData with {
+    briefly "Bill presented"
+    described as {
+      |Bill has been calculated and presented to the table.
+      |Awaiting payment.
+    }
+  }
+  state PaymentComplete of type TableOrder.TableOrderData with {
+    briefly "Payment complete"
+    described as {
+      |Payment has been processed through the payment
+      |gateway. Awaiting order closure.
+    }
+  }
+  state Closed of type TableOrder.TableOrderData with {
+    briefly "Order closed"
+    described as {
+      |Order has been finalized after payment. Terminal
+      |state.
     }
   }
   handler TableOrderHandler is {
     on command CreateOrder is {
       morph entity FrontOfHouse.TableOrder to state
-        FrontOfHouse.TableOrder.ActiveOrder with command CreateOrder
-      set field TableOrder.ActiveOrder.orderStatus to "DraftStatus"
+        FrontOfHouse.TableOrder.Draft
+          with command CreateOrder
       tell event OrderCreated to entity FrontOfHouse.TableOrder
     }
     on command AddItem is {
       do "append AddItem.addedItem to
-        TableOrderStateData.orderItems"
+        TableOrderData.orderItems"
       tell event ItemAdded to entity FrontOfHouse.TableOrder
     }
     on command RemoveItem is {
-      when "order is in DraftStatus" then
-        do "remove OrderLine from TableOrderStateData.orderItems
-          where orderLineItem.itemCode = RemoveItem
-          .removedMenuItemId"
-        tell event ItemRemoved to entity FrontOfHouse.TableOrder
-      else
-        error "items can only be removed from orders in Draft
-          status"
-      end
+      do "remove OrderLine from TableOrderData.orderItems
+        where orderLineItem.itemCode = RemoveItem
+        .removedMenuItemId"
+      tell event ItemRemoved to entity FrontOfHouse.TableOrder
     }
     on command SubmitOrder is {
-      set field TableOrder.ActiveOrder.orderStatus to
-        "SubmittedStatus"
-      set field TableOrder.ActiveOrder.actualSubmittedAt to
+      morph entity FrontOfHouse.TableOrder to state
+        FrontOfHouse.TableOrder.Submitted
+          with command SubmitOrder
+      set field TableOrder.Submitted.actualSubmittedAt to
         "submittedAt from command"
       tell event OrderSubmitted to entity FrontOfHouse.TableOrder
       send event OrderSubmitted to outlet
         FrontOfHouse.OrderSplitter.SubmittedOrders
-      when "TableOrderStateData.orderItems contains food
+      when "TableOrderData.orderItems contains food
         category items" then
         tell command ReceiveTicket to entity
           Kitchen.KitchenTicket
       end
-      when "TableOrderStateData.orderItems contains drink
+      when "TableOrderData.orderItems contains drink
         category items" then
         tell command ReceiveDrinkOrder to entity
           Bar.DrinkOrder
       end
     }
+    on command MarkOrderInPreparation is {
+      morph entity FrontOfHouse.TableOrder to state
+        FrontOfHouse.TableOrder.InPreparation
+          with command MarkOrderInPreparation
+      tell event OrderMarkedInPreparation to entity
+        FrontOfHouse.TableOrder
+    }
+    on command MarkOrderReadyToServe is {
+      morph entity FrontOfHouse.TableOrder to state
+        FrontOfHouse.TableOrder.ReadyToServe
+          with command MarkOrderReadyToServe
+      set field TableOrder.ReadyToServe.readyAt to
+        "readyAt from command"
+      tell event OrderMarkedReadyToServe to entity
+        FrontOfHouse.TableOrder
+    }
     on command PresentBill is {
-      do "sum TableOrderStateData.orderItems applying
+      morph entity FrontOfHouse.TableOrder to state
+        FrontOfHouse.TableOrder.BillPresentedState
+          with command PresentBill
+      do "sum TableOrderData.orderItems applying
         orderLineItem.itemPrice * orderLineQuantity for each
         OrderLine to compute presentedBillTotal"
-      set field TableOrder.ActiveOrder.presentedBillTotal to
+      set field TableOrder.BillPresentedState.presentedBillTotal to
         "computed presentedBillTotal"
-      set field TableOrder.ActiveOrder.orderStatus to
-        "BillPresentedStatus"
       tell event BillPresented to entity FrontOfHouse.TableOrder
     }
     on command ProcessPayment is {
-      set field TableOrder.ActiveOrder.processedPayment to
+      morph entity FrontOfHouse.TableOrder to state
+        FrontOfHouse.TableOrder.PaymentComplete
+          with command ProcessPayment
+      set field TableOrder.PaymentComplete.processedPayment to
         "payment info from command"
-      set field TableOrder.ActiveOrder.orderStatus to
-        "PaymentCompleteStatus"
       tell event PaymentProcessed to entity
         FrontOfHouse.TableOrder
       do "PaymentProcessed event triggers PaymentGateway
@@ -451,9 +575,10 @@ entity TableOrder is {
         point accrual via ToLoyalty adaptor"
     }
     on command CloseOrder is {
-      set field TableOrder.ActiveOrder.orderStatus to
-        "ClosedStatus"
-      set field TableOrder.ActiveOrder.actualClosedAt to
+      morph entity FrontOfHouse.TableOrder to state
+        FrontOfHouse.TableOrder.Closed
+          with command CloseOrder
+      set field TableOrder.Closed.actualClosedAt to
         "closedAt from command"
       tell event OrderClosed to entity FrontOfHouse.TableOrder
       do "OrderClosed event triggers accounting transaction
@@ -462,10 +587,11 @@ entity TableOrder is {
   } with {
     briefly "Table order command handler"
     described as {
-      |Processes table order lifecycle commands including item
-      |management, order splitting to kitchen and bar, payment
-      |processing through the external gateway, and loyalty
-      |point accrual on completed payments.
+      |Processes table order lifecycle commands with explicit
+      |state transitions: Draft → Submitted → InPreparation →
+      |ReadyToServe → BillPresented → PaymentComplete → Closed.
+      |Includes order splitting to kitchen and bar, payment
+      |processing, and loyalty point accrual.
     }
   }
 } with {

@@ -188,6 +188,32 @@ entity DeliveryOrder is {
       |Report an issue during delivery.
     }
   }
+  command FailDelivery is {
+    deliveryId: DeliveryId with {
+      briefly "ID"
+      described as {
+        |Delivery that failed.
+      }
+    }
+    failureReason: String(1,1000) with {
+      briefly "Reason"
+      described as {
+        |Reason for the delivery failure.
+      }
+    }
+    failedAt: TimeStamp with {
+      briefly "Failed at"
+      described as {
+        |When the delivery was marked as failed.
+      }
+    }
+  } with {
+    briefly "Fail delivery"
+    described as {
+      |Mark a delivery as permanently failed, such as when
+      |the customer is unavailable after timeout.
+    }
+  }
   // ---- Events ----
   event DeliveryCreated is  {
     deliveryId: DeliveryId with {
@@ -364,8 +390,34 @@ entity DeliveryOrder is {
       |Emitted when a delivery issue is reported.
     }
   }
+  event DeliveryMarkedFailed is {
+    deliveryId: DeliveryId with {
+      briefly "ID"
+      described as {
+        |Delivery identifier.
+      }
+    }
+    failureReason: String(1,1000) with {
+      briefly "Reason"
+      described as {
+        |Reason for failure.
+      }
+    }
+    failedAt: TimeStamp with {
+      briefly "Failed at"
+      described as {
+        |When failed.
+      }
+    }
+  } with {
+    briefly "Delivery marked failed"
+    described as {
+      |Emitted when a delivery is permanently marked as
+      |failed.
+    }
+  }
   // ---- State ----
-  record DeliveryStateData is  {
+  record DeliveryBase is {
     deliveryId: DeliveryId with {
       briefly "ID"
       described as {
@@ -396,22 +448,86 @@ entity DeliveryOrder is {
         |Delivery address.
       }
     }
-    deliveryStatus: DeliveryStatus with {
-      briefly "Status"
+    createdAt: TimeStamp with {
+      briefly "Created at"
       described as {
-        |Current delivery status.
+        |When created.
       }
     }
-    assignedDriverId: DriverId? with {
+  } with {
+    briefly "Delivery base data"
+    described as {
+      |Common fields shared by all delivery states.
+    }
+  }
+  record PendingData is {
+    base: DeliveryBase with {
+      briefly "Base"
+      described as {
+        |Common delivery fields.
+      }
+    }
+  } with {
+    briefly "Pending state data"
+    described as {
+      |State data for a delivery awaiting driver assignment.
+    }
+  }
+  record DriverAssignedData is {
+    base: DeliveryBase with {
+      briefly "Base"
+      described as {
+        |Common delivery fields.
+      }
+    }
+    assignedDriverId: DriverId with {
       briefly "Driver ID"
       described as {
         |Assigned driver.
       }
     }
-    assignedDriverName: String(1,100)? with {
+    assignedDriverName: String(1,100) with {
       briefly "Driver name"
       described as {
         |Driver name.
+      }
+    }
+    assignedAt: TimeStamp with {
+      briefly "Assigned at"
+      described as {
+        |When the driver was assigned.
+      }
+    }
+  } with {
+    briefly "Driver assigned state data"
+    described as {
+      |State data for a delivery with an assigned driver
+      |awaiting dispatch.
+    }
+  }
+  record InTransitData is {
+    base: DeliveryBase with {
+      briefly "Base"
+      described as {
+        |Common delivery fields.
+      }
+    }
+    assignedDriverId: DriverId with {
+      briefly "Driver ID"
+      described as {
+        |Assigned driver.
+      }
+    }
+    assignedDriverName: String(1,100) with {
+      briefly "Driver name"
+      described as {
+        |Driver name.
+      }
+    }
+    dispatchedAt: TimeStamp with {
+      briefly "Dispatched at"
+      described as {
+        |When dispatched.
       }
     }
     lastKnownLocation: GeoLocation? with {
@@ -420,84 +536,148 @@ entity DeliveryOrder is {
         |Last recorded GPS location.
       }
     }
-    createdAt: TimeStamp with {
-      briefly "Created at"
+  } with {
+    briefly "In transit state data"
+    described as {
+      |State data for a delivery in transit with GPS
+      |tracking of the driver.
+    }
+  }
+  record DeliveredData is {
+    base: DeliveryBase with {
+      briefly "Base"
       described as {
-        |When created.
+        |Common delivery fields.
       }
     }
-    actualDispatchedAt: TimeStamp? with {
-      briefly "Dispatched at"
+    assignedDriverId: DriverId with {
+      briefly "Driver ID"
       described as {
-        |When dispatched.
+        |Driver who completed the delivery.
       }
     }
-    actualConfirmedAt: TimeStamp? with {
+    assignedDriverName: String(1,100) with {
+      briefly "Driver name"
+      described as {
+        |Driver name.
+      }
+    }
+    confirmedAt: TimeStamp with {
       briefly "Confirmed at"
       described as {
-        |When delivery confirmed.
+        |When the delivery was confirmed.
       }
     }
   } with {
-    briefly "Delivery state data"
+    briefly "Delivered state data"
     described as {
-      |Full state of a delivery.
+      |State data for a completed delivery.
     }
   }
-  state ActiveDelivery of type DeliveryOrder.DeliveryStateData
-    with {
-    briefly "Active delivery state"
+  record FailedData is {
+    base: DeliveryBase with {
+      briefly "Base"
+      described as {
+        |Common delivery fields.
+      }
+    }
+    failureReason: String(1,1000) with {
+      briefly "Reason"
+      described as {
+        |Reason for delivery failure.
+      }
+    }
+    failedAt: TimeStamp with {
+      briefly "Failed at"
+      described as {
+        |When the delivery failed.
+      }
+    }
+    lastDriverId: DriverId? with {
+      briefly "Last driver"
+      described as {
+        |Last assigned driver before failure.
+      }
+    }
+  } with {
+    briefly "Failed state data"
     described as {
-      |The primary state of a delivery from creation
-      |through driver assignment, dispatch, GPS tracking,
-      |confirmation, and issue reporting.
+      |State data for a failed delivery.
+    }
+  }
+  state Pending of type DeliveryOrder.PendingData with {
+    briefly "Delivery pending"
+    described as {
+      |Delivery has been created and is awaiting driver
+      |assignment. Can also return to this state from
+      |InTransit due to vehicle breakdown reassignment.
+    }
+  }
+  state DriverAssignedState of type DeliveryOrder.DriverAssignedData
+    with {
+    briefly "Driver assigned"
+    described as {
+      |A driver has been assigned and notified. Awaiting
+      |dispatch.
+    }
+  }
+  state InTransit of type DeliveryOrder.InTransitData with {
+    briefly "In transit"
+    described as {
+      |Driver has been dispatched and is en route. GPS
+      |location updates are being tracked.
+    }
+  }
+  state Delivered of type DeliveryOrder.DeliveredData with {
+    briefly "Delivered"
+    described as {
+      |Delivery has been confirmed complete. Terminal state.
+    }
+  }
+  state Failed of type DeliveryOrder.FailedData with {
+    briefly "Delivery failed"
+    described as {
+      |Delivery could not be completed. Terminal state.
     }
   }
   handler DeliveryHandler is {
     on command CreateDelivery is {
       morph entity Delivery.DeliveryOrder to state
-        Delivery.DeliveryOrder.ActiveDelivery
+        Delivery.DeliveryOrder.Pending
           with command CreateDelivery
-      set field DeliveryOrder.ActiveDelivery.deliveryStatus to
-        "DeliveryPending"
       tell event DeliveryCreated to entity
         Delivery.DeliveryOrder
       do "query available drivers by GeoLocation proximity to
         restaurant and select nearest with status = available"
     }
     on command AssignDriver is {
-      set field DeliveryOrder.ActiveDelivery.assignedDriverId to
-        "driverId from command"
-      set field DeliveryOrder.ActiveDelivery.assignedDriverName to
-        "driverName from command"
-      set field DeliveryOrder.ActiveDelivery.deliveryStatus to
-        "DriverAssignedStatus"
+      morph entity Delivery.DeliveryOrder to state
+        Delivery.DeliveryOrder.DriverAssignedState
+          with command AssignDriver
       tell event DriverAssigned to entity
         Delivery.DeliveryOrder
       do "DriverAssigned event triggers push notification to
         driver via NotificationService streaming topology"
     }
     on command DispatchDriver is {
-      set field DeliveryOrder.ActiveDelivery.deliveryStatus to
-        "InTransit"
-      set field DeliveryOrder.ActiveDelivery.actualDispatchedAt to
-        "dispatchedAt from command"
+      morph entity Delivery.DeliveryOrder to state
+        Delivery.DeliveryOrder.InTransit
+          with command DispatchDriver
       tell event DriverDispatched to entity
         Delivery.DeliveryOrder
       do "DriverDispatched event triggers push notification to
         customer via NotificationService streaming topology"
     }
     on command RecordDeliveryLocation is {
-      set field DeliveryOrder.ActiveDelivery.lastKnownLocation to
+      set field DeliveryOrder.InTransit.lastKnownLocation to
         "driverLocation from command"
       tell event DeliveryLocationRecorded to entity
         Delivery.DeliveryOrder
     }
     on command ConfirmDelivery is {
-      set field DeliveryOrder.ActiveDelivery.deliveryStatus to
-        "Delivered"
-      set field DeliveryOrder.ActiveDelivery.actualConfirmedAt to
-        "confirmedAt from command"
+      morph entity Delivery.DeliveryOrder to state
+        Delivery.DeliveryOrder.Delivered
+          with command ConfirmDelivery
       tell event DeliveryConfirmed to entity
         Delivery.DeliveryOrder
       do "DeliveryConfirmed event triggers push notification
@@ -518,23 +698,22 @@ entity DeliveryOrder is {
         case "CustomerUnavailable" {
           tell command SendPushNotification to entity
             Restaurant.NotificationService
-          do "schedule DeliveryStatus transition to
-            DeliveryFailed after 10-minute timeout if no
-            customer response"
+          do "schedule FailDelivery command after 10-minute
+            timeout if no customer response"
         }
         case "FoodDamaged" {
           tell command SendPushNotification to entity
             Restaurant.NotificationService
           do "construct ReceiveTicket replacement order from
-            DeliveryStateData.sourceOnlineOrderId and send to
+            DeliveryBase.sourceOnlineOrderId and send to
             Kitchen.KitchenTicket"
         }
         case "VehicleBreakdown" {
-          set field DeliveryOrder.ActiveDelivery.deliveryStatus to
-            "DeliveryPending"
+          morph entity Delivery.DeliveryOrder to state
+            Delivery.DeliveryOrder.Pending
+              with command ReportDeliveryIssue
           do "query available drivers by GeoLocation proximity
-            excluding current DeliveryStateData
-            .assignedDriverId"
+            excluding current driver"
         }
         case "TrafficDelay" {
           tell command SendPushNotification to entity
@@ -546,14 +725,21 @@ entity DeliveryOrder is {
         }
       }
     }
+    on command FailDelivery is {
+      morph entity Delivery.DeliveryOrder to state
+        Delivery.DeliveryOrder.Failed
+          with command FailDelivery
+      tell event DeliveryMarkedFailed to entity
+        Delivery.DeliveryOrder
+    }
   } with {
     briefly "Delivery command handler"
     described as {
-      |Processes delivery lifecycle commands including driver
-      |assignment, GPS tracking, customer notifications, and
-      |issue handling with specific responses per issue type.
-      |Designed for offline resilience so drivers can cache
-      |details and sync when connectivity resumes.
+      |Processes delivery lifecycle commands with explicit
+      |state transitions: Pending → DriverAssigned → InTransit
+      |→ Delivered. VehicleBreakdown morphs InTransit back to
+      |Pending for driver reassignment. CustomerUnavailable
+      |timeout triggers FailDelivery.
     }
   }
 } with {

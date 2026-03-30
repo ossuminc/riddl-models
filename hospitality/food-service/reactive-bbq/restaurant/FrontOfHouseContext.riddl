@@ -4,7 +4,7 @@ context FrontOfHouse is {
   include "Reservation.riddl"
   include "TableOrder.riddl"
   repository ReservationRepository is {
-    schema ReservationData is relational
+    schema ReservationSchema is relational
       of reservations as type Reservation
         index on field Reservation.reservationId
         index on field Reservation.guestName
@@ -20,30 +20,49 @@ context FrontOfHouse is {
       on command Reservation.MakeReservation is {
         tell event Reservation.ReservationMade to entity
           FrontOfHouse.Reservation
-        do "insert row into ReservationData.reservations with
-          reservationId, guestName, guestPhone, partySize,
-          reservationTime, and reservationStatus = Requested"
+        do "insert row into ReservationSchema.reservations
+          with reservationId, guestName, guestPhone,
+          partySize, reservationTime"
       }
       on command Reservation.ConfirmReservation is {
         tell event Reservation.ReservationConfirmed to entity
           FrontOfHouse.Reservation
-        do "update ReservationData.reservations set
-          reservationStatus = Confirmed, assignedTable =
-          confirmedTable where reservationId matches"
+        do "update ReservationSchema.reservations set
+          assignedTable = confirmedTable where reservationId
+          matches"
       }
       on command Reservation.CancelReservation is {
         tell event Reservation.ReservationCancelled to entity
           FrontOfHouse.Reservation
-        do "update ReservationData.reservations set
-          reservationStatus = Cancelled where reservationId
-          matches"
+        do "update ReservationSchema.reservations where
+          reservationId matches"
       }
       on command Reservation.SeatParty is {
         tell event Reservation.PartySeated to entity
           FrontOfHouse.Reservation
-        do "update ReservationData.reservations set
-          reservationStatus = Seated, actualSeatedAt =
-          seatedAt where reservationId matches"
+        do "update ReservationSchema.reservations set
+          seatedAt = seatedAt where reservationId matches"
+      }
+      on command Reservation.CompleteVisit is {
+        tell event Reservation.VisitCompleted to entity
+          FrontOfHouse.Reservation
+        do "update ReservationSchema.reservations set
+          completedAt = completedAt where reservationId
+          matches"
+      }
+      on command Reservation.MarkNoShow is {
+        tell event Reservation.NoShowMarked to entity
+          FrontOfHouse.Reservation
+        do "update ReservationSchema.reservations set
+          markedNoShowAt = markedNoShowAt where
+          reservationId matches"
+      }
+      on command Reservation.RescheduleReservation is {
+        tell event Reservation.ReservationRescheduled to
+          entity FrontOfHouse.Reservation
+        do "update ReservationSchema.reservations set
+          reservationTime = newReservationTime where
+          reservationId matches"
       }
     } with {
       briefly "Reservation persistence"
@@ -59,7 +78,7 @@ context FrontOfHouse is {
     }
   }
   repository TableOrderRepository is {
-    schema TableOrderData is relational
+    schema TableOrderSchema is relational
       of orders as type TableOrder
         index on field TableOrder.tableOrderId
         index on field TableOrder.tableNumber
@@ -74,43 +93,61 @@ context FrontOfHouse is {
       on command TableOrder.CreateOrder is {
         tell event TableOrder.OrderCreated to entity
           FrontOfHouse.TableOrder
-        do "insert row into TableOrderData.orders with
-          tableOrderId, tableNumber, serverId, and
-          orderStatus = DraftStatus"
+        do "insert row into TableOrderSchema.orders with
+          tableOrderId, tableNumber, serverId"
       }
       on command TableOrder.AddItem is {
         tell event TableOrder.ItemAdded to entity
           FrontOfHouse.TableOrder
         do "append addedItem OrderLine to orderItems array
-          in TableOrderData.orders where tableOrderId matches"
+          in TableOrderSchema.orders where tableOrderId
+          matches"
       }
       on command TableOrder.RemoveItem is {
         tell event TableOrder.ItemRemoved to entity
           FrontOfHouse.TableOrder
         do "remove OrderLine with removedMenuItemId from
-          orderItems array in TableOrderData.orders where
+          orderItems array in TableOrderSchema.orders where
           tableOrderId matches"
       }
       on command TableOrder.SubmitOrder is {
         tell event TableOrder.OrderSubmitted to entity
           FrontOfHouse.TableOrder
-        do "update TableOrderData.orders set orderStatus =
-          SubmittedStatus, actualSubmittedAt = submittedAt
-          where tableOrderId matches"
+        do "update TableOrderSchema.orders set
+          actualSubmittedAt = submittedAt where tableOrderId
+          matches"
+      }
+      on command TableOrder.MarkOrderInPreparation is {
+        tell event TableOrder.OrderMarkedInPreparation to
+          entity FrontOfHouse.TableOrder
+        do "update TableOrderSchema.orders where
+          tableOrderId matches"
+      }
+      on command TableOrder.MarkOrderReadyToServe is {
+        tell event TableOrder.OrderMarkedReadyToServe to
+          entity FrontOfHouse.TableOrder
+        do "update TableOrderSchema.orders set readyAt =
+          readyAt where tableOrderId matches"
+      }
+      on command TableOrder.PresentBill is {
+        tell event TableOrder.BillPresented to entity
+          FrontOfHouse.TableOrder
+        do "update TableOrderSchema.orders set
+          presentedBillTotal = billTotal where tableOrderId
+          matches"
       }
       on command TableOrder.ProcessPayment is {
         tell event TableOrder.PaymentProcessed to entity
           FrontOfHouse.TableOrder
-        do "update TableOrderData.orders set processedPayment
-          = orderPayment, orderStatus = PaymentCompleteStatus
-          where tableOrderId matches"
+        do "update TableOrderSchema.orders set
+          processedPayment = orderPayment where tableOrderId
+          matches"
       }
       on command TableOrder.CloseOrder is {
         tell event TableOrder.OrderClosed to entity
           FrontOfHouse.TableOrder
-        do "update TableOrderData.orders set orderStatus =
-          ClosedStatus, actualClosedAt = closedAt where
-          tableOrderId matches"
+        do "update TableOrderSchema.orders set actualClosedAt
+          = closedAt where tableOrderId matches"
       }
     } with {
       briefly "Order persistence"
@@ -151,10 +188,10 @@ context FrontOfHouse is {
           |Reservation time.
         }
       }
-      reservationStatus: ReservationStatus with {
+      reservationDisplayStatus: String(1,30) with {
         briefly "Status"
         described as {
-          |Current status.
+          |Display status derived from entity state name.
         }
       }
       assignedTable: TableNumber? with {
@@ -175,13 +212,14 @@ context FrontOfHouse is {
         do "insert ReservationBoardEntry with reservationId =
           event.reservationId, guestName = event.guestName,
           partySize = event.partySize, reservationTime =
-          event.reservationTime, reservationStatus = Requested,
+          event.reservationTime, reservationDisplayStatus = Requested,
           assignedTable = none"
       }
       on event Reservation.ReservationConfirmed is {
         let entry: ReservationBoardEntry = "updated ReservationBoardEntry from event"
-        do "update ReservationBoardEntry set reservationStatus
-          = Confirmed, assignedTable = event.confirmedTable
+        do "update ReservationBoardEntry set
+          reservationDisplayStatus = Confirmed,
+          assignedTable = event.confirmedTable
           where reservationId = event.reservationId"
       }
       on event Reservation.ReservationCancelled is {
@@ -189,8 +227,9 @@ context FrontOfHouse is {
           event.reservationId"
       }
       on event Reservation.PartySeated is {
-        do "update ReservationBoardEntry set reservationStatus
-          = Seated, assignedTable = event.seatedTable where
+        do "update ReservationBoardEntry set
+          reservationDisplayStatus = Seated,
+          assignedTable = event.seatedTable where
           reservationId = event.reservationId"
       }
     } with {
