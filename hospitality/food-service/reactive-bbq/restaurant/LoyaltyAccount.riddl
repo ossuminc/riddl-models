@@ -383,105 +383,190 @@ entity LoyaltyAccount is {
       |lifecycle states as a superset record.
     }
   }
-  state Active of type LoyaltyAccount.LoyaltyAccountData with {
+  state Active of type LoyaltyAccount.LoyaltyAccountData is {
+    handler ActiveHandler is {
+      on command AccruePoints is {
+        tell event PointsAccrued to entity
+          Loyalty.LoyaltyAccount
+      }
+      on event PointsAccrued is {
+        set field LoyaltyAccount.Active.pointBalance to
+          "LoyaltyAccountData.pointBalance +
+          PointsAccrued.accrualPoints"
+        set field LoyaltyAccount.Active.lifetimePoints to
+          "LoyaltyAccountData.lifetimePoints +
+          PointsAccrued.accrualPoints"
+        do "append PointTransaction to LoyaltyAccountData
+          .recentTransactions with new transactionId,
+          pointsChanged = PointsAccrued.accrualPoints,
+          transactionReason = PointsAccrued.accrualReason,
+          sourceOrderRef = AccruePoints.accrualOrderRef,
+          transactionTimestamp = current timestamp"
+      }
+      on command RedeemPoints is {
+        when "LoyaltyAccountData.pointBalance >=
+          RedeemPoints.redemptionPoints" then
+          tell event PointsRedeemed to entity
+            Loyalty.LoyaltyAccount
+        else
+          error "insufficient point balance for redemption"
+        end
+      }
+      on event PointsRedeemed is {
+        set field LoyaltyAccount.Active.pointBalance to
+          "LoyaltyAccountData.pointBalance -
+          PointsRedeemed.redemptionPoints"
+        do "append PointTransaction to LoyaltyAccountData
+          .recentTransactions with new transactionId,
+          pointsChanged = negative PointsRedeemed
+          .redemptionPoints, transactionReason = PointsRedeemed
+          .redemptionReason, transactionTimestamp = current
+          timestamp"
+      }
+      on command SuspendAccount is {
+        tell event AccountSuspended to entity
+          Loyalty.LoyaltyAccount
+      }
+      on event AccountSuspended is {
+        morph entity Loyalty.LoyaltyAccount to state
+          Loyalty.LoyaltyAccount.Suspended
+            with event AccountSuspended
+      }
+      on command CloseAccount is {
+        tell event AccountClosed to entity
+          Loyalty.LoyaltyAccount
+      }
+      on event AccountClosed is {
+        morph entity Loyalty.LoyaltyAccount to state
+          Loyalty.LoyaltyAccount.Closed
+            with event AccountClosed
+        set field LoyaltyAccount.Closed.closedAt to
+          "current timestamp"
+      }
+      on command EnrollCustomer is {
+        error "Customer is already enrolled"
+      }
+      on command ReactivateAccount is {
+        error "Account is already active"
+      }
+    } with {
+      briefly "Active state handler"
+      described as {
+        |Handles commands valid in the Active state.
+        |AccruePoints and RedeemPoints operate within
+        |Active without state transition. SuspendAccount
+        |and CloseAccount transition to other states.
+      }
+    }
+  } with {
     briefly "Active account"
     described as {
       |Account is enrolled and operational. Points can be
       |accrued and redeemed.
     }
   }
-  state Suspended of type LoyaltyAccount.LoyaltyAccountData with {
+  state Suspended of type LoyaltyAccount.LoyaltyAccountData is {
+    handler SuspendedHandler is {
+      on command ReactivateAccount is {
+        tell event AccountReactivated to entity
+          Loyalty.LoyaltyAccount
+      }
+      on event AccountReactivated is {
+        morph entity Loyalty.LoyaltyAccount to state
+          Loyalty.LoyaltyAccount.Active
+            with event AccountReactivated
+      }
+      on command CloseAccount is {
+        tell event AccountClosed to entity
+          Loyalty.LoyaltyAccount
+      }
+      on event AccountClosed is {
+        morph entity Loyalty.LoyaltyAccount to state
+          Loyalty.LoyaltyAccount.Closed
+            with event AccountClosed
+        set field LoyaltyAccount.Closed.closedAt to
+          "current timestamp"
+      }
+      on command EnrollCustomer is {
+        error "Customer is already enrolled"
+      }
+      on command AccruePoints is {
+        error "Cannot accrue points on a suspended account"
+      }
+      on command RedeemPoints is {
+        error "Cannot redeem points on a suspended account"
+      }
+      on command SuspendAccount is {
+        error "Account is already suspended"
+      }
+    } with {
+      briefly "Suspended state handler"
+      described as {
+        |Handles commands valid in the Suspended state.
+        |ReactivateAccount returns to Active. CloseAccount
+        |permanently closes the account.
+      }
+    }
+  } with {
     briefly "Suspended account"
     described as {
       |Account is temporarily suspended. Points cannot be
       |accrued or redeemed until reactivated.
     }
   }
-  state Closed of type LoyaltyAccount.LoyaltyAccountData with {
+  state Closed of type LoyaltyAccount.LoyaltyAccountData is {
+    handler ClosedHandler is {
+      on command EnrollCustomer is {
+        error "Account is permanently closed"
+      }
+      on command AccruePoints is {
+        error "Account is permanently closed"
+      }
+      on command RedeemPoints is {
+        error "Account is permanently closed"
+      }
+      on command SuspendAccount is {
+        error "Account is permanently closed"
+      }
+      on command ReactivateAccount is {
+        error "Account is permanently closed"
+      }
+      on command CloseAccount is {
+        error "Account is already closed"
+      }
+    } with {
+      briefly "Closed state handler"
+      described as {
+        |Terminal state. All commands are rejected.
+      }
+    }
+  } with {
     briefly "Closed account"
     described as {
       |Account is permanently closed. No further operations
       |are possible.
     }
   }
-  handler LoyaltyAccountHandler is {
+  handler LoyaltyCreationHandler is {
     on command EnrollCustomer is {
-      morph entity Loyalty.LoyaltyAccount to state
-        Loyalty.LoyaltyAccount.Active
-          with command EnrollCustomer
-      set field LoyaltyAccount.Active.pointBalance to "0"
-      set field LoyaltyAccount.Active.lifetimePoints to "0"
       tell event CustomerEnrolled to entity
         Loyalty.LoyaltyAccount
+    }
+    on event CustomerEnrolled is {
+      morph entity Loyalty.LoyaltyAccount to state
+        Loyalty.LoyaltyAccount.Active
+          with event CustomerEnrolled
+      set field LoyaltyAccount.Active.pointBalance to "0"
+      set field LoyaltyAccount.Active.lifetimePoints to "0"
       do "CustomerEnrolled event triggers welcome push
         notification via NotificationService streaming
         topology"
     }
-    on command AccruePoints is {
-      set field LoyaltyAccount.Active.pointBalance to
-        "LoyaltyAccountData.pointBalance +
-        AccruePoints.accrualPoints"
-      set field LoyaltyAccount.Active.lifetimePoints to
-        "LoyaltyAccountData.lifetimePoints +
-        AccruePoints.accrualPoints"
-      do "append PointTransaction to LoyaltyAccountData
-        .recentTransactions with new transactionId,
-        pointsChanged = AccruePoints.accrualPoints,
-        transactionReason = AccruePoints.accrualReason,
-        sourceOrderRef = AccruePoints.accrualOrderRef,
-        transactionTimestamp = current timestamp"
-      tell event PointsAccrued to entity
-        Loyalty.LoyaltyAccount
-    }
-    on command RedeemPoints is {
-      when "LoyaltyAccountData.pointBalance >=
-        RedeemPoints.redemptionPoints" then
-        set field LoyaltyAccount.Active.pointBalance to
-          "LoyaltyAccountData.pointBalance -
-          RedeemPoints.redemptionPoints"
-        do "append PointTransaction to LoyaltyAccountData
-          .recentTransactions with new transactionId,
-          pointsChanged = negative RedeemPoints
-          .redemptionPoints, transactionReason = RedeemPoints
-          .redemptionReason, transactionTimestamp = current
-          timestamp"
-        tell event PointsRedeemed to entity
-          Loyalty.LoyaltyAccount
-      else
-        error "insufficient point balance for redemption"
-      end
-    }
-    on command SuspendAccount is {
-      morph entity Loyalty.LoyaltyAccount to state
-        Loyalty.LoyaltyAccount.Suspended
-          with command SuspendAccount
-      tell event AccountSuspended to entity
-        Loyalty.LoyaltyAccount
-    }
-    on command ReactivateAccount is {
-      morph entity Loyalty.LoyaltyAccount to state
-        Loyalty.LoyaltyAccount.Active
-          with command ReactivateAccount
-      tell event AccountReactivated to entity
-        Loyalty.LoyaltyAccount
-    }
-    on command CloseAccount is {
-      morph entity Loyalty.LoyaltyAccount to state
-        Loyalty.LoyaltyAccount.Closed
-          with command CloseAccount
-      set field LoyaltyAccount.Closed.closedAt to
-        "current timestamp"
-      tell event AccountClosed to entity
-        Loyalty.LoyaltyAccount
-    }
   } with {
-    briefly "Loyalty account command handler"
+    briefly "Loyalty creation handler"
     described as {
-      |Processes loyalty account lifecycle commands with
-      |explicit state transitions: Active ←→ Suspended →
-      |Closed. AccruePoints and RedeemPoints operate within
-      |the Active state. CloseAccount is terminal from
-      |either Active or Suspended.
+      |Handles the initial EnrollCustomer command when
+      |the entity has no state yet.
     }
   }
 } with {
@@ -489,8 +574,8 @@ entity LoyaltyAccount is {
   described as {
     | Manages the lifecycle of a loyalty account from
     | enrollment through point accrual, redemption,
-    | suspension, and reactivation. Isolated context
-    | enables incremental rollout without affecting
-    | other systems.
+    | suspension, and reactivation. State handlers ensure
+    | commands are only valid in appropriate states, and
+    | events are persisted before state transitions.
   }
 }

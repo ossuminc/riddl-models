@@ -449,149 +449,395 @@ entity TableOrder is {
       |lifecycle states as a superset record.
     }
   }
-  state Draft of type TableOrder.TableOrderData with {
+  state Draft of type TableOrder.TableOrderData is {
+    handler DraftHandler is {
+      on command AddItem is {
+        tell event ItemAdded to entity FrontOfHouse.TableOrder
+      }
+      on event ItemAdded is {
+        do "append ItemAdded.addedItem to
+          TableOrderData.orderItems"
+      }
+      on command RemoveItem is {
+        tell event ItemRemoved to entity FrontOfHouse.TableOrder
+      }
+      on event ItemRemoved is {
+        do "remove OrderLine from TableOrderData.orderItems
+          where orderLineItem.itemCode = ItemRemoved
+          .removedMenuItemId"
+      }
+      on command SubmitOrder is {
+        tell event OrderSubmitted to entity
+          FrontOfHouse.TableOrder
+      }
+      on event OrderSubmitted is {
+        morph entity FrontOfHouse.TableOrder to state
+          FrontOfHouse.TableOrder.Submitted
+            with event OrderSubmitted
+        set field TableOrder.Submitted.actualSubmittedAt to
+          "submittedAt from event"
+        send event OrderSubmitted to outlet
+          FrontOfHouse.OrderSplitter.SubmittedOrders
+        when "TableOrderData.orderItems contains food
+          category items" then
+          tell command ReceiveTicket to entity
+            Kitchen.KitchenTicket
+        end
+        when "TableOrderData.orderItems contains drink
+          category items" then
+          tell command ReceiveDrinkOrder to entity
+            Bar.DrinkOrder
+        end
+      }
+      on command CreateOrder is {
+        error "Order has already been created"
+      }
+      on command MarkOrderInPreparation is {
+        error "Cannot mark in preparation before order is submitted"
+      }
+      on command MarkOrderReadyToServe is {
+        error "Cannot mark ready before order is submitted"
+      }
+      on command PresentBill is {
+        error "Cannot present bill before order is prepared"
+      }
+      on command ProcessPayment is {
+        error "Cannot process payment before bill is presented"
+      }
+      on command CloseOrder is {
+        error "Cannot close order before payment is processed"
+      }
+    } with {
+      briefly "Draft state handler"
+      described as {
+        |Handles commands valid in the Draft state.
+        |AddItem and RemoveItem modify the order. SubmitOrder
+        |freezes items and routes to kitchen and bar.
+      }
+    }
+  } with {
     briefly "Draft order"
     described as {
       |Order is being composed. Items can be added or
       |removed before submission.
     }
   }
-  state Submitted of type TableOrder.TableOrderData with {
+  state Submitted of type TableOrder.TableOrderData is {
+    handler SubmittedHandler is {
+      on command MarkOrderInPreparation is {
+        tell event OrderMarkedInPreparation to entity
+          FrontOfHouse.TableOrder
+      }
+      on event OrderMarkedInPreparation is {
+        morph entity FrontOfHouse.TableOrder to state
+          FrontOfHouse.TableOrder.InPreparation
+            with event OrderMarkedInPreparation
+      }
+      on command CreateOrder is {
+        error "Order has already been created"
+      }
+      on command AddItem is {
+        error "Cannot add items after order is submitted"
+      }
+      on command RemoveItem is {
+        error "Cannot remove items after order is submitted"
+      }
+      on command SubmitOrder is {
+        error "Order has already been submitted"
+      }
+      on command MarkOrderReadyToServe is {
+        error "Cannot mark ready before preparation begins"
+      }
+      on command PresentBill is {
+        error "Cannot present bill before order is prepared"
+      }
+      on command ProcessPayment is {
+        error "Cannot process payment before bill is presented"
+      }
+      on command CloseOrder is {
+        error "Cannot close order before payment is processed"
+      }
+    } with {
+      briefly "Submitted state handler"
+      described as {
+        |Handles commands valid in the Submitted state.
+        |Only MarkOrderInPreparation advances the lifecycle.
+      }
+    }
+  } with {
     briefly "Order submitted"
     described as {
       |Order has been submitted to kitchen and bar for
       |preparation. Items are frozen.
     }
   }
-  state InPreparation of type TableOrder.TableOrderData with {
+  state InPreparation of type TableOrder.TableOrderData is {
+    handler InPreparationHandler is {
+      on command MarkOrderReadyToServe is {
+        tell event OrderMarkedReadyToServe to entity
+          FrontOfHouse.TableOrder
+      }
+      on event OrderMarkedReadyToServe is {
+        morph entity FrontOfHouse.TableOrder to state
+          FrontOfHouse.TableOrder.ReadyToServe
+            with event OrderMarkedReadyToServe
+        set field TableOrder.ReadyToServe.readyAt to
+          "readyAt from event"
+      }
+      on command CreateOrder is {
+        error "Order has already been created"
+      }
+      on command AddItem is {
+        error "Cannot add items after order is submitted"
+      }
+      on command RemoveItem is {
+        error "Cannot remove items after order is submitted"
+      }
+      on command SubmitOrder is {
+        error "Order has already been submitted"
+      }
+      on command MarkOrderInPreparation is {
+        error "Order is already in preparation"
+      }
+      on command PresentBill is {
+        error "Cannot present bill before order is ready"
+      }
+      on command ProcessPayment is {
+        error "Cannot process payment before bill is presented"
+      }
+      on command CloseOrder is {
+        error "Cannot close order before payment is processed"
+      }
+    } with {
+      briefly "InPreparation state handler"
+      described as {
+        |Handles commands valid in the InPreparation state.
+        |Only MarkOrderReadyToServe advances the lifecycle.
+      }
+    }
+  } with {
     briefly "In preparation"
     described as {
       |Kitchen and bar are actively preparing the items.
     }
   }
-  state ReadyToServe of type TableOrder.TableOrderData with {
+  state ReadyToServe of type TableOrder.TableOrderData is {
+    handler ReadyToServeHandler is {
+      on command PresentBill is {
+        tell event BillPresented to entity
+          FrontOfHouse.TableOrder
+      }
+      on event BillPresented is {
+        morph entity FrontOfHouse.TableOrder to state
+          FrontOfHouse.TableOrder.BillPresentedState
+            with event BillPresented
+        do "sum TableOrderData.orderItems applying
+          orderLineItem.itemPrice * orderLineQuantity for each
+          OrderLine to compute presentedBillTotal"
+        set field TableOrder.BillPresentedState.presentedBillTotal
+          to "computed presentedBillTotal"
+      }
+      on command CreateOrder is {
+        error "Order has already been created"
+      }
+      on command AddItem is {
+        error "Cannot add items after order is submitted"
+      }
+      on command RemoveItem is {
+        error "Cannot remove items after order is submitted"
+      }
+      on command SubmitOrder is {
+        error "Order has already been submitted"
+      }
+      on command MarkOrderInPreparation is {
+        error "Order preparation is already complete"
+      }
+      on command MarkOrderReadyToServe is {
+        error "Order is already ready to serve"
+      }
+      on command ProcessPayment is {
+        error "Cannot process payment before bill is presented"
+      }
+      on command CloseOrder is {
+        error "Cannot close order before payment is processed"
+      }
+    } with {
+      briefly "ReadyToServe state handler"
+      described as {
+        |Handles commands valid in the ReadyToServe state.
+        |Only PresentBill advances the lifecycle.
+      }
+    }
+  } with {
     briefly "Ready to serve"
     described as {
       |All items are ready and waiting for the server to
       |deliver them to the table.
     }
   }
-  state BillPresentedState of type TableOrder.TableOrderData with {
+  state BillPresentedState of type TableOrder.TableOrderData is {
+    handler BillPresentedHandler is {
+      on command ProcessPayment is {
+        tell event PaymentProcessed to entity
+          FrontOfHouse.TableOrder
+      }
+      on event PaymentProcessed is {
+        morph entity FrontOfHouse.TableOrder to state
+          FrontOfHouse.TableOrder.PaymentComplete
+            with event PaymentProcessed
+        set field TableOrder.PaymentComplete.processedPayment to
+          "payment info from event"
+        do "PaymentProcessed event triggers PaymentGateway
+          authorization via streaming topology and Loyalty
+          point accrual via ToLoyalty adaptor"
+      }
+      on command CreateOrder is {
+        error "Order has already been created"
+      }
+      on command AddItem is {
+        error "Cannot add items after order is submitted"
+      }
+      on command RemoveItem is {
+        error "Cannot remove items after order is submitted"
+      }
+      on command SubmitOrder is {
+        error "Order has already been submitted"
+      }
+      on command MarkOrderInPreparation is {
+        error "Order preparation is already complete"
+      }
+      on command MarkOrderReadyToServe is {
+        error "Order is already ready to serve"
+      }
+      on command PresentBill is {
+        error "Bill has already been presented"
+      }
+      on command CloseOrder is {
+        error "Cannot close order before payment is processed"
+      }
+    } with {
+      briefly "BillPresented state handler"
+      described as {
+        |Handles commands valid in the BillPresented state.
+        |Only ProcessPayment advances the lifecycle.
+      }
+    }
+  } with {
     briefly "Bill presented"
     described as {
       |Bill has been calculated and presented to the table.
       |Awaiting payment.
     }
   }
-  state PaymentComplete of type TableOrder.TableOrderData with {
+  state PaymentComplete of type TableOrder.TableOrderData is {
+    handler PaymentCompleteHandler is {
+      on command CloseOrder is {
+        tell event OrderClosed to entity
+          FrontOfHouse.TableOrder
+      }
+      on event OrderClosed is {
+        morph entity FrontOfHouse.TableOrder to state
+          FrontOfHouse.TableOrder.Closed
+            with event OrderClosed
+        set field TableOrder.Closed.actualClosedAt to
+          "closedAt from event"
+        do "OrderClosed event triggers accounting transaction
+          posting via streaming topology"
+      }
+      on command CreateOrder is {
+        error "Order has already been created"
+      }
+      on command AddItem is {
+        error "Cannot add items after order is submitted"
+      }
+      on command RemoveItem is {
+        error "Cannot remove items after order is submitted"
+      }
+      on command SubmitOrder is {
+        error "Order has already been submitted"
+      }
+      on command MarkOrderInPreparation is {
+        error "Order preparation is already complete"
+      }
+      on command MarkOrderReadyToServe is {
+        error "Order is already ready to serve"
+      }
+      on command PresentBill is {
+        error "Bill has already been presented"
+      }
+      on command ProcessPayment is {
+        error "Payment has already been processed"
+      }
+    } with {
+      briefly "PaymentComplete state handler"
+      described as {
+        |Handles commands valid in the PaymentComplete state.
+        |Only CloseOrder advances the lifecycle.
+      }
+    }
+  } with {
     briefly "Payment complete"
     described as {
       |Payment has been processed through the payment
       |gateway. Awaiting order closure.
     }
   }
-  state Closed of type TableOrder.TableOrderData with {
+  state Closed of type TableOrder.TableOrderData is {
+    handler ClosedHandler is {
+      on command CreateOrder is {
+        error "Order is closed"
+      }
+      on command AddItem is {
+        error "Order is closed"
+      }
+      on command RemoveItem is {
+        error "Order is closed"
+      }
+      on command SubmitOrder is {
+        error "Order is closed"
+      }
+      on command MarkOrderInPreparation is {
+        error "Order is closed"
+      }
+      on command MarkOrderReadyToServe is {
+        error "Order is closed"
+      }
+      on command PresentBill is {
+        error "Order is closed"
+      }
+      on command ProcessPayment is {
+        error "Order is closed"
+      }
+      on command CloseOrder is {
+        error "Order is already closed"
+      }
+    } with {
+      briefly "Closed state handler"
+      described as {
+        |Terminal state. All commands are rejected.
+      }
+    }
+  } with {
     briefly "Order closed"
     described as {
       |Order has been finalized after payment. Terminal
       |state.
     }
   }
-  handler TableOrderHandler is {
+  handler TableOrderCreationHandler is {
     on command CreateOrder is {
-      morph entity FrontOfHouse.TableOrder to state
-        FrontOfHouse.TableOrder.Draft
-          with command CreateOrder
       tell event OrderCreated to entity FrontOfHouse.TableOrder
     }
-    on command AddItem is {
-      do "append AddItem.addedItem to
-        TableOrderData.orderItems"
-      tell event ItemAdded to entity FrontOfHouse.TableOrder
-    }
-    on command RemoveItem is {
-      do "remove OrderLine from TableOrderData.orderItems
-        where orderLineItem.itemCode = RemoveItem
-        .removedMenuItemId"
-      tell event ItemRemoved to entity FrontOfHouse.TableOrder
-    }
-    on command SubmitOrder is {
+    on event OrderCreated is {
       morph entity FrontOfHouse.TableOrder to state
-        FrontOfHouse.TableOrder.Submitted
-          with command SubmitOrder
-      set field TableOrder.Submitted.actualSubmittedAt to
-        "submittedAt from command"
-      tell event OrderSubmitted to entity FrontOfHouse.TableOrder
-      send event OrderSubmitted to outlet
-        FrontOfHouse.OrderSplitter.SubmittedOrders
-      when "TableOrderData.orderItems contains food
-        category items" then
-        tell command ReceiveTicket to entity
-          Kitchen.KitchenTicket
-      end
-      when "TableOrderData.orderItems contains drink
-        category items" then
-        tell command ReceiveDrinkOrder to entity
-          Bar.DrinkOrder
-      end
-    }
-    on command MarkOrderInPreparation is {
-      morph entity FrontOfHouse.TableOrder to state
-        FrontOfHouse.TableOrder.InPreparation
-          with command MarkOrderInPreparation
-      tell event OrderMarkedInPreparation to entity
-        FrontOfHouse.TableOrder
-    }
-    on command MarkOrderReadyToServe is {
-      morph entity FrontOfHouse.TableOrder to state
-        FrontOfHouse.TableOrder.ReadyToServe
-          with command MarkOrderReadyToServe
-      set field TableOrder.ReadyToServe.readyAt to
-        "readyAt from command"
-      tell event OrderMarkedReadyToServe to entity
-        FrontOfHouse.TableOrder
-    }
-    on command PresentBill is {
-      morph entity FrontOfHouse.TableOrder to state
-        FrontOfHouse.TableOrder.BillPresentedState
-          with command PresentBill
-      do "sum TableOrderData.orderItems applying
-        orderLineItem.itemPrice * orderLineQuantity for each
-        OrderLine to compute presentedBillTotal"
-      set field TableOrder.BillPresentedState.presentedBillTotal to
-        "computed presentedBillTotal"
-      tell event BillPresented to entity FrontOfHouse.TableOrder
-    }
-    on command ProcessPayment is {
-      morph entity FrontOfHouse.TableOrder to state
-        FrontOfHouse.TableOrder.PaymentComplete
-          with command ProcessPayment
-      set field TableOrder.PaymentComplete.processedPayment to
-        "payment info from command"
-      tell event PaymentProcessed to entity
-        FrontOfHouse.TableOrder
-      do "PaymentProcessed event triggers PaymentGateway
-        authorization via streaming topology and Loyalty
-        point accrual via ToLoyalty adaptor"
-    }
-    on command CloseOrder is {
-      morph entity FrontOfHouse.TableOrder to state
-        FrontOfHouse.TableOrder.Closed
-          with command CloseOrder
-      set field TableOrder.Closed.actualClosedAt to
-        "closedAt from command"
-      tell event OrderClosed to entity FrontOfHouse.TableOrder
-      do "OrderClosed event triggers accounting transaction
-        posting via streaming topology"
+        FrontOfHouse.TableOrder.Draft
+          with event OrderCreated
     }
   } with {
-    briefly "Table order command handler"
+    briefly "Table order creation handler"
     described as {
-      |Processes table order lifecycle commands with explicit
-      |state transitions: Draft → Submitted → InPreparation →
-      |ReadyToServe → BillPresented → PaymentComplete → Closed.
-      |Includes order splitting to kitchen and bar, payment
-      |processing, and loyalty point accrual.
+      |Handles the initial CreateOrder command when
+      |the entity has no state yet.
     }
   }
 } with {
@@ -600,5 +846,8 @@ entity TableOrder is {
     | Manages the full lifecycle of a dine-in table order
     | from creation through item management, submission
     | to kitchen and bar, billing, payment, and closing.
+    | State handlers ensure commands are only valid in
+    | appropriate states, and events are persisted before
+    | state transitions.
   }
 }

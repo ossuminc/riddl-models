@@ -534,115 +534,297 @@ entity Reservation is {
       |not arrive.
     }
   }
-  state Requested of type Reservation.RequestedData with {
+  state Requested of type Reservation.RequestedData is {
+    handler RequestedHandler is {
+      on command ConfirmReservation is {
+        tell event ReservationConfirmed to entity
+          FrontOfHouse.Reservation
+      }
+      on event ReservationConfirmed is {
+        morph entity FrontOfHouse.Reservation to state
+          FrontOfHouse.Reservation.Confirmed
+            with event ReservationConfirmed
+      }
+      on command CancelReservation is {
+        tell event ReservationCancelled to entity
+          FrontOfHouse.Reservation
+      }
+      on event ReservationCancelled is {
+        morph entity FrontOfHouse.Reservation to state
+          FrontOfHouse.Reservation.Cancelled
+            with event ReservationCancelled
+      }
+      on command MakeReservation is {
+        error "Reservation has already been made"
+      }
+      on command SeatParty is {
+        error "Cannot seat party before reservation is confirmed"
+      }
+      on command CompleteVisit is {
+        error "Cannot complete visit before party is seated"
+      }
+      on command MarkNoShow is {
+        error "Cannot mark no-show before reservation is confirmed"
+      }
+      on command RescheduleReservation is {
+        error "Cannot reschedule before reservation is confirmed"
+      }
+    } with {
+      briefly "Requested state handler"
+      described as {
+        |Handles commands valid in the Requested state.
+        |ConfirmReservation and CancelReservation advance
+        |the lifecycle.
+      }
+    }
+  } with {
     briefly "Reservation requested"
     described as {
       |Initial state after a reservation is made.
       |Awaiting confirmation with table assignment.
     }
   }
-  state Confirmed of type Reservation.ConfirmedData with {
+  state Confirmed of type Reservation.ConfirmedData is {
+    handler ConfirmedHandler is {
+      on command SeatParty is {
+        tell event PartySeated to entity
+          FrontOfHouse.Reservation
+      }
+      on event PartySeated is {
+        morph entity FrontOfHouse.Reservation to state
+          FrontOfHouse.Reservation.Seated
+            with event PartySeated
+        do "construct CreateOrder with new TableOrderId,
+          tableNumber = PartySeated.seatedTable, serverId from
+          host assignment"
+        tell command CreateOrder to entity
+          FrontOfHouse.TableOrder
+      }
+      on command CancelReservation is {
+        tell event ReservationCancelled to entity
+          FrontOfHouse.Reservation
+      }
+      on event ReservationCancelled is {
+        morph entity FrontOfHouse.Reservation to state
+          FrontOfHouse.Reservation.Cancelled
+            with event ReservationCancelled
+      }
+      on command MarkNoShow is {
+        tell event NoShowMarked to entity
+          FrontOfHouse.Reservation
+      }
+      on event NoShowMarked is {
+        morph entity FrontOfHouse.Reservation to state
+          FrontOfHouse.Reservation.NoShow
+            with event NoShowMarked
+      }
+      on command RescheduleReservation is {
+        tell event ReservationRescheduled to entity
+          FrontOfHouse.Reservation
+      }
+      on event ReservationRescheduled is {
+        morph entity FrontOfHouse.Reservation to state
+          FrontOfHouse.Reservation.Requested
+            with event ReservationRescheduled
+        set field Reservation.Requested.base to
+          "copy base with reservationTime =
+          ReservationRescheduled.newReservationTime"
+      }
+      on command MakeReservation is {
+        error "Reservation has already been made"
+      }
+      on command ConfirmReservation is {
+        error "Reservation is already confirmed"
+      }
+      on command CompleteVisit is {
+        error "Cannot complete visit before party is seated"
+      }
+    } with {
+      briefly "Confirmed state handler"
+      described as {
+        |Handles commands valid in the Confirmed state.
+        |SeatParty, CancelReservation, MarkNoShow, and
+        |RescheduleReservation are all valid transitions.
+      }
+    }
+  } with {
     briefly "Reservation confirmed"
     described as {
       |Reservation has been confirmed with a table
       |assignment. Awaiting the party's arrival.
     }
   }
-  state Seated of type Reservation.SeatedData with {
+  state Seated of type Reservation.SeatedData is {
+    handler SeatedHandler is {
+      on command CompleteVisit is {
+        tell event VisitCompleted to entity
+          FrontOfHouse.Reservation
+      }
+      on event VisitCompleted is {
+        morph entity FrontOfHouse.Reservation to state
+          FrontOfHouse.Reservation.Completed
+            with event VisitCompleted
+      }
+      on command MakeReservation is {
+        error "Reservation has already been made"
+      }
+      on command ConfirmReservation is {
+        error "Reservation is already confirmed and seated"
+      }
+      on command CancelReservation is {
+        error "Cannot cancel reservation after party is seated"
+      }
+      on command SeatParty is {
+        error "Party is already seated"
+      }
+      on command MarkNoShow is {
+        error "Cannot mark no-show after party is seated"
+      }
+      on command RescheduleReservation is {
+        error "Cannot reschedule after party is seated"
+      }
+    } with {
+      briefly "Seated state handler"
+      described as {
+        |Handles commands valid in the Seated state.
+        |Only CompleteVisit advances the lifecycle.
+      }
+    }
+  } with {
     briefly "Party seated"
     described as {
       |Party has arrived and been seated at their table.
       |A table order has been created.
     }
   }
-  state Completed of type Reservation.CompletedData with {
+  state Completed of type Reservation.CompletedData is {
+    handler CompletedHandler is {
+      on command MakeReservation is {
+        error "Reservation is completed"
+      }
+      on command ConfirmReservation is {
+        error "Reservation is completed"
+      }
+      on command CancelReservation is {
+        error "Reservation is completed"
+      }
+      on command SeatParty is {
+        error "Reservation is completed"
+      }
+      on command CompleteVisit is {
+        error "Reservation is already completed"
+      }
+      on command MarkNoShow is {
+        error "Reservation is completed"
+      }
+      on command RescheduleReservation is {
+        error "Reservation is completed"
+      }
+    } with {
+      briefly "Completed state handler"
+      described as {
+        |Terminal state. All commands are rejected.
+      }
+    }
+  } with {
     briefly "Visit completed"
     described as {
       |Party has finished dining. Terminal state.
     }
   }
-  state Cancelled of type Reservation.CancelledData with {
+  state Cancelled of type Reservation.CancelledData is {
+    handler CancelledHandler is {
+      on command MakeReservation is {
+        error "Reservation is cancelled"
+      }
+      on command ConfirmReservation is {
+        error "Reservation is cancelled"
+      }
+      on command CancelReservation is {
+        error "Reservation is already cancelled"
+      }
+      on command SeatParty is {
+        error "Reservation is cancelled"
+      }
+      on command CompleteVisit is {
+        error "Reservation is cancelled"
+      }
+      on command MarkNoShow is {
+        error "Reservation is cancelled"
+      }
+      on command RescheduleReservation is {
+        error "Reservation is cancelled"
+      }
+    } with {
+      briefly "Cancelled state handler"
+      described as {
+        |Terminal state. All commands are rejected.
+      }
+    }
+  } with {
     briefly "Reservation cancelled"
     described as {
       |Reservation has been cancelled. Terminal state.
     }
   }
-  state NoShow of type Reservation.NoShowData with {
+  state NoShow of type Reservation.NoShowData is {
+    handler NoShowHandler is {
+      on command MakeReservation is {
+        error "Reservation is marked as no-show"
+      }
+      on command ConfirmReservation is {
+        error "Reservation is marked as no-show"
+      }
+      on command CancelReservation is {
+        error "Reservation is marked as no-show"
+      }
+      on command SeatParty is {
+        error "Reservation is marked as no-show"
+      }
+      on command CompleteVisit is {
+        error "Reservation is marked as no-show"
+      }
+      on command MarkNoShow is {
+        error "Reservation is already marked as no-show"
+      }
+      on command RescheduleReservation is {
+        error "Reservation is marked as no-show"
+      }
+    } with {
+      briefly "NoShow state handler"
+      described as {
+        |Terminal state. All commands are rejected.
+      }
+    }
+  } with {
     briefly "No-show"
     described as {
       |Party did not arrive for their confirmed
       |reservation. Terminal state.
     }
   }
-  handler ReservationHandler is {
+  handler ReservationCreationHandler is {
     on command MakeReservation is {
-      morph entity FrontOfHouse.Reservation to state
-        FrontOfHouse.Reservation.Requested
-          with command MakeReservation
       do "validate MakeReservation.partySize is between 1 and 20"
       do "validate MakeReservation.reservationTime is in the
         future and within the 30-day booking window"
       do "query ReservationRepository for conflicting
         reservations at MakeReservation.reservationTime with
         sufficient table capacity for MakeReservation.partySize"
-      tell event ReservationMade to entity FrontOfHouse.Reservation
-    }
-    on command ConfirmReservation is {
-      morph entity FrontOfHouse.Reservation to state
-        FrontOfHouse.Reservation.Confirmed
-          with command ConfirmReservation
-      tell event ReservationConfirmed to entity
+      tell event ReservationMade to entity
         FrontOfHouse.Reservation
     }
-    on command CancelReservation is {
-      morph entity FrontOfHouse.Reservation to state
-        FrontOfHouse.Reservation.Cancelled
-          with command CancelReservation
-      tell event ReservationCancelled to entity
-        FrontOfHouse.Reservation
-    }
-    on command SeatParty is {
-      morph entity FrontOfHouse.Reservation to state
-        FrontOfHouse.Reservation.Seated
-          with command SeatParty
-      tell event PartySeated to entity FrontOfHouse.Reservation
-      do "construct CreateOrder with new TableOrderId,
-        tableNumber = SeatParty.seatedTable, serverId from
-        host assignment"
-      tell command CreateOrder to entity FrontOfHouse.TableOrder
-    }
-    on command CompleteVisit is {
-      morph entity FrontOfHouse.Reservation to state
-        FrontOfHouse.Reservation.Completed
-          with command CompleteVisit
-      tell event VisitCompleted to entity
-        FrontOfHouse.Reservation
-    }
-    on command MarkNoShow is {
-      morph entity FrontOfHouse.Reservation to state
-        FrontOfHouse.Reservation.NoShow
-          with command MarkNoShow
-      tell event NoShowMarked to entity
-        FrontOfHouse.Reservation
-    }
-    on command RescheduleReservation is {
+    on event ReservationMade is {
       morph entity FrontOfHouse.Reservation to state
         FrontOfHouse.Reservation.Requested
-          with command RescheduleReservation
-      set field Reservation.Requested.base to
-        "copy base with reservationTime =
-        RescheduleReservation.newReservationTime"
-      tell event ReservationRescheduled to entity
-        FrontOfHouse.Reservation
+          with event ReservationMade
     }
   } with {
-    briefly "Reservation command handler"
+    briefly "Reservation creation handler"
     described as {
-      |Processes reservation lifecycle commands with explicit
-      |state transitions: Requested → Confirmed → Seated →
-      |Completed. Also handles Cancelled (from Requested or
-      |Confirmed), NoShow (from Confirmed), and Reschedule
-      |(Confirmed → back to Requested with new time).
+      |Handles the initial MakeReservation command when
+      |the entity has no state yet. Validates party size,
+      |reservation time, and table availability.
     }
   }
 } with {
@@ -650,6 +832,8 @@ entity Reservation is {
   described as {
     | Manages the lifecycle of a restaurant reservation
     | from request through confirmation, seating, or
-    | cancellation.
+    | cancellation. State handlers ensure commands are
+    | only valid in appropriate states, and events are
+    | persisted before state transitions.
   }
 }

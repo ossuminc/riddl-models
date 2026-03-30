@@ -574,191 +574,635 @@ entity OnlineOrder is {
       |lifecycle states as a superset record.
     }
   }
-  state Browsing of type OnlineOrder.OnlineOrderData with {
+  state Browsing of type OnlineOrder.OnlineOrderData is {
+    handler BrowsingHandler is {
+      on command AddToCart is {
+        tell event ItemAddedToCart to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event ItemAddedToCart is {
+        do "append ItemAddedToCart.cartItem to
+          OnlineOrderData.orderCartItems"
+      }
+      on command RemoveFromCart is {
+        tell event ItemRemovedFromCart to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event ItemRemovedFromCart is {
+        do "remove CartItem from OnlineOrderData
+          .orderCartItems where cartMenuItemId =
+          ItemRemovedFromCart.removedCartItemId"
+      }
+      on command SelectFulfillment is {
+        when "fulfillment is DeliveryFulfillment" then
+          do "validate SelectFulfillment.deliveryAddress is within
+            restaurant service area by ZIP code"
+        end
+        tell event FulfillmentSelected to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event FulfillmentSelected is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.FulfillmentChosen
+            with event FulfillmentSelected
+        set field OnlineOrder.FulfillmentChosen.selectedFulfillment
+          to "fulfillmentType from event"
+        when "fulfillment is DeliveryFulfillment" then
+          set field
+            OnlineOrder.FulfillmentChosen.selectedDeliveryAddress
+            to "deliveryAddress from event"
+        end
+      }
+      on command CancelOnlineOrder is {
+        tell event OnlineOrderCancelled to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlineOrderCancelled is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.Cancelled
+            with event OnlineOrderCancelled
+        set field OnlineOrder.Cancelled.cancelledAt to
+          "cancelledAt from event"
+        set field OnlineOrder.Cancelled.cancellationReason to
+          "cancellationReason from event"
+      }
+      on command BrowseMenu is {
+        error "Online order session already started"
+      }
+      on command SubmitOnlineOrder is {
+        error "Cannot submit before selecting fulfillment"
+      }
+      on command ProcessOnlinePayment is {
+        error "Cannot process payment before order is submitted"
+      }
+      on command MarkOnlineInPreparation is {
+        error "Cannot mark in preparation before payment"
+      }
+      on command MarkReadyForPickup is {
+        error "Cannot mark ready before preparation"
+      }
+      on command MarkOutForDelivery is {
+        error "Cannot mark out for delivery before preparation"
+      }
+      on command CompleteOnlineOrder is {
+        error "Cannot complete before pickup or delivery"
+      }
+    } with {
+      briefly "Browsing state handler"
+      described as {
+        |Handles commands valid in the Browsing state.
+        |AddToCart and RemoveFromCart modify the cart.
+        |SelectFulfillment advances the lifecycle.
+        |CancelOnlineOrder moves to Cancelled.
+      }
+    }
+  } with {
     briefly "Browsing menu"
     described as {
       |Customer is browsing the menu and building their
       |cart. Items can be added and removed.
     }
   }
-  state FulfillmentChosen of type OnlineOrder.OnlineOrderData
-    with {
+  state FulfillmentChosen of type OnlineOrder.OnlineOrderData is {
+    handler FulfillmentChosenHandler is {
+      on command SubmitOnlineOrder is {
+        tell event OnlineOrderSubmitted to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlineOrderSubmitted is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.Submitted
+            with event OnlineOrderSubmitted
+        set field OnlineOrder.Submitted.actualOnlineSubmittedAt to
+          "onlineSubmittedAt from event"
+        do "OnlineOrderSubmitted event triggers kitchen ticket
+          creation via ToKitchen adaptor"
+        when "OnlineOrderData.selectedFulfillment is
+          DeliveryFulfillment" then
+          tell command CreateDelivery to entity
+            Delivery.DeliveryOrder
+        end
+      }
+      on command CancelOnlineOrder is {
+        tell event OnlineOrderCancelled to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlineOrderCancelled is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.Cancelled
+            with event OnlineOrderCancelled
+        set field OnlineOrder.Cancelled.cancelledAt to
+          "cancelledAt from event"
+        set field OnlineOrder.Cancelled.cancellationReason to
+          "cancellationReason from event"
+      }
+      on command BrowseMenu is {
+        error "Online order session already started"
+      }
+      on command AddToCart is {
+        error "Cannot modify cart after fulfillment is selected"
+      }
+      on command RemoveFromCart is {
+        error "Cannot modify cart after fulfillment is selected"
+      }
+      on command SelectFulfillment is {
+        error "Fulfillment has already been selected"
+      }
+      on command ProcessOnlinePayment is {
+        error "Cannot process payment before order is submitted"
+      }
+      on command MarkOnlineInPreparation is {
+        error "Cannot mark in preparation before payment"
+      }
+      on command MarkReadyForPickup is {
+        error "Cannot mark ready before preparation"
+      }
+      on command MarkOutForDelivery is {
+        error "Cannot mark out for delivery before preparation"
+      }
+      on command CompleteOnlineOrder is {
+        error "Cannot complete before pickup or delivery"
+      }
+    } with {
+      briefly "FulfillmentChosen state handler"
+      described as {
+        |Handles commands valid in the FulfillmentChosen state.
+        |SubmitOnlineOrder advances the lifecycle.
+        |CancelOnlineOrder moves to Cancelled.
+      }
+    }
+  } with {
     briefly "Fulfillment chosen"
     described as {
       |Customer has selected pickup or delivery fulfillment.
       |Ready for submission.
     }
   }
-  state Submitted of type OnlineOrder.OnlineOrderData with {
+  state Submitted of type OnlineOrder.OnlineOrderData is {
+    handler SubmittedHandler is {
+      on command ProcessOnlinePayment is {
+        tell event OnlinePaymentProcessed to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlinePaymentProcessed is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.Paid
+            with event OnlinePaymentProcessed
+        set field OnlineOrder.Paid.processedOnlinePayment to
+          "payment info from event"
+        do "OnlinePaymentProcessed event triggers PaymentGateway
+          authorization via streaming topology and Loyalty
+          point accrual via ToLoyalty adaptor"
+      }
+      on command CancelOnlineOrder is {
+        tell event OnlineOrderCancelled to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlineOrderCancelled is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.Cancelled
+            with event OnlineOrderCancelled
+        set field OnlineOrder.Cancelled.cancelledAt to
+          "cancelledAt from event"
+        set field OnlineOrder.Cancelled.cancellationReason to
+          "cancellationReason from event"
+      }
+      on command BrowseMenu is {
+        error "Online order session already started"
+      }
+      on command AddToCart is {
+        error "Cannot modify cart after order is submitted"
+      }
+      on command RemoveFromCart is {
+        error "Cannot modify cart after order is submitted"
+      }
+      on command SelectFulfillment is {
+        error "Fulfillment has already been selected"
+      }
+      on command SubmitOnlineOrder is {
+        error "Order has already been submitted"
+      }
+      on command MarkOnlineInPreparation is {
+        error "Cannot mark in preparation before payment"
+      }
+      on command MarkReadyForPickup is {
+        error "Cannot mark ready before preparation"
+      }
+      on command MarkOutForDelivery is {
+        error "Cannot mark out for delivery before preparation"
+      }
+      on command CompleteOnlineOrder is {
+        error "Cannot complete before pickup or delivery"
+      }
+    } with {
+      briefly "Submitted state handler"
+      described as {
+        |Handles commands valid in the Submitted state.
+        |ProcessOnlinePayment advances the lifecycle.
+        |CancelOnlineOrder moves to Cancelled.
+      }
+    }
+  } with {
     briefly "Order submitted"
     described as {
       |Order has been submitted for processing. Kitchen
       |ticket creation and delivery routing triggered.
     }
   }
-  state Paid of type OnlineOrder.OnlineOrderData with {
+  state Paid of type OnlineOrder.OnlineOrderData is {
+    handler PaidHandler is {
+      on command MarkOnlineInPreparation is {
+        tell event OnlineOrderInPreparation to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlineOrderInPreparation is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.InPreparation
+            with event OnlineOrderInPreparation
+      }
+      on command CancelOnlineOrder is {
+        tell event OnlineOrderCancelled to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlineOrderCancelled is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.Cancelled
+            with event OnlineOrderCancelled
+        set field OnlineOrder.Cancelled.cancelledAt to
+          "cancelledAt from event"
+        set field OnlineOrder.Cancelled.cancellationReason to
+          "cancellationReason from event"
+        when "OnlineOrderData.processedOnlinePayment is
+          not empty" then
+          do "trigger refund via PaymentGateway for
+            processedOnlinePayment amount"
+        end
+      }
+      on command BrowseMenu is {
+        error "Online order session already started"
+      }
+      on command AddToCart is {
+        error "Cannot modify cart after order is submitted"
+      }
+      on command RemoveFromCart is {
+        error "Cannot modify cart after order is submitted"
+      }
+      on command SelectFulfillment is {
+        error "Fulfillment has already been selected"
+      }
+      on command SubmitOnlineOrder is {
+        error "Order has already been submitted"
+      }
+      on command ProcessOnlinePayment is {
+        error "Payment has already been processed"
+      }
+      on command MarkReadyForPickup is {
+        error "Cannot mark ready before preparation"
+      }
+      on command MarkOutForDelivery is {
+        error "Cannot mark out for delivery before preparation"
+      }
+      on command CompleteOnlineOrder is {
+        error "Cannot complete before pickup or delivery"
+      }
+    } with {
+      briefly "Paid state handler"
+      described as {
+        |Handles commands valid in the Paid state.
+        |MarkOnlineInPreparation advances the lifecycle.
+        |CancelOnlineOrder moves to Cancelled with refund.
+      }
+    }
+  } with {
     briefly "Payment complete"
     described as {
       |Payment has been processed. Order is confirmed and
       |awaiting preparation.
     }
   }
-  state InPreparation of type OnlineOrder.OnlineOrderData with {
+  state InPreparation of type OnlineOrder.OnlineOrderData is {
+    handler InPreparationHandler is {
+      on command MarkReadyForPickup is {
+        tell event OnlineOrderReadyForPickup to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlineOrderReadyForPickup is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.ReadyForPickup
+            with event OnlineOrderReadyForPickup
+        do "OnlineOrderReadyForPickup triggers push notification
+          to customer"
+      }
+      on command MarkOutForDelivery is {
+        tell event OnlineOrderOutForDelivery to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlineOrderOutForDelivery is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.OutForDelivery
+            with event OnlineOrderOutForDelivery
+        do "OnlineOrderOutForDelivery triggers push notification
+          to customer with driver tracking link"
+      }
+      on command CancelOnlineOrder is {
+        tell event OnlineOrderCancelled to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlineOrderCancelled is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.Cancelled
+            with event OnlineOrderCancelled
+        set field OnlineOrder.Cancelled.cancelledAt to
+          "cancelledAt from event"
+        set field OnlineOrder.Cancelled.cancellationReason to
+          "cancellationReason from event"
+        when "OnlineOrderData.processedOnlinePayment is
+          not empty" then
+          do "trigger refund via PaymentGateway for
+            processedOnlinePayment amount"
+        end
+      }
+      on command BrowseMenu is {
+        error "Online order session already started"
+      }
+      on command AddToCart is {
+        error "Cannot modify cart after order is submitted"
+      }
+      on command RemoveFromCart is {
+        error "Cannot modify cart after order is submitted"
+      }
+      on command SelectFulfillment is {
+        error "Fulfillment has already been selected"
+      }
+      on command SubmitOnlineOrder is {
+        error "Order has already been submitted"
+      }
+      on command ProcessOnlinePayment is {
+        error "Payment has already been processed"
+      }
+      on command MarkOnlineInPreparation is {
+        error "Order is already in preparation"
+      }
+      on command CompleteOnlineOrder is {
+        error "Cannot complete before pickup or delivery"
+      }
+    } with {
+      briefly "InPreparation state handler"
+      described as {
+        |Handles commands valid in the InPreparation state.
+        |MarkReadyForPickup or MarkOutForDelivery advance
+        |the lifecycle based on fulfillment type.
+        |CancelOnlineOrder moves to Cancelled with refund.
+      }
+    }
+  } with {
     briefly "In preparation"
     described as {
       |Kitchen is actively preparing the order items.
     }
   }
-  state ReadyForPickup of type OnlineOrder.OnlineOrderData with {
+  state ReadyForPickup of type OnlineOrder.OnlineOrderData is {
+    handler ReadyForPickupHandler is {
+      on command CompleteOnlineOrder is {
+        tell event OnlineOrderCompleted to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlineOrderCompleted is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.Completed
+            with event OnlineOrderCompleted
+        set field OnlineOrder.Completed.completedAt to
+          "completedAt from event"
+      }
+      on command CancelOnlineOrder is {
+        tell event OnlineOrderCancelled to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlineOrderCancelled is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.Cancelled
+            with event OnlineOrderCancelled
+        set field OnlineOrder.Cancelled.cancelledAt to
+          "cancelledAt from event"
+        set field OnlineOrder.Cancelled.cancellationReason to
+          "cancellationReason from event"
+        when "OnlineOrderData.processedOnlinePayment is
+          not empty" then
+          do "trigger refund via PaymentGateway for
+            processedOnlinePayment amount"
+        end
+      }
+      on command BrowseMenu is {
+        error "Online order session already started"
+      }
+      on command AddToCart is {
+        error "Cannot modify cart after order is submitted"
+      }
+      on command RemoveFromCart is {
+        error "Cannot modify cart after order is submitted"
+      }
+      on command SelectFulfillment is {
+        error "Fulfillment has already been selected"
+      }
+      on command SubmitOnlineOrder is {
+        error "Order has already been submitted"
+      }
+      on command ProcessOnlinePayment is {
+        error "Payment has already been processed"
+      }
+      on command MarkOnlineInPreparation is {
+        error "Order preparation is already complete"
+      }
+      on command MarkReadyForPickup is {
+        error "Order is already ready for pickup"
+      }
+      on command MarkOutForDelivery is {
+        error "Order is a pickup order, not delivery"
+      }
+    } with {
+      briefly "ReadyForPickup state handler"
+      described as {
+        |Handles commands valid in the ReadyForPickup state.
+        |CompleteOnlineOrder finalizes the lifecycle.
+        |CancelOnlineOrder moves to Cancelled with refund.
+      }
+    }
+  } with {
     briefly "Ready for pickup"
     described as {
       |Order is prepared and waiting for customer pickup.
       |Pickup fulfillment only.
     }
   }
-  state OutForDelivery of type OnlineOrder.OnlineOrderData with {
+  state OutForDelivery of type OnlineOrder.OnlineOrderData is {
+    handler OutForDeliveryHandler is {
+      on command CompleteOnlineOrder is {
+        tell event OnlineOrderCompleted to entity
+          OnlineOrdering.OnlineOrder
+      }
+      on event OnlineOrderCompleted is {
+        morph entity OnlineOrdering.OnlineOrder to state
+          OnlineOrdering.OnlineOrder.Completed
+            with event OnlineOrderCompleted
+        set field OnlineOrder.Completed.completedAt to
+          "completedAt from event"
+      }
+      on command BrowseMenu is {
+        error "Online order session already started"
+      }
+      on command AddToCart is {
+        error "Cannot modify cart after order is submitted"
+      }
+      on command RemoveFromCart is {
+        error "Cannot modify cart after order is submitted"
+      }
+      on command SelectFulfillment is {
+        error "Fulfillment has already been selected"
+      }
+      on command SubmitOnlineOrder is {
+        error "Order has already been submitted"
+      }
+      on command ProcessOnlinePayment is {
+        error "Payment has already been processed"
+      }
+      on command MarkOnlineInPreparation is {
+        error "Order preparation is already complete"
+      }
+      on command MarkReadyForPickup is {
+        error "Order is a delivery order, not pickup"
+      }
+      on command MarkOutForDelivery is {
+        error "Order is already out for delivery"
+      }
+      on command CancelOnlineOrder is {
+        error "Cannot cancel order once out for delivery"
+      }
+    } with {
+      briefly "OutForDelivery state handler"
+      described as {
+        |Handles commands valid in the OutForDelivery state.
+        |CompleteOnlineOrder finalizes the lifecycle.
+        |Cancellation is not allowed once the driver is
+        |dispatched.
+      }
+    }
+  } with {
     briefly "Out for delivery"
     described as {
       |Order has been dispatched with a delivery driver.
       |Delivery fulfillment only.
     }
   }
-  state Completed of type OnlineOrder.OnlineOrderData with {
+  state Completed of type OnlineOrder.OnlineOrderData is {
+    handler CompletedHandler is {
+      on command BrowseMenu is {
+        error "Order is completed"
+      }
+      on command AddToCart is {
+        error "Order is completed"
+      }
+      on command RemoveFromCart is {
+        error "Order is completed"
+      }
+      on command SelectFulfillment is {
+        error "Order is completed"
+      }
+      on command SubmitOnlineOrder is {
+        error "Order is completed"
+      }
+      on command ProcessOnlinePayment is {
+        error "Order is completed"
+      }
+      on command MarkOnlineInPreparation is {
+        error "Order is completed"
+      }
+      on command MarkReadyForPickup is {
+        error "Order is completed"
+      }
+      on command MarkOutForDelivery is {
+        error "Order is completed"
+      }
+      on command CompleteOnlineOrder is {
+        error "Order is already completed"
+      }
+      on command CancelOnlineOrder is {
+        error "Cannot cancel a completed order"
+      }
+    } with {
+      briefly "Completed state handler"
+      described as {
+        |Terminal state. All commands are rejected.
+      }
+    }
+  } with {
     briefly "Order completed"
     described as {
       |Order has been picked up or delivered. Terminal state.
     }
   }
-  state Cancelled of type OnlineOrder.OnlineOrderData with {
+  state Cancelled of type OnlineOrder.OnlineOrderData is {
+    handler CancelledHandler is {
+      on command BrowseMenu is {
+        error "Order is cancelled"
+      }
+      on command AddToCart is {
+        error "Order is cancelled"
+      }
+      on command RemoveFromCart is {
+        error "Order is cancelled"
+      }
+      on command SelectFulfillment is {
+        error "Order is cancelled"
+      }
+      on command SubmitOnlineOrder is {
+        error "Order is cancelled"
+      }
+      on command ProcessOnlinePayment is {
+        error "Order is cancelled"
+      }
+      on command MarkOnlineInPreparation is {
+        error "Order is cancelled"
+      }
+      on command MarkReadyForPickup is {
+        error "Order is cancelled"
+      }
+      on command MarkOutForDelivery is {
+        error "Order is cancelled"
+      }
+      on command CompleteOnlineOrder is {
+        error "Order is cancelled"
+      }
+      on command CancelOnlineOrder is {
+        error "Order is already cancelled"
+      }
+    } with {
+      briefly "Cancelled state handler"
+      described as {
+        |Terminal state. All commands are rejected.
+      }
+    }
+  } with {
     briefly "Order cancelled"
     described as {
       |Order has been cancelled. If payment was already
       |processed, a refund is triggered. Terminal state.
     }
   }
-  handler OnlineOrderHandler is {
+  handler OnlineOrderCreationHandler is {
     on command BrowseMenu is {
+      tell event MenuBrowsed to entity
+        OnlineOrdering.OnlineOrder
+    }
+    on event MenuBrowsed is {
       morph entity OnlineOrdering.OnlineOrder to state
         OnlineOrdering.OnlineOrder.Browsing
-          with command BrowseMenu
-      tell event MenuBrowsed to entity OnlineOrdering.OnlineOrder
-    }
-    on command AddToCart is {
-      do "append AddToCart.cartItem to
-        OnlineOrderData.orderCartItems"
-      tell event ItemAddedToCart to entity
-        OnlineOrdering.OnlineOrder
-    }
-    on command RemoveFromCart is {
-      do "remove CartItem from OnlineOrderData
-        .orderCartItems where cartMenuItemId =
-        RemoveFromCart.removedCartItemId"
-      tell event ItemRemovedFromCart to entity
-        OnlineOrdering.OnlineOrder
-    }
-    on command SelectFulfillment is {
-      morph entity OnlineOrdering.OnlineOrder to state
-        OnlineOrdering.OnlineOrder.FulfillmentChosen
-          with command SelectFulfillment
-      set field OnlineOrder.FulfillmentChosen.selectedFulfillment
-        to "fulfillmentType from command"
-      tell event FulfillmentSelected to entity
-        OnlineOrdering.OnlineOrder
-      when "fulfillment is DeliveryFulfillment" then
-        set field
-          OnlineOrder.FulfillmentChosen.selectedDeliveryAddress
-          to "deliveryAddress from command"
-        do "validate SelectFulfillment.deliveryAddress is within
-          restaurant service area by ZIP code"
-      end
-    }
-    on command SubmitOnlineOrder is {
-      morph entity OnlineOrdering.OnlineOrder to state
-        OnlineOrdering.OnlineOrder.Submitted
-          with command SubmitOnlineOrder
-      set field OnlineOrder.Submitted.actualOnlineSubmittedAt to
-        "onlineSubmittedAt from command"
-      tell event OnlineOrderSubmitted to entity
-        OnlineOrdering.OnlineOrder
-      do "OnlineOrderSubmitted event triggers kitchen ticket
-        creation via ToKitchen adaptor"
-      when "OnlineOrderData.selectedFulfillment is
-        DeliveryFulfillment" then
-        tell command CreateDelivery to entity
-          Delivery.DeliveryOrder
-      end
-    }
-    on command ProcessOnlinePayment is {
-      morph entity OnlineOrdering.OnlineOrder to state
-        OnlineOrdering.OnlineOrder.Paid
-          with command ProcessOnlinePayment
-      set field OnlineOrder.Paid.processedOnlinePayment to
-        "payment info from command"
-      tell event OnlinePaymentProcessed to entity
-        OnlineOrdering.OnlineOrder
-      do "OnlinePaymentProcessed event triggers PaymentGateway
-        authorization via streaming topology and Loyalty
-        point accrual via ToLoyalty adaptor"
-    }
-    on command MarkOnlineInPreparation is {
-      morph entity OnlineOrdering.OnlineOrder to state
-        OnlineOrdering.OnlineOrder.InPreparation
-          with command MarkOnlineInPreparation
-      tell event OnlineOrderInPreparation to entity
-        OnlineOrdering.OnlineOrder
-    }
-    on command MarkReadyForPickup is {
-      morph entity OnlineOrdering.OnlineOrder to state
-        OnlineOrdering.OnlineOrder.ReadyForPickup
-          with command MarkReadyForPickup
-      tell event OnlineOrderReadyForPickup to entity
-        OnlineOrdering.OnlineOrder
-      do "OnlineOrderReadyForPickup triggers push notification
-        to customer"
-    }
-    on command MarkOutForDelivery is {
-      morph entity OnlineOrdering.OnlineOrder to state
-        OnlineOrdering.OnlineOrder.OutForDelivery
-          with command MarkOutForDelivery
-      tell event OnlineOrderOutForDelivery to entity
-        OnlineOrdering.OnlineOrder
-      do "OnlineOrderOutForDelivery triggers push notification
-        to customer with driver tracking link"
-    }
-    on command CompleteOnlineOrder is {
-      morph entity OnlineOrdering.OnlineOrder to state
-        OnlineOrdering.OnlineOrder.Completed
-          with command CompleteOnlineOrder
-      set field OnlineOrder.Completed.completedAt to
-        "completedAt from command"
-      tell event OnlineOrderCompleted to entity
-        OnlineOrdering.OnlineOrder
-    }
-    on command CancelOnlineOrder is {
-      morph entity OnlineOrdering.OnlineOrder to state
-        OnlineOrdering.OnlineOrder.Cancelled
-          with command CancelOnlineOrder
-      set field OnlineOrder.Cancelled.cancelledAt to
-        "cancelledAt from command"
-      set field OnlineOrder.Cancelled.cancellationReason to
-        "cancellationReason from command"
-      tell event OnlineOrderCancelled to entity
-        OnlineOrdering.OnlineOrder
-      when "OnlineOrderData.processedOnlinePayment is
-        not empty" then
-        do "trigger refund via PaymentGateway for
-          processedOnlinePayment amount"
-      end
+          with event MenuBrowsed
     }
   } with {
-    briefly "Online order command handler"
+    briefly "Online order creation handler"
     described as {
-      |Processes online order lifecycle commands with explicit
-      |state transitions: Browsing → FulfillmentChosen →
-      |Submitted → Paid → InPreparation → ReadyForPickup or
-      |OutForDelivery → Completed. Cancellation is allowed
-      |from any state before delivery/pickup completion; if
-      |already paid, a refund is triggered.
+      |Handles the initial BrowseMenu command when
+      |the entity has no state yet.
     }
   }
 } with {
@@ -766,7 +1210,10 @@ entity OnlineOrder is {
   described as {
     | Manages the lifecycle of an online order from menu
     | browsing through cart management, fulfillment selection,
-    | submission, and payment. Decoupled from delivery to
-    | enable electronic menus independently.
+    | submission, and payment. State handlers ensure commands
+    | are only valid in appropriate states, and events are
+    | persisted before state transitions. Cancellation is
+    | allowed from any state before delivery dispatch, with
+    | automatic refund if payment was processed.
   }
 }

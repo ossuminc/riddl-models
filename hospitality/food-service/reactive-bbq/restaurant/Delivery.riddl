@@ -605,7 +605,55 @@ entity DeliveryOrder is {
       |State data for a failed delivery.
     }
   }
-  state Pending of type DeliveryOrder.PendingData with {
+  state Pending of type DeliveryOrder.PendingData is {
+    handler PendingHandler is {
+      on command AssignDriver is {
+        tell event DriverAssigned to entity
+          Delivery.DeliveryOrder
+      }
+      on event DriverAssigned is {
+        morph entity Delivery.DeliveryOrder to state
+          Delivery.DeliveryOrder.DriverAssignedState
+            with event DriverAssigned
+        do "DriverAssigned event triggers push notification to
+          driver via NotificationService streaming topology"
+      }
+      on command FailDelivery is {
+        tell event DeliveryMarkedFailed to entity
+          Delivery.DeliveryOrder
+      }
+      on event DeliveryMarkedFailed is {
+        morph entity Delivery.DeliveryOrder to state
+          Delivery.DeliveryOrder.Failed
+            with event DeliveryMarkedFailed
+      }
+      on command CreateDelivery is {
+        error "Delivery has already been created"
+      }
+      on command DispatchDriver is {
+        error "Cannot dispatch before a driver is assigned"
+      }
+      on command RecordDeliveryLocation is {
+        error "Cannot record location before driver is dispatched"
+      }
+      on command ConfirmDelivery is {
+        error "Cannot confirm delivery before driver is dispatched"
+      }
+      on command RecordDeliveryPayment is {
+        error "Cannot record payment before delivery is in transit"
+      }
+      on command ReportDeliveryIssue is {
+        error "Cannot report issue before delivery is in transit"
+      }
+    } with {
+      briefly "Pending state handler"
+      described as {
+        |Handles commands valid in the Pending state.
+        |AssignDriver advances the lifecycle. FailDelivery
+        |moves to the terminal Failed state.
+      }
+    }
+  } with {
     briefly "Delivery pending"
     described as {
       |Delivery has been created and is awaiting driver
@@ -614,132 +662,258 @@ entity DeliveryOrder is {
     }
   }
   state DriverAssignedState of type DeliveryOrder.DriverAssignedData
-    with {
+    is {
+    handler DriverAssignedHandler is {
+      on command DispatchDriver is {
+        tell event DriverDispatched to entity
+          Delivery.DeliveryOrder
+      }
+      on event DriverDispatched is {
+        morph entity Delivery.DeliveryOrder to state
+          Delivery.DeliveryOrder.InTransit
+            with event DriverDispatched
+        do "DriverDispatched event triggers push notification to
+          customer via NotificationService streaming topology"
+      }
+      on command FailDelivery is {
+        tell event DeliveryMarkedFailed to entity
+          Delivery.DeliveryOrder
+      }
+      on event DeliveryMarkedFailed is {
+        morph entity Delivery.DeliveryOrder to state
+          Delivery.DeliveryOrder.Failed
+            with event DeliveryMarkedFailed
+      }
+      on command CreateDelivery is {
+        error "Delivery has already been created"
+      }
+      on command AssignDriver is {
+        error "Driver has already been assigned"
+      }
+      on command RecordDeliveryLocation is {
+        error "Cannot record location before driver is dispatched"
+      }
+      on command ConfirmDelivery is {
+        error "Cannot confirm delivery before driver is dispatched"
+      }
+      on command RecordDeliveryPayment is {
+        error "Cannot record payment before delivery is in transit"
+      }
+      on command ReportDeliveryIssue is {
+        error "Cannot report issue before delivery is in transit"
+      }
+    } with {
+      briefly "DriverAssigned state handler"
+      described as {
+        |Handles commands valid in the DriverAssigned state.
+        |DispatchDriver advances the lifecycle. FailDelivery
+        |moves to the terminal Failed state.
+      }
+    }
+  } with {
     briefly "Driver assigned"
     described as {
       |A driver has been assigned and notified. Awaiting
       |dispatch.
     }
   }
-  state InTransit of type DeliveryOrder.InTransitData with {
+  state InTransit of type DeliveryOrder.InTransitData is {
+    handler InTransitHandler is {
+      on command RecordDeliveryLocation is {
+        tell event DeliveryLocationRecorded to entity
+          Delivery.DeliveryOrder
+      }
+      on event DeliveryLocationRecorded is {
+        set field DeliveryOrder.InTransit.lastKnownLocation to
+          "driverLocation from event"
+      }
+      on command ConfirmDelivery is {
+        tell event DeliveryConfirmed to entity
+          Delivery.DeliveryOrder
+      }
+      on event DeliveryConfirmed is {
+        morph entity Delivery.DeliveryOrder to state
+          Delivery.DeliveryOrder.Delivered
+            with event DeliveryConfirmed
+        do "DeliveryConfirmed event triggers push notification
+          to customer via NotificationService streaming topology"
+      }
+      on command RecordDeliveryPayment is {
+        tell event DeliveryPaymentRecorded to entity
+          Delivery.DeliveryOrder
+      }
+      on event DeliveryPaymentRecorded is {
+        do "record tip and payment details"
+      }
+      on command ReportDeliveryIssue is {
+        tell event DeliveryIssueReported to entity
+          Delivery.DeliveryOrder
+      }
+      on event DeliveryIssueReported is {
+        match "issueType" {
+          case "AddressNotFound" {
+            tell command SendPushNotification to entity
+              Restaurant.NotificationService
+          }
+          case "CustomerUnavailable" {
+            tell command SendPushNotification to entity
+              Restaurant.NotificationService
+            do "schedule FailDelivery command after 10-minute
+              timeout if no customer response"
+          }
+          case "FoodDamaged" {
+            tell command SendPushNotification to entity
+              Restaurant.NotificationService
+            do "construct ReceiveTicket replacement order from
+              DeliveryBase.sourceOnlineOrderId and send to
+              Kitchen.KitchenTicket"
+          }
+          case "VehicleBreakdown" {
+            morph entity Delivery.DeliveryOrder to state
+              Delivery.DeliveryOrder.Pending
+                with event DeliveryIssueReported
+            do "query available drivers by GeoLocation proximity
+              excluding current driver"
+          }
+          case "TrafficDelay" {
+            tell command SendPushNotification to entity
+              Restaurant.NotificationService
+          }
+          default {
+            tell command SendPushNotification to entity
+              Restaurant.NotificationService
+          }
+        }
+      }
+      on command FailDelivery is {
+        tell event DeliveryMarkedFailed to entity
+          Delivery.DeliveryOrder
+      }
+      on event DeliveryMarkedFailed is {
+        morph entity Delivery.DeliveryOrder to state
+          Delivery.DeliveryOrder.Failed
+            with event DeliveryMarkedFailed
+      }
+      on command CreateDelivery is {
+        error "Delivery has already been created"
+      }
+      on command AssignDriver is {
+        error "Cannot reassign driver while in transit"
+      }
+      on command DispatchDriver is {
+        error "Driver has already been dispatched"
+      }
+    } with {
+      briefly "InTransit state handler"
+      described as {
+        |Handles commands valid in the InTransit state.
+        |RecordDeliveryLocation updates GPS tracking.
+        |ConfirmDelivery completes delivery. ReportDeliveryIssue
+        |handles various issue types including VehicleBreakdown
+        |which morphs back to Pending for driver reassignment.
+        |FailDelivery moves to the terminal Failed state.
+      }
+    }
+  } with {
     briefly "In transit"
     described as {
       |Driver has been dispatched and is en route. GPS
       |location updates are being tracked.
     }
   }
-  state Delivered of type DeliveryOrder.DeliveredData with {
+  state Delivered of type DeliveryOrder.DeliveredData is {
+    handler DeliveredHandler is {
+      on command CreateDelivery is {
+        error "Delivery is completed"
+      }
+      on command AssignDriver is {
+        error "Delivery is completed"
+      }
+      on command DispatchDriver is {
+        error "Delivery is completed"
+      }
+      on command RecordDeliveryLocation is {
+        error "Delivery is completed"
+      }
+      on command ConfirmDelivery is {
+        error "Delivery is already confirmed"
+      }
+      on command RecordDeliveryPayment is {
+        error "Delivery is completed"
+      }
+      on command ReportDeliveryIssue is {
+        error "Delivery is completed"
+      }
+      on command FailDelivery is {
+        error "Delivery is already completed successfully"
+      }
+    } with {
+      briefly "Delivered state handler"
+      described as {
+        |Terminal state. All commands are rejected.
+      }
+    }
+  } with {
     briefly "Delivered"
     described as {
       |Delivery has been confirmed complete. Terminal state.
     }
   }
-  state Failed of type DeliveryOrder.FailedData with {
+  state Failed of type DeliveryOrder.FailedData is {
+    handler FailedHandler is {
+      on command CreateDelivery is {
+        error "Delivery has failed"
+      }
+      on command AssignDriver is {
+        error "Delivery has failed"
+      }
+      on command DispatchDriver is {
+        error "Delivery has failed"
+      }
+      on command RecordDeliveryLocation is {
+        error "Delivery has failed"
+      }
+      on command ConfirmDelivery is {
+        error "Delivery has failed"
+      }
+      on command RecordDeliveryPayment is {
+        error "Delivery has failed"
+      }
+      on command ReportDeliveryIssue is {
+        error "Delivery has failed"
+      }
+      on command FailDelivery is {
+        error "Delivery is already marked as failed"
+      }
+    } with {
+      briefly "Failed state handler"
+      described as {
+        |Terminal state. All commands are rejected.
+      }
+    }
+  } with {
     briefly "Delivery failed"
     described as {
       |Delivery could not be completed. Terminal state.
     }
   }
-  handler DeliveryHandler is {
+  handler DeliveryCreationHandler is {
     on command CreateDelivery is {
-      morph entity Delivery.DeliveryOrder to state
-        Delivery.DeliveryOrder.Pending
-          with command CreateDelivery
       tell event DeliveryCreated to entity
         Delivery.DeliveryOrder
       do "query available drivers by GeoLocation proximity to
         restaurant and select nearest with status = available"
     }
-    on command AssignDriver is {
+    on event DeliveryCreated is {
       morph entity Delivery.DeliveryOrder to state
-        Delivery.DeliveryOrder.DriverAssignedState
-          with command AssignDriver
-      tell event DriverAssigned to entity
-        Delivery.DeliveryOrder
-      do "DriverAssigned event triggers push notification to
-        driver via NotificationService streaming topology"
-    }
-    on command DispatchDriver is {
-      morph entity Delivery.DeliveryOrder to state
-        Delivery.DeliveryOrder.InTransit
-          with command DispatchDriver
-      tell event DriverDispatched to entity
-        Delivery.DeliveryOrder
-      do "DriverDispatched event triggers push notification to
-        customer via NotificationService streaming topology"
-    }
-    on command RecordDeliveryLocation is {
-      set field DeliveryOrder.InTransit.lastKnownLocation to
-        "driverLocation from command"
-      tell event DeliveryLocationRecorded to entity
-        Delivery.DeliveryOrder
-    }
-    on command ConfirmDelivery is {
-      morph entity Delivery.DeliveryOrder to state
-        Delivery.DeliveryOrder.Delivered
-          with command ConfirmDelivery
-      tell event DeliveryConfirmed to entity
-        Delivery.DeliveryOrder
-      do "DeliveryConfirmed event triggers push notification
-        to customer via NotificationService streaming topology"
-    }
-    on command RecordDeliveryPayment is {
-      tell event DeliveryPaymentRecorded to entity
-        Delivery.DeliveryOrder
-    }
-    on command ReportDeliveryIssue is {
-      tell event DeliveryIssueReported to entity
-        Delivery.DeliveryOrder
-      match "issueType" {
-        case "AddressNotFound" {
-          tell command SendPushNotification to entity
-            Restaurant.NotificationService
-        }
-        case "CustomerUnavailable" {
-          tell command SendPushNotification to entity
-            Restaurant.NotificationService
-          do "schedule FailDelivery command after 10-minute
-            timeout if no customer response"
-        }
-        case "FoodDamaged" {
-          tell command SendPushNotification to entity
-            Restaurant.NotificationService
-          do "construct ReceiveTicket replacement order from
-            DeliveryBase.sourceOnlineOrderId and send to
-            Kitchen.KitchenTicket"
-        }
-        case "VehicleBreakdown" {
-          morph entity Delivery.DeliveryOrder to state
-            Delivery.DeliveryOrder.Pending
-              with command ReportDeliveryIssue
-          do "query available drivers by GeoLocation proximity
-            excluding current driver"
-        }
-        case "TrafficDelay" {
-          tell command SendPushNotification to entity
-            Restaurant.NotificationService
-        }
-        default {
-          tell command SendPushNotification to entity
-            Restaurant.NotificationService
-        }
-      }
-    }
-    on command FailDelivery is {
-      morph entity Delivery.DeliveryOrder to state
-        Delivery.DeliveryOrder.Failed
-          with command FailDelivery
-      tell event DeliveryMarkedFailed to entity
-        Delivery.DeliveryOrder
+        Delivery.DeliveryOrder.Pending
+          with event DeliveryCreated
     }
   } with {
-    briefly "Delivery command handler"
+    briefly "Delivery creation handler"
     described as {
-      |Processes delivery lifecycle commands with explicit
-      |state transitions: Pending → DriverAssigned → InTransit
-      |→ Delivered. VehicleBreakdown morphs InTransit back to
-      |Pending for driver reassignment. CustomerUnavailable
-      |timeout triggers FailDelivery.
+      |Handles the initial CreateDelivery command when
+      |the entity has no state yet.
     }
   }
 } with {
@@ -747,8 +921,10 @@ entity DeliveryOrder is {
   described as {
     | Manages the lifecycle of a delivery from creation
     | through driver assignment, dispatch, GPS tracking,
-    | confirmation, and issue reporting. Designed for
-    | offline resilience so drivers can cache details
-    | and report issues when connectivity resumes.
+    | confirmation, and issue reporting. State handlers
+    | ensure commands are only valid in appropriate states,
+    | and events are persisted before state transitions.
+    | Designed for offline resilience so drivers can cache
+    | details and report issues when connectivity resumes.
   }
 }

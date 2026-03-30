@@ -341,22 +341,132 @@ entity KitchenTicket is {
       |lifecycle states as a superset record.
     }
   }
-  state Received of type KitchenTicket.KitchenTicketData with {
+  state Received of type KitchenTicket.KitchenTicketData is {
+    handler ReceivedHandler is {
+      on command AssignStation is {
+        tell event StationAssigned to entity
+          Kitchen.KitchenTicket
+      }
+      on event StationAssigned is {
+        morph entity Kitchen.KitchenTicket to state
+          Kitchen.KitchenTicket.Assigned
+            with event StationAssigned
+        set field KitchenTicket.Assigned.currentStation to
+          "assignedStation from event"
+      }
+      on command ReceiveTicket is {
+        error "Ticket has already been received"
+      }
+      on command StartPreparation is {
+        error "Cannot start preparation before station assignment"
+      }
+      on command MarkItemReady is {
+        error "Cannot mark item ready before preparation begins"
+      }
+      on command ApproveTicket is {
+        error "Cannot approve ticket before preparation"
+      }
+      on command NotifyServer is {
+        error "Cannot notify server before ticket is approved"
+      }
+    } with {
+      briefly "Received state handler"
+      described as {
+        |Handles commands valid in the Received state.
+        |Only AssignStation advances the lifecycle.
+      }
+    }
+  } with {
     briefly "Ticket received"
     described as {
       |Initial state when a ticket arrives from an order.
       |Awaiting station assignment.
     }
   }
-  state Assigned of type KitchenTicket.KitchenTicketData with {
+  state Assigned of type KitchenTicket.KitchenTicketData is {
+    handler AssignedHandler is {
+      on command StartPreparation is {
+        tell event PreparationStarted to entity
+          Kitchen.KitchenTicket
+      }
+      on event PreparationStarted is {
+        morph entity Kitchen.KitchenTicket to state
+          Kitchen.KitchenTicket.InPreparation
+            with event PreparationStarted
+        set field
+          KitchenTicket.InPreparation.actualPreparationStartedAt
+          to "startedAt from event"
+      }
+      on command ReceiveTicket is {
+        error "Ticket has already been received"
+      }
+      on command AssignStation is {
+        error "Ticket has already been assigned to a station"
+      }
+      on command MarkItemReady is {
+        error "Cannot mark item ready before preparation begins"
+      }
+      on command ApproveTicket is {
+        error "Cannot approve ticket before preparation"
+      }
+      on command NotifyServer is {
+        error "Cannot notify server before ticket is approved"
+      }
+    } with {
+      briefly "Assigned state handler"
+      described as {
+        |Handles commands valid in the Assigned state.
+        |Only StartPreparation advances the lifecycle.
+      }
+    }
+  } with {
     briefly "Station assigned"
     described as {
       |Ticket has been assigned to a kitchen station.
       |Awaiting start of preparation.
     }
   }
-  state InPreparation of type KitchenTicket.KitchenTicketData
-    with {
+  state InPreparation of type KitchenTicket.KitchenTicketData is {
+    handler InPreparationHandler is {
+      on command MarkItemReady is {
+        tell event ItemMarkedReady to entity
+          Kitchen.KitchenTicket
+      }
+      on event ItemMarkedReady is {
+        do "set KitchenTicketData.ticketItems[
+          ItemMarkedReady.readyMenuItemId].ticketItemReady
+          = true"
+        when "all KitchenTicketData.ticketItems have
+          ticketItemReady = true" then
+          morph entity Kitchen.KitchenTicket to state
+            Kitchen.KitchenTicket.ItemsReady
+              with event ItemMarkedReady
+        end
+      }
+      on command ReceiveTicket is {
+        error "Ticket has already been received"
+      }
+      on command AssignStation is {
+        error "Ticket has already been assigned to a station"
+      }
+      on command StartPreparation is {
+        error "Preparation has already started"
+      }
+      on command ApproveTicket is {
+        error "Cannot approve ticket before all items are ready"
+      }
+      on command NotifyServer is {
+        error "Cannot notify server before ticket is approved"
+      }
+    } with {
+      briefly "InPreparation state handler"
+      described as {
+        |Handles commands valid in the InPreparation state.
+        |MarkItemReady updates individual items and conditionally
+        |transitions to ItemsReady when all items are complete.
+      }
+    }
+  } with {
     briefly "In preparation"
     described as {
       |Station is actively preparing the items on this
@@ -364,14 +474,87 @@ entity KitchenTicket is {
       |are completed.
     }
   }
-  state ItemsReady of type KitchenTicket.KitchenTicketData with {
+  state ItemsReady of type KitchenTicket.KitchenTicketData is {
+    handler ItemsReadyHandler is {
+      on command ApproveTicket is {
+        tell event TicketApproved to entity
+          Kitchen.KitchenTicket
+      }
+      on event TicketApproved is {
+        morph entity Kitchen.KitchenTicket to state
+          Kitchen.KitchenTicket.Approved
+            with event TicketApproved
+        set field KitchenTicket.Approved.ticketApprovedAt to
+          "approvedAt from event"
+        tell command NotifyServer to entity
+          Kitchen.KitchenTicket
+      }
+      on command ReceiveTicket is {
+        error "Ticket has already been received"
+      }
+      on command AssignStation is {
+        error "Ticket has already been assigned to a station"
+      }
+      on command StartPreparation is {
+        error "Preparation has already completed"
+      }
+      on command MarkItemReady is {
+        error "All items are already ready"
+      }
+      on command NotifyServer is {
+        error "Cannot notify server before ticket is approved"
+      }
+    } with {
+      briefly "ItemsReady state handler"
+      described as {
+        |Handles commands valid in the ItemsReady state.
+        |ApproveTicket advances the lifecycle and auto-triggers
+        |server notification.
+      }
+    }
+  } with {
     briefly "All items ready"
     described as {
       |All items on the ticket have been prepared.
       |Awaiting chef quality approval.
     }
   }
-  state Approved of type KitchenTicket.KitchenTicketData with {
+  state Approved of type KitchenTicket.KitchenTicketData is {
+    handler ApprovedHandler is {
+      on command NotifyServer is {
+        tell event ServerNotified to entity
+          Kitchen.KitchenTicket
+      }
+      on event ServerNotified is {
+        morph entity Kitchen.KitchenTicket to state
+          Kitchen.KitchenTicket.ServerNotifiedState
+            with event ServerNotified
+        do "ServerNotified event triggers push notification to
+          server via NotificationService streaming topology"
+      }
+      on command ReceiveTicket is {
+        error "Ticket has already been received"
+      }
+      on command AssignStation is {
+        error "Ticket has already been assigned to a station"
+      }
+      on command StartPreparation is {
+        error "Preparation has already completed"
+      }
+      on command MarkItemReady is {
+        error "All items are already ready"
+      }
+      on command ApproveTicket is {
+        error "Ticket has already been approved"
+      }
+    } with {
+      briefly "Approved state handler"
+      described as {
+        |Handles commands valid in the Approved state.
+        |NotifyServer advances to the terminal state.
+      }
+    }
+  } with {
     briefly "Chef approved"
     described as {
       |Chef has approved the completed ticket for serving.
@@ -379,73 +562,53 @@ entity KitchenTicket is {
     }
   }
   state ServerNotifiedState of type KitchenTicket.KitchenTicketData
-    with {
+    is {
+    handler ServerNotifiedHandler is {
+      on command ReceiveTicket is {
+        error "Ticket lifecycle is complete"
+      }
+      on command AssignStation is {
+        error "Ticket lifecycle is complete"
+      }
+      on command StartPreparation is {
+        error "Ticket lifecycle is complete"
+      }
+      on command MarkItemReady is {
+        error "Ticket lifecycle is complete"
+      }
+      on command ApproveTicket is {
+        error "Ticket lifecycle is complete"
+      }
+      on command NotifyServer is {
+        error "Server has already been notified"
+      }
+    } with {
+      briefly "ServerNotified state handler"
+      described as {
+        |Terminal state. All commands are rejected.
+      }
+    }
+  } with {
     briefly "Server notified"
     described as {
       |Server has been notified that the order is ready
       |for pickup. Terminal state.
     }
   }
-  handler KitchenTicketHandler is {
+  handler KitchenTicketCreationHandler is {
     on command ReceiveTicket is {
-      morph entity Kitchen.KitchenTicket to state
-        Kitchen.KitchenTicket.Received
-          with command ReceiveTicket
       tell event TicketReceived to entity Kitchen.KitchenTicket
     }
-    on command AssignStation is {
+    on event TicketReceived is {
       morph entity Kitchen.KitchenTicket to state
-        Kitchen.KitchenTicket.Assigned
-          with command AssignStation
-      set field KitchenTicket.Assigned.currentStation to
-        "assignedStation from command"
-      tell event StationAssigned to entity Kitchen.KitchenTicket
-    }
-    on command StartPreparation is {
-      morph entity Kitchen.KitchenTicket to state
-        Kitchen.KitchenTicket.InPreparation
-          with command StartPreparation
-      set field KitchenTicket.InPreparation.actualPreparationStartedAt
-        to "startedAt from command"
-      tell event PreparationStarted to entity
-        Kitchen.KitchenTicket
-    }
-    on command MarkItemReady is {
-      do "set KitchenTicketData.ticketItems[
-        MarkItemReady.readyMenuItemId].ticketItemReady = true"
-      tell event ItemMarkedReady to entity Kitchen.KitchenTicket
-      when "all KitchenTicketData.ticketItems have
-        ticketItemReady = true" then
-        morph entity Kitchen.KitchenTicket to state
-          Kitchen.KitchenTicket.ItemsReady
-            with command MarkItemReady
-      end
-    }
-    on command ApproveTicket is {
-      morph entity Kitchen.KitchenTicket to state
-        Kitchen.KitchenTicket.Approved
-          with command ApproveTicket
-      set field KitchenTicket.Approved.ticketApprovedAt to
-        "approvedAt from command"
-      tell event TicketApproved to entity Kitchen.KitchenTicket
-      tell command NotifyServer to entity Kitchen.KitchenTicket
-    }
-    on command NotifyServer is {
-      morph entity Kitchen.KitchenTicket to state
-        Kitchen.KitchenTicket.ServerNotifiedState
-          with command NotifyServer
-      tell event ServerNotified to entity Kitchen.KitchenTicket
-      do "ServerNotified event triggers push notification to
-        server via NotificationService streaming topology"
+        Kitchen.KitchenTicket.Received
+          with event TicketReceived
     }
   } with {
-    briefly "Kitchen ticket command handler"
+    briefly "Kitchen ticket creation handler"
     described as {
-      |Processes kitchen ticket lifecycle commands with
-      |explicit state transitions: Received → Assigned →
-      |InPreparation → ItemsReady → Approved → ServerNotified.
-      |MarkItemReady conditionally transitions to ItemsReady
-      |when all items are complete.
+      |Handles the initial ReceiveTicket command when
+      |the entity has no state yet.
     }
   }
 } with {
@@ -453,7 +616,9 @@ entity KitchenTicket is {
   described as {
     | Manages the lifecycle of a kitchen ticket from
     | receipt through station assignment, preparation,
-    | quality approval, and server notification. Event
-    | sourcing ensures tickets survive system crashes.
+    | quality approval, and server notification. State
+    | handlers ensure commands are only valid in appropriate
+    | states, and events are persisted before state
+    | transitions for crash recovery safety.
   }
 }

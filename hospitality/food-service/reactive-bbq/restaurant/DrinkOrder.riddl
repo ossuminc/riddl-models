@@ -286,87 +286,204 @@ entity DrinkOrder is {
       |lifecycle states as a superset record.
     }
   }
-  state Received of type DrinkOrder.DrinkOrderData with {
+  state Received of type DrinkOrder.DrinkOrderData is {
+    handler ReceivedHandler is {
+      on command PrepareDrink is {
+        tell event DrinkPrepared to entity Bar.DrinkOrder
+      }
+      on event DrinkPrepared is {
+        morph entity Bar.DrinkOrder to state
+          Bar.DrinkOrder.InPreparation
+            with event DrinkPrepared
+      }
+      on command ReceiveDrinkOrder is {
+        error "Drink order has already been received"
+      }
+      on command MarkDrinkReady is {
+        error "Cannot mark drink ready before preparation begins"
+      }
+      on command NotifyServerDrinksReady is {
+        error "Cannot notify server before drinks are ready"
+      }
+      on command CompleteDrinkOrder is {
+        error "Cannot complete drink order before delivery"
+      }
+    } with {
+      briefly "Received state handler"
+      described as {
+        |Handles commands valid in the Received state.
+        |Only PrepareDrink advances the lifecycle.
+      }
+    }
+  } with {
     briefly "Drink order received"
     described as {
       |Initial state when a drink order arrives at the bar
       |from a table order submission.
     }
   }
-  state InPreparation of type DrinkOrder.DrinkOrderData with {
+  state InPreparation of type DrinkOrder.DrinkOrderData is {
+    handler InPreparationHandler is {
+      on command MarkDrinkReady is {
+        tell event DrinkMarkedReady to entity Bar.DrinkOrder
+      }
+      on event DrinkMarkedReady is {
+        morph entity Bar.DrinkOrder to state
+          Bar.DrinkOrder.Ready
+            with event DrinkMarkedReady
+        set field DrinkOrder.Ready.actualDrinkReadyAt to
+          "drinkReadyAt from event"
+        tell command NotifyServerDrinksReady to entity
+          Bar.DrinkOrder
+      }
+      on command ReceiveDrinkOrder is {
+        error "Drink order has already been received"
+      }
+      on command PrepareDrink is {
+        error "Drink preparation has already started"
+      }
+      on command NotifyServerDrinksReady is {
+        error "Cannot notify server before drinks are ready"
+      }
+      on command CompleteDrinkOrder is {
+        error "Cannot complete drink order before delivery"
+      }
+    } with {
+      briefly "InPreparation state handler"
+      described as {
+        |Handles commands valid in the InPreparation state.
+        |MarkDrinkReady advances the lifecycle and auto-triggers
+        |server notification.
+      }
+    }
+  } with {
     briefly "Drink in preparation"
     described as {
       |Bartender is actively preparing the drinks.
     }
   }
-  state Ready of type DrinkOrder.DrinkOrderData with {
+  state Ready of type DrinkOrder.DrinkOrderData is {
+    handler ReadyHandler is {
+      on command NotifyServerDrinksReady is {
+        tell event ServerNotifiedDrinksReady to entity
+          Bar.DrinkOrder
+      }
+      on event ServerNotifiedDrinksReady is {
+        morph entity Bar.DrinkOrder to state
+          Bar.DrinkOrder.Delivered
+            with event ServerNotifiedDrinksReady
+        do "ServerNotifiedDrinksReady event triggers push
+          notification to server via NotificationService
+          streaming topology"
+      }
+      on command ReceiveDrinkOrder is {
+        error "Drink order has already been received"
+      }
+      on command PrepareDrink is {
+        error "Drink preparation has already completed"
+      }
+      on command MarkDrinkReady is {
+        error "Drinks have already been marked ready"
+      }
+      on command CompleteDrinkOrder is {
+        error "Cannot complete drink order before delivery"
+      }
+    } with {
+      briefly "Ready state handler"
+      described as {
+        |Handles commands valid in the Ready state.
+        |NotifyServerDrinksReady advances the lifecycle
+        |and triggers a push notification to the server.
+      }
+    }
+  } with {
     briefly "Drinks ready"
     described as {
       |Drinks are prepared and waiting for server pickup.
     }
   }
-  state Delivered of type DrinkOrder.DrinkOrderData with {
+  state Delivered of type DrinkOrder.DrinkOrderData is {
+    handler DeliveredHandler is {
+      on command CompleteDrinkOrder is {
+        tell event DrinkOrderCompleted to entity Bar.DrinkOrder
+      }
+      on event DrinkOrderCompleted is {
+        morph entity Bar.DrinkOrder to state
+          Bar.DrinkOrder.Completed
+            with event DrinkOrderCompleted
+        set field DrinkOrder.Completed.actualDrinkCompletedAt to
+          "drinkCompletedAt from event"
+      }
+      on command ReceiveDrinkOrder is {
+        error "Drink order has already been received"
+      }
+      on command PrepareDrink is {
+        error "Drink preparation has already completed"
+      }
+      on command MarkDrinkReady is {
+        error "Drinks have already been marked ready"
+      }
+      on command NotifyServerDrinksReady is {
+        error "Server has already been notified"
+      }
+    } with {
+      briefly "Delivered state handler"
+      described as {
+        |Handles commands valid in the Delivered state.
+        |CompleteDrinkOrder finalizes the lifecycle.
+      }
+    }
+  } with {
     briefly "Drinks delivered"
     described as {
       |Server has been notified and drinks are on the way
       |to the table.
     }
   }
-  state Completed of type DrinkOrder.DrinkOrderData with {
+  state Completed of type DrinkOrder.DrinkOrderData is {
+    handler CompletedHandler is {
+      on command ReceiveDrinkOrder is {
+        error "Drink order is already completed"
+      }
+      on command PrepareDrink is {
+        error "Drink order is already completed"
+      }
+      on command MarkDrinkReady is {
+        error "Drink order is already completed"
+      }
+      on command NotifyServerDrinksReady is {
+        error "Drink order is already completed"
+      }
+      on command CompleteDrinkOrder is {
+        error "Drink order is already completed"
+      }
+    } with {
+      briefly "Completed state handler"
+      described as {
+        |Terminal state. All commands are rejected.
+      }
+    }
+  } with {
     briefly "Drink order completed"
     described as {
       |Drinks have been delivered to the table and the
       |drink order is finalized.
     }
   }
-  handler DrinkOrderHandler is {
+  handler DrinkOrderCreationHandler is {
     on command ReceiveDrinkOrder is {
-      morph entity Bar.DrinkOrder to state
-        Bar.DrinkOrder.Received
-          with command ReceiveDrinkOrder
       tell event DrinkOrderReceived to entity Bar.DrinkOrder
     }
-    on command PrepareDrink is {
+    on event DrinkOrderReceived is {
       morph entity Bar.DrinkOrder to state
-        Bar.DrinkOrder.InPreparation
-          with command PrepareDrink
-      tell event DrinkPrepared to entity Bar.DrinkOrder
-    }
-    on command MarkDrinkReady is {
-      morph entity Bar.DrinkOrder to state
-        Bar.DrinkOrder.Ready
-          with command MarkDrinkReady
-      set field DrinkOrder.Ready.actualDrinkReadyAt to
-        "drinkReadyAt from command"
-      tell event DrinkMarkedReady to entity Bar.DrinkOrder
-      tell command NotifyServerDrinksReady to entity
-        Bar.DrinkOrder
-    }
-    on command NotifyServerDrinksReady is {
-      morph entity Bar.DrinkOrder to state
-        Bar.DrinkOrder.Delivered
-          with command NotifyServerDrinksReady
-      tell event ServerNotifiedDrinksReady to entity
-        Bar.DrinkOrder
-      do "ServerNotifiedDrinksReady event triggers push
-        notification to server via NotificationService
-        streaming topology"
-    }
-    on command CompleteDrinkOrder is {
-      morph entity Bar.DrinkOrder to state
-        Bar.DrinkOrder.Completed
-          with command CompleteDrinkOrder
-      set field DrinkOrder.Completed.actualDrinkCompletedAt to
-        "drinkCompletedAt from command"
-      tell event DrinkOrderCompleted to entity Bar.DrinkOrder
+        Bar.DrinkOrder.Received
+          with event DrinkOrderReceived
     }
   } with {
-    briefly "Drink order command handler"
+    briefly "Drink order creation handler"
     described as {
-      |Processes drink order lifecycle commands with explicit
-      |state transitions: Received → InPreparation → Ready →
-      |Delivered → Completed. Push notifications to servers
-      |when drinks are ready solve the melting-ice problem.
+      |Handles the initial ReceiveDrinkOrder command when
+      |the entity has no state yet.
     }
   }
 } with {
@@ -375,6 +492,8 @@ entity DrinkOrder is {
     | Manages the lifecycle of a drink order from receipt
     | through preparation, readiness notification, and
     | delivery to the table. Push notifications solve the
-    | bartender-server communication gap.
+    | bartender-server communication gap. State handlers
+    | ensure commands are only valid in appropriate states,
+    | and events are persisted before state transitions.
   }
 }
