@@ -70,6 +70,7 @@ context Kitchen is {
     }
   }
   projector KitchenDisplay is {
+    updates repository Kitchen.KitchenTicketRepository
     record KitchenDisplayEntry is  {
       kitchenTicketId: KitchenTicketId with {
         briefly "ID"
@@ -116,36 +117,54 @@ context Kitchen is {
     handler KitchenDisplayHandler is {
       on event KitchenTicket.TicketReceived is {
         let entry: KitchenDisplayEntry = "new KitchenDisplayEntry from event"
+        tell event KitchenTicket.TicketReceived to repository
+          Kitchen.KitchenTicketRepository
         do "insert KitchenDisplayEntry with kitchenTicketId =
           event.kitchenTicketId, ticketSource =
           event.ticketSource, ticketItems = event.ticketItems,
           ticketDisplayStatus = Received, displayStation = none,
           receivedAt = event.receivedAt"
+        set field KitchenDisplayEntry.ticketDisplayStatus to "Received"
       }
       on event KitchenTicket.StationAssigned is {
+        tell event KitchenTicket.StationAssigned to repository
+          Kitchen.KitchenTicketRepository
         do "update KitchenDisplayEntry set displayStation =
           event.assignedStation, ticketDisplayStatus = Assigned
           where kitchenTicketId = event.kitchenTicketId"
+        set field KitchenDisplayEntry.ticketDisplayStatus to "Assigned"
       }
       on event KitchenTicket.PreparationStarted is {
+        tell event KitchenTicket.PreparationStarted to repository
+          Kitchen.KitchenTicketRepository
         do "update KitchenDisplayEntry set ticketDisplayStatus =
           InPreparation where kitchenTicketId =
           event.kitchenTicketId"
+        set field KitchenDisplayEntry.ticketDisplayStatus to "InPreparation"
       }
       on event KitchenTicket.ItemMarkedReady is {
+        tell event KitchenTicket.ItemMarkedReady to repository
+          Kitchen.KitchenTicketRepository
         do "update KitchenDisplayEntry set
           ticketItems[event.readyMenuItemId].ticketItemReady
           = true where kitchenTicketId =
           event.kitchenTicketId"
+        set field KitchenDisplayEntry.ticketDisplayStatus to "ItemReady"
       }
       on event KitchenTicket.TicketApproved is {
+        tell event KitchenTicket.TicketApproved to repository
+          Kitchen.KitchenTicketRepository
         do "update KitchenDisplayEntry set ticketDisplayStatus =
           Approved where kitchenTicketId =
           event.kitchenTicketId"
+        set field KitchenDisplayEntry.ticketDisplayStatus to "Approved"
       }
       on event KitchenTicket.ServerNotified is {
+        tell event KitchenTicket.ServerNotified to repository
+          Kitchen.KitchenTicketRepository
         do "delete KitchenDisplayEntry where kitchenTicketId =
           event.kitchenTicketId"
+        set field KitchenDisplayEntry.ticketDisplayStatus to "ServerNotified"
       }
     } with {
       briefly "Kitchen display handler"
@@ -161,6 +180,38 @@ context Kitchen is {
       | Real-time kitchen display screen showing active
       | tickets, station assignments, and preparation status.
       | Replaces handwritten tickets and prevents order loss.
+    }
+  }
+  source KitchenTicketEventSource is {
+    outlet KitchenTicketEvents is type KitchenTicketEvent
+    handler KitchenTicketEventEmitter is {
+      on event KitchenTicket.TicketReceived is {
+        send event KitchenTicket.TicketReceived to outlet KitchenTicketEvents
+      }
+      on event KitchenTicket.StationAssigned is {
+        send event KitchenTicket.StationAssigned to outlet KitchenTicketEvents
+      }
+      on event KitchenTicket.PreparationStarted is {
+        send event KitchenTicket.PreparationStarted to outlet KitchenTicketEvents
+      }
+      on event KitchenTicket.TicketApproved is {
+        send event KitchenTicket.TicketApproved to outlet KitchenTicketEvents
+      }
+      on event KitchenTicket.ServerNotified is {
+        send event KitchenTicket.ServerNotified to outlet KitchenTicketEvents
+      }
+    } with {
+      briefly "Kitchen ticket event emitter"
+      described as {
+        |Emits kitchen ticket lifecycle events into the
+        |streaming topology.
+      }
+    }
+  } with {
+    briefly "Kitchen ticket event source"
+    described as {
+      |Publishes kitchen ticket entity events for external
+      |consumption.
     }
   }
   flow TicketQueue is {
@@ -190,6 +241,8 @@ context Kitchen is {
     inlet DisplayedTickets is type KitchenTicketEvent
     handler TicketDisplayHandler is {
       on event KitchenTicket.TicketReceived is {
+        tell event KitchenTicket.TicketReceived to entity
+          Kitchen.KitchenTicket
         do "render ticket on kitchen display screen"
       }
     } with {
@@ -215,6 +268,18 @@ context Kitchen is {
     described as {
       |Wires processed tickets from the queue to the display
       |sink for rendering on the kitchen screen.
+    }
+  }
+  connector KitchenToInventory is {
+    from outlet
+      Kitchen.KitchenTicketEventSource.KitchenTicketEvents to
+      inlet Inventory.KitchenTicketEventSink.IncomingKitchenTicketEvents
+  } with {
+    option is persistent
+    briefly "Kitchen to inventory connector"
+    described as {
+      |Wires kitchen ticket events to the inventory context
+      |for stock consumption tracking.
     }
   }
   adaptor FromFrontOfHouse from context Restaurant.FrontOfHouse is {

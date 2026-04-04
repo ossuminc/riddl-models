@@ -61,10 +61,107 @@ context Inventory is {
       |Stores and retrieves inventory item data.
     }
   }
-  adaptor FromKitchen from context Restaurant.Kitchen is { 
+  source InventoryItemEventSource is {
+    outlet InventoryItemEvents is type InventoryEvent
+    handler InventoryItemEventEmitter is {
+      on event InventoryItem.StockReceived is {
+        send event InventoryItem.StockReceived to outlet InventoryItemEvents
+      }
+      on event InventoryItem.StockConsumed is {
+        send event InventoryItem.StockConsumed to outlet InventoryItemEvents
+      }
+      on event InventoryItem.StockAdjusted is {
+        send event InventoryItem.StockAdjusted to outlet InventoryItemEvents
+      }
+      on event InventoryItem.ReorderThresholdSet is {
+        send event InventoryItem.ReorderThresholdSet to outlet InventoryItemEvents
+      }
+      on event InventoryItem.PurchaseOrderCreated is {
+        send event InventoryItem.PurchaseOrderCreated to outlet InventoryItemEvents
+      }
+    } with {
+      briefly "Inventory item event emitter"
+      described as {
+        |Emits inventory item lifecycle events.
+      }
+    }
+  } with {
+    briefly "Inventory item event source"
+    described as {
+      |Publishes inventory item entity events.
+    }
+  }
+  sink KitchenTicketEventSink is {
+    inlet IncomingKitchenTicketEvents is type KitchenTicketEvent
+    handler KitchenTicketEventIntake is {
+      on event Restaurant.Kitchen.KitchenTicket.PreparationStarted is {
+        tell command InventoryItem.ConsumeStock to entity
+          Inventory.InventoryItem
+        do "consume stock for ingredients used in prepared ticket"
+      }
+      on event Restaurant.Kitchen.KitchenTicket.TicketApproved is {
+        tell command InventoryItem.ConsumeStock to entity
+          Inventory.InventoryItem
+        do "finalize stock consumption for approved ticket"
+      }
+    } with {
+      briefly "Kitchen ticket event intake"
+      described as {
+        |Processes incoming kitchen ticket events for stock
+        |consumption tracking.
+      }
+    }
+  } with {
+    briefly "Kitchen ticket event sink"
+    described as {
+      |Receives kitchen ticket events from the streaming
+      |topology for stock consumption tracking.
+    }
+  }
+  sink PurchaseOrderEventSink is {
+    inlet IncomingPurchaseOrderEvents is type PurchaseOrderEvent
+    handler PurchaseOrderEventIntake is {
+      on event Corporate.SupplyChain.PurchaseOrder.ShipmentReceived is {
+        tell command InventoryItem.ReceiveStock to entity
+          Inventory.InventoryItem
+        do "receive stock from delivered purchase order shipment"
+      }
+      on event Corporate.SupplyChain.PurchaseOrder.OrderShipped is {
+        tell command InventoryItem.ReceiveStock to entity
+          Inventory.InventoryItem
+        do "prepare for incoming stock from shipped order"
+      }
+    } with {
+      briefly "Purchase order event intake"
+      described as {
+        |Processes incoming purchase order events for stock
+        |receipt notification.
+      }
+    }
+  } with {
+    briefly "Purchase order event sink"
+    described as {
+      |Receives purchase order events from the streaming
+      |topology for stock receipt notification.
+    }
+  }
+  connector InventoryToReporting is {
+    from outlet
+      Inventory.InventoryItemEventSource.InventoryItemEvents to
+      inlet Reporting.InventoryEventSink.IncomingInventoryEvents
+  } with {
+    option is persistent
+    briefly "Inventory to reporting connector"
+    described as {
+      |Wires inventory item events to the reporting context
+      |for inventory reports.
+    }
+  }
+  adaptor FromKitchen from context Restaurant.Kitchen is {
     handler KitchenConsumptionIntake is {
       on event Restaurant.Kitchen.KitchenTicket.PreparationStarted is {
-        prompt "Consume stock for items being prepared"
+        do "look up recipe ingredients for ticket items"
+        tell command InventoryItem.ConsumeStock to entity Inventory.InventoryItem
       }
     } with {
       briefly "Kitchen consumption intake"

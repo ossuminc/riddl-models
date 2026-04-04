@@ -3,6 +3,97 @@ context FrontOfHouse is {
   include "front-of-house-types.riddl"
   include "Reservation.riddl"
   include "TableOrder.riddl"
+  command NotifyDrinkReady is {
+    tableOrderId: TableOrderId with {
+      briefly "ID"
+      described as {
+        |Order with ready drinks.
+      }
+    }
+  } with {
+    briefly "Notify drink ready"
+    described as {
+      |Notify that drinks are ready for a table order.
+    }
+  }
+  command NotifyDrinksServed is {
+    tableOrderId: TableOrderId with {
+      briefly "ID"
+      described as {
+        |Order with served drinks.
+      }
+    }
+  } with {
+    briefly "Notify drinks served"
+    described as {
+      |Notify that drinks have been served.
+    }
+  }
+  command ApplyMenuItemUpdate is {
+    menuItemId: String(1,50) with {
+      briefly "ID"
+      described as {
+        |Updated menu item.
+      }
+    }
+  } with {
+    briefly "Apply menu item update"
+    described as {
+      |Apply a menu item update from corporate.
+    }
+  }
+  command ApplyMenuItemPriceChange is {
+    menuItemId: String(1,50) with {
+      briefly "ID"
+      described as {
+        |Repriced menu item.
+      }
+    }
+  } with {
+    briefly "Apply menu item price change"
+    described as {
+      |Apply a menu item price change from corporate.
+    }
+  }
+  command ApplyMenuRelease is {
+    releaseId: String(1,50) with {
+      briefly "ID"
+      described as {
+        |Menu release to apply.
+      }
+    }
+  } with {
+    briefly "Apply menu release"
+    described as {
+      |Apply a published menu release from corporate.
+    }
+  }
+  command RollbackMenuRelease is {
+    releaseId: String(1,50) with {
+      briefly "ID"
+      described as {
+        |Menu release to roll back.
+      }
+    }
+  } with {
+    briefly "Rollback menu release"
+    described as {
+      |Roll back a menu release from corporate.
+    }
+  }
+  command RecordNotificationAck is {
+    notificationId: String(1,50) with {
+      briefly "ID"
+      described as {
+        |Notification that was acknowledged.
+      }
+    }
+  } with {
+    briefly "Record notification ack"
+    described as {
+      |Record a push notification delivery confirmation.
+    }
+  }
   repository ReservationRepository is {
     schema ReservationSchema is relational
       of reservations as type Reservation
@@ -63,6 +154,16 @@ context FrontOfHouse is {
         do "update ReservationSchema.reservations set
           reservationTime = newReservationTime where
           reservationId matches"
+      }
+      on command RecordNotificationAck is {
+        do "log notification delivery confirmation for
+          audit trail"
+      }
+      on command ApplyMenuRelease is {
+        do "apply published menu release to restaurant"
+      }
+      on command RollbackMenuRelease is {
+        do "rollback menu release at restaurant"
       }
     } with {
       briefly "Reservation persistence"
@@ -149,6 +250,18 @@ context FrontOfHouse is {
         do "update TableOrderSchema.orders set actualClosedAt
           = closedAt where tableOrderId matches"
       }
+      on command NotifyDrinkReady is {
+        do "notify server that drinks are ready for table"
+      }
+      on command NotifyDrinksServed is {
+        do "record drink readiness notification acknowledgment"
+      }
+      on command ApplyMenuItemUpdate is {
+        do "update local menu item cache with changes"
+      }
+      on command ApplyMenuItemPriceChange is {
+        do "update local menu pricing from corporate"
+      }
     } with {
       briefly "Order persistence"
       described as {
@@ -163,6 +276,7 @@ context FrontOfHouse is {
     }
   }
   projector ReservationBoard is {
+    updates repository FrontOfHouse.ReservationRepository
     record ReservationBoardEntry is  {
       reservationId: ReservationId with {
         briefly "ID"
@@ -208,7 +322,9 @@ context FrontOfHouse is {
     }
     handler ReservationBoardHandler is {
       on event Reservation.ReservationMade is {
-        let entry: ReservationBoardEntry = "new ReservationBoardEntry from event"
+        set field ReservationBoardEntry.reservationDisplayStatus to "Requested"
+        tell event Reservation.ReservationMade to repository
+          FrontOfHouse.ReservationRepository
         do "insert ReservationBoardEntry with reservationId =
           event.reservationId, guestName = event.guestName,
           partySize = event.partySize, reservationTime =
@@ -216,17 +332,25 @@ context FrontOfHouse is {
           assignedTable = none"
       }
       on event Reservation.ReservationConfirmed is {
-        let entry: ReservationBoardEntry = "updated ReservationBoardEntry from event"
+        set field ReservationBoardEntry.reservationDisplayStatus to "Confirmed"
+        tell event Reservation.ReservationConfirmed to repository
+          FrontOfHouse.ReservationRepository
         do "update ReservationBoardEntry set
           reservationDisplayStatus = Confirmed,
           assignedTable = event.confirmedTable
           where reservationId = event.reservationId"
       }
       on event Reservation.ReservationCancelled is {
+        set field ReservationBoardEntry.reservationDisplayStatus to "Cancelled"
+        tell event Reservation.ReservationCancelled to repository
+          FrontOfHouse.ReservationRepository
         do "delete ReservationBoardEntry where reservationId =
           event.reservationId"
       }
       on event Reservation.PartySeated is {
+        set field ReservationBoardEntry.reservationDisplayStatus to "Seated"
+        tell event Reservation.PartySeated to repository
+          FrontOfHouse.ReservationRepository
         do "update ReservationBoardEntry set
           reservationDisplayStatus = Seated,
           assignedTable = event.seatedTable where
@@ -265,6 +389,76 @@ context FrontOfHouse is {
     described as {
       |Emits order submission events from the TableOrder entity
       |into the streaming topology for kitchen and bar routing.
+    }
+  }
+  source ReservationEventSource is {
+    outlet ReservationEvents is type ReservationEvent
+    handler ReservationEventEmitter is {
+      on event Reservation.ReservationMade is {
+        send event Reservation.ReservationMade to outlet ReservationEvents
+      }
+      on event Reservation.ReservationConfirmed is {
+        send event Reservation.ReservationConfirmed to outlet ReservationEvents
+      }
+      on event Reservation.ReservationCancelled is {
+        send event Reservation.ReservationCancelled to outlet ReservationEvents
+      }
+      on event Reservation.PartySeated is {
+        send event Reservation.PartySeated to outlet ReservationEvents
+      }
+      on event Reservation.VisitCompleted is {
+        send event Reservation.VisitCompleted to outlet ReservationEvents
+      }
+      on event Reservation.NoShowMarked is {
+        send event Reservation.NoShowMarked to outlet ReservationEvents
+      }
+      on event Reservation.ReservationRescheduled is {
+        send event Reservation.ReservationRescheduled to outlet ReservationEvents
+      }
+    } with {
+      briefly "Reservation event emitter"
+      described as {
+        |Emits reservation lifecycle events into the streaming
+        |topology for downstream consumers.
+      }
+    }
+  } with {
+    briefly "Reservation event source"
+    described as {
+      |Publishes reservation entity events for external
+      |consumption via the streaming topology.
+    }
+  }
+  source TableOrderEventSource is {
+    outlet TableOrderEvents is type OrderEvent
+    handler TableOrderEventEmitter is {
+      on event TableOrder.OrderCreated is {
+        send event TableOrder.OrderCreated to outlet TableOrderEvents
+      }
+      on event TableOrder.ItemAdded is {
+        send event TableOrder.ItemAdded to outlet TableOrderEvents
+      }
+      on event TableOrder.OrderSubmitted is {
+        send event TableOrder.OrderSubmitted to outlet TableOrderEvents
+      }
+      on event TableOrder.PaymentProcessed is {
+        send event TableOrder.PaymentProcessed to outlet TableOrderEvents
+      }
+      on event TableOrder.OrderClosed is {
+        send event TableOrder.OrderClosed to outlet TableOrderEvents
+      }
+    } with {
+      briefly "Table order event emitter"
+      described as {
+        |Emits table order lifecycle events into the streaming
+        |topology for downstream consumers.
+      }
+    }
+  } with {
+    briefly "Table order event source"
+    described as {
+      |Publishes table order entity events for external
+      |consumption via the streaming topology.
     }
   }
   split OrderSplitter is {
@@ -384,12 +578,16 @@ context FrontOfHouse is {
     inlet IncomingPaymentResults is type PaymentGatewayEvent
     handler PaymentResultHandler is {
       on event PaymentGateway.PaymentAuthorized is {
+        tell command TableOrder.ProcessPayment to entity
+          FrontOfHouse.TableOrder
         do "match PaymentAuthorized.paymentGatewayTransactionId
           to pending TableOrder by payment reference and
           trigger payment capture via PaymentGateway
           streaming topology"
       }
       on event PaymentGateway.PaymentCaptured is {
+        tell command TableOrder.CloseOrder to entity
+          FrontOfHouse.TableOrder
         do "mark payment as fully settled for the matching
           TableOrder using PaymentCaptured
           .captureTransactionId"
@@ -414,6 +612,8 @@ context FrontOfHouse is {
     inlet NotificationAcks is type NotificationEvent
     handler NotificationAckHandler is {
       on event NotificationService.PushNotificationSent is {
+        tell command RecordNotificationAck
+          to repository FrontOfHouse.ReservationRepository
         do "log notification delivery confirmation for
           PushNotificationSent.notificationRecipient at
           PushNotificationSent.sentAt for audit trail"
@@ -485,6 +685,111 @@ context FrontOfHouse is {
     described as {
       |Wires drink items from the order splitter to the bar
       |drink order queue for ordered processing.
+    }
+  }
+  sink DrinkOrderEventSink is {
+    inlet IncomingDrinkOrderEvents is type DrinkOrderEvent
+    handler DrinkOrderEventIntake is {
+      on event Restaurant.Bar.DrinkOrder.DrinkMarkedReady is {
+        tell command NotifyDrinkReady
+          to repository FrontOfHouse.TableOrderRepository
+        do "notify server that drinks are ready for table"
+      }
+      on event Restaurant.Bar.DrinkOrder.ServerNotifiedDrinksReady is {
+        tell command NotifyDrinksServed
+          to repository FrontOfHouse.TableOrderRepository
+        do "record drink readiness notification acknowledgment"
+      }
+    } with {
+      briefly "Drink order event intake"
+      described as {
+        |Processes incoming drink order events for order
+        |readiness notification.
+      }
+    }
+  } with {
+    briefly "Drink order event sink"
+    described as {
+      |Receives drink order events from the bar streaming
+      |topology for order readiness notification.
+    }
+  }
+  sink MenuItemEventSink is {
+    inlet IncomingMenuItemEvents is type MenuItemEvent
+    handler MenuItemEventIntake is {
+      on event Corporate.MenuManagement.MenuItem.MenuItemUpdated is {
+        tell command ApplyMenuItemUpdate
+          to repository FrontOfHouse.TableOrderRepository
+        do "update local menu item cache with changes"
+      }
+      on event Corporate.MenuManagement.MenuItem.PriceSet is {
+        tell command ApplyMenuItemPriceChange
+          to repository FrontOfHouse.TableOrderRepository
+        do "update local menu pricing from corporate"
+      }
+    } with {
+      briefly "Menu item event intake"
+      described as {
+        |Processes incoming menu item events for local menu
+        |updates.
+      }
+    }
+  } with {
+    briefly "Menu item event sink"
+    described as {
+      |Receives menu item events from the menu management
+      |streaming topology for restaurant menu updates.
+    }
+  }
+  sink MenuReleaseEventSink is {
+    inlet IncomingMenuReleaseEvents is type MenuReleaseEvent
+    handler MenuReleaseEventIntake is {
+      on event Corporate.MenuManagement.MenuRelease.ReleasePublished is {
+        tell command ApplyMenuRelease
+          to repository FrontOfHouse.ReservationRepository
+        do "apply published menu release to restaurant"
+      }
+      on event Corporate.MenuManagement.MenuRelease.ReleaseRolledBack is {
+        tell command RollbackMenuRelease
+          to repository FrontOfHouse.ReservationRepository
+        do "rollback menu release at restaurant"
+      }
+    } with {
+      briefly "Menu release event intake"
+      described as {
+        |Processes incoming menu release events for menu
+        |distribution.
+      }
+    }
+  } with {
+    briefly "Menu release event sink"
+    described as {
+      |Receives menu release events from the menu management
+      |streaming topology for menu release distribution.
+    }
+  }
+  connector ReservationToReporting is {
+    from outlet
+      FrontOfHouse.ReservationEventSource.ReservationEvents to
+      inlet Reporting.ReservationEventSink.IncomingReservationEvents
+  } with {
+    option is persistent
+    briefly "Reservation to reporting connector"
+    described as {
+      |Wires reservation events to the reporting context
+      |for sales and reservation reports.
+    }
+  }
+  connector TableOrderToReporting is {
+    from outlet
+      FrontOfHouse.TableOrderEventSource.TableOrderEvents to
+      inlet Reporting.TableOrderEventSink.IncomingTableOrderEvents
+  } with {
+    option is persistent
+    briefly "Table order to reporting connector"
+    described as {
+      |Wires table order events to the reporting context
+      |for sales reports.
     }
   }
 } with {

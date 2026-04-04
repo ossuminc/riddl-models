@@ -3,6 +3,32 @@ context MenuManagement is {
   include "menu-types.riddl"
   include "MenuItem.riddl"
   include "MenuRelease.riddl"
+  command RecordPrintCompletion is {
+    printJobId: String(1,50) with {
+      briefly "ID"
+      described as {
+        |Print job.
+      }
+    }
+  } with {
+    briefly "Record print completion"
+    described as {
+      |Record menu print job completion.
+    }
+  }
+  command RecordPhotoShootCompletion is {
+    shootId: String(1,50) with {
+      briefly "ID"
+      described as {
+        |Photo shoot.
+      }
+    }
+  } with {
+    briefly "Record photo shoot completion"
+    described as {
+      |Record menu photo shoot completion.
+    }
+  }
   repository MenuItemRepository is {
     schema MenuItemData is relational
       of menuItems as type MenuItem
@@ -23,7 +49,7 @@ context MenuManagement is {
         do "insert row into MenuItemData.menuItems with
           menuItemId, menuItemName, menuItemCategory,
           menuItemDescription, recipe, pricing, and
-          menuItemLifecycle = Draft"
+          menuItemLifecycle = DraftLifecycle"
       }
       on command MenuItem.UpdateMenuItem is {
         tell event MenuItem.MenuItemUpdated to entity
@@ -43,6 +69,9 @@ context MenuManagement is {
           MenuManagement.MenuItem
         do "update MenuItemData.menuItems set menuItemLifecycle
           = Retired where menuItemId matches"
+      }
+      on command RecordPhotoShootCompletion is {
+        do "update menu item images from completed photo shoot"
       }
     } with {
       briefly "Menu item persistence"
@@ -103,6 +132,9 @@ context MenuManagement is {
           menuReleaseStatus = RolledBack where menuReleaseId
           matches"
       }
+      on command RecordPrintCompletion is {
+        do "log print job completion for menu release"
+      }
     } with {
       briefly "Menu release persistence"
       described as {
@@ -115,10 +147,63 @@ context MenuManagement is {
       |Stores and retrieves menu release data.
     }
   }
+  source MenuItemEventSource is {
+    outlet MenuItemEvents is type MenuItemEvent
+    handler MenuItemEventEmitter is {
+      on event MenuItem.MenuItemCreated is {
+        send event MenuItem.MenuItemCreated to outlet MenuItemEvents
+      }
+      on event MenuItem.MenuItemUpdated is {
+        send event MenuItem.MenuItemUpdated to outlet MenuItemEvents
+      }
+      on event MenuItem.PriceSet is {
+        send event MenuItem.PriceSet to outlet MenuItemEvents
+      }
+      on event MenuItem.MenuItemRetired is {
+        send event MenuItem.MenuItemRetired to outlet MenuItemEvents
+      }
+    } with {
+      briefly "Menu item event emitter"
+      described as {
+        |Emits menu item lifecycle events.
+      }
+    }
+  } with {
+    briefly "Menu item event source"
+    described as {
+      |Publishes menu item entity events.
+    }
+  }
+  source MenuReleaseEventSource is {
+    outlet MenuReleaseEvents is type MenuReleaseEvent
+    handler MenuReleaseEventEmitter is {
+      on event MenuRelease.MenuReleaseCreated is {
+        send event MenuRelease.MenuReleaseCreated to outlet MenuReleaseEvents
+      }
+      on event MenuRelease.ReleasePublished is {
+        send event MenuRelease.ReleasePublished to outlet MenuReleaseEvents
+      }
+      on event MenuRelease.ReleaseRolledBack is {
+        send event MenuRelease.ReleaseRolledBack to outlet MenuReleaseEvents
+      }
+    } with {
+      briefly "Menu release event emitter"
+      described as {
+        |Emits menu release lifecycle events.
+      }
+    }
+  } with {
+    briefly "Menu release event source"
+    described as {
+      |Publishes menu release entity events.
+    }
+  }
   sink PrintConfirmSink is {
     inlet IncomingPrintResults is type PrintingEvent
     handler PrintConfirmHandler is {
       on event PrintingService.MenusPrinted is {
+        tell command RecordPrintCompletion
+          to repository MenuManagement.MenuReleaseRepository
         do "log print job completion for
           MenusPrinted.printJobId completed at
           MenusPrinted.printedAt"
@@ -140,6 +225,8 @@ context MenuManagement is {
     inlet IncomingShootResults is type PhotographyEvent
     handler PhotoConfirmHandler is {
       on event PhotographyService.PhotoShootCompleted is {
+        tell command RecordPhotoShootCompletion
+          to repository MenuManagement.MenuItemRepository
         do "update menu item images from completed photo
           shoot PhotoShootCompleted.shootId completed at
           PhotoShootCompleted.completedAt"
@@ -179,11 +266,38 @@ context MenuManagement is {
       |Wires photo shoot completions to menu management.
     }
   }
+  connector MenuItemToFOH is {
+    from outlet
+      MenuManagement.MenuItemEventSource.MenuItemEvents to
+      inlet
+      FrontOfHouse.MenuItemEventSink.IncomingMenuItemEvents
+  } with {
+    option is persistent
+    briefly "Menu item to front of house connector"
+    described as {
+      |Wires menu item events to the front of house for
+      |restaurant menu updates.
+    }
+  }
+  connector MenuReleaseToFOH is {
+    from outlet
+      MenuManagement.MenuReleaseEventSource.MenuReleaseEvents to
+      inlet
+      FrontOfHouse.MenuReleaseEventSink.IncomingMenuReleaseEvents
+  } with {
+    option is persistent
+    briefly "Menu release to front of house connector"
+    described as {
+      |Wires menu release events to the front of house for
+      |menu release distribution.
+    }
+  }
   adaptor ToRestaurants to context Restaurant.FrontOfHouse is {
     handler MenuDistribution is {
       on command Restaurant.FrontOfHouse.TableOrder.CreateOrder is {
         do "distribute published menu updates to restaurant
           locations"
+        tell command Restaurant.FrontOfHouse.TableOrder.CreateOrder to entity Restaurant.FrontOfHouse.TableOrder
       }
     } with {
       briefly "Menu distribution"
