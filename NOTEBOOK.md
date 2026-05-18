@@ -15,21 +15,59 @@ to the task file and note completion in this notebook.
 
 ## Current Status
 
-**Date**: 2026-02-21
-**Phase**: riddlc 1.13.1 — sbt-riddl Plugin + Prettified Models
+**Date**: 2026-05-18
+**Phase**: riddlc 1.23.0 — Handlers Completed, BAST Tracked
 
-- **187 models** validated with riddlc 1.13.1 — zero errors
-- All models reformatted via `riddlc prettify` to canonical syntax
-  (colon fields, `Type?` optionals, `described as` markdown,
-  `is` on handlers, no commas between fields)
-- Build uses **sbt-riddl plugin** (replaced custom RiddlcTasks.scala)
-- `.bast` files removed from tracking (regenerate with `sbt b`)
+- **187 models** validated with riddlc 1.23.0 — zero errors
+- Handler placeholders (`prompt "..."`) replaced with concrete
+  `tell command/event X to entity Y` messaging across all models
+- Missing commands/queries/results added to entities for a
+  complete operational surface
+- Canonical RIDDL prettify form unchanged from 1.16.5/1.17.1 to
+  1.23.0 (verified on shopping-cart: byte-identical output)
+- Build uses **sbt-riddl plugin** at 1.23.0
+- `.bast` files **are tracked** and regenerated via `sbt b`
+- `validateOnCompile = false` in build.sbt — validation must be
+  invoked explicitly via `sbt v` / `sbt riddlcValidate`
 - All model READMEs have NAICS codes
-- `sbt compile` auto-downloads riddlc and validates all models
+
+### Open Loose Ends
+
+- 8 untracked helper scripts at repo root and in `scripts/`
+  (`fix-models.py`, `fix_models.py` near-duplicate, etc.) —
+  triage needed: keep the useful ones in `scripts/`, delete
+  scratch work at the root
 
 ---
 
 ## Completed Work
+
+### 2026-05-18: Complete Handlers + Sync Docs to riddlc 1.23.0
+
+Two cohesive commits on `main`:
+
+1. **`dea0645` — Update CLAUDE.md to reflect current build versions**
+   - Bumped `riddlc` / `sbt-riddl` from 1.17.1 → 1.23.0 (per
+     `project/plugins.sbt`)
+   - Bumped `sbt-ossuminc` from 1.3.5 → 1.4.0
+   - Removed stale `riddl-lib` row (no longer a build dep)
+   - Corrected three references that incorrectly claimed
+     validation was wired into `sbt compile`; clarified that
+     `validateOnCompile = false` and validation must be run
+     explicitly via `sbt v`
+   - Bumped "canonical form as of riddlc 1.16.5 prettify" →
+     `1.23.0` after verifying byte-identical prettify output
+     on `commerce/e-commerce/shopping-cart`
+
+2. **`079f231` — Complete handler implementations + regenerate
+   .bast across all 187 models** (501 files, +14074/−1408)
+   - Replaced placeholder `prompt "..."` stubs in adaptor and
+     repository handlers with concrete messaging:
+     `tell command X to entity Y`, `tell event X to entity Y`
+   - Added missing commands, queries, and results to entities
+     (e.g. `InitializeCart`, `GetCart`, `CartResult` on `Cart`)
+   - All 187 models pass `sbt riddlcValidate` against 1.23.0
+   - `.bast` files regenerated via `sbt riddlcBastify`
 
 ### 2026-02-21: Upgrade to riddlc 1.13.1 + sbt-riddl + Prettify
 
