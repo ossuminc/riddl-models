@@ -7,40 +7,40 @@ context LifePolicyContext is {
   repository LifePolicyRepository is {
     handler LifePolicyRepositoryHandler is {
       on command IssueLifePolicy is {
-        prompt "Persist newly issued policy to database"
+        tell event LifePolicyIssued to entity LifePolicy
       }
       on command AddBeneficiary is {
-        prompt "Store beneficiary addition"
+        tell event BeneficiaryAdded to entity LifePolicy
       }
       on command RemoveBeneficiary is {
-        prompt "Remove beneficiary record"
+        tell event BeneficiaryRemoved to entity LifePolicy
       }
       on command AddRider is {
-        prompt "Store rider addition"
+        tell event RiderAdded to entity LifePolicy
       }
       on command RemoveRider is {
-        prompt "Remove rider record"
+        tell event RiderRemoved to entity LifePolicy
       }
       on command ProcessPremium is {
-        prompt "Store premium payment and update policy status"
+        tell event PremiumProcessed to entity LifePolicy
       }
       on command RequestLoan is {
-        prompt "Store loan disbursement and update cash value"
+        tell event LoanDisbursed to entity LifePolicy
       }
       on command RepayLoan is {
-        prompt "Store loan repayment and update balance"
+        tell event LoanRepaid to entity LifePolicy
       }
       on command SurrenderPolicy is {
-        prompt "Update policy record to reflect surrender status"
+        tell event PolicySurrendered to entity LifePolicy
       }
       on command ProcessDeath is {
-        prompt "Create death claim record and update policy status"
+        tell event DeathClaimInitiated to entity LifePolicy
       }
       on command LapsePolicy is {
-        prompt "Update policy record to reflect lapsed status"
+        tell event PolicyLapsed to entity LifePolicy
       }
       on command ReinstatePolicyFromLapse is {
-        prompt "Update policy record to reflect reinstated status"
+        tell event PolicyReinstated to entity LifePolicy
       }
     } with {
       briefly "Repository handler for policy events"
@@ -56,6 +56,7 @@ context LifePolicyContext is {
   }
   // Projector for policy metrics and reporting
   projector LifePolicyMetricsProjector is {
+    updates repository LifePolicyContext.LifePolicyRepository
     record PersistencyMetrics is  {
       totalPoliciesInForce: Natural with {
         briefly "Policies in force"
@@ -236,25 +237,32 @@ context LifePolicyContext is {
     }
     handler LifePolicyMetricsHandler is {
       on event LifePolicyIssued is {
-        prompt "Update issuance counts and premium volume metrics"
+        tell event LifePolicyIssued to repository
+          LifePolicyContext.LifePolicyRepository
       }
       on event PremiumProcessed is {
-        prompt "Update premium collection and persistency metrics"
+        tell event PremiumProcessed to repository
+          LifePolicyContext.LifePolicyRepository
       }
       on event PolicySurrendered is {
-        prompt "Track surrender rates and cash value disbursements"
+        tell event PolicySurrendered to repository
+          LifePolicyContext.LifePolicyRepository
       }
       on event PolicyLapsed is {
-        prompt "Track lapse rates for persistency analysis"
+        tell event PolicyLapsed to repository
+          LifePolicyContext.LifePolicyRepository
       }
       on event PolicyReinstated is {
-        prompt "Track reinstatement success rates"
+        tell event PolicyReinstated to repository
+          LifePolicyContext.LifePolicyRepository
       }
       on event DeathClaimInitiated is {
-        prompt "Update mortality experience and claims metrics"
+        tell event DeathClaimInitiated to repository
+          LifePolicyContext.LifePolicyRepository
       }
       on event LoanDisbursed is {
-        prompt "Track policy loan utilization and balances"
+        tell event LoanDisbursed to repository
+          LifePolicyContext.LifePolicyRepository
       }
     } with {
       briefly "Metrics projector handler"
@@ -267,6 +275,75 @@ context LifePolicyContext is {
     described as {
       | Maintains read-optimized views of policy persistency metrics including
       | in-force counts, lapse rates, production, and claims experience.
+    }
+  }
+  source LifePolicyEventSource is {
+    outlet LifePolicyEvents is type LifePolicyEvent
+    handler LifePolicyEventEmitter is {
+      on init is {
+        tell command InitializeLifePolicy to entity LifePolicy
+      }
+      on other is { ??? }
+      on event LifePolicyIssued is {
+        send event LifePolicyIssued to outlet LifePolicyEvents
+      }
+      on event PolicySurrendered is {
+        send event PolicySurrendered to outlet LifePolicyEvents
+      }
+      on event PolicyLapsed is {
+        send event PolicyLapsed to outlet LifePolicyEvents
+      }
+      on event DeathClaimInitiated is {
+        send event DeathClaimInitiated to outlet LifePolicyEvents
+      }
+      on event PolicyReinstated is {
+        send event PolicyReinstated to outlet LifePolicyEvents
+      }
+    } with {
+      briefly "Life policy event emitter"
+      described as {
+        |Emits life policy lifecycle events into the streaming
+        |topology.
+      }
+    }
+  } with {
+    briefly "Life policy event source"
+    described as {
+      |Publishes life policy entity events for streaming.
+    }
+  }
+  sink LifePolicyEventSink is {
+    inlet IncomingLifePolicyEvents is type LifePolicyEvent
+    handler LifePolicyEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event LifePolicyIssued is {
+        tell event LifePolicyIssued to repository
+          LifePolicyContext.LifePolicyRepository
+      }
+      on event PolicyLapsed is {
+        tell event PolicyLapsed to repository
+          LifePolicyContext.LifePolicyRepository
+      }
+    } with {
+      briefly "Life policy event receiver"
+      described as {
+        |Receives life policy events and persists them.
+      }
+    }
+  } with {
+    briefly "Life policy event sink"
+    described as {
+      |Receives life policy events from the streaming topology.
+    }
+  }
+  connector LifePolicyEventPipeline is {
+    from outlet LifePolicyContext.LifePolicyEventSource.LifePolicyEvents
+      to inlet LifePolicyContext.LifePolicyEventSink.IncomingLifePolicyEvents
+  } with {
+    briefly "Life policy event pipeline"
+    described as {
+      |Wires life policy events from source to sink.
     }
   }
 } with {

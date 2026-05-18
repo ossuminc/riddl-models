@@ -11,22 +11,28 @@ context ProductionContext is {
 
     handler ProductionPersistence is {
       on command Production.CreateProduction is {
-        prompt "Store new production"
+        tell event Production.ProductionCreated to entity
+          ProductionContext.Production
       }
       on command Production.AssignCrew is {
-        prompt "Store crew assignment"
+        tell event Production.CrewAssigned to entity
+          ProductionContext.Production
       }
       on command Production.AllocateEquipment is {
-        prompt "Store equipment allocation"
+        tell event Production.EquipmentAllocated to entity
+          ProductionContext.Production
       }
       on command Production.ScheduleRehearsal is {
-        prompt "Store rehearsal schedule"
+        tell event Production.RehearsalScheduled to entity
+          ProductionContext.Production
       }
       on command Production.CompleteRehearsal is {
-        prompt "Update rehearsal to completed"
+        tell event Production.RehearsalCompleted to entity
+          ProductionContext.Production
       }
       on command Production.CompleteShow is {
-        prompt "Update production to completed"
+        tell event Production.ShowCompleted to entity
+          ProductionContext.Production
       }
     } with {
       briefly "Persists production commands"
@@ -41,6 +47,7 @@ context ProductionContext is {
     }
   }
   projector ProductionMetrics is {
+    updates repository ProductionContext.ProductionRepository
     record EventMetrics is  {
       productionsCreated: Natural with {
         briefly "Created"
@@ -80,13 +87,16 @@ context ProductionContext is {
     }
     handler MetricsHandler is {
       on event Production.ProductionCreated is {
-        prompt "Increment productions created"
+        tell event Production.ProductionCreated to repository
+          ProductionContext.ProductionRepository
       }
       on event Production.ShowCompleted is {
-        prompt "Increment productions completed and add attendance"
+        tell event Production.ShowCompleted to repository
+          ProductionContext.ProductionRepository
       }
       on event Production.ProductionCancelled is {
-        prompt "Increment productions cancelled"
+        tell event Production.ProductionCancelled to repository
+          ProductionContext.ProductionRepository
       }
     } with {
       briefly "Maintains production metrics"
@@ -98,6 +108,70 @@ context ProductionContext is {
     briefly "Production metrics"
     described as {
       |Production management analytics.
+    }
+  }
+  source ProductionEventSource is {
+    outlet ProductionEvents is type ProductionEvent
+    handler ProductionEventEmitter is {
+      on init is {
+        tell command InitializeProduction to entity
+          ProductionContext.Production
+      }
+      on other is { ??? }
+      on event Production.ProductionCreated is {
+        send event Production.ProductionCreated to outlet ProductionEvents
+      }
+      on event Production.ShowCompleted is {
+        send event Production.ShowCompleted to outlet ProductionEvents
+      }
+      on event Production.ProductionCancelled is {
+        send event Production.ProductionCancelled to outlet ProductionEvents
+      }
+    } with {
+      briefly "Production event emitter"
+      described as {
+        |Emits production lifecycle events into the streaming
+        |topology.
+      }
+    }
+  } with {
+    briefly "Production event source"
+    described as {
+      |Publishes production entity events for streaming.
+    }
+  }
+  sink ProductionEventSink is {
+    inlet IncomingProductionEvents is type ProductionEvent
+    handler ProductionEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Production.ProductionCreated is {
+        tell event Production.ProductionCreated to repository
+          ProductionContext.ProductionRepository
+      }
+      on event Production.ProductionCancelled is {
+        tell event Production.ProductionCancelled to repository
+          ProductionContext.ProductionRepository
+      }
+    } with {
+      briefly "Production event receiver"
+      described as {
+        |Receives production events and persists them.
+      }
+    }
+  } with {
+    briefly "Production event sink"
+    described as {
+      |Receives production events from the streaming topology.
+    }
+  }
+  connector ProductionEventPipeline is {
+    from outlet ProductionContext.ProductionEventSource.ProductionEvents
+      to inlet ProductionContext.ProductionEventSink.IncomingProductionEvents
+  } with {
+    briefly "Production event pipeline"
+    described as {
+      |Wires production events from source to sink.
     }
   }
 } with {

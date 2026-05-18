@@ -11,31 +11,31 @@ context PipelineContext is {
 
     handler PipelinePersistence is {
       on command Pipeline.CreatePipeline is {
-        prompt "Store new pipeline"
+        tell event Pipeline.PipelineCreated to entity PipelineContext.Pipeline
       }
       on command Pipeline.StartPipeline is {
-        prompt "Store build execution"
+        tell event Pipeline.PipelineStarted to entity PipelineContext.Pipeline
       }
       on command Pipeline.CompleteStage is {
-        prompt "Update stage results"
+        tell event Pipeline.StageCompleted to entity PipelineContext.Pipeline
       }
       on command Pipeline.StoreArtifact is {
-        prompt "Store artifact reference"
+        tell event Pipeline.ArtifactStored to entity PipelineContext.Pipeline
       }
       on command Pipeline.RequestApproval is {
-        prompt "Store approval request"
+        tell event Pipeline.ApprovalRequested to entity PipelineContext.Pipeline
       }
       on command Pipeline.ApproveDeployment is {
-        prompt "Update approval status"
+        tell event Pipeline.DeploymentApproved to entity PipelineContext.Pipeline
       }
       on command Pipeline.RejectDeployment is {
-        prompt "Update rejection status"
+        tell event Pipeline.DeploymentRejected to entity PipelineContext.Pipeline
       }
       on command Pipeline.CancelPipeline is {
-        prompt "Update to cancelled"
+        tell event Pipeline.PipelineCancelled to entity PipelineContext.Pipeline
       }
       on command Pipeline.CompletePipeline is {
-        prompt "Update final status"
+        tell event Pipeline.PipelineCompleted to entity PipelineContext.Pipeline
       }
     } with {
       briefly "Persists pipeline commands"
@@ -52,6 +52,7 @@ context PipelineContext is {
   }
   // Projector for pipeline analytics
   projector PipelineAnalytics is {
+    updates repository PipelineContext.PipelineRepository
     record PipelineStats is  {
       totalPipelines: Natural with {
         briefly "Total"
@@ -91,13 +92,13 @@ context PipelineContext is {
     }
     handler AnalyticsHandler is {
       on event Pipeline.PipelineStarted is {
-        prompt "Update build counts"
+        tell event Pipeline.PipelineStarted to repository PipelineContext.PipelineRepository
       }
       on event Pipeline.PipelineCompleted is {
-        prompt "Update success metrics"
+        tell event Pipeline.PipelineCompleted to repository PipelineContext.PipelineRepository
       }
       on event Pipeline.DeploymentApproved is {
-        prompt "Update deployment counts"
+        tell event Pipeline.DeploymentApproved to repository PipelineContext.PipelineRepository
       }
     } with {
       briefly "Maintains pipeline analytics"
@@ -109,6 +110,104 @@ context PipelineContext is {
     briefly "Pipeline analytics projections"
     described as {
       |Maintains CI/CD pipeline analytics data.
+    }
+  }
+  // Event streaming infrastructure
+  type PipelineEvent is one of {
+    PipelineContext.Pipeline.PipelineCreated,
+    PipelineContext.Pipeline.PipelineStarted,
+    PipelineContext.Pipeline.StageCompleted,
+    PipelineContext.Pipeline.PipelineCompleted,
+    PipelineContext.Pipeline.PipelineCancelled
+  } with {
+    briefly "Pipeline events"
+    described as {
+      |Union of all Pipeline events for streaming.
+    }
+  }
+  source PipelineSource is {
+    outlet PipelineEventOutlet is type PipelineEvent with {
+      briefly "Event outlet"
+      described as {
+        |Outlet for Pipeline events.
+      }
+    }
+    handler PipelineSourceHandler is {
+      on init is {
+        tell command Pipeline.InitializePipeline to entity PipelineContext.Pipeline
+      }
+      on event Pipeline.PipelineCreated is {
+        send event Pipeline.PipelineCreated to outlet PipelineEventOutlet
+      }
+      on event Pipeline.PipelineStarted is {
+        send event Pipeline.PipelineStarted to outlet PipelineEventOutlet
+      }
+      on event Pipeline.StageCompleted is {
+        send event Pipeline.StageCompleted to outlet PipelineEventOutlet
+      }
+      on event Pipeline.PipelineCompleted is {
+        send event Pipeline.PipelineCompleted to outlet PipelineEventOutlet
+      }
+      on event Pipeline.PipelineCancelled is {
+        send event Pipeline.PipelineCancelled to outlet PipelineEventOutlet
+      }
+      on other is { ??? }
+    } with {
+      briefly "Source handler"
+      described as {
+        |Handles Pipeline events for streaming.
+      }
+    }
+  } with {
+    briefly "Pipeline event source"
+    described as {
+      |Publishes Pipeline events to the event stream.
+    }
+  }
+  sink PipelineSink is {
+    inlet PipelineEventInlet is type PipelineEvent with {
+      briefly "Event inlet"
+      described as {
+        |Inlet for Pipeline events.
+      }
+    }
+    handler PipelineSinkHandler is {
+      on init is { ??? }
+      on event Pipeline.PipelineCreated is {
+        tell event Pipeline.PipelineCreated to repository PipelineContext.PipelineRepository
+      }
+      on event Pipeline.PipelineStarted is {
+        tell event Pipeline.PipelineStarted to repository PipelineContext.PipelineRepository
+      }
+      on event Pipeline.StageCompleted is {
+        tell event Pipeline.StageCompleted to repository PipelineContext.PipelineRepository
+      }
+      on event Pipeline.PipelineCompleted is {
+        tell event Pipeline.PipelineCompleted to repository PipelineContext.PipelineRepository
+      }
+      on event Pipeline.PipelineCancelled is {
+        tell event Pipeline.PipelineCancelled to repository PipelineContext.PipelineRepository
+      }
+      on other is { ??? }
+    } with {
+      briefly "Sink handler"
+      described as {
+        |Handles incoming Pipeline events for persistence.
+      }
+    }
+  } with {
+    briefly "Pipeline event sink"
+    described as {
+      |Receives Pipeline events for persistence.
+    }
+  }
+  connector PipelineEventFlow is {
+    from outlet PipelineContext.PipelineSource.PipelineEventOutlet to
+      inlet PipelineContext.PipelineSink.PipelineEventInlet
+  } with {
+    briefly "Pipeline event connector"
+    described as {
+      |Wires Pipeline source to sink for event flow.
     }
   }
 } with {

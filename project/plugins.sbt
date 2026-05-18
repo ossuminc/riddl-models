@@ -1,8 +1,8 @@
 // Ossum Inc SBT plugin for standardized build configuration
-addSbtPlugin("com.ossuminc" % "sbt-ossuminc" % "1.3.5")
+addSbtPlugin("com.ossuminc" % "sbt-ossuminc" % "1.4.0")
 
 // RIDDL compiler sbt plugin (validate, bastify, prettify, etc.)
-addSbtPlugin("com.ossuminc" % "sbt-riddl" % "1.17.1")
+addSbtPlugin("com.ossuminc" % "sbt-riddl" % "1.23.0")
 
 // Credentials for GitHub Packages
 credentials ++= {

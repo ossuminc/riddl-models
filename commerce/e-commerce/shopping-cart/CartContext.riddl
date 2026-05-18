@@ -6,10 +6,10 @@ context CartContext is {
   adaptor PricingAdapter from context PricingService is { 
     handler PricingEvents is {
       on event PricingService.PriceChanged is {
-        prompt "Update item prices in active carts"
+        tell command Cart.UpdateQuantity to entity CartContext.Cart
       }
       on event PricingService.PromotionActivated is {
-        prompt "Apply eligible promotions to carts"
+        tell command Cart.ApplyPromoCode to entity CartContext.Cart
       }
     } with {
       briefly "Handles pricing events"
@@ -26,10 +26,10 @@ context CartContext is {
   adaptor InventoryAdapter from context InventoryService is { 
     handler InventoryEvents is {
       on event InventoryService.StockDepleted is {
-        prompt "Mark item as out of stock in cart"
+        tell command Cart.RemoveItem to entity CartContext.Cart
       }
       on event InventoryService.StockReplenished is {
-        prompt "Update availability in carts with waiting items"
+        tell command Cart.AddItem to entity CartContext.Cart
       }
     } with {
       briefly "Handles inventory events"
@@ -46,7 +46,7 @@ context CartContext is {
   adaptor OrderAdapter to context OrderService is { 
     handler OrderCreation is {
       on command OrderService.CreateOrder is {
-        prompt "Create order from checked out cart"
+        tell event Cart.CartCheckedOut to entity CartContext.Cart
       }
     } with {
       briefly "Handles order creation"
@@ -69,25 +69,25 @@ context CartContext is {
 
     handler CartPersistence is {
       on command Cart.CreateCart is {
-        prompt "Persist new cart to database"
+        tell event Cart.CartCreated to entity CartContext.Cart
       }
       on command Cart.AddItem is {
-        prompt "Update cart items in database"
+        tell event Cart.ItemAdded to entity CartContext.Cart
       }
       on command Cart.RemoveItem is {
-        prompt "Remove item from cart in database"
+        tell event Cart.ItemRemoved to entity CartContext.Cart
       }
       on command Cart.UpdateQuantity is {
-        prompt "Update item quantity in database"
+        tell event Cart.ItemQuantityUpdated to entity CartContext.Cart
       }
       on command Cart.ApplyPromoCode is {
-        prompt "Persist applied discount"
+        tell event Cart.PromoCodeApplied to entity CartContext.Cart
       }
       on command Cart.Checkout is {
-        prompt "Update cart status to checked out"
+        tell event Cart.CartCheckedOut to entity CartContext.Cart
       }
       on command Cart.AbandonCart is {
-        prompt "Update cart status to abandoned"
+        tell event Cart.CartAbandoned to entity CartContext.Cart
       }
     } with {
       briefly "Persists cart commands"
@@ -104,6 +104,7 @@ context CartContext is {
   }
   // Projector for cart analytics
   projector CartAnalytics is {
+    updates repository CartContext.CartRepository
     record AbandonedCartMetrics is  {
       period: Date with {
         briefly "Period"
@@ -137,10 +138,10 @@ context CartContext is {
     }
     handler AnalyticsHandler is {
       on event Cart.CartAbandoned is {
-        prompt "Update abandoned cart metrics"
+        tell event Cart.CartAbandoned to repository CartContext.CartRepository
       }
       on event Cart.CartCheckedOut is {
-        prompt "Update conversion metrics"
+        tell event Cart.CartCheckedOut to repository CartContext.CartRepository
       }
     } with {
       briefly "Maintains analytics views"
@@ -152,6 +153,66 @@ context CartContext is {
     briefly "Cart analytics projections"
     described as {
       |Maintains analytics views for cart behavior.
+    }
+  }
+  source CartEventSource is {
+    outlet CartEvents is type CartEvent
+    handler CartSourceHandler is {
+      on init is {
+        tell command Cart.InitializeCart to entity CartContext.Cart
+      }
+      on other is { ??? }
+      on event Cart.CartCreated is {
+        send event Cart.CartCreated to outlet CartEvents
+      }
+      on event Cart.CartCheckedOut is {
+        send event Cart.CartCheckedOut to outlet CartEvents
+      }
+      on event Cart.CartAbandoned is {
+        send event Cart.CartAbandoned to outlet CartEvents
+      }
+    } with {
+      briefly "Cart source handler"
+      described as {
+        |Handles cart events and sends to outlet.
+      }
+    }
+  } with {
+    briefly "Cart event source"
+    described as {
+      |Publishes cart entity events.
+    }
+  }
+  sink CartEventSink is {
+    inlet CartInlet is type CartEvent
+    handler CartSinkHandler is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Cart.CartCreated is {
+        tell event Cart.CartCreated to repository CartContext.CartRepository
+      }
+      on event Cart.CartCheckedOut is {
+        tell event Cart.CartCheckedOut to repository CartContext.CartRepository
+      }
+    } with {
+      briefly "Cart sink handler"
+      described as {
+        |Receives cart events and persists them.
+      }
+    }
+  } with {
+    briefly "Cart event sink"
+    described as {
+      |Receives cart events for persistence.
+    }
+  }
+  connector CartEventFlow is {
+    from outlet CartContext.CartEventSource.CartEvents to
+      inlet CartContext.CartEventSink.CartInlet
+  } with {
+    briefly "Cart event flow"
+    described as {
+      |Connects cart source to sink.
     }
   }
 } with {

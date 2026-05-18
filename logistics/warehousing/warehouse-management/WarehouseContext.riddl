@@ -74,11 +74,21 @@ context WarehouseContext is {
     }
     // Handler for queries
     handler InventoryQueryHandler is {
-      on query GetInventoryById is { ??? }
-      on query GetInventoryByProduct is { ??? }
-      on query GetInventoryByLocation is { ??? }
-      on query GetLowStockInventory is { ??? }
-      on query GetInventoryMovementHistory is { ??? }
+      on query GetInventoryById is {
+        tell result InventoryResult to entity WarehouseContext.Inventory
+      }
+      on query GetInventoryByProduct is {
+        tell result InventoryListResult to entity WarehouseContext.Inventory
+      }
+      on query GetInventoryByLocation is {
+        tell result InventoryListResult to entity WarehouseContext.Inventory
+      }
+      on query GetLowStockInventory is {
+        tell result LowStockResult to entity WarehouseContext.Inventory
+      }
+      on query GetInventoryMovementHistory is {
+        tell result MovementHistoryResult to entity WarehouseContext.Inventory
+      }
     } with {
       briefly "Handles inventory query requests"
       described as {
@@ -95,6 +105,7 @@ context WarehouseContext is {
   }
   // Projector for inventory analytics and reporting views
   projector InventoryProjector is {
+    updates repository WarehouseContext.InventoryRepository
     // Record types for projections
     record InventoryLevelProjection is  {
       productId: ProductId
@@ -142,14 +153,30 @@ context WarehouseContext is {
     }
     // Handler for processing inventory events into projections
     handler ProjectionHandler is {
-      on event Inventory.InventoryReceived is { ??? }
-      on event Inventory.InventoryShipped is { ??? }
-      on event Inventory.InventoryTransferred is { ??? }
-      on event Inventory.InventoryAdjusted is { ??? }
-      on event Inventory.InventoryReserved is { ??? }
-      on event Inventory.ReservationReleased is { ??? }
-      on event Inventory.InventoryQuarantined is { ??? }
-      on event Inventory.InventoryReleasedFromQuarantine is { ??? }
+      on event Inventory.InventoryReceived is {
+        tell event Inventory.InventoryReceived to repository WarehouseContext.InventoryRepository
+      }
+      on event Inventory.InventoryShipped is {
+        tell event Inventory.InventoryShipped to repository WarehouseContext.InventoryRepository
+      }
+      on event Inventory.InventoryTransferred is {
+        tell event Inventory.InventoryTransferred to repository WarehouseContext.InventoryRepository
+      }
+      on event Inventory.InventoryAdjusted is {
+        tell event Inventory.InventoryAdjusted to repository WarehouseContext.InventoryRepository
+      }
+      on event Inventory.InventoryReserved is {
+        tell event Inventory.InventoryReserved to repository WarehouseContext.InventoryRepository
+      }
+      on event Inventory.ReservationReleased is {
+        tell event Inventory.ReservationReleased to repository WarehouseContext.InventoryRepository
+      }
+      on event Inventory.InventoryQuarantined is {
+        tell event Inventory.InventoryQuarantined to repository WarehouseContext.InventoryRepository
+      }
+      on event Inventory.InventoryReleasedFromQuarantine is {
+        tell event Inventory.InventoryReleasedFromQuarantine to repository WarehouseContext.InventoryRepository
+      }
     } with {
       briefly "Processes events into read-optimized projections"
       described as {
@@ -164,6 +191,76 @@ context WarehouseContext is {
       | denormalized views optimized for reporting, dashboards, and analytics.
       | It provides aggregated views by product, location utilization metrics,
       | and movement summaries for operational visibility.
+    }
+  }
+  type InventoryEvent is one of {
+    WarehouseContext.Inventory.InventoryReceived,
+    WarehouseContext.Inventory.InventoryShipped,
+    WarehouseContext.Inventory.InventoryAdjusted
+  } with {
+    briefly "Inventory event union"
+    described as {
+      |Union of Inventory events for streaming.
+    }
+  }
+  source InventoryEventSource is {
+    outlet InventoryEvents is type InventoryEvent
+    handler InventoryEventEmitter is {
+      on init is { tell command Inventory.InitializeInventory to entity WarehouseContext.Inventory }
+      on other is { ??? }
+      on event Inventory.InventoryReceived is {
+        send event Inventory.InventoryReceived to outlet InventoryEvents
+      }
+      on event Inventory.InventoryShipped is {
+        send event Inventory.InventoryShipped to outlet InventoryEvents
+      }
+      on event Inventory.InventoryAdjusted is {
+        send event Inventory.InventoryAdjusted to outlet InventoryEvents
+      }
+    } with {
+      briefly "Event emitter"
+      described as {
+        |Emits Inventory events to the stream.
+      }
+    }
+  } with {
+    briefly "Inventory event source"
+    described as {
+      |Publishes Inventory events to the event stream.
+    }
+  }
+  sink InventoryEventSink is {
+    inlet IncomingInventoryEvents is type InventoryEvent
+    handler InventoryEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Inventory.InventoryReceived is {
+        tell event Inventory.InventoryReceived to repository WarehouseContext.InventoryRepository
+      }
+      on event Inventory.InventoryShipped is {
+        tell event Inventory.InventoryShipped to repository WarehouseContext.InventoryRepository
+      }
+      on event Inventory.InventoryAdjusted is {
+        tell event Inventory.InventoryAdjusted to repository WarehouseContext.InventoryRepository
+      }
+    } with {
+      briefly "Event receiver"
+      described as {
+        |Receives Inventory events for persistence.
+      }
+    }
+  } with {
+    briefly "Inventory event sink"
+    described as {
+      |Receives Inventory events from streaming.
+    }
+  }
+  connector InventoryEventPipeline is {
+    from outlet WarehouseContext.InventoryEventSource.InventoryEvents to inlet WarehouseContext.InventoryEventSink.IncomingInventoryEvents
+  } with {
+    briefly "Inventory event pipeline"
+    described as {
+      |Wires Inventory event source to sink.
     }
   }
 } with {

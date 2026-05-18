@@ -11,28 +11,36 @@ context MerchantContext is {
 
     handler MerchantPersistence is {
       on command Merchant.SubmitApplication is {
-        prompt "Store merchant application"
+        tell event Merchant.ApplicationSubmitted to entity
+          MerchantContext.Merchant
       }
       on command Merchant.ApproveApplication is {
-        prompt "Update merchant to approved"
+        tell event Merchant.ApplicationApproved to entity
+          MerchantContext.Merchant
       }
       on command Merchant.DeclineApplication is {
-        prompt "Store decline record"
+        tell event Merchant.ApplicationDeclined to entity
+          MerchantContext.Merchant
       }
       on command Merchant.ActivateMerchant is {
-        prompt "Update merchant to active"
+        tell event Merchant.MerchantActivated to entity
+          MerchantContext.Merchant
       }
       on command Merchant.UpdatePricing is {
-        prompt "Update merchant pricing"
+        tell event Merchant.PricingUpdated to entity
+          MerchantContext.Merchant
       }
       on command Merchant.SuspendMerchant is {
-        prompt "Update merchant to suspended"
+        tell event Merchant.MerchantSuspended to entity
+          MerchantContext.Merchant
       }
       on command Merchant.ReactivateMerchant is {
-        prompt "Update merchant to active"
+        tell event Merchant.MerchantReactivated to entity
+          MerchantContext.Merchant
       }
       on command Merchant.TerminateMerchant is {
-        prompt "Update merchant to terminated"
+        tell event Merchant.MerchantTerminated to entity
+          MerchantContext.Merchant
       }
     } with {
       briefly "Persists merchant commands"
@@ -49,6 +57,7 @@ context MerchantContext is {
   }
   // Projector for merchant analytics
   projector MerchantAnalytics is {
+    updates repository MerchantContext.MerchantRepository
     record MerchantStats is  {
       totalApplications: Natural with {
         briefly "Applications"
@@ -93,17 +102,21 @@ context MerchantContext is {
       }
     }
     handler AnalyticsHandler is {
-      on event MerchantContext.Merchant.ApplicationSubmitted is {
-        prompt "Update application counts"
+      on event Merchant.ApplicationSubmitted is {
+        tell event Merchant.ApplicationSubmitted to repository
+          MerchantContext.MerchantRepository
       }
-      on event MerchantContext.Merchant.ApplicationApproved is {
-        prompt "Update approval metrics"
+      on event Merchant.ApplicationApproved is {
+        tell event Merchant.ApplicationApproved to repository
+          MerchantContext.MerchantRepository
       }
-      on event MerchantContext.Merchant.MerchantActivated is {
-        prompt "Update active merchant count"
+      on event Merchant.MerchantActivated is {
+        tell event Merchant.MerchantActivated to repository
+          MerchantContext.MerchantRepository
       }
-      on event MerchantContext.Merchant.MerchantTerminated is {
-        prompt "Update termination metrics"
+      on event Merchant.MerchantTerminated is {
+        tell event Merchant.MerchantTerminated to repository
+          MerchantContext.MerchantRepository
       }
     } with {
       briefly "Maintains merchant analytics"
@@ -115,6 +128,73 @@ context MerchantContext is {
     briefly "Merchant analytics projections"
     described as {
       |Maintains merchant portfolio analytics data.
+    }
+  }
+  source MerchantEventSource is {
+    outlet MerchantEvents is type MerchantEvent
+    handler MerchantEventEmitter is {
+      on init is {
+        tell command InitializeMerchant to entity
+          MerchantContext.Merchant
+      }
+      on other is { ??? }
+      on event Merchant.ApplicationSubmitted is {
+        send event Merchant.ApplicationSubmitted to outlet MerchantEvents
+      }
+      on event Merchant.MerchantActivated is {
+        send event Merchant.MerchantActivated to outlet MerchantEvents
+      }
+      on event Merchant.MerchantSuspended is {
+        send event Merchant.MerchantSuspended to outlet MerchantEvents
+      }
+      on event Merchant.MerchantTerminated is {
+        send event Merchant.MerchantTerminated to outlet MerchantEvents
+      }
+    } with {
+      briefly "Merchant event emitter"
+      described as {
+        |Emits merchant lifecycle events into the streaming
+        |topology.
+      }
+    }
+  } with {
+    briefly "Merchant event source"
+    described as {
+      |Publishes merchant entity events for streaming.
+    }
+  }
+  sink MerchantEventSink is {
+    inlet IncomingMerchantEvents is type MerchantEvent
+    handler MerchantEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Merchant.ApplicationSubmitted is {
+        tell event Merchant.ApplicationSubmitted to repository
+          MerchantContext.MerchantRepository
+      }
+      on event Merchant.MerchantTerminated is {
+        tell event Merchant.MerchantTerminated to repository
+          MerchantContext.MerchantRepository
+      }
+    } with {
+      briefly "Merchant event receiver"
+      described as {
+        |Receives merchant events and persists them.
+      }
+    }
+  } with {
+    briefly "Merchant event sink"
+    described as {
+      |Receives merchant events from the streaming topology.
+    }
+  }
+  connector MerchantEventPipeline is {
+    from outlet MerchantContext.MerchantEventSource.MerchantEvents
+      to inlet MerchantContext.MerchantEventSink.IncomingMerchantEvents
+  } with {
+    briefly "Merchant event pipeline"
+    described as {
+      |Wires merchant events from source to sink.
     }
   }
 } with {

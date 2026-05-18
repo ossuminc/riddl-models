@@ -157,7 +157,49 @@ context DeploymentContext is {
         |State data for an active environment.
       }
     }
-    state Active of type Environment.ActiveEnvironmentData
+    state Active of type Environment.ActiveEnvironmentData is {
+      handler ActiveInitHandler is {
+        on init is {
+          set state Active to "initialize from prior event"
+        }
+      } with {
+        briefly "Initializes Active state"
+        described as {
+          |Handles initialization of the Active state.
+        }
+      }
+    } with {
+      briefly "Active state"
+      described as {
+        |The entity in Active state.
+      }
+    }
+    query GetEnvironment is {
+      environmentId: EnvironmentId with {
+        briefly "ID"
+        described as {
+          |Environment to retrieve.
+        }
+      }
+    } with {
+      briefly "Get Environment"
+      described as {
+        |Retrieves Environment data.
+      }
+    }
+    result EnvironmentResult is {
+      environmentId: EnvironmentId with {
+        briefly "ID"
+        described as {
+          |Environment identifier.
+        }
+      }
+    } with {
+      briefly "Environment result"
+      described as {
+        |Environment data result.
+      }
+    }
     handler EnvironmentHandler is {
       on command RegisterEnvironment is {
         morph entity Environment to state Environment.Active with command RegisterEnvironment
@@ -165,6 +207,9 @@ context DeploymentContext is {
       }
       on command UpdateEnvironmentArtifact is {
         tell event EnvironmentArtifactUpdated to entity Environment
+      }
+      on query GetEnvironment is {
+        tell result EnvironmentResult to entity DeploymentContext.Environment
       }
     } with {
       briefly "Handles environment management commands"
@@ -320,10 +365,18 @@ context DeploymentContext is {
       }
     }
     handler DeploymentRepositoryHandler is {
-      on query FindDeploymentById is { ??? }
-      on query FindDeploymentsByEnvironment is { ??? }
-      on query FindDeploymentsByStatus is { ??? }
-      on query FindRecentDeployments is { ??? }
+      on query FindDeploymentById is {
+        tell result DeploymentResult to entity DeploymentContext.Deployment
+      }
+      on query FindDeploymentsByEnvironment is {
+        tell result DeploymentListResult to entity DeploymentContext.Deployment
+      }
+      on query FindDeploymentsByStatus is {
+        tell result DeploymentListResult to entity DeploymentContext.Deployment
+      }
+      on query FindRecentDeployments is {
+        tell result DeploymentListResult to entity DeploymentContext.Deployment
+      }
     } with {
       briefly "Handles deployment repository queries"
       described as {
@@ -339,6 +392,7 @@ context DeploymentContext is {
     }
   }
   projector DeploymentMetricsProjector is {
+    updates repository DeploymentContext.DeploymentRepository
     record DeploymentMetricsSummary is  {
       environmentId: EnvironmentId with {
         briefly "Environment"
@@ -389,9 +443,15 @@ context DeploymentContext is {
       }
     }
     handler DeploymentMetricsHandler is {
-      on event Deployment.DeploymentCompleted is { ??? }
-      on event Deployment.DeploymentFailed is { ??? }
-      on event Deployment.DeploymentRolledBack is { ??? }
+      on event Deployment.DeploymentCompleted is {
+        tell event Deployment.DeploymentCompleted to repository DeploymentContext.DeploymentRepository
+      }
+      on event Deployment.DeploymentFailed is {
+        tell event Deployment.DeploymentFailed to repository DeploymentContext.DeploymentRepository
+      }
+      on event Deployment.DeploymentRolledBack is {
+        tell event Deployment.DeploymentRolledBack to repository DeploymentContext.DeploymentRepository
+      }
     } with {
       briefly "Handles events to update deployment metrics"
       described as {
@@ -405,6 +465,104 @@ context DeploymentContext is {
       | The DeploymentMetricsProjector maintains read-optimized views of
       | deployment statistics. It tracks success rates, failure rates,
       | rollback frequency, and deployment duration to support dashboards.
+    }
+  }
+  // Event streaming infrastructure
+  type DeploymentEvent is one of {
+    DeploymentContext.Deployment.DeploymentInitiated,
+    DeploymentContext.Deployment.DeploymentApproved,
+    DeploymentContext.Deployment.DeploymentStarted,
+    DeploymentContext.Deployment.DeploymentCompleted,
+    DeploymentContext.Deployment.DeploymentFailed
+  } with {
+    briefly "Deployment events"
+    described as {
+      |Union of all Deployment events for streaming.
+    }
+  }
+  source DeploymentSource is {
+    outlet DeploymentEventOutlet is type DeploymentEvent with {
+      briefly "Event outlet"
+      described as {
+        |Outlet for Deployment events.
+      }
+    }
+    handler DeploymentSourceHandler is {
+      on init is {
+        tell command Deployment.InitializeDeployment to entity DeploymentContext.Deployment
+      }
+      on event Deployment.DeploymentInitiated is {
+        send event Deployment.DeploymentInitiated to outlet DeploymentEventOutlet
+      }
+      on event Deployment.DeploymentApproved is {
+        send event Deployment.DeploymentApproved to outlet DeploymentEventOutlet
+      }
+      on event Deployment.DeploymentStarted is {
+        send event Deployment.DeploymentStarted to outlet DeploymentEventOutlet
+      }
+      on event Deployment.DeploymentCompleted is {
+        send event Deployment.DeploymentCompleted to outlet DeploymentEventOutlet
+      }
+      on event Deployment.DeploymentFailed is {
+        send event Deployment.DeploymentFailed to outlet DeploymentEventOutlet
+      }
+      on other is { ??? }
+    } with {
+      briefly "Source handler"
+      described as {
+        |Handles Deployment events for streaming.
+      }
+    }
+  } with {
+    briefly "Deployment event source"
+    described as {
+      |Publishes Deployment events to the event stream.
+    }
+  }
+  sink DeploymentSink is {
+    inlet DeploymentEventInlet is type DeploymentEvent with {
+      briefly "Event inlet"
+      described as {
+        |Inlet for Deployment events.
+      }
+    }
+    handler DeploymentSinkHandler is {
+      on init is { ??? }
+      on event Deployment.DeploymentInitiated is {
+        tell event Deployment.DeploymentInitiated to repository DeploymentContext.DeploymentRepository
+      }
+      on event Deployment.DeploymentApproved is {
+        tell event Deployment.DeploymentApproved to repository DeploymentContext.DeploymentRepository
+      }
+      on event Deployment.DeploymentStarted is {
+        tell event Deployment.DeploymentStarted to repository DeploymentContext.DeploymentRepository
+      }
+      on event Deployment.DeploymentCompleted is {
+        tell event Deployment.DeploymentCompleted to repository DeploymentContext.DeploymentRepository
+      }
+      on event Deployment.DeploymentFailed is {
+        tell event Deployment.DeploymentFailed to repository DeploymentContext.DeploymentRepository
+      }
+      on other is { ??? }
+    } with {
+      briefly "Sink handler"
+      described as {
+        |Handles incoming Deployment events for persistence.
+      }
+    }
+  } with {
+    briefly "Deployment event sink"
+    described as {
+      |Receives Deployment events for persistence.
+    }
+  }
+  connector DeploymentEventFlow is {
+    from outlet DeploymentContext.DeploymentSource.DeploymentEventOutlet to
+      inlet DeploymentContext.DeploymentSink.DeploymentEventInlet
+  } with {
+    briefly "Deployment event connector"
+    described as {
+      |Wires Deployment source to sink for event flow.
     }
   }
 } with {

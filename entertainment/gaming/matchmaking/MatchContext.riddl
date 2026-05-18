@@ -11,28 +11,36 @@ context MatchContext is {
 
     handler MatchPersistence is {
       on command Match.CreateMatch is {
-        prompt "Store match record"
+        tell event Match.MatchCreated to entity
+          MatchContext.Match
       }
       on command Match.AssignServer is {
-        prompt "Update match with server"
+        tell event Match.ServerAssigned to entity
+          MatchContext.Match
       }
       on command Match.ConfirmPlayer is {
-        prompt "Update confirmed players"
+        tell event Match.PlayerConfirmed to entity
+          MatchContext.Match
       }
       on command Match.StartMatch is {
-        prompt "Update match to active"
+        tell event Match.MatchStarted to entity
+          MatchContext.Match
       }
       on command Match.UpdateScore is {
-        prompt "Update player score"
+        tell event Match.ScoreUpdated to entity
+          MatchContext.Match
       }
       on command Match.EndMatch is {
-        prompt "Update match to completed"
+        tell event Match.MatchEnded to entity
+          MatchContext.Match
       }
       on command Match.CancelMatch is {
-        prompt "Update match to cancelled"
+        tell event Match.MatchCancelled to entity
+          MatchContext.Match
       }
       on command Match.RemovePlayer is {
-        prompt "Remove player from match"
+        tell event Match.PlayerRemoved to entity
+          MatchContext.Match
       }
     } with {
       briefly "Persists match commands"
@@ -49,6 +57,7 @@ context MatchContext is {
   }
   // Projector for matchmaking analytics
   projector MatchAnalytics is {
+    updates repository MatchContext.MatchRepository
     record MatchStats is  {
       gameMode: GameMode with {
         briefly "Mode"
@@ -94,13 +103,16 @@ context MatchContext is {
     }
     handler AnalyticsHandler is {
       on event Match.MatchCreated is {
-        prompt "Update match counts"
+        tell event Match.MatchCreated to repository
+          MatchContext.MatchRepository
       }
       on event Match.MatchStarted is {
-        prompt "Update queue time metrics"
+        tell event Match.MatchStarted to repository
+          MatchContext.MatchRepository
       }
       on event Match.MatchEnded is {
-        prompt "Update completion metrics"
+        tell event Match.MatchEnded to repository
+          MatchContext.MatchRepository
       }
     } with {
       briefly "Maintains match analytics"
@@ -112,6 +124,73 @@ context MatchContext is {
     briefly "Match analytics projections"
     described as {
       |Maintains matchmaking analytics data.
+    }
+  }
+  source MatchEventSource is {
+    outlet MatchEvents is type MatchEvent
+    handler MatchEventEmitter is {
+      on init is {
+        tell command InitializeMatch to entity
+          MatchContext.Match
+      }
+      on other is { ??? }
+      on event Match.MatchCreated is {
+        send event Match.MatchCreated to outlet MatchEvents
+      }
+      on event Match.MatchStarted is {
+        send event Match.MatchStarted to outlet MatchEvents
+      }
+      on event Match.MatchEnded is {
+        send event Match.MatchEnded to outlet MatchEvents
+      }
+      on event Match.MatchCancelled is {
+        send event Match.MatchCancelled to outlet MatchEvents
+      }
+    } with {
+      briefly "Match event emitter"
+      described as {
+        |Emits match lifecycle events into the streaming
+        |topology.
+      }
+    }
+  } with {
+    briefly "Match event source"
+    described as {
+      |Publishes match entity events for streaming.
+    }
+  }
+  sink MatchEventSink is {
+    inlet IncomingMatchEvents is type MatchEvent
+    handler MatchEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Match.MatchCreated is {
+        tell event Match.MatchCreated to repository
+          MatchContext.MatchRepository
+      }
+      on event Match.MatchEnded is {
+        tell event Match.MatchEnded to repository
+          MatchContext.MatchRepository
+      }
+    } with {
+      briefly "Match event receiver"
+      described as {
+        |Receives match events and persists them.
+      }
+    }
+  } with {
+    briefly "Match event sink"
+    described as {
+      |Receives match events from the streaming topology.
+    }
+  }
+  connector MatchEventPipeline is {
+    from outlet MatchContext.MatchEventSource.MatchEvents
+      to inlet MatchContext.MatchEventSink.IncomingMatchEvents
+  } with {
+    briefly "Match event pipeline"
+    described as {
+      |Wires match events from source to sink.
     }
   }
 } with {

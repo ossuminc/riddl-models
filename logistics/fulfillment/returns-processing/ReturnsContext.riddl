@@ -12,19 +12,19 @@ context ReturnsContext is {
 
     handler ReturnsPersistence is {
       on command Return.RequestReturn is {
-        prompt "Store new return record"
+        tell event Return.ReturnRequested to entity ReturnsContext.Return
       }
       on command Return.AuthorizeReturn is {
-        prompt "Update return with RMA"
+        tell event Return.ReturnAuthorized to entity ReturnsContext.Return
       }
       on command Return.ReceiveReturn is {
-        prompt "Update return to received"
+        tell event Return.ReturnReceived to entity ReturnsContext.Return
       }
       on command Return.InspectItem is {
-        prompt "Store inspection result"
+        tell event Return.ItemInspected to entity ReturnsContext.Return
       }
       on command Return.ProcessRefund is {
-        prompt "Update return to completed"
+        tell event Return.RefundProcessed to entity ReturnsContext.Return
       }
     } with {
       briefly "Persists return commands"
@@ -39,6 +39,7 @@ context ReturnsContext is {
     }
   }
   projector ReturnsAnalytics is {
+    updates repository ReturnsContext.ReturnsRepository
     record ReturnsMetrics is  {
       period: String(1,20) with {
         briefly "Period"
@@ -84,13 +85,13 @@ context ReturnsContext is {
     }
     handler AnalyticsHandler is {
       on event Return.ReturnRequested is {
-        prompt "Increment return count"
+        tell event Return.ReturnRequested to repository ReturnsContext.ReturnsRepository
       }
       on event Return.RefundProcessed is {
-        prompt "Calculate processing time and totals"
+        tell event Return.RefundProcessed to repository ReturnsContext.ReturnsRepository
       }
       on event Return.ReturnRejected is {
-        prompt "Update approval rate"
+        tell event Return.ReturnRejected to repository ReturnsContext.ReturnsRepository
       }
     } with {
       briefly "Maintains returns analytics"
@@ -102,6 +103,76 @@ context ReturnsContext is {
     briefly "Returns analytics"
     described as {
       |Returns processing analysis.
+    }
+  }
+  type ReturnEvent is one of {
+    ReturnsContext.Return.ReturnRequested,
+    ReturnsContext.Return.RefundProcessed,
+    ReturnsContext.Return.ReturnRejected
+  } with {
+    briefly "Return event union"
+    described as {
+      |Union of Return events for streaming.
+    }
+  }
+  source ReturnEventSource is {
+    outlet ReturnEvents is type ReturnEvent
+    handler ReturnEventEmitter is {
+      on init is { tell command Return.InitializeReturn to entity ReturnsContext.Return }
+      on other is { ??? }
+      on event Return.ReturnRequested is {
+        send event Return.ReturnRequested to outlet ReturnEvents
+      }
+      on event Return.RefundProcessed is {
+        send event Return.RefundProcessed to outlet ReturnEvents
+      }
+      on event Return.ReturnRejected is {
+        send event Return.ReturnRejected to outlet ReturnEvents
+      }
+    } with {
+      briefly "Event emitter"
+      described as {
+        |Emits Return events to the stream.
+      }
+    }
+  } with {
+    briefly "Return event source"
+    described as {
+      |Publishes Return events to the event stream.
+    }
+  }
+  sink ReturnEventSink is {
+    inlet IncomingReturnEvents is type ReturnEvent
+    handler ReturnEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Return.ReturnRequested is {
+        tell event Return.ReturnRequested to repository ReturnsContext.ReturnsRepository
+      }
+      on event Return.RefundProcessed is {
+        tell event Return.RefundProcessed to repository ReturnsContext.ReturnsRepository
+      }
+      on event Return.ReturnRejected is {
+        tell event Return.ReturnRejected to repository ReturnsContext.ReturnsRepository
+      }
+    } with {
+      briefly "Event receiver"
+      described as {
+        |Receives Return events for persistence.
+      }
+    }
+  } with {
+    briefly "Return event sink"
+    described as {
+      |Receives Return events from streaming.
+    }
+  }
+  connector ReturnEventPipeline is {
+    from outlet ReturnsContext.ReturnEventSource.ReturnEvents to inlet ReturnsContext.ReturnEventSink.IncomingReturnEvents
+  } with {
+    briefly "Return event pipeline"
+    described as {
+      |Wires Return event source to sink.
     }
   }
 } with {

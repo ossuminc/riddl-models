@@ -6,10 +6,10 @@ context ClaimsContext is {
   adaptor PolicyAdapter from context PolicyService is { 
     handler InboundPolicy is {
       on event PolicyService.PolicyDetailsRetrieved is {
-        prompt "Update claim with policy coverage details"
+        tell command FileClaim to entity Claim
       }
       on event PolicyService.CoverageVerified is {
-        prompt "Record coverage verification result on claim"
+        tell command ApproveClaim to entity Claim
       }
     } with {
       briefly "Handles policy events from policy service"
@@ -30,7 +30,7 @@ context ClaimsContext is {
         tell command IssuePay to entity Claim
       }
       on event PaymentService.PaymentVoided is {
-        prompt "Handle voided payment - may require reissue"
+        tell command IssuePay to entity Claim
       }
     } with {
       briefly "Handles payment events from payment service"
@@ -48,13 +48,13 @@ context ClaimsContext is {
   adaptor FraudAdapter from context FraudDetection is { 
     handler InboundFraud is {
       on event FraudDetection.FraudAnalysisComplete is {
-        prompt "Apply fraud risk score to claim and route if high risk"
+        tell command InvestigateClaim to entity Claim
       }
       on event FraudDetection.SIUReferralAccepted is {
-        prompt "Mark claim as under special investigation"
+        tell command InvestigateClaim to entity Claim
       }
       on event FraudDetection.SIUInvestigationClosed is {
-        prompt "Apply SIU findings to claim for decision"
+        tell command ApproveClaim to entity Claim
       }
     } with {
       briefly "Handles fraud detection events"
@@ -78,28 +78,28 @@ context ClaimsContext is {
 
     handler ClaimPersistence is {
       on command Claim.FileClaim is {
-        prompt "Persist new claim to database"
+        tell event Claim.ClaimFiled to entity Claim
       }
       on command Claim.AssignAdjuster is {
-        prompt "Update claim with adjuster assignment"
+        tell event Claim.AdjusterAssigned to entity Claim
       }
       on command Claim.InvestigateClaim is {
-        prompt "Append investigation notes to claim history"
+        tell event Claim.InvestigationUpdated to entity Claim
       }
       on command Claim.SetReserve is {
-        prompt "Update claim reserves and financial exposure"
+        tell event Claim.ReserveEstablished to entity Claim
       }
       on command Claim.ApproveClaim is {
-        prompt "Update claim with approval details"
+        tell event Claim.ClaimApproved to entity Claim
       }
       on command Claim.IssuePay is {
-        prompt "Record payment and update paid amounts"
+        tell event Claim.PaymentIssued to entity Claim
       }
       on command Claim.DenyClaim is {
-        prompt "Update claim with denial details"
+        tell event Claim.ClaimDenied to entity Claim
       }
       on command Claim.CloseClaim is {
-        prompt "Mark claim as closed with final status"
+        tell event Claim.ClaimClosed to entity Claim
       }
     } with {
       briefly "Persists claim events to storage"
@@ -109,19 +109,19 @@ context ClaimsContext is {
     }
     handler ClaimQueries is {
       on query FindClaimById is {
-        prompt "Retrieve claim by its identifier"
+        tell result Claim.ClaimResult to entity Claim
       }
       on query FindClaimsByPolicy is {
-        prompt "Find all claims for a specific policy"
+        tell result Claim.ClaimResult to entity Claim
       }
       on query FindClaimsByAdjuster is {
-        prompt "Find claims assigned to an adjuster"
+        tell result Claim.ClaimResult to entity Claim
       }
       on query FindClaimsByStatus is {
-        prompt "Find claims in a specific status"
+        tell result Claim.ClaimResult to entity Claim
       }
       on query FindOpenClaims is {
-        prompt "Find all claims not in closed status"
+        tell result Claim.ClaimResult to entity Claim
       }
     } with {
       briefly "Query handler for claim repository"
@@ -140,6 +140,7 @@ context ClaimsContext is {
   }
   // Projector for loss ratio analytics
   projector LossRatioProjector is {
+    updates repository ClaimsContext.ClaimRepository
     record LossRatioMetric is  {
       periodStart: Date with {
         briefly "Period start"
@@ -198,16 +199,20 @@ context ClaimsContext is {
     }
     handler LossRatioHandler is {
       on event Claim.ClaimFiled is {
-        prompt "Increment claim counts for loss calculation"
+        tell event Claim.ClaimFiled to repository
+          ClaimsContext.ClaimRepository
       }
       on event Claim.ReserveEstablished is {
-        prompt "Update incurred losses with reserve amounts"
+        tell event Claim.ReserveEstablished to repository
+          ClaimsContext.ClaimRepository
       }
       on event Claim.PaymentIssued is {
-        prompt "Record actual paid amounts to loss calculations"
+        tell event Claim.PaymentIssued to repository
+          ClaimsContext.ClaimRepository
       }
       on event Claim.ClaimClosed is {
-        prompt "Finalize claim in loss calculations"
+        tell event Claim.ClaimClosed to repository
+          ClaimsContext.ClaimRepository
       }
     } with {
       briefly "Event handler for loss ratio projection"
@@ -226,6 +231,7 @@ context ClaimsContext is {
   }
   // Projector for cycle time metrics
   projector CycleTimeProjector is {
+    updates repository ClaimsContext.ClaimRepository
     record CycleTimeMetric is  {
       periodStart: Date with {
         briefly "Period start"
@@ -334,19 +340,24 @@ context ClaimsContext is {
     }
     handler CycleTimeHandler is {
       on event Claim.ClaimFiled is {
-        prompt "Start tracking claim cycle time"
+        tell event Claim.ClaimFiled to repository
+          ClaimsContext.ClaimRepository
       }
       on event Claim.AdjusterAssigned is {
-        prompt "Record assignment timing milestone"
+        tell event Claim.AdjusterAssigned to repository
+          ClaimsContext.ClaimRepository
       }
       on event Claim.ReserveEstablished is {
-        prompt "Record reserve timing milestone"
+        tell event Claim.ReserveEstablished to repository
+          ClaimsContext.ClaimRepository
       }
       on event Claim.InvestigationUpdated is {
-        prompt "Increment touch count for workload tracking"
+        tell event Claim.InvestigationUpdated to repository
+          ClaimsContext.ClaimRepository
       }
       on event Claim.ClaimClosed is {
-        prompt "Finalize cycle time and update aggregates"
+        tell event Claim.ClaimClosed to repository
+          ClaimsContext.ClaimRepository
       }
     } with {
       briefly "Event handler for cycle time projection"
@@ -361,6 +372,75 @@ context ClaimsContext is {
       | Tracks and aggregates claims processing cycle times and
       | activity metrics. Provides operational KPIs for process
       | improvement and staffing decisions.
+    }
+  }
+  source ClaimEventSource is {
+    outlet ClaimEvents is type ClaimEvent
+    handler ClaimEventEmitter is {
+      on init is {
+        tell command InitializeClaim to entity Claim
+      }
+      on other is { ??? }
+      on event Claim.ClaimFiled is {
+        send event Claim.ClaimFiled to outlet ClaimEvents
+      }
+      on event Claim.ClaimApproved is {
+        send event Claim.ClaimApproved to outlet ClaimEvents
+      }
+      on event Claim.PaymentIssued is {
+        send event Claim.PaymentIssued to outlet ClaimEvents
+      }
+      on event Claim.ClaimDenied is {
+        send event Claim.ClaimDenied to outlet ClaimEvents
+      }
+      on event Claim.ClaimClosed is {
+        send event Claim.ClaimClosed to outlet ClaimEvents
+      }
+    } with {
+      briefly "Claim event emitter"
+      described as {
+        |Emits claim lifecycle events into the streaming
+        |topology.
+      }
+    }
+  } with {
+    briefly "Claim event source"
+    described as {
+      |Publishes claim entity events for streaming.
+    }
+  }
+  sink ClaimEventSink is {
+    inlet IncomingClaimEvents is type ClaimEvent
+    handler ClaimEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Claim.ClaimFiled is {
+        tell event Claim.ClaimFiled to repository
+          ClaimsContext.ClaimRepository
+      }
+      on event Claim.ClaimClosed is {
+        tell event Claim.ClaimClosed to repository
+          ClaimsContext.ClaimRepository
+      }
+    } with {
+      briefly "Claim event receiver"
+      described as {
+        |Receives claim events and persists them.
+      }
+    }
+  } with {
+    briefly "Claim event sink"
+    described as {
+      |Receives claim events from the streaming topology.
+    }
+  }
+  connector ClaimEventPipeline is {
+    from outlet ClaimsContext.ClaimEventSource.ClaimEvents
+      to inlet ClaimsContext.ClaimEventSink.IncomingClaimEvents
+  } with {
+    briefly "Claim event pipeline"
+    described as {
+      |Wires claim events from source to sink.
     }
   }
 } with {

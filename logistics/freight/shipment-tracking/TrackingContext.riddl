@@ -11,25 +11,25 @@ context TrackingContext is {
 
     handler ShipmentPersistence is {
       on command Shipment.CreateShipment is {
-        prompt "Store new shipment record"
+        tell event Shipment.ShipmentCreated to entity TrackingContext.Shipment
       }
       on command Shipment.RecordPickup is {
-        prompt "Update shipment with pickup"
+        tell event Shipment.PickupRecorded to entity TrackingContext.Shipment
       }
       on command Shipment.AddTrackingEvent is {
-        prompt "Append tracking event"
+        tell event Shipment.TrackingEventAdded to entity TrackingContext.Shipment
       }
       on command Shipment.UpdateLocation is {
-        prompt "Update current location"
+        tell event Shipment.LocationUpdated to entity TrackingContext.Shipment
       }
       on command Shipment.UpdateETA is {
-        prompt "Update delivery window"
+        tell event Shipment.ETAUpdated to entity TrackingContext.Shipment
       }
       on command Shipment.RecordDelivery is {
-        prompt "Store delivery confirmation"
+        tell event Shipment.DeliveryRecorded to entity TrackingContext.Shipment
       }
       on command Shipment.ReportException is {
-        prompt "Store exception details"
+        tell event Shipment.ExceptionReported to entity TrackingContext.Shipment
       }
     } with {
       briefly "Persists shipment commands"
@@ -44,6 +44,7 @@ context TrackingContext is {
     }
   }
   projector ShipmentAnalytics is {
+    updates repository TrackingContext.ShipmentRepository
     record DeliveryMetrics is  {
       totalShipments: Natural with {
         briefly "Total"
@@ -89,13 +90,13 @@ context TrackingContext is {
     }
     handler AnalyticsHandler is {
       on event Shipment.ShipmentCreated is {
-        prompt "Increment shipment count"
+        tell event Shipment.ShipmentCreated to repository TrackingContext.ShipmentRepository
       }
       on event Shipment.DeliveryRecorded is {
-        prompt "Update delivery statistics"
+        tell event Shipment.DeliveryRecorded to repository TrackingContext.ShipmentRepository
       }
       on event Shipment.ExceptionReported is {
-        prompt "Update exception rate"
+        tell event Shipment.ExceptionReported to repository TrackingContext.ShipmentRepository
       }
     } with {
       briefly "Maintains delivery analytics"
@@ -107,6 +108,76 @@ context TrackingContext is {
     briefly "Shipment analytics"
     described as {
       |Delivery performance tracking.
+    }
+  }
+  type ShipmentEvent is one of {
+    TrackingContext.Shipment.ShipmentCreated,
+    TrackingContext.Shipment.DeliveryRecorded,
+    TrackingContext.Shipment.ExceptionReported
+  } with {
+    briefly "Shipment event union"
+    described as {
+      |Union of Shipment events for streaming.
+    }
+  }
+  source ShipmentEventSource is {
+    outlet ShipmentEvents is type ShipmentEvent
+    handler ShipmentEventEmitter is {
+      on init is { tell command Shipment.InitializeShipment to entity TrackingContext.Shipment }
+      on other is { ??? }
+      on event Shipment.ShipmentCreated is {
+        send event Shipment.ShipmentCreated to outlet ShipmentEvents
+      }
+      on event Shipment.DeliveryRecorded is {
+        send event Shipment.DeliveryRecorded to outlet ShipmentEvents
+      }
+      on event Shipment.ExceptionReported is {
+        send event Shipment.ExceptionReported to outlet ShipmentEvents
+      }
+    } with {
+      briefly "Event emitter"
+      described as {
+        |Emits Shipment events to the stream.
+      }
+    }
+  } with {
+    briefly "Shipment event source"
+    described as {
+      |Publishes Shipment events to the event stream.
+    }
+  }
+  sink ShipmentEventSink is {
+    inlet IncomingShipmentEvents is type ShipmentEvent
+    handler ShipmentEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Shipment.ShipmentCreated is {
+        tell event Shipment.ShipmentCreated to repository TrackingContext.ShipmentRepository
+      }
+      on event Shipment.DeliveryRecorded is {
+        tell event Shipment.DeliveryRecorded to repository TrackingContext.ShipmentRepository
+      }
+      on event Shipment.ExceptionReported is {
+        tell event Shipment.ExceptionReported to repository TrackingContext.ShipmentRepository
+      }
+    } with {
+      briefly "Event receiver"
+      described as {
+        |Receives Shipment events for persistence.
+      }
+    }
+  } with {
+    briefly "Shipment event sink"
+    described as {
+      |Receives Shipment events from streaming.
+    }
+  }
+  connector ShipmentEventPipeline is {
+    from outlet TrackingContext.ShipmentEventSource.ShipmentEvents to inlet TrackingContext.ShipmentEventSink.IncomingShipmentEvents
+  } with {
+    briefly "Shipment event pipeline"
+    described as {
+      |Wires Shipment event source to sink.
     }
   }
 } with {

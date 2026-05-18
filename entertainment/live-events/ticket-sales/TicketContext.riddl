@@ -10,12 +10,11 @@ context TicketContext is {
         tell command PurchaseTicket to entity Ticket
       }
       on event PaymentGateway.PaymentFailed is {
-        prompt "Log payment failure and release reservation"
         tell command CancelReservation to entity Ticket
         error "Payment failed for ticket reservation"
       }
       on event PaymentGateway.RefundCompleted is {
-        prompt "Update ticket status with refund confirmation"
+        tell command RefundTicket to entity Ticket
       }
     } with {
       briefly "Handles payment events from gateway"
@@ -33,10 +32,10 @@ context TicketContext is {
   adaptor VenueAdapter from context VenueManagement is { 
     handler InboundVenue is {
       on event VenueManagement.SeatingChartUpdated is {
-        prompt "Sync seat inventory with updated venue layout"
+        tell command ReleaseTickets to entity Ticket
       }
       on event VenueManagement.VenueCapacityChanged is {
-        prompt "Adjust available ticket inventory based on capacity change"
+        tell command ReleaseTickets to entity Ticket
       }
     } with {
       briefly "Handles venue management events"
@@ -88,28 +87,28 @@ context TicketContext is {
 
     handler TicketPersistence is {
       on command Ticket.CreateEvent is {
-        prompt "Persist new event and initialize ticket inventory"
+        tell event Ticket.EventCreated to entity TicketContext.Ticket
       }
       on command Ticket.ReleaseTickets is {
-        prompt "Update ticket availability status for released inventory"
+        tell event Ticket.TicketsReleased to entity TicketContext.Ticket
       }
       on command Ticket.ReserveTicket is {
-        prompt "Mark ticket as reserved with expiration"
+        tell event Ticket.TicketReserved to entity TicketContext.Ticket
       }
       on command Ticket.PurchaseTicket is {
-        prompt "Update ticket with purchase details and buyer"
+        tell event Ticket.TicketPurchased to entity TicketContext.Ticket
       }
       on command Ticket.TransferTicket is {
-        prompt "Update ticket ownership and add transfer record"
+        tell event Ticket.TicketTransferred to entity TicketContext.Ticket
       }
       on command Ticket.RefundTicket is {
-        prompt "Mark ticket as refunded and return to inventory"
+        tell event Ticket.TicketRefunded to entity TicketContext.Ticket
       }
       on command Ticket.CancelReservation is {
-        prompt "Return ticket to available inventory"
+        tell event Ticket.ReservationCancelled to entity TicketContext.Ticket
       }
       on command Ticket.ScanTicket is {
-        prompt "Mark ticket as used for entry"
+        tell event Ticket.TicketScanned to entity TicketContext.Ticket
       }
     } with {
       briefly "Persists ticket events to storage"
@@ -127,6 +126,7 @@ context TicketContext is {
   }
   // Projector for sales metrics
   projector SalesMetrics is {
+    updates repository TicketContext.TicketRepository
     record EventSalesMetrics is  {
       eventId: EventId with {
         briefly "Event identifier"
@@ -297,22 +297,24 @@ context TicketContext is {
     }
     handler SalesMetricsHandler is {
       on event Ticket.TicketPurchased is {
-        prompt "Update event sales counts and revenue totals"
-        prompt "Update daily sales aggregates"
-        prompt "Recalculate average ticket price"
+        tell event Ticket.TicketPurchased to repository
+          TicketContext.TicketRepository
       }
       on event Ticket.TicketRefunded is {
-        prompt "Decrement sales counts and adjust revenue"
-        prompt "Increment refund metrics"
+        tell event Ticket.TicketRefunded to repository
+          TicketContext.TicketRepository
       }
       on event Ticket.TicketTransferred is {
-        prompt "Increment transfer count for daily metrics"
+        tell event Ticket.TicketTransferred to repository
+          TicketContext.TicketRepository
       }
       on event Ticket.EventCreated is {
-        prompt "Initialize event sales metrics with zero values"
+        tell event Ticket.EventCreated to repository
+          TicketContext.TicketRepository
       }
       on event Ticket.TicketsReleased is {
-        prompt "Update available ticket count for event"
+        tell event Ticket.TicketsReleased to repository
+          TicketContext.TicketRepository
       }
     } with {
       briefly "Projects ticket events for sales analytics"
@@ -326,6 +328,69 @@ context TicketContext is {
       | Maintains aggregated views of sales data for dashboards,
       | promoter reporting, and business intelligence. Tracks
       | sales velocity, revenue, and inventory levels in real-time.
+    }
+  }
+  source TicketEventSource is {
+    outlet TicketEvents is type TicketEvent
+    handler TicketEventEmitter is {
+      on init is {
+        tell command InitializeTicket to entity TicketContext.Ticket
+      }
+      on other is { ??? }
+      on event Ticket.EventCreated is {
+        send event Ticket.EventCreated to outlet TicketEvents
+      }
+      on event Ticket.TicketPurchased is {
+        send event Ticket.TicketPurchased to outlet TicketEvents
+      }
+      on event Ticket.TicketRefunded is {
+        send event Ticket.TicketRefunded to outlet TicketEvents
+      }
+      on event Ticket.TicketScanned is {
+        send event Ticket.TicketScanned to outlet TicketEvents
+      }
+    } with {
+      briefly "Ticket event emitter"
+      described as {
+        |Emits ticket lifecycle events into the streaming topology.
+      }
+    }
+  } with {
+    briefly "Ticket event source"
+    described as {
+      |Publishes ticket entity events for streaming.
+    }
+  }
+  sink TicketEventSink is {
+    inlet IncomingTicketEvents is type TicketEvent
+    handler TicketEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Ticket.EventCreated is {
+        tell event Ticket.EventCreated to repository TicketContext.TicketRepository
+      }
+      on event Ticket.TicketScanned is {
+        tell event Ticket.TicketScanned to repository TicketContext.TicketRepository
+      }
+    } with {
+      briefly "Ticket event receiver"
+      described as {
+        |Receives ticket events and persists them.
+      }
+    }
+  } with {
+    briefly "Ticket event sink"
+    described as {
+      |Receives ticket events from the streaming topology.
+    }
+  }
+  connector TicketEventPipeline is {
+    from outlet TicketContext.TicketEventSource.TicketEvents
+      to inlet TicketContext.TicketEventSink.IncomingTicketEvents
+  } with {
+    briefly "Ticket event pipeline"
+    described as {
+      |Wires ticket events from source to sink.
     }
   }
 } with {

@@ -162,11 +162,21 @@ context CustomerSuccessContext is {
       }
     }
     handler CustomerAccountRepositoryHandler is {
-      on query FindAccountById is { ??? }
-      on query FindAccountsByHealthStatus is { ??? }
-      on query FindAccountsByCsm is { ??? }
-      on query FindAccountsNearingRenewal is { ??? }
-      on query FindAtRiskAccounts is { ??? }
+      on query FindAccountById is {
+        tell result AccountFound to entity CustomerSuccessContext.CustomerAccount
+      }
+      on query FindAccountsByHealthStatus is {
+        tell result AccountsFound to entity CustomerSuccessContext.CustomerAccount
+      }
+      on query FindAccountsByCsm is {
+        tell result AccountsFound to entity CustomerSuccessContext.CustomerAccount
+      }
+      on query FindAccountsNearingRenewal is {
+        tell result AccountsFound to entity CustomerSuccessContext.CustomerAccount
+      }
+      on query FindAtRiskAccounts is {
+        tell result AccountsFound to entity CustomerSuccessContext.CustomerAccount
+      }
     } with {
       briefly "Handles repository queries"
       described as {
@@ -183,6 +193,7 @@ context CustomerSuccessContext is {
   }
   // Projector for health score analytics
   projector HealthScoreTrendsProjector is {
+    updates repository CustomerSuccessContext.CustomerAccountRepository
     record HealthScoreTrend is  {
       accountId: AccountId with {
         briefly "Account"
@@ -313,9 +324,15 @@ context CustomerSuccessContext is {
       }
     }
     handler HealthScoreTrendsHandler is {
-      on event CustomerAccount.HealthScoreUpdated is { ??? }
-      on event CustomerAccount.AccountFlaggedAtRisk is { ??? }
-      on event CustomerAccount.CustomerChurned is { ??? }
+      on event CustomerAccount.HealthScoreUpdated is {
+        tell event CustomerAccount.HealthScoreUpdated to repository CustomerSuccessContext.CustomerAccountRepository
+      }
+      on event CustomerAccount.AccountFlaggedAtRisk is {
+        tell event CustomerAccount.AccountFlaggedAtRisk to repository CustomerSuccessContext.CustomerAccountRepository
+      }
+      on event CustomerAccount.CustomerChurned is {
+        tell event CustomerAccount.CustomerChurned to repository CustomerSuccessContext.CustomerAccountRepository
+      }
     } with {
       briefly "Processes health events"
       described as {
@@ -333,6 +350,7 @@ context CustomerSuccessContext is {
   }
   // Projector for churn analytics
   projector ChurnMetricsProjector is {
+    updates repository CustomerSuccessContext.CustomerAccountRepository
     record ChurnMetric is  {
       period: String(1,20) with {
         briefly "Period"
@@ -506,9 +524,15 @@ context CustomerSuccessContext is {
       }
     }
     handler ChurnMetricsHandler is {
-      on event CustomerAccount.CustomerChurned is { ??? }
-      on event CustomerAccount.AccountFlaggedAtRisk is { ??? }
-      on event CustomerAccount.HealthScoreUpdated is { ??? }
+      on event CustomerAccount.CustomerChurned is {
+        tell event CustomerAccount.CustomerChurned to repository CustomerSuccessContext.CustomerAccountRepository
+      }
+      on event CustomerAccount.AccountFlaggedAtRisk is {
+        tell event CustomerAccount.AccountFlaggedAtRisk to repository CustomerSuccessContext.CustomerAccountRepository
+      }
+      on event CustomerAccount.HealthScoreUpdated is {
+        tell event CustomerAccount.HealthScoreUpdated to repository CustomerSuccessContext.CustomerAccountRepository
+      }
     } with {
       briefly "Processes churn events"
       described as {
@@ -521,6 +545,104 @@ context CustomerSuccessContext is {
       | Provides real-time churn analytics including historical churn rates,
       | revenue impact, reason analysis, and current risk pipeline. Essential
       | for executive reporting and strategic retention planning.
+    }
+  }
+  // Event streaming infrastructure
+  type CustomerAccountEvent is one of {
+    CustomerSuccessContext.CustomerAccount.CustomerOnboarded,
+    CustomerSuccessContext.CustomerAccount.HealthScoreUpdated,
+    CustomerSuccessContext.CustomerAccount.TouchpointRecorded,
+    CustomerSuccessContext.CustomerAccount.AccountFlaggedAtRisk,
+    CustomerSuccessContext.CustomerAccount.CustomerChurned
+  } with {
+    briefly "CustomerAccount events"
+    described as {
+      |Union of all CustomerAccount events for streaming.
+    }
+  }
+  source CustomerAccountSource is {
+    outlet CustomerAccountEventOutlet is type CustomerAccountEvent with {
+      briefly "Event outlet"
+      described as {
+        |Outlet for CustomerAccount events.
+      }
+    }
+    handler CustomerAccountSourceHandler is {
+      on init is {
+        tell command CustomerAccount.InitializeCustomerAccount to entity CustomerSuccessContext.CustomerAccount
+      }
+      on event CustomerAccount.CustomerOnboarded is {
+        send event CustomerAccount.CustomerOnboarded to outlet CustomerAccountEventOutlet
+      }
+      on event CustomerAccount.HealthScoreUpdated is {
+        send event CustomerAccount.HealthScoreUpdated to outlet CustomerAccountEventOutlet
+      }
+      on event CustomerAccount.TouchpointRecorded is {
+        send event CustomerAccount.TouchpointRecorded to outlet CustomerAccountEventOutlet
+      }
+      on event CustomerAccount.AccountFlaggedAtRisk is {
+        send event CustomerAccount.AccountFlaggedAtRisk to outlet CustomerAccountEventOutlet
+      }
+      on event CustomerAccount.CustomerChurned is {
+        send event CustomerAccount.CustomerChurned to outlet CustomerAccountEventOutlet
+      }
+      on other is { ??? }
+    } with {
+      briefly "Source handler"
+      described as {
+        |Handles CustomerAccount events for streaming.
+      }
+    }
+  } with {
+    briefly "CustomerAccount event source"
+    described as {
+      |Publishes CustomerAccount events to the event stream.
+    }
+  }
+  sink CustomerAccountSink is {
+    inlet CustomerAccountEventInlet is type CustomerAccountEvent with {
+      briefly "Event inlet"
+      described as {
+        |Inlet for CustomerAccount events.
+      }
+    }
+    handler CustomerAccountSinkHandler is {
+      on init is { ??? }
+      on event CustomerAccount.CustomerOnboarded is {
+        tell event CustomerAccount.CustomerOnboarded to repository CustomerSuccessContext.CustomerAccountRepository
+      }
+      on event CustomerAccount.HealthScoreUpdated is {
+        tell event CustomerAccount.HealthScoreUpdated to repository CustomerSuccessContext.CustomerAccountRepository
+      }
+      on event CustomerAccount.TouchpointRecorded is {
+        tell event CustomerAccount.TouchpointRecorded to repository CustomerSuccessContext.CustomerAccountRepository
+      }
+      on event CustomerAccount.AccountFlaggedAtRisk is {
+        tell event CustomerAccount.AccountFlaggedAtRisk to repository CustomerSuccessContext.CustomerAccountRepository
+      }
+      on event CustomerAccount.CustomerChurned is {
+        tell event CustomerAccount.CustomerChurned to repository CustomerSuccessContext.CustomerAccountRepository
+      }
+      on other is { ??? }
+    } with {
+      briefly "Sink handler"
+      described as {
+        |Handles incoming CustomerAccount events for persistence.
+      }
+    }
+  } with {
+    briefly "CustomerAccount event sink"
+    described as {
+      |Receives CustomerAccount events for persistence.
+    }
+  }
+  connector CustomerAccountEventFlow is {
+    from outlet CustomerSuccessContext.CustomerAccountSource.CustomerAccountEventOutlet to
+      inlet CustomerSuccessContext.CustomerAccountSink.CustomerAccountEventInlet
+  } with {
+    briefly "CustomerAccount event connector"
+    described as {
+      |Wires CustomerAccount source to sink for event flow.
     }
   }
 } with {

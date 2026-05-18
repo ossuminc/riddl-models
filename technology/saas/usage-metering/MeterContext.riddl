@@ -108,11 +108,21 @@ context MeterContext is {
       }
     }
     handler MeterRepositoryHandler is {
-      on query FindMeterById is { ??? }
-      on query FindByCustomer is { ??? }
-      on query FindBySubscription is { ??? }
-      on query GetCurrentUsage is { ??? }
-      on query GetUsageHistory is { ??? }
+      on query FindMeterById is {
+        tell result MeterResult to entity MeterContext.Meter
+      }
+      on query FindByCustomer is {
+        tell result MetersResult to entity MeterContext.Meter
+      }
+      on query FindBySubscription is {
+        tell result MetersResult to entity MeterContext.Meter
+      }
+      on query GetCurrentUsage is {
+        tell result MeterResult to entity MeterContext.Meter
+      }
+      on query GetUsageHistory is {
+        tell result MetersResult to entity MeterContext.Meter
+      }
     } with {
       briefly "Handles repository queries"
       described as {
@@ -127,6 +137,7 @@ context MeterContext is {
   }
   // Projector for usage analytics
   projector UsageAnalytics is {
+    updates repository MeterContext.MeterRepository
     record AnalyticsData is  {
       totalEvents: Natural with {
         briefly "Events"
@@ -215,10 +226,18 @@ context MeterContext is {
       }
     }
     handler AnalyticsHandler is {
-      on event Meter.UsageEventRecorded is { ??? }
-      on event Meter.UsageAggregated is { ??? }
-      on event Meter.UsageAlertTriggered is { ??? }
-      on event Meter.BillingRecordGenerated is { ??? }
+      on event Meter.UsageEventRecorded is {
+        tell event Meter.UsageEventRecorded to repository MeterContext.MeterRepository
+      }
+      on event Meter.UsageAggregated is {
+        tell event Meter.UsageAggregated to repository MeterContext.MeterRepository
+      }
+      on event Meter.UsageAlertTriggered is {
+        tell event Meter.UsageAlertTriggered to repository MeterContext.MeterRepository
+      }
+      on event Meter.BillingRecordGenerated is {
+        tell event Meter.BillingRecordGenerated to repository MeterContext.MeterRepository
+      }
     } with {
       briefly "Processes analytics events"
       described as {
@@ -229,6 +248,104 @@ context MeterContext is {
     briefly "Usage analytics"
     described as {
       |Projects usage metrics for reporting.
+    }
+  }
+  // Event streaming infrastructure
+  type MeterEvent is one of {
+    MeterContext.Meter.MeterCreated,
+    MeterContext.Meter.UsageEventRecorded,
+    MeterContext.Meter.UsageAggregated,
+    MeterContext.Meter.BillingRecordGenerated,
+    MeterContext.Meter.MeterClosed
+  } with {
+    briefly "Meter events"
+    described as {
+      |Union of all Meter events for streaming.
+    }
+  }
+  source MeterSource is {
+    outlet MeterEventOutlet is type MeterEvent with {
+      briefly "Event outlet"
+      described as {
+        |Outlet for Meter events.
+      }
+    }
+    handler MeterSourceHandler is {
+      on init is {
+        tell command Meter.InitializeMeter to entity MeterContext.Meter
+      }
+      on event Meter.MeterCreated is {
+        send event Meter.MeterCreated to outlet MeterEventOutlet
+      }
+      on event Meter.UsageEventRecorded is {
+        send event Meter.UsageEventRecorded to outlet MeterEventOutlet
+      }
+      on event Meter.UsageAggregated is {
+        send event Meter.UsageAggregated to outlet MeterEventOutlet
+      }
+      on event Meter.BillingRecordGenerated is {
+        send event Meter.BillingRecordGenerated to outlet MeterEventOutlet
+      }
+      on event Meter.MeterClosed is {
+        send event Meter.MeterClosed to outlet MeterEventOutlet
+      }
+      on other is { ??? }
+    } with {
+      briefly "Source handler"
+      described as {
+        |Handles Meter events for streaming.
+      }
+    }
+  } with {
+    briefly "Meter event source"
+    described as {
+      |Publishes Meter events to the event stream.
+    }
+  }
+  sink MeterSink is {
+    inlet MeterEventInlet is type MeterEvent with {
+      briefly "Event inlet"
+      described as {
+        |Inlet for Meter events.
+      }
+    }
+    handler MeterSinkHandler is {
+      on init is { ??? }
+      on event Meter.MeterCreated is {
+        tell event Meter.MeterCreated to repository MeterContext.MeterRepository
+      }
+      on event Meter.UsageEventRecorded is {
+        tell event Meter.UsageEventRecorded to repository MeterContext.MeterRepository
+      }
+      on event Meter.UsageAggregated is {
+        tell event Meter.UsageAggregated to repository MeterContext.MeterRepository
+      }
+      on event Meter.BillingRecordGenerated is {
+        tell event Meter.BillingRecordGenerated to repository MeterContext.MeterRepository
+      }
+      on event Meter.MeterClosed is {
+        tell event Meter.MeterClosed to repository MeterContext.MeterRepository
+      }
+      on other is { ??? }
+    } with {
+      briefly "Sink handler"
+      described as {
+        |Handles incoming Meter events for persistence.
+      }
+    }
+  } with {
+    briefly "Meter event sink"
+    described as {
+      |Receives Meter events for persistence.
+    }
+  }
+  connector MeterEventFlow is {
+    from outlet MeterContext.MeterSource.MeterEventOutlet to
+      inlet MeterContext.MeterSink.MeterEventInlet
+  } with {
+    briefly "Meter event connector"
+    described as {
+      |Wires Meter source to sink for event flow.
     }
   }
 } with {

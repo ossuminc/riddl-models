@@ -12,22 +12,22 @@ context InventoryControlContext is {
 
     handler InventoryPersistence is {
       on command InventoryItem.CreateInventoryItem is {
-        prompt "Store new inventory item"
+        tell event InventoryItem.InventoryItemCreated to entity InventoryControlContext.InventoryItem
       }
       on command InventoryItem.AdjustQuantity is {
-        prompt "Update item quantity"
+        tell event InventoryItem.QuantityAdjusted to entity InventoryControlContext.InventoryItem
       }
       on command InventoryItem.ReserveStock is {
-        prompt "Update reserved quantity"
+        tell event InventoryItem.StockReserved to entity InventoryControlContext.InventoryItem
       }
       on command InventoryItem.RecordCycleCount is {
-        prompt "Store cycle count result"
+        tell event InventoryItem.CycleCountRecorded to entity InventoryControlContext.InventoryItem
       }
       on command InventoryItem.RelocateItem is {
-        prompt "Update item bin location"
+        tell event InventoryItem.ItemRelocated to entity InventoryControlContext.InventoryItem
       }
       on command InventoryItem.DeactivateItem is {
-        prompt "Mark item as inactive"
+        tell event InventoryItem.ItemDeactivated to entity InventoryControlContext.InventoryItem
       }
     } with {
       briefly "Persists inventory commands"
@@ -42,6 +42,7 @@ context InventoryControlContext is {
     }
   }
   projector InventoryAccuracyMetrics is {
+    updates repository InventoryControlContext.InventoryRepository
     record WarehouseAccuracy is  {
       totalItemsCounted: Natural with {
         briefly "Counted"
@@ -81,13 +82,13 @@ context InventoryControlContext is {
     }
     handler AccuracyMetricsHandler is {
       on event InventoryItem.CycleCountRecorded is {
-        prompt "Update count totals and accuracy rate"
+        tell event InventoryItem.CycleCountRecorded to repository InventoryControlContext.InventoryRepository
       }
       on event InventoryItem.QuantityAdjusted is {
-        prompt "Increment adjustment count"
+        tell event InventoryItem.QuantityAdjusted to repository InventoryControlContext.InventoryRepository
       }
       on event InventoryItem.ReplenishmentTriggered is {
-        prompt "Track replenishment frequency"
+        tell event InventoryItem.ReplenishmentTriggered to repository InventoryControlContext.InventoryRepository
       }
     } with {
       briefly "Maintains accuracy metrics"
@@ -99,6 +100,76 @@ context InventoryControlContext is {
     briefly "Inventory accuracy metrics"
     described as {
       |Inventory accuracy and count analytics.
+    }
+  }
+  type InventoryItemEvent is one of {
+    InventoryControlContext.InventoryItem.InventoryItemCreated,
+    InventoryControlContext.InventoryItem.QuantityAdjusted,
+    InventoryControlContext.InventoryItem.ItemDeactivated
+  } with {
+    briefly "InventoryItem event union"
+    described as {
+      |Union of InventoryItem events for streaming.
+    }
+  }
+  source InventoryItemEventSource is {
+    outlet InventoryItemEvents is type InventoryItemEvent
+    handler InventoryItemEventEmitter is {
+      on init is { tell command InventoryItem.InitializeInventoryItem to entity InventoryControlContext.InventoryItem }
+      on other is { ??? }
+      on event InventoryItem.InventoryItemCreated is {
+        send event InventoryItem.InventoryItemCreated to outlet InventoryItemEvents
+      }
+      on event InventoryItem.QuantityAdjusted is {
+        send event InventoryItem.QuantityAdjusted to outlet InventoryItemEvents
+      }
+      on event InventoryItem.ItemDeactivated is {
+        send event InventoryItem.ItemDeactivated to outlet InventoryItemEvents
+      }
+    } with {
+      briefly "Event emitter"
+      described as {
+        |Emits InventoryItem events to the stream.
+      }
+    }
+  } with {
+    briefly "InventoryItem event source"
+    described as {
+      |Publishes InventoryItem events to the event stream.
+    }
+  }
+  sink InventoryItemEventSink is {
+    inlet IncomingInventoryItemEvents is type InventoryItemEvent
+    handler InventoryItemEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event InventoryItem.InventoryItemCreated is {
+        tell event InventoryItem.InventoryItemCreated to repository InventoryControlContext.InventoryRepository
+      }
+      on event InventoryItem.QuantityAdjusted is {
+        tell event InventoryItem.QuantityAdjusted to repository InventoryControlContext.InventoryRepository
+      }
+      on event InventoryItem.ItemDeactivated is {
+        tell event InventoryItem.ItemDeactivated to repository InventoryControlContext.InventoryRepository
+      }
+    } with {
+      briefly "Event receiver"
+      described as {
+        |Receives InventoryItem events for persistence.
+      }
+    }
+  } with {
+    briefly "InventoryItem event sink"
+    described as {
+      |Receives InventoryItem events from streaming.
+    }
+  }
+  connector InventoryItemEventPipeline is {
+    from outlet InventoryControlContext.InventoryItemEventSource.InventoryItemEvents to inlet InventoryControlContext.InventoryItemEventSink.IncomingInventoryItemEvents
+  } with {
+    briefly "InventoryItem event pipeline"
+    described as {
+      |Wires InventoryItem event source to sink.
     }
   }
 } with {

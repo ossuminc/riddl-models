@@ -11,19 +11,19 @@ context FulfillmentContext is {
 
     handler FulfillmentPersistence is {
       on command FulfillmentOrder.CreateFulfillmentOrder is {
-        prompt "Store new fulfillment order"
+        tell event FulfillmentOrder.FulfillmentOrderCreated to entity FulfillmentContext.FulfillmentOrder
       }
       on command FulfillmentOrder.AllocateInventory is {
-        prompt "Update order with pick tasks"
+        tell event FulfillmentOrder.InventoryAllocated to entity FulfillmentContext.FulfillmentOrder
       }
       on command FulfillmentOrder.PackOrder is {
-        prompt "Update order packing status"
+        tell event FulfillmentOrder.OrderPacked to entity FulfillmentContext.FulfillmentOrder
       }
       on command FulfillmentOrder.ShipOrder is {
-        prompt "Update order to shipped"
+        tell event FulfillmentOrder.OrderShipped to entity FulfillmentContext.FulfillmentOrder
       }
       on command FulfillmentOrder.ConfirmDelivery is {
-        prompt "Update order to delivered"
+        tell event FulfillmentOrder.DeliveryConfirmed to entity FulfillmentContext.FulfillmentOrder
       }
     } with {
       briefly "Persists fulfillment commands"
@@ -38,6 +38,7 @@ context FulfillmentContext is {
     }
   }
   projector FulfillmentMetrics is {
+    updates repository FulfillmentContext.FulfillmentRepository
     record OrderMetrics is  {
       ordersReceived: Natural with {
         briefly "Received"
@@ -77,16 +78,16 @@ context FulfillmentContext is {
     }
     handler MetricsHandler is {
       on event FulfillmentOrder.FulfillmentOrderCreated is {
-        prompt "Increment orders received"
+        tell event FulfillmentOrder.FulfillmentOrderCreated to repository FulfillmentContext.FulfillmentRepository
       }
       on event FulfillmentOrder.OrderShipped is {
-        prompt "Increment orders shipped"
+        tell event FulfillmentOrder.OrderShipped to repository FulfillmentContext.FulfillmentRepository
       }
       on event FulfillmentOrder.DeliveryConfirmed is {
-        prompt "Increment orders delivered and calculate time"
+        tell event FulfillmentOrder.DeliveryConfirmed to repository FulfillmentContext.FulfillmentRepository
       }
       on event FulfillmentOrder.DeliveryFailed is {
-        prompt "Increment orders failed"
+        tell event FulfillmentOrder.DeliveryFailed to repository FulfillmentContext.FulfillmentRepository
       }
     } with {
       briefly "Maintains fulfillment metrics"
@@ -98,6 +99,76 @@ context FulfillmentContext is {
     briefly "Fulfillment metrics"
     described as {
       |Order fulfillment analytics.
+    }
+  }
+  type FulfillmentOrderEvent is one of {
+    FulfillmentContext.FulfillmentOrder.FulfillmentOrderCreated,
+    FulfillmentContext.FulfillmentOrder.OrderShipped,
+    FulfillmentContext.FulfillmentOrder.DeliveryConfirmed
+  } with {
+    briefly "FulfillmentOrder event union"
+    described as {
+      |Union of FulfillmentOrder events for streaming.
+    }
+  }
+  source FulfillmentOrderEventSource is {
+    outlet FulfillmentOrderEvents is type FulfillmentOrderEvent
+    handler FulfillmentOrderEventEmitter is {
+      on init is { tell command FulfillmentOrder.InitializeFulfillmentOrder to entity FulfillmentContext.FulfillmentOrder }
+      on other is { ??? }
+      on event FulfillmentOrder.FulfillmentOrderCreated is {
+        send event FulfillmentOrder.FulfillmentOrderCreated to outlet FulfillmentOrderEvents
+      }
+      on event FulfillmentOrder.OrderShipped is {
+        send event FulfillmentOrder.OrderShipped to outlet FulfillmentOrderEvents
+      }
+      on event FulfillmentOrder.DeliveryConfirmed is {
+        send event FulfillmentOrder.DeliveryConfirmed to outlet FulfillmentOrderEvents
+      }
+    } with {
+      briefly "Event emitter"
+      described as {
+        |Emits FulfillmentOrder events to the stream.
+      }
+    }
+  } with {
+    briefly "FulfillmentOrder event source"
+    described as {
+      |Publishes FulfillmentOrder events to the event stream.
+    }
+  }
+  sink FulfillmentOrderEventSink is {
+    inlet IncomingFulfillmentOrderEvents is type FulfillmentOrderEvent
+    handler FulfillmentOrderEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event FulfillmentOrder.FulfillmentOrderCreated is {
+        tell event FulfillmentOrder.FulfillmentOrderCreated to repository FulfillmentContext.FulfillmentRepository
+      }
+      on event FulfillmentOrder.OrderShipped is {
+        tell event FulfillmentOrder.OrderShipped to repository FulfillmentContext.FulfillmentRepository
+      }
+      on event FulfillmentOrder.DeliveryConfirmed is {
+        tell event FulfillmentOrder.DeliveryConfirmed to repository FulfillmentContext.FulfillmentRepository
+      }
+    } with {
+      briefly "Event receiver"
+      described as {
+        |Receives FulfillmentOrder events for persistence.
+      }
+    }
+  } with {
+    briefly "FulfillmentOrder event sink"
+    described as {
+      |Receives FulfillmentOrder events from streaming.
+    }
+  }
+  connector FulfillmentOrderEventPipeline is {
+    from outlet FulfillmentContext.FulfillmentOrderEventSource.FulfillmentOrderEvents to inlet FulfillmentContext.FulfillmentOrderEventSink.IncomingFulfillmentOrderEvents
+  } with {
+    briefly "FulfillmentOrder event pipeline"
+    described as {
+      |Wires FulfillmentOrder event source to sink.
     }
   }
 } with {

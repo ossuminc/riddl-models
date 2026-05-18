@@ -141,7 +141,27 @@ context TeamContext is {
         |Data for an active team in the league.
       }
     }
-    state ActiveTeam of type Team.ActiveTeamData
+    command InitializeTeam is { ??? } with {
+      briefly "Initialize team"
+      described as {
+        |Initialize the Team entity on source startup.
+      }
+    }
+    state ActiveTeam of type Team.ActiveTeamData is {
+      handler ActiveTeamInitHandler is {
+        on init is { set state ActiveTeam to "initialize from TeamCreated event" }
+      } with {
+        briefly "Active team init handler"
+        described as {
+          |Initializes the Active team state.
+        }
+      }
+    } with {
+      briefly "Active team"
+      described as {
+        |Team is active in the league.
+      }
+    }
     handler TeamHandler is {
       on command CreateTeam is {
         tell event TeamCreated to entity Team
@@ -291,6 +311,7 @@ context TeamContext is {
   }
   // Projector for roster analytics
   projector RosterMetrics is {
+    updates repository TeamContext.PlayerRepository
     record RosterMetricsRecord is  {
       teamId: TeamId with {
         briefly "Team identifier"
@@ -394,6 +415,70 @@ context TeamContext is {
       | Maintains a continuously updated view of roster composition,
       | salary cap utilization, and team demographics. Used for
       | front office decision support and league compliance reporting.
+    }
+  }
+  source PlayerEventSource is {
+    outlet PlayerEvents is type PlayerEvent
+    handler PlayerEventEmitter is {
+      on init is {
+        tell command InitializePlayer to entity
+          TeamContext.Player
+      }
+      on other is { ??? }
+      on event Player.PlayerSigned is {
+        send event Player.PlayerSigned to outlet PlayerEvents
+      }
+      on event Player.PlayerTraded is {
+        send event Player.PlayerTraded to outlet PlayerEvents
+      }
+      on event Player.PlayerReleased is {
+        send event Player.PlayerReleased to outlet PlayerEvents
+      }
+    } with {
+      briefly "Player event emitter"
+      described as {
+        |Emits player lifecycle events into the streaming
+        |topology.
+      }
+    }
+  } with {
+    briefly "Player event source"
+    described as {
+      |Publishes player entity events for streaming.
+    }
+  }
+  sink PlayerEventSink is {
+    inlet IncomingPlayerEvents is type PlayerEvent
+    handler PlayerEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Player.PlayerSigned is {
+        tell event Player.PlayerSigned to repository
+          TeamContext.PlayerRepository
+      }
+      on event Player.PlayerReleased is {
+        tell event Player.PlayerReleased to repository
+          TeamContext.PlayerRepository
+      }
+    } with {
+      briefly "Player event receiver"
+      described as {
+        |Receives player events and persists them.
+      }
+    }
+  } with {
+    briefly "Player event sink"
+    described as {
+      |Receives player events from the streaming topology.
+    }
+  }
+  connector PlayerEventPipeline is {
+    from outlet TeamContext.PlayerEventSource.PlayerEvents
+      to inlet TeamContext.PlayerEventSink.IncomingPlayerEvents
+  } with {
+    briefly "Player event pipeline"
+    described as {
+      |Wires player events from source to sink.
     }
   }
 } with {

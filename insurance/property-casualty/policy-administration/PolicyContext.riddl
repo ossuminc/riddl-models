@@ -12,28 +12,36 @@ context PolicyContext is {
 
     handler PolicyPersistence is {
       on command Policy.IssuePolicy is {
-        prompt "Store new policy record"
+        tell event Policy.PolicyIssued to entity
+          PolicyContext.Policy
       }
       on command Policy.AddEndorsement is {
-        prompt "Update policy with endorsement"
+        tell event Policy.EndorsementAdded to entity
+          PolicyContext.Policy
       }
       on command Policy.ProcessRenewal is {
-        prompt "Store renewal and new policy term"
+        tell event Policy.RenewalProcessed to entity
+          PolicyContext.Policy
       }
       on command Policy.DeclineRenewal is {
-        prompt "Mark policy for expiration"
+        tell event Policy.RenewalDeclined to entity
+          PolicyContext.Policy
       }
       on command Policy.CancelPolicy is {
-        prompt "Update policy to cancelled status"
+        tell event Policy.PolicyCancelled to entity
+          PolicyContext.Policy
       }
       on command Policy.ReinstatPolicy is {
-        prompt "Update policy to active status"
+        tell event Policy.PolicyReinstated to entity
+          PolicyContext.Policy
       }
       on command Policy.UpdateBilling is {
-        prompt "Update billing schedule"
+        tell event Policy.BillingUpdated to entity
+          PolicyContext.Policy
       }
       on command Policy.GenerateRenewalOffer is {
-        prompt "Store renewal offer"
+        tell event Policy.RenewalOfferGenerated to entity
+          PolicyContext.Policy
       }
     } with {
       briefly "Persists policy commands"
@@ -50,6 +58,7 @@ context PolicyContext is {
   }
   // Projector for policy metrics
   projector PolicyMetricsProjector is {
+    updates repository PolicyContext.PolicyRepository
     record PolicyMetricsView is  {
       policyId: PolicyId with {
         briefly "Policy"
@@ -168,19 +177,24 @@ context PolicyContext is {
     }
     handler MetricsHandler is {
       on event Policy.PolicyIssued is {
-        prompt "Update policy counts and premium totals"
+        tell event Policy.PolicyIssued to repository
+          PolicyContext.PolicyRepository
       }
       on event Policy.EndorsementAdded is {
-        prompt "Update endorsement counts"
+        tell event Policy.EndorsementAdded to repository
+          PolicyContext.PolicyRepository
       }
       on event Policy.RenewalProcessed is {
-        prompt "Update renewal statistics"
+        tell event Policy.RenewalProcessed to repository
+          PolicyContext.PolicyRepository
       }
       on event Policy.PolicyCancelled is {
-        prompt "Update cancellation counts"
+        tell event Policy.PolicyCancelled to repository
+          PolicyContext.PolicyRepository
       }
       on event Policy.PolicyReinstated is {
-        prompt "Update reinstatement metrics"
+        tell event Policy.PolicyReinstated to repository
+          PolicyContext.PolicyRepository
       }
     } with {
       briefly "Maintains policy metrics"
@@ -193,6 +207,73 @@ context PolicyContext is {
     described as {
       | Maintains read-optimized views of policy data for
       | dashboards, reporting, and portfolio analysis.
+    }
+  }
+  source PolicyEventSource is {
+    outlet PolicyEvents is type PolicyEvent
+    handler PolicyEventEmitter is {
+      on init is {
+        tell command InitializePolicy to entity
+          PolicyContext.Policy
+      }
+      on other is { ??? }
+      on event Policy.PolicyIssued is {
+        send event Policy.PolicyIssued to outlet PolicyEvents
+      }
+      on event Policy.PolicyCancelled is {
+        send event Policy.PolicyCancelled to outlet PolicyEvents
+      }
+      on event Policy.RenewalProcessed is {
+        send event Policy.RenewalProcessed to outlet PolicyEvents
+      }
+      on event Policy.PolicyReinstated is {
+        send event Policy.PolicyReinstated to outlet PolicyEvents
+      }
+    } with {
+      briefly "Policy event emitter"
+      described as {
+        |Emits policy lifecycle events into the streaming
+        |topology.
+      }
+    }
+  } with {
+    briefly "Policy event source"
+    described as {
+      |Publishes policy entity events for streaming.
+    }
+  }
+  sink PolicyEventSink is {
+    inlet IncomingPolicyEvents is type PolicyEvent
+    handler PolicyEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Policy.PolicyIssued is {
+        tell event Policy.PolicyIssued to repository
+          PolicyContext.PolicyRepository
+      }
+      on event Policy.PolicyCancelled is {
+        tell event Policy.PolicyCancelled to repository
+          PolicyContext.PolicyRepository
+      }
+    } with {
+      briefly "Policy event receiver"
+      described as {
+        |Receives policy events and persists them.
+      }
+    }
+  } with {
+    briefly "Policy event sink"
+    described as {
+      |Receives policy events from the streaming topology.
+    }
+  }
+  connector PolicyEventPipeline is {
+    from outlet PolicyContext.PolicyEventSource.PolicyEvents
+      to inlet PolicyContext.PolicyEventSink.IncomingPolicyEvents
+  } with {
+    briefly "Policy event pipeline"
+    described as {
+      |Wires policy events from source to sink.
     }
   }
 } with {

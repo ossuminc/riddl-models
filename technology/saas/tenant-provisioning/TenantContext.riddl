@@ -11,28 +11,28 @@ context TenantContext is {
 
     handler TenantPersistence is {
       on command Tenant.CreateTenant is {
-        prompt "Store new tenant"
+        tell event Tenant.TenantCreated to entity TenantContext.Tenant
       }
       on command Tenant.ConfigureTenant is {
-        prompt "Update tenant configuration"
+        tell event Tenant.TenantConfigured to entity TenantContext.Tenant
       }
       on command Tenant.ProvisionResource is {
-        prompt "Store provisioned resource"
+        tell event Tenant.ResourceProvisioned to entity TenantContext.Tenant
       }
       on command Tenant.ScaleResource is {
-        prompt "Update resource scaling"
+        tell event Tenant.ResourceScaled to entity TenantContext.Tenant
       }
       on command Tenant.UpgradeTier is {
-        prompt "Update tenant tier"
+        tell event Tenant.TierUpgraded to entity TenantContext.Tenant
       }
       on command Tenant.SuspendTenant is {
-        prompt "Update tenant to suspended"
+        tell event Tenant.TenantSuspended to entity TenantContext.Tenant
       }
       on command Tenant.ReactivateTenant is {
-        prompt "Update tenant to active"
+        tell event Tenant.TenantReactivated to entity TenantContext.Tenant
       }
       on command Tenant.DecommissionTenant is {
-        prompt "Archive tenant data"
+        tell event Tenant.TenantDecommissioned to entity TenantContext.Tenant
       }
     } with {
       briefly "Persists tenant commands"
@@ -49,6 +49,7 @@ context TenantContext is {
   }
   // Projector for tenant analytics
   projector TenantAnalytics is {
+    updates repository TenantContext.TenantRepository
     record TenantStats is  {
       totalTenants: Natural with {
         briefly "Total"
@@ -88,16 +89,16 @@ context TenantContext is {
     }
     handler AnalyticsHandler is {
       on event Tenant.TenantCreated is {
-        prompt "Update tenant counts"
+        tell event Tenant.TenantCreated to repository TenantContext.TenantRepository
       }
       on event Tenant.ResourceProvisioned is {
-        prompt "Update resource metrics"
+        tell event Tenant.ResourceProvisioned to repository TenantContext.TenantRepository
       }
       on event Tenant.TierUpgraded is {
-        prompt "Update tier distribution"
+        tell event Tenant.TierUpgraded to repository TenantContext.TenantRepository
       }
       on event Tenant.TenantDecommissioned is {
-        prompt "Update decommission metrics"
+        tell event Tenant.TenantDecommissioned to repository TenantContext.TenantRepository
       }
     } with {
       briefly "Maintains tenant analytics"
@@ -109,6 +110,104 @@ context TenantContext is {
     briefly "Tenant analytics projections"
     described as {
       |Maintains platform tenant analytics data.
+    }
+  }
+  // Event streaming infrastructure
+  type TenantEvent is one of {
+    TenantContext.Tenant.TenantCreated,
+    TenantContext.Tenant.TenantConfigured,
+    TenantContext.Tenant.ResourceProvisioned,
+    TenantContext.Tenant.ResourceScaled,
+    TenantContext.Tenant.TenantDecommissioned
+  } with {
+    briefly "Tenant events"
+    described as {
+      |Union of all Tenant events for streaming.
+    }
+  }
+  source TenantSource is {
+    outlet TenantEventOutlet is type TenantEvent with {
+      briefly "Event outlet"
+      described as {
+        |Outlet for Tenant events.
+      }
+    }
+    handler TenantSourceHandler is {
+      on init is {
+        tell command Tenant.InitializeTenant to entity TenantContext.Tenant
+      }
+      on event Tenant.TenantCreated is {
+        send event Tenant.TenantCreated to outlet TenantEventOutlet
+      }
+      on event Tenant.TenantConfigured is {
+        send event Tenant.TenantConfigured to outlet TenantEventOutlet
+      }
+      on event Tenant.ResourceProvisioned is {
+        send event Tenant.ResourceProvisioned to outlet TenantEventOutlet
+      }
+      on event Tenant.ResourceScaled is {
+        send event Tenant.ResourceScaled to outlet TenantEventOutlet
+      }
+      on event Tenant.TenantDecommissioned is {
+        send event Tenant.TenantDecommissioned to outlet TenantEventOutlet
+      }
+      on other is { ??? }
+    } with {
+      briefly "Source handler"
+      described as {
+        |Handles Tenant events for streaming.
+      }
+    }
+  } with {
+    briefly "Tenant event source"
+    described as {
+      |Publishes Tenant events to the event stream.
+    }
+  }
+  sink TenantSink is {
+    inlet TenantEventInlet is type TenantEvent with {
+      briefly "Event inlet"
+      described as {
+        |Inlet for Tenant events.
+      }
+    }
+    handler TenantSinkHandler is {
+      on init is { ??? }
+      on event Tenant.TenantCreated is {
+        tell event Tenant.TenantCreated to repository TenantContext.TenantRepository
+      }
+      on event Tenant.TenantConfigured is {
+        tell event Tenant.TenantConfigured to repository TenantContext.TenantRepository
+      }
+      on event Tenant.ResourceProvisioned is {
+        tell event Tenant.ResourceProvisioned to repository TenantContext.TenantRepository
+      }
+      on event Tenant.ResourceScaled is {
+        tell event Tenant.ResourceScaled to repository TenantContext.TenantRepository
+      }
+      on event Tenant.TenantDecommissioned is {
+        tell event Tenant.TenantDecommissioned to repository TenantContext.TenantRepository
+      }
+      on other is { ??? }
+    } with {
+      briefly "Sink handler"
+      described as {
+        |Handles incoming Tenant events for persistence.
+      }
+    }
+  } with {
+    briefly "Tenant event sink"
+    described as {
+      |Receives Tenant events for persistence.
+    }
+  }
+  connector TenantEventFlow is {
+    from outlet TenantContext.TenantSource.TenantEventOutlet to
+      inlet TenantContext.TenantSink.TenantEventInlet
+  } with {
+    briefly "Tenant event connector"
+    described as {
+      |Wires Tenant source to sink for event flow.
     }
   }
 } with {

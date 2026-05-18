@@ -11,22 +11,28 @@ context TicketingContext is {
 
     handler TicketingPersistence is {
       on command Ticket.CreateTicket is {
-        prompt "Store new ticket"
+        tell event Ticket.TicketCreated to entity
+          TicketingContext.Ticket
       }
       on command Ticket.ReserveTicket is {
-        prompt "Update ticket to reserved"
+        tell event Ticket.TicketReserved to entity
+          TicketingContext.Ticket
       }
       on command Ticket.PurchaseTicket is {
-        prompt "Update ticket to purchased"
+        tell event Ticket.TicketPurchased to entity
+          TicketingContext.Ticket
       }
       on command Ticket.DeliverTicket is {
-        prompt "Update ticket delivery info"
+        tell event Ticket.TicketDelivered to entity
+          TicketingContext.Ticket
       }
       on command Ticket.ValidateTicket is {
-        prompt "Update ticket to validated"
+        tell event Ticket.TicketValidated to entity
+          TicketingContext.Ticket
       }
       on command Ticket.RefundTicket is {
-        prompt "Update ticket to refunded"
+        tell event Ticket.TicketRefunded to entity
+          TicketingContext.Ticket
       }
     } with {
       briefly "Persists ticketing commands"
@@ -41,6 +47,7 @@ context TicketingContext is {
     }
   }
   projector TicketingMetrics is {
+    updates repository TicketingContext.TicketingRepository
     record SalesMetrics is  {
       ticketsCreated: Natural with {
         briefly "Created"
@@ -80,16 +87,20 @@ context TicketingContext is {
     }
     handler MetricsHandler is {
       on event Ticket.TicketCreated is {
-        prompt "Increment tickets created"
+        tell event Ticket.TicketCreated to repository
+          TicketingContext.TicketingRepository
       }
       on event Ticket.TicketPurchased is {
-        prompt "Increment tickets sold and update revenue"
+        tell event Ticket.TicketPurchased to repository
+          TicketingContext.TicketingRepository
       }
       on event Ticket.TicketRefunded is {
-        prompt "Increment tickets refunded and adjust revenue"
+        tell event Ticket.TicketRefunded to repository
+          TicketingContext.TicketingRepository
       }
       on event Ticket.TicketValidated is {
-        prompt "Track entry validation count"
+        tell event Ticket.TicketValidated to repository
+          TicketingContext.TicketingRepository
       }
     } with {
       briefly "Maintains ticketing metrics"
@@ -101,6 +112,73 @@ context TicketingContext is {
     briefly "Ticketing metrics"
     described as {
       |Ticket sales and entry analytics.
+    }
+  }
+  source TicketEventSource is {
+    outlet TicketEvents is type TicketEvent
+    handler TicketEventEmitter is {
+      on init is {
+        tell command InitializeTicket to entity
+          TicketingContext.Ticket
+      }
+      on other is { ??? }
+      on event Ticket.TicketCreated is {
+        send event Ticket.TicketCreated to outlet TicketEvents
+      }
+      on event Ticket.TicketPurchased is {
+        send event Ticket.TicketPurchased to outlet TicketEvents
+      }
+      on event Ticket.TicketRefunded is {
+        send event Ticket.TicketRefunded to outlet TicketEvents
+      }
+      on event Ticket.TicketValidated is {
+        send event Ticket.TicketValidated to outlet TicketEvents
+      }
+    } with {
+      briefly "Ticket event emitter"
+      described as {
+        |Emits ticket lifecycle events into the streaming
+        |topology.
+      }
+    }
+  } with {
+    briefly "Ticket event source"
+    described as {
+      |Publishes ticket entity events for streaming.
+    }
+  }
+  sink TicketEventSink is {
+    inlet IncomingTicketEvents is type TicketEvent
+    handler TicketEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Ticket.TicketCreated is {
+        tell event Ticket.TicketCreated to repository
+          TicketingContext.TicketingRepository
+      }
+      on event Ticket.TicketRefunded is {
+        tell event Ticket.TicketRefunded to repository
+          TicketingContext.TicketingRepository
+      }
+    } with {
+      briefly "Ticket event receiver"
+      described as {
+        |Receives ticket events and persists them.
+      }
+    }
+  } with {
+    briefly "Ticket event sink"
+    described as {
+      |Receives ticket events from the streaming topology.
+    }
+  }
+  connector TicketEventPipeline is {
+    from outlet TicketingContext.TicketEventSource.TicketEvents
+      to inlet TicketingContext.TicketEventSink.IncomingTicketEvents
+  } with {
+    briefly "Ticket event pipeline"
+    described as {
+      |Wires ticket events from source to sink.
     }
   }
 } with {

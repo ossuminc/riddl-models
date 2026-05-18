@@ -11,28 +11,28 @@ context StreamContext is {
 
     handler StreamPersistence is {
       on command Stream.StartStream is {
-        prompt "Store stream session"
+        tell event Stream.StreamStarted to entity StreamContext.Stream
       }
       on command Stream.PauseStream is {
-        prompt "Update stream status to paused"
+        tell event Stream.StreamPaused to entity StreamContext.Stream
       }
       on command Stream.ResumeStream is {
-        prompt "Update stream status to playing"
+        tell event Stream.StreamResumed to entity StreamContext.Stream
       }
       on command Stream.SeekPosition is {
-        prompt "Update stream position"
+        tell event Stream.PositionSeeked to entity StreamContext.Stream
       }
       on command Stream.ChangeQuality is {
-        prompt "Update stream quality"
+        tell event Stream.QualityChanged to entity StreamContext.Stream
       }
       on command Stream.ReportMetrics is {
-        prompt "Store stream metrics"
+        tell event Stream.MetricsReported to entity StreamContext.Stream
       }
       on command Stream.EndStream is {
-        prompt "Update stream to ended"
+        tell event Stream.StreamEnded to entity StreamContext.Stream
       }
       on command Stream.ReportError is {
-        prompt "Store stream error"
+        tell event Stream.StreamErrorOccurred to entity StreamContext.Stream
       }
     } with {
       briefly "Persists stream commands"
@@ -49,6 +49,7 @@ context StreamContext is {
   }
   // Projector for streaming analytics
   projector StreamAnalytics is {
+    updates repository StreamContext.StreamRepository
     record StreamStats is  {
       contentId: ContentId with {
         briefly "Content"
@@ -94,13 +95,13 @@ context StreamContext is {
     }
     handler AnalyticsHandler is {
       on event Stream.StreamStarted is {
-        prompt "Increment view counts"
+        tell event Stream.StreamStarted to repository StreamContext.StreamRepository
       }
       on event Stream.MetricsReported is {
-        prompt "Update quality metrics"
+        tell event Stream.MetricsReported to repository StreamContext.StreamRepository
       }
       on event Stream.StreamEnded is {
-        prompt "Update watch time metrics"
+        tell event Stream.StreamEnded to repository StreamContext.StreamRepository
       }
     } with {
       briefly "Maintains stream analytics"
@@ -112,6 +113,53 @@ context StreamContext is {
     briefly "Stream analytics projections"
     described as {
       |Maintains streaming analytics data.
+    }
+  }
+  source StreamEventSource is {
+    outlet StreamEvents is type StreamEvent
+    handler StreamEventEmitter is {
+      on init is { tell command InitializeStream to entity StreamContext.Stream }
+      on other is { ??? }
+      on event Stream.StreamStarted is { send event Stream.StreamStarted to outlet StreamEvents }
+      on event Stream.StreamEnded is { send event Stream.StreamEnded to outlet StreamEvents }
+      on event Stream.StreamErrorOccurred is { send event Stream.StreamErrorOccurred to outlet StreamEvents }
+    } with {
+      briefly "Stream event emitter"
+      described as {
+        |Emits stream lifecycle events into streaming topology.
+      }
+    }
+  } with {
+    briefly "Stream event source"
+    described as {
+      |Publishes stream entity events for streaming.
+    }
+  }
+  sink StreamEventSink is {
+    inlet IncomingStreamEvents is type StreamEvent
+    handler StreamEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Stream.StreamStarted is { tell event Stream.StreamStarted to repository StreamContext.StreamRepository }
+      on event Stream.StreamEnded is { tell event Stream.StreamEnded to repository StreamContext.StreamRepository }
+    } with {
+      briefly "Stream event receiver"
+      described as {
+        |Receives stream events and persists them.
+      }
+    }
+  } with {
+    briefly "Stream event sink"
+    described as {
+      |Receives stream events from streaming topology.
+    }
+  }
+  connector StreamEventPipeline is {
+    from outlet StreamContext.StreamEventSource.StreamEvents to inlet StreamContext.StreamEventSink.IncomingStreamEvents
+  } with {
+    briefly "Stream event pipeline"
+    described as {
+      |Wires stream events from source to sink.
     }
   }
 } with {

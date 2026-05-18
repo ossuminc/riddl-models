@@ -2,7 +2,6 @@
 context WorkOrderContext is {
   include "types.riddl"
   include "WorkOrder.riddl"
-  // Repository for work order persistence
   repository WorkOrderRepository is {
     schema WorkOrderData is relational
       of workOrders as type WorkOrder
@@ -12,40 +11,40 @@ context WorkOrderContext is {
 
     handler WorkOrderPersistence is {
       on command WorkOrder.CreateWorkOrder is {
-        prompt "Store new work order"
+        tell event WorkOrder.WorkOrderCreated to entity WorkOrderContext.WorkOrder
       }
       on command WorkOrder.ReleaseWorkOrder is {
-        prompt "Update to released"
+        tell event WorkOrder.WorkOrderReleased to entity WorkOrderContext.WorkOrder
       }
       on command WorkOrder.IssueMaterials is {
-        prompt "Store material issues"
+        tell event WorkOrder.MaterialsIssued to entity WorkOrderContext.WorkOrder
       }
       on command WorkOrder.StartWorkOrder is {
-        prompt "Update to in progress"
+        tell event WorkOrder.WorkOrderStarted to entity WorkOrderContext.WorkOrder
       }
       on command WorkOrder.StartOperation is {
-        prompt "Update operation status"
+        tell event WorkOrder.OperationStarted to entity WorkOrderContext.WorkOrder
       }
       on command WorkOrder.CompleteOperation is {
-        prompt "Update operation completion"
+        tell event WorkOrder.OperationCompleted to entity WorkOrderContext.WorkOrder
       }
       on command WorkOrder.RecordLabor is {
-        prompt "Store labor entry"
+        tell event WorkOrder.LaborRecorded to entity WorkOrderContext.WorkOrder
       }
       on command WorkOrder.RecordQuality is {
-        prompt "Store quality result"
+        tell event WorkOrder.QualityRecorded to entity WorkOrderContext.WorkOrder
       }
       on command WorkOrder.PlaceOnHold is {
-        prompt "Update to on hold"
+        tell event WorkOrder.WorkOrderOnHold to entity WorkOrderContext.WorkOrder
       }
       on command WorkOrder.ReleaseHold is {
-        prompt "Update hold release"
+        tell event WorkOrder.HoldReleased to entity WorkOrderContext.WorkOrder
       }
       on command WorkOrder.CompleteWorkOrder is {
-        prompt "Update to completed"
+        tell event WorkOrder.WorkOrderCompleted to entity WorkOrderContext.WorkOrder
       }
       on command WorkOrder.CancelWorkOrder is {
-        prompt "Update to cancelled"
+        tell event WorkOrder.WorkOrderCancelled to entity WorkOrderContext.WorkOrder
       }
     } with {
       briefly "Persists work order events"
@@ -60,43 +59,25 @@ context WorkOrderContext is {
       | work orders, operations, and production data.
     }
   }
-  // Projector for production analytics
   projector ProductionAnalytics is {
+    updates repository WorkOrderContext.WorkOrderRepository
     record ProductionStats is  {
-      activeWorkOrders: Natural with {
-        briefly "Active"
-        described as {
-          |Active work orders.
+      activeWorkOrders: Natural with { briefly "Active" described as { |Active work orders.
         }
       }
-      completedToday: Natural with {
-        briefly "Completed"
-        described as {
-          |Completed today.
+      completedToday: Natural with { briefly "Completed" described as { |Completed today.
         }
       }
-      onTimeDelivery: Decimal(5,4) with {
-        briefly "OTD"
-        described as {
-          |On-time delivery rate.
+      onTimeDelivery: Decimal(5,4) with { briefly "OTD" described as { |On-time delivery rate.
         }
       }
-      firstPassYield: Decimal(5,4) with {
-        briefly "FPY"
-        described as {
-          |First pass yield.
+      firstPassYield: Decimal(5,4) with { briefly "FPY" described as { |First pass yield.
         }
       }
-      oee: Decimal(5,4) with {
-        briefly "OEE"
-        described as {
-          |Overall equipment effectiveness.
+      oee: Decimal(5,4) with { briefly "OEE" described as { |Overall equipment effectiveness.
         }
       }
-      averageCycleTime: Natural with {
-        briefly "Cycle time"
-        described as {
-          |Average cycle time (min).
+      averageCycleTime: Natural with { briefly "Cycle time" described as { |Average cycle time (min).
         }
       }
     } with {
@@ -107,16 +88,16 @@ context WorkOrderContext is {
     }
     handler AnalyticsHandler is {
       on event WorkOrder.WorkOrderStarted is {
-        prompt "Update active counts"
+        tell event WorkOrder.WorkOrderStarted to repository WorkOrderContext.WorkOrderRepository
       }
       on event WorkOrder.WorkOrderCompleted is {
-        prompt "Update completion metrics"
+        tell event WorkOrder.WorkOrderCompleted to repository WorkOrderContext.WorkOrderRepository
       }
       on event WorkOrder.QualityRecorded is {
-        prompt "Update quality metrics"
+        tell event WorkOrder.QualityRecorded to repository WorkOrderContext.WorkOrderRepository
       }
       on event WorkOrder.OperationCompleted is {
-        prompt "Update cycle time metrics"
+        tell event WorkOrder.OperationCompleted to repository WorkOrderContext.WorkOrderRepository
       }
     } with {
       briefly "Maintains production analytics"
@@ -128,6 +109,76 @@ context WorkOrderContext is {
     briefly "Production analytics projections"
     described as {
       |Maintains manufacturing analytics data.
+    }
+  }
+  type WorkOrderEvent is one of {
+    WorkOrderContext.WorkOrder.WorkOrderCreated,
+    WorkOrderContext.WorkOrder.WorkOrderCompleted,
+    WorkOrderContext.WorkOrder.WorkOrderCancelled
+  } with {
+    briefly "WorkOrder event union"
+    described as {
+      |Union of WorkOrder events for streaming.
+    }
+  }
+  source WorkOrderEventSource is {
+    outlet WorkOrderEvents is type WorkOrderEvent
+    handler WorkOrderEventEmitter is {
+      on init is { tell command WorkOrder.InitializeWorkOrder to entity WorkOrderContext.WorkOrder }
+      on other is { ??? }
+      on event WorkOrder.WorkOrderCreated is {
+        send event WorkOrder.WorkOrderCreated to outlet WorkOrderEvents
+      }
+      on event WorkOrder.WorkOrderCompleted is {
+        send event WorkOrder.WorkOrderCompleted to outlet WorkOrderEvents
+      }
+      on event WorkOrder.WorkOrderCancelled is {
+        send event WorkOrder.WorkOrderCancelled to outlet WorkOrderEvents
+      }
+    } with {
+      briefly "Event emitter"
+      described as {
+        |Emits WorkOrder events to the stream.
+      }
+    }
+  } with {
+    briefly "WorkOrder event source"
+    described as {
+      |Publishes WorkOrder events to the event stream.
+    }
+  }
+  sink WorkOrderEventSink is {
+    inlet IncomingWorkOrderEvents is type WorkOrderEvent
+    handler WorkOrderEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event WorkOrder.WorkOrderCreated is {
+        tell event WorkOrder.WorkOrderCreated to repository WorkOrderContext.WorkOrderRepository
+      }
+      on event WorkOrder.WorkOrderCompleted is {
+        tell event WorkOrder.WorkOrderCompleted to repository WorkOrderContext.WorkOrderRepository
+      }
+      on event WorkOrder.WorkOrderCancelled is {
+        tell event WorkOrder.WorkOrderCancelled to repository WorkOrderContext.WorkOrderRepository
+      }
+    } with {
+      briefly "Event receiver"
+      described as {
+        |Receives WorkOrder events for persistence.
+      }
+    }
+  } with {
+    briefly "WorkOrder event sink"
+    described as {
+      |Receives WorkOrder events from streaming.
+    }
+  }
+  connector WorkOrderEventPipeline is {
+    from outlet WorkOrderContext.WorkOrderEventSource.WorkOrderEvents to inlet WorkOrderContext.WorkOrderEventSink.IncomingWorkOrderEvents
+  } with {
+    briefly "WorkOrder event pipeline"
+    described as {
+      |Wires WorkOrder event source to sink.
     }
   }
 } with {

@@ -11,28 +11,36 @@ context PaymentContext is {
 
     handler PaymentPersistence is {
       on command Payment.AuthorizePayment is {
-        prompt "Store payment authorization"
+        tell event Payment.PaymentAuthorized to entity
+          PaymentContext.Payment
       }
       on command Payment.DeclinePayment is {
-        prompt "Store decline record"
+        tell event Payment.PaymentDeclined to entity
+          PaymentContext.Payment
       }
       on command Payment.CapturePayment is {
-        prompt "Update payment to captured"
+        tell event Payment.PaymentCaptured to entity
+          PaymentContext.Payment
       }
       on command Payment.VoidPayment is {
-        prompt "Update payment to voided"
+        tell event Payment.PaymentVoided to entity
+          PaymentContext.Payment
       }
       on command Payment.RefundPayment is {
-        prompt "Store refund record"
+        tell event Payment.PaymentRefunded to entity
+          PaymentContext.Payment
       }
       on command Payment.SettlePayment is {
-        prompt "Update payment to settled"
+        tell event Payment.PaymentSettled to entity
+          PaymentContext.Payment
       }
       on command Payment.RecordDispute is {
-        prompt "Store dispute record"
+        tell event Payment.DisputeRecorded to entity
+          PaymentContext.Payment
       }
       on command Payment.ResolveDispute is {
-        prompt "Update dispute resolution"
+        tell event Payment.DisputeResolved to entity
+          PaymentContext.Payment
       }
     } with {
       briefly "Persists payment commands"
@@ -49,6 +57,7 @@ context PaymentContext is {
   }
   // Projector for payment analytics
   projector PaymentAnalytics is {
+    updates repository PaymentContext.PaymentRepository
     record PaymentStats is  {
       merchantId: MerchantId with {
         briefly "Merchant"
@@ -94,13 +103,16 @@ context PaymentContext is {
     }
     handler AnalyticsHandler is {
       on event Payment.PaymentAuthorized is {
-        prompt "Update transaction counts"
+        tell event Payment.PaymentAuthorized to repository
+          PaymentContext.PaymentRepository
       }
       on event Payment.PaymentCaptured is {
-        prompt "Update volume metrics"
+        tell event Payment.PaymentCaptured to repository
+          PaymentContext.PaymentRepository
       }
       on event Payment.DisputeRecorded is {
-        prompt "Update chargeback metrics"
+        tell event Payment.DisputeRecorded to repository
+          PaymentContext.PaymentRepository
       }
     } with {
       briefly "Maintains payment analytics"
@@ -112,6 +124,73 @@ context PaymentContext is {
     briefly "Payment analytics projections"
     described as {
       |Maintains payment processing analytics data.
+    }
+  }
+  source PaymentEventSource is {
+    outlet PaymentEvents is type PaymentEvent
+    handler PaymentEventEmitter is {
+      on init is {
+        tell command InitializePayment to entity
+          PaymentContext.Payment
+      }
+      on other is { ??? }
+      on event Payment.PaymentAuthorized is {
+        send event Payment.PaymentAuthorized to outlet PaymentEvents
+      }
+      on event Payment.PaymentCaptured is {
+        send event Payment.PaymentCaptured to outlet PaymentEvents
+      }
+      on event Payment.PaymentSettled is {
+        send event Payment.PaymentSettled to outlet PaymentEvents
+      }
+      on event Payment.DisputeRecorded is {
+        send event Payment.DisputeRecorded to outlet PaymentEvents
+      }
+    } with {
+      briefly "Payment event emitter"
+      described as {
+        |Emits payment lifecycle events into the streaming
+        |topology.
+      }
+    }
+  } with {
+    briefly "Payment event source"
+    described as {
+      |Publishes payment entity events for streaming.
+    }
+  }
+  sink PaymentEventSink is {
+    inlet IncomingPaymentEvents is type PaymentEvent
+    handler PaymentEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Payment.PaymentAuthorized is {
+        tell event Payment.PaymentAuthorized to repository
+          PaymentContext.PaymentRepository
+      }
+      on event Payment.PaymentSettled is {
+        tell event Payment.PaymentSettled to repository
+          PaymentContext.PaymentRepository
+      }
+    } with {
+      briefly "Payment event receiver"
+      described as {
+        |Receives payment events and persists them.
+      }
+    }
+  } with {
+    briefly "Payment event sink"
+    described as {
+      |Receives payment events from the streaming topology.
+    }
+  }
+  connector PaymentEventPipeline is {
+    from outlet PaymentContext.PaymentEventSource.PaymentEvents
+      to inlet PaymentContext.PaymentEventSink.IncomingPaymentEvents
+  } with {
+    briefly "Payment event pipeline"
+    described as {
+      |Wires payment events from source to sink.
     }
   }
 } with {

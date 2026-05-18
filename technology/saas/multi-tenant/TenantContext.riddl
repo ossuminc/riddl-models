@@ -12,22 +12,22 @@ context TenantContext is {
 
     handler TenantPersistence is {
       on command Tenant.ProvisionTenant is {
-        prompt "Store new tenant record"
+        tell event Tenant.TenantProvisioned to entity TenantContext.Tenant
       }
       on command Tenant.ActivateTenant is {
-        prompt "Update tenant to active"
+        tell event Tenant.TenantActivated to entity TenantContext.Tenant
       }
       on command Tenant.UpdateSettings is {
-        prompt "Store tenant settings"
+        tell event Tenant.SettingsUpdated to entity TenantContext.Tenant
       }
       on command Tenant.AddUser is {
-        prompt "Store tenant user"
+        tell event Tenant.UserAdded to entity TenantContext.Tenant
       }
       on command Tenant.RecordUsage is {
-        prompt "Store usage metrics"
+        tell event Tenant.UsageRecorded to entity TenantContext.Tenant
       }
       on command Tenant.DeactivateTenant is {
-        prompt "Update tenant to deactivated"
+        tell event Tenant.TenantDeactivated to entity TenantContext.Tenant
       }
     } with {
       briefly "Persists tenant commands"
@@ -42,6 +42,7 @@ context TenantContext is {
     }
   }
   projector PlatformAnalytics is {
+    updates repository TenantContext.TenantRepository
     record PlatformMetrics is  {
       totalTenants: Natural with {
         briefly "Total"
@@ -81,16 +82,16 @@ context TenantContext is {
     }
     handler AnalyticsHandler is {
       on event Tenant.TenantProvisioned is {
-        prompt "Increment tenant count"
+        tell event Tenant.TenantProvisioned to repository TenantContext.TenantRepository
       }
       on event Tenant.UserAdded is {
-        prompt "Increment user count"
+        tell event Tenant.UserAdded to repository TenantContext.TenantRepository
       }
       on event Tenant.UsageRecorded is {
-        prompt "Aggregate storage usage"
+        tell event Tenant.UsageRecorded to repository TenantContext.TenantRepository
       }
       on event Tenant.TierChanged is {
-        prompt "Recalculate MRR"
+        tell event Tenant.TierChanged to repository TenantContext.TenantRepository
       }
     } with {
       briefly "Maintains platform analytics"
@@ -102,6 +103,104 @@ context TenantContext is {
     briefly "Platform analytics"
     described as {
       |Multi-tenant platform metrics.
+    }
+  }
+  // Event streaming infrastructure
+  type TenantEvent is one of {
+    TenantContext.Tenant.TenantProvisioned,
+    TenantContext.Tenant.TenantActivated,
+    TenantContext.Tenant.SettingsUpdated,
+    TenantContext.Tenant.UserAdded,
+    TenantContext.Tenant.TenantDeactivated
+  } with {
+    briefly "Tenant events"
+    described as {
+      |Union of all Tenant events for streaming.
+    }
+  }
+  source TenantSource is {
+    outlet TenantEventOutlet is type TenantEvent with {
+      briefly "Event outlet"
+      described as {
+        |Outlet for Tenant events.
+      }
+    }
+    handler TenantSourceHandler is {
+      on init is {
+        tell command Tenant.InitializeTenant to entity TenantContext.Tenant
+      }
+      on event Tenant.TenantProvisioned is {
+        send event Tenant.TenantProvisioned to outlet TenantEventOutlet
+      }
+      on event Tenant.TenantActivated is {
+        send event Tenant.TenantActivated to outlet TenantEventOutlet
+      }
+      on event Tenant.SettingsUpdated is {
+        send event Tenant.SettingsUpdated to outlet TenantEventOutlet
+      }
+      on event Tenant.UserAdded is {
+        send event Tenant.UserAdded to outlet TenantEventOutlet
+      }
+      on event Tenant.TenantDeactivated is {
+        send event Tenant.TenantDeactivated to outlet TenantEventOutlet
+      }
+      on other is { ??? }
+    } with {
+      briefly "Source handler"
+      described as {
+        |Handles Tenant events for streaming.
+      }
+    }
+  } with {
+    briefly "Tenant event source"
+    described as {
+      |Publishes Tenant events to the event stream.
+    }
+  }
+  sink TenantSink is {
+    inlet TenantEventInlet is type TenantEvent with {
+      briefly "Event inlet"
+      described as {
+        |Inlet for Tenant events.
+      }
+    }
+    handler TenantSinkHandler is {
+      on init is { ??? }
+      on event Tenant.TenantProvisioned is {
+        tell event Tenant.TenantProvisioned to repository TenantContext.TenantRepository
+      }
+      on event Tenant.TenantActivated is {
+        tell event Tenant.TenantActivated to repository TenantContext.TenantRepository
+      }
+      on event Tenant.SettingsUpdated is {
+        tell event Tenant.SettingsUpdated to repository TenantContext.TenantRepository
+      }
+      on event Tenant.UserAdded is {
+        tell event Tenant.UserAdded to repository TenantContext.TenantRepository
+      }
+      on event Tenant.TenantDeactivated is {
+        tell event Tenant.TenantDeactivated to repository TenantContext.TenantRepository
+      }
+      on other is { ??? }
+    } with {
+      briefly "Sink handler"
+      described as {
+        |Handles incoming Tenant events for persistence.
+      }
+    }
+  } with {
+    briefly "Tenant event sink"
+    described as {
+      |Receives Tenant events for persistence.
+    }
+  }
+  connector TenantEventFlow is {
+    from outlet TenantContext.TenantSource.TenantEventOutlet to
+      inlet TenantContext.TenantSink.TenantEventInlet
+  } with {
+    briefly "Tenant event connector"
+    described as {
+      |Wires Tenant source to sink for event flow.
     }
   }
 } with {

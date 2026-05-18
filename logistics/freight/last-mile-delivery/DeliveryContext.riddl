@@ -12,28 +12,28 @@ context DeliveryContext is {
 
     handler DeliveryPersistence is {
       on command Delivery.CreateDelivery is {
-        prompt "Store new delivery record"
+        tell event Delivery.DeliveryCreated to entity DeliveryContext.Delivery
       }
       on command Delivery.AssignToRoute is {
-        prompt "Update route assignment"
+        tell event Delivery.AssignedToRoute to entity DeliveryContext.Delivery
       }
       on command Delivery.MarkOutForDelivery is {
-        prompt "Update delivery status"
+        tell event Delivery.MarkedOutForDelivery to entity DeliveryContext.Delivery
       }
       on command Delivery.UpdateETA is {
-        prompt "Update estimated arrival"
+        tell event Delivery.ETAUpdated to entity DeliveryContext.Delivery
       }
       on command Delivery.AttemptDelivery is {
-        prompt "Store delivery attempt"
+        tell event Delivery.DeliveryAttempted to entity DeliveryContext.Delivery
       }
       on command Delivery.CompleteDelivery is {
-        prompt "Store proof of delivery"
+        tell event Delivery.DeliveryCompleted to entity DeliveryContext.Delivery
       }
       on command Delivery.FailDelivery is {
-        prompt "Update to failed status"
+        tell event Delivery.DeliveryFailed to entity DeliveryContext.Delivery
       }
       on command Delivery.RescheduleDelivery is {
-        prompt "Update delivery schedule"
+        tell event Delivery.DeliveryRescheduled to entity DeliveryContext.Delivery
       }
     } with {
       briefly "Persists delivery commands"
@@ -48,6 +48,7 @@ context DeliveryContext is {
     }
   }
   projector DeliveryAnalytics is {
+    updates repository DeliveryContext.DeliveryRepository
     record DailyMetrics is  {
       totalDeliveries: Natural with {
         briefly "Total"
@@ -93,16 +94,16 @@ context DeliveryContext is {
     }
     handler AnalyticsHandler is {
       on event Delivery.DeliveryCreated is {
-        prompt "Increment delivery count"
+        tell event Delivery.DeliveryCreated to repository DeliveryContext.DeliveryRepository
       }
       on event Delivery.DeliveryCompleted is {
-        prompt "Update completion metrics"
+        tell event Delivery.DeliveryCompleted to repository DeliveryContext.DeliveryRepository
       }
       on event Delivery.DeliveryFailed is {
-        prompt "Update failure metrics"
+        tell event Delivery.DeliveryFailed to repository DeliveryContext.DeliveryRepository
       }
       on event Delivery.DeliveryAttempted is {
-        prompt "Track attempt statistics"
+        tell event Delivery.DeliveryAttempted to repository DeliveryContext.DeliveryRepository
       }
     } with {
       briefly "Maintains delivery analytics"
@@ -114,6 +115,76 @@ context DeliveryContext is {
     briefly "Delivery analytics"
     described as {
       |Delivery performance tracking.
+    }
+  }
+  type DeliveryEvent is one of {
+    DeliveryContext.Delivery.DeliveryCreated,
+    DeliveryContext.Delivery.DeliveryCompleted,
+    DeliveryContext.Delivery.DeliveryFailed
+  } with {
+    briefly "Delivery event union"
+    described as {
+      |Union of Delivery events for streaming.
+    }
+  }
+  source DeliveryEventSource is {
+    outlet DeliveryEvents is type DeliveryEvent
+    handler DeliveryEventEmitter is {
+      on init is { tell command Delivery.InitializeDelivery to entity DeliveryContext.Delivery }
+      on other is { ??? }
+      on event Delivery.DeliveryCreated is {
+        send event Delivery.DeliveryCreated to outlet DeliveryEvents
+      }
+      on event Delivery.DeliveryCompleted is {
+        send event Delivery.DeliveryCompleted to outlet DeliveryEvents
+      }
+      on event Delivery.DeliveryFailed is {
+        send event Delivery.DeliveryFailed to outlet DeliveryEvents
+      }
+    } with {
+      briefly "Event emitter"
+      described as {
+        |Emits Delivery events to the stream.
+      }
+    }
+  } with {
+    briefly "Delivery event source"
+    described as {
+      |Publishes Delivery events to the event stream.
+    }
+  }
+  sink DeliveryEventSink is {
+    inlet IncomingDeliveryEvents is type DeliveryEvent
+    handler DeliveryEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Delivery.DeliveryCreated is {
+        tell event Delivery.DeliveryCreated to repository DeliveryContext.DeliveryRepository
+      }
+      on event Delivery.DeliveryCompleted is {
+        tell event Delivery.DeliveryCompleted to repository DeliveryContext.DeliveryRepository
+      }
+      on event Delivery.DeliveryFailed is {
+        tell event Delivery.DeliveryFailed to repository DeliveryContext.DeliveryRepository
+      }
+    } with {
+      briefly "Event receiver"
+      described as {
+        |Receives Delivery events for persistence.
+      }
+    }
+  } with {
+    briefly "Delivery event sink"
+    described as {
+      |Receives Delivery events from streaming.
+    }
+  }
+  connector DeliveryEventPipeline is {
+    from outlet DeliveryContext.DeliveryEventSource.DeliveryEvents to inlet DeliveryContext.DeliveryEventSink.IncomingDeliveryEvents
+  } with {
+    briefly "Delivery event pipeline"
+    described as {
+      |Wires Delivery event source to sink.
     }
   }
 } with {

@@ -11,31 +11,40 @@ context TransferContext is {
 
     handler TransferPersistence is {
       on command Transfer.SubmitTransfer is {
-        prompt "Store transfer record"
+        tell event Transfer.TransferSubmitted to entity
+          TransferContext.Transfer
       }
       on command Transfer.ValidateTransfer is {
-        prompt "Update transfer status to validated"
+        tell event Transfer.TransferValidated to entity
+          TransferContext.Transfer
       }
       on command Transfer.ApplyFees is {
-        prompt "Store transfer fees"
+        tell event Transfer.FeesApplied to entity
+          TransferContext.Transfer
       }
       on command Transfer.ApplyExchangeRate is {
-        prompt "Store exchange rate"
+        tell event Transfer.ExchangeRateApplied to entity
+          TransferContext.Transfer
       }
       on command Transfer.RouteTransfer is {
-        prompt "Update with network reference"
+        tell event Transfer.TransferRouted to entity
+          TransferContext.Transfer
       }
       on command Transfer.ProcessTransfer is {
-        prompt "Update transfer status"
+        tell event Transfer.TransferProcessed to entity
+          TransferContext.Transfer
       }
       on command Transfer.CompleteTransfer is {
-        prompt "Update transfer to completed"
+        tell event Transfer.TransferCompleted to entity
+          TransferContext.Transfer
       }
       on command Transfer.ReturnTransfer is {
-        prompt "Update transfer to returned"
+        tell event Transfer.TransferReturned to entity
+          TransferContext.Transfer
       }
       on command Transfer.CancelTransfer is {
-        prompt "Update transfer to cancelled"
+        tell event Transfer.TransferCancelled to entity
+          TransferContext.Transfer
       }
     } with {
       briefly "Persists transfer commands"
@@ -52,6 +61,7 @@ context TransferContext is {
   }
   // Projector for transfer analytics
   projector TransferAnalytics is {
+    updates repository TransferContext.TransferRepository
     record TransferStats is  {
       transferType: TransferType with {
         briefly "Type"
@@ -97,13 +107,16 @@ context TransferContext is {
     }
     handler AnalyticsHandler is {
       on event Transfer.TransferSubmitted is {
-        prompt "Update transfer counts"
+        tell event Transfer.TransferSubmitted to repository
+          TransferContext.TransferRepository
       }
       on event Transfer.TransferCompleted is {
-        prompt "Update completion metrics"
+        tell event Transfer.TransferCompleted to repository
+          TransferContext.TransferRepository
       }
       on event Transfer.TransferReturned is {
-        prompt "Update return metrics"
+        tell event Transfer.TransferReturned to repository
+          TransferContext.TransferRepository
       }
     } with {
       briefly "Maintains transfer analytics"
@@ -115,6 +128,73 @@ context TransferContext is {
     briefly "Transfer analytics projections"
     described as {
       |Maintains fund transfer analytics data.
+    }
+  }
+  source TransferEventSource is {
+    outlet TransferEvents is type TransferEvent
+    handler TransferEventEmitter is {
+      on init is {
+        tell command InitializeTransfer to entity
+          TransferContext.Transfer
+      }
+      on other is { ??? }
+      on event Transfer.TransferSubmitted is {
+        send event Transfer.TransferSubmitted to outlet TransferEvents
+      }
+      on event Transfer.TransferCompleted is {
+        send event Transfer.TransferCompleted to outlet TransferEvents
+      }
+      on event Transfer.TransferReturned is {
+        send event Transfer.TransferReturned to outlet TransferEvents
+      }
+      on event Transfer.TransferCancelled is {
+        send event Transfer.TransferCancelled to outlet TransferEvents
+      }
+    } with {
+      briefly "Transfer event emitter"
+      described as {
+        |Emits transfer lifecycle events into the streaming
+        |topology.
+      }
+    }
+  } with {
+    briefly "Transfer event source"
+    described as {
+      |Publishes transfer entity events for streaming.
+    }
+  }
+  sink TransferEventSink is {
+    inlet IncomingTransferEvents is type TransferEvent
+    handler TransferEventReceiver is {
+      on init is { ??? }
+      on other is { ??? }
+      on event Transfer.TransferSubmitted is {
+        tell event Transfer.TransferSubmitted to repository
+          TransferContext.TransferRepository
+      }
+      on event Transfer.TransferCompleted is {
+        tell event Transfer.TransferCompleted to repository
+          TransferContext.TransferRepository
+      }
+    } with {
+      briefly "Transfer event receiver"
+      described as {
+        |Receives transfer events and persists them.
+      }
+    }
+  } with {
+    briefly "Transfer event sink"
+    described as {
+      |Receives transfer events from the streaming topology.
+    }
+  }
+  connector TransferEventPipeline is {
+    from outlet TransferContext.TransferEventSource.TransferEvents
+      to inlet TransferContext.TransferEventSink.IncomingTransferEvents
+  } with {
+    briefly "Transfer event pipeline"
+    described as {
+      |Wires transfer events from source to sink.
     }
   }
 } with {

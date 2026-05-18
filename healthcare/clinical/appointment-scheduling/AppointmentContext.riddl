@@ -12,28 +12,28 @@ context AppointmentContext is {
 
     handler AppointmentPersistence is {
       on command Appointment.ScheduleAppointment is {
-        prompt "Store new appointment"
+        tell event Appointment.AppointmentScheduled to entity AppointmentContext.Appointment
       }
       on command Appointment.ConfirmAppointment is {
-        prompt "Update confirmation status"
+        tell event Appointment.AppointmentConfirmed to entity AppointmentContext.Appointment
       }
       on command Appointment.RescheduleAppointment is {
-        prompt "Update appointment time"
+        tell event Appointment.AppointmentRescheduled to entity AppointmentContext.Appointment
       }
       on command Appointment.CancelAppointment is {
-        prompt "Update appointment to canceled"
+        tell event Appointment.AppointmentCanceled to entity AppointmentContext.Appointment
       }
       on command Appointment.CheckInPatient is {
-        prompt "Update check-in status"
+        tell event Appointment.PatientCheckedIn to entity AppointmentContext.Appointment
       }
       on command Appointment.StartAppointment is {
-        prompt "Update start time"
+        tell event Appointment.AppointmentStarted to entity AppointmentContext.Appointment
       }
       on command Appointment.CompleteAppointment is {
-        prompt "Update appointment to complete"
+        tell event Appointment.AppointmentCompleted to entity AppointmentContext.Appointment
       }
       on command Appointment.MarkNoShow is {
-        prompt "Update appointment as no-show"
+        tell event Appointment.PatientNoShow to entity AppointmentContext.Appointment
       }
     } with {
       briefly "Persists appointment commands"
@@ -50,6 +50,7 @@ context AppointmentContext is {
   }
   // Projector for scheduling analytics
   projector SchedulingAnalytics is {
+    updates repository AppointmentContext.AppointmentRepository
     record SchedulingStats is  {
       totalAppointments: Natural with {
         briefly "Total"
@@ -95,16 +96,16 @@ context AppointmentContext is {
     }
     handler AnalyticsHandler is {
       on event Appointment.AppointmentScheduled is {
-        prompt "Update appointment counts"
+        tell event Appointment.AppointmentScheduled to repository AppointmentContext.AppointmentRepository
       }
       on event Appointment.AppointmentCompleted is {
-        prompt "Update completion metrics"
+        tell event Appointment.AppointmentCompleted to repository AppointmentContext.AppointmentRepository
       }
       on event Appointment.PatientNoShow is {
-        prompt "Update no-show metrics"
+        tell event Appointment.PatientNoShow to repository AppointmentContext.AppointmentRepository
       }
       on event Appointment.AppointmentCanceled is {
-        prompt "Update cancellation metrics"
+        tell event Appointment.AppointmentCanceled to repository AppointmentContext.AppointmentRepository
       }
     } with {
       briefly "Maintains scheduling analytics"
@@ -116,6 +117,104 @@ context AppointmentContext is {
     briefly "Scheduling analytics projections"
     described as {
       |Maintains appointment scheduling analytics data.
+    }
+  }
+  // Event union for streaming
+  type AppointmentEvent is one of {
+    AppointmentContext.Appointment.AppointmentScheduled,
+    AppointmentContext.Appointment.AppointmentConfirmed,
+    AppointmentContext.Appointment.AppointmentRescheduled,
+    AppointmentContext.Appointment.AppointmentCanceled,
+    AppointmentContext.Appointment.PatientCheckedIn,
+    AppointmentContext.Appointment.AppointmentStarted,
+    AppointmentContext.Appointment.AppointmentCompleted,
+    AppointmentContext.Appointment.PatientNoShow
+  } with {
+    briefly "Appointment events"
+    described as {
+      |Union of all appointment entity events for streaming.
+    }
+  }
+  // Source streamlet for appointment events
+  source AppointmentSource is {
+    outlet AppointmentEvents is type AppointmentEvent with {
+      briefly "Appointment event outlet"
+      described as {
+        |Publishes appointment events.
+      }
+    }
+    handler AppointmentSourceHandler is {
+      on init is {
+        tell command Appointment.InitializeAppointment to entity AppointmentContext.Appointment
+      }
+      on event Appointment.AppointmentScheduled is {
+        send event Appointment.AppointmentScheduled to outlet AppointmentEvents
+      }
+      on event Appointment.AppointmentCompleted is {
+        send event Appointment.AppointmentCompleted to outlet AppointmentEvents
+      }
+      on event Appointment.AppointmentCanceled is {
+        send event Appointment.AppointmentCanceled to outlet AppointmentEvents
+      }
+      on event Appointment.PatientNoShow is {
+        send event Appointment.PatientNoShow to outlet AppointmentEvents
+      }
+      on other is { ??? }
+    } with {
+      briefly "Appointment source handler"
+      described as {
+        |Forwards appointment events to the outlet.
+      }
+    }
+  } with {
+    briefly "Appointment event source"
+    described as {
+      |Source streamlet that publishes appointment events.
+    }
+  }
+  // Sink streamlet for appointment events
+  sink AppointmentSink is {
+    inlet AppointmentEventsIn is type AppointmentEvent with {
+      briefly "Appointment event inlet"
+      described as {
+        |Receives appointment events.
+      }
+    }
+    handler AppointmentSinkHandler is {
+      on init is { ??? }
+      on event Appointment.AppointmentScheduled is {
+        tell event Appointment.AppointmentScheduled to repository AppointmentContext.AppointmentRepository
+      }
+      on event Appointment.AppointmentCompleted is {
+        tell event Appointment.AppointmentCompleted to repository AppointmentContext.AppointmentRepository
+      }
+      on event Appointment.AppointmentCanceled is {
+        tell event Appointment.AppointmentCanceled to repository AppointmentContext.AppointmentRepository
+      }
+      on event Appointment.PatientNoShow is {
+        tell event Appointment.PatientNoShow to repository AppointmentContext.AppointmentRepository
+      }
+      on other is { ??? }
+    } with {
+      briefly "Appointment sink handler"
+      described as {
+        |Persists appointment events from the inlet.
+      }
+    }
+  } with {
+    briefly "Appointment event sink"
+    described as {
+      |Sink streamlet that consumes appointment events.
+    }
+  }
+  // Connector wiring source to sink
+  connector AppointmentFlow is {
+    from outlet AppointmentContext.AppointmentSource.AppointmentEvents to
+      inlet AppointmentContext.AppointmentSink.AppointmentEventsIn
+  } with {
+    briefly "Appointment event flow"
+    described as {
+      |Connects appointment source to sink for event streaming.
     }
   }
 } with {

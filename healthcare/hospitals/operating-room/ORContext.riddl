@@ -12,31 +12,31 @@ context ORContext is {
 
     handler SurgicalCasePersistence is {
       on command SurgicalCase.ScheduleCase is {
-        prompt "Store new surgical case record"
+        tell event SurgicalCase.CaseScheduled to entity ORContext.SurgicalCase
       }
       on command SurgicalCase.ConfirmCase is {
-        prompt "Update case with team and preference card"
+        tell event SurgicalCase.CaseConfirmed to entity ORContext.SurgicalCase
       }
       on command SurgicalCase.StartPreOp is {
-        prompt "Update case with pre-op arrival time"
+        tell event SurgicalCase.PreOpStarted to entity ORContext.SurgicalCase
       }
       on command SurgicalCase.BringToOR is {
-        prompt "Update case with in-room time"
+        tell event SurgicalCase.PatientInOR to entity ORContext.SurgicalCase
       }
       on command SurgicalCase.StartSurgery is {
-        prompt "Update case with procedure start time"
+        tell event SurgicalCase.SurgeryStarted to entity ORContext.SurgicalCase
       }
       on command SurgicalCase.CompleteSurgery is {
-        prompt "Update case with procedure end and outcomes"
+        tell event SurgicalCase.SurgeryCompleted to entity ORContext.SurgicalCase
       }
       on command SurgicalCase.MoveToRecovery is {
-        prompt "Update case with PACU arrival time"
+        tell event SurgicalCase.InRecovery to entity ORContext.SurgicalCase
       }
       on command SurgicalCase.DischargeFromPACU is {
-        prompt "Update case to completed status"
+        tell event SurgicalCase.DischargedFromPACU to entity ORContext.SurgicalCase
       }
       on command SurgicalCase.CancelCase is {
-        prompt "Update case to cancelled status"
+        tell event SurgicalCase.CaseCancelled to entity ORContext.SurgicalCase
       }
     } with {
       briefly "Persists surgical case events"
@@ -61,10 +61,10 @@ context ORContext is {
 
     handler SchedulePersistence is {
       on command SurgicalCase.ScheduleCase is {
-        prompt "Create room assignment for scheduled case"
+        tell event SurgicalCase.CaseScheduled to entity ORContext.SurgicalCase
       }
       on command SurgicalCase.CancelCase is {
-        prompt "Remove room assignment for cancelled case"
+        tell event SurgicalCase.CaseCancelled to entity ORContext.SurgicalCase
       }
     } with {
       briefly "Persists OR schedule"
@@ -81,6 +81,7 @@ context ORContext is {
   }
   // Projector for OR utilization metrics
   projector ORUtilizationProjector is {
+    updates repository ORContext.SurgicalCaseRepository
     record UtilizationStats is  {
       roomId: RoomId with {
         briefly "Room"
@@ -150,13 +151,13 @@ context ORContext is {
     }
     handler UtilizationHandler is {
       on event SurgicalCase.CaseScheduled is {
-        prompt "Update scheduled minutes for room"
+        tell event SurgicalCase.CaseScheduled to repository ORContext.SurgicalCaseRepository
       }
       on event SurgicalCase.SurgeryCompleted is {
-        prompt "Update actual minutes and cases completed"
+        tell event SurgicalCase.SurgeryCompleted to repository ORContext.SurgicalCaseRepository
       }
       on event SurgicalCase.CaseCancelled is {
-        prompt "Update cancellation count if same day"
+        tell event SurgicalCase.CaseCancelled to repository ORContext.SurgicalCaseRepository
       }
     } with {
       briefly "Maintains utilization metrics"
@@ -172,6 +173,7 @@ context ORContext is {
   }
   // Projector for case duration analytics
   projector CaseDurationProjector is {
+    updates repository ORContext.SurgicalCaseRepository
     record DurationStats is  {
       procedureId: ProcedureId with {
         briefly "Procedure"
@@ -247,7 +249,7 @@ context ORContext is {
     }
     handler DurationHandler is {
       on event SurgicalCase.SurgeryCompleted is {
-        prompt "Update duration statistics for procedure and surgeon"
+        tell event SurgicalCase.SurgeryCompleted to repository ORContext.SurgicalCaseRepository
       }
     } with {
       briefly "Maintains duration metrics"
@@ -263,6 +265,7 @@ context ORContext is {
   }
   // Projector for turnover time analytics
   projector TurnoverTimeProjector is {
+    updates repository ORContext.SurgicalCaseRepository
     record TurnoverStats is  {
       roomId: RoomId with {
         briefly "Room"
@@ -332,10 +335,10 @@ context ORContext is {
     }
     handler TurnoverHandler is {
       on event SurgicalCase.PatientInOR is {
-        prompt "Calculate turnover time from previous case"
+        tell event SurgicalCase.PatientInOR to repository ORContext.SurgicalCaseRepository
       }
       on event SurgicalCase.SurgeryCompleted is {
-        prompt "Record case end for next turnover calculation"
+        tell event SurgicalCase.SurgeryCompleted to repository ORContext.SurgicalCaseRepository
       }
     } with {
       briefly "Maintains turnover metrics"
@@ -351,6 +354,7 @@ context ORContext is {
   }
   // Projector for cancellation analytics
   projector CancellationRateProjector is {
+    updates repository ORContext.SurgicalCaseRepository
     record CancellationStats is  {
       periodStart: Date with {
         briefly "Start"
@@ -420,10 +424,10 @@ context ORContext is {
     }
     handler CancellationHandler is {
       on event SurgicalCase.CaseScheduled is {
-        prompt "Increment scheduled cases count"
+        tell event SurgicalCase.CaseScheduled to repository ORContext.SurgicalCaseRepository
       }
       on event SurgicalCase.CaseCancelled is {
-        prompt "Update cancellation statistics by reason and timing"
+        tell event SurgicalCase.CaseCancelled to repository ORContext.SurgicalCaseRepository
       }
     } with {
       briefly "Maintains cancellation metrics"
@@ -439,6 +443,7 @@ context ORContext is {
   }
   // Projector for first case on-time starts
   projector FirstCaseStartProjector is {
+    updates repository ORContext.SurgicalCaseRepository
     record FirstCaseStats is  {
       roomId: RoomId with {
         briefly "Room"
@@ -490,7 +495,7 @@ context ORContext is {
     }
     handler FirstCaseHandler is {
       on event SurgicalCase.SurgeryStarted is {
-        prompt "Compare actual start to scheduled for first case of day"
+        tell event SurgicalCase.SurgeryStarted to repository ORContext.SurgicalCaseRepository
       }
     } with {
       briefly "Maintains first case metrics"
@@ -502,6 +507,76 @@ context ORContext is {
     briefly "First case on-time projections"
     described as {
       |Maintains first case on-time start analytics.
+    }
+  }
+  type SurgicalCaseEvent is one of {
+    ORContext.SurgicalCase.CaseScheduled, ORContext.SurgicalCase.CaseConfirmed,
+    ORContext.SurgicalCase.PreOpStarted, ORContext.SurgicalCase.PatientInOR,
+    ORContext.SurgicalCase.SurgeryStarted, ORContext.SurgicalCase.SurgeryCompleted,
+    ORContext.SurgicalCase.InRecovery, ORContext.SurgicalCase.DischargedFromPACU,
+    ORContext.SurgicalCase.CaseCancelled
+  } with {
+    briefly "Surgical case events"
+    described as {
+      |Union of all surgical case events for streaming.
+    }
+  }
+  source SurgicalCaseSource is {
+    outlet SurgicalCaseEvents is type SurgicalCaseEvent with {
+      briefly "Surgical case event outlet"
+      described as {
+        |Publishes surgical case events.
+      }
+    }
+    handler SurgicalCaseSourceHandler is {
+      on init is { tell command SurgicalCase.InitializeSurgicalCase to entity ORContext.SurgicalCase }
+      on event SurgicalCase.CaseScheduled is { send event SurgicalCase.CaseScheduled to outlet SurgicalCaseEvents }
+      on event SurgicalCase.SurgeryCompleted is { send event SurgicalCase.SurgeryCompleted to outlet SurgicalCaseEvents }
+      on event SurgicalCase.CaseCancelled is { send event SurgicalCase.CaseCancelled to outlet SurgicalCaseEvents }
+      on other is { ??? }
+    } with {
+      briefly "Surgical case source handler"
+      described as {
+        |Forwards surgical case events to the outlet.
+      }
+    }
+  } with {
+    briefly "Surgical case event source"
+    described as {
+      |Source streamlet that publishes surgical case events.
+    }
+  }
+  sink SurgicalCaseSink is {
+    inlet SurgicalCaseEventsIn is type SurgicalCaseEvent with {
+      briefly "Surgical case event inlet"
+      described as {
+        |Receives surgical case events.
+      }
+    }
+    handler SurgicalCaseSinkHandler is {
+      on init is { ??? }
+      on event SurgicalCase.CaseScheduled is { tell event SurgicalCase.CaseScheduled to repository ORContext.SurgicalCaseRepository }
+      on event SurgicalCase.SurgeryCompleted is { tell event SurgicalCase.SurgeryCompleted to repository ORContext.SurgicalCaseRepository }
+      on other is { ??? }
+    } with {
+      briefly "Surgical case sink handler"
+      described as {
+        |Persists surgical case events from the inlet.
+      }
+    }
+  } with {
+    briefly "Surgical case event sink"
+    described as {
+      |Sink streamlet that consumes surgical case events.
+    }
+  }
+  connector SurgicalCaseFlow is {
+    from outlet ORContext.SurgicalCaseSource.SurgicalCaseEvents to
+      inlet ORContext.SurgicalCaseSink.SurgicalCaseEventsIn
+  } with {
+    briefly "Surgical case event flow"
+    described as {
+      |Connects surgical case source to sink for event streaming.
     }
   }
 } with {

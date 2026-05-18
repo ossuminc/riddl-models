@@ -11,37 +11,37 @@ context SubscriptionContext is {
 
     handler SubscriptionPersistence is {
       on command Subscription.CreateSubscription is {
-        prompt "Store new subscription"
+        tell event Subscription.SubscriptionCreated to entity SubscriptionContext.Subscription
       }
       on command Subscription.StartTrial is {
-        prompt "Store trial subscription"
+        tell event Subscription.TrialStarted to entity SubscriptionContext.Subscription
       }
       on command Subscription.ConvertTrial is {
-        prompt "Update subscription to paid"
+        tell event Subscription.TrialConverted to entity SubscriptionContext.Subscription
       }
       on command Subscription.ChangePlan is {
-        prompt "Update subscription plan"
+        tell event Subscription.PlanChanged to entity SubscriptionContext.Subscription
       }
       on command Subscription.ApplyDiscount is {
-        prompt "Store discount"
+        tell event Subscription.DiscountApplied to entity SubscriptionContext.Subscription
       }
       on command Subscription.RecordPayment is {
-        prompt "Store payment record"
+        tell event Subscription.PaymentReceived to entity SubscriptionContext.Subscription
       }
       on command Subscription.RecordPaymentFailure is {
-        prompt "Store payment failure"
+        tell event Subscription.PaymentFailed to entity SubscriptionContext.Subscription
       }
       on command Subscription.SuspendSubscription is {
-        prompt "Update subscription to suspended"
+        tell event Subscription.SubscriptionSuspended to entity SubscriptionContext.Subscription
       }
       on command Subscription.ReactivateSubscription is {
-        prompt "Update subscription to active"
+        tell event Subscription.SubscriptionReactivated to entity SubscriptionContext.Subscription
       }
       on command Subscription.CancelSubscription is {
-        prompt "Update subscription to canceled"
+        tell event Subscription.SubscriptionCanceled to entity SubscriptionContext.Subscription
       }
       on command Subscription.RenewSubscription is {
-        prompt "Update renewal date"
+        tell event Subscription.SubscriptionRenewed to entity SubscriptionContext.Subscription
       }
     } with {
       briefly "Persists subscription commands"
@@ -58,6 +58,7 @@ context SubscriptionContext is {
   }
   // Projector for subscription analytics
   projector SubscriptionAnalytics is {
+    updates repository SubscriptionContext.SubscriptionRepository
     record SubscriptionStats is  {
       totalSubscriptions: Natural with {
         briefly "Total"
@@ -103,16 +104,16 @@ context SubscriptionContext is {
     }
     handler AnalyticsHandler is {
       on event Subscription.SubscriptionCreated is {
-        prompt "Update subscription counts"
+        tell event Subscription.SubscriptionCreated to repository SubscriptionContext.SubscriptionRepository
       }
       on event Subscription.PaymentReceived is {
-        prompt "Update revenue metrics"
+        tell event Subscription.PaymentReceived to repository SubscriptionContext.SubscriptionRepository
       }
       on event Subscription.SubscriptionCanceled is {
-        prompt "Update churn metrics"
+        tell event Subscription.SubscriptionCanceled to repository SubscriptionContext.SubscriptionRepository
       }
       on event Subscription.TrialConverted is {
-        prompt "Update conversion metrics"
+        tell event Subscription.TrialConverted to repository SubscriptionContext.SubscriptionRepository
       }
     } with {
       briefly "Maintains subscription analytics"
@@ -124,6 +125,104 @@ context SubscriptionContext is {
     briefly "Subscription analytics projections"
     described as {
       |Maintains SaaS subscription analytics data.
+    }
+  }
+  // Event streaming infrastructure
+  type SubscriptionEvent is one of {
+    SubscriptionContext.Subscription.SubscriptionCreated,
+    SubscriptionContext.Subscription.TrialStarted,
+    SubscriptionContext.Subscription.TrialConverted,
+    SubscriptionContext.Subscription.PlanChanged,
+    SubscriptionContext.Subscription.PaymentReceived
+  } with {
+    briefly "Subscription events"
+    described as {
+      |Union of all Subscription events for streaming.
+    }
+  }
+  source SubscriptionSource is {
+    outlet SubscriptionEventOutlet is type SubscriptionEvent with {
+      briefly "Event outlet"
+      described as {
+        |Outlet for Subscription events.
+      }
+    }
+    handler SubscriptionSourceHandler is {
+      on init is {
+        tell command Subscription.InitializeSubscription to entity SubscriptionContext.Subscription
+      }
+      on event Subscription.SubscriptionCreated is {
+        send event Subscription.SubscriptionCreated to outlet SubscriptionEventOutlet
+      }
+      on event Subscription.TrialStarted is {
+        send event Subscription.TrialStarted to outlet SubscriptionEventOutlet
+      }
+      on event Subscription.TrialConverted is {
+        send event Subscription.TrialConverted to outlet SubscriptionEventOutlet
+      }
+      on event Subscription.PlanChanged is {
+        send event Subscription.PlanChanged to outlet SubscriptionEventOutlet
+      }
+      on event Subscription.PaymentReceived is {
+        send event Subscription.PaymentReceived to outlet SubscriptionEventOutlet
+      }
+      on other is { ??? }
+    } with {
+      briefly "Source handler"
+      described as {
+        |Handles Subscription events for streaming.
+      }
+    }
+  } with {
+    briefly "Subscription event source"
+    described as {
+      |Publishes Subscription events to the event stream.
+    }
+  }
+  sink SubscriptionSink is {
+    inlet SubscriptionEventInlet is type SubscriptionEvent with {
+      briefly "Event inlet"
+      described as {
+        |Inlet for Subscription events.
+      }
+    }
+    handler SubscriptionSinkHandler is {
+      on init is { ??? }
+      on event Subscription.SubscriptionCreated is {
+        tell event Subscription.SubscriptionCreated to repository SubscriptionContext.SubscriptionRepository
+      }
+      on event Subscription.TrialStarted is {
+        tell event Subscription.TrialStarted to repository SubscriptionContext.SubscriptionRepository
+      }
+      on event Subscription.TrialConverted is {
+        tell event Subscription.TrialConverted to repository SubscriptionContext.SubscriptionRepository
+      }
+      on event Subscription.PlanChanged is {
+        tell event Subscription.PlanChanged to repository SubscriptionContext.SubscriptionRepository
+      }
+      on event Subscription.PaymentReceived is {
+        tell event Subscription.PaymentReceived to repository SubscriptionContext.SubscriptionRepository
+      }
+      on other is { ??? }
+    } with {
+      briefly "Sink handler"
+      described as {
+        |Handles incoming Subscription events for persistence.
+      }
+    }
+  } with {
+    briefly "Subscription event sink"
+    described as {
+      |Receives Subscription events for persistence.
+    }
+  }
+  connector SubscriptionEventFlow is {
+    from outlet SubscriptionContext.SubscriptionSource.SubscriptionEventOutlet to
+      inlet SubscriptionContext.SubscriptionSink.SubscriptionEventInlet
+  } with {
+    briefly "Subscription event connector"
+    described as {
+      |Wires Subscription source to sink for event flow.
     }
   }
 } with {

@@ -11,37 +11,37 @@ context CarePlanContext is {
 
     handler CarePlanPersistence is {
       on command CarePlan.CreateCarePlan is {
-        prompt "Store new care plan"
+        tell event CarePlan.CarePlanCreated to entity CarePlanContext.CarePlan
       }
       on command CarePlan.AddCareTeamMember is {
-        prompt "Store team member"
+        tell event CarePlan.CareTeamMemberAdded to entity CarePlanContext.CarePlan
       }
       on command CarePlan.RemoveCareTeamMember is {
-        prompt "Remove team member"
+        tell event CarePlan.CareTeamMemberRemoved to entity CarePlanContext.CarePlan
       }
       on command CarePlan.AddGoal is {
-        prompt "Store care goal"
+        tell event CarePlan.GoalAdded to entity CarePlanContext.CarePlan
       }
       on command CarePlan.UpdateGoalStatus is {
-        prompt "Update goal status"
+        tell event CarePlan.GoalStatusUpdated to entity CarePlanContext.CarePlan
       }
       on command CarePlan.AddTask is {
-        prompt "Store care task"
+        tell event CarePlan.TaskAdded to entity CarePlanContext.CarePlan
       }
       on command CarePlan.CompleteTask is {
-        prompt "Update task to complete"
+        tell event CarePlan.TaskCompleted to entity CarePlanContext.CarePlan
       }
       on command CarePlan.CreateReferral is {
-        prompt "Store referral"
+        tell event CarePlan.ReferralCreated to entity CarePlanContext.CarePlan
       }
       on command CarePlan.UpdateReferralStatus is {
-        prompt "Update referral status"
+        tell event CarePlan.ReferralStatusUpdated to entity CarePlanContext.CarePlan
       }
       on command CarePlan.ActivateCarePlan is {
-        prompt "Update plan to active"
+        tell event CarePlan.CarePlanActivated to entity CarePlanContext.CarePlan
       }
       on command CarePlan.CompleteCarePlan is {
-        prompt "Update plan to complete"
+        tell event CarePlan.CarePlanCompleted to entity CarePlanContext.CarePlan
       }
     } with {
       briefly "Persists care plan events"
@@ -58,6 +58,7 @@ context CarePlanContext is {
   }
   // Projector for care coordination analytics
   projector CareCoordinationAnalytics is {
+    updates repository CarePlanContext.CarePlanRepository
     record CoordinationStats is  {
       activePlans: Natural with {
         briefly "Active"
@@ -97,16 +98,16 @@ context CarePlanContext is {
     }
     handler AnalyticsHandler is {
       on event CarePlan.CarePlanCreated is {
-        prompt "Update plan counts"
+        tell event CarePlan.CarePlanCreated to repository CarePlanContext.CarePlanRepository
       }
       on event CarePlan.GoalStatusUpdated is {
-        prompt "Update goal metrics"
+        tell event CarePlan.GoalStatusUpdated to repository CarePlanContext.CarePlanRepository
       }
       on event CarePlan.ReferralCreated is {
-        prompt "Update referral counts"
+        tell event CarePlan.ReferralCreated to repository CarePlanContext.CarePlanRepository
       }
       on event CarePlan.CarePlanCompleted is {
-        prompt "Update completion metrics"
+        tell event CarePlan.CarePlanCompleted to repository CarePlanContext.CarePlanRepository
       }
     } with {
       briefly "Maintains coordination analytics"
@@ -118,6 +119,95 @@ context CarePlanContext is {
     briefly "Coordination analytics projections"
     described as {
       |Maintains care coordination analytics data.
+    }
+  }
+  // Event union for streaming
+  type CarePlanEvent is one of {
+    CarePlanContext.CarePlan.CarePlanCreated,
+    CarePlanContext.CarePlan.CareTeamMemberAdded,
+    CarePlanContext.CarePlan.CareTeamMemberRemoved,
+    CarePlanContext.CarePlan.GoalAdded,
+    CarePlanContext.CarePlan.GoalStatusUpdated,
+    CarePlanContext.CarePlan.TaskAdded,
+    CarePlanContext.CarePlan.TaskCompleted,
+    CarePlanContext.CarePlan.ReferralCreated,
+    CarePlanContext.CarePlan.ReferralStatusUpdated,
+    CarePlanContext.CarePlan.CarePlanActivated,
+    CarePlanContext.CarePlan.CarePlanCompleted
+  } with {
+    briefly "Care plan events"
+    described as {
+      |Union of all care plan entity events for streaming.
+    }
+  }
+  source CarePlanSource is {
+    outlet CarePlanEvents is type CarePlanEvent with {
+      briefly "Care plan event outlet"
+      described as {
+        |Publishes care plan events.
+      }
+    }
+    handler CarePlanSourceHandler is {
+      on init is {
+        tell command CarePlan.InitializeCarePlan to entity CarePlanContext.CarePlan
+      }
+      on event CarePlan.CarePlanCreated is {
+        send event CarePlan.CarePlanCreated to outlet CarePlanEvents
+      }
+      on event CarePlan.CarePlanActivated is {
+        send event CarePlan.CarePlanActivated to outlet CarePlanEvents
+      }
+      on event CarePlan.CarePlanCompleted is {
+        send event CarePlan.CarePlanCompleted to outlet CarePlanEvents
+      }
+      on other is { ??? }
+    } with {
+      briefly "Care plan source handler"
+      described as {
+        |Forwards care plan events to the outlet.
+      }
+    }
+  } with {
+    briefly "Care plan event source"
+    described as {
+      |Source streamlet that publishes care plan events.
+    }
+  }
+  sink CarePlanSink is {
+    inlet CarePlanEventsIn is type CarePlanEvent with {
+      briefly "Care plan event inlet"
+      described as {
+        |Receives care plan events.
+      }
+    }
+    handler CarePlanSinkHandler is {
+      on init is { ??? }
+      on event CarePlan.CarePlanCreated is {
+        tell event CarePlan.CarePlanCreated to repository CarePlanContext.CarePlanRepository
+      }
+      on event CarePlan.CarePlanCompleted is {
+        tell event CarePlan.CarePlanCompleted to repository CarePlanContext.CarePlanRepository
+      }
+      on other is { ??? }
+    } with {
+      briefly "Care plan sink handler"
+      described as {
+        |Persists care plan events from the inlet.
+      }
+    }
+  } with {
+    briefly "Care plan event sink"
+    described as {
+      |Sink streamlet that consumes care plan events.
+    }
+  }
+  connector CarePlanFlow is {
+    from outlet CarePlanContext.CarePlanSource.CarePlanEvents to
+      inlet CarePlanContext.CarePlanSink.CarePlanEventsIn
+  } with {
+    briefly "Care plan event flow"
+    described as {
+      |Connects care plan source to sink for event streaming.
     }
   }
 } with {

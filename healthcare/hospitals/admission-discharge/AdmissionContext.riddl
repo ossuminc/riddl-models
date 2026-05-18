@@ -11,25 +11,25 @@ context AdmissionContext is {
 
     handler AdmissionPersistence is {
       on command Admission.CreateAdmission is {
-        prompt "Store new admission record"
+        tell event Admission.AdmissionCreated to entity AdmissionContext.Admission
       }
       on command Admission.AssignBed is {
-        prompt "Update admission with bed assignment"
+        tell event Admission.BedAssigned to entity AdmissionContext.Admission
       }
       on command Admission.RequestTransfer is {
-        prompt "Store transfer request"
+        tell event Admission.TransferRequested to entity AdmissionContext.Admission
       }
       on command Admission.TransferPatient is {
-        prompt "Update bed assignment and transfer history"
+        tell event Admission.PatientTransferred to entity AdmissionContext.Admission
       }
       on command Admission.UpdateCondition is {
-        prompt "Update patient condition"
+        tell event Admission.ConditionUpdated to entity AdmissionContext.Admission
       }
       on command Admission.InitiateDischarge is {
-        prompt "Store discharge order"
+        tell event Admission.DischargeInitiated to entity AdmissionContext.Admission
       }
       on command Admission.CompleteDischarge is {
-        prompt "Update admission to discharged status"
+        tell event Admission.DischargeCompleted to entity AdmissionContext.Admission
       }
     } with {
       briefly "Persists admission commands"
@@ -53,13 +53,13 @@ context AdmissionContext is {
 
     handler BedCensusPersistence is {
       on command Admission.AssignBed is {
-        prompt "Mark bed as occupied"
+        tell event Admission.BedAssigned to entity AdmissionContext.Admission
       }
       on command Admission.TransferPatient is {
-        prompt "Update bed occupancy for both old and new beds"
+        tell event Admission.PatientTransferred to entity AdmissionContext.Admission
       }
       on command Admission.CompleteDischarge is {
-        prompt "Mark bed as available for housekeeping"
+        tell event Admission.DischargeCompleted to entity AdmissionContext.Admission
       }
     } with {
       briefly "Maintains bed census"
@@ -76,6 +76,7 @@ context AdmissionContext is {
   }
   // Projector for bed occupancy metrics
   projector BedOccupancyProjector is {
+    updates repository AdmissionContext.AdmissionRepository
     record OccupancyStats is  {
       unitId: UnitId with {
         briefly "Unit"
@@ -133,13 +134,13 @@ context AdmissionContext is {
     }
     handler OccupancyHandler is {
       on event Admission.BedAssigned is {
-        prompt "Increment occupied beds for unit"
+        tell event Admission.BedAssigned to repository AdmissionContext.AdmissionRepository
       }
       on event Admission.PatientTransferred is {
-        prompt "Update occupancy for both source and destination units"
+        tell event Admission.PatientTransferred to repository AdmissionContext.AdmissionRepository
       }
       on event Admission.DischargeCompleted is {
-        prompt "Decrement occupied beds and increment pending clean"
+        tell event Admission.DischargeCompleted to repository AdmissionContext.AdmissionRepository
       }
     } with {
       briefly "Maintains occupancy metrics"
@@ -155,6 +156,7 @@ context AdmissionContext is {
   }
   // Projector for length of stay analytics
   projector LengthOfStayProjector is {
+    updates repository AdmissionContext.AdmissionRepository
     record LOSStats is  {
       filterUnitId: UnitId? with {
         briefly "Unit"
@@ -218,7 +220,7 @@ context AdmissionContext is {
     }
     handler LOSHandler is {
       on event Admission.DischargeCompleted is {
-        prompt "Update length of stay statistics"
+        tell event Admission.DischargeCompleted to repository AdmissionContext.AdmissionRepository
       }
     } with {
       briefly "Maintains LOS analytics"
@@ -234,6 +236,7 @@ context AdmissionContext is {
   }
   // Projector for throughput metrics
   projector ThroughputProjector is {
+    updates repository AdmissionContext.AdmissionRepository
     record ThroughputStats is  {
       periodDate: Date with {
         briefly "Date"
@@ -291,16 +294,16 @@ context AdmissionContext is {
     }
     handler ThroughputHandler is {
       on event Admission.AdmissionCreated is {
-        prompt "Increment admission count by type"
+        tell event Admission.AdmissionCreated to repository AdmissionContext.AdmissionRepository
       }
       on event Admission.BedAssigned is {
-        prompt "Calculate time to bed assignment"
+        tell event Admission.BedAssigned to repository AdmissionContext.AdmissionRepository
       }
       on event Admission.PatientTransferred is {
-        prompt "Increment transfer count"
+        tell event Admission.PatientTransferred to repository AdmissionContext.AdmissionRepository
       }
       on event Admission.DischargeCompleted is {
-        prompt "Increment discharge count and calculate processing time"
+        tell event Admission.DischargeCompleted to repository AdmissionContext.AdmissionRepository
       }
     } with {
       briefly "Maintains throughput metrics"
@@ -312,6 +315,87 @@ context AdmissionContext is {
     briefly "Throughput projections"
     described as {
       |Maintains daily patient flow and throughput metrics.
+    }
+  }
+  type AdmissionEvent is one of {
+    AdmissionContext.Admission.AdmissionCreated,
+    AdmissionContext.Admission.BedAssigned,
+    AdmissionContext.Admission.TransferRequested,
+    AdmissionContext.Admission.PatientTransferred,
+    AdmissionContext.Admission.ConditionUpdated,
+    AdmissionContext.Admission.DischargeInitiated,
+    AdmissionContext.Admission.DischargeCompleted
+  } with {
+    briefly "Admission events"
+    described as {
+      |Union of all admission entity events for streaming.
+    }
+  }
+  source AdmissionSource is {
+    outlet AdmissionEvents is type AdmissionEvent with {
+      briefly "Admission event outlet"
+      described as {
+        |Publishes admission events.
+      }
+    }
+    handler AdmissionSourceHandler is {
+      on init is {
+        tell command Admission.InitializeAdmission to entity AdmissionContext.Admission
+      }
+      on event Admission.AdmissionCreated is {
+        send event Admission.AdmissionCreated to outlet AdmissionEvents
+      }
+      on event Admission.DischargeCompleted is {
+        send event Admission.DischargeCompleted to outlet AdmissionEvents
+      }
+      on other is { ??? }
+    } with {
+      briefly "Admission source handler"
+      described as {
+        |Forwards admission events to the outlet.
+      }
+    }
+  } with {
+    briefly "Admission event source"
+    described as {
+      |Source streamlet that publishes admission events.
+    }
+  }
+  sink AdmissionSink is {
+    inlet AdmissionEventsIn is type AdmissionEvent with {
+      briefly "Admission event inlet"
+      described as {
+        |Receives admission events.
+      }
+    }
+    handler AdmissionSinkHandler is {
+      on init is { ??? }
+      on event Admission.AdmissionCreated is {
+        tell event Admission.AdmissionCreated to repository AdmissionContext.AdmissionRepository
+      }
+      on event Admission.DischargeCompleted is {
+        tell event Admission.DischargeCompleted to repository AdmissionContext.AdmissionRepository
+      }
+      on other is { ??? }
+    } with {
+      briefly "Admission sink handler"
+      described as {
+        |Persists admission events from the inlet.
+      }
+    }
+  } with {
+    briefly "Admission event sink"
+    described as {
+      |Sink streamlet that consumes admission events.
+    }
+  }
+  connector AdmissionFlow is {
+    from outlet AdmissionContext.AdmissionSource.AdmissionEvents to
+      inlet AdmissionContext.AdmissionSink.AdmissionEventsIn
+  } with {
+    briefly "Admission event flow"
+    described as {
+      |Connects admission source to sink for event streaming.
     }
   }
 } with {
