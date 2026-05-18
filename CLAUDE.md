@@ -182,7 +182,7 @@ Each pattern includes:
 ### RIDDL Style
 
 Follow these idioms when writing RIDDL (canonical form as of
-riddlc 1.16.5 prettify):
+riddlc 1.23.0 prettify):
 
 1. **Use `is` keyword** for readability: `entity Order is { }`
 2. **Use `???` for placeholders** - empty bodies not allowed
@@ -277,9 +277,11 @@ context PaymentGateway is {
 
 ## Validation with riddlc
 
-**Validation is integrated into `sbt compile`** — running `sbt compile`
-automatically downloads riddlc and validates all 187 models. The MCP
-server can still be used for querying grammar, idioms, and patterns.
+**Validation is run explicitly** via `sbt riddlcValidate` (alias
+`sbt v`). The `sbt-riddl` plugin downloads riddlc on first use.
+Validate-on-compile is disabled in `build.sbt` to keep `sbt compile`
+fast; run validation as a separate step. The MCP server can still
+be used for querying grammar, idioms, and patterns.
 
 ### sbt Tasks (via sbt-riddl Plugin)
 
@@ -289,10 +291,10 @@ which provides all riddlc integration. Configuration in `build.sbt`:
 - `riddlcSourceDir` — Set to `baseDirectory.value` (repo root) so
   the plugin scans all sector directories for `.conf` files
 - `riddlcConfExclusions` — Excludes `patterns/` from scanning
-- `riddlcValidateOnCompile` — Wires validation into `sbt compile`
+- `riddlc(..., validateOnCompile = false)` — validation is **not**
+  wired into `sbt compile`; invoke `riddlcValidate` explicitly
 
 ```bash
-sbt compile           # Downloads riddlc + validates all + compiles
 sbt riddlcValidate    # Validate all models
 sbt v                 # Short alias
 sbt riddlcBastify     # Generate .bast for all models
@@ -368,7 +370,7 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **1.17.1** (set via `sbt-riddl` plugin version
+Current version: **1.23.0** (set via `sbt-riddl` plugin version
 in `project/plugins.sbt`).
 
 ### Model Include Structure
@@ -446,10 +448,9 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 1.17.1 | Driven by sbt-riddl plugin version |
-| sbt-riddl | 1.17.1 | Plugin in `project/plugins.sbt` |
-| riddl-lib | 1.17.1 | Test dependency for Scala validation |
-| sbt-ossuminc | 1.3.5 | Build plugin |
+| riddlc | 1.23.0 | Driven by sbt-riddl plugin version |
+| sbt-riddl | 1.23.0 | Plugin in `project/plugins.sbt` |
+| sbt-ossuminc | 1.4.0 | Build plugin |
 
-Models are validated against the RIDDL grammar using riddlc, both
-via `sbt compile` (automatic) and in the existing Scala test suite.
+Models are validated against the RIDDL grammar using riddlc via
+`sbt riddlcValidate` (alias `sbt v`).
