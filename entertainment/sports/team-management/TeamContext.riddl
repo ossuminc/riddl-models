@@ -31,6 +31,25 @@ context TeamContext is {
   include "external-contexts.riddl"
   // Team entity for managing team-level operations
   entity Team is {
+    type TeamCommand is one of {
+      Team.CreateTeam,
+      Team.InitializeTeam
+    } with {
+      briefly "Team command alternation"
+      described as {
+        |Commands accepted by the Team entity.
+      }
+    }
+    type TeamEvent is one of {
+      Team.TeamCreated
+    } with {
+      briefly "Team event alternation"
+      described as {
+        |Events published by the Team entity.
+      }
+    }
+    inlet TeamCommands is type TeamCommand
+    outlet TeamEvents is type TeamEvent
     query GetTeam is {
       teamId: TeamId with {
         briefly "ID"
@@ -237,6 +256,10 @@ context TeamContext is {
   }
   // Repository for player data persistence
   repository PlayerRepository is {
+    inlet PlayerRepositoryFromPlayer is type PlayerEvent
+    inlet PlayerRepositoryFromTeam is type TeamEvent
+    inlet PlayerRepositoryFromRosterMetrics is type PlayerEvent
+    outlet PlayerRepositoryResponses is type Player.PlayerResult
     query GetPlayerById is  {
       playerId: PlayerId with {
         briefly "Player to retrieve"
@@ -366,6 +389,9 @@ context TeamContext is {
   }
   // Projector for roster analytics
   projector RosterMetrics is {
+    inlet RosterMetricsFromPlayer is type PlayerEvent
+    inlet RosterMetricsFromTeam is type TeamEvent
+    outlet RosterMetricsOut is type PlayerEvent
     updates repository TeamContext.PlayerRepository
     record RosterMetricsRecord is  {
       teamId: TeamId with {
@@ -544,6 +570,123 @@ context TeamContext is {
     described as {
       |Wires player events from source to sink.
     }
+  }
+  processor PlayerEventSplit is {
+    inlet PlayerEventSplitIn is type PlayerEvent
+    outlet PlayerEventSplitToPlayerRepository is type PlayerEvent
+    outlet PlayerEventSplitToRosterMetrics is type PlayerEvent
+    handler PlayerEventSplitHandler is {
+      on event Player.PlayerSigned is {
+        send event Player.PlayerSigned to outlet PlayerEventSplitToPlayerRepository
+        send event Player.PlayerSigned to outlet PlayerEventSplitToRosterMetrics
+        tell event Player.PlayerSigned to entity TeamContext.Player
+      }
+      on event Player.PlayerAssignedToRoster is {
+        send event Player.PlayerAssignedToRoster to outlet PlayerEventSplitToPlayerRepository
+        send event Player.PlayerAssignedToRoster to outlet PlayerEventSplitToRosterMetrics
+        tell event Player.PlayerAssignedToRoster to entity TeamContext.Player
+      }
+      on event Player.ContractExtended is {
+        send event Player.ContractExtended to outlet PlayerEventSplitToPlayerRepository
+        send event Player.ContractExtended to outlet PlayerEventSplitToRosterMetrics
+        tell event Player.ContractExtended to entity TeamContext.Player
+      }
+      on event Player.PlayerTraded is {
+        send event Player.PlayerTraded to outlet PlayerEventSplitToPlayerRepository
+        send event Player.PlayerTraded to outlet PlayerEventSplitToRosterMetrics
+        tell event Player.PlayerTraded to entity TeamContext.Player
+      }
+      on event Player.PlayerReleased is {
+        send event Player.PlayerReleased to outlet PlayerEventSplitToPlayerRepository
+        send event Player.PlayerReleased to outlet PlayerEventSplitToRosterMetrics
+        tell event Player.PlayerReleased to entity TeamContext.Player
+      }
+      on event Player.PlayerPlacedOnInjuredReserve is {
+        send event Player.PlayerPlacedOnInjuredReserve to outlet PlayerEventSplitToPlayerRepository
+        send event Player.PlayerPlacedOnInjuredReserve to outlet PlayerEventSplitToRosterMetrics
+        tell event Player.PlayerPlacedOnInjuredReserve to entity TeamContext.Player
+      }
+      on other is {
+        error "Unexpected message for processor PlayerEventSplit"
+      }
+    } with {
+      briefly "Player event fan-out handler"
+      described as {
+        |Delivers each Player event to all of its consumers.
+      }
+    }
+  } with {
+    briefly "Player event fan-out"
+    described as {
+      |Fans Player events out to the repository and projectors.
+    }
+  }
+  processor TeamEventSplit is {
+    inlet TeamEventSplitIn is type TeamEvent
+    outlet TeamEventSplitToPlayerRepository is type TeamEvent
+    outlet TeamEventSplitToRosterMetrics is type TeamEvent
+    handler TeamEventSplitHandler is {
+      on event Team.TeamCreated is {
+        send event Team.TeamCreated to outlet TeamEventSplitToPlayerRepository
+        send event Team.TeamCreated to outlet TeamEventSplitToRosterMetrics
+        tell event Team.TeamCreated to entity TeamContext.Team
+      }
+      on other is {
+        error "Unexpected message for processor TeamEventSplit"
+      }
+    } with {
+      briefly "Team event fan-out handler"
+      described as {
+        |Delivers each Team event to all of its consumers.
+      }
+    }
+  } with {
+    briefly "Team event fan-out"
+    described as {
+      |Fans Team events out to the repository and projectors.
+    }
+  }
+  connector LinkPlayerToPlayerEventSplit is {
+    from outlet TeamContext.Player.PlayerEvents2 to
+      inlet TeamContext.PlayerEventSplit.PlayerEventSplitIn
+  } with {
+    briefly "LinkPlayerToPlayerEventSplit"
+  }
+  connector LinkPlayerEventSplitToPlayerRepository is {
+    from outlet TeamContext.PlayerEventSplit.PlayerEventSplitToPlayerRepository to
+      inlet TeamContext.PlayerRepository.PlayerRepositoryFromPlayer
+  } with {
+    briefly "LinkPlayerEventSplitToPlayerRepository"
+  }
+  connector LinkPlayerEventSplitToRosterMetrics is {
+    from outlet TeamContext.PlayerEventSplit.PlayerEventSplitToRosterMetrics to
+      inlet TeamContext.RosterMetrics.RosterMetricsFromPlayer
+  } with {
+    briefly "LinkPlayerEventSplitToRosterMetrics"
+  }
+  connector LinkTeamToTeamEventSplit is {
+    from outlet TeamContext.Team.TeamEvents to
+      inlet TeamContext.TeamEventSplit.TeamEventSplitIn
+  } with {
+    briefly "LinkTeamToTeamEventSplit"
+  }
+  connector LinkTeamEventSplitToPlayerRepository is {
+    from outlet TeamContext.TeamEventSplit.TeamEventSplitToPlayerRepository to
+      inlet TeamContext.PlayerRepository.PlayerRepositoryFromTeam
+  } with {
+    briefly "LinkTeamEventSplitToPlayerRepository"
+  }
+  connector LinkTeamEventSplitToRosterMetrics is {
+    from outlet TeamContext.TeamEventSplit.TeamEventSplitToRosterMetrics to
+      inlet TeamContext.RosterMetrics.RosterMetricsFromTeam
+  } with {
+    briefly "LinkTeamEventSplitToRosterMetrics"
+  }
+  connector LinkRosterMetricsToPlayerRepository is {
+    from outlet TeamContext.RosterMetrics.RosterMetricsOut to
+      inlet TeamContext.PlayerRepository.PlayerRepositoryFromRosterMetrics
+  } with {
+    briefly "LinkRosterMetricsToPlayerRepository"
   }
 } with {
   briefly "Bounded context for team roster management"

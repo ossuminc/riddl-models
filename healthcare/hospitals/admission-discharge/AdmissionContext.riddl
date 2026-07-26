@@ -4,6 +4,11 @@ context AdmissionContext is {
   include "Admission.riddl"
   // Repository for admission persistence
   repository AdmissionRepository is {
+    inlet AdmissionRepositoryFromAdmission is type AdmissionEvent
+    inlet AdmissionRepositoryFromBedOccupancyProjector is type AdmissionEvent
+    inlet AdmissionRepositoryFromLengthOfStayProjector is type AdmissionEvent
+    inlet AdmissionRepositoryFromThroughputProjector is type AdmissionEvent
+    outlet AdmissionRepositoryResponses is type Admission.AdmissionResult
     schema AdmissionData is relational
       of admissions as type Admission
         index on field Admission.admissionId
@@ -76,6 +81,8 @@ context AdmissionContext is {
   }
   // Projector for bed occupancy metrics
   projector BedOccupancyProjector is {
+    inlet BedOccupancyProjectorFromAdmission is type AdmissionEvent
+    outlet BedOccupancyProjectorOut is type AdmissionEvent
     updates repository AdmissionContext.AdmissionRepository
     record OccupancyStats is  {
       unitId: UnitId with {
@@ -156,6 +163,8 @@ context AdmissionContext is {
   }
   // Projector for length of stay analytics
   projector LengthOfStayProjector is {
+    inlet LengthOfStayProjectorFromAdmission is type AdmissionEvent
+    outlet LengthOfStayProjectorOut is type AdmissionEvent
     updates repository AdmissionContext.AdmissionRepository
     record LOSStats is  {
       filterUnitId: UnitId? with {
@@ -236,6 +245,8 @@ context AdmissionContext is {
   }
   // Projector for throughput metrics
   projector ThroughputProjector is {
+    inlet ThroughputProjectorFromAdmission is type AdmissionEvent
+    outlet ThroughputProjectorOut is type AdmissionEvent
     updates repository AdmissionContext.AdmissionRepository
     record ThroughputStats is  {
       periodDate: Date with {
@@ -401,6 +412,125 @@ context AdmissionContext is {
     described as {
       |Connects admission source to sink for event streaming.
     }
+  }
+  processor AdmissionEventSplit is {
+    inlet AdmissionEventSplitIn is type AdmissionEvent
+    outlet AdmissionEventSplitToAdmissionRepository is type AdmissionEvent
+    outlet AdmissionEventSplitToBedOccupancyProjector is type AdmissionEvent
+    outlet AdmissionEventSplitToLengthOfStayProjector is type AdmissionEvent
+    outlet AdmissionEventSplitToThroughputProjector is type AdmissionEvent
+    handler AdmissionEventSplitHandler is {
+      on event Admission.AdmissionCreated is {
+        send event Admission.AdmissionCreated to outlet AdmissionEventSplitToAdmissionRepository
+        send event Admission.AdmissionCreated to outlet AdmissionEventSplitToBedOccupancyProjector
+        send event Admission.AdmissionCreated to outlet AdmissionEventSplitToLengthOfStayProjector
+        send event Admission.AdmissionCreated to outlet AdmissionEventSplitToThroughputProjector
+        tell event Admission.AdmissionCreated to entity AdmissionContext.Admission
+      }
+      on event Admission.BedAssigned is {
+        send event Admission.BedAssigned to outlet AdmissionEventSplitToAdmissionRepository
+        send event Admission.BedAssigned to outlet AdmissionEventSplitToBedOccupancyProjector
+        send event Admission.BedAssigned to outlet AdmissionEventSplitToLengthOfStayProjector
+        send event Admission.BedAssigned to outlet AdmissionEventSplitToThroughputProjector
+        tell event Admission.BedAssigned to entity AdmissionContext.Admission
+      }
+      on event Admission.TransferRequested is {
+        send event Admission.TransferRequested to outlet AdmissionEventSplitToAdmissionRepository
+        send event Admission.TransferRequested to outlet AdmissionEventSplitToBedOccupancyProjector
+        send event Admission.TransferRequested to outlet AdmissionEventSplitToLengthOfStayProjector
+        send event Admission.TransferRequested to outlet AdmissionEventSplitToThroughputProjector
+        tell event Admission.TransferRequested to entity AdmissionContext.Admission
+      }
+      on event Admission.PatientTransferred is {
+        send event Admission.PatientTransferred to outlet AdmissionEventSplitToAdmissionRepository
+        send event Admission.PatientTransferred to outlet AdmissionEventSplitToBedOccupancyProjector
+        send event Admission.PatientTransferred to outlet AdmissionEventSplitToLengthOfStayProjector
+        send event Admission.PatientTransferred to outlet AdmissionEventSplitToThroughputProjector
+        tell event Admission.PatientTransferred to entity AdmissionContext.Admission
+      }
+      on event Admission.ConditionUpdated is {
+        send event Admission.ConditionUpdated to outlet AdmissionEventSplitToAdmissionRepository
+        send event Admission.ConditionUpdated to outlet AdmissionEventSplitToBedOccupancyProjector
+        send event Admission.ConditionUpdated to outlet AdmissionEventSplitToLengthOfStayProjector
+        send event Admission.ConditionUpdated to outlet AdmissionEventSplitToThroughputProjector
+        tell event Admission.ConditionUpdated to entity AdmissionContext.Admission
+      }
+      on event Admission.DischargeInitiated is {
+        send event Admission.DischargeInitiated to outlet AdmissionEventSplitToAdmissionRepository
+        send event Admission.DischargeInitiated to outlet AdmissionEventSplitToBedOccupancyProjector
+        send event Admission.DischargeInitiated to outlet AdmissionEventSplitToLengthOfStayProjector
+        send event Admission.DischargeInitiated to outlet AdmissionEventSplitToThroughputProjector
+        tell event Admission.DischargeInitiated to entity AdmissionContext.Admission
+      }
+      on event Admission.DischargeCompleted is {
+        send event Admission.DischargeCompleted to outlet AdmissionEventSplitToAdmissionRepository
+        send event Admission.DischargeCompleted to outlet AdmissionEventSplitToBedOccupancyProjector
+        send event Admission.DischargeCompleted to outlet AdmissionEventSplitToLengthOfStayProjector
+        send event Admission.DischargeCompleted to outlet AdmissionEventSplitToThroughputProjector
+        tell event Admission.DischargeCompleted to entity AdmissionContext.Admission
+      }
+      on other is {
+        error "Unexpected message for processor AdmissionEventSplit"
+      }
+    } with {
+      briefly "Admission event fan-out handler"
+      described as {
+        |Delivers each Admission event to all of its consumers.
+      }
+    }
+  } with {
+    briefly "Admission event fan-out"
+    described as {
+      |Fans Admission events out to the repository and projectors.
+    }
+  }
+  connector LinkAdmissionToAdmissionEventSplit is {
+    from outlet AdmissionContext.Admission.AdmissionEvents2 to
+      inlet AdmissionContext.AdmissionEventSplit.AdmissionEventSplitIn
+  } with {
+    briefly "LinkAdmissionToAdmissionEventSplit"
+  }
+  connector LinkAdmissionEventSplitToAdmissionRepository is {
+    from outlet AdmissionContext.AdmissionEventSplit.AdmissionEventSplitToAdmissionRepository to
+      inlet AdmissionContext.AdmissionRepository.AdmissionRepositoryFromAdmission
+  } with {
+    briefly "LinkAdmissionEventSplitToAdmissionRepository"
+  }
+  connector LinkAdmissionEventSplitToBedOccupancyProjector is {
+    from outlet AdmissionContext.AdmissionEventSplit.AdmissionEventSplitToBedOccupancyProjector to
+      inlet AdmissionContext.BedOccupancyProjector.BedOccupancyProjectorFromAdmission
+  } with {
+    briefly "LinkAdmissionEventSplitToBedOccupancyProjector"
+  }
+  connector LinkAdmissionEventSplitToLengthOfStayProjector is {
+    from outlet AdmissionContext.AdmissionEventSplit.AdmissionEventSplitToLengthOfStayProjector to
+      inlet AdmissionContext.LengthOfStayProjector.LengthOfStayProjectorFromAdmission
+  } with {
+    briefly "LinkAdmissionEventSplitToLengthOfStayProjector"
+  }
+  connector LinkAdmissionEventSplitToThroughputProjector is {
+    from outlet AdmissionContext.AdmissionEventSplit.AdmissionEventSplitToThroughputProjector to
+      inlet AdmissionContext.ThroughputProjector.ThroughputProjectorFromAdmission
+  } with {
+    briefly "LinkAdmissionEventSplitToThroughputProjector"
+  }
+  connector LinkBedOccupancyProjectorToAdmissionRepository is {
+    from outlet AdmissionContext.BedOccupancyProjector.BedOccupancyProjectorOut to
+      inlet AdmissionContext.AdmissionRepository.AdmissionRepositoryFromBedOccupancyProjector
+  } with {
+    briefly "LinkBedOccupancyProjectorToAdmissionRepository"
+  }
+  connector LinkLengthOfStayProjectorToAdmissionRepository is {
+    from outlet AdmissionContext.LengthOfStayProjector.LengthOfStayProjectorOut to
+      inlet AdmissionContext.AdmissionRepository.AdmissionRepositoryFromLengthOfStayProjector
+  } with {
+    briefly "LinkLengthOfStayProjectorToAdmissionRepository"
+  }
+  connector LinkThroughputProjectorToAdmissionRepository is {
+    from outlet AdmissionContext.ThroughputProjector.ThroughputProjectorOut to
+      inlet AdmissionContext.AdmissionRepository.AdmissionRepositoryFromThroughputProjector
+  } with {
+    briefly "LinkThroughputProjectorToAdmissionRepository"
   }
 } with {
   briefly "Bounded context for hospital admissions"

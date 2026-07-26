@@ -4,6 +4,10 @@ context CustomerSuccessContext is {
   include "CustomerAccount.riddl"
   // Repository for persisting customer account data
   repository CustomerAccountRepository is {
+    inlet CustomerAccountRepositoryFromCustomerAccount is type CustomerAccountEvent
+    inlet CustomerAccountRepositoryFromHealthScoreTrendsProjector is type CustomerAccountEvent
+    inlet CustomerAccountRepositoryFromChurnMetricsProjector is type CustomerAccountEvent
+    outlet CustomerAccountRepositoryResponses is type CustomerAccount.CustomerAccountResult
     query FindAccountById is  {
       accountId: AccountId with {
         briefly "Account ID"
@@ -193,6 +197,8 @@ context CustomerSuccessContext is {
   }
   // Projector for health score analytics
   projector HealthScoreTrendsProjector is {
+    inlet HealthScoreTrendsProjectorFromCustomerAccount is type CustomerAccountEvent
+    outlet HealthScoreTrendsProjectorOut is type CustomerAccountEvent
     updates repository CustomerSuccessContext.CustomerAccountRepository
     record HealthScoreTrend is  {
       accountId: AccountId with {
@@ -350,6 +356,8 @@ context CustomerSuccessContext is {
   }
   // Projector for churn analytics
   projector ChurnMetricsProjector is {
+    inlet ChurnMetricsProjectorFromCustomerAccount is type CustomerAccountEvent
+    outlet ChurnMetricsProjectorOut is type CustomerAccountEvent
     updates repository CustomerSuccessContext.CustomerAccountRepository
     record ChurnMetric is  {
       period: String(1,20) with {
@@ -648,6 +656,99 @@ context CustomerSuccessContext is {
     described as {
       |Wires CustomerAccount source to sink for event flow.
     }
+  }
+  processor CustomerAccountEventSplit is {
+    inlet CustomerAccountEventSplitIn is type CustomerAccountEvent
+    outlet CustomerAccountEventSplitToCustomerAccountRepository is type CustomerAccountEvent
+    outlet CustomerAccountEventSplitToHealthScoreTrendsProjector is type CustomerAccountEvent
+    outlet CustomerAccountEventSplitToChurnMetricsProjector is type CustomerAccountEvent
+    handler CustomerAccountEventSplitHandler is {
+      on event CustomerAccount.CustomerOnboarded is {
+        send event CustomerAccount.CustomerOnboarded to outlet CustomerAccountEventSplitToCustomerAccountRepository
+        send event CustomerAccount.CustomerOnboarded to outlet CustomerAccountEventSplitToHealthScoreTrendsProjector
+        send event CustomerAccount.CustomerOnboarded to outlet CustomerAccountEventSplitToChurnMetricsProjector
+        tell event CustomerAccount.CustomerOnboarded to entity CustomerSuccessContext.CustomerAccount
+      }
+      on event CustomerAccount.HealthScoreUpdated is {
+        send event CustomerAccount.HealthScoreUpdated to outlet CustomerAccountEventSplitToCustomerAccountRepository
+        send event CustomerAccount.HealthScoreUpdated to outlet CustomerAccountEventSplitToHealthScoreTrendsProjector
+        send event CustomerAccount.HealthScoreUpdated to outlet CustomerAccountEventSplitToChurnMetricsProjector
+        tell event CustomerAccount.HealthScoreUpdated to entity CustomerSuccessContext.CustomerAccount
+      }
+      on event CustomerAccount.TouchpointRecorded is {
+        send event CustomerAccount.TouchpointRecorded to outlet CustomerAccountEventSplitToCustomerAccountRepository
+        send event CustomerAccount.TouchpointRecorded to outlet CustomerAccountEventSplitToHealthScoreTrendsProjector
+        send event CustomerAccount.TouchpointRecorded to outlet CustomerAccountEventSplitToChurnMetricsProjector
+        tell event CustomerAccount.TouchpointRecorded to entity CustomerSuccessContext.CustomerAccount
+      }
+      on event CustomerAccount.AccountFlaggedAtRisk is {
+        send event CustomerAccount.AccountFlaggedAtRisk to outlet CustomerAccountEventSplitToCustomerAccountRepository
+        send event CustomerAccount.AccountFlaggedAtRisk to outlet CustomerAccountEventSplitToHealthScoreTrendsProjector
+        send event CustomerAccount.AccountFlaggedAtRisk to outlet CustomerAccountEventSplitToChurnMetricsProjector
+        tell event CustomerAccount.AccountFlaggedAtRisk to entity CustomerSuccessContext.CustomerAccount
+      }
+      on event CustomerAccount.RenewalInitiated is {
+        send event CustomerAccount.RenewalInitiated to outlet CustomerAccountEventSplitToCustomerAccountRepository
+        send event CustomerAccount.RenewalInitiated to outlet CustomerAccountEventSplitToHealthScoreTrendsProjector
+        send event CustomerAccount.RenewalInitiated to outlet CustomerAccountEventSplitToChurnMetricsProjector
+        tell event CustomerAccount.RenewalInitiated to entity CustomerSuccessContext.CustomerAccount
+      }
+      on event CustomerAccount.CustomerChurned is {
+        send event CustomerAccount.CustomerChurned to outlet CustomerAccountEventSplitToCustomerAccountRepository
+        send event CustomerAccount.CustomerChurned to outlet CustomerAccountEventSplitToHealthScoreTrendsProjector
+        send event CustomerAccount.CustomerChurned to outlet CustomerAccountEventSplitToChurnMetricsProjector
+        tell event CustomerAccount.CustomerChurned to entity CustomerSuccessContext.CustomerAccount
+      }
+      on other is {
+        error "Unexpected message for processor CustomerAccountEventSplit"
+      }
+    } with {
+      briefly "CustomerAccount event fan-out handler"
+      described as {
+        |Delivers each CustomerAccount event to all of its consumers.
+      }
+    }
+  } with {
+    briefly "CustomerAccount event fan-out"
+    described as {
+      |Fans CustomerAccount events out to the repository and projectors.
+    }
+  }
+  connector LinkCustomerAccountToCustomerAccountEventSplit is {
+    from outlet CustomerSuccessContext.CustomerAccount.CustomerAccountEvents to
+      inlet CustomerSuccessContext.CustomerAccountEventSplit.CustomerAccountEventSplitIn
+  } with {
+    briefly "LinkCustomerAccountToCustomerAccountEventSplit"
+  }
+  connector LinkCustomerAccountEventSplitToCustomerAccountRepository is {
+    from outlet CustomerSuccessContext.CustomerAccountEventSplit.CustomerAccountEventSplitToCustomerAccountRepository to
+      inlet CustomerSuccessContext.CustomerAccountRepository.CustomerAccountRepositoryFromCustomerAccount
+  } with {
+    briefly "LinkCustomerAccountEventSplitToCustomerAccountRepository"
+  }
+  connector LinkCustomerAccountEventSplitToHealthScoreTrendsProjector is {
+    from outlet CustomerSuccessContext.CustomerAccountEventSplit.CustomerAccountEventSplitToHealthScoreTrendsProjector to
+      inlet CustomerSuccessContext.HealthScoreTrendsProjector.HealthScoreTrendsProjectorFromCustomerAccount
+  } with {
+    briefly "LinkCustomerAccountEventSplitToHealthScoreTrendsProjector"
+  }
+  connector LinkCustomerAccountEventSplitToChurnMetricsProjector is {
+    from outlet CustomerSuccessContext.CustomerAccountEventSplit.CustomerAccountEventSplitToChurnMetricsProjector to
+      inlet CustomerSuccessContext.ChurnMetricsProjector.ChurnMetricsProjectorFromCustomerAccount
+  } with {
+    briefly "LinkCustomerAccountEventSplitToChurnMetricsProjector"
+  }
+  connector LinkHealthScoreTrendsProjectorToCustomerAccountRepository is {
+    from outlet CustomerSuccessContext.HealthScoreTrendsProjector.HealthScoreTrendsProjectorOut to
+      inlet CustomerSuccessContext.CustomerAccountRepository.CustomerAccountRepositoryFromHealthScoreTrendsProjector
+  } with {
+    briefly "LinkHealthScoreTrendsProjectorToCustomerAccountRepository"
+  }
+  connector LinkChurnMetricsProjectorToCustomerAccountRepository is {
+    from outlet CustomerSuccessContext.ChurnMetricsProjector.ChurnMetricsProjectorOut to
+      inlet CustomerSuccessContext.CustomerAccountRepository.CustomerAccountRepositoryFromChurnMetricsProjector
+  } with {
+    briefly "LinkChurnMetricsProjectorToCustomerAccountRepository"
   }
 } with {
   briefly "Customer success context"

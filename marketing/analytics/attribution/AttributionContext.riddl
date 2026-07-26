@@ -3,6 +3,9 @@ context AttributionContext is {
   include "types.riddl"
   include "ConversionPath.riddl"
   repository AttributionRepository is {
+    inlet AttributionRepositoryFromConversionPath is type ConversionPathEvent
+    inlet AttributionRepositoryFromAttributionMetrics is type ConversionPathEvent
+    outlet AttributionRepositoryResponses is type ConversionPath.ConversionPathResult
     schema AttributionData is relational
       of conversionPaths as type ConversionPath
         index on field ConversionPath.conversionPathId
@@ -41,6 +44,8 @@ context AttributionContext is {
     }
   }
   projector AttributionMetrics is {
+    inlet AttributionMetricsFromConversionPath is type ConversionPathEvent
+    outlet AttributionMetricsOut is type ConversionPathEvent
     updates repository AttributionContext.AttributionRepository
     record ChannelMetrics is  {
       totalConversions: Natural with {
@@ -193,6 +198,80 @@ context AttributionContext is {
     described as {
       |Connects the ConversionPath source to its sink.
     }
+  }
+  processor ConversionPathEventSplit is {
+    inlet ConversionPathEventSplitIn is type ConversionPathEvent
+    outlet ConversionPathEventSplitToAttributionRepository is type ConversionPathEvent
+    outlet ConversionPathEventSplitToAttributionMetrics is type ConversionPathEvent
+    handler ConversionPathEventSplitHandler is {
+      on event ConversionPath.ConversionPathCreated is {
+        send event ConversionPath.ConversionPathCreated to outlet ConversionPathEventSplitToAttributionRepository
+        send event ConversionPath.ConversionPathCreated to outlet ConversionPathEventSplitToAttributionMetrics
+        tell event ConversionPath.ConversionPathCreated to entity AttributionContext.ConversionPath
+      }
+      on event ConversionPath.TouchpointRecorded is {
+        send event ConversionPath.TouchpointRecorded to outlet ConversionPathEventSplitToAttributionRepository
+        send event ConversionPath.TouchpointRecorded to outlet ConversionPathEventSplitToAttributionMetrics
+        tell event ConversionPath.TouchpointRecorded to entity AttributionContext.ConversionPath
+      }
+      on event ConversionPath.ConversionRecorded is {
+        send event ConversionPath.ConversionRecorded to outlet ConversionPathEventSplitToAttributionRepository
+        send event ConversionPath.ConversionRecorded to outlet ConversionPathEventSplitToAttributionMetrics
+        tell event ConversionPath.ConversionRecorded to entity AttributionContext.ConversionPath
+      }
+      on event ConversionPath.AttributionModelApplied is {
+        send event ConversionPath.AttributionModelApplied to outlet ConversionPathEventSplitToAttributionRepository
+        send event ConversionPath.AttributionModelApplied to outlet ConversionPathEventSplitToAttributionMetrics
+        tell event ConversionPath.AttributionModelApplied to entity AttributionContext.ConversionPath
+      }
+      on event ConversionPath.PathExpired is {
+        send event ConversionPath.PathExpired to outlet ConversionPathEventSplitToAttributionRepository
+        send event ConversionPath.PathExpired to outlet ConversionPathEventSplitToAttributionMetrics
+        tell event ConversionPath.PathExpired to entity AttributionContext.ConversionPath
+      }
+      on event ConversionPath.PathCancelled is {
+        send event ConversionPath.PathCancelled to outlet ConversionPathEventSplitToAttributionRepository
+        send event ConversionPath.PathCancelled to outlet ConversionPathEventSplitToAttributionMetrics
+        tell event ConversionPath.PathCancelled to entity AttributionContext.ConversionPath
+      }
+      on other is {
+        error "Unexpected message for processor ConversionPathEventSplit"
+      }
+    } with {
+      briefly "ConversionPath event fan-out handler"
+      described as {
+        |Delivers each ConversionPath event to all of its consumers.
+      }
+    }
+  } with {
+    briefly "ConversionPath event fan-out"
+    described as {
+      |Fans ConversionPath events out to the repository and projectors.
+    }
+  }
+  connector LinkConversionPathToConversionPathEventSplit is {
+    from outlet AttributionContext.ConversionPath.ConversionPathEvents2 to
+      inlet AttributionContext.ConversionPathEventSplit.ConversionPathEventSplitIn
+  } with {
+    briefly "LinkConversionPathToConversionPathEventSplit"
+  }
+  connector LinkConversionPathEventSplitToAttributionRepository is {
+    from outlet AttributionContext.ConversionPathEventSplit.ConversionPathEventSplitToAttributionRepository to
+      inlet AttributionContext.AttributionRepository.AttributionRepositoryFromConversionPath
+  } with {
+    briefly "LinkConversionPathEventSplitToAttributionRepository"
+  }
+  connector LinkConversionPathEventSplitToAttributionMetrics is {
+    from outlet AttributionContext.ConversionPathEventSplit.ConversionPathEventSplitToAttributionMetrics to
+      inlet AttributionContext.AttributionMetrics.AttributionMetricsFromConversionPath
+  } with {
+    briefly "LinkConversionPathEventSplitToAttributionMetrics"
+  }
+  connector LinkAttributionMetricsToAttributionRepository is {
+    from outlet AttributionContext.AttributionMetrics.AttributionMetricsOut to
+      inlet AttributionContext.AttributionRepository.AttributionRepositoryFromAttributionMetrics
+  } with {
+    briefly "LinkAttributionMetricsToAttributionRepository"
   }
 } with {
   briefly "Bounded context for marketing attribution"
