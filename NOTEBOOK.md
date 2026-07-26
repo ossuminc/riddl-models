@@ -44,11 +44,13 @@ Gate over all 187 `.conf` entry points as of 2026-07-26:
 |---------------|-------------:|----:|
 | errors | 0 | 0 |
 | deprecations | 0 | 0 |
-| unreachable | 98 | 68 |
+| completeness | 0 | 0 |
+| unreachable | 98 | **0** |
 
-The remaining 68 are all Class A — whole contexts (mostly
-`external` ones) used as `tell` targets. Each needs an inlet plus
-a connector carrying `option is persistent` (spec §7.3).
+**A6 is complete.** The 14 warnings that remain are the same 14
+that predate this work (verified by diffing normalized message
+text against the baseline): 10 "cross-context references violate
+the 'bounded' aspect" path warnings and 4 port-overload warnings.
 
 Class B (30 warnings, second-and-subsequent repositories) is
 **done**. The defect was misrouting, not omission: the generator
@@ -65,6 +67,43 @@ Newly wired repositories get **inlets only, no `Responses`
 outlet** — reachability needs only an inbound connector, and
 adding app-side response ports is what caused the port-name
 collisions in an earlier, reverted attempt.
+
+Class A (68 warnings, whole contexts as `tell` targets) is
+**done**, but only 10 of them were what the plan assumed. 58 were
+a context or entity telling **itself**, where a connector would be
+a self-loop modelling something untrue. Two idioms, and they are
+not interchangeable:
+
+- **entity tells its own context** (8) → `send event X to outlet
+  <entity's event outlet>`. `yield` does *not* work here: it
+  clears the unreachable warning but raises `[completeness]`
+  "Command processing in Entity E should result in sending an
+  event". Entities must emit through a port.
+- **external context tells itself** (50) → `yield event X`.
+  Contexts are not bound by that entity rule, so this is clean.
+
+The 10 genuine cross-context tells got an inlet on the target, an
+outlet on the source, and a domain-scoped connector carrying
+`option is persistent` (spec §7.3). Where the source was already
+an `adaptor` (ticket-sales `MarketingAdapter`), the adaptor itself
+carries the outlet.
+
+Two things worth knowing next time:
+
+1. **Compiler bug (riddl).** `ValidationPass.scala:441` checks
+   only `SendStatement`/`TellStatement` for the command→event
+   completeness rule, while the `QueryCase` arm immediately below
+   it also checks `YieldStatement`. `yield` was wired into the
+   query branch when A22 landed and the command branch was
+   missed. Filed as `../riddl/task/`. Once fixed, `yield` becomes
+   legal for entity command handlers too — though `send ... to
+   outlet` stays the better model, since that is what puts the
+   event on the wire to repositories and projectors.
+2. **Latent gap.** `OrderFulfillmentSaga` tells four external
+   contexts cross-context, yet the compiler emits *no*
+   unreachable warning for tells inside a `saga`. Reachability
+   appears not to traverse saga steps. Those 8 sites are
+   unwired and invisible to the gate.
 
 Note: `riddlc-13cc4baa` reports 2 pre-existing `[missing]`
 warnings in `healthcare/clinical/appointment-scheduling` (schema
