@@ -31,6 +31,46 @@ to the task file and note completion in this notebook.
   invoked explicitly via `sbt v` / `sbt riddlcValidate`
 - All model READMEs have NAICS codes
 
+### In Progress: `release/2` — A6 tell-reachability
+
+Branch `release/2` migrates the corpus to RIDDL 2.0 streaming
+syntax and wires every `tell` target so it is reachable via a
+connector (A6). Validate with `../bin/riddlc-13cc4baa` — it
+misreports its own git hash but is the latest `riddl` build.
+
+Gate over all 187 `.conf` entry points as of 2026-07-26:
+
+| metric | at `cc6902c` | now |
+|---------------|-------------:|----:|
+| errors | 0 | 0 |
+| deprecations | 0 | 0 |
+| unreachable | 98 | 68 |
+
+The remaining 68 are all Class A — whole contexts (mostly
+`external` ones) used as `tell` targets. Each needs an inlet plus
+a connector carrying `option is persistent` (spec §7.3).
+
+Class B (30 warnings, second-and-subsequent repositories) is
+**done**. The defect was misrouting, not omission: the generator
+in `task/wire-a6-reachability.py` wires only `repos[0]`, so events
+belonging to a sibling repository were connected to the wrong one.
+Fixed by re-pointing existing connectors, using two affinity
+signals — a projector's own `updates repository X` clause (exact),
+and the repository handler's `on command Entity.*` set. `Reporting`
+was never wired at all: the generator requires a context to have
+entities, and that context has three repositories, three
+projectors, and zero entities.
+
+Newly wired repositories get **inlets only, no `Responses`
+outlet** — reachability needs only an inbound connector, and
+adding app-side response ports is what caused the port-name
+collisions in an earlier, reverted attempt.
+
+Note: `riddlc-13cc4baa` reports 2 pre-existing `[missing]`
+warnings in `healthcare/clinical/appointment-scheduling` (schema
+`AppointmentData` lacks metadata and a description) that older
+binaries did not flag. Unrelated to A6.
+
 ### Open Loose Ends
 
 - 8 untracked helper scripts at repo root and in `scripts/`
