@@ -59,6 +59,9 @@ context Loyalty is {
           closedAt = current timestamp where
           loyaltyAccountId matches"
       }
+      on command LogLoyaltyAccountEvent is {
+        do "append the loyalty account event to the LoyaltyAccount event log"
+      }
     } with {
       briefly "Loyalty account persistence"
       described as {
@@ -112,8 +115,7 @@ context Loyalty is {
       |Publishes loyalty account entity events.
     }
   }
-  sink CampaignEventSink is {
-    inlet IncomingCampaignEvents is type CampaignEvent
+  adaptor FromMarketing from context Corporate.Marketing is {
     handler CampaignEventIntake is {
       on event Corporate.Marketing.Campaign.CampaignLaunched is {
         tell command LoyaltyAccount.AccruePoints to entity
@@ -124,6 +126,9 @@ context Loyalty is {
         tell command LoyaltyAccount.AccruePoints to entity
           Loyalty.LoyaltyAccount
         do "finalize campaign promotion points for loyalty accounts"
+      }
+      on other is {
+        error "Unexpected message for adaptor FromMarketing"
       }
     } with {
       briefly "Campaign event intake"
@@ -137,18 +142,6 @@ context Loyalty is {
     described as {
       |Receives campaign events from the streaming topology
       |for promotion distribution to loyalty accounts.
-    }
-  }
-  connector LoyaltyToMarketing is {
-    from outlet
-      Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents to
-      inlet Marketing.LoyaltyEventSink.IncomingLoyaltyEvents
-  } with {
-    option is persistent
-    briefly "Loyalty to marketing connector"
-    described as {
-      |Wires loyalty account events to the marketing context
-      |for campaign targeting.
     }
   }
   adaptor FromPayment from context Restaurant.FrontOfHouse is {
@@ -210,6 +203,55 @@ context Loyalty is {
     briefly "Online payment adaptor"
     described as {
       |Receives online payment events for loyalty accrual.
+    }
+  }
+  // ---- Local event log for loyalty account events ----
+  command LogLoyaltyAccountEvent is {
+    loggedLoyaltyAccountId: String(1,50) with {
+      briefly "ID"
+      described as {
+        |Identifier of the loyalty account the logged event concerns.
+      }
+    }
+    loggedLoyaltyAccountEventType: String(1,50) with {
+      briefly "Event type"
+      described as {
+        |Which loyalty account event was logged.
+      }
+    }
+  } with {
+    briefly "Log loyalty account event"
+    described as {
+      |Append a published loyalty account event to this context's event log.
+    }
+  }
+  sink LoyaltyAccountEventLog is {
+    inlet IncomingLoyaltyAccountLog is type LoyaltyEvent
+    handler LoyaltyAccountLogIntake is {
+      on other is {
+        tell command LogLoyaltyAccountEvent to repository Loyalty.LoyaltyAccountRepository
+        do "append the loyalty account event to the context event log"
+      }
+    } with {
+      briefly "LoyaltyAccount log intake"
+      described as {
+        |Routes every published loyalty account event into the context's
+        |own durable event log.
+      }
+    }
+  } with {
+    briefly "LoyaltyAccount event log"
+    described as {
+      |Durable local log of loyalty account events this context publishes.
+    }
+  }
+  connector LoyaltyAccountToLog is {
+    from outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents to inlet
+      Loyalty.LoyaltyAccountEventLog.IncomingLoyaltyAccountLog
+  } with {
+    briefly "LoyaltyAccount event log connector"
+    described as {
+      |Wires published loyalty account events to the context's event log.
     }
   }
 } with {

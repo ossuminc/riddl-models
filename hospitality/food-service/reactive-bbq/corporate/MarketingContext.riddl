@@ -69,6 +69,9 @@ context Marketing is {
         do "update CampaignData.campaigns set campaignStatus =
           Ended where campaignId matches"
       }
+      on command LogCampaignEvent is {
+        do "append the campaign event to the Campaign event log"
+      }
     } with {
       briefly "Campaign persistence"
       described as {
@@ -118,8 +121,7 @@ context Marketing is {
       |Publishes campaign entity events.
     }
   }
-  sink LoyaltyEventSink is {
-    inlet IncomingLoyaltyEvents is type LoyaltyEvent
+  adaptor FromLoyalty from context Restaurant.Loyalty is {
     handler LoyaltyEventIntake is {
       on event Restaurant.Loyalty.LoyaltyAccount.PointsAccrued is {
         tell command RecordLoyaltyActivity
@@ -130,6 +132,9 @@ context Marketing is {
         tell command RecordLoyaltyActivity
           to entity Marketing.Campaign
         do "target new loyalty member for welcome campaign"
+      }
+      on other is {
+        error "Unexpected message for adaptor FromLoyalty"
       }
     } with {
       briefly "Loyalty event intake"
@@ -145,15 +150,53 @@ context Marketing is {
       |for marketing campaign targeting.
     }
   }
-  connector CampaignToLoyalty is {
-    from outlet Marketing.CampaignEventSource.CampaignEvents to
-      inlet Loyalty.CampaignEventSink.IncomingCampaignEvents
+  // ---- Local event log for campaign events ----
+  command LogCampaignEvent is {
+    loggedCampaignId: String(1,50) with {
+      briefly "ID"
+      described as {
+        |Identifier of the campaign the logged event concerns.
+      }
+    }
+    loggedCampaignEventType: String(1,50) with {
+      briefly "Event type"
+      described as {
+        |Which campaign event was logged.
+      }
+    }
   } with {
-    option is persistent
-    briefly "Campaign to loyalty connector"
+    briefly "Log campaign event"
     described as {
-      |Wires campaign events to the loyalty context for
-      |promotion distribution.
+      |Append a published campaign event to this context's event log.
+    }
+  }
+  sink CampaignEventLog is {
+    inlet IncomingCampaignLog is type CampaignEvent
+    handler CampaignLogIntake is {
+      on other is {
+        tell command LogCampaignEvent to repository Marketing.CampaignRepository
+        do "append the campaign event to the context event log"
+      }
+    } with {
+      briefly "Campaign log intake"
+      described as {
+        |Routes every published campaign event into the context's
+        |own durable event log.
+      }
+    }
+  } with {
+    briefly "Campaign event log"
+    described as {
+      |Durable local log of campaign events this context publishes.
+    }
+  }
+  connector CampaignToLog is {
+    from outlet Marketing.CampaignEventSource.CampaignEvents to inlet
+      Marketing.CampaignEventLog.IncomingCampaignLog
+  } with {
+    briefly "Campaign event log connector"
+    described as {
+      |Wires published campaign events to the context's event log.
     }
   }
 } with {
