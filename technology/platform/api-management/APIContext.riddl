@@ -4,7 +4,10 @@ context APIContext is {
   include "types.riddl"
   include "APIProduct.riddl"
   // Repository for API Products
-  repository APIProductRepository is {
+  repository APIProductRepository as merge is {
+    inlet FromEntity is type APIProductEvent
+    inlet FromProjector is type APIProductEvent
+    outlet Responses is type APIProduct.APIProductQueryResult
     type APIProductRecord is {
       apiId: APIId
       name: String
@@ -135,7 +138,9 @@ context APIContext is {
     }
   }
   // Projector for API Usage Metrics
-  projector APIUsageMetricsProjector is {
+  projector APIUsageMetricsProjector as flow is {
+    inlet IncomingEvents is type APIProductEvent
+    outlet ToRepository is type APIProductEvent
     updates repository APIContext.APIProductRepository
     record ProjectorState is  { lastUpdated: DateTime } with {
       briefly "Projector internal state"
@@ -176,9 +181,11 @@ context APIContext is {
     handler MetricsProjectionHandler is {
       on event APIProduct.VersionPublished is {
         tell event APIProduct.VersionPublished to repository APIContext.APIProductRepository
+        send event APIProduct.VersionPublished to outlet ToRepository
       }
       on event APIProduct.SubscriptionCreated is {
         tell event APIProduct.SubscriptionCreated to repository APIContext.APIProductRepository
+        send event APIProduct.SubscriptionCreated to outlet ToRepository
       }
     } with {
       briefly "Metrics projection handler"
@@ -217,87 +224,67 @@ context APIContext is {
       |persistence.
     }
   }
-  processor APIProductEventSource as source is {
-    outlet APIProductEvents is type APIProductEvent
-    handler APIProductSourceHandler is {
+  processor APIProductEventSplit as split is {
+    inlet FromEntity is type APIProductEvent
+    outlet SplitToRepository is type APIProductEvent
+    outlet SplitToProjector is type APIProductEvent
+    handler APIProductEventSplitHandler is {
       on event APIProduct.APICreated is {
-        send event APIProduct.APICreated to outlet APIProductEvents
+        send event APIProduct.APICreated to outlet SplitToRepository
+        send event APIProduct.APICreated to outlet SplitToProjector
       }
       on event APIProduct.VersionPublished is {
-        send event APIProduct.VersionPublished to outlet APIProductEvents
+        send event APIProduct.VersionPublished to outlet SplitToRepository
+        send event APIProduct.VersionPublished to outlet SplitToProjector
       }
       on event APIProduct.VersionDeprecated is {
-        send event APIProduct.VersionDeprecated to outlet APIProductEvents
+        send event APIProduct.VersionDeprecated to outlet SplitToRepository
+        send event APIProduct.VersionDeprecated to outlet SplitToProjector
       }
       on event APIProduct.SubscriptionCreated is {
-        send event APIProduct.SubscriptionCreated to outlet APIProductEvents
+        send event APIProduct.SubscriptionCreated to outlet SplitToRepository
+        send event APIProduct.SubscriptionCreated to outlet SplitToProjector
       }
       on event APIProduct.SubscriptionRevoked is {
-        send event APIProduct.SubscriptionRevoked to outlet APIProductEvents
+        send event APIProduct.SubscriptionRevoked to outlet SplitToRepository
+        send event APIProduct.SubscriptionRevoked to outlet SplitToProjector
       }
       on event APIProduct.RateLimitUpdated is {
-        send event APIProduct.RateLimitUpdated to outlet APIProductEvents
+        send event APIProduct.RateLimitUpdated to outlet SplitToRepository
+        send event APIProduct.RateLimitUpdated to outlet SplitToProjector
       }
       on other is {
-        error "Unexpected message for source APIProductEventSource"
+        error "Unexpected message for processor APIProductEventSplit"
       }
     } with {
-      briefly "APIProduct source handler"
+      briefly "API product event fan-out"
       described as {
-        |Publishes APIProduct events onto the outlet.
+        |Delivers each API product event to both the repository and the
+        |usage-metrics projector.
       }
     }
   } with {
-    briefly "APIProduct event source"
+    briefly "API product event split"
     described as {
-      |Publishes APIProduct entity events into the streaming topology.
+      |Fans API product events out to their consumers.
     }
   }
-  processor APIProductEventSink as sink is {
-    inlet APIProductInlet is type APIProductEvent
-    handler APIProductSinkHandler is {
-      on event APIProduct.APICreated is {
-        tell event APIProduct.APICreated to repository APIContext.APIProductRepository
-      }
-      on event APIProduct.VersionPublished is {
-        tell event APIProduct.VersionPublished to repository APIContext.APIProductRepository
-      }
-      on event APIProduct.VersionDeprecated is {
-        tell event APIProduct.VersionDeprecated to repository APIContext.APIProductRepository
-      }
-      on event APIProduct.SubscriptionCreated is {
-        tell event APIProduct.SubscriptionCreated to repository APIContext.APIProductRepository
-      }
-      on event APIProduct.SubscriptionRevoked is {
-        tell event APIProduct.SubscriptionRevoked to repository APIContext.APIProductRepository
-      }
-      on event APIProduct.RateLimitUpdated is {
-        tell event APIProduct.RateLimitUpdated to repository APIContext.APIProductRepository
-      }
-      on other is {
-        error "Unexpected message for sink APIProductEventSink"
-      }
-    } with {
-      briefly "APIProduct sink handler"
-      described as {
-        |Persists APIProduct events via the repository.
-      }
-    }
-  } with {
-    briefly "APIProduct event sink"
-    described as {
-      |Receives APIProduct events for persistence.
-    }
-  }
-  connector APIProductEventFlow is {
-    from outlet APIContext.APIProductEventSource.APIProductEvents to
-      inlet APIContext.APIProductEventSink.APIProductInlet
-  } with {
-    briefly "APIProduct event flow"
-    described as {
-      |Connects the APIProduct source to its sink.
-    }
-  }
+  connector APIProductEventsToSplit is {
+    from outlet APIContext.APIProduct.Events to
+      inlet APIContext.APIProductEventSplit.FromEntity
+  } with { briefly "Entity events to fan-out" }
+  connector APIProductSplitToRepository is {
+    from outlet APIContext.APIProductEventSplit.SplitToRepository to
+      inlet APIContext.APIProductRepository.FromEntity
+  } with { briefly "Fan-out to repository" }
+  connector APIProductSplitToProjector is {
+    from outlet APIContext.APIProductEventSplit.SplitToProjector to
+      inlet APIContext.APIUsageMetricsProjector.IncomingEvents
+  } with { briefly "Fan-out to projector" }
+  connector APIProductProjectorToRepository is {
+    from outlet APIContext.APIUsageMetricsProjector.ToRepository to
+      inlet APIContext.APIProductRepository.FromProjector
+  } with { briefly "Projector to repository" }
 } with {
   briefly "API Management bounded context"
   described as {
