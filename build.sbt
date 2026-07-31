@@ -18,11 +18,11 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     Test / fork := true,
 
     // --- sbt-riddl configuration ---
-    // riddlcVersion is pinned even though sbt-riddl is now 2.0.0-rc.1: the
-    // plugin shells out to a riddlc binary, so plugin version and language
-    // version are independent, and pinning keeps `sbt v` on the same build as
-    // ../bin/riddlc rather than whatever the plugin defaults to.
-    riddlcVersion := "2.0.0-rc.1",
+    // riddlcVersion is pinned even though it matches the plugin: the plugin
+    // shells out to a riddlc binary, so plugin version and language version are
+    // independent, and pinning states which parser the corpus is validated
+    // against rather than inheriting the plugin's default.
+    riddlcVersion := "2.0.0-rc.6",
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages")
