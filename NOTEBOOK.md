@@ -110,6 +110,59 @@ warnings in `healthcare/clinical/appointment-scheduling` (schema
 `AppointmentData` lacks metadata and a description) that older
 binaries did not flag. Unrelated to A6.
 
+### 2026-08-01: riddlc 2.0.0-rc.8 — error-sink inlets
+
+rc.8 requires every domain to name a destination for hard errors:
+an inlet accepting `Riddl.GeneratorError` and carrying `option
+error-sink()`. Without one the domain draws a `[missing]`
+warning — 190 of them, one per domain, across the whole corpus.
+
+Three constraints shaped the fix, each found by testing rather
+than assumption:
+
+1. **A domain body does not admit an inlet.** Only `connector`,
+   `context`, `application`, `epic`, `author`, types and includes.
+   So the inlet lives in the domain's application context and the
+   connector, which a domain body *does* admit, sits beside it.
+2. **The inlet must be connected**, or it draws `Inlet 'ErrorSink'
+   is not connected`. Upstream is `Riddl.ForeverEmpty.void`, the
+   predefined source that never emits — the honest statement that
+   no modelled component produces a `GeneratorError`; generators
+   do, at run time. That is what the predefined pair is for:
+   `ForeverEmpty` as placeholder producer, `BottomlessPit` as
+   placeholder consumer.
+3. **An arity-ascribed context cannot host one.**
+   `api-management`'s `application context APIManagementApp as
+   flow` is fixed at 1 inlet / 1 outlet; adding the sink made it
+   `merge` and errored. Its sink moved to the plain sibling
+   context `APIContext`.
+
+`reactive-bbq` is left with 3 `[missing]` warnings that **no model
+edit can clear** — the two error-sink checks contradict each other
+for nested domains. The missing check is per-domain and names
+`Restaurant`, `BackOffice` and `Corporate` individually; the
+uniqueness check is scoped to the *root* domain, so giving each
+subdomain a sink yields "second 'error-sink' in Domain
+'ReactiveBBQ'". One sink → 3 warnings; four sinks → 3 errors.
+Warnings being preferable, the root keeps the single sink, hosted
+in a new `ChainOperations` context since the umbrella domain owns
+no application of its own. Filed upstream as
+`../riddl/task/error-sink-checks-contradict-for-nested-domains.md`.
+
+Gate at rc.8, all 187 models: **0 errors, 0 deprecations, 0
+completeness, 0 usage, 0 warnings**, 3 `[missing]` (the
+unsatisfiable ones above), 0 nonzero exits. Round trip 187/187
+with zero discrepancies.
+
+Two canonical-form details worth remembering, both caught by the
+round trip rather than by validation:
+
+- `option error-sink` parses but canonicalizes to
+  `option error-sink()`
+- a connector's canonical form is the single-line
+  `connector X is from outlet A to inlet B with { ... }`, not a
+  braced body
+
 ### Open Loose Ends
 
 - 8 untracked helper scripts at repo root and in `scripts/`
