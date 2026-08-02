@@ -1,5 +1,5 @@
 // InventoryItem entity for the Inventory context
-entity InventoryItem is {
+event-sourced entity InventoryItem is {
   type InventoryItemCommand is one of {
     InventoryItem.InitializeInventoryItem or InventoryItem.ReceiveStock or InventoryItem.ConsumeStock or InventoryItem.AdjustStock or InventoryItem.SetReorderThreshold or InventoryItem.CreatePurchaseOrder
   } with {
@@ -24,7 +24,7 @@ entity InventoryItem is {
       |Initialize the InventoryItem entity on source startup.
     }
   }
-  command ReceiveStock is  {
+  command ReceiveStock yields event StockReceived is  {
     inventoryItemId: InventoryItemId with {
       briefly "ID"
       described as {
@@ -61,7 +61,7 @@ entity InventoryItem is {
       |Record receipt of new stock.
     }
   }
-  command ConsumeStock is  {
+  command ConsumeStock yields event StockConsumed is  {
     inventoryItemId: InventoryItemId with {
       briefly "ID"
       described as {
@@ -92,7 +92,7 @@ entity InventoryItem is {
       |Record stock consumption from preparation.
     }
   }
-  command AdjustStock is  {
+  command AdjustStock yields event StockAdjusted is  {
     inventoryItemId: InventoryItemId with {
       briefly "ID"
       described as {
@@ -129,7 +129,7 @@ entity InventoryItem is {
       |Manually adjust stock level.
     }
   }
-  command SetReorderThreshold is  {
+  command SetReorderThreshold yields event ReorderThresholdSet is  {
     inventoryItemId: InventoryItemId with {
       briefly "ID"
       described as {
@@ -154,7 +154,7 @@ entity InventoryItem is {
       |Set the low-stock reorder threshold.
     }
   }
-  command CreatePurchaseOrder is  {
+  command CreatePurchaseOrder yields event PurchaseOrderCreated is  {
     inventoryItemId: InventoryItemId with {
       briefly "ID"
       described as {
@@ -186,6 +186,33 @@ entity InventoryItem is {
     }
   }
   // ---- Events ----
+  event InventoryItemInitialized is  {
+    inventoryItemId: InventoryItemId with {
+      briefly "ID"
+      described as {
+        |Item identifier.
+      }
+    }
+    inventoryItemName: String with {
+      briefly "Name"
+      described as {
+        |Item name.
+      }
+    }
+    stockUnit: UnitOfMeasure with {
+      briefly "Unit"
+      described as {
+        |Unit stock is counted in.
+      }
+    }
+  } with {
+    briefly "An inventory item was initialized"
+    described as {
+      |Records the creation of a tracked inventory item. An event-sourced
+      |entity's initial state must come from an event like any other state
+      |change, so this is what `on init` yields.
+    }
+  }
   event StockReceived is  {
     inventoryItemId: InventoryItemId with {
       briefly "ID"
@@ -433,7 +460,7 @@ entity InventoryItem is {
   initial state TrackedItem of record InventoryItem.InventoryItemStateData is {
     initial handler TrackedItemInitHandler is {
       on init is {
-        set state TrackedItem to "inventoryItemId, inventoryItemName, currentStockLevel = 0, stockUnit, inventoryItemStatus = InStock, configuredReorderThreshold = none, preferredSupplier = none, lastReceivedAt = none"
+        yield event InventoryItemInitialized
       }
     } with {
       briefly "Tracked item init handler"
@@ -451,25 +478,42 @@ entity InventoryItem is {
   }
   initial handler InventoryItemHandler is {
     on command ReceiveStock is {
-      morph entity Inventory.InventoryItem to state Inventory.InventoryItem.TrackedItem with record InventoryItem.InventoryItemStateData
-      tell event StockReceived to entity Inventory.InventoryItem
+      yield event StockReceived
       send event StockReceived to outlet Inventory.InventoryItemEventSource.InventoryItemEvents
     }
     on command ConsumeStock is {
-      tell event StockConsumed to entity Inventory.InventoryItem
+      yield event StockConsumed
       send event StockConsumed to outlet Inventory.InventoryItemEventSource.InventoryItemEvents
     }
     on command AdjustStock is {
-      tell event StockAdjusted to entity Inventory.InventoryItem
+      yield event StockAdjusted
       send event StockAdjusted to outlet Inventory.InventoryItemEventSource.InventoryItemEvents
     }
     on command SetReorderThreshold is {
-      tell event ReorderThresholdSet to entity Inventory.InventoryItem
+      yield event ReorderThresholdSet
       send event ReorderThresholdSet to outlet Inventory.InventoryItemEventSource.InventoryItemEvents
     }
     on command CreatePurchaseOrder is {
-      tell event PurchaseOrderCreated to entity Inventory.InventoryItem
+      yield event PurchaseOrderCreated
       send event PurchaseOrderCreated to outlet Inventory.InventoryItemEventSource.InventoryItemEvents
+    }
+    on event InventoryItemInitialized is {
+      set state TrackedItem to "inventoryItemId, inventoryItemName, currentStockLevel = 0, stockUnit, inventoryItemStatus = InStock, configuredReorderThreshold = none, preferredSupplier = none, lastReceivedAt = none"
+    }
+    on event StockReceived is {
+      set state TrackedItem to "apply StockReceived to the tracked item"
+    }
+    on event StockConsumed is {
+      set state TrackedItem to "apply StockConsumed to the tracked item"
+    }
+    on event StockAdjusted is {
+      set state TrackedItem to "apply StockAdjusted to the tracked item"
+    }
+    on event ReorderThresholdSet is {
+      set state TrackedItem to "apply ReorderThresholdSet to the tracked item"
+    }
+    on event PurchaseOrderCreated is {
+      set state TrackedItem to "apply PurchaseOrderCreated to the tracked item"
     }
     on query GetInventoryItem is {
       do "look up InventoryItem by GetInventoryItem.inventoryItemId"

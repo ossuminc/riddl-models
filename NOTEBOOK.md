@@ -163,6 +163,55 @@ round trip rather than by validation:
   `connector X is from outlet A to inlet B with { ... }`, not a
   braced body
 
+### 2026-08-02: event sourcing — reactive-bbq converted in part
+
+The staged binary promotes entity semantics from options to keywords
+(`event-sourced entity Order is {`) and enforces four preconditions of
+event sourcing as errors, gated on that intention:
+
+- **R1** every handled command's TYPE declares `yields`
+- **R2** every event so named has an `on event` clause to apply on replay
+- **R3** `set`/`morph`/`become` only in `on event` — `on init` included
+- **R4** a foreign event may not touch state; it yields one of ours first
+
+**The recipe**, validated on `InventoryItem` and then applied:
+
+1. `entity X` → `event-sourced entity X`
+2. add `yields event E` to each handled command's declaration
+3. the existing self-`tell event E to entity <self>` becomes `yield event E`
+   — that statement always *was* "apply this event", `yield` is its name
+4. `morph`/`set` move out of the command clause into `on event E`
+5. `on init { set state S ... }` → `on init { yield event <Creation> }`,
+   with the `set` moving to `on event <Creation>`
+
+Two things that constrain the shape, both established by testing:
+
+- **`on init` cannot be dropped.** R3 forbids `set` there, but a state with
+  an empty body is a parse error, so the init handler must stay. `yield` is
+  legal in it, which is what makes step 5 work.
+- **A repository must yield too.** `yields` is a property of the command
+  *type*, so every handler of that command is obliged — including a
+  repository. Moving the repository to `on event` instead is refused:
+  "repositories typically handle commands and queries, not events".
+
+**6 of 13 entities converted**: `InventoryItem`, `Shift`, `Campaign`,
+`MenuItem`, `MenuRelease`, `PurchaseOrder`. Model validates clean, round
+trip 48/48.
+
+**The other 7 are blocked**, and not by anything in the model.
+`checkYieldConformance` has no exemption for a clause that *refuses* a
+command, so a state that rejects `AddItem` is required to `yield event
+ItemAdded` — to record the change it just declined. The restaurant
+aggregates are all multi-state: 52 of 78 commands have more than one
+clause, and 268 refusing clauses would each be forced to yield a success
+event. Filed as
+`../riddl/task/yields-conformance-forces-refusing-clauses-to-yield.md`.
+
+Corpus state under this binary: **194 errors, 27 deprecations in 10
+models** — those already carrying `option event-sourced()`. All of them
+are single-clause, so the recipe applies unchanged; that work is next and
+is not blocked. Every `.bast` is stale (FORMAT_REVISION 2 → 3).
+
 ### Open Loose Ends
 
 - 8 untracked helper scripts at repo root and in `scripts/`

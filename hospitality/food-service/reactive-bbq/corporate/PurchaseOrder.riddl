@@ -1,5 +1,5 @@
 // PurchaseOrder entity for the SupplyChain context
-entity PurchaseOrder is {
+event-sourced entity PurchaseOrder is {
   type PurchaseOrderCommand is one of {
     PurchaseOrder.InitializePurchaseOrder or PurchaseOrder.CreateBulkOrder or PurchaseOrder.ApproveOrder or PurchaseOrder.ShipOrder or PurchaseOrder.ReceiveShipment or PurchaseOrder.ReportIssue
   } with {
@@ -16,7 +16,7 @@ entity PurchaseOrder is {
       |Initialize the PurchaseOrder entity on source startup.
     }
   }
-  command CreateBulkOrder is  {
+  command CreateBulkOrder yields event BulkOrderCreated is  {
     purchaseOrderId: PurchaseOrderId with {
       briefly "ID"
       described as {
@@ -53,7 +53,7 @@ entity PurchaseOrder is {
       |Create a new bulk purchase order.
     }
   }
-  command ApproveOrder is  {
+  command ApproveOrder yields event OrderApproved is  {
     purchaseOrderId: PurchaseOrderId with {
       briefly "ID"
       described as {
@@ -78,7 +78,7 @@ entity PurchaseOrder is {
       |Approve a purchase order for fulfillment.
     }
   }
-  command ShipOrder is  {
+  command ShipOrder yields event OrderShipped is  {
     purchaseOrderId: PurchaseOrderId with {
       briefly "ID"
       described as {
@@ -103,7 +103,7 @@ entity PurchaseOrder is {
       |Record that the order has shipped.
     }
   }
-  command ReceiveShipment is  {
+  command ReceiveShipment yields event ShipmentReceived is  {
     purchaseOrderId: PurchaseOrderId with {
       briefly "ID"
       described as {
@@ -134,7 +134,7 @@ entity PurchaseOrder is {
       |Record receipt of the shipment.
     }
   }
-  command ReportIssue is  {
+  command ReportIssue yields event IssueReported is  {
     purchaseOrderId: PurchaseOrderId with {
       briefly "ID"
       described as {
@@ -401,7 +401,7 @@ entity PurchaseOrder is {
   initial state ActivePurchaseOrder of record PurchaseOrder.PurchaseOrderStateData is {
     initial handler ActivePurchaseOrderInitHandler is {
       on init is {
-        set state ActivePurchaseOrder to "purchaseOrderId, vendorId, vendorName, poLineItems, purchaseOrderStatus = PendingApproval, requestedDeliveryDate, trackingNumber = none, poCreatedAt = current timestamp, actualPoApprovedAt = none, actualShipmentReceivedAt = none"
+        yield event BulkOrderCreated
       }
     } with {
       briefly "Active purchase order init handler"
@@ -420,29 +420,44 @@ entity PurchaseOrder is {
   }
   initial handler PurchaseOrderHandler is {
     on command CreateBulkOrder is {
-      morph entity SupplyChain.PurchaseOrder to state SupplyChain.PurchaseOrder.ActivePurchaseOrder with record PurchaseOrder.PurchaseOrderStateData
-      tell event BulkOrderCreated to entity SupplyChain.PurchaseOrder
+      yield event BulkOrderCreated
       send event BulkOrderCreated to outlet SupplyChain.PurchaseOrderEventSource.PurchaseOrderEvents
     }
     on command ApproveOrder is {
-      tell event OrderApproved to entity SupplyChain.PurchaseOrder
+      yield event OrderApproved
       send event OrderApproved to outlet SupplyChain.PurchaseOrderEventSource.PurchaseOrderEvents
     }
     on command ShipOrder is {
-      tell event OrderShipped to entity SupplyChain.PurchaseOrder
+      yield event OrderShipped
       send event OrderShipped to outlet SupplyChain.PurchaseOrderEventSource.PurchaseOrderEvents
     }
     on command ReceiveShipment is {
-      tell event ShipmentReceived to entity SupplyChain.PurchaseOrder
+      yield event ShipmentReceived
       send event ShipmentReceived to outlet SupplyChain.PurchaseOrderEventSource.PurchaseOrderEvents
     }
     on command ReportIssue is {
-      tell event IssueReported to entity SupplyChain.PurchaseOrder
+      yield event IssueReported
       send event IssueReported to outlet SupplyChain.PurchaseOrderEventSource.PurchaseOrderEvents
     }
     on query GetPurchaseOrder is {
       do "look up PurchaseOrder by GetPurchaseOrder.purchaseOrderId"
       tell result PurchaseOrderResult to entity SupplyChain.PurchaseOrder
+    }
+    on event BulkOrderCreated is {
+      morph entity SupplyChain.PurchaseOrder to state SupplyChain.PurchaseOrder.ActivePurchaseOrder with record PurchaseOrder.PurchaseOrderStateData
+      set state ActivePurchaseOrder to "purchaseOrderId, vendorId, vendorName, poLineItems, purchaseOrderStatus = PendingApproval, requestedDeliveryDate, trackingNumber = none, poCreatedAt = current timestamp, actualPoApprovedAt = none, actualShipmentReceivedAt = none"
+    }
+    on event OrderApproved is {
+      set state ActivePurchaseOrder to "apply OrderApproved to the PurchaseOrder state"
+    }
+    on event OrderShipped is {
+      set state ActivePurchaseOrder to "apply OrderShipped to the PurchaseOrder state"
+    }
+    on event ShipmentReceived is {
+      set state ActivePurchaseOrder to "apply ShipmentReceived to the PurchaseOrder state"
+    }
+    on event IssueReported is {
+      set state ActivePurchaseOrder to "apply IssueReported to the PurchaseOrder state"
     }
   } with {
     briefly "Purchase order command handler"

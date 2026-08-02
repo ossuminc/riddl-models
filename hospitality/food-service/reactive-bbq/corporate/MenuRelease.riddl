@@ -1,5 +1,5 @@
 // MenuRelease entity for the MenuManagement context
-entity MenuRelease is {
+event-sourced entity MenuRelease is {
   type MenuReleaseCommand is one of {
     MenuRelease.InitializeMenuRelease or MenuRelease.CreateMenuRelease or MenuRelease.AddItemToRelease or MenuRelease.FinalizeRelease or MenuRelease.PublishRelease or MenuRelease.RollbackRelease
   } with {
@@ -16,7 +16,7 @@ entity MenuRelease is {
       |Initialize the MenuRelease entity on source startup.
     }
   }
-  command CreateMenuRelease is  {
+  command CreateMenuRelease yields event MenuReleaseCreated is  {
     menuReleaseId: MenuReleaseId with {
       briefly "ID"
       described as {
@@ -47,7 +47,7 @@ entity MenuRelease is {
       |Create a new menu release for atomic distribution.
     }
   }
-  command AddItemToRelease is  {
+  command AddItemToRelease yields event ItemAddedToRelease is  {
     menuReleaseId: MenuReleaseId with {
       briefly "ID"
       described as {
@@ -72,7 +72,7 @@ entity MenuRelease is {
       |Add a menu item to the release.
     }
   }
-  command FinalizeRelease is  {
+  command FinalizeRelease yields event ReleaseFinalized is  {
     menuReleaseId: MenuReleaseId with {
       briefly "ID"
       described as {
@@ -91,7 +91,7 @@ entity MenuRelease is {
       |Lock the release for review before publishing.
     }
   }
-  command PublishRelease is  {
+  command PublishRelease yields event ReleasePublished is  {
     menuReleaseId: MenuReleaseId with {
       briefly "ID"
       described as {
@@ -110,7 +110,7 @@ entity MenuRelease is {
       |Publish the release to all restaurant locations atomically.
     }
   }
-  command RollbackRelease is  {
+  command RollbackRelease yields event ReleaseRolledBack is  {
     menuReleaseId: MenuReleaseId with {
       briefly "ID"
       described as {
@@ -406,7 +406,7 @@ entity MenuRelease is {
   initial state ActiveRelease of record MenuRelease.MenuReleaseStateData is {
     initial handler ActiveReleaseInitHandler is {
       on init is {
-        set state ActiveRelease to "menuReleaseId, releaseName, releaseDescription, effectiveDate, menuReleaseStatus = Draft, releaseItems = empty, releaseCreatedAt = current timestamp, actualPublishedAt = none"
+        yield event MenuReleaseCreated
       }
     } with {
       briefly "Active release init handler"
@@ -424,31 +424,46 @@ entity MenuRelease is {
   }
   initial handler MenuReleaseHandler is {
     on command CreateMenuRelease is {
-      morph entity MenuManagement.MenuRelease to state MenuManagement.MenuRelease.ActiveRelease with record MenuRelease.MenuReleaseStateData
-      tell event MenuReleaseCreated to entity MenuManagement.MenuRelease
+      yield event MenuReleaseCreated
       send event MenuReleaseCreated to outlet MenuManagement.MenuReleaseEventSource.MenuReleaseEvents
     }
     on command AddItemToRelease is {
-      tell event ItemAddedToRelease to entity MenuManagement.MenuRelease
+      yield event ItemAddedToRelease
       send event ItemAddedToRelease to outlet MenuManagement.MenuReleaseEventSource.MenuReleaseEvents
     }
     on command FinalizeRelease is {
-      tell event ReleaseFinalized to entity MenuManagement.MenuRelease
+      yield event ReleaseFinalized
       send event ReleaseFinalized to outlet MenuManagement.MenuReleaseEventSource.MenuReleaseEvents
     }
     on command PublishRelease is {
-      tell event ReleasePublished to entity MenuManagement.MenuRelease
+      yield event ReleasePublished
       send event ReleasePublished to outlet MenuManagement.MenuReleaseEventSource.MenuReleaseEvents
       do "ReleasePublished event triggers menu printing via
         PrintingService streaming topology"
     }
     on command RollbackRelease is {
-      tell event ReleaseRolledBack to entity MenuManagement.MenuRelease
+      yield event ReleaseRolledBack
       send event ReleaseRolledBack to outlet MenuManagement.MenuReleaseEventSource.MenuReleaseEvents
     }
     on query GetMenuRelease is {
       do "look up MenuRelease by GetMenuRelease.menuReleaseId"
       tell result MenuReleaseResult to entity MenuManagement.MenuRelease
+    }
+    on event MenuReleaseCreated is {
+      morph entity MenuManagement.MenuRelease to state MenuManagement.MenuRelease.ActiveRelease with record MenuRelease.MenuReleaseStateData
+      set state ActiveRelease to "menuReleaseId, releaseName, releaseDescription, effectiveDate, menuReleaseStatus = Draft, releaseItems = empty, releaseCreatedAt = current timestamp, actualPublishedAt = none"
+    }
+    on event ItemAddedToRelease is {
+      set state ActiveRelease to "apply ItemAddedToRelease to the MenuRelease state"
+    }
+    on event ReleaseFinalized is {
+      set state ActiveRelease to "apply ReleaseFinalized to the MenuRelease state"
+    }
+    on event ReleasePublished is {
+      set state ActiveRelease to "apply ReleasePublished to the MenuRelease state"
+    }
+    on event ReleaseRolledBack is {
+      set state ActiveRelease to "apply ReleaseRolledBack to the MenuRelease state"
     }
   } with {
     briefly "Menu release command handler"
