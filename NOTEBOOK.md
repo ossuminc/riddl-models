@@ -189,10 +189,16 @@ Two things that constrain the shape, both established by testing:
 - **`on init` cannot be dropped.** R3 forbids `set` there, but a state with
   an empty body is a parse error, so the init handler must stay. `yield` is
   legal in it, which is what makes step 5 work.
-- **A repository must yield too.** `yields` is a property of the command
-  *type*, so every handler of that command is obliged — including a
-  repository. Moving the repository to `on event` instead is refused:
-  "repositories typically handle commands and queries, not events".
+- **A repository must not handle a domain command.** `yields` is optional,
+  and it belongs to a *domain* command: it says what handling that command
+  records. A repository stores the consequence; it does not decide it. The
+  corpus had repositories handling the entity's own commands, which only
+  showed up as a conflict once R1 put a `yields` on them. Each such
+  repository now has its own `Persist<Event>` commands, declaring no
+  `yields` — the idiom `ReportingContext` already used with its `Record*`
+  and `Log*` commands. A persistence clause writes the stored row
+  (`set field Stored<X>.<field>`), which is also what makes it executable
+  rather than prompt-only.
 
 **6 of 13 entities converted**: `InventoryItem`, `Shift`, `Campaign`,
 `MenuItem`, `MenuRelease`, `PurchaseOrder`. Model validates clean, round
