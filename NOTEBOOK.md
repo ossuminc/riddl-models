@@ -267,6 +267,50 @@ set of command names, and converted repositories in 47 unrelated models
 because `AddItem` is a domain command in reactive-bbq and an ordinary one
 in shopping-cart. Name sets must be scoped per model.
 
+### 2026-08-03: riddlc 2.0.0-rc.9-29-989b7f46 — both sink gaps closed
+
+**187 models, 0 findings of any category, 0 nonzero exits, round trip
+187/187.**
+
+The four split/merge/flow tell-dispatch warnings are gone — `30979985d`
+restricts that check to a Sink, which was the answer to our task. The Sink
+check itself was answered "right as written" (`9c6546945`): connecting an
+app straight to an entity's inlet **is** an inbound stream that has not
+been modelled, and it hides the context boundary inside whichever entity
+happens to be the first target. Both outliers were real gaps.
+
+**Delivery.** The `ToDelivery` adaptor reached across the boundary into
+`Delivery.DeliveryOrder`. Now `OnlineOrderPipeline` gains a
+`DeliveryFulfillments` outlet, a domain-scoped `persistent` connector
+carries it to a new `DeliveryIntake` sink, and that sink does the
+translation the adaptor used to do. The adaptor is gone; its
+`DeliveryRouted` notification moved to the pipeline. The pipeline became
+`as split` — two outlets is a split's arity, not a flow's.
+
+**Inventory.** Three approaches failed before the right one:
+
+1. A cross-domain connector from Corporate's supply chain is **not
+   allowed** — "a connector that crosses a domain boundary indicates a
+   failure of domain analysis". Cross-domain integration in this model is
+   done with adaptors and `tell`, never connectors.
+2. Routing the app's connector through a sink and dropping the entity's
+   inlet broke A6: a sink has **no outlets**, so it cannot connect onward,
+   and the entity became unreachable.
+3. What worked follows the domain's own existing pattern. `HRSystem` and
+   `AccountingSystem` are already modelled as external contexts with event
+   sources feeding sinks. What actually replenishes inventory is a
+   supplier delivering stock, so `SupplierSystem` joins them, and its
+   `StockDeliveries` outlet feeds a new `StockReceiptSink` that turns a
+   delivery into `ReceiveStock`.
+
+The upstream-path check walks `Streamlet` adjacency only, so an **adaptor
+breaks the chain** — a sink fed via an adaptor still reports "no upstream
+path from any source". Feed sinks from a streamlet.
+
+Round-trip note: prettify emits an inlet and the definition after it on
+one line. Two new sinks tripped this; canonical form has to be matched by
+hand.
+
 ### 2026-08-03: riddlc 2.0.0-rc.9-21-2db8f1d0 — include transparency
 
 Recheck after the upgrade: **187 models, 0 errors, 0 nonzero exits, round
