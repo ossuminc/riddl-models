@@ -267,6 +267,29 @@ set of command names, and converted repositories in 47 unrelated models
 because `AddItem` is a domain command in reactive-bbq and an ordinary one
 in shopping-cart. Name sets must be scoped per model.
 
+### 2026-08-03: riddlc 2.0.0-rc.9-42-37b0db94 — nothing broke
+
+First upgrade where the build automation carried the check. `sbt v`
+covers the whole repository now, and it was green on the first run: **2
+pattern examples, 7 templates, 187 models, 0 findings**; round trip
+187/187.
+
+The syntax change in this build **relaxed** a rule rather than tightening
+one. `867ab0333` lets a saga body hold comments and types, like every
+sibling container — the restriction we hit writing the saga template was
+"a rule disagreeing with its own AST", since `OccursInSaga` always
+admitted `Comment`. `sagaDefinitions` was the one container in its family
+that did not lead with `vitalDefinitionContents`.
+
+So the note in the saga template saying comments do not parse there is
+gone, and the explanation of compensation ordering moved back to where it
+belongs: directly above the steps it explains. That is the placement the
+riddl commit argues for, and it was only ever outside the saga because
+the parser forced it there.
+
+181 `.bast` regenerated — the parser-input hash memoisation
+(`496e77c39`) changed their content, though the round trip is unaffected.
+
 ### 2026-08-03: the patterns check is wired into the build
 
 `sbt verifyTemplates` runs `scripts/verify-templates.py`, and
