@@ -267,6 +267,38 @@ set of command names, and converted repositories in 47 unrelated models
 because `AddItem` is a domain command in reactive-bbq and an ordinary one
 in shopping-cart. Name sets must be scoped per model.
 
+### 2026-08-03: riddlc 2.0.0-rc.9-21-2db8f1d0 — include transparency
+
+Recheck after the upgrade: **187 models, 0 errors, 0 nonzero exits, round
+trip 187/187, `.bast` unchanged** (BAST format stable since revision 3).
+
+`c98e33e5e` let the AST content accessors see through `include` files.
+Every entity in this corpus lives in an include, so two context-level
+completeness checks that key off `c.entities` had been **dormant for the
+whole corpus** and are now live — 6 new `[completeness]` warnings, the
+only findings anywhere:
+
+- **4 × tell-dispatch on split/merge/flow.** The check requires every
+  streamlet with inlets and handlers to `tell` an entity. Right for a
+  `sink` — that is the boundary that dispatches inward, and every sink in
+  the corpus already does it — but wrong for split/merge/flow, which
+  route between ports by definition. No honest edit satisfies it.
+- **2 × "context has entities but no Sink streamlet"** (`Delivery`,
+  `Inventory`). 185 of ~190 contexts satisfy this, so the convention is
+  real. `Delivery` is a genuine gap: the `ToDelivery` adaptor tells
+  straight into the entity, past any boundary. `Inventory` has no inbound
+  stream at all — the app connects directly to the entity's own inlet,
+  which the check does not count. Fixing `Inventory` would mean modelling
+  a replenishment flow from Corporate, a cross-domain addition left for
+  Reid's call.
+
+Filed as
+`../riddl/task/include-transparency-activated-two-dormant-checks.md`.
+
+Note for whoever adds those sinks: a sink handling `on command X` where X
+declares `yields` hits the relay problem. The corpus's working sinks
+handle an **event** and tell a **command**, which sidesteps it.
+
 ### Open Loose Ends
 
 - 8 untracked helper scripts at repo root and in `scripts/`
