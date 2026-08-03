@@ -267,6 +267,41 @@ set of command names, and converted repositories in 47 unrelated models
 because `AddItem` is a domain command in reactive-bbq and an ordinary one
 in shopping-cart. Name sets must be scoped per model.
 
+### 2026-08-03: riddlc 2.0.0-rc.9-34-5488fd9d — patterns/ caught up
+
+Gate and round trip both clean on the upgrade with no model changes:
+187 gated models, 0 findings, round trip 187/187.
+
+The work was in **`patterns/`**, which `build.sbt` excludes from
+`riddlcValidate` (`riddlcConfExclusions := Seq("patterns")`) and which the
+round-trip harness skips too. The two pattern *examples* have `.conf`
+files and had therefore gone unchecked through every upgrade in this
+migration. Validating them explicitly found:
+
+- both carried a deprecated `option aggregate()` and no error-sink inlet
+- **the event-sourced pattern did not declare `event-sourced`.** The file
+  that exists to demonstrate the idiom — whose own prose says "every
+  balance change is recorded as an event" — was a plain aggregate. Now
+  `aggregate event-sourced entity Account`, satisfying all four rules,
+  with its repository moved to `Persist<Event>` commands.
+
+Full gate including patterns: **189 models, 0 findings.**
+
+Two things deliberately left alone:
+
+- The seven `template.riddl` files are parameterised with
+  `{Placeholder}` names and do not parse by design. No `.conf`, so
+  nothing gates them.
+- The pattern examples are hand-formatted for readability (wrapped
+  alternations, `Decimal(12, 2)`), which differs from canonical form in
+  151 lines. Canonicalising would emit 341-character alternations and two
+  ports per line — the prettify quirks already noted — and these files are
+  documentation. Their `.bast` is regenerated; their formatting is not.
+
+**Lesson:** an exclusion in `build.sbt` is invisible to the gate that
+reads it. Anything excluded needs its own check, or it silently rots
+through every upgrade.
+
 ### 2026-08-03: riddlc 2.0.0-rc.9-29-989b7f46 — both sink gaps closed
 
 **187 models, 0 findings of any category, 0 nonzero exits, round trip

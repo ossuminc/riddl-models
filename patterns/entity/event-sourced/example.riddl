@@ -26,7 +26,7 @@ domain Banking is {
         |Uniquely identifies an account.
       }
     }
-    entity Account is {
+    aggregate event-sourced entity Account is {
       type AccountCommand is one of {
         Account.OpenAccount or Account.Deposit or Account.Withdraw or
         Account.CloseAccount
@@ -47,7 +47,7 @@ domain Banking is {
       }
       inlet AccountCommands is type AccountCommand
       outlet AccountEvents is type AccountEvent
-      command OpenAccount is {
+      command OpenAccount yields event AccountOpened is {
         accountId: AccountId with {
           briefly "Account"
           described as {
@@ -72,7 +72,7 @@ domain Banking is {
           |Opens a new account for a named owner with an initial deposit.
         }
       }
-      command Deposit is {
+      command Deposit yields event MoneyDeposited is {
         accountId: AccountId with {
           briefly "Account"
           described as {
@@ -91,7 +91,7 @@ domain Banking is {
           |Credits the account with the given amount.
         }
       }
-      command Withdraw is {
+      command Withdraw yields event MoneyWithdrawn is {
         accountId: AccountId with {
           briefly "Account"
           described as {
@@ -110,7 +110,7 @@ domain Banking is {
           |Debits the account, provided the balance covers it.
         }
       }
-      command CloseAccount is {
+      command CloseAccount yields event AccountClosed is {
         accountId: AccountId with {
           briefly "Account"
           described as {
@@ -294,7 +294,7 @@ domain Banking is {
       state Active of record Account.ActiveStateData is {
         handler ActiveHandler is {
           on init is {
-            set state Active to "initialize the active account from the opening event"
+            yield event Account.AccountOpened
           }
         } with {
           briefly "Active state handler"
@@ -311,7 +311,7 @@ domain Banking is {
       state Closed of record Account.ClosedStateData is {
         handler ClosedHandler is {
           on init is {
-            set state Closed to "initialize the closed account from the closing event"
+            yield event Account.AccountClosed
           }
         } with {
           briefly "Closed state handler"
@@ -356,20 +356,34 @@ domain Banking is {
           yield result Account.AccountResult
         }
         on command OpenAccount is {
-          morph entity Accounts.Account to state Accounts.Account.Active with record Account.ActiveStateData
+          yield event Account.AccountOpened
           send event Account.AccountOpened to outlet AccountEvents
         }
         on command Deposit is {
-          set field Account.ActiveStateData.balance to "balance plus the deposited amount"
+          yield event Account.MoneyDeposited
           send event Account.MoneyDeposited to outlet AccountEvents
         }
         on command Withdraw is {
-          set field Account.ActiveStateData.balance to "balance minus the withdrawn amount"
+          yield event Account.MoneyWithdrawn
           send event Account.MoneyWithdrawn to outlet AccountEvents
         }
         on command CloseAccount is {
-          morph entity Accounts.Account to state Accounts.Account.Closed with record Account.ClosedStateData
+          yield event Account.AccountClosed
           send event Account.AccountClosed to outlet AccountEvents
+        }
+        on event Account.AccountOpened is {
+          morph entity Accounts.Account to state Accounts.Account.Active with record Account.ActiveStateData
+          set state Active to "initialize the active account from the opening event"
+        }
+        on event Account.MoneyDeposited is {
+          set field Account.ActiveStateData.balance to "balance plus the deposited amount"
+        }
+        on event Account.MoneyWithdrawn is {
+          set field Account.ActiveStateData.balance to "balance minus the withdrawn amount"
+        }
+        on event Account.AccountClosed is {
+          morph entity Accounts.Account to state Accounts.Account.Closed with record Account.ClosedStateData
+          set state Closed to "initialize the closed account from the closing event"
         }
       } with {
         briefly "Account command handler"
@@ -378,7 +392,6 @@ domain Banking is {
         }
       }
     } with {
-      option aggregate()
       briefly "A bank account"
       described as {
         |An event-sourced account: every balance change is recorded as an
@@ -415,20 +428,80 @@ domain Banking is {
           |The relational schema holding account rows.
         }
       }
+      command PersistAccountOpened is {
+        accountId: AccountId with {
+          briefly "ID"
+          described as {
+            |The stored account row to update.
+          }
+        }
+      } with {
+        briefly "Persist AccountOpened"
+        described as {
+          |Instructs this repository to apply AccountOpened to the stored row. A
+          |persistence command, not a domain command: it declares no `yields`
+          |because storing a row records no new entity state.
+        }
+      }
+      command PersistMoneyDeposited is {
+        accountId: AccountId with {
+          briefly "ID"
+          described as {
+            |The stored account row to update.
+          }
+        }
+      } with {
+        briefly "Persist MoneyDeposited"
+        described as {
+          |Instructs this repository to apply MoneyDeposited to the stored row. A
+          |persistence command, not a domain command: it declares no `yields`
+          |because storing a row records no new entity state.
+        }
+      }
+      command PersistMoneyWithdrawn is {
+        accountId: AccountId with {
+          briefly "ID"
+          described as {
+            |The stored account row to update.
+          }
+        }
+      } with {
+        briefly "Persist MoneyWithdrawn"
+        described as {
+          |Instructs this repository to apply MoneyWithdrawn to the stored row. A
+          |persistence command, not a domain command: it declares no `yields`
+          |because storing a row records no new entity state.
+        }
+      }
+      command PersistAccountClosed is {
+        accountId: AccountId with {
+          briefly "ID"
+          described as {
+            |The stored account row to update.
+          }
+        }
+      } with {
+        briefly "Persist AccountClosed"
+        described as {
+          |Instructs this repository to apply AccountClosed to the stored row. A
+          |persistence command, not a domain command: it declares no `yields`
+          |because storing a row records no new entity state.
+        }
+      }
       handler AccountPersistence is {
-        on command Account.OpenAccount is {
+        on command PersistAccountOpened is {
           set field StoredAccount.balance to "the opening balance"
           do "insert the opened account row"
         }
-        on command Account.Deposit is {
+        on command PersistMoneyDeposited is {
           set field StoredAccount.balance to "balance plus the deposited amount"
           do "update the stored balance from the deposit"
         }
-        on command Account.Withdraw is {
+        on command PersistMoneyWithdrawn is {
           set field StoredAccount.balance to "balance minus the withdrawn amount"
           do "update the stored balance from the withdrawal"
         }
-        on command Account.CloseAccount is {
+        on command PersistAccountClosed is {
           set field StoredAccount.balance to "the final balance"
           do "mark the stored account row closed"
         }
@@ -515,6 +588,13 @@ domain Banking is {
     }
   }
   application context BankingApp is {
+    inlet ErrorSink is record Riddl.GeneratorError with {
+      option error-sink()
+      briefly "Hard error destination"
+      described as {
+        |Where hard errors raised anywhere in Banking are delivered.
+      }
+    }
     outlet AppAccountCommands is type Accounts.Account.AccountCommand
     group AccountScreen is {
       input OpenAccountInput acquires command Accounts.Account.OpenAccount with {
@@ -555,6 +635,15 @@ domain Banking is {
       |Carries commands from the application to the account entity.
     }
   }
+  connector ErrorsToSink is from outlet Riddl.ForeverEmpty.void to inlet BankingApp.ErrorSink with {
+    briefly "Hard errors to the domain error sink"
+    described as {
+      |No modelled component emits a GeneratorError; generators do, at run
+      |time. ForeverEmpty states that honestly rather than inventing a
+      |producer.
+    }
+  }
+
 } with {
   by author OssumInc
   briefly "Banking domain"

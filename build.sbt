@@ -22,7 +22,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // shells out to a riddlc binary, so plugin version and language version are
     // independent, and pinning states which parser the corpus is validated
     // against rather than inheriting the plugin's default.
-    riddlcVersion := "2.0.0-rc.9-29-989b7f46",
+    riddlcVersion := "2.0.0-rc.9-34-5488fd9d",
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages")

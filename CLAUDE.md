@@ -231,15 +231,39 @@ own line.
   - Optional variants in state → `updatedCompletedAt`,
     `currentBooking`, `assignedDriver`, etc.
 
-**Repository Handlers**:
-- Repositories handle **commands**, not events
-- Use `on command Entity.CreateEntity`, NOT `on event`
-- Event-to-command name mapping: `EntityCreated` → `CreateEntity`,
-  `EntityUpdated` → `UpdateEntity`, etc.
+**Entity Intentions** (RIDDL 2.0):
+- Written as keywords **before** `entity`, not as options:
+  `aggregate event-sourced entity Order is { ... }`
+- Three independent groups: persistence
+  (`event-sourced` | `persistent` | `transient`), consistency
+  (`consistent` | `available`), and `aggregate`
+- Write them **alphabetically sorted** — the parser stores them that
+  way and prettify emits that order, so unsorted keywords fail the
+  BAST round trip
+- The old `option event-sourced()` etc. still parse but are deprecated
 
-**"to" Adaptor Handlers**:
-- Must reference the **target** context's command types
-- Use `on command TargetContext.CommandName`, NOT source events
+**Event-Sourced Entities** — four rules, all hard errors:
+1. Every handled command's **type** declares `yields event E`
+2. Every event so named has an `on event E` clause to apply on replay
+3. `set`/`morph`/`become` appear **only** in `on event` — including
+   `on init`, which yields the entering event instead
+4. A foreign event may not touch state; it yields one of ours first
+
+A state's body cannot be empty, so `on init` cannot simply be dropped;
+`on init { yield event <Creation> }` is the working form.
+
+**Who may handle a command that declares `yields`**: only the thing
+that fulfils it. `yields` is optional and belongs to a *domain*
+command. A processor that stores, forwards or translates must not
+handle one:
+- **Repositories** declare their own `Persist<Event>` commands, which
+  carry no `yields`, and write the stored row with
+  `set field Stored<X>.<field>`. They handle commands and queries,
+  never events.
+- **"to" adaptors** handle the **source event** they translate
+  (`on event <Source>`), not the target context's command.
+- **Relays** (source/sink processors) use `on other`. A `source` has
+  no inlets, so an `on command` clause in one can never fire.
 
 **Projector Handlers**:
 - Projectors handle **events** to build read models
@@ -259,9 +283,19 @@ context PaymentGateway is {
 ```
 
 **Messaging**:
-- Use `tell event X to entity Y` for entity-to-entity messaging
+- Inside an event-sourced entity, `yield event X` records the event —
+  this is what a self-`tell` used to mean
 - Use `tell command X to entity Y` for command dispatch
-- `send to outlet` is only for streamlet flows
+- `send event X to outlet` puts the event on the wire to repositories
+  and projectors; an entity must emit through a port
+- A connector may **not** cross a domain boundary — riddlc treats that
+  as a failure of domain analysis. Cross-domain integration uses
+  adaptors and `tell`
+- A sink must have an upstream path from a **source**, and the check
+  walks streamlets only: an adaptor in the chain breaks it
+- A context with entities needs a streamlet with an inlet. Connecting
+  an application straight to an entity's inlet is an inbound stream
+  that has not been modelled
 
 **State Transitions**:
 - Use `morph entity X to state Y with command Z` for state changes
@@ -370,7 +404,7 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **1.23.0** (set via `sbt-riddl` plugin version
+Current version: **2.0.0-rc.9-34-5488fd9d** (set via `sbt-riddl` plugin version
 in `project/plugins.sbt`).
 
 ### Model Include Structure
@@ -448,9 +482,12 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 1.23.0 | Driven by sbt-riddl plugin version |
-| sbt-riddl | 1.23.0 | Plugin in `project/plugins.sbt` |
-| sbt-ossuminc | 1.4.0 | Build plugin |
+| riddlc | 2.0.0-rc.9-34-5488fd9d | Pinned via `riddlcVersion` |
+| sbt-riddl | 2.0.0-rc.9-34-5488fd9d | Plugin in `project/plugins.sbt` |
+| sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
 Models are validated against the RIDDL grammar using riddlc via
-`sbt riddlcValidate` (alias `sbt v`).
+`sbt riddlcValidate` (alias `sbt v`). `build.sbt` excludes `patterns/`
+from that scan, so the two pattern **examples** must be validated
+explicitly; the seven `template.riddl` files are parameterised with
+`{Placeholder}` names and do not parse by design.
