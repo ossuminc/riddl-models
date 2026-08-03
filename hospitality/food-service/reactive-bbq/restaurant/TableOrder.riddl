@@ -1,5 +1,5 @@
 // TableOrder entity for the Front of House context
-entity TableOrder is {
+event-sourced entity TableOrder is {
   type TableOrderCommand is one of {
     TableOrder.InitializeTableOrder or TableOrder.CreateOrder or TableOrder.AddItem or TableOrder.RemoveItem or TableOrder.SubmitOrder or TableOrder.PresentBill or TableOrder.ProcessPayment or TableOrder.CloseOrder or TableOrder.MarkOrderInPreparation or TableOrder.MarkOrderReadyToServe
   } with {
@@ -24,7 +24,7 @@ entity TableOrder is {
       |Initialize the TableOrder entity on source startup.
     }
   }
-  command CreateOrder is  {
+  command CreateOrder yields event OrderCreated is  {
     tableOrderId: TableOrderId with {
       briefly "ID"
       described as {
@@ -49,7 +49,7 @@ entity TableOrder is {
       |Create a new table order.
     }
   }
-  command AddItem is  {
+  command AddItem yields event ItemAdded is  {
     tableOrderId: TableOrderId with {
       briefly "ID"
       described as {
@@ -68,7 +68,7 @@ entity TableOrder is {
       |Add a menu item to the order.
     }
   }
-  command RemoveItem is  {
+  command RemoveItem yields event ItemRemoved is  {
     tableOrderId: TableOrderId with {
       briefly "ID"
       described as {
@@ -87,7 +87,7 @@ entity TableOrder is {
       |Remove a menu item from the order.
     }
   }
-  command SubmitOrder is  {
+  command SubmitOrder yields event OrderSubmitted is  {
     tableOrderId: TableOrderId with {
       briefly "ID"
       described as {
@@ -106,7 +106,7 @@ entity TableOrder is {
       |Submit the order to kitchen and bar.
     }
   }
-  command PresentBill is  {
+  command PresentBill yields event BillPresented is  {
     tableOrderId: TableOrderId with {
       briefly "ID"
       described as {
@@ -125,7 +125,7 @@ entity TableOrder is {
       |Present the bill to the table.
     }
   }
-  command ProcessPayment is  {
+  command ProcessPayment yields event PaymentProcessed is  {
     tableOrderId: TableOrderId with {
       briefly "ID"
       described as {
@@ -144,7 +144,7 @@ entity TableOrder is {
       |Process payment for the order.
     }
   }
-  command CloseOrder is  {
+  command CloseOrder yields event OrderClosed is  {
     tableOrderId: TableOrderId with {
       briefly "ID"
       described as {
@@ -163,7 +163,7 @@ entity TableOrder is {
       |Close the order after payment.
     }
   }
-  command MarkOrderInPreparation is  {
+  command MarkOrderInPreparation yields event OrderMarkedInPreparation is  {
     tableOrderId: TableOrderId with {
       briefly "ID"
       described as {
@@ -178,7 +178,7 @@ entity TableOrder is {
       |context.
     }
   }
-  command MarkOrderReadyToServe is  {
+  command MarkOrderReadyToServe yields event OrderMarkedReadyToServe is  {
     tableOrderId: TableOrderId with {
       briefly "ID"
       described as {
@@ -737,16 +737,10 @@ entity TableOrder is {
   initial state Draft of record TableOrder.TableOrderData is {
     initial handler DraftHandler is {
       on init is {
-        set state TableOrder.Draft to "tableOrderId, tableNumber,
-          serverId, orderItems = empty,
-          presentedBillTotal = none,
-          processedPayment = none,
-          createdAt = OrderCreated.createdAt,
-          actualSubmittedAt = none, readyAt = none,
-          actualClosedAt = none"
+        yield event OrderCreated
       }
       on command AddItem is {
-        tell event ItemAdded to entity FrontOfHouse.TableOrder
+        yield event ItemAdded
         send event ItemAdded to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on event ItemAdded is {
@@ -754,7 +748,7 @@ entity TableOrder is {
           TableOrderData.orderItems"
       }
       on command RemoveItem is {
-        tell event ItemRemoved to entity FrontOfHouse.TableOrder
+        yield event ItemRemoved
         send event ItemRemoved to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on event ItemRemoved is {
@@ -763,7 +757,7 @@ entity TableOrder is {
           .removedMenuItemId"
       }
       on command SubmitOrder is {
-        tell event OrderSubmitted to entity FrontOfHouse.TableOrder
+        yield event OrderSubmitted
         send event OrderSubmitted to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on event OrderSubmitted is {
@@ -778,23 +772,34 @@ entity TableOrder is {
           category items") then
           tell command ReceiveDrinkOrder to entity Bar.DrinkOrder
         end
+        set state TableOrder.Submitted to "tableOrderId, tableNumber,
+          serverId, orderItems, presentedBillTotal = none,
+          processedPayment = none, createdAt,
+          actualSubmittedAt = populated,
+          readyAt = none, actualClosedAt = none"
       }
       on command CreateOrder is {
+        error "TableOrder does not accept CreateOrder in this state"
         send event CreateOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command MarkOrderInPreparation is {
+        error "TableOrder does not accept MarkOrderInPreparation in this state"
         send event MarkOrderInPreparationRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command MarkOrderReadyToServe is {
+        error "TableOrder does not accept MarkOrderReadyToServe in this state"
         send event MarkOrderReadyToServeRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command PresentBill is {
+        error "TableOrder does not accept PresentBill in this state"
         send event PresentBillRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command ProcessPayment is {
+        error "TableOrder does not accept ProcessPayment in this state"
         send event ProcessPaymentRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command CloseOrder is {
+        error "TableOrder does not accept CloseOrder in this state"
         send event CloseOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
     } with {
@@ -815,41 +820,50 @@ entity TableOrder is {
   state Submitted of record TableOrder.TableOrderData is {
     initial handler SubmittedHandler is {
       on init is {
-        set state TableOrder.Submitted to "tableOrderId, tableNumber,
+        yield event OrderSubmitted
+      }
+      on command MarkOrderInPreparation is {
+        yield event OrderMarkedInPreparation
+        send event OrderMarkedInPreparation to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
+      }
+      on event OrderMarkedInPreparation is {
+        morph entity FrontOfHouse.TableOrder to state FrontOfHouse.TableOrder.InPreparation with record TableOrder.TableOrderData
+        set state TableOrder.InPreparation to "tableOrderId, tableNumber,
           serverId, orderItems, presentedBillTotal = none,
           processedPayment = none, createdAt,
           actualSubmittedAt = populated,
           readyAt = none, actualClosedAt = none"
       }
-      on command MarkOrderInPreparation is {
-        tell event OrderMarkedInPreparation to entity FrontOfHouse.TableOrder
-        send event OrderMarkedInPreparation to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
-      }
-      on event OrderMarkedInPreparation is {
-        morph entity FrontOfHouse.TableOrder to state FrontOfHouse.TableOrder.InPreparation with record TableOrder.TableOrderData
-      }
       on command CreateOrder is {
+        error "TableOrder does not accept CreateOrder in this state"
         send event CreateOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command AddItem is {
+        error "TableOrder does not accept AddItem in this state"
         send event AddItemRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command RemoveItem is {
+        error "TableOrder does not accept RemoveItem in this state"
         send event RemoveItemRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command SubmitOrder is {
+        error "TableOrder does not accept SubmitOrder in this state"
         send event SubmitOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command MarkOrderReadyToServe is {
+        error "TableOrder does not accept MarkOrderReadyToServe in this state"
         send event MarkOrderReadyToServeRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command PresentBill is {
+        error "TableOrder does not accept PresentBill in this state"
         send event PresentBillRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command ProcessPayment is {
+        error "TableOrder does not accept ProcessPayment in this state"
         send event ProcessPaymentRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command CloseOrder is {
+        error "TableOrder does not accept CloseOrder in this state"
         send event CloseOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
     } with {
@@ -869,42 +883,51 @@ entity TableOrder is {
   state InPreparation of record TableOrder.TableOrderData is {
     initial handler InPreparationHandler is {
       on init is {
-        set state TableOrder.InPreparation to "tableOrderId, tableNumber,
-          serverId, orderItems, presentedBillTotal = none,
-          processedPayment = none, createdAt,
-          actualSubmittedAt = populated,
-          readyAt = none, actualClosedAt = none"
+        yield event OrderMarkedInPreparation
       }
       on command MarkOrderReadyToServe is {
-        tell event OrderMarkedReadyToServe to entity FrontOfHouse.TableOrder
+        yield event OrderMarkedReadyToServe
         send event OrderMarkedReadyToServe to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on event OrderMarkedReadyToServe is {
         morph entity FrontOfHouse.TableOrder to state FrontOfHouse.TableOrder.ReadyToServe with record TableOrder.TableOrderData
         set field TableOrder.ReadyToServe.readyAt to "readyAt from event"
+        set state ReadyToServe to "tableOrderId, tableNumber,
+          serverId, orderItems, presentedBillTotal = none,
+          processedPayment = none, createdAt,
+          actualSubmittedAt = populated,
+          readyAt = populated, actualClosedAt = none"
       }
       on command CreateOrder is {
+        error "TableOrder does not accept CreateOrder in this state"
         send event CreateOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command AddItem is {
+        error "TableOrder does not accept AddItem in this state"
         send event AddItemRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command RemoveItem is {
+        error "TableOrder does not accept RemoveItem in this state"
         send event RemoveItemRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command SubmitOrder is {
+        error "TableOrder does not accept SubmitOrder in this state"
         send event SubmitOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command MarkOrderInPreparation is {
+        error "TableOrder does not accept MarkOrderInPreparation in this state"
         send event MarkOrderInPreparationRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command PresentBill is {
+        error "TableOrder does not accept PresentBill in this state"
         send event PresentBillRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command ProcessPayment is {
+        error "TableOrder does not accept ProcessPayment in this state"
         send event ProcessPaymentRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command CloseOrder is {
+        error "TableOrder does not accept CloseOrder in this state"
         send event CloseOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
     } with {
@@ -923,14 +946,10 @@ entity TableOrder is {
   state ReadyToServe of record TableOrder.TableOrderData is {
     initial handler ReadyToServeHandler is {
       on init is {
-        set state ReadyToServe to "tableOrderId, tableNumber,
-          serverId, orderItems, presentedBillTotal = none,
-          processedPayment = none, createdAt,
-          actualSubmittedAt = populated,
-          readyAt = populated, actualClosedAt = none"
+        yield event OrderMarkedReadyToServe
       }
       on command PresentBill is {
-        tell event BillPresented to entity FrontOfHouse.TableOrder
+        yield event BillPresented
         send event BillPresented to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on event BillPresented is {
@@ -939,29 +958,43 @@ entity TableOrder is {
           orderLineItem.itemPrice * orderLineQuantity for each
           OrderLine to compute presentedBillTotal"
         set field TableOrder.BillPresentedState.presentedBillTotal to "computed presentedBillTotal"
+        set state BillPresentedState to "tableOrderId,
+          tableNumber, serverId, orderItems,
+          presentedBillTotal = populated,
+          processedPayment = none, createdAt,
+          actualSubmittedAt = populated,
+          readyAt = populated, actualClosedAt = none"
       }
       on command CreateOrder is {
+        error "TableOrder does not accept CreateOrder in this state"
         send event CreateOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command AddItem is {
+        error "TableOrder does not accept AddItem in this state"
         send event AddItemRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command RemoveItem is {
+        error "TableOrder does not accept RemoveItem in this state"
         send event RemoveItemRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command SubmitOrder is {
+        error "TableOrder does not accept SubmitOrder in this state"
         send event SubmitOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command MarkOrderInPreparation is {
+        error "TableOrder does not accept MarkOrderInPreparation in this state"
         send event MarkOrderInPreparationRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command MarkOrderReadyToServe is {
+        error "TableOrder does not accept MarkOrderReadyToServe in this state"
         send event MarkOrderReadyToServeRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command ProcessPayment is {
+        error "TableOrder does not accept ProcessPayment in this state"
         send event ProcessPaymentRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command CloseOrder is {
+        error "TableOrder does not accept CloseOrder in this state"
         send event CloseOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
     } with {
@@ -981,15 +1014,10 @@ entity TableOrder is {
   state BillPresentedState of record TableOrder.TableOrderData is {
     initial handler BillPresentedHandler is {
       on init is {
-        set state BillPresentedState to "tableOrderId,
-          tableNumber, serverId, orderItems,
-          presentedBillTotal = populated,
-          processedPayment = none, createdAt,
-          actualSubmittedAt = populated,
-          readyAt = populated, actualClosedAt = none"
+        yield event BillPresented
       }
       on command ProcessPayment is {
-        tell event PaymentProcessed to entity FrontOfHouse.TableOrder
+        yield event PaymentProcessed
         send event PaymentProcessed to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on event PaymentProcessed is {
@@ -998,29 +1026,43 @@ entity TableOrder is {
         do "PaymentProcessed event triggers PaymentGateway
           authorization via streaming topology and Loyalty
           point accrual via ToLoyalty adaptor"
+        set state PaymentComplete to "tableOrderId,
+          tableNumber, serverId, orderItems,
+          presentedBillTotal = populated,
+          processedPayment = populated, createdAt,
+          actualSubmittedAt = populated,
+          readyAt = populated, actualClosedAt = none"
       }
       on command CreateOrder is {
+        error "TableOrder does not accept CreateOrder in this state"
         send event CreateOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command AddItem is {
+        error "TableOrder does not accept AddItem in this state"
         send event AddItemRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command RemoveItem is {
+        error "TableOrder does not accept RemoveItem in this state"
         send event RemoveItemRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command SubmitOrder is {
+        error "TableOrder does not accept SubmitOrder in this state"
         send event SubmitOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command MarkOrderInPreparation is {
+        error "TableOrder does not accept MarkOrderInPreparation in this state"
         send event MarkOrderInPreparationRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command MarkOrderReadyToServe is {
+        error "TableOrder does not accept MarkOrderReadyToServe in this state"
         send event MarkOrderReadyToServeRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command PresentBill is {
+        error "TableOrder does not accept PresentBill in this state"
         send event PresentBillRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command CloseOrder is {
+        error "TableOrder does not accept CloseOrder in this state"
         send event CloseOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
     } with {
@@ -1040,15 +1082,10 @@ entity TableOrder is {
   state PaymentComplete of record TableOrder.TableOrderData is {
     initial handler PaymentCompleteHandler is {
       on init is {
-        set state PaymentComplete to "tableOrderId,
-          tableNumber, serverId, orderItems,
-          presentedBillTotal = populated,
-          processedPayment = populated, createdAt,
-          actualSubmittedAt = populated,
-          readyAt = populated, actualClosedAt = none"
+        yield event PaymentProcessed
       }
       on command CloseOrder is {
-        tell event OrderClosed to entity FrontOfHouse.TableOrder
+        yield event OrderClosed
         send event OrderClosed to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on event OrderClosed is {
@@ -1056,29 +1093,44 @@ entity TableOrder is {
         set field TableOrder.Closed.actualClosedAt to "closedAt from event"
         do "OrderClosed event triggers accounting transaction
           posting via streaming topology"
+        set state TableOrder.Closed to "tableOrderId, tableNumber,
+          serverId, orderItems,
+          presentedBillTotal = populated,
+          processedPayment = populated, createdAt,
+          actualSubmittedAt = populated,
+          readyAt = populated,
+          actualClosedAt = populated"
       }
       on command CreateOrder is {
+        error "TableOrder does not accept CreateOrder in this state"
         send event CreateOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command AddItem is {
+        error "TableOrder does not accept AddItem in this state"
         send event AddItemRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command RemoveItem is {
+        error "TableOrder does not accept RemoveItem in this state"
         send event RemoveItemRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command SubmitOrder is {
+        error "TableOrder does not accept SubmitOrder in this state"
         send event SubmitOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command MarkOrderInPreparation is {
+        error "TableOrder does not accept MarkOrderInPreparation in this state"
         send event MarkOrderInPreparationRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command MarkOrderReadyToServe is {
+        error "TableOrder does not accept MarkOrderReadyToServe in this state"
         send event MarkOrderReadyToServeRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command PresentBill is {
+        error "TableOrder does not accept PresentBill in this state"
         send event PresentBillRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command ProcessPayment is {
+        error "TableOrder does not accept ProcessPayment in this state"
         send event ProcessPaymentRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
     } with {
@@ -1098,39 +1150,42 @@ entity TableOrder is {
   state Closed of record TableOrder.TableOrderData is {
     initial handler ClosedHandler is {
       on init is {
-        set state TableOrder.Closed to "tableOrderId, tableNumber,
-          serverId, orderItems,
-          presentedBillTotal = populated,
-          processedPayment = populated, createdAt,
-          actualSubmittedAt = populated,
-          readyAt = populated,
-          actualClosedAt = populated"
+        yield event OrderClosed
       }
       on command CreateOrder is {
+        error "TableOrder does not accept CreateOrder in this state"
         send event CreateOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command AddItem is {
+        error "TableOrder does not accept AddItem in this state"
         send event AddItemRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command RemoveItem is {
+        error "TableOrder does not accept RemoveItem in this state"
         send event RemoveItemRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command SubmitOrder is {
+        error "TableOrder does not accept SubmitOrder in this state"
         send event SubmitOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command MarkOrderInPreparation is {
+        error "TableOrder does not accept MarkOrderInPreparation in this state"
         send event MarkOrderInPreparationRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command MarkOrderReadyToServe is {
+        error "TableOrder does not accept MarkOrderReadyToServe in this state"
         send event MarkOrderReadyToServeRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command PresentBill is {
+        error "TableOrder does not accept PresentBill in this state"
         send event PresentBillRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command ProcessPayment is {
+        error "TableOrder does not accept ProcessPayment in this state"
         send event ProcessPaymentRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
       on command CloseOrder is {
+        error "TableOrder does not accept CloseOrder in this state"
         send event CloseOrderRejected to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
       }
     } with {
@@ -1148,11 +1203,18 @@ entity TableOrder is {
   }
   handler TableOrderCreationHandler is {
     on command CreateOrder is {
-      tell event OrderCreated to entity FrontOfHouse.TableOrder
+      yield event OrderCreated
       send event OrderCreated to outlet FrontOfHouse.TableOrderEventSource.TableOrderEvents
     }
     on event OrderCreated is {
       morph entity FrontOfHouse.TableOrder to state FrontOfHouse.TableOrder.Draft with record TableOrder.TableOrderData
+      set state TableOrder.Draft to "tableOrderId, tableNumber,
+          serverId, orderItems = empty,
+          presentedBillTotal = none,
+          processedPayment = none,
+          createdAt = OrderCreated.createdAt,
+          actualSubmittedAt = none, readyAt = none,
+          actualClosedAt = none"
     }
     on query GetTableOrder is {
       do "look up TableOrder by GetTableOrder.tableOrderId"

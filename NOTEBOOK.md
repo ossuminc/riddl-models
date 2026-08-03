@@ -200,18 +200,30 @@ Two things that constrain the shape, both established by testing:
   (`set field Stored<X>.<field>`), which is also what makes it executable
   rather than prompt-only.
 
-**6 of 13 entities converted**: `InventoryItem`, `Shift`, `Campaign`,
-`MenuItem`, `MenuRelease`, `PurchaseOrder`. Model validates clean, round
-trip 48/48.
+**All 13 entities converted.** Model validates clean; round trip 48/48.
+83 `yields` declarations, 147 `yield` statements, 268 refusals made
+explicit, 30+52 repository persistence commands.
 
-**The other 7 are blocked**, and not by anything in the model.
-`checkYieldConformance` has no exemption for a clause that *refuses* a
-command, so a state that rejects `AddItem` is required to `yield event
-ItemAdded` — to record the change it just declined. The restaurant
-aggregates are all multi-state: 52 of 78 commands have more than one
-clause, and 268 refusing clauses would each be forced to yield a success
-event. Filed as
-`../riddl/task/yields-conformance-forces-refusing-clauses-to-yield.md`.
+Two more corrections the multi-state entities forced, both the same
+category error — a processor that *handles* a command without *producing*
+its event:
+
+- **A "to" adaptor translates a source event into the target's command.**
+  Saying it handles the target's command made it a false handler, and once
+  that command declared `yields` the adaptor was asked to record an event
+  it does not produce. Six adaptor clauses now read `on event <Source>`,
+  each source picked from the fields the clause's own prose already reads.
+  This contradicts CLAUDE.md's older "to adaptors must reference the target
+  context's command types" rule, which came from an earlier riddlc.
+- **A refusing clause says `error` first.** riddl 0054a8433 exempts a
+  clause that refuses, but reads refusal from `error`/`require` — and the
+  A23 work had *removed* those errors, leaving refusal implied only by
+  sending a `*Rejected` event. The error now precedes the effect, which is
+  what A23 asked for in the first place.
+
+The multi-state entities were already most of the way there: the streaming
+work had given each state handler `on event E { morph ... }` clauses, so
+R2 and R3's morph half were satisfied before this started.
 
 Corpus state under this binary: **194 errors, 27 deprecations in 10
 models** — those already carrying `option event-sourced()`. All of them

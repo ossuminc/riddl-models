@@ -1,5 +1,5 @@
 // OnlineOrder entity for the OnlineOrdering context
-entity OnlineOrder is {
+event-sourced entity OnlineOrder is {
   type OnlineOrderCommand is one of {
     OnlineOrder.InitializeOnlineOrder or OnlineOrder.BrowseMenu or OnlineOrder.AddToCart or OnlineOrder.RemoveFromCart or OnlineOrder.SelectFulfillment or OnlineOrder.SubmitOnlineOrder or OnlineOrder.ProcessOnlinePayment or OnlineOrder.MarkOnlineInPreparation or OnlineOrder.MarkReadyForPickup or OnlineOrder.MarkOutForDelivery or OnlineOrder.CompleteOnlineOrder or OnlineOrder.CancelOnlineOrder
   } with {
@@ -16,7 +16,7 @@ entity OnlineOrder is {
       |Initialize the OnlineOrder entity on source startup.
     }
   }
-  command BrowseMenu is  {
+  command BrowseMenu yields event MenuBrowsed is  {
     onlineOrderId: OnlineOrderId with {
       briefly "ID"
       described as {
@@ -41,7 +41,7 @@ entity OnlineOrder is {
       |Customer begins browsing the online menu.
     }
   }
-  command AddToCart is  {
+  command AddToCart yields event ItemAddedToCart is  {
     onlineOrderId: OnlineOrderId with {
       briefly "ID"
       described as {
@@ -60,7 +60,7 @@ entity OnlineOrder is {
       |Add an item to the online shopping cart.
     }
   }
-  command RemoveFromCart is  {
+  command RemoveFromCart yields event ItemRemovedFromCart is  {
     onlineOrderId: OnlineOrderId with {
       briefly "ID"
       described as {
@@ -79,7 +79,7 @@ entity OnlineOrder is {
       |Remove an item from the online shopping cart.
     }
   }
-  command SelectFulfillment is  {
+  command SelectFulfillment yields event FulfillmentSelected is  {
     onlineOrderId: OnlineOrderId with {
       briefly "ID"
       described as {
@@ -110,7 +110,7 @@ entity OnlineOrder is {
       |Choose pickup or delivery fulfillment.
     }
   }
-  command SubmitOnlineOrder is  {
+  command SubmitOnlineOrder yields event OnlineOrderSubmitted is  {
     onlineOrderId: OnlineOrderId with {
       briefly "ID"
       described as {
@@ -129,7 +129,7 @@ entity OnlineOrder is {
       |Submit the online order for processing.
     }
   }
-  command ProcessOnlinePayment is  {
+  command ProcessOnlinePayment yields event OnlinePaymentProcessed is  {
     onlineOrderId: OnlineOrderId with {
       briefly "ID"
       described as {
@@ -148,7 +148,7 @@ entity OnlineOrder is {
       |Process payment for the online order.
     }
   }
-  command MarkOnlineInPreparation is  {
+  command MarkOnlineInPreparation yields event OnlineOrderInPreparation is  {
     onlineOrderId: OnlineOrderId with {
       briefly "ID"
       described as {
@@ -162,7 +162,7 @@ entity OnlineOrder is {
       |kitchen. Triggered by adaptor from Kitchen context.
     }
   }
-  command MarkReadyForPickup is  {
+  command MarkReadyForPickup yields event OnlineOrderReadyForPickup is  {
     onlineOrderId: OnlineOrderId with {
       briefly "ID"
       described as {
@@ -181,7 +181,7 @@ entity OnlineOrder is {
       |Mark a pickup order as ready for customer collection.
     }
   }
-  command MarkOutForDelivery is  {
+  command MarkOutForDelivery yields event OnlineOrderOutForDelivery is  {
     onlineOrderId: OnlineOrderId with {
       briefly "ID"
       described as {
@@ -200,7 +200,7 @@ entity OnlineOrder is {
       |Mark a delivery order as dispatched with the driver.
     }
   }
-  command CompleteOnlineOrder is  {
+  command CompleteOnlineOrder yields event OnlineOrderCompleted is  {
     onlineOrderId: OnlineOrderId with {
       briefly "ID"
       described as {
@@ -219,7 +219,7 @@ entity OnlineOrder is {
       |Mark the order as completed after pickup or delivery.
     }
   }
-  command CancelOnlineOrder is  {
+  command CancelOnlineOrder yields event OnlineOrderCancelled is  {
     onlineOrderId: OnlineOrderId with {
       briefly "ID"
       described as {
@@ -890,7 +890,7 @@ entity OnlineOrder is {
   initial state Browsing of record OnlineOrder.OnlineOrderData is {
     initial handler BrowsingInitHandler is {
       on init is {
-        set state Browsing to "onlineOrderId, customerId, orderCartItems = empty, selectedFulfillment = none, selectedDeliveryAddress = none, processedOnlinePayment = none, createdAt = current timestamp, actualOnlineSubmittedAt = none, completedAt = none, cancelledAt = none, cancellationReason = none"
+        yield event MenuBrowsed
       }
     } with {
       briefly "Browsing init handler"
@@ -900,7 +900,7 @@ entity OnlineOrder is {
     }
     handler BrowsingHandler is {
       on command AddToCart is {
-        tell event ItemAddedToCart to entity OnlineOrdering.OnlineOrder
+        yield event ItemAddedToCart
         send event ItemAddedToCart to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event ItemAddedToCart is {
@@ -908,7 +908,7 @@ entity OnlineOrder is {
           OnlineOrderData.orderCartItems"
       }
       on command RemoveFromCart is {
-        tell event ItemRemovedFromCart to entity OnlineOrdering.OnlineOrder
+        yield event ItemRemovedFromCart
         send event ItemRemovedFromCart to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event ItemRemovedFromCart is {
@@ -921,7 +921,7 @@ entity OnlineOrder is {
           do "validate SelectFulfillment.deliveryAddress is within
             restaurant service area by ZIP code"
         end
-        tell event FulfillmentSelected to entity OnlineOrdering.OnlineOrder
+        yield event FulfillmentSelected
         send event FulfillmentSelected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event FulfillmentSelected is {
@@ -930,35 +930,44 @@ entity OnlineOrder is {
         when prompt("fulfillment is DeliveryFulfillment") then
           set field OnlineOrder.FulfillmentChosen.selectedDeliveryAddress to "deliveryAddress from event"
         end
+        set state FulfillmentChosen to "onlineOrderId, customerId, orderCartItems, selectedFulfillment = FulfillmentSelected.fulfillmentType, selectedDeliveryAddress = FulfillmentSelected.deliveryAddress, processedOnlinePayment = none, createdAt, actualOnlineSubmittedAt = none, completedAt = none, cancelledAt = none, cancellationReason = none"
       }
       on command CancelOnlineOrder is {
-        tell event OnlineOrderCancelled to entity OnlineOrdering.OnlineOrder
+        yield event OnlineOrderCancelled
         send event OnlineOrderCancelled to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlineOrderCancelled is {
         morph entity OnlineOrdering.OnlineOrder to state OnlineOrdering.OnlineOrder.Cancelled with record OnlineOrder.OnlineOrderData
         set field OnlineOrder.Cancelled.cancelledAt to "cancelledAt from event"
         set field OnlineOrder.Cancelled.cancellationReason to "cancellationReason from event"
+        set state OnlineOrder.Cancelled to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment, createdAt, actualOnlineSubmittedAt, completedAt = none, cancelledAt = OnlineOrderCancelled.cancelledAt, cancellationReason = OnlineOrderCancelled.cancellationReason"
       }
       on command BrowseMenu is {
+        error "OnlineOrder does not accept BrowseMenu in this state"
         send event BrowseMenuRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SubmitOnlineOrder is {
+        error "OnlineOrder does not accept SubmitOnlineOrder in this state"
         send event SubmitOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command ProcessOnlinePayment is {
+        error "OnlineOrder does not accept ProcessOnlinePayment in this state"
         send event ProcessOnlinePaymentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOnlineInPreparation is {
+        error "OnlineOrder does not accept MarkOnlineInPreparation in this state"
         send event MarkOnlineInPreparationRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkReadyForPickup is {
+        error "OnlineOrder does not accept MarkReadyForPickup in this state"
         send event MarkReadyForPickupRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOutForDelivery is {
+        error "OnlineOrder does not accept MarkOutForDelivery in this state"
         send event MarkOutForDeliveryRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command CompleteOnlineOrder is {
+        error "OnlineOrder does not accept CompleteOnlineOrder in this state"
         send event CompleteOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
     } with {
@@ -980,7 +989,7 @@ entity OnlineOrder is {
   state FulfillmentChosen of record OnlineOrder.OnlineOrderData is {
     initial handler FulfillmentChosenInitHandler is {
       on init is {
-        set state FulfillmentChosen to "onlineOrderId, customerId, orderCartItems, selectedFulfillment = FulfillmentSelected.fulfillmentType, selectedDeliveryAddress = FulfillmentSelected.deliveryAddress, processedOnlinePayment = none, createdAt, actualOnlineSubmittedAt = none, completedAt = none, cancelledAt = none, cancellationReason = none"
+        yield event FulfillmentSelected
       }
     } with {
       briefly "FulfillmentChosen init handler"
@@ -991,7 +1000,7 @@ entity OnlineOrder is {
     }
     handler FulfillmentChosenHandler is {
       on command SubmitOnlineOrder is {
-        tell event OnlineOrderSubmitted to entity OnlineOrdering.OnlineOrder
+        yield event OnlineOrderSubmitted
         send event OnlineOrderSubmitted to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlineOrderSubmitted is {
@@ -1003,9 +1012,10 @@ entity OnlineOrder is {
           DeliveryFulfillment") then
           tell command CreateDelivery to entity Delivery.DeliveryOrder
         end
+        set state OnlineOrder.Submitted to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment = none, createdAt, actualOnlineSubmittedAt = OnlineOrderSubmitted.onlineSubmittedAt, completedAt = none, cancelledAt = none, cancellationReason = none"
       }
       on command CancelOnlineOrder is {
-        tell event OnlineOrderCancelled to entity OnlineOrdering.OnlineOrder
+        yield event OnlineOrderCancelled
         send event OnlineOrderCancelled to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlineOrderCancelled is {
@@ -1014,30 +1024,39 @@ entity OnlineOrder is {
         set field OnlineOrder.Cancelled.cancellationReason to "cancellationReason from event"
       }
       on command BrowseMenu is {
+        error "OnlineOrder does not accept BrowseMenu in this state"
         send event BrowseMenuRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command AddToCart is {
+        error "OnlineOrder does not accept AddToCart in this state"
         send event AddToCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command RemoveFromCart is {
+        error "OnlineOrder does not accept RemoveFromCart in this state"
         send event RemoveFromCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SelectFulfillment is {
+        error "OnlineOrder does not accept SelectFulfillment in this state"
         send event SelectFulfillmentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command ProcessOnlinePayment is {
+        error "OnlineOrder does not accept ProcessOnlinePayment in this state"
         send event ProcessOnlinePaymentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOnlineInPreparation is {
+        error "OnlineOrder does not accept MarkOnlineInPreparation in this state"
         send event MarkOnlineInPreparationRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkReadyForPickup is {
+        error "OnlineOrder does not accept MarkReadyForPickup in this state"
         send event MarkReadyForPickupRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOutForDelivery is {
+        error "OnlineOrder does not accept MarkOutForDelivery in this state"
         send event MarkOutForDeliveryRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command CompleteOnlineOrder is {
+        error "OnlineOrder does not accept CompleteOnlineOrder in this state"
         send event CompleteOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
     } with {
@@ -1058,7 +1077,7 @@ entity OnlineOrder is {
   state Submitted of record OnlineOrder.OnlineOrderData is {
     initial handler SubmittedInitHandler is {
       on init is {
-        set state OnlineOrder.Submitted to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment = none, createdAt, actualOnlineSubmittedAt = OnlineOrderSubmitted.onlineSubmittedAt, completedAt = none, cancelledAt = none, cancellationReason = none"
+        yield event OnlineOrderSubmitted
       }
     } with {
       briefly "Submitted init handler"
@@ -1069,7 +1088,7 @@ entity OnlineOrder is {
     }
     handler SubmittedHandler is {
       on command ProcessOnlinePayment is {
-        tell event OnlinePaymentProcessed to entity OnlineOrdering.OnlineOrder
+        yield event OnlinePaymentProcessed
         send event OnlinePaymentProcessed to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlinePaymentProcessed is {
@@ -1078,9 +1097,10 @@ entity OnlineOrder is {
         do "OnlinePaymentProcessed event triggers PaymentGateway
           authorization via streaming topology and Loyalty
           point accrual via ToLoyalty adaptor"
+        set state Paid to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment = OnlinePaymentProcessed.onlinePayment, createdAt, actualOnlineSubmittedAt, completedAt = none, cancelledAt = none, cancellationReason = none"
       }
       on command CancelOnlineOrder is {
-        tell event OnlineOrderCancelled to entity OnlineOrdering.OnlineOrder
+        yield event OnlineOrderCancelled
         send event OnlineOrderCancelled to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlineOrderCancelled is {
@@ -1089,30 +1109,39 @@ entity OnlineOrder is {
         set field OnlineOrder.Cancelled.cancellationReason to "cancellationReason from event"
       }
       on command BrowseMenu is {
+        error "OnlineOrder does not accept BrowseMenu in this state"
         send event BrowseMenuRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command AddToCart is {
+        error "OnlineOrder does not accept AddToCart in this state"
         send event AddToCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command RemoveFromCart is {
+        error "OnlineOrder does not accept RemoveFromCart in this state"
         send event RemoveFromCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SelectFulfillment is {
+        error "OnlineOrder does not accept SelectFulfillment in this state"
         send event SelectFulfillmentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SubmitOnlineOrder is {
+        error "OnlineOrder does not accept SubmitOnlineOrder in this state"
         send event SubmitOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOnlineInPreparation is {
+        error "OnlineOrder does not accept MarkOnlineInPreparation in this state"
         send event MarkOnlineInPreparationRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkReadyForPickup is {
+        error "OnlineOrder does not accept MarkReadyForPickup in this state"
         send event MarkReadyForPickupRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOutForDelivery is {
+        error "OnlineOrder does not accept MarkOutForDelivery in this state"
         send event MarkOutForDeliveryRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command CompleteOnlineOrder is {
+        error "OnlineOrder does not accept CompleteOnlineOrder in this state"
         send event CompleteOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
     } with {
@@ -1133,7 +1162,7 @@ entity OnlineOrder is {
   state Paid of record OnlineOrder.OnlineOrderData is {
     initial handler PaidInitHandler is {
       on init is {
-        set state Paid to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment = OnlinePaymentProcessed.onlinePayment, createdAt, actualOnlineSubmittedAt, completedAt = none, cancelledAt = none, cancellationReason = none"
+        yield event OnlinePaymentProcessed
       }
     } with {
       briefly "Paid init handler"
@@ -1144,14 +1173,15 @@ entity OnlineOrder is {
     }
     handler PaidHandler is {
       on command MarkOnlineInPreparation is {
-        tell event OnlineOrderInPreparation to entity OnlineOrdering.OnlineOrder
+        yield event OnlineOrderInPreparation
         send event OnlineOrderInPreparation to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlineOrderInPreparation is {
         morph entity OnlineOrdering.OnlineOrder to state OnlineOrdering.OnlineOrder.InPreparation with record OnlineOrder.OnlineOrderData
+        set state OnlineOrder.InPreparation to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment, createdAt, actualOnlineSubmittedAt, completedAt = none, cancelledAt = none, cancellationReason = none"
       }
       on command CancelOnlineOrder is {
-        tell event OnlineOrderCancelled to entity OnlineOrdering.OnlineOrder
+        yield event OnlineOrderCancelled
         send event OnlineOrderCancelled to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlineOrderCancelled is {
@@ -1165,30 +1195,39 @@ entity OnlineOrder is {
         end
       }
       on command BrowseMenu is {
+        error "OnlineOrder does not accept BrowseMenu in this state"
         send event BrowseMenuRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command AddToCart is {
+        error "OnlineOrder does not accept AddToCart in this state"
         send event AddToCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command RemoveFromCart is {
+        error "OnlineOrder does not accept RemoveFromCart in this state"
         send event RemoveFromCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SelectFulfillment is {
+        error "OnlineOrder does not accept SelectFulfillment in this state"
         send event SelectFulfillmentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SubmitOnlineOrder is {
+        error "OnlineOrder does not accept SubmitOnlineOrder in this state"
         send event SubmitOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command ProcessOnlinePayment is {
+        error "OnlineOrder does not accept ProcessOnlinePayment in this state"
         send event ProcessOnlinePaymentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkReadyForPickup is {
+        error "OnlineOrder does not accept MarkReadyForPickup in this state"
         send event MarkReadyForPickupRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOutForDelivery is {
+        error "OnlineOrder does not accept MarkOutForDelivery in this state"
         send event MarkOutForDeliveryRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command CompleteOnlineOrder is {
+        error "OnlineOrder does not accept CompleteOnlineOrder in this state"
         send event CompleteOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
     } with {
@@ -1209,7 +1248,7 @@ entity OnlineOrder is {
   state InPreparation of record OnlineOrder.OnlineOrderData is {
     initial handler InPreparationInitHandler is {
       on init is {
-        set state OnlineOrder.InPreparation to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment, createdAt, actualOnlineSubmittedAt, completedAt = none, cancelledAt = none, cancellationReason = none"
+        yield event OnlineOrderInPreparation
       }
     } with {
       briefly "InPreparation init handler"
@@ -1220,25 +1259,27 @@ entity OnlineOrder is {
     }
     handler InPreparationHandler is {
       on command MarkReadyForPickup is {
-        tell event OnlineOrderReadyForPickup to entity OnlineOrdering.OnlineOrder
+        yield event OnlineOrderReadyForPickup
         send event OnlineOrderReadyForPickup to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlineOrderReadyForPickup is {
         morph entity OnlineOrdering.OnlineOrder to state OnlineOrdering.OnlineOrder.ReadyForPickup with record OnlineOrder.OnlineOrderData
         do "OnlineOrderReadyForPickup triggers push notification
           to customer"
+        set state ReadyForPickup to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment, createdAt, actualOnlineSubmittedAt, completedAt = none, cancelledAt = none, cancellationReason = none"
       }
       on command MarkOutForDelivery is {
-        tell event OnlineOrderOutForDelivery to entity OnlineOrdering.OnlineOrder
+        yield event OnlineOrderOutForDelivery
         send event OnlineOrderOutForDelivery to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlineOrderOutForDelivery is {
         morph entity OnlineOrdering.OnlineOrder to state OnlineOrdering.OnlineOrder.OutForDelivery with record OnlineOrder.OnlineOrderData
         do "OnlineOrderOutForDelivery triggers push notification
           to customer with driver tracking link"
+        set state OutForDelivery to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment, createdAt, actualOnlineSubmittedAt, completedAt = none, cancelledAt = none, cancellationReason = none"
       }
       on command CancelOnlineOrder is {
-        tell event OnlineOrderCancelled to entity OnlineOrdering.OnlineOrder
+        yield event OnlineOrderCancelled
         send event OnlineOrderCancelled to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlineOrderCancelled is {
@@ -1252,27 +1293,35 @@ entity OnlineOrder is {
         end
       }
       on command BrowseMenu is {
+        error "OnlineOrder does not accept BrowseMenu in this state"
         send event BrowseMenuRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command AddToCart is {
+        error "OnlineOrder does not accept AddToCart in this state"
         send event AddToCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command RemoveFromCart is {
+        error "OnlineOrder does not accept RemoveFromCart in this state"
         send event RemoveFromCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SelectFulfillment is {
+        error "OnlineOrder does not accept SelectFulfillment in this state"
         send event SelectFulfillmentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SubmitOnlineOrder is {
+        error "OnlineOrder does not accept SubmitOnlineOrder in this state"
         send event SubmitOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command ProcessOnlinePayment is {
+        error "OnlineOrder does not accept ProcessOnlinePayment in this state"
         send event ProcessOnlinePaymentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOnlineInPreparation is {
+        error "OnlineOrder does not accept MarkOnlineInPreparation in this state"
         send event MarkOnlineInPreparationRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command CompleteOnlineOrder is {
+        error "OnlineOrder does not accept CompleteOnlineOrder in this state"
         send event CompleteOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
     } with {
@@ -1293,7 +1342,7 @@ entity OnlineOrder is {
   state ReadyForPickup of record OnlineOrder.OnlineOrderData is {
     initial handler ReadyForPickupInitHandler is {
       on init is {
-        set state ReadyForPickup to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment, createdAt, actualOnlineSubmittedAt, completedAt = none, cancelledAt = none, cancellationReason = none"
+        yield event OnlineOrderReadyForPickup
       }
     } with {
       briefly "ReadyForPickup init handler"
@@ -1304,15 +1353,16 @@ entity OnlineOrder is {
     }
     handler ReadyForPickupHandler is {
       on command CompleteOnlineOrder is {
-        tell event OnlineOrderCompleted to entity OnlineOrdering.OnlineOrder
+        yield event OnlineOrderCompleted
         send event OnlineOrderCompleted to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlineOrderCompleted is {
         morph entity OnlineOrdering.OnlineOrder to state OnlineOrdering.OnlineOrder.Completed with record OnlineOrder.OnlineOrderData
         set field OnlineOrder.Completed.completedAt to "completedAt from event"
+        set state OnlineOrder.Completed to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment, createdAt, actualOnlineSubmittedAt, completedAt = OnlineOrderCompleted.completedAt, cancelledAt = none, cancellationReason = none"
       }
       on command CancelOnlineOrder is {
-        tell event OnlineOrderCancelled to entity OnlineOrdering.OnlineOrder
+        yield event OnlineOrderCancelled
         send event OnlineOrderCancelled to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlineOrderCancelled is {
@@ -1326,30 +1376,39 @@ entity OnlineOrder is {
         end
       }
       on command BrowseMenu is {
+        error "OnlineOrder does not accept BrowseMenu in this state"
         send event BrowseMenuRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command AddToCart is {
+        error "OnlineOrder does not accept AddToCart in this state"
         send event AddToCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command RemoveFromCart is {
+        error "OnlineOrder does not accept RemoveFromCart in this state"
         send event RemoveFromCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SelectFulfillment is {
+        error "OnlineOrder does not accept SelectFulfillment in this state"
         send event SelectFulfillmentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SubmitOnlineOrder is {
+        error "OnlineOrder does not accept SubmitOnlineOrder in this state"
         send event SubmitOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command ProcessOnlinePayment is {
+        error "OnlineOrder does not accept ProcessOnlinePayment in this state"
         send event ProcessOnlinePaymentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOnlineInPreparation is {
+        error "OnlineOrder does not accept MarkOnlineInPreparation in this state"
         send event MarkOnlineInPreparationRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkReadyForPickup is {
+        error "OnlineOrder does not accept MarkReadyForPickup in this state"
         send event MarkReadyForPickupRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOutForDelivery is {
+        error "OnlineOrder does not accept MarkOutForDelivery in this state"
         send event MarkOutForDeliveryRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
     } with {
@@ -1370,7 +1429,7 @@ entity OnlineOrder is {
   state OutForDelivery of record OnlineOrder.OnlineOrderData is {
     initial handler OutForDeliveryInitHandler is {
       on init is {
-        set state OutForDelivery to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment, createdAt, actualOnlineSubmittedAt, completedAt = none, cancelledAt = none, cancellationReason = none"
+        yield event OnlineOrderOutForDelivery
       }
     } with {
       briefly "OutForDelivery init handler"
@@ -1381,7 +1440,7 @@ entity OnlineOrder is {
     }
     handler OutForDeliveryHandler is {
       on command CompleteOnlineOrder is {
-        tell event OnlineOrderCompleted to entity OnlineOrdering.OnlineOrder
+        yield event OnlineOrderCompleted
         send event OnlineOrderCompleted to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on event OnlineOrderCompleted is {
@@ -1389,33 +1448,43 @@ entity OnlineOrder is {
         set field OnlineOrder.Completed.completedAt to "completedAt from event"
       }
       on command BrowseMenu is {
+        error "OnlineOrder does not accept BrowseMenu in this state"
         send event BrowseMenuRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command AddToCart is {
+        error "OnlineOrder does not accept AddToCart in this state"
         send event AddToCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command RemoveFromCart is {
+        error "OnlineOrder does not accept RemoveFromCart in this state"
         send event RemoveFromCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SelectFulfillment is {
+        error "OnlineOrder does not accept SelectFulfillment in this state"
         send event SelectFulfillmentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SubmitOnlineOrder is {
+        error "OnlineOrder does not accept SubmitOnlineOrder in this state"
         send event SubmitOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command ProcessOnlinePayment is {
+        error "OnlineOrder does not accept ProcessOnlinePayment in this state"
         send event ProcessOnlinePaymentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOnlineInPreparation is {
+        error "OnlineOrder does not accept MarkOnlineInPreparation in this state"
         send event MarkOnlineInPreparationRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkReadyForPickup is {
+        error "OnlineOrder does not accept MarkReadyForPickup in this state"
         send event MarkReadyForPickupRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOutForDelivery is {
+        error "OnlineOrder does not accept MarkOutForDelivery in this state"
         send event MarkOutForDeliveryRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command CancelOnlineOrder is {
+        error "OnlineOrder does not accept CancelOnlineOrder in this state"
         send event CancelOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
     } with {
@@ -1437,7 +1506,7 @@ entity OnlineOrder is {
   state Completed of record OnlineOrder.OnlineOrderData is {
     initial handler CompletedInitHandler is {
       on init is {
-        set state OnlineOrder.Completed to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment, createdAt, actualOnlineSubmittedAt, completedAt = OnlineOrderCompleted.completedAt, cancelledAt = none, cancellationReason = none"
+        yield event OnlineOrderCompleted
       }
     } with {
       briefly "Completed init handler"
@@ -1448,36 +1517,47 @@ entity OnlineOrder is {
     }
     handler CompletedHandler is {
       on command BrowseMenu is {
+        error "OnlineOrder does not accept BrowseMenu in this state"
         send event BrowseMenuRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command AddToCart is {
+        error "OnlineOrder does not accept AddToCart in this state"
         send event AddToCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command RemoveFromCart is {
+        error "OnlineOrder does not accept RemoveFromCart in this state"
         send event RemoveFromCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SelectFulfillment is {
+        error "OnlineOrder does not accept SelectFulfillment in this state"
         send event SelectFulfillmentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SubmitOnlineOrder is {
+        error "OnlineOrder does not accept SubmitOnlineOrder in this state"
         send event SubmitOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command ProcessOnlinePayment is {
+        error "OnlineOrder does not accept ProcessOnlinePayment in this state"
         send event ProcessOnlinePaymentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOnlineInPreparation is {
+        error "OnlineOrder does not accept MarkOnlineInPreparation in this state"
         send event MarkOnlineInPreparationRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkReadyForPickup is {
+        error "OnlineOrder does not accept MarkReadyForPickup in this state"
         send event MarkReadyForPickupRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOutForDelivery is {
+        error "OnlineOrder does not accept MarkOutForDelivery in this state"
         send event MarkOutForDeliveryRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command CompleteOnlineOrder is {
+        error "OnlineOrder does not accept CompleteOnlineOrder in this state"
         send event CompleteOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command CancelOnlineOrder is {
+        error "OnlineOrder does not accept CancelOnlineOrder in this state"
         send event CancelOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
     } with {
@@ -1495,7 +1575,7 @@ entity OnlineOrder is {
   state Cancelled of record OnlineOrder.OnlineOrderData is {
     initial handler CancelledInitHandler is {
       on init is {
-        set state OnlineOrder.Cancelled to "onlineOrderId, customerId, orderCartItems, selectedFulfillment, selectedDeliveryAddress, processedOnlinePayment, createdAt, actualOnlineSubmittedAt, completedAt = none, cancelledAt = OnlineOrderCancelled.cancelledAt, cancellationReason = OnlineOrderCancelled.cancellationReason"
+        yield event OnlineOrderCancelled
       }
     } with {
       briefly "Cancelled init handler"
@@ -1506,36 +1586,47 @@ entity OnlineOrder is {
     }
     handler CancelledHandler is {
       on command BrowseMenu is {
+        error "OnlineOrder does not accept BrowseMenu in this state"
         send event BrowseMenuRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command AddToCart is {
+        error "OnlineOrder does not accept AddToCart in this state"
         send event AddToCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command RemoveFromCart is {
+        error "OnlineOrder does not accept RemoveFromCart in this state"
         send event RemoveFromCartRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SelectFulfillment is {
+        error "OnlineOrder does not accept SelectFulfillment in this state"
         send event SelectFulfillmentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command SubmitOnlineOrder is {
+        error "OnlineOrder does not accept SubmitOnlineOrder in this state"
         send event SubmitOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command ProcessOnlinePayment is {
+        error "OnlineOrder does not accept ProcessOnlinePayment in this state"
         send event ProcessOnlinePaymentRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOnlineInPreparation is {
+        error "OnlineOrder does not accept MarkOnlineInPreparation in this state"
         send event MarkOnlineInPreparationRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkReadyForPickup is {
+        error "OnlineOrder does not accept MarkReadyForPickup in this state"
         send event MarkReadyForPickupRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command MarkOutForDelivery is {
+        error "OnlineOrder does not accept MarkOutForDelivery in this state"
         send event MarkOutForDeliveryRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command CompleteOnlineOrder is {
+        error "OnlineOrder does not accept CompleteOnlineOrder in this state"
         send event CompleteOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
       on command CancelOnlineOrder is {
+        error "OnlineOrder does not accept CancelOnlineOrder in this state"
         send event CancelOnlineOrderRejected to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
       }
     } with {
@@ -1553,11 +1644,12 @@ entity OnlineOrder is {
   }
   handler OnlineOrderCreationHandler is {
     on command BrowseMenu is {
-      tell event MenuBrowsed to entity OnlineOrdering.OnlineOrder
+      yield event MenuBrowsed
       send event MenuBrowsed to outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents
     }
     on event MenuBrowsed is {
       morph entity OnlineOrdering.OnlineOrder to state OnlineOrdering.OnlineOrder.Browsing with record OnlineOrder.OnlineOrderData
+      set state Browsing to "onlineOrderId, customerId, orderCartItems = empty, selectedFulfillment = none, selectedDeliveryAddress = none, processedOnlinePayment = none, createdAt = current timestamp, actualOnlineSubmittedAt = none, completedAt = none, cancelledAt = none, cancellationReason = none"
     }
     on query GetOnlineOrder is {
       do "look up OnlineOrder by GetOnlineOrder.onlineOrderId"

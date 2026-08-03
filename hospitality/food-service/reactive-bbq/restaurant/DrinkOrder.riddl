@@ -1,5 +1,5 @@
 // DrinkOrder entity for the Bar context
-entity DrinkOrder is {
+event-sourced entity DrinkOrder is {
   type DrinkOrderCommand is one of {
     DrinkOrder.InitializeDrinkOrder or DrinkOrder.ReceiveDrinkOrder or DrinkOrder.PrepareDrink or DrinkOrder.MarkDrinkReady or DrinkOrder.NotifyServerDrinksReady or DrinkOrder.CompleteDrinkOrder
   } with {
@@ -16,7 +16,7 @@ entity DrinkOrder is {
       |Initialize the DrinkOrder entity on source startup.
     }
   }
-  command ReceiveDrinkOrder is  {
+  command ReceiveDrinkOrder yields event DrinkOrderReceived is  {
     drinkOrderId: DrinkOrderId with {
       briefly "ID"
       described as {
@@ -53,7 +53,7 @@ entity DrinkOrder is {
       |Receive a new drink order from a table order.
     }
   }
-  command PrepareDrink is  {
+  command PrepareDrink yields event DrinkPrepared is  {
     drinkOrderId: DrinkOrderId with {
       briefly "ID"
       described as {
@@ -72,7 +72,7 @@ entity DrinkOrder is {
       |Start preparing the drink order.
     }
   }
-  command MarkDrinkReady is  {
+  command MarkDrinkReady yields event DrinkMarkedReady is  {
     drinkOrderId: DrinkOrderId with {
       briefly "ID"
       described as {
@@ -91,7 +91,7 @@ entity DrinkOrder is {
       |Mark the drink order as ready for pickup.
     }
   }
-  command NotifyServerDrinksReady is  {
+  command NotifyServerDrinksReady yields event ServerNotifiedDrinksReady is  {
     drinkOrderId: DrinkOrderId with {
       briefly "ID"
       described as {
@@ -110,7 +110,7 @@ entity DrinkOrder is {
       |Push notification to server that drinks are ready.
     }
   }
-  command CompleteDrinkOrder is  {
+  command CompleteDrinkOrder yields event DrinkOrderCompleted is  {
     drinkOrderId: DrinkOrderId with {
       briefly "ID"
       described as {
@@ -427,7 +427,7 @@ entity DrinkOrder is {
   initial state Received of record DrinkOrder.DrinkOrderData is {
     initial handler ReceivedInitHandler is {
       on init is {
-        set state DrinkOrder.Received to "drinkOrderId, sourceOrderId, drinkTableNumber, drinkItems, drinkReceivedAt, actualDrinkReadyAt = none, actualDrinkCompletedAt = none"
+        yield event DrinkOrderReceived
       }
     } with {
       briefly "Received init handler"
@@ -437,22 +437,27 @@ entity DrinkOrder is {
     }
     handler ReceivedHandler is {
       on command PrepareDrink is {
-        tell event DrinkPrepared to entity Bar.DrinkOrder
+        yield event DrinkPrepared
         send event DrinkPrepared to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on event DrinkPrepared is {
         morph entity Bar.DrinkOrder to state Bar.DrinkOrder.InPreparation with record DrinkOrder.DrinkOrderData
+        set state DrinkOrder.InPreparation to "drinkOrderId, sourceOrderId, drinkTableNumber, drinkItems, drinkReceivedAt, actualDrinkReadyAt = none, actualDrinkCompletedAt = none"
       }
       on command ReceiveDrinkOrder is {
+        error "DrinkOrder does not accept ReceiveDrinkOrder in this state"
         send event ReceiveDrinkOrderRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command MarkDrinkReady is {
+        error "DrinkOrder does not accept MarkDrinkReady in this state"
         send event MarkDrinkReadyRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command NotifyServerDrinksReady is {
+        error "DrinkOrder does not accept NotifyServerDrinksReady in this state"
         send event NotifyServerDrinksReadyRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command CompleteDrinkOrder is {
+        error "DrinkOrder does not accept CompleteDrinkOrder in this state"
         send event CompleteDrinkOrderRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
     } with {
@@ -472,7 +477,7 @@ entity DrinkOrder is {
   state InPreparation of record DrinkOrder.DrinkOrderData is {
     initial handler InPreparationInitHandler is {
       on init is {
-        set state DrinkOrder.InPreparation to "drinkOrderId, sourceOrderId, drinkTableNumber, drinkItems, drinkReceivedAt, actualDrinkReadyAt = none, actualDrinkCompletedAt = none"
+        yield event DrinkPrepared
       }
     } with {
       briefly "InPreparation init handler"
@@ -482,24 +487,29 @@ entity DrinkOrder is {
     }
     handler InPreparationHandler is {
       on command MarkDrinkReady is {
-        tell event DrinkMarkedReady to entity Bar.DrinkOrder
+        yield event DrinkMarkedReady
         send event DrinkMarkedReady to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on event DrinkMarkedReady is {
         morph entity Bar.DrinkOrder to state Bar.DrinkOrder.Ready with record DrinkOrder.DrinkOrderData
         set field DrinkOrder.Ready.actualDrinkReadyAt to "drinkReadyAt from event"
         tell command NotifyServerDrinksReady to entity Bar.DrinkOrder
+        set state Ready to "drinkOrderId, sourceOrderId, drinkTableNumber, drinkItems, drinkReceivedAt, actualDrinkReadyAt, actualDrinkCompletedAt = none"
       }
       on command ReceiveDrinkOrder is {
+        error "DrinkOrder does not accept ReceiveDrinkOrder in this state"
         send event ReceiveDrinkOrderRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command PrepareDrink is {
+        error "DrinkOrder does not accept PrepareDrink in this state"
         send event PrepareDrinkRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command NotifyServerDrinksReady is {
+        error "DrinkOrder does not accept NotifyServerDrinksReady in this state"
         send event NotifyServerDrinksReadyRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command CompleteDrinkOrder is {
+        error "DrinkOrder does not accept CompleteDrinkOrder in this state"
         send event CompleteDrinkOrderRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
     } with {
@@ -519,7 +529,7 @@ entity DrinkOrder is {
   state Ready of record DrinkOrder.DrinkOrderData is {
     initial handler ReadyInitHandler is {
       on init is {
-        set state Ready to "drinkOrderId, sourceOrderId, drinkTableNumber, drinkItems, drinkReceivedAt, actualDrinkReadyAt, actualDrinkCompletedAt = none"
+        yield event DrinkMarkedReady
       }
     } with {
       briefly "Ready init handler"
@@ -529,7 +539,7 @@ entity DrinkOrder is {
     }
     handler ReadyHandler is {
       on command NotifyServerDrinksReady is {
-        tell event ServerNotifiedDrinksReady to entity Bar.DrinkOrder
+        yield event ServerNotifiedDrinksReady
         send event ServerNotifiedDrinksReady to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on event ServerNotifiedDrinksReady is {
@@ -537,17 +547,22 @@ entity DrinkOrder is {
         do "ServerNotifiedDrinksReady event triggers push
           notification to server via NotificationService
           streaming topology"
+        set state DrinkOrder.Delivered to "drinkOrderId, sourceOrderId, drinkTableNumber, drinkItems, drinkReceivedAt, actualDrinkReadyAt, actualDrinkCompletedAt = none"
       }
       on command ReceiveDrinkOrder is {
+        error "DrinkOrder does not accept ReceiveDrinkOrder in this state"
         send event ReceiveDrinkOrderRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command PrepareDrink is {
+        error "DrinkOrder does not accept PrepareDrink in this state"
         send event PrepareDrinkRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command MarkDrinkReady is {
+        error "DrinkOrder does not accept MarkDrinkReady in this state"
         send event MarkDrinkReadyRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command CompleteDrinkOrder is {
+        error "DrinkOrder does not accept CompleteDrinkOrder in this state"
         send event CompleteDrinkOrderRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
     } with {
@@ -567,7 +582,7 @@ entity DrinkOrder is {
   state Delivered of record DrinkOrder.DrinkOrderData is {
     initial handler DeliveredInitHandler is {
       on init is {
-        set state DrinkOrder.Delivered to "drinkOrderId, sourceOrderId, drinkTableNumber, drinkItems, drinkReceivedAt, actualDrinkReadyAt, actualDrinkCompletedAt = none"
+        yield event ServerNotifiedDrinksReady
       }
     } with {
       briefly "Delivered init handler"
@@ -577,23 +592,28 @@ entity DrinkOrder is {
     }
     handler DeliveredHandler is {
       on command CompleteDrinkOrder is {
-        tell event DrinkOrderCompleted to entity Bar.DrinkOrder
+        yield event DrinkOrderCompleted
         send event DrinkOrderCompleted to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on event DrinkOrderCompleted is {
         morph entity Bar.DrinkOrder to state Bar.DrinkOrder.Completed with record DrinkOrder.DrinkOrderData
         set field DrinkOrder.Completed.actualDrinkCompletedAt to "drinkCompletedAt from event"
+        set state DrinkOrder.Completed to "drinkOrderId, sourceOrderId, drinkTableNumber, drinkItems, drinkReceivedAt, actualDrinkReadyAt, actualDrinkCompletedAt"
       }
       on command ReceiveDrinkOrder is {
+        error "DrinkOrder does not accept ReceiveDrinkOrder in this state"
         send event ReceiveDrinkOrderRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command PrepareDrink is {
+        error "DrinkOrder does not accept PrepareDrink in this state"
         send event PrepareDrinkRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command MarkDrinkReady is {
+        error "DrinkOrder does not accept MarkDrinkReady in this state"
         send event MarkDrinkReadyRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command NotifyServerDrinksReady is {
+        error "DrinkOrder does not accept NotifyServerDrinksReady in this state"
         send event NotifyServerDrinksReadyRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
     } with {
@@ -613,7 +633,7 @@ entity DrinkOrder is {
   state Completed of record DrinkOrder.DrinkOrderData is {
     initial handler CompletedInitHandler is {
       on init is {
-        set state DrinkOrder.Completed to "drinkOrderId, sourceOrderId, drinkTableNumber, drinkItems, drinkReceivedAt, actualDrinkReadyAt, actualDrinkCompletedAt"
+        yield event DrinkOrderCompleted
       }
     } with {
       briefly "Completed init handler"
@@ -623,18 +643,23 @@ entity DrinkOrder is {
     }
     handler CompletedHandler is {
       on command ReceiveDrinkOrder is {
+        error "DrinkOrder does not accept ReceiveDrinkOrder in this state"
         send event ReceiveDrinkOrderRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command PrepareDrink is {
+        error "DrinkOrder does not accept PrepareDrink in this state"
         send event PrepareDrinkRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command MarkDrinkReady is {
+        error "DrinkOrder does not accept MarkDrinkReady in this state"
         send event MarkDrinkReadyRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command NotifyServerDrinksReady is {
+        error "DrinkOrder does not accept NotifyServerDrinksReady in this state"
         send event NotifyServerDrinksReadyRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
       on command CompleteDrinkOrder is {
+        error "DrinkOrder does not accept CompleteDrinkOrder in this state"
         send event CompleteDrinkOrderRejected to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
       }
     } with {
@@ -652,11 +677,12 @@ entity DrinkOrder is {
   }
   handler DrinkOrderCreationHandler is {
     on command ReceiveDrinkOrder is {
-      tell event DrinkOrderReceived to entity Bar.DrinkOrder
+      yield event DrinkOrderReceived
       send event DrinkOrderReceived to outlet Bar.DrinkOrderEventSource.DrinkOrderEvents
     }
     on event DrinkOrderReceived is {
       morph entity Bar.DrinkOrder to state Bar.DrinkOrder.Received with record DrinkOrder.DrinkOrderData
+      set state DrinkOrder.Received to "drinkOrderId, sourceOrderId, drinkTableNumber, drinkItems, drinkReceivedAt, actualDrinkReadyAt = none, actualDrinkCompletedAt = none"
     }
     on query GetDrinkOrder is {
       do "look up DrinkOrder by GetDrinkOrder.drinkOrderId"

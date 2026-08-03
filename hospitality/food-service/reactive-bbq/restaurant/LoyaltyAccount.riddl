@@ -1,5 +1,5 @@
 // LoyaltyAccount entity for the Loyalty context
-entity LoyaltyAccount is {
+event-sourced entity LoyaltyAccount is {
   type LoyaltyAccountCommand is one of {
     LoyaltyAccount.InitializeLoyaltyAccount or LoyaltyAccount.EnrollCustomer or LoyaltyAccount.AccruePoints or LoyaltyAccount.RedeemPoints or LoyaltyAccount.SuspendAccount or LoyaltyAccount.ReactivateAccount or LoyaltyAccount.CloseAccount
   } with {
@@ -24,7 +24,7 @@ entity LoyaltyAccount is {
       |Initialize the LoyaltyAccount entity on source startup.
     }
   }
-  command EnrollCustomer is  {
+  command EnrollCustomer yields event CustomerEnrolled is  {
     loyaltyAccountId: LoyaltyAccountId with {
       briefly "ID"
       described as {
@@ -55,7 +55,7 @@ entity LoyaltyAccount is {
       |Enroll a new customer in the loyalty program.
     }
   }
-  command AccruePoints is  {
+  command AccruePoints yields event PointsAccrued is  {
     loyaltyAccountId: LoyaltyAccountId with {
       briefly "ID"
       described as {
@@ -86,7 +86,7 @@ entity LoyaltyAccount is {
       |Add loyalty points to the account.
     }
   }
-  command RedeemPoints is  {
+  command RedeemPoints yields event PointsRedeemed is  {
     loyaltyAccountId: LoyaltyAccountId with {
       briefly "ID"
       described as {
@@ -111,7 +111,7 @@ entity LoyaltyAccount is {
       |Redeem loyalty points from the account.
     }
   }
-  command SuspendAccount is  {
+  command SuspendAccount yields event AccountSuspended is  {
     loyaltyAccountId: LoyaltyAccountId with {
       briefly "ID"
       described as {
@@ -130,7 +130,7 @@ entity LoyaltyAccount is {
       |Suspend a loyalty account.
     }
   }
-  command ReactivateAccount is  {
+  command ReactivateAccount yields event AccountReactivated is  {
     loyaltyAccountId: LoyaltyAccountId with {
       briefly "ID"
       described as {
@@ -143,7 +143,7 @@ entity LoyaltyAccount is {
       |Reactivate a suspended loyalty account.
     }
   }
-  command CloseAccount is  {
+  command CloseAccount yields event AccountClosed is  {
     loyaltyAccountId: LoyaltyAccountId with {
       briefly "ID"
       described as {
@@ -551,7 +551,7 @@ entity LoyaltyAccount is {
   initial state Active of record LoyaltyAccount.LoyaltyAccountData is {
     initial handler ActiveInitHandler is {
       on init is {
-        set state LoyaltyAccount.Active to "loyaltyAccountId, loyaltyCustomerId, customerDisplayName, customerEmail, pointBalance = 0, lifetimePoints = 0, recentTransactions = empty, enrolledAt = CustomerEnrolled.enrolledAt, closedAt = none"
+        yield event CustomerEnrolled
       }
     } with {
       briefly "Active state init handler"
@@ -561,7 +561,7 @@ entity LoyaltyAccount is {
     }
     handler ActiveHandler is {
       on command AccruePoints is {
-        tell event PointsAccrued to entity Loyalty.LoyaltyAccount
+        yield event PointsAccrued
         send event PointsAccrued to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on event PointsAccrued is {
@@ -579,7 +579,7 @@ entity LoyaltyAccount is {
       on command RedeemPoints is {
         when prompt("LoyaltyAccountData.pointBalance >=
           RedeemPoints.redemptionPoints") then
-          tell event PointsRedeemed to entity Loyalty.LoyaltyAccount
+          yield event PointsRedeemed
           send event PointsRedeemed to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
         else
           send event RedeemPointsRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
@@ -596,24 +596,28 @@ entity LoyaltyAccount is {
           timestamp"
       }
       on command SuspendAccount is {
-        tell event AccountSuspended to entity Loyalty.LoyaltyAccount
+        yield event AccountSuspended
         send event AccountSuspended to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on event AccountSuspended is {
         morph entity Loyalty.LoyaltyAccount to state Loyalty.LoyaltyAccount.Suspended with record LoyaltyAccount.LoyaltyAccountData
+        set state Suspended to "loyaltyAccountId, loyaltyCustomerId, customerDisplayName, customerEmail, pointBalance, lifetimePoints, recentTransactions, enrolledAt = AccountSuspended.suspendedAt, closedAt = none"
       }
       on command CloseAccount is {
-        tell event AccountClosed to entity Loyalty.LoyaltyAccount
+        yield event AccountClosed
         send event AccountClosed to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on event AccountClosed is {
         morph entity Loyalty.LoyaltyAccount to state Loyalty.LoyaltyAccount.Closed with record LoyaltyAccount.LoyaltyAccountData
         set field LoyaltyAccount.Closed.closedAt to "current timestamp"
+        set state LoyaltyAccount.Closed to "loyaltyAccountId, loyaltyCustomerId, customerDisplayName, customerEmail, pointBalance, lifetimePoints, recentTransactions, enrolledAt, closedAt = AccountClosed.closedAt"
       }
       on command EnrollCustomer is {
+        error "LoyaltyAccount does not accept EnrollCustomer in this state"
         send event EnrollCustomerRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on command ReactivateAccount is {
+        error "LoyaltyAccount does not accept ReactivateAccount in this state"
         send event ReactivateAccountRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
     } with {
@@ -635,7 +639,7 @@ entity LoyaltyAccount is {
   state Suspended of record LoyaltyAccount.LoyaltyAccountData is {
     initial handler SuspendedInitHandler is {
       on init is {
-        set state Suspended to "loyaltyAccountId, loyaltyCustomerId, customerDisplayName, customerEmail, pointBalance, lifetimePoints, recentTransactions, enrolledAt = AccountSuspended.suspendedAt, closedAt = none"
+        yield event AccountSuspended
       }
     } with {
       briefly "Suspended state init handler"
@@ -646,14 +650,14 @@ entity LoyaltyAccount is {
     }
     handler SuspendedHandler is {
       on command ReactivateAccount is {
-        tell event AccountReactivated to entity Loyalty.LoyaltyAccount
+        yield event AccountReactivated
         send event AccountReactivated to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on event AccountReactivated is {
         morph entity Loyalty.LoyaltyAccount to state Loyalty.LoyaltyAccount.Active with record LoyaltyAccount.LoyaltyAccountData
       }
       on command CloseAccount is {
-        tell event AccountClosed to entity Loyalty.LoyaltyAccount
+        yield event AccountClosed
         send event AccountClosed to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on event AccountClosed is {
@@ -661,15 +665,19 @@ entity LoyaltyAccount is {
         set field LoyaltyAccount.Closed.closedAt to "current timestamp"
       }
       on command EnrollCustomer is {
+        error "LoyaltyAccount does not accept EnrollCustomer in this state"
         send event EnrollCustomerRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on command AccruePoints is {
+        error "LoyaltyAccount does not accept AccruePoints in this state"
         send event AccruePointsRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on command RedeemPoints is {
+        error "LoyaltyAccount does not accept RedeemPoints in this state"
         send event RedeemPointsRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on command SuspendAccount is {
+        error "LoyaltyAccount does not accept SuspendAccount in this state"
         send event SuspendAccountRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
     } with {
@@ -690,7 +698,7 @@ entity LoyaltyAccount is {
   state Closed of record LoyaltyAccount.LoyaltyAccountData is {
     initial handler ClosedInitHandler is {
       on init is {
-        set state LoyaltyAccount.Closed to "loyaltyAccountId, loyaltyCustomerId, customerDisplayName, customerEmail, pointBalance, lifetimePoints, recentTransactions, enrolledAt, closedAt = AccountClosed.closedAt"
+        yield event AccountClosed
       }
     } with {
       briefly "Closed state init handler"
@@ -701,21 +709,27 @@ entity LoyaltyAccount is {
     }
     handler ClosedHandler is {
       on command EnrollCustomer is {
+        error "LoyaltyAccount does not accept EnrollCustomer in this state"
         send event EnrollCustomerRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on command AccruePoints is {
+        error "LoyaltyAccount does not accept AccruePoints in this state"
         send event AccruePointsRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on command RedeemPoints is {
+        error "LoyaltyAccount does not accept RedeemPoints in this state"
         send event RedeemPointsRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on command SuspendAccount is {
+        error "LoyaltyAccount does not accept SuspendAccount in this state"
         send event SuspendAccountRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on command ReactivateAccount is {
+        error "LoyaltyAccount does not accept ReactivateAccount in this state"
         send event ReactivateAccountRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
       on command CloseAccount is {
+        error "LoyaltyAccount does not accept CloseAccount in this state"
         send event CloseAccountRejected to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
       }
     } with {
@@ -733,7 +747,7 @@ entity LoyaltyAccount is {
   }
   handler LoyaltyCreationHandler is {
     on command EnrollCustomer is {
-      tell event CustomerEnrolled to entity Loyalty.LoyaltyAccount
+      yield event CustomerEnrolled
       send event CustomerEnrolled to outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEvents
     }
     on event CustomerEnrolled is {
@@ -743,6 +757,7 @@ entity LoyaltyAccount is {
       do "CustomerEnrolled event triggers welcome push
         notification via NotificationService streaming
         topology"
+      set state LoyaltyAccount.Active to "loyaltyAccountId, loyaltyCustomerId, customerDisplayName, customerEmail, pointBalance = 0, lifetimePoints = 0, recentTransactions = empty, enrolledAt = CustomerEnrolled.enrolledAt, closedAt = none"
     }
     on query GetLoyaltyAccount is {
       do "look up LoyaltyAccount by GetLoyaltyAccount.loyaltyAccountId"

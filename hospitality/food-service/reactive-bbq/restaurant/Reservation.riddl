@@ -1,5 +1,5 @@
 // Reservation entity for the Front of House context
-entity Reservation is {
+event-sourced entity Reservation is {
   type ReservationCommand is one of {
     Reservation.InitializeReservation or Reservation.MakeReservation or Reservation.ConfirmReservation or Reservation.CancelReservation or Reservation.SeatParty or Reservation.CompleteVisit or Reservation.MarkNoShow or Reservation.RescheduleReservation
   } with {
@@ -16,7 +16,7 @@ entity Reservation is {
       |Initialize the Reservation entity on source startup.
     }
   }
-  command MakeReservation is  {
+  command MakeReservation yields event ReservationMade is  {
     reservationId: ReservationId with {
       briefly "ID"
       described as {
@@ -53,7 +53,7 @@ entity Reservation is {
       |Request a new reservation.
     }
   }
-  command ConfirmReservation is  {
+  command ConfirmReservation yields event ReservationConfirmed is  {
     reservationId: ReservationId with {
       briefly "ID"
       described as {
@@ -72,7 +72,7 @@ entity Reservation is {
       |Confirm a pending reservation with a table assignment.
     }
   }
-  command CancelReservation is  {
+  command CancelReservation yields event ReservationCancelled is  {
     reservationId: ReservationId with {
       briefly "ID"
       described as {
@@ -91,7 +91,7 @@ entity Reservation is {
       |Cancel an existing reservation.
     }
   }
-  command SeatParty is  {
+  command SeatParty yields event PartySeated is  {
     reservationId: ReservationId with {
       briefly "ID"
       described as {
@@ -116,7 +116,7 @@ entity Reservation is {
       |Mark a reservation as seated at a table.
     }
   }
-  command CompleteVisit is  {
+  command CompleteVisit yields event VisitCompleted is  {
     reservationId: ReservationId with {
       briefly "ID"
       described as {
@@ -136,7 +136,7 @@ entity Reservation is {
       |has finished dining.
     }
   }
-  command MarkNoShow is  {
+  command MarkNoShow yields event NoShowMarked is  {
     reservationId: ReservationId with {
       briefly "ID"
       described as {
@@ -156,7 +156,7 @@ entity Reservation is {
       |the party does not arrive.
     }
   }
-  command RescheduleReservation is  {
+  command RescheduleReservation yields event ReservationRescheduled is  {
     reservationId: ReservationId with {
       briefly "ID"
       described as {
@@ -713,7 +713,7 @@ entity Reservation is {
   initial state Requested of record Reservation.RequestedData is {
     initial handler RequestedInitHandler is {
       on init is {
-        set state Requested to "base = ReservationBase(ReservationMade.reservationId, ReservationMade.guestName, ReservationMade.guestPhone, ReservationMade.partySize, ReservationMade.reservationTime, ReservationMade.madeAt)"
+        yield event ReservationMade
       }
     } with {
       briefly "Requested init handler"
@@ -724,32 +724,39 @@ entity Reservation is {
     }
     handler RequestedHandler is {
       on command ConfirmReservation is {
-        tell event ReservationConfirmed to entity FrontOfHouse.Reservation
+        yield event ReservationConfirmed
         send event ReservationConfirmed to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on event ReservationConfirmed is {
         morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.Confirmed with record Reservation.ConfirmedData
+        set state Confirmed to "base from prior state, assignedTable = ReservationConfirmed.confirmedTable, confirmedAt = ReservationConfirmed.confirmedAt"
       }
       on command CancelReservation is {
-        tell event ReservationCancelled to entity FrontOfHouse.Reservation
+        yield event ReservationCancelled
         send event ReservationCancelled to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on event ReservationCancelled is {
         morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.Cancelled with record Reservation.CancelledData
+        set state Reservation.Cancelled to "base from prior state, cancelledAt = ReservationCancelled.cancelledAt, cancellationReason = ReservationCancelled.cancellationReason"
       }
       on command MakeReservation is {
+        error "Reservation does not accept MakeReservation in this state"
         send event MakeReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command SeatParty is {
+        error "Reservation does not accept SeatParty in this state"
         send event SeatPartyRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command CompleteVisit is {
+        error "Reservation does not accept CompleteVisit in this state"
         send event CompleteVisitRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command MarkNoShow is {
+        error "Reservation does not accept MarkNoShow in this state"
         send event MarkNoShowRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command RescheduleReservation is {
+        error "Reservation does not accept RescheduleReservation in this state"
         send event RescheduleReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
     } with {
@@ -770,7 +777,7 @@ entity Reservation is {
   state Confirmed of record Reservation.ConfirmedData is {
     initial handler ConfirmedInitHandler is {
       on init is {
-        set state Confirmed to "base from prior state, assignedTable = ReservationConfirmed.confirmedTable, confirmedAt = ReservationConfirmed.confirmedAt"
+        yield event ReservationConfirmed
       }
     } with {
       briefly "Confirmed init handler"
@@ -781,7 +788,7 @@ entity Reservation is {
     }
     handler ConfirmedHandler is {
       on command SeatParty is {
-        tell event PartySeated to entity FrontOfHouse.Reservation
+        yield event PartySeated
         send event PartySeated to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on event PartySeated is {
@@ -790,23 +797,25 @@ entity Reservation is {
           tableNumber = PartySeated.seatedTable, serverId from
           host assignment"
         tell command CreateOrder to entity FrontOfHouse.TableOrder
+        set state Seated to "base from prior state, assignedTable from prior state, seatedAt = PartySeated.seatedAt"
       }
       on command CancelReservation is {
-        tell event ReservationCancelled to entity FrontOfHouse.Reservation
+        yield event ReservationCancelled
         send event ReservationCancelled to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on event ReservationCancelled is {
         morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.Cancelled with record Reservation.CancelledData
       }
       on command MarkNoShow is {
-        tell event NoShowMarked to entity FrontOfHouse.Reservation
+        yield event NoShowMarked
         send event NoShowMarked to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on event NoShowMarked is {
         morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.NoShow with record Reservation.NoShowData
+        set state NoShow to "base from prior state, markedNoShowAt = NoShowMarked.markedNoShowAt"
       }
       on command RescheduleReservation is {
-        tell event ReservationRescheduled to entity FrontOfHouse.Reservation
+        yield event ReservationRescheduled
         send event ReservationRescheduled to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on event ReservationRescheduled is {
@@ -815,12 +824,15 @@ entity Reservation is {
           ReservationRescheduled.newReservationTime"
       }
       on command MakeReservation is {
+        error "Reservation does not accept MakeReservation in this state"
         send event MakeReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command ConfirmReservation is {
+        error "Reservation does not accept ConfirmReservation in this state"
         send event ConfirmReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command CompleteVisit is {
+        error "Reservation does not accept CompleteVisit in this state"
         send event CompleteVisitRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
     } with {
@@ -841,7 +853,7 @@ entity Reservation is {
   state Seated of record Reservation.SeatedData is {
     initial handler SeatedInitHandler is {
       on init is {
-        set state Seated to "base from prior state, assignedTable from prior state, seatedAt = PartySeated.seatedAt"
+        yield event PartySeated
       }
     } with {
       briefly "Seated init handler"
@@ -852,28 +864,35 @@ entity Reservation is {
     }
     handler SeatedHandler is {
       on command CompleteVisit is {
-        tell event VisitCompleted to entity FrontOfHouse.Reservation
+        yield event VisitCompleted
         send event VisitCompleted to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on event VisitCompleted is {
         morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.Completed with record Reservation.CompletedData
+        set state Reservation.Completed to "base from prior state, assignedTable from prior state, completedAt = VisitCompleted.completedAt"
       }
       on command MakeReservation is {
+        error "Reservation does not accept MakeReservation in this state"
         send event MakeReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command ConfirmReservation is {
+        error "Reservation does not accept ConfirmReservation in this state"
         send event ConfirmReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command CancelReservation is {
+        error "Reservation does not accept CancelReservation in this state"
         send event CancelReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command SeatParty is {
+        error "Reservation does not accept SeatParty in this state"
         send event SeatPartyRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command MarkNoShow is {
+        error "Reservation does not accept MarkNoShow in this state"
         send event MarkNoShowRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command RescheduleReservation is {
+        error "Reservation does not accept RescheduleReservation in this state"
         send event RescheduleReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
     } with {
@@ -893,7 +912,7 @@ entity Reservation is {
   state Completed of record Reservation.CompletedData is {
     initial handler CompletedInitHandler is {
       on init is {
-        set state Reservation.Completed to "base from prior state, assignedTable from prior state, completedAt = VisitCompleted.completedAt"
+        yield event VisitCompleted
       }
     } with {
       briefly "Completed init handler"
@@ -904,24 +923,31 @@ entity Reservation is {
     }
     handler CompletedHandler is {
       on command MakeReservation is {
+        error "Reservation does not accept MakeReservation in this state"
         send event MakeReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command ConfirmReservation is {
+        error "Reservation does not accept ConfirmReservation in this state"
         send event ConfirmReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command CancelReservation is {
+        error "Reservation does not accept CancelReservation in this state"
         send event CancelReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command SeatParty is {
+        error "Reservation does not accept SeatParty in this state"
         send event SeatPartyRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command CompleteVisit is {
+        error "Reservation does not accept CompleteVisit in this state"
         send event CompleteVisitRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command MarkNoShow is {
+        error "Reservation does not accept MarkNoShow in this state"
         send event MarkNoShowRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command RescheduleReservation is {
+        error "Reservation does not accept RescheduleReservation in this state"
         send event RescheduleReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
     } with {
@@ -939,7 +965,7 @@ entity Reservation is {
   state Cancelled of record Reservation.CancelledData is {
     initial handler CancelledInitHandler is {
       on init is {
-        set state Reservation.Cancelled to "base from prior state, cancelledAt = ReservationCancelled.cancelledAt, cancellationReason = ReservationCancelled.cancellationReason"
+        yield event ReservationCancelled
       }
     } with {
       briefly "Cancelled init handler"
@@ -950,24 +976,31 @@ entity Reservation is {
     }
     handler CancelledHandler is {
       on command MakeReservation is {
+        error "Reservation does not accept MakeReservation in this state"
         send event MakeReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command ConfirmReservation is {
+        error "Reservation does not accept ConfirmReservation in this state"
         send event ConfirmReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command CancelReservation is {
+        error "Reservation does not accept CancelReservation in this state"
         send event CancelReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command SeatParty is {
+        error "Reservation does not accept SeatParty in this state"
         send event SeatPartyRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command CompleteVisit is {
+        error "Reservation does not accept CompleteVisit in this state"
         send event CompleteVisitRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command MarkNoShow is {
+        error "Reservation does not accept MarkNoShow in this state"
         send event MarkNoShowRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command RescheduleReservation is {
+        error "Reservation does not accept RescheduleReservation in this state"
         send event RescheduleReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
     } with {
@@ -985,7 +1018,7 @@ entity Reservation is {
   state NoShow of record Reservation.NoShowData is {
     initial handler NoShowInitHandler is {
       on init is {
-        set state NoShow to "base from prior state, markedNoShowAt = NoShowMarked.markedNoShowAt"
+        yield event NoShowMarked
       }
     } with {
       briefly "NoShow init handler"
@@ -996,24 +1029,31 @@ entity Reservation is {
     }
     handler NoShowHandler is {
       on command MakeReservation is {
+        error "Reservation does not accept MakeReservation in this state"
         send event MakeReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command ConfirmReservation is {
+        error "Reservation does not accept ConfirmReservation in this state"
         send event ConfirmReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command CancelReservation is {
+        error "Reservation does not accept CancelReservation in this state"
         send event CancelReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command SeatParty is {
+        error "Reservation does not accept SeatParty in this state"
         send event SeatPartyRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command CompleteVisit is {
+        error "Reservation does not accept CompleteVisit in this state"
         send event CompleteVisitRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command MarkNoShow is {
+        error "Reservation does not accept MarkNoShow in this state"
         send event MarkNoShowRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
       on command RescheduleReservation is {
+        error "Reservation does not accept RescheduleReservation in this state"
         send event RescheduleReservationRejected to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
       }
     } with {
@@ -1037,11 +1077,12 @@ entity Reservation is {
       do "query ReservationRepository for conflicting
         reservations at MakeReservation.reservationTime with
         sufficient table capacity for MakeReservation.partySize"
-      tell event ReservationMade to entity FrontOfHouse.Reservation
+      yield event ReservationMade
       send event ReservationMade to outlet FrontOfHouse.ReservationEventSource.ReservationEvents
     }
     on event ReservationMade is {
       morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.Requested with record Reservation.RequestedData
+      set state Requested to "base = ReservationBase(ReservationMade.reservationId, ReservationMade.guestName, ReservationMade.guestPhone, ReservationMade.partySize, ReservationMade.reservationTime, ReservationMade.madeAt)"
     }
     on query GetReservation is {
       do "look up Reservation by GetReservation.reservationId"

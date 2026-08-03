@@ -1,5 +1,5 @@
 // DeliveryOrder entity for the Delivery context
-entity DeliveryOrder is {
+event-sourced entity DeliveryOrder is {
   type DeliveryOrderCommand is one of {
     DeliveryOrder.InitializeDeliveryOrder or DeliveryOrder.CreateDelivery or DeliveryOrder.AssignDriver or DeliveryOrder.DispatchDriver or DeliveryOrder.RecordDeliveryLocation or DeliveryOrder.ConfirmDelivery or DeliveryOrder.RecordDeliveryPayment or DeliveryOrder.ReportDeliveryIssue or DeliveryOrder.FailDelivery
   } with {
@@ -24,7 +24,7 @@ entity DeliveryOrder is {
       |Initialize the DeliveryOrder entity on source startup.
     }
   }
-  command CreateDelivery is  {
+  command CreateDelivery yields event DeliveryCreated is  {
     deliveryId: DeliveryId with {
       briefly "ID"
       described as {
@@ -67,7 +67,7 @@ entity DeliveryOrder is {
       |Create a new delivery from an online order.
     }
   }
-  command AssignDriver is  {
+  command AssignDriver yields event DriverAssigned is  {
     deliveryId: DeliveryId with {
       briefly "ID"
       described as {
@@ -92,7 +92,7 @@ entity DeliveryOrder is {
       |Assign a delivery driver.
     }
   }
-  command DispatchDriver is  {
+  command DispatchDriver yields event DriverDispatched is  {
     deliveryId: DeliveryId with {
       briefly "ID"
       described as {
@@ -111,7 +111,7 @@ entity DeliveryOrder is {
       |Dispatch the assigned driver for delivery.
     }
   }
-  command RecordDeliveryLocation is  {
+  command RecordDeliveryLocation yields event DeliveryLocationRecorded is  {
     deliveryId: DeliveryId with {
       briefly "ID"
       described as {
@@ -130,7 +130,7 @@ entity DeliveryOrder is {
       |Record the driver's current GPS location.
     }
   }
-  command ConfirmDelivery is  {
+  command ConfirmDelivery yields event DeliveryConfirmed is  {
     deliveryId: DeliveryId with {
       briefly "ID"
       described as {
@@ -155,7 +155,7 @@ entity DeliveryOrder is {
       |Confirm the delivery was completed.
     }
   }
-  command RecordDeliveryPayment is  {
+  command RecordDeliveryPayment yields event DeliveryPaymentRecorded is  {
     deliveryId: DeliveryId with {
       briefly "ID"
       described as {
@@ -180,7 +180,7 @@ entity DeliveryOrder is {
       |Record cash tip or additional payment at delivery.
     }
   }
-  command ReportDeliveryIssue is  {
+  command ReportDeliveryIssue yields event DeliveryIssueReported is  {
     deliveryId: DeliveryId with {
       briefly "ID"
       described as {
@@ -211,7 +211,7 @@ entity DeliveryOrder is {
       |Report an issue during delivery.
     }
   }
-  command FailDelivery is  {
+  command FailDelivery yields event DeliveryMarkedFailed is  {
     deliveryId: DeliveryId with {
       briefly "ID"
       described as {
@@ -814,7 +814,7 @@ entity DeliveryOrder is {
   initial state Pending of record DeliveryOrder.PendingData is {
     initial handler PendingInitHandler is {
       on init is {
-        set state Pending to "base"
+        yield event DeliveryCreated
       }
     } with {
       briefly "Pending init handler"
@@ -824,37 +824,45 @@ entity DeliveryOrder is {
     }
     handler PendingHandler is {
       on command AssignDriver is {
-        tell event DriverAssigned to entity Delivery.DeliveryOrder
+        yield event DriverAssigned
         send event DriverAssigned to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on event DriverAssigned is {
         morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.DriverAssignedState with record DeliveryOrder.DriverAssignedData
         do "DriverAssigned event triggers push notification to
           driver via NotificationService streaming topology"
+        set state DriverAssignedState to "base, assignedDriverId, assignedDriverName, assignedAt"
       }
       on command FailDelivery is {
-        tell event DeliveryMarkedFailed to entity Delivery.DeliveryOrder
+        yield event DeliveryMarkedFailed
         send event DeliveryMarkedFailed to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on event DeliveryMarkedFailed is {
         morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData
+        set state Failed to "base, failureReason, failedAt, lastDriverId = none"
       }
       on command CreateDelivery is {
+        error "DeliveryOrder does not accept CreateDelivery in this state"
         send event CreateDeliveryRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command DispatchDriver is {
+        error "DeliveryOrder does not accept DispatchDriver in this state"
         send event DispatchDriverRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command RecordDeliveryLocation is {
+        error "DeliveryOrder does not accept RecordDeliveryLocation in this state"
         send event RecordDeliveryLocationRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command ConfirmDelivery is {
+        error "DeliveryOrder does not accept ConfirmDelivery in this state"
         send event ConfirmDeliveryRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command RecordDeliveryPayment is {
+        error "DeliveryOrder does not accept RecordDeliveryPayment in this state"
         send event RecordDeliveryPaymentRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command ReportDeliveryIssue is {
+        error "DeliveryOrder does not accept ReportDeliveryIssue in this state"
         send event ReportDeliveryIssueRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
     } with {
@@ -876,7 +884,7 @@ entity DeliveryOrder is {
   state DriverAssignedState of record DeliveryOrder.DriverAssignedData is {
     initial handler DriverAssignedInitHandler is {
       on init is {
-        set state DriverAssignedState to "base, assignedDriverId, assignedDriverName, assignedAt"
+        yield event DriverAssigned
       }
     } with {
       briefly "DriverAssigned init handler"
@@ -886,37 +894,44 @@ entity DeliveryOrder is {
     }
     handler DriverAssignedHandler is {
       on command DispatchDriver is {
-        tell event DriverDispatched to entity Delivery.DeliveryOrder
+        yield event DriverDispatched
         send event DriverDispatched to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on event DriverDispatched is {
         morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.InTransit with record DeliveryOrder.InTransitData
         do "DriverDispatched event triggers push notification to
           customer via NotificationService streaming topology"
+        set state InTransit to "base, assignedDriverId, assignedDriverName, dispatchedAt, lastKnownLocation = none"
       }
       on command FailDelivery is {
-        tell event DeliveryMarkedFailed to entity Delivery.DeliveryOrder
+        yield event DeliveryMarkedFailed
         send event DeliveryMarkedFailed to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on event DeliveryMarkedFailed is {
         morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData
       }
       on command CreateDelivery is {
+        error "DeliveryOrder does not accept CreateDelivery in this state"
         send event CreateDeliveryRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command AssignDriver is {
+        error "DeliveryOrder does not accept AssignDriver in this state"
         send event AssignDriverRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command RecordDeliveryLocation is {
+        error "DeliveryOrder does not accept RecordDeliveryLocation in this state"
         send event RecordDeliveryLocationRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command ConfirmDelivery is {
+        error "DeliveryOrder does not accept ConfirmDelivery in this state"
         send event ConfirmDeliveryRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command RecordDeliveryPayment is {
+        error "DeliveryOrder does not accept RecordDeliveryPayment in this state"
         send event RecordDeliveryPaymentRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command ReportDeliveryIssue is {
+        error "DeliveryOrder does not accept ReportDeliveryIssue in this state"
         send event ReportDeliveryIssueRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
     } with {
@@ -937,7 +952,7 @@ entity DeliveryOrder is {
   state InTransit of record DeliveryOrder.InTransitData is {
     initial handler InTransitInitHandler is {
       on init is {
-        set state InTransit to "base, assignedDriverId, assignedDriverName, dispatchedAt, lastKnownLocation = none"
+        yield event DriverDispatched
       }
     } with {
       briefly "InTransit init handler"
@@ -947,30 +962,31 @@ entity DeliveryOrder is {
     }
     handler InTransitHandler is {
       on command RecordDeliveryLocation is {
-        tell event DeliveryLocationRecorded to entity Delivery.DeliveryOrder
+        yield event DeliveryLocationRecorded
         send event DeliveryLocationRecorded to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on event DeliveryLocationRecorded is {
         set field DeliveryOrder.InTransit.lastKnownLocation to "driverLocation from event"
       }
       on command ConfirmDelivery is {
-        tell event DeliveryConfirmed to entity Delivery.DeliveryOrder
+        yield event DeliveryConfirmed
         send event DeliveryConfirmed to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on event DeliveryConfirmed is {
         morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Delivered with record DeliveryOrder.DeliveredData
         do "DeliveryConfirmed event triggers push notification
           to customer via NotificationService streaming topology"
+        set state DeliveryOrder.Delivered to "base, assignedDriverId, assignedDriverName, confirmedAt"
       }
       on command RecordDeliveryPayment is {
-        tell event DeliveryPaymentRecorded to entity Delivery.DeliveryOrder
+        yield event DeliveryPaymentRecorded
         send event DeliveryPaymentRecorded to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on event DeliveryPaymentRecorded is {
         do "record tip and payment details"
       }
       on command ReportDeliveryIssue is {
-        tell event DeliveryIssueReported to entity Delivery.DeliveryOrder
+        yield event DeliveryIssueReported
         send event DeliveryIssueReported to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on event DeliveryIssueReported is {
@@ -1003,19 +1019,22 @@ entity DeliveryOrder is {
         }
       }
       on command FailDelivery is {
-        tell event DeliveryMarkedFailed to entity Delivery.DeliveryOrder
+        yield event DeliveryMarkedFailed
         send event DeliveryMarkedFailed to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on event DeliveryMarkedFailed is {
         morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData
       }
       on command CreateDelivery is {
+        error "DeliveryOrder does not accept CreateDelivery in this state"
         send event CreateDeliveryRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command AssignDriver is {
+        error "DeliveryOrder does not accept AssignDriver in this state"
         send event AssignDriverRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command DispatchDriver is {
+        error "DeliveryOrder does not accept DispatchDriver in this state"
         send event DispatchDriverRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
     } with {
@@ -1039,7 +1058,7 @@ entity DeliveryOrder is {
   state Delivered of record DeliveryOrder.DeliveredData is {
     initial handler DeliveredInitHandler is {
       on init is {
-        set state DeliveryOrder.Delivered to "base, assignedDriverId, assignedDriverName, confirmedAt"
+        yield event DeliveryConfirmed
       }
     } with {
       briefly "Delivered init handler"
@@ -1049,27 +1068,35 @@ entity DeliveryOrder is {
     }
     handler DeliveredHandler is {
       on command CreateDelivery is {
+        error "DeliveryOrder does not accept CreateDelivery in this state"
         send event CreateDeliveryRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command AssignDriver is {
+        error "DeliveryOrder does not accept AssignDriver in this state"
         send event AssignDriverRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command DispatchDriver is {
+        error "DeliveryOrder does not accept DispatchDriver in this state"
         send event DispatchDriverRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command RecordDeliveryLocation is {
+        error "DeliveryOrder does not accept RecordDeliveryLocation in this state"
         send event RecordDeliveryLocationRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command ConfirmDelivery is {
+        error "DeliveryOrder does not accept ConfirmDelivery in this state"
         send event ConfirmDeliveryRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command RecordDeliveryPayment is {
+        error "DeliveryOrder does not accept RecordDeliveryPayment in this state"
         send event RecordDeliveryPaymentRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command ReportDeliveryIssue is {
+        error "DeliveryOrder does not accept ReportDeliveryIssue in this state"
         send event ReportDeliveryIssueRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command FailDelivery is {
+        error "DeliveryOrder does not accept FailDelivery in this state"
         send event FailDeliveryRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
     } with {
@@ -1087,7 +1114,7 @@ entity DeliveryOrder is {
   state Failed of record DeliveryOrder.FailedData is {
     initial handler FailedInitHandler is {
       on init is {
-        set state Failed to "base, failureReason, failedAt, lastDriverId = none"
+        yield event DeliveryMarkedFailed
       }
     } with {
       briefly "Failed init handler"
@@ -1097,27 +1124,35 @@ entity DeliveryOrder is {
     }
     handler FailedHandler is {
       on command CreateDelivery is {
+        error "DeliveryOrder does not accept CreateDelivery in this state"
         send event CreateDeliveryRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command AssignDriver is {
+        error "DeliveryOrder does not accept AssignDriver in this state"
         send event AssignDriverRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command DispatchDriver is {
+        error "DeliveryOrder does not accept DispatchDriver in this state"
         send event DispatchDriverRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command RecordDeliveryLocation is {
+        error "DeliveryOrder does not accept RecordDeliveryLocation in this state"
         send event RecordDeliveryLocationRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command ConfirmDelivery is {
+        error "DeliveryOrder does not accept ConfirmDelivery in this state"
         send event ConfirmDeliveryRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command RecordDeliveryPayment is {
+        error "DeliveryOrder does not accept RecordDeliveryPayment in this state"
         send event RecordDeliveryPaymentRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command ReportDeliveryIssue is {
+        error "DeliveryOrder does not accept ReportDeliveryIssue in this state"
         send event ReportDeliveryIssueRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on command FailDelivery is {
+        error "DeliveryOrder does not accept FailDelivery in this state"
         send event FailDeliveryRejected to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
     } with {
@@ -1134,14 +1169,14 @@ entity DeliveryOrder is {
   }
   handler DeliveryCreationHandler is {
     on command CreateDelivery is {
-      morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Pending with record DeliveryOrder.PendingData
-      tell event DeliveryCreated to entity Delivery.DeliveryOrder
+      yield event DeliveryCreated
       send event DeliveryCreated to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       do "query available drivers by GeoLocation proximity to
         restaurant and select nearest with status = available"
     }
     on event DeliveryCreated is {
       morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Pending with record DeliveryOrder.PendingData
+      set state Pending to "base"
     }
     on query GetDeliveryOrder is {
       do "look up DeliveryOrder by GetDeliveryOrder.deliveryId"
