@@ -267,6 +267,45 @@ set of command names, and converted repositories in 47 unrelated models
 because `AddItem` is a domain command in reactive-bbq and an ordinary one
 in shopping-cart. Name sets must be scoped per model.
 
+### 2026-08-03: a substitution harness for the pattern templates
+
+`scripts/verify-templates.py` makes the seven `template.riddl` files
+checkable for the first time. They were unreadable by riddlc for two
+reasons at once — they carry `{Placeholder}` names, and they are
+*fragments* that begin at `entity`/`saga`/`projector`, not at `domain` —
+so nothing had ever checked them, and they had drifted to pre-2.0 syntax
+while the 187 models were kept green.
+
+The harness substitutes ordinary values (Order, Cart, Item), wraps each
+fragment in the smallest scaffold that makes it a whole model, and runs
+riddlc. **All seven now parse; they did not before — 0/7 at baseline.**
+
+Two tiers, deliberately:
+
+- **parse is the gate.** It is what these files actually failed, and it
+  catches exactly the rot that happened.
+- `--validate` is a source of suggestions. Making a bare fragment
+  validate as a whole model needs a scaffold so large — sink, repository,
+  source, connectors — that it starts testing the scaffold. So findings
+  naming a scaffold definition are classified and ignored, and what
+  remains is about the template. Some of that is inherent to being a
+  fragment: an entity template cannot declare its Id type "in the
+  containing context" when it has no context, nor connect its own outlet.
+  2 of 7 validate cleanly today.
+
+An unknown `{Placeholder}` fails the run rather than silently
+substituting nothing — that is the maintenance guard, and it is tested.
+
+What the rewrite had to fix, all of it invisible until now: `option
+event-sourced` as an option, `briefly` outside a `with` block, `state X
+is { fields }` instead of `of record`, comma-separated aggregate fields,
+`{Child}*` for `many`, and `@Cmd.field` references. Two parser facts
+worth keeping: a saga's `requires`/`returns` belong to the **saga**, not
+to a step — a step's body is statements, its compensation is spelled
+`reverted by` — and a **comment between `returns` and the first `step`
+does not parse**. Also `???` is for a wholly empty body; it cannot follow
+another statement.
+
 ### 2026-08-03: riddlc 2.0.0-rc.9-34-5488fd9d — patterns/ caught up
 
 Gate and round trip both clean on the upgrade with no model changes:

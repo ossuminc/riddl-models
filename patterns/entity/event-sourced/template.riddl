@@ -1,68 +1,232 @@
 // Event-Sourced Entity Pattern
 // Replace {EntityName} with your actual entity name (e.g., Order, Account)
+//
+// The `event-sourced` intention is a keyword before `entity`, not an option,
+// because it decides what the model MEANS and whether it is even legal. It
+// brings four rules with it, all hard errors:
+//
+//   1. every handled command's TYPE declares `yields`
+//   2. every event so named has an `on event` clause to apply it on replay
+//   3. `set`/`morph`/`become` appear ONLY in `on event` -- `on init` included
+//   4. a foreign event may not touch state; it yields one of ours first
+//
+// Together they say one thing: replay must reproduce the same state changes,
+// so the change belongs where the event is applied, never on the command.
 
-entity {EntityName} is {
-  option event-sourced
-  briefly "An event-sourced {EntityName} entity"
-
-  // Identity type
-  type {EntityName}Id is Id({EntityName})
-
-  // Commands (requests to change state)
-  command Create{EntityName} is {
-    id: {EntityName}Id
-    // TODO: Add creation fields
+event-sourced entity {EntityName} is {
+  type {EntityName}Id is Id({EntityName}) with {
+    briefly "{EntityName} identifier"
+    described as {
+      |Identifies one {EntityName}.
+    }
   }
-  command Update{EntityName} is {
-    id: {EntityName}Id
-    // TODO: Add fields to update
+  // Commands are requests. Each declares what it records when it succeeds.
+  command Create{EntityName} yields event {EntityName}Created is {
+    id: {EntityName}Id with {
+      briefly "ID"
+      described as {
+        |The {EntityName} to create.
+      }
+    }
+  } with {
+    briefly "Create a {EntityName}"
+    described as {
+      |Requests creation. TODO: add the fields creation needs.
+    }
   }
-  command Delete{EntityName} is {
-    id: {EntityName}Id
+  command Update{EntityName} yields event {EntityName}Updated is {
+    id: {EntityName}Id with {
+      briefly "ID"
+      described as {
+        |The {EntityName} to update.
+      }
+    }
+  } with {
+    briefly "Update a {EntityName}"
+    described as {
+      |Requests a change. TODO: add the fields that may change.
+    }
   }
-
-  // Events (facts about what happened)
+  command Delete{EntityName} yields event {EntityName}Deleted is {
+    id: {EntityName}Id with {
+      briefly "ID"
+      described as {
+        |The {EntityName} to delete.
+      }
+    }
+  } with {
+    briefly "Delete a {EntityName}"
+    described as {
+      |Requests deletion.
+    }
+  }
+  // Events are facts. They are what replay re-applies, so they carry
+  // everything the state change needs.
   event {EntityName}Created is {
-    id: {EntityName}Id,
-    createdAt: TimeStamp
-    // TODO: Add creation fields
+    id: {EntityName}Id with {
+      briefly "ID"
+      described as {
+        |The {EntityName} that was created.
+      }
+    }
+    createdAt: TimeStamp with {
+      briefly "Created"
+      described as {
+        |When it was created.
+      }
+    }
+  } with {
+    briefly "A {EntityName} was created"
+    described as {
+      |Records creation.
+    }
   }
   event {EntityName}Updated is {
-    id: {EntityName}Id,
-    updatedAt: TimeStamp
-    // TODO: Add updated fields
+    id: {EntityName}Id with {
+      briefly "ID"
+      described as {
+        |The {EntityName} that changed.
+      }
+    }
+    updatedAt: TimeStamp with {
+      briefly "Updated"
+      described as {
+        |When it changed.
+      }
+    }
+  } with {
+    briefly "A {EntityName} was updated"
+    described as {
+      |Records a change.
+    }
   }
   event {EntityName}Deleted is {
-    id: {EntityName}Id,
-    deletedAt: TimeStamp
+    id: {EntityName}Id with {
+      briefly "ID"
+      described as {
+        |The {EntityName} that was deleted.
+      }
+    }
+    deletedAt: TimeStamp with {
+      briefly "Deleted"
+      described as {
+        |When it was deleted.
+      }
+    }
+  } with {
+    briefly "A {EntityName} was deleted"
+    described as {
+      |Records deletion.
+    }
   }
-
-  // State (current view derived from events)
-  state Active is {
-    id: {EntityName}Id,
-    createdAt: TimeStamp,
-    updatedAt: TimeStamp
-    // TODO: Add state fields
+  // State is held in a record, one per state.
+  record ActiveData is {
+    id: {EntityName}Id with {
+      briefly "ID"
+      described as {
+        |The {EntityName} this state belongs to.
+      }
+    }
+    createdAt: TimeStamp with {
+      briefly "Created"
+      described as {
+        |When it was created.
+      }
+    }
+  } with {
+    briefly "Active {EntityName} data"
+    described as {
+      |What a live {EntityName} holds. TODO: add your state fields.
+    }
   }
-
-  state Deleted is {
-    id: {EntityName}Id,
-    deletedAt: TimeStamp
+  record DeletedData is {
+    id: {EntityName}Id with {
+      briefly "ID"
+      described as {
+        |The {EntityName} this state belongs to.
+      }
+    }
+    deletedAt: TimeStamp with {
+      briefly "Deleted"
+      described as {
+        |When it was deleted.
+      }
+    }
+  } with {
+    briefly "Deleted {EntityName} data"
+    described as {
+      |What remains after deletion.
+    }
   }
-
-  // Handler processes commands and emits events
+  // `on init` may not `set` (rule 3). Initial state arrives by replaying the
+  // creation event, which is what event sourcing means.
+  initial state Active of record {EntityName}.ActiveData is {
+    initial handler ActiveInitHandler is {
+      on init is {
+        yield event {EntityName}Created
+      }
+    } with {
+      briefly "Active init handler"
+      described as {
+        |Rebuilds the active state by replaying creation.
+      }
+    }
+  } with {
+    briefly "Active state"
+    described as {
+      |The {EntityName} is live.
+    }
+  }
+  state Deleted of record {EntityName}.DeletedData is {
+    initial handler DeletedInitHandler is {
+      on init is {
+        yield event {EntityName}Deleted
+      }
+    } with {
+      briefly "Deleted init handler"
+      described as {
+        |Rebuilds the deleted state by replaying deletion.
+      }
+    }
+  } with {
+    briefly "Deleted state"
+    described as {
+      |The {EntityName} is gone. Terminal.
+    }
+  }
   handler {EntityName}Handler is {
-    on command Create{EntityName} {
-      // TODO: Validate and create
-      send event {EntityName}Created to outlet Events
+    // The command clause decides and records. It does not change state.
+    on command Create{EntityName} is {
+      yield event {EntityName}Created
     }
-    on command Update{EntityName} {
-      // TODO: Validate and update
-      send event {EntityName}Updated to outlet Events
+    on command Update{EntityName} is {
+      yield event {EntityName}Updated
     }
-    on command Delete{EntityName} {
-      morph entity {EntityName} to state Deleted
-      send event {EntityName}Deleted to outlet Events
+    on command Delete{EntityName} is {
+      yield event {EntityName}Deleted
     }
+    // The event clause changes state, so replay can re-run it.
+    on event {EntityName}Created is {
+      morph entity {EntityName} to state {EntityName}.Active with record {EntityName}.ActiveData
+      set state Active to "initialize from the creation event"
+    }
+    on event {EntityName}Updated is {
+      set field {EntityName}.ActiveData.createdAt to "unchanged; TODO apply your update"
+    }
+    on event {EntityName}Deleted is {
+      morph entity {EntityName} to state {EntityName}.Deleted with record {EntityName}.DeletedData
+      set state Deleted to "initialize from the deletion event"
+    }
+  } with {
+    briefly "{EntityName} handler"
+    described as {
+      |Turns commands into recorded events, and applies those events to state.
+    }
+  }
+} with {
+  briefly "An event-sourced {EntityName} entity"
+  described as {
+    |Every state change is recorded as an event, so the state can be rebuilt
+    |by replaying them in order.
   }
 }

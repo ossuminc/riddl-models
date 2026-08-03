@@ -488,6 +488,22 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 Models are validated against the RIDDL grammar using riddlc via
 `sbt riddlcValidate` (alias `sbt v`). `build.sbt` excludes `patterns/`
-from that scan, so the two pattern **examples** must be validated
-explicitly; the seven `template.riddl` files are parameterised with
-`{Placeholder}` names and do not parse by design.
+from that scan, so `patterns/` needs its own checks:
+
+- the two pattern **examples** have `.conf` files and must be validated
+  explicitly
+- the seven `template.riddl` files are parameterised with `{Placeholder}`
+  names and are fragments, so riddlc cannot read them directly.
+  `scripts/verify-templates.py` substitutes sane values, wraps each
+  fragment in a scaffold domain, and parses the result:
+
+```bash
+RIDDLC=../bin/riddlc ./scripts/verify-templates.py            # the gate
+RIDDLC=../bin/riddlc ./scripts/verify-templates.py --validate # suggestions
+RIDDLC=../bin/riddlc ./scripts/verify-templates.py --keep     # keep output
+```
+
+  Adding a placeholder without adding it to the script's `TEMPLATES` map
+  fails the run. **Run this after any riddlc upgrade** — without it the
+  templates rot silently, which is exactly what happened to them through
+  the whole RIDDL 2.0 migration.
