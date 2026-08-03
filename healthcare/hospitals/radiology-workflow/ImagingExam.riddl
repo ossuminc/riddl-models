@@ -1,6 +1,6 @@
 // ImagingExam Entity
 // Core entity managing the lifecycle of an imaging examination
-entity ImagingExam is {
+aggregate event-sourced entity ImagingExam is {
   type ImagingExamCommand is one of {
     ImagingExam.OrderExam or ImagingExam.ScheduleExam or ImagingExam.CheckInPatient or ImagingExam.StartAcquisition or ImagingExam.CompleteAcquisition or ImagingExam.CreateDraftReport or ImagingExam.FinalizeReport or ImagingExam.AddAddendum or ImagingExam.ReportCriticalFinding
   } with {
@@ -39,7 +39,7 @@ entity ImagingExam is {
   // ==========================================================================
   // Commands
   // ==========================================================================
-  command OrderExam is  {
+  command OrderExam yields event ExamOrdered is  {
     examId: ExamId
     patientId: PatientId
     orderingPhysicianId: PhysicianId
@@ -57,7 +57,7 @@ entity ImagingExam is {
       | order with clinical context and priority.
     }
   }
-  command ScheduleExam is  {
+  command ScheduleExam yields event ExamScheduled is  {
     examId: ExamId
     scheduledDateTime: TimeStamp
     modalityId: ModalityId
@@ -71,7 +71,7 @@ entity ImagingExam is {
       | ordered examination.
     }
   }
-  command CheckInPatient is  {
+  command CheckInPatient yields event PatientCheckedIn is  {
     examId: ExamId
     checkedInAt: TimeStamp
     verifiedIdentity: Boolean
@@ -84,7 +84,7 @@ entity ImagingExam is {
       | screening and consent processes.
     }
   }
-  command StartAcquisition is  {
+  command StartAcquisition yields event AcquisitionStarted is  {
     examId: ExamId
     technicianId: TechnicianId
     modalityId: ModalityId
@@ -96,7 +96,7 @@ entity ImagingExam is {
       | begins acquiring images.
     }
   }
-  command CompleteAcquisition is  {
+  command CompleteAcquisition yields event AcquisitionCompleted is  {
     examId: ExamId
     studyInfo: StudyInfo
     completedAt: TimeStamp
@@ -108,7 +108,7 @@ entity ImagingExam is {
       | technician notes about the examination.
     }
   }
-  command CreateDraftReport is  {
+  command CreateDraftReport yields event DraftReportCreated is  {
     examId: ExamId
     radiologistId: PhysicianId
     findings: String
@@ -122,7 +122,7 @@ entity ImagingExam is {
       | imaging study.
     }
   }
-  command FinalizeReport is  {
+  command FinalizeReport yields event ReportFinalized is  {
     examId: ExamId
     reportId: ReportId
     radiologistId: PhysicianId
@@ -134,7 +134,7 @@ entity ImagingExam is {
       | available to ordering physicians.
     }
   }
-  command AddAddendum is  {
+  command AddAddendum yields event AddendumAdded is  {
     examId: ExamId
     reportId: ReportId
     radiologistId: PhysicianId
@@ -147,7 +147,7 @@ entity ImagingExam is {
       | finalized report without modifying the original interpretation.
     }
   }
-  command ReportCriticalFinding is  {
+  command ReportCriticalFinding yields event CriticalFindingReported is  {
     examId: ExamId
     finding: CriticalFinding
   } with {
@@ -345,7 +345,7 @@ entity ImagingExam is {
         tell result ImagingExamResult to entity RadiologyContext.ImagingExam
       }
       on init is {
-        set state OrderedState to "initialize from prior event"
+        yield event ExamOrdered
       }
     } with {
       briefly "OrderedState init handler"
@@ -362,7 +362,7 @@ entity ImagingExam is {
   state ScheduledState of record ImagingExam.ScheduledStateData is {
     initial handler ScheduledStateInitHandler is {
       on init is {
-        set state ScheduledState to "initialize from prior event"
+        yield event ExamScheduled
       }
     } with {
       briefly "ScheduledState init handler"
@@ -379,7 +379,7 @@ entity ImagingExam is {
   state AcquisitionState of record ImagingExam.AcquisitionStateData is {
     initial handler AcquisitionStateInitHandler is {
       on init is {
-        set state AcquisitionState to "initialize from prior event"
+        yield event PatientCheckedIn
       }
     } with {
       briefly "AcquisitionState init handler"
@@ -396,7 +396,7 @@ entity ImagingExam is {
   state InterpretationState of record ImagingExam.InterpretationStateData is {
     initial handler InterpretationStateInitHandler is {
       on init is {
-        set state InterpretationState to "initialize from prior event"
+        yield event AcquisitionCompleted
       }
     } with {
       briefly "InterpretationState init handler"
@@ -413,7 +413,7 @@ entity ImagingExam is {
   state FinalizedState of record ImagingExam.FinalizedStateData is {
     initial handler FinalizedStateInitHandler is {
       on init is {
-        set state FinalizedState to "initialize from prior event"
+        yield event ReportFinalized
       }
     } with {
       briefly "FinalizedState init handler"
@@ -432,43 +432,70 @@ entity ImagingExam is {
   // ==========================================================================
   handler ImagingExamHandler is {
     on command OrderExam is {
-      tell event ExamOrdered to entity ImagingExam
-      morph entity ImagingExam to state ImagingExam.OrderedState with record ImagingExam.OrderedStateData
+      yield event ExamOrdered
     }
     on command ScheduleExam is {
-      tell event ExamScheduled to entity ImagingExam
-      morph entity ImagingExam to state ImagingExam.ScheduledState with record ImagingExam.ScheduledStateData
+      yield event ExamScheduled
     }
     on command CheckInPatient is {
-      tell event PatientCheckedIn to entity ImagingExam
-      morph entity ImagingExam to state ImagingExam.AcquisitionState with record ImagingExam.AcquisitionStateData
+      yield event PatientCheckedIn
     }
     on command StartAcquisition is {
-      tell event AcquisitionStarted to entity ImagingExam
+      yield event AcquisitionStarted
       do "Begin image acquisition"
     }
     on command CompleteAcquisition is {
-      tell event AcquisitionCompleted to entity ImagingExam
-      morph entity ImagingExam to state ImagingExam.InterpretationState with record ImagingExam.InterpretationStateData
+      yield event AcquisitionCompleted
     }
     on command CreateDraftReport is {
-      tell event DraftReportCreated to entity ImagingExam
+      yield event DraftReportCreated
       do "Draft report created, awaiting signature"
     }
     on command FinalizeReport is {
-      tell event ReportFinalized to entity ImagingExam
-      morph entity ImagingExam to state ImagingExam.FinalizedState with record ImagingExam.FinalizedStateData
+      yield event ReportFinalized
     }
     on command AddAddendum is {
-      tell event AddendumAdded to entity ImagingExam
+      yield event AddendumAdded
       do "Addendum added to finalized report"
     }
     on command ReportCriticalFinding is {
-      tell event CriticalFindingReported to entity ImagingExam
+      yield event CriticalFindingReported
       do "Critical finding communication initiated"
     }
     on other is {
       error "Unknown command received"
+    }
+    on event ExamOrdered is {
+      morph entity ImagingExam to state ImagingExam.OrderedState with record ImagingExam.OrderedStateData
+      set state OrderedState to "initialize from prior event"
+    }
+    on event ExamScheduled is {
+      morph entity ImagingExam to state ImagingExam.ScheduledState with record ImagingExam.ScheduledStateData
+      set state ScheduledState to "initialize from prior event"
+    }
+    on event PatientCheckedIn is {
+      morph entity ImagingExam to state ImagingExam.AcquisitionState with record ImagingExam.AcquisitionStateData
+      set state AcquisitionState to "initialize from prior event"
+    }
+    on event AcquisitionStarted is {
+      do "apply AcquisitionStarted to the current state"
+    }
+    on event AcquisitionCompleted is {
+      morph entity ImagingExam to state ImagingExam.InterpretationState with record ImagingExam.InterpretationStateData
+      set state InterpretationState to "initialize from prior event"
+    }
+    on event DraftReportCreated is {
+      do "apply DraftReportCreated to the current state"
+    }
+    on event ReportFinalized is {
+      morph entity ImagingExam to state ImagingExam.FinalizedState with record ImagingExam.FinalizedStateData
+      set state FinalizedState to "initialize from prior event"
+    }
+    on event AddendumAdded is {
+      do "apply AddendumAdded to the current state"
+    }
+    on event CriticalFindingReported is {
+      do "apply CriticalFindingReported to the current state"
     }
   } with {
     briefly "Main command handler for imaging exams"
@@ -478,8 +505,6 @@ entity ImagingExam is {
     }
   }
 } with {
-  option aggregate()
-  option event-sourced()
   briefly "Imaging examination aggregate"
   described as {
     | The ImagingExam entity manages the complete lifecycle of a radiology

@@ -225,10 +225,47 @@ The multi-state entities were already most of the way there: the streaming
 work had given each state handler `on event E { morph ... }` clauses, so
 R2 and R3's morph half were satisfied before this started.
 
-Corpus state under this binary: **194 errors, 27 deprecations in 10
-models** — those already carrying `option event-sourced()`. All of them
-are single-clause, so the recipe applies unchanged; that work is next and
-is not blocked. Every `.bast` is stale (FORMAT_REVISION 2 → 3).
+Corpus state under this binary: **clean**. All 187 models validate with
+zero findings of every category, 0 nonzero exits; round trip 187/187 with
+zero discrepancies; every `.bast` regenerated (FORMAT_REVISION 2 → 3).
+
+**The corpus-wide sweep**, from 194 errors + 27 deprecations to zero:
+
+- 27 entity options became intention keywords (`aggregate event-sourced
+  entity Claim is {`). The parser stores them canonically sorted and
+  prettify emits that order, so they are written sorted or the round trip
+  rewrites every one.
+- The 10 models that already declared `event-sourced` had the uniform
+  shape `on command C { morph to state S; tell event E to self }` with a
+  per-state `on init { set state S }`. R2 and R3 are the same move: the
+  state change belongs where the event is applied, so each event got an
+  `on event` clause holding the morph and the set, and each `on init`
+  yields the event that enters its state.
+- 45 events enter no state at all — they record something without moving
+  the machine — so their `on event` clause applies them to the current
+  state rather than naming one.
+- Several states have **no modelled transition into them** (a gap that
+  predates this work). Their `on init` yields the creation event, which
+  for an event-sourced entity is what initialisation means: replay from
+  creation.
+
+The same "handles a command it does not fulfil" error recurred in three
+more processor kinds, and each was a modelling defect rather than a
+compiler one:
+
+- 27 repository clauses across 4 models → their own `Persist<Event>`
+  commands. Where two repositories persist the same event, the clause is
+  qualified by repository, or the bare name is ambiguous.
+- 6 "to" adaptor clauses → `on event <Source>`.
+- 1 source and 1 sink relay in `campaign-management`. A `source` has no
+  inlets, so an `on command` clause in one can never fire — dead. The
+  sink's inlet is typed `CreateCampaign`, so `on other` routes exactly
+  what arrives without claiming to fulfil it.
+
+**A trap worth remembering:** the persistence sweep first used a corpus-wide
+set of command names, and converted repositories in 47 unrelated models
+because `AddItem` is a domain command in reactive-bbq and an ordinary one
+in shopping-cart. Name sets must be scoped per model.
 
 ### Open Loose Ends
 

@@ -1,5 +1,5 @@
 // Incident Entity for Incident Management Domain
-entity Incident is {
+aggregate event-sourced entity Incident is {
   type IncidentCommand is one of {
     Incident.CreateIncident or Incident.AcknowledgeIncident or Incident.EscalateIncident or Incident.UpdateStatus or Incident.AssignIncidentCommander or Incident.AddTimelineEntry or Incident.ResolveIncident or Incident.CreatePostMortem or Incident.CloseIncident
   } with {
@@ -36,7 +36,7 @@ entity Incident is {
     }
   }
   // Commands
-  command CreateIncident is  {
+  command CreateIncident yields event IncidentCreated is  {
     title: String(1,200) with {
       briefly "Incident title"
       described as {
@@ -87,7 +87,7 @@ entity Incident is {
       | severity and identifies affected services.
     }
   }
-  command AcknowledgeIncident is  {
+  command AcknowledgeIncident yields event IncidentAcknowledged is  {
     incidentId: IncidentId with {
       briefly "Incident identifier"
       described as {
@@ -114,7 +114,7 @@ entity Incident is {
       | investigation phase.
     }
   }
-  command EscalateIncident is  {
+  command EscalateIncident yields event IncidentEscalated is  {
     incidentId: IncidentId with {
       briefly "Incident identifier"
       described as {
@@ -153,7 +153,7 @@ entity Incident is {
       | the impact or when the situation worsens.
     }
   }
-  command UpdateStatus is  {
+  command UpdateStatus yields event IncidentStatusUpdated is  {
     incidentId: IncidentId with {
       briefly "Incident identifier"
       described as {
@@ -186,7 +186,7 @@ entity Incident is {
       | current situation.
     }
   }
-  command AssignIncidentCommander is  {
+  command AssignIncidentCommander yields event IncidentCommanderAssigned is  {
     incidentId: IncidentId with {
       briefly "Incident identifier"
       described as {
@@ -213,7 +213,7 @@ entity Incident is {
       | critical decisions.
     }
   }
-  command AddTimelineEntry is  {
+  command AddTimelineEntry yields event TimelineEntryAdded is  {
     incidentId: IncidentId with {
       briefly "Incident identifier"
       described as {
@@ -245,7 +245,7 @@ entity Incident is {
       | incident response. Builds the audit trail for post-mortem analysis.
     }
   }
-  command ResolveIncident is  {
+  command ResolveIncident yields event IncidentResolved is  {
     incidentId: IncidentId with {
       briefly "Incident identifier"
       described as {
@@ -278,7 +278,7 @@ entity Incident is {
       | cause if known.
     }
   }
-  command CreatePostMortem is  {
+  command CreatePostMortem yields event PostMortemCreated is  {
     incidentId: IncidentId with {
       briefly "Incident identifier"
       described as {
@@ -335,7 +335,7 @@ entity Incident is {
       | and action items for preventing future occurrences.
     }
   }
-  command CloseIncident is  {
+  command CloseIncident yields event IncidentClosed is  {
     incidentId: IncidentId with {
       briefly "Incident identifier"
       described as {
@@ -770,7 +770,7 @@ entity Incident is {
         tell result IncidentResult to entity IncidentContext.Incident
       }
       on init is {
-        set state TriggeredState to "initialize Incident.TriggeredStateData fields from the creating message"
+        yield event IncidentCreated
       }
     } with {
       briefly "TriggeredState initialization"
@@ -788,7 +788,7 @@ entity Incident is {
   state ActiveState of record Incident.ActiveStateData is {
     initial handler ActiveStateInitHandler is {
       on init is {
-        set state ActiveState to "initialize Incident.ActiveStateData fields from the creating message"
+        yield event IncidentAcknowledged
       }
     } with {
       briefly "ActiveState initialization"
@@ -806,7 +806,7 @@ entity Incident is {
   state ResolvedState of record Incident.ResolvedStateData is {
     initial handler ResolvedStateInitHandler is {
       on init is {
-        set state ResolvedState to "initialize Incident.ResolvedStateData fields from the creating message"
+        yield event IncidentResolved
       }
     } with {
       briefly "ResolvedState initialization"
@@ -824,7 +824,7 @@ entity Incident is {
   state ClosedState of record Incident.ClosedStateData is {
     initial handler ClosedStateInitHandler is {
       on init is {
-        set state ClosedState to "initialize Incident.ClosedStateData fields from the creating message"
+        yield event IncidentClosed
       }
     } with {
       briefly "ClosedState initialization"
@@ -842,35 +842,62 @@ entity Incident is {
   // Handler
   handler IncidentHandler is {
     on command CreateIncident is {
-      morph entity Incident to state Incident.TriggeredState with record Incident.TriggeredStateData
-      tell event IncidentCreated to entity Incident
+      yield event IncidentCreated
     }
     on command AcknowledgeIncident is {
-      morph entity Incident to state Incident.ActiveState with record Incident.ActiveStateData
-      tell event IncidentAcknowledged to entity Incident
+      yield event IncidentAcknowledged
     }
     on command EscalateIncident is {
-      tell event IncidentEscalated to entity Incident
+      yield event IncidentEscalated
     }
     on command UpdateStatus is {
-      tell event IncidentStatusUpdated to entity Incident
+      yield event IncidentStatusUpdated
     }
     on command AssignIncidentCommander is {
-      tell event IncidentCommanderAssigned to entity Incident
+      yield event IncidentCommanderAssigned
     }
     on command AddTimelineEntry is {
-      tell event TimelineEntryAdded to entity Incident
+      yield event TimelineEntryAdded
     }
     on command ResolveIncident is {
-      morph entity Incident to state Incident.ResolvedState with record Incident.ResolvedStateData
-      tell event IncidentResolved to entity Incident
+      yield event IncidentResolved
     }
     on command CreatePostMortem is {
-      tell event PostMortemCreated to entity Incident
+      yield event PostMortemCreated
     }
     on command CloseIncident is {
+      yield event IncidentClosed
+    }
+    on event IncidentCreated is {
+      morph entity Incident to state Incident.TriggeredState with record Incident.TriggeredStateData
+      set state TriggeredState to "initialize Incident.TriggeredStateData fields from the creating message"
+    }
+    on event IncidentAcknowledged is {
+      morph entity Incident to state Incident.ActiveState with record Incident.ActiveStateData
+      set state ActiveState to "initialize Incident.ActiveStateData fields from the creating message"
+    }
+    on event IncidentEscalated is {
+      do "apply IncidentEscalated to the current state"
+    }
+    on event IncidentStatusUpdated is {
+      do "apply IncidentStatusUpdated to the current state"
+    }
+    on event IncidentCommanderAssigned is {
+      do "apply IncidentCommanderAssigned to the current state"
+    }
+    on event TimelineEntryAdded is {
+      do "apply TimelineEntryAdded to the current state"
+    }
+    on event IncidentResolved is {
+      morph entity Incident to state Incident.ResolvedState with record Incident.ResolvedStateData
+      set state ResolvedState to "initialize Incident.ResolvedStateData fields from the creating message"
+    }
+    on event PostMortemCreated is {
+      do "apply PostMortemCreated to the current state"
+    }
+    on event IncidentClosed is {
       morph entity Incident to state Incident.ClosedState with record Incident.ClosedStateData
-      tell event IncidentClosed to entity Incident
+      set state ClosedState to "initialize Incident.ClosedStateData fields from the creating message"
     }
   } with {
     briefly "Handles all incident lifecycle commands"
@@ -880,8 +907,6 @@ entity Incident is {
     }
   }
 } with {
-  option aggregate()
-  option event-sourced()
   briefly "An incident requiring response and resolution"
   described as {
     | The Incident entity represents a service disruption or degradation

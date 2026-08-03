@@ -1,5 +1,5 @@
 // Clinical Study Entity
-entity ClinicalStudy is {
+aggregate event-sourced entity ClinicalStudy is {
   type ClinicalStudyCommand is one of {
     ClinicalStudy.CreateStudy or ClinicalStudy.ActivateSite or ClinicalStudy.EnrollSubject or ClinicalStudy.RecordVisit or ClinicalStudy.SubmitData or ClinicalStudy.CloseStudy or ClinicalStudy.UpdateStudyStatus
   } with {
@@ -79,7 +79,7 @@ entity ClinicalStudy is {
     }
   }
   // Commands
-  command CreateStudy is  {
+  command CreateStudy yields event StudyCreated is  {
     studyId: StudyId
     protocol: StudyProtocol
   } with {
@@ -88,7 +88,7 @@ entity ClinicalStudy is {
       |Creates a new clinical study record with protocol details. Study starts in Draft status.
     }
   }
-  command ActivateSite is  {
+  command ActivateSite yields event SiteActivated is  {
     studyId: StudyId
     siteInfo: SiteInfo
   } with {
@@ -97,7 +97,7 @@ entity ClinicalStudy is {
       |Adds a site to the study and marks it as active for subject enrollment after initiation visit.
     }
   }
-  command EnrollSubject is  {
+  command EnrollSubject yields event SubjectEnrolled is  {
     studyId: StudyId
     enrollment: SubjectEnrollment
   } with {
@@ -106,7 +106,7 @@ entity ClinicalStudy is {
       |Records a new subject enrollment after informed consent and eligibility confirmation.
     }
   }
-  command RecordVisit is  {
+  command RecordVisit yields event VisitRecorded is  {
     studyId: StudyId
     visit: VisitRecord
   } with {
@@ -115,7 +115,7 @@ entity ClinicalStudy is {
       |Documents the completion of a protocol-defined study visit with assessments performed.
     }
   }
-  command SubmitData is  {
+  command SubmitData yields event DataSubmitted is  {
     studyId: StudyId
     submission: DataSubmission
   } with {
@@ -124,7 +124,7 @@ entity ClinicalStudy is {
       |Records data entry into the EDC system for a specific subject visit.
     }
   }
-  command CloseStudy is  {
+  command CloseStudy yields event StudyClosed is  {
     studyId: StudyId
     closureDate: Date
     closureReason: String
@@ -134,7 +134,7 @@ entity ClinicalStudy is {
       |Marks the study as completed or terminated, triggering closeout procedures at all sites.
     }
   }
-  command UpdateStudyStatus is  {
+  command UpdateStudyStatus yields event StudyStatusUpdated is  {
     studyId: StudyId
     newStatus: StudyStatus
     effectiveDate: Date
@@ -228,7 +228,7 @@ entity ClinicalStudy is {
         tell result ClinicalStudyResult to entity StudyContext.ClinicalStudy
       }
       on init is {
-        set state DraftState to "initialize DraftStateFields fields from the creating message"
+        yield event StudyCreated
       }
     } with {
       briefly "DraftState initialization"
@@ -246,7 +246,7 @@ entity ClinicalStudy is {
   state ActiveState of record ActiveStateFields is {
     initial handler ActiveStateInitHandler is {
       on init is {
-        set state ActiveState to "initialize ActiveStateFields fields from the creating message"
+        yield event StudyCreated
       }
     } with {
       briefly "ActiveState initialization"
@@ -264,7 +264,7 @@ entity ClinicalStudy is {
   state ClosedState of record ClosedStateFields is {
     initial handler ClosedStateInitHandler is {
       on init is {
-        set state ClosedState to "initialize ClosedStateFields fields from the creating message"
+        yield event StudyCreated
       }
     } with {
       briefly "ClosedState initialization"
@@ -282,27 +282,47 @@ entity ClinicalStudy is {
   // Handler
   handler ClinicalStudyHandler is {
     on command CreateStudy is {
-      tell event ClinicalStudy.StudyCreated to entity StudyContext.ClinicalStudy
+      yield event StudyCreated
+    }
+    on command ActivateSite is {
+      yield event SiteActivated
+    }
+    on command EnrollSubject is {
+      yield event SubjectEnrolled
+    }
+    on command RecordVisit is {
+      yield event VisitRecorded
+    }
+    on command SubmitData is {
+      yield event DataSubmitted
+    }
+    on command CloseStudy is {
+      yield event StudyClosed
+    }
+    on command UpdateStudyStatus is {
+      yield event StudyStatusUpdated
+    }
+    on event StudyCreated is {
       set field DraftState.studyId to "CreateStudy.studyId"
       set field DraftState.protocol to "CreateStudy.protocol"
     }
-    on command ActivateSite is {
-      tell event ClinicalStudy.SiteActivated to entity StudyContext.ClinicalStudy
+    on event SiteActivated is {
+      do "apply SiteActivated to the current state"
     }
-    on command EnrollSubject is {
-      tell event ClinicalStudy.SubjectEnrolled to entity StudyContext.ClinicalStudy
+    on event SubjectEnrolled is {
+      do "apply SubjectEnrolled to the current state"
     }
-    on command RecordVisit is {
-      tell event ClinicalStudy.VisitRecorded to entity StudyContext.ClinicalStudy
+    on event VisitRecorded is {
+      do "apply VisitRecorded to the current state"
     }
-    on command SubmitData is {
-      tell event ClinicalStudy.DataSubmitted to entity StudyContext.ClinicalStudy
+    on event DataSubmitted is {
+      do "apply DataSubmitted to the current state"
     }
-    on command CloseStudy is {
-      tell event ClinicalStudy.StudyClosed to entity StudyContext.ClinicalStudy
+    on event StudyClosed is {
+      do "apply StudyClosed to the current state"
     }
-    on command UpdateStudyStatus is {
-      tell event ClinicalStudy.StudyStatusUpdated to entity StudyContext.ClinicalStudy
+    on event StudyStatusUpdated is {
+      do "apply StudyStatusUpdated to the current state"
     }
   } with {
     briefly "Command handler for ClinicalStudy"
@@ -311,8 +331,6 @@ entity ClinicalStudy is {
     }
   }
 } with {
-  option aggregate()
-  option event-sourced()
   briefly "Aggregate root for clinical study management"
   described as {
     | The ClinicalStudy entity manages the complete lifecycle of a clinical

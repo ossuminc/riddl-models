@@ -1,5 +1,5 @@
 // Supply Order entity for managing the procurement lifecycle
-entity SupplyOrder is {
+aggregate event-sourced entity SupplyOrder is {
   type SupplyOrderCommand is one of {
     SupplyOrder.CreateRequisition or SupplyOrder.ApproveRequisition or SupplyOrder.PlaceOrder or SupplyOrder.ReceiveShipment or SupplyOrder.IssueSupplies
   } with {
@@ -38,7 +38,7 @@ entity SupplyOrder is {
   // ==========================================================================
   // Commands
   // ==========================================================================
-  command CreateRequisition is  {
+  command CreateRequisition yields event RequisitionCreated is  {
     requisitionId: String
     requestedBy: String
     requestDate: DateTime
@@ -53,7 +53,7 @@ entity SupplyOrder is {
       | be routine, urgent, or emergency which affects approval routing.
     }
   }
-  command ApproveRequisition is  {
+  command ApproveRequisition yields event RequisitionApproved is  {
     requisitionId: String
     approvedBy: String
     approvalDate: DateTime
@@ -66,7 +66,7 @@ entity SupplyOrder is {
       | to the approved state where it can be converted to a purchase order.
     }
   }
-  command PlaceOrder is  {
+  command PlaceOrder yields event OrderPlaced is  {
     purchaseOrderId: PurchaseOrderId
     requisitionId: String
     vendorId: String
@@ -81,7 +81,7 @@ entity SupplyOrder is {
       | on pricing, availability, and contract terms.
     }
   }
-  command ReceiveShipment is  {
+  command ReceiveShipment yields event ShipmentReceived is  {
     receiptId: ReceiptId
     purchaseOrderId: PurchaseOrderId
     receiptDate: DateTime
@@ -97,7 +97,7 @@ entity SupplyOrder is {
       | Lot numbers and expiration dates are captured for tracked items.
     }
   }
-  command IssueSupplies is  {
+  command IssueSupplies yields event SuppliesIssued is  {
     issueId: String
     requestId: String
     itemId: ItemId
@@ -293,7 +293,7 @@ entity SupplyOrder is {
         tell result SupplyOrderResult to entity SupplyContext.SupplyOrder
       }
       on init is {
-        set state DraftState to "initialize from prior event"
+        yield event RequisitionCreated
       }
     } with {
       briefly "DraftState init handler"
@@ -310,7 +310,7 @@ entity SupplyOrder is {
   state PendingApprovalState of record SupplyOrder.PendingApprovalStateData is {
     initial handler PendingApprovalStateInitHandler is {
       on init is {
-        set state PendingApprovalState to "initialize from prior event"
+        yield event RequisitionCreated
       }
     } with {
       briefly "PendingApprovalState init handler"
@@ -327,7 +327,7 @@ entity SupplyOrder is {
   state ApprovedState of record SupplyOrder.ApprovedStateData is {
     initial handler ApprovedStateInitHandler is {
       on init is {
-        set state ApprovedState to "initialize from prior event"
+        yield event RequisitionApproved
       }
     } with {
       briefly "ApprovedState init handler"
@@ -344,7 +344,7 @@ entity SupplyOrder is {
   state OrderedState of record SupplyOrder.OrderedStateData is {
     initial handler OrderedStateInitHandler is {
       on init is {
-        set state OrderedState to "initialize from prior event"
+        yield event OrderPlaced
       }
     } with {
       briefly "OrderedState init handler"
@@ -361,7 +361,7 @@ entity SupplyOrder is {
   state PartiallyReceivedState of record SupplyOrder.PartiallyReceivedStateData is {
     initial handler PartiallyReceivedStateInitHandler is {
       on init is {
-        set state PartiallyReceivedState to "initialize from prior event"
+        yield event RequisitionCreated
       }
     } with {
       briefly "PartiallyReceivedState init handler"
@@ -378,7 +378,7 @@ entity SupplyOrder is {
   state FullyReceivedState of record SupplyOrder.FullyReceivedStateData is {
     initial handler FullyReceivedStateInitHandler is {
       on init is {
-        set state FullyReceivedState to "initialize from prior event"
+        yield event ShipmentReceived
       }
     } with {
       briefly "FullyReceivedState init handler"
@@ -395,7 +395,7 @@ entity SupplyOrder is {
   state ClosedState of record SupplyOrder.ClosedStateData is {
     initial handler ClosedStateInitHandler is {
       on init is {
-        set state ClosedState to "initialize from prior event"
+        yield event RequisitionCreated
       }
     } with {
       briefly "ClosedState init handler"
@@ -414,27 +414,42 @@ entity SupplyOrder is {
   // ==========================================================================
   handler SupplyOrderHandler is {
     on command CreateRequisition is {
-      tell event RequisitionCreated to entity SupplyOrder
-      morph entity SupplyOrder to state SupplyOrder.PendingApprovalState with record SupplyOrder.PendingApprovalStateData
+      yield event RequisitionCreated
     }
     on command ApproveRequisition is {
-      tell event RequisitionApproved to entity SupplyOrder
-      morph entity SupplyOrder to state SupplyOrder.ApprovedState with record SupplyOrder.ApprovedStateData
+      yield event RequisitionApproved
     }
     on command PlaceOrder is {
-      tell event OrderPlaced to entity SupplyOrder
-      morph entity SupplyOrder to state SupplyOrder.OrderedState with record SupplyOrder.OrderedStateData
+      yield event OrderPlaced
     }
     on command ReceiveShipment is {
-      tell event ShipmentReceived to entity SupplyOrder
-      morph entity SupplyOrder to state SupplyOrder.FullyReceivedState with record SupplyOrder.FullyReceivedStateData
+      yield event ShipmentReceived
     }
     on command IssueSupplies is {
-      tell event SuppliesIssued to entity SupplyOrder
+      yield event SuppliesIssued
       do "Supplies issued to department"
     }
     on other is {
       error "Unknown command received"
+    }
+    on event RequisitionCreated is {
+      morph entity SupplyOrder to state SupplyOrder.PendingApprovalState with record SupplyOrder.PendingApprovalStateData
+      set state PendingApprovalState to "initialize from prior event"
+    }
+    on event RequisitionApproved is {
+      morph entity SupplyOrder to state SupplyOrder.ApprovedState with record SupplyOrder.ApprovedStateData
+      set state ApprovedState to "initialize from prior event"
+    }
+    on event OrderPlaced is {
+      morph entity SupplyOrder to state SupplyOrder.OrderedState with record SupplyOrder.OrderedStateData
+      set state OrderedState to "initialize from prior event"
+    }
+    on event ShipmentReceived is {
+      morph entity SupplyOrder to state SupplyOrder.FullyReceivedState with record SupplyOrder.FullyReceivedStateData
+      set state FullyReceivedState to "initialize from prior event"
+    }
+    on event SuppliesIssued is {
+      do "apply SuppliesIssued to the current state"
     }
   } with {
     briefly "Command handler for supply order lifecycle"
@@ -446,8 +461,6 @@ entity SupplyOrder is {
     }
   }
 } with {
-  option aggregate()
-  option event-sourced()
   briefly "Entity managing the supply order procurement lifecycle"
   described as {
     | The SupplyOrder entity is the aggregate root for the procurement

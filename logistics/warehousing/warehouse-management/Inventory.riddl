@@ -1,5 +1,5 @@
 // Inventory Entity - Manages inventory items at specific warehouse locations
-entity Inventory is {
+aggregate event-sourced entity Inventory is {
   type InventoryCommand is one of {
     Inventory.ReceiveInventory or Inventory.AdjustInventory or Inventory.ReserveInventory or Inventory.ReleaseReservation or Inventory.TransferInventory or Inventory.UpdateLocation or Inventory.ShipInventory or Inventory.QuarantineInventory or Inventory.ReleaseFromQuarantine or Inventory.InitializeInventory
   } with {
@@ -10,7 +10,7 @@ entity Inventory is {
   }
   inlet InventoryCommands is type InventoryCommand  outlet InventoryEvents2 is type InventoryEvent
   // Commands
-  command ReceiveInventory is  {
+  command ReceiveInventory yields event InventoryReceived is  {
     inventoryId: InventoryId
     productId: ProductId
     locationId: LocationId
@@ -26,7 +26,7 @@ entity Inventory is {
       |Records the receipt of inventory from an inbound shipment into a specific location.
     }
   }
-  command AdjustInventory is  {
+  command AdjustInventory yields event InventoryAdjusted is  {
     inventoryId: InventoryId
     adjustmentQuantity: Integer
     reason: String(1,500)
@@ -37,7 +37,7 @@ entity Inventory is {
       |Adjusts inventory quantity up or down to correct discrepancies found during counts.
     }
   }
-  command ReserveInventory is  {
+  command ReserveInventory yields event InventoryReserved is  {
     inventoryId: InventoryId
     quantity: Integer
     orderId: String(1,50)
@@ -47,7 +47,7 @@ entity Inventory is {
       |Reserves a quantity of inventory for a specific customer order, making it unavailable for other orders.
     }
   }
-  command ReleaseReservation is  {
+  command ReleaseReservation yields event ReservationReleased is  {
     inventoryId: InventoryId
     quantity: Integer
     orderId: String(1,50)
@@ -57,7 +57,7 @@ entity Inventory is {
       |Releases reserved inventory back to available status when an order is cancelled or modified.
     }
   }
-  command TransferInventory is  {
+  command TransferInventory yields event InventoryTransferred is  {
     inventoryId: InventoryId
     fromLocationId: LocationId
     toLocationId: LocationId
@@ -69,7 +69,7 @@ entity Inventory is {
       |Moves inventory from one warehouse location to another for optimization or picking preparation.
     }
   }
-  command UpdateLocation is  {
+  command UpdateLocation yields event LocationUpdated is  {
     inventoryId: InventoryId
     newLocationId: LocationId
     movedBy: String(1,100)
@@ -79,7 +79,7 @@ entity Inventory is {
       |Changes the recorded location of inventory after physical movement within the warehouse.
     }
   }
-  command ShipInventory is  {
+  command ShipInventory yields event InventoryShipped is  {
     inventoryId: InventoryId
     quantity: Integer
     orderId: String(1,50)
@@ -91,7 +91,7 @@ entity Inventory is {
       |Records the shipment of inventory out of the warehouse to fulfill a customer order.
     }
   }
-  command QuarantineInventory is  {
+  command QuarantineInventory yields event InventoryQuarantined is  {
     inventoryId: InventoryId
     reason: String(1,500)
     quarantinedBy: String(1,100)
@@ -101,7 +101,7 @@ entity Inventory is {
       |Moves inventory to quarantine status for quality inspection or investigation.
     }
   }
-  command ReleaseFromQuarantine is  {
+  command ReleaseFromQuarantine yields event InventoryReleasedFromQuarantine is  {
     inventoryId: InventoryId
     disposition: InventoryStatus
     releasedBy: String(1,100)
@@ -273,7 +273,7 @@ entity Inventory is {
   initial state EmptyInventoryState of record Inventory.EmptyInventoryStateData is {
     initial handler EmptyInventoryStateInitHandler is {
       on init is {
-        set state EmptyInventoryState to "initialize from prior event"
+        yield event InventoryReceived
       }
     } with {
       briefly "Initializes EmptyInventory state"
@@ -290,7 +290,7 @@ entity Inventory is {
   state ActiveInventoryState of record Inventory.ActiveInventoryStateData is {
     initial handler ActiveInventoryStateInitHandler is {
       on init is {
-        set state ActiveInventoryState to "initialize from prior event"
+        yield event InventoryReleasedFromQuarantine
       }
     } with {
       briefly "Initializes ActiveInventory state"
@@ -307,7 +307,7 @@ entity Inventory is {
   state QuarantineInventoryState of record Inventory.QuarantineInventoryStateData is {
     initial handler QuarantineInventoryStateInitHandler is {
       on init is {
-        set state QuarantineInventoryState to "initialize from prior event"
+        yield event InventoryQuarantined
       }
     } with {
       briefly "Initializes QuarantineInventory state"
@@ -359,34 +359,61 @@ entity Inventory is {
       tell result InventoryEntityResult to entity WarehouseContext.Inventory
     }
     on command ReceiveInventory is {
-      morph entity WarehouseContext.Inventory to state WarehouseContext.Inventory.ActiveInventoryState with record Inventory.ActiveInventoryStateData
-      tell event InventoryReceived to entity WarehouseContext.Inventory
+      yield event InventoryReceived
     }
     on command AdjustInventory is {
-      tell event InventoryAdjusted to entity WarehouseContext.Inventory
+      yield event InventoryAdjusted
     }
     on command ReserveInventory is {
-      tell event InventoryReserved to entity WarehouseContext.Inventory
+      yield event InventoryReserved
     }
     on command ReleaseReservation is {
-      tell event ReservationReleased to entity WarehouseContext.Inventory
+      yield event ReservationReleased
     }
     on command TransferInventory is {
-      tell event InventoryTransferred to entity WarehouseContext.Inventory
+      yield event InventoryTransferred
     }
     on command UpdateLocation is {
-      tell event LocationUpdated to entity WarehouseContext.Inventory
+      yield event LocationUpdated
     }
     on command ShipInventory is {
-      tell event InventoryShipped to entity WarehouseContext.Inventory
+      yield event InventoryShipped
     }
     on command QuarantineInventory is {
-      morph entity WarehouseContext.Inventory to state WarehouseContext.Inventory.QuarantineInventoryState with record Inventory.QuarantineInventoryStateData
-      tell event InventoryQuarantined to entity WarehouseContext.Inventory
+      yield event InventoryQuarantined
     }
     on command ReleaseFromQuarantine is {
+      yield event InventoryReleasedFromQuarantine
+    }
+    on event InventoryReceived is {
       morph entity WarehouseContext.Inventory to state WarehouseContext.Inventory.ActiveInventoryState with record Inventory.ActiveInventoryStateData
-      tell event InventoryReleasedFromQuarantine to entity WarehouseContext.Inventory
+      set state ActiveInventoryState to "initialize from prior event"
+    }
+    on event InventoryAdjusted is {
+      do "apply InventoryAdjusted to the current state"
+    }
+    on event InventoryReserved is {
+      do "apply InventoryReserved to the current state"
+    }
+    on event ReservationReleased is {
+      do "apply ReservationReleased to the current state"
+    }
+    on event InventoryTransferred is {
+      do "apply InventoryTransferred to the current state"
+    }
+    on event LocationUpdated is {
+      do "apply LocationUpdated to the current state"
+    }
+    on event InventoryShipped is {
+      do "apply InventoryShipped to the current state"
+    }
+    on event InventoryQuarantined is {
+      morph entity WarehouseContext.Inventory to state WarehouseContext.Inventory.QuarantineInventoryState with record Inventory.QuarantineInventoryStateData
+      set state QuarantineInventoryState to "initialize from prior event"
+    }
+    on event InventoryReleasedFromQuarantine is {
+      morph entity WarehouseContext.Inventory to state WarehouseContext.Inventory.ActiveInventoryState with record Inventory.ActiveInventoryStateData
+      set state ActiveInventoryState to "initialize from prior event"
     }
   } with {
     briefly "Processes inventory commands"
@@ -396,8 +423,6 @@ entity Inventory is {
     }
   }
 } with {
-  option event-sourced()
-  option aggregate()
   briefly "Manages inventory items at warehouse locations"
   described as {
     | The Inventory entity is the core aggregate for warehouse inventory management.
