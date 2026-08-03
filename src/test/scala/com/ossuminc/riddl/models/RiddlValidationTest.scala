@@ -1,5 +1,5 @@
 /*
- * Copyright 2026-2026 Ossum, Inc.
+ * Copyright 2026-2026 Ossum Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

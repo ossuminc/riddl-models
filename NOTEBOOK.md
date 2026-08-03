@@ -267,6 +267,38 @@ set of command names, and converted repositories in 47 unrelated models
 because `AddItem` is a domain command in reactive-bbq and an ordinary one
 in shopping-cart. Name sets must be scoped per model.
 
+### 2026-08-03: the patterns check is wired into the build
+
+`sbt verifyTemplates` runs `scripts/verify-templates.py`, and
+`riddlcValidate` depends on it — so `sbt v` now means the whole
+repository. Verified end to end: exit 1 with a broken template, exit 0
+when fixed, and it re-runs rather than caching.
+
+The script also grew to validate the two pattern **examples**, since
+`riddlcConfExclusions := Seq("patterns")` hides those from
+`riddlcValidate` for the same reason it hid the templates.
+
+Three things this turned up:
+
+1. **`riddlcVersion` pointed at a version that cannot be downloaded.**
+   The staged `2.0.0-rc.9-34-5488fd9d` is not published, so `riddlcBinary`
+   failed with a bare `Nonzero exit value: 56` — meaning `sbt v` had been
+   broken for anyone since the pin, while the corpus was being validated
+   with `../bin/riddlc` directly. `riddlcPath` now prefers a staged binary
+   when present and falls back to the download.
+2. **Two `Def.uncached` needs.** A `Unit` task with no hashable inputs
+   runs once and is then cached forever, and `Tests.Output` has no
+   `JsonFormat` at all — the same sbt 2 caching trap filed against the
+   plugin in July.
+3. **The Scala test suite has never compiled.** It imports
+   `com.ossuminc.riddl.language/passes/utils`, and `build.sbt` declares no
+   `libraryDependencies` at all. It dates from the first commit. Left
+   alone; the `Test / executeTests` hook is in place for when it is fixed.
+
+There is no CI in this repo — `.github/` holds only `FUNDING.yml` — so
+this task is the automation. riddl's own CI validates the corpus
+externally via `validate_external_riddl.py`.
+
 ### 2026-08-03: a substitution harness for the pattern templates
 
 `scripts/verify-templates.py` makes the seven `template.riddl` files

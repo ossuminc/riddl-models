@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Verify that every pattern template still parses and validates.
+"""Verify everything under patterns/, which the sbt build excludes.
+
+`build.sbt` sets `riddlcConfExclusions := Seq("patterns")`, so `sbt
+riddlcValidate` never looks in there. This script is what covers it, and
+`sbt verifyTemplates` runs it. Two jobs:
+
+  * the two pattern EXAMPLES have `.conf` files and are validated as ordinary
+    models,
+  * the seven TEMPLATES are parameterised fragments and need the substitution
+    treatment described below.
 
 The seven `patterns/**/template.riddl` files are parameterised: they carry
 `{Placeholder}` names, and they are FRAGMENTS -- they begin at `entity`,
@@ -322,6 +331,26 @@ def run(cmd, cwd):
     return p.returncode, out
 
 
+def check_examples(validate_all):
+    """The pattern examples are ordinary models; validate them as such."""
+    failures = 0
+    for root, _, files in os.walk(os.path.join(ROOT, "patterns")):
+        for f in sorted(files):
+            if not f.endswith(".conf"):
+                continue
+            rel = os.path.relpath(os.path.join(root, f), ROOT)
+            rc, out = run([RIDDLC, "from", f, "validate"], root)
+            findings = [l for l in out.split("\n") if re.match(r"^\[", l)]
+            if rc != 0 or findings:
+                print(f"FAIL  {rel}  (validate)")
+                for l in findings[:6]:
+                    print(f"        {l}")
+                failures += 1
+            else:
+                print(f"ok    {rel}")
+    return failures
+
+
 def main():
     parse_only = "--validate" not in sys.argv
     keep = "--keep" in sys.argv
@@ -329,8 +358,10 @@ def main():
         print(f"riddlc not found at {RIDDLC} (set RIDDLC=/path/to/riddlc)", file=sys.stderr)
         return 2
 
+    failures = check_examples(not parse_only)
+    examples = failures
+
     tmp = tempfile.mkdtemp(prefix="riddl-templates-")
-    failures = 0
     for path, spec in sorted(TEMPLATES.items()):
         name = path.split("/")[-2]
         d = os.path.join(tmp, name)
@@ -386,9 +417,11 @@ def main():
         else:
             print(f"ok    {path}")
 
+    template_failures = failures - examples
     print()
-    print(f"templates passing : {len(TEMPLATES) - failures}")
-    print(f"templates failing : {failures}")
+    print(f"examples  passing : {2 - examples}")
+    print(f"templates passing : {len(TEMPLATES) - template_failures}")
+    print(f"failing           : {failures}")
     if keep:
         print(f"generated models  : {tmp}")
     else:

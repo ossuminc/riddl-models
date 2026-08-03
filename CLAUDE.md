@@ -504,6 +504,23 @@ RIDDLC=../bin/riddlc ./scripts/verify-templates.py --keep     # keep output
 ```
 
   Adding a placeholder without adding it to the script's `TEMPLATES` map
-  fails the run. **Run this after any riddlc upgrade** — without it the
-  templates rot silently, which is exactly what happened to them through
-  the whole RIDDL 2.0 migration.
+  fails the run.
+
+**This is wired into the build, so it is not something to remember.**
+`build.sbt` defines a `verifyTemplates` task that runs the script against
+the same riddlc the rest of the build uses, and `riddlcValidate` depends
+on it — so `sbt v` covers the whole repository, not just the 187 gated
+models, and fails if `patterns/` breaks. `Test / executeTests` depends on
+it too, for when the Scala test suite is repaired (it currently does not
+compile: it imports riddl library modules that `build.sbt` never declares
+as dependencies, and has not compiled since the first commit).
+
+Both `verifyTemplates` and the `executeTests` hook need `Def.uncached`:
+sbt 2 caches task results, and a `Unit` task with no hashable inputs runs
+exactly once otherwise, while `Tests.Output` has no `JsonFormat` at all.
+
+`riddlcPath` prefers a staged `../bin/riddlc` when one exists, falling
+back to downloading `riddlcVersion`. While a release candidate is staged
+rather than published the pinned version cannot be downloaded, and
+without that fallback every riddlc task fails with a bare
+`Nonzero exit value: 56`.
