@@ -267,6 +267,24 @@ set of command names, and converted repositories in 47 unrelated models
 because `AddItem` is a domain command in reactive-bbq and an ordinary one
 in shopping-cart. Name sets must be scoped per model.
 
+### 2026-08-04: riddlc 2.0.0-rc.9-48-fdc5c171 — BAST revision 4
+
+`sbt v` green on the first run again: 2 pattern examples, 7 templates,
+187 models, 0 findings. No source change was needed — moving
+`requires`/`returns` from `Function`/`Saga` fields into contents
+(`3e4af6801`) is an AST change that leaves the surface syntax alone, and
+the saga template that uses both still parses untouched.
+
+What it did move is the wire format: `FORMAT_REVISION` 3 → 4, so **all
+189 `.bast` regenerated** — the 187 models plus both pattern examples.
+Round trip 187/187 with zero discrepancies, and both pattern examples
+unbastify to valid source.
+
+Note the revision numbering restarted at 1 for BAST version 2, which is
+safe only because the version moved with it: `Header.isValid` checks
+version first, and no file carries version 2 from before. It must not be
+renumbered again within version 2.
+
 ### 2026-08-03: riddlc 2.0.0-rc.9-42-37b0db94 — nothing broke
 
 First upgrade where the build automation carried the check. `sbt v`

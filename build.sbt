@@ -33,7 +33,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // shells out to a riddlc binary, so plugin version and language version are
     // independent, and pinning states which parser the corpus is validated
     // against rather than inheriting the plugin's default.
-    riddlcVersion := "2.0.0-rc.9-42-37b0db94",
+    riddlcVersion := "2.0.0-rc.9-48-fdc5c171",
 
     // That version is STAGED, not published, so it cannot be downloaded. Use a
     // staged ../bin/riddlc when one is there, and fall back to the download
