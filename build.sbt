@@ -13,6 +13,13 @@ enablePlugins(RiddlSbtPlugin)
 // the whole RIDDL 2.0 migration without anyone noticing. This task is what
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
+// The riddlc binary and the riddl libraries the test suite uses come from the
+// same build, so one value pins both. While riddl's release/2 is being
+// perfected the binary is staged at ../bin/riddlc and the libraries arrive by
+// `sbt publishLocal` from that checkout, so this moves in step with riddl
+// rather than tracking published releases.
+lazy val riddlVersion = "2.0.0-rc.9-48-fdc5c171"
+
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
     "substituting their {Placeholder} names"
@@ -33,7 +40,22 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // shells out to a riddlc binary, so plugin version and language version are
     // independent, and pinning states which parser the corpus is validated
     // against rather than inheriting the plugin's default.
-    riddlcVersion := "2.0.0-rc.9-48-fdc5c171",
+    // Must match the Scala version riddl publishes with: its TASTy is not
+    // readable by an older compiler, and the test suite links those libraries
+    // directly. If `Test/compile` starts failing with "TASTy file ... could not
+    // be read", this is what drifted.
+    scalaVersion := "3.9.0-RC4",
+
+    riddlcVersion := riddlVersion,
+
+    // The test suite validates the corpus through the library API, which is a
+    // different path from the CLI that riddlcValidate drives. These resolve
+    // from the local ivy repository while release/2 is in flight.
+    libraryDependencies ++= Seq(
+      "com.ossuminc" %% "riddl-language" % riddlVersion % Test,
+      "com.ossuminc" %% "riddl-passes" % riddlVersion % Test,
+      "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
+    ),
 
     // That version is STAGED, not published, so it cannot be downloaded. Use a
     // staged ../bin/riddlc when one is there, and fall back to the download
@@ -81,12 +103,12 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // patterns/ is excluded from riddlcValidate, so bolt the check onto it:
     // `sbt v` now means the whole repository, not just the 187 gated models.
     riddlcValidate := riddlcValidate.dependsOn(verifyTemplates).value,
-    // `test` is an InputTask in sbt 2, so hook executeTests, which `sbt test`
-    // runs anyway. Def.uncached because Tests.Output has no JsonFormat and so
-    // cannot be a cached result.
-    Test / executeTests := Def.uncached(
-      (Test / executeTests).dependsOn(verifyTemplates)
-    ).value
+    // `test` is an InputTask in sbt 2, so this is `.evaluated` rather than
+    // `.value`. Note sbt 2 routes `test` to testQuick, which skips unchanged
+    // tests -- and this suite reads .riddl files at RUN time, so sbt cannot see
+    // a model change as an input. `sbt test` is therefore a weak gate for model
+    // edits; `sbt checkAll` below forces the full suite.
+    Test / test := ((Test / test) dependsOn verifyTemplates).evaluated
   )
 
 // Command aliases (plugin provides validate, bastify, prettify)
@@ -94,3 +116,8 @@ addCommandAlias("v", "riddlcValidate")
 addCommandAlias("b", "riddlcBastify")
 addCommandAlias("r", "riddlcPrettify")
 addCommandAlias("vt", "verifyTemplates")
+
+// The whole-repository gate: patterns, the corpus through the CLI, and the
+// corpus again through the library API. executeTests rather than test, because
+// the latter skips tests sbt believes are unchanged.
+addCommandAlias("checkAll", "; riddlcValidate; Test/executeTests")

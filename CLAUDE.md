@@ -508,19 +508,49 @@ RIDDLC=../bin/riddlc ./scripts/verify-templates.py --keep     # keep output
 
 **This is wired into the build, so it is not something to remember.**
 `build.sbt` defines a `verifyTemplates` task that runs the script against
-the same riddlc the rest of the build uses, and `riddlcValidate` depends
-on it — so `sbt v` covers the whole repository, not just the 187 gated
-models, and fails if `patterns/` breaks. `Test / executeTests` depends on
-it too, for when the Scala test suite is repaired (it currently does not
-compile: it imports riddl library modules that `build.sbt` never declares
-as dependencies, and has not compiled since the first commit).
+the same riddlc the rest of the build uses. Both `riddlcValidate` and
+`Test / test` depend on it, so `sbt v` and `sbt test` each fail if
+`patterns/` breaks.
+
+### The gates
+
+| Command | What it checks |
+|---------|----------------|
+| `sbt v` | patterns, then all 187 models via the riddlc **CLI** |
+| `sbt test` | patterns, then the models via the **library API** |
+| `sbt checkAll` | both, with the full test suite forced |
+
+`sbt test` is a **weak gate for model edits**: sbt 2 routes `test` to
+`testQuick`, which skips tests it believes unchanged, and the suite reads
+`.riddl` files at run time so sbt cannot see a model change as an input.
+`checkAll` uses `Test / executeTests`, which always runs all 189 cases
+(187 models + 2 pattern examples).
+
+The test suite is a genuinely independent check, not a duplicate: it links
+`riddl-language`, `riddl-passes` and `riddl-utils` and calls
+`Riddl.parseAndValidate` in process, where `riddlcValidate` shells out to
+the binary. If the two ever disagree, that disagreement is the finding.
+Its unit is a **model** — the file a `.conf` names in `input-file` — not
+every `.riddl`, since most are `include` fragments that cannot parse alone.
 
 Both `verifyTemplates` and the `executeTests` hook need `Def.uncached`:
 sbt 2 caches task results, and a `Unit` task with no hashable inputs runs
 exactly once otherwise, while `Tests.Output` has no `JsonFormat` at all.
 
-`riddlcPath` prefers a staged `../bin/riddlc` when one exists, falling
-back to downloading `riddlcVersion`. While a release candidate is staged
-rather than published the pinned version cannot be downloaded, and
-without that fallback every riddlc task fails with a bare
-`Nonzero exit value: 56`.
+### Tracking riddl's `release/2`
+
+Until riddl's `release/2` is perfected the corpus tracks it directly
+rather than published releases, and riddl, riddl-generator and this
+repository move together — code generation needs drive language changes,
+which land here as model changes.
+
+- **`riddlVersion` in `build.sbt` pins both** the riddlc binary and the
+  riddl libraries the test suite links. They come from the same build.
+- **`riddlcPath` prefers a staged `../bin/riddlc`**, falling back to
+  downloading `riddlcVersion`. A staged RC is not published, so without
+  the fallback every riddlc task fails with a bare
+  `Nonzero exit value: 56`.
+- **The libraries arrive by `sbt publishLocal`** from the riddl checkout.
+- **`scalaVersion` must match riddl's** (`V.scala` in
+  `riddl/project/`). Its TASTy is not readable by an older compiler. A
+  `Test/compile` failure reading `.tasty` means this drifted.

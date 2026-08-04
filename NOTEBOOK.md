@@ -267,6 +267,43 @@ set of command names, and converted repositories in 47 unrelated models
 because `AddItem` is a domain command in reactive-bbq and an ordinary one
 in shopping-cart. Name sets must be scoped per model.
 
+### 2026-08-04: `sbt test` works — a second, independent gate
+
+The Scala suite had never compiled since the first commit. Now wired up
+and green: **189 test cases, 187 models plus the 2 pattern examples.**
+
+Three things had to be true, and each was a small discovery:
+
+1. **Dependencies.** `riddl-language`, `riddl-passes` and `riddl-utils`
+   at `riddlVersion`, resolved from the local ivy that riddl's
+   `publishLocal` fills. One `riddlVersion` val now pins both the binary
+   and the libraries, since they come from the same build.
+2. **Scala version.** This project was on 3.8.4 and riddl publishes with
+   **3.9.0-RC4** — newer TASTy is not readable by an older compiler, so
+   `Test/compile` failed with "TASTy file ... could not be read". Note
+   riddl's own `build.sbt` comment claims 3.8.4; `V.scala` is the truth.
+3. **The suite validated the wrong unit.** It walked every `.riddl` file,
+   which would fail on ~800 `include` fragments that begin at `context`
+   or `entity` and cannot parse alone. It now iterates the file each
+   `.conf` names in `input-file` — a model, not a file. That also picks
+   up the two pattern examples for free.
+
+It is not a duplicate of `sbt v`: this links the library and calls
+`Riddl.parseAndValidate` in process, where riddlcValidate shells out to
+the binary. A disagreement between them would itself be the finding.
+
+**`sbt test` is a weak gate for model edits.** sbt 2 routes `test` to
+`testQuick`, which skips tests it believes unchanged, and this suite
+reads `.riddl` files at run time so sbt never sees a model change as an
+input. Hence `sbt checkAll` (`riddlcValidate` then `Test/executeTests`),
+which forces all 189. The `verifyTemplates` hook had to move from
+`Test / executeTests` to `Test / test` for the same reason — `sbt test`
+never routed through executeTests at all.
+
+Also fixed: the suite used the deprecated `RiddlParserInput.fromPath`,
+which throws; `fromPathSafe` returns the failure so an unreadable file
+fails the test with its reason.
+
 ### 2026-08-04: riddlc 2.0.0-rc.9-48-fdc5c171 — BAST revision 4
 
 `sbt v` green on the first run again: 2 pattern examples, 7 templates,
