@@ -301,6 +301,38 @@ context PaymentGateway is {
 - Use `morph entity X to state Y with command Z` for state changes
 - The `with command` provides the data source for the new state
 
+### Connector Naming
+
+Name a connector for **what flows through it**, never for its endpoints —
+`from outlet X to inlet Y` already gives source, target and direction, so
+`LinkSalesReportToSalesReportRepository` adds length and no information.
+
+The corpus wires every entity the same way — entity → `EventSplit` →
+{repository, projector}, with an application either side — which gives
+five roles. A name is `<Subject><Role>`:
+
+| Role | Carries | Example |
+|------|---------|---------|
+| `<E>EventStream` | an entity's events, fanned out | `OrderEventStream` |
+| `<E>EventStorage` | those events on their way to storage | `OrderEventStorage` |
+| `<P>Feed` | events feeding a projection | `OrderAnalyticsFeed` |
+| `<P>Storage` | a projection on its way to storage | `OrderAnalyticsStorage` |
+| `<E>CommandStream` | commands from the application | `OrderCommandStream` |
+| `<E>QueryResults` | results back to the application | `OrderQueryResults` |
+
+**`Commands` and `Persistence` read better but are already taken**: an
+entity's command inlet is `<E>Commands` (737 of them) and a repository's
+handler is `<E>Persistence` (489). Reusing either makes the connector
+overload an existing definition, which riddlc reports. Check a candidate
+role word against every declared identifier before adopting it.
+
+A connector's `briefly` should say what the pipe carries, not repeat its
+name — all 1287 previously read `briefly "Link<Source>To<Target>"`, which
+is the one place that could have said something useful.
+
+`scripts/rename-connectors.py` applies the convention and holds back
+anything it cannot name unambiguously rather than guessing.
+
 ### Directory Naming
 
 - Sectors: `kebab-case` (e.g., `natural-resources`)
