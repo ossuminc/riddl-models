@@ -6,34 +6,52 @@ Development journal for active work on the riddl-models repository.
 
 **Branch** `release/2`, clean and pushed (`origin/release/2` level, 0
 unpushed). Everything happens on this branch — `main` stays 1.x until riddl
-2.0 ships (BACKLOG #4).
+2.0 ships (BACKLOG #3).
 
-**Versions — these disagree, deliberately noted, not yet reconciled:**
+**Versions — the skew is gone.** `build.sbt` `riddlVersion` is
+`2.0.0-rc.9-54-64b7b413`, matching the staged `../bin/riddlc` that
+`riddlcPath` prefers. One value pins the binary *and* the test-suite
+libraries, so nothing disagrees any more.
 
-| | version |
-|---|---|
-| `build.sbt` `riddlVersion` (binary + test libs) | `2.0.0-rc.9-48-fdc5c171` |
-| `../bin/riddlc` as staged 2026-08-04 22:35 | **rc.9-54** (`riddl` `b163d3c85`) |
+`sbt-riddl` in `project/plugins.sbt` stays at **rc.9-48 on purpose** — the
+plugin only shells out to a binary, so it moves independently of the
+language version (`build.sbt:39`). That is not skew; do not "fix" it.
 
-`riddlcPath` prefers `../bin/riddlc`, so the last full verification ran on
-**rc.9-54** while the test suite linked **rc.9-48** libraries — and both
-were green. Bumping to rc.9-54 is BACKLOG #1 and should be a version bump,
-not a migration.
+**Verified this session, by running it, not recalling it, at rc.9-54:** 187
+models validate, 189 test cases pass, 7 templates parse, 2 pattern examples
+validate, round trip 187/187, and a full `.bast` regeneration leaves **zero**
+files modified — the committed bytes are exactly what the staged binary
+emits.
 
-**Verified this session, by running it, not recalling it:** 187 models
-validate, 189 test cases pass, 7 templates parse, 2 pattern examples
-validate, 0 overload warnings, round trip 187/187, all 189 `.bast`
-regenerated and committed.
+The library API reports **1233 warnings** across the corpus (1043 of them
+"has ports but no `as <shape>` ascription"). This is **not** a regression
+from the bump: rc.9-48 reports the identical 1233, verified by A/B.
 
-**In flight:** nothing half-done. The connector rename finished — 0
-`Link*` connectors remain — and its task is closed.
+The CLI reports none of them, and the reason is worth knowing. They are
+`[style]` warnings — `riddlc validate shopping-cart.riddl` prints them, while
+`riddlc from shopping-cart.conf validate` does not, because every `.conf`
+sets `show-style-warnings = false` and `show-usage-warnings = false`. The
+test suite calls the library directly and never reads that `common` block, so
+it sees everything. **The `.conf` wins over the command line:** `riddlc -s
+true from <conf> validate` still printed zero. So the two gates do not
+disagree — they are differently configured, and only the `.conf` decides on
+the CLI path.
+
+**In flight:** nothing half-done. BACKLOG #1 (the rc.9-54 upgrade) is
+complete and its item is gone.
 
 ### Traps
 
-- **A `.bast` diff with clean `.riddl` means the staged binary moved.**
-  Bastify is deterministic (verified by `md5` over two runs). This bit us:
-  `.bast` committed at 21:11 were stale by 22:27 because `../bin/riddlc`
-  was restaged underneath. Regenerate, round-trip, commit.
+- **Do not trust a `.bast` diff until it survives a regenerate.** Bastify is
+  deterministic, so a diff with clean `.riddl` means something rewrote them —
+  usually a restaged `../bin/riddlc` (that bit us on 2026-08-04). But on
+  2026-08-05, 181 `.bast` were rewritten by something never identified while
+  the binary provably had *not* moved, and the diff was 9 bytes of container
+  metadata with byte-identical recovered source. The one command that settles
+  it: `./scripts/verify-bast-roundtrip.sh` then
+  `git status --short -- '*.bast'` — empty means the committed bytes are
+  right. Restore with `git checkout -- '*.bast'`; never delete them.
+  Full account in BACKLOG #6.
 - **`sbt test` can pass having run nothing** — sbt 2 routes it to
   `testQuick` and the suite reads `.riddl` at run time, so sbt cannot see a
   model edit. Use **`sbt checkAll`**.
@@ -50,10 +68,18 @@ regenerated and committed.
 
 ### Certainty
 
-Verified by command: git state, both version facts, all test/validate
-counts, bastify determinism, the zero-invariant finding, `main`'s 72-commit
-lag. **Assumed:** why `../bin/riddlc` was restaged mid-session — the
-timestamps and riddl's own commit are the evidence; nobody told us.
+Verified by command: git state, the version facts, all test/validate counts,
+round trip 187/187, that a full `.bast` regeneration changes nothing, that
+the 1233 warnings are identical at rc.9-48 and rc.9-54, that they are
+`[style]` warnings the `.conf` suppresses, and that `../bin/riddlc` did not
+move (`md5` before and after).
+
+**Not known:** what rewrote 181 `.bast` at 10:09 on 2026-08-05. Four
+candidates were tested and none reproduced it. Concurrent `sbt` processes
+belonging to no session here started at 10:07 and 10:08, which makes outside
+activity the likely source — that is a hypothesis and is not to be repeated
+as fact. It does not matter for correctness: the regenerate-and-compare check
+proves the committed `.bast` are right.
 
 ### Pointers
 

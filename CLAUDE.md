@@ -456,8 +456,11 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.0.0-rc.9-34-5488fd9d** (set via `sbt-riddl` plugin version
-in `project/plugins.sbt`).
+Current version: **2.0.0-rc.9-54-64b7b413** (set by `riddlVersion` in
+`build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
+While `release/2` is in flight `riddlcPath` prefers the staged
+`../bin/riddlc`, so that binary is what actually runs — check it with
+`../bin/riddlc info` rather than trusting the pin.
 
 ### Model Include Structure
 
@@ -534,9 +537,14 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.0.0-rc.9-34-5488fd9d | Pinned via `riddlcVersion` |
-| sbt-riddl | 2.0.0-rc.9-34-5488fd9d | Plugin in `project/plugins.sbt` |
+| riddlc | 2.0.0-rc.9-54-64b7b413 | `riddlVersion` in `build.sbt` |
+| sbt-riddl | 2.0.0-rc.9-48-fdc5c171 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
+
+riddlc and sbt-riddl are **deliberately allowed to differ**: the plugin only
+shells out to a riddlc binary, so the plugin version and the language version
+are independent (see the comment at `build.sbt:39`). Bump the plugin only when
+it gains a feature this build needs, not to match the language version.
 
 Models are validated against the RIDDL grammar using riddlc via
 `sbt riddlcValidate` (alias `sbt v`). `build.sbt` excludes `patterns/`
