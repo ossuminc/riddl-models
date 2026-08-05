@@ -310,18 +310,26 @@ refusing any site whose text does not match rather than guessing.
 - Projectors handle **events** to build read models
 - Do NOT use `on command` or `on query` in projector handlers
 
-**External Contexts**:
-- Mark external bounded contexts with `option is external` in the `with` block
-- NOT inside the context body
+**External Contexts** — `external` is a **keyword before `context`**:
 
 ```riddl
-context PaymentGateway is {
+external context PaymentGateway is {
   // events and types only, no handlers
 } with {
-  option is external
   briefly "External payment processing system"
 }
 ```
+
+The older `option is external` inside the `with` block is **gone**: there
+are **zero** occurrences of it across the corpus, and all 13 external
+context files use the keyword form.
+
+**Their types are unreferenced on purpose.** An external context documents
+the payloads the outside system exchanges — `PaymentRequest`,
+`DrugProduct`, `MFAChallenge` — so nothing inside the model needs to name
+them. That produces 54 "Type 'X' is unused" usage warnings, and those are
+**not defects**: suppressing them or wiring the types into adaptors purely
+to silence them would be invention. Leave them.
 
 **Messaging**:
 - Inside an event-sourced entity, `yield event X` records the event —

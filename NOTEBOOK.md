@@ -35,13 +35,23 @@ diagnosis. Once `../bin/riddlc` is restaged from the newer build, regenerate
 and recommit: `./scripts/verify-bast-roundtrip.sh` then bastify the two
 `patterns/` examples.
 
-**Shape ascriptions: 1043 sites added, that warning class is gone.** Every
-ported processor in all 189 models now carries `as <shape>`, and the library
-API's warning total fell **1233 → 190**. The 190 that remain are other
-classes (unused types 136, short identifiers 17, adaptor suggestions 11).
-The convention and the arity table are in CLAUDE.md; the two scripts that
-did it are `scripts/collect-ascriptions.py` and
-`scripts/apply-ascriptions.py`.
+**Warnings: 1233 → 150 this session.** Three passes, each verified:
+
+| | fixed | remaining |
+|---|---:|---|
+| `as <shape>` ascriptions | 1043 | 0 — class eliminated |
+| too-short identifiers | 17 | 0 — class eliminated |
+| "is unused" | 23 | 139, **triaged in BACKLOG #1** |
+
+Every ported processor in all 189 models now carries `as <shape>`. The
+convention and the arity table are in CLAUDE.md; the scripts are
+`scripts/collect-ascriptions.py`, `scripts/apply-ascriptions.py` and the
+general `scripts/collect-warnings.py`.
+
+**Do not re-triage the remaining 139** — BACKLOG #1 has the breakdown with
+evidence. The short version: 54 are inside `external context` blocks and
+are **correct as they stand**, 80 need per-model design judgment, and 5 are
+a real structural defect (repositories with no ports).
 
 The shape was never hand-derived — riddlc's own `--provide-tips` suggestion
 names both the shape and the insertion column, so the compiler's
@@ -57,8 +67,14 @@ reads that `common` block. **The `.conf` wins over the command line** —
 `riddlc -s true from <conf> validate` still printed zero. The gates were
 never in conflict, just differently configured.
 
-**In flight:** nothing half-done. BACKLOG #1 (the rc.9-54 upgrade) is
-complete and its item is gone.
+**In flight:** nothing half-done. The rc.9-54 upgrade is complete, as are
+the ascription, short-identifier and result-wiring passes.
+
+**One durable correction made this session:** CLAUDE.md said external
+contexts are marked `option is external` in the `with` block. That form has
+**zero** occurrences; RIDDL 2.0 uses the keyword `external context X is {`,
+which all 13 external-context files use. The old text would have sent a
+future session chasing a syntax that does not exist.
 
 ### Traps
 
