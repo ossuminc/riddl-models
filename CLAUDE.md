@@ -505,7 +505,7 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.0.0-rc.9-54-64b7b413** (set by `riddlVersion` in
+Current version: **2.0.0-rc.10-2-ff3a59b4** (set by `riddlVersion` in
 `build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
 While `release/2` is in flight `riddlcPath` prefers the staged
 `../bin/riddlc`, so that binary is what actually runs — check it with
@@ -523,7 +523,7 @@ model-directory/
 ├── Entity1.riddl             # Entity definitions
 ├── Entity2.riddl
 ├── Context.riddl             # Main bounded context
-├── external-contexts.riddl   # External systems (option is external)
+├── external-contexts.riddl   # External systems (external context X is)
 └── README.md
 ```
 
@@ -586,7 +586,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.0.0-rc.9-54-64b7b413 | `riddlVersion` in `build.sbt` |
+| riddlc | 2.0.0-rc.10-2-ff3a59b4 | `riddlVersion` in `build.sbt` |
 | sbt-riddl | 2.0.0-rc.9-48-fdc5c171 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
