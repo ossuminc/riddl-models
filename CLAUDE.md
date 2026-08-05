@@ -307,28 +307,48 @@ Name a connector for **what flows through it**, never for its endpoints —
 `from outlet X to inlet Y` already gives source, target and direction, so
 `LinkSalesReportToSalesReportRepository` adds length and no information.
 
-The corpus wires every entity the same way — entity → `EventSplit` →
-{repository, projector}, with an application either side — which gives
-five roles. A name is `<Subject><Role>`:
+**Use a quoted identifier so the name has spaces.** Jamming words together
+makes long names unreadable; `'MarketplaceOrderEvent Storage'` reads,
+`MarketplaceOrderEventStorage` does not. Single quotes around an
+identifier permit spaces, and the form survives validation and the BAST
+round trip.
 
-| Role | Carries | Example |
-|------|---------|---------|
-| `<E>EventStream` | an entity's events, fanned out | `OrderEventStream` |
-| `<E>EventStorage` | those events on their way to storage | `OrderEventStorage` |
-| `<P>Feed` | events feeding a projection | `OrderAnalyticsFeed` |
-| `<P>Storage` | a projection on its way to storage | `OrderAnalyticsStorage` |
-| `<E>CommandStream` | commands from the application | `OrderCommandStream` |
-| `<E>QueryResults` | results back to the application | `OrderQueryResults` |
+**The stream's type is the name.** Ports carry an alternation
+(`OrderEvent`, `VendorCommand`), which is precisely what flows, so the
+subject comes from the port's declared type rather than from a
+definition's name:
 
-**`Commands` and `Persistence` read better but are already taken**: an
-entity's command inlet is `<E>Commands` (737 of them) and a repository's
-handler is `<E>Persistence` (489). Reusing either makes the connector
-overload an existing definition, which riddlc reports. Check a candidate
-role word against every declared identifier before adopting it.
+| Name | Carries |
+|------|---------|
+| `'<T>Command Stream'` | commands from the application |
+| `'<T>Result Stream'` | results back to the application |
+| `'<T>Event Stream'` | an entity's events, fanned out |
+| `'<T>Event Storage'` | those events on their way to storage |
+| `'<Projector> Feed'` | events feeding that projection |
+| `'<Projector> Storage'` | that projection on its way to storage |
 
-A connector's `briefly` should say what the pipe carries, not repeat its
-name — all 1287 previously read `briefly "Link<Source>To<Target>"`, which
-is the one place that could have said something useful.
+The two projector legs are named for the **projector**, not the type: a
+split and a projector push the *same* event type into the same repository,
+so the type alone cannot tell `'OrderEvent Storage'` from
+`'OrderAnalytics Storage'` (205 collisions when tried).
+
+Where several entities feed one projector, the projector no longer
+distinguishes them either — then the alternation does:
+`'ReservationEvent Feed'` and `'TableOrderEvent Feed'` both reach
+`ReservationBoard`.
+
+An adaptor translates, so name it for the boundary it crosses:
+`'Translation To Context QualityService'`,
+`'Translation From Context AlertingService'`.
+
+**Check a role word against every declared identifier first.** `Commands`
+and `Persistence` read better than `CommandStream` and `EventStorage` but
+are already an entity's command inlet (737) and a repository's handler
+(489); reusing them makes the connector overload an existing definition.
+
+A connector's `briefly` says what the pipe carries. All 1287 previously
+read `briefly "Link<Source>To<Target>"` — the one place that could have
+said something useful, repeating the name instead.
 
 `scripts/rename-connectors.py` applies the convention and holds back
 anything it cannot name unambiguously rather than guessing.
