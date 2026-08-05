@@ -267,6 +267,29 @@ set of command names, and converted repositories in 47 unrelated models
 because `AddItem` is a domain command in reactive-bbq and an ordinary one
 in shopping-cart. Name sets must be scoped per model.
 
+### 2026-08-04: task triage — six closed
+
+- **`.synapify/` gitignored.** It had been untracked since 2026-08-01, and
+  every commit since was made by excluding it by hand. Real papercut,
+  one line.
+- **error-sink** — done, but *not* in the shape the task asked for. It
+  prescribed a `context Operations`; riddl later withdrew that
+  (`cca938268`), and canonical is `option error-sink()` **with parens** —
+  the bare form parses but canonicalizes, so it fails the round trip. The
+  file is corrected rather than filed as-written.
+- **release/2 syntax migration** — acceptance met (0 errors, 0
+  deprecations). Its `FORMAT_REVISION 13` references are stale: that was
+  BAST version 1, and revision restarted at 1 for version 2. We are on 4.
+- **A9 requires/returns**, **connector scope** — both verified done.
+- **`main` still 1.x** — closed as *superseded*, not fixed. Synapify now
+  reads `release/2` and has a settings panel for it. `main` stays on 1.x
+  until riddl 2.0 ships, because `release/2` pins a staged, unpublished
+  RC that nobody could resolve from a default branch.
+
+**Open:** `2026-08-04-connector-naming-convention.md` arrived mid-session.
+Its claim verified exactly: **1287 of 1705** connectors are named
+`Link<Source>To<Target>`, 76 of them in reactive-bbq.
+
 ### 2026-08-04: `sbt test` works — a second, independent gate
 
 The Scala suite had never compiled since the first commit. Now wired up
