@@ -78,20 +78,23 @@ not that anything is wrong with the models.
 
 After any restage: regenerate `.bast`, re-run the round trip, commit.
 
-**2026-08-05 — an unattributed rewrite, and the test that settles it.** Mid
-session, 181 `.bast` were rewritten (10:09:04–07) from a tree that was clean
-at session start. Each differed from `HEAD` by **9 bytes in the container
-only** — the length field at `0x14` and the checksum at `0x18`; unbastifying
-both recovered **byte-identical** source.
+**2026-08-05 — the writer was `../riddl`, not anything here.** Mid session,
+181 `.bast` were rewritten (10:09:04–07) from a tree that was clean at session
+start. Each differed from `HEAD` by **9 bytes in the container only** — the
+length field at `0x14` and the checksum at `0x18`; unbastifying both recovered
+**byte-identical** source.
 
-The writer was never identified, and it is not worth re-deriving: it was not
-`riddlcValidate`, not `Test/executeTests` (tried at both rc.9-48 and rc.9-54),
-not a `build.sbt` touch, and no file watcher exists — each was tested and
-none reproduced it. `../bin/riddlc` did **not** move (`md5`
-`38b557b3838d…` identical before and after, mtime still 2026-08-04 22:35).
-Other `sbt` processes belonging to no session here started at 10:07 and 10:08,
-so concurrent outside activity is the likely source — a hypothesis, not a
-finding.
+The cause was riddl's `RiddlModelsRoundTripTest` (modified in the `../riddl`
+checkout), run there against this corpus and writing `.bast` from riddl's
+working-tree build. Four local candidates were tested first and none
+reproduced it — not `riddlcValidate`, not `Test/executeTests` at either pin,
+not a `build.sbt` touch, and no file watcher exists — because **the writer
+was never in this repository**. `../bin/riddlc` had not moved (`md5`
+`38b557b3838d…` identical before and after).
+
+So: an unexplained `.bast` diff means look at `../riddl` first. And note the
+corollary — the corpus can be rewritten by a build you are not running, so a
+diff that appears mid-session is not necessarily yours.
 
 **The decisive check, which costs one command:** regenerate everything and ask
 git.

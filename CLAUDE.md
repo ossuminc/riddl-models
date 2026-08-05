@@ -265,6 +265,47 @@ handle one:
 - **Relays** (source/sink processors) use `on other`. A `source` has
   no inlets, so an `on command` clause in one can never fire.
 
+**Shape Ascriptions** — every ported processor carries one:
+
+```riddl
+entity Cart as flow is { ... }
+repository CartRepository as merge is { ... }
+projector CartAnalytics as flow is { ... }
+processor CartEventSplit as split is { ... }
+application context ShoppingCartApp as merge is { ... }
+```
+
+The shape is **derived from arity**, not chosen — `shapeForArity` in
+riddl's `AST.scala`, by `(outlets, inlets)`:
+
+| outlets | inlets | shape |
+|--------:|-------:|-------|
+| 1 | 0 | `source` |
+| 0 | 1 | `sink` |
+| 1 | 1 | `flow` |
+| ≥2 | 1 | `split` |
+| 1 | ≥2 | `merge` |
+| ≥2 | ≥2 | `router` |
+| 0 | 0 | *(none — portless processors carry no ascription)* |
+
+Anything else is degenerate and derives `void`; the corpus has no such
+case. An ascription contradicting the arity is a hard **error**, so these
+are validated, not decorative. A processor with an `error-sink` inlet may
+be ascribed either with or without that inlet counted — both readings are
+accepted.
+
+**Position**: between the identifier and `is` — except an **adaptor**,
+whose grammar is `"adaptor" identifier direction context_ref [as_shape] is`,
+so the ascription follows the context reference:
+`adaptor MarketingAdapter to context MarketingService as source is {`.
+
+**Do not hand-derive the shape.** riddlc computes it and hands it over:
+`riddlc --provide-tips validate <model>.riddl` prints
+`Suggestion: Add 'as flow' to Entity 'Cart' ...`, with the insertion column
+as the end of its `(line:start->end)` span. `scripts/collect-ascriptions.py`
+harvests those into JSONL and `scripts/apply-ascriptions.py` applies them,
+refusing any site whose text does not match rather than guessing.
+
 **Projector Handlers**:
 - Projectors handle **events** to build read models
 - Do NOT use `on command` or `on query` in projector handlers
