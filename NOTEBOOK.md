@@ -2,6 +2,70 @@
 
 Development journal for active work on the riddl-models repository.
 
+## HANDOFF
+
+**Branch** `release/2`, clean and pushed (`origin/release/2` level, 0
+unpushed). Everything happens on this branch — `main` stays 1.x until riddl
+2.0 ships (BACKLOG #4).
+
+**Versions — these disagree, deliberately noted, not yet reconciled:**
+
+| | version |
+|---|---|
+| `build.sbt` `riddlVersion` (binary + test libs) | `2.0.0-rc.9-48-fdc5c171` |
+| `../bin/riddlc` as staged 2026-08-04 22:35 | **rc.9-54** (`riddl` `b163d3c85`) |
+
+`riddlcPath` prefers `../bin/riddlc`, so the last full verification ran on
+**rc.9-54** while the test suite linked **rc.9-48** libraries — and both
+were green. Bumping to rc.9-54 is BACKLOG #1 and should be a version bump,
+not a migration.
+
+**Verified this session, by running it, not recalling it:** 187 models
+validate, 189 test cases pass, 7 templates parse, 2 pattern examples
+validate, 0 overload warnings, round trip 187/187, all 189 `.bast`
+regenerated and committed.
+
+**In flight:** nothing half-done. The connector rename finished — 0
+`Link*` connectors remain — and its task is closed.
+
+### Traps
+
+- **A `.bast` diff with clean `.riddl` means the staged binary moved.**
+  Bastify is deterministic (verified by `md5` over two runs). This bit us:
+  `.bast` committed at 21:11 were stale by 22:27 because `../bin/riddlc`
+  was restaged underneath. Regenerate, round-trip, commit.
+- **`sbt test` can pass having run nothing** — sbt 2 routes it to
+  `testQuick` and the suite reads `.riddl` at run time, so sbt cannot see a
+  model edit. Use **`sbt checkAll`**.
+- **`patterns/` is excluded from `riddlcValidate`** (`riddlcConfExclusions`).
+  That exclusion is why the templates rotted through the entire 2.0
+  migration unnoticed. `sbt verifyTemplates` now covers it and
+  `riddlcValidate` depends on it — do not remove that wiring.
+- **`scalaVersion` must track riddl's `V.scala`** (currently 3.9.0-RC4).
+  Newer TASTy is unreadable by an older compiler. riddl's own `build.sbt`
+  comment claiming 3.8.4 is stale; `project/*.scala` is the truth.
+- **Connector role words are collision-prone.** `<E>Commands` and
+  `<E>Persistence` are already an entity inlet (737) and a repository
+  handler (489). Check any new role word against every declared identifier.
+
+### Certainty
+
+Verified by command: git state, both version facts, all test/validate
+counts, bastify determinism, the zero-invariant finding, `main`'s 72-commit
+lag. **Assumed:** why `../bin/riddlc` was restaged mid-session — the
+timestamps and riddl's own commit are the evidence; nobody told us.
+
+### Pointers
+
+- **BACKLOG.md** — all open work, with evidence
+- **CLAUDE.md** — durable facts: connector naming, event-sourcing rules,
+  who may handle a `yields` command, the gates and their differences
+- `task/` is **empty**; everything is triaged and closed into `task/done/`
+
+Run `/ossuminc-skills:check-tasks` in the new session.
+
+---
+
 ## Incoming Tasks
 
 **At session start**, check the `task/` directory for pending
@@ -549,15 +613,6 @@ Filed as
 Note for whoever adds those sinks: a sink handling `on command X` where X
 declares `yields` hits the relay problem. The corpus's working sinks
 handle an **event** and tell a **command**, which sidesteps it.
-
-### Open Loose Ends
-
-- 8 untracked helper scripts at repo root and in `scripts/`
-  (`fix-models.py`, `fix_models.py` near-duplicate, etc.) —
-  triage needed: keep the useful ones in `scripts/`, delete
-  scratch work at the root
-
----
 
 ## Completed Work
 
