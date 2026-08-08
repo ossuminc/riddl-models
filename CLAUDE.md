@@ -350,6 +350,46 @@ to silence them would be invention. Leave them.
 - Use `morph entity X to state Y with command Z` for state changes
 - The `with command` provides the data source for the new state
 
+**Saga Steps** — a step tells a **local** command to a **local** entity:
+
+```riddl
+step StepAllocateInventory is {
+  do "Request inventory allocation from InventoryService"
+  tell command AllocateInventory to entity Order
+}
+reverted by {
+  tell command CancelOrder to entity Order
+}
+```
+
+Three riddlc rules bound the shape, and together they leave exactly one
+answer:
+
+1. **Every step must contain a `tell command`** — otherwise
+   "SagaStep 'X' do-statements contain no 'tell command' to effect state
+   changes". Prose in `do` does not satisfy it.
+2. **The tell may not cross a context boundary** — naming another
+   context's command trips the 'bounded' aspect warning.
+3. **The target must be reachable via a connector.** A local entity is;
+   `tell ... to adaptor X` is **not** — that was tried and made things
+   worse, because the adaptor itself then needs an inbound connector.
+
+So a saga orchestrates its **own** aggregate. Calling an external system is
+*not* the step's `tell`: it belongs in the `do` prose, and the reply comes
+back through an inbound `from context` adaptor that issues the local
+command. A step that does `tell command PaymentGateway.ProcessPayment to
+context PaymentGateway` bypasses the anti-corruption layer and fails rules
+2 and 3 at once.
+
+Where no local command fits a step, **add one** rather than reaching for an
+unrelated one — with its `on command` clause, an event for it to tell (a
+handler that sends nothing warns "should result in sending an event"), and
+an entry in the context's `<X>Command` / `<X>Event` alternations.
+
+These rules only became visible in riddlc **rc.10-37**, which traverses
+saga step statements for the first time; before that a saga could contain
+anything and nothing checked it.
+
 ### Connector Naming
 
 Name a connector for **what flows through it**, never for its endpoints —
@@ -505,7 +545,7 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.0.0-rc.10-2-ff3a59b4** (set by `riddlVersion` in
+Current version: **2.0.0-rc.10-37-1d87a109** (set by `riddlVersion` in
 `build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
 While `release/2` is in flight `riddlcPath` prefers the staged
 `../bin/riddlc`, so that binary is what actually runs — check it with
@@ -586,7 +626,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.0.0-rc.10-2-ff3a59b4 | `riddlVersion` in `build.sbt` |
+| riddlc | 2.0.0-rc.10-37-1d87a109 | `riddlVersion` in `build.sbt` |
 | sbt-riddl | 2.0.0-rc.9-48-fdc5c171 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 

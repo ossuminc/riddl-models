@@ -5,24 +5,21 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
-## 1. The 139 remaining "is unused" warnings, already triaged
+## 1. The 85 remaining "is unused" warnings, already triaged
 
-Down from 162 (2026-08-05). The 23 that were **broken wiring** are fixed —
-plural queries yielding the singular result — and are gone. What is left
-splits three ways, and the split is the point: only one of the three is a
-defect.
+Down from 162. The 23 that were **broken wiring** are fixed (plural queries
+yielding the singular result), and the 54 external-context ones are gone
+because **riddl accepted the argument** and exempted external contexts in
+`7e4c25b94` — see `../riddl/task/2026-08-05-suppress-unused-in-external-contexts.md`.
+What remains splits two ways, and only one of the two is a defect.
 
 | count | category | verdict |
 |------:|----------|---------|
-| 54 | types inside `external context` blocks | **not a defect — leave** |
-| 80 | domain types/records never referenced | needs per-model judgment |
+| 79 | domain types/records never referenced | needs per-model judgment |
 | 5 | repositories nothing references | real structural gap |
+| 1 | an unreferenced record | with the 79 |
 
-**The 54 are correct as they stand.** An external context documents the
-outside system's payloads, so nothing in the model names them. See
-CLAUDE.md § External Contexts. Do not "fix" these.
-
-**The 80 are not mechanically fixable.** They are standalone vocabulary —
+**The 79 are not mechanically fixable.** They are standalone vocabulary —
 `AcademicTerm`, `TrainerInfo`, `ActionItem`, `DailySchedule`. Using them
 means deciding *where*: a new field on an existing message, or a capability
 the model does not currently expose. knowledge-management is the clearest
@@ -30,7 +27,7 @@ case and shows why it was left: `SearchQuery` and `SearchResult` plainly
 imply a search, but implementing it means adding a query, a result and a
 handler — inventing a capability, not repairing one. Reid's standing
 instruction covers this: if unsure, leave it, it is only a usage warning.
-A useful sub-case for whoever picks this up: **13 of the 80 have a
+A useful sub-case for whoever picks this up: **13 of them have a
 near-duplicate declaration** (`AccountSummary` vs the projector's inline
 `record AccountSummaryView`), where the fix is to share one shape rather
 than invent a use.

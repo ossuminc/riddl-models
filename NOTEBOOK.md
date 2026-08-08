@@ -9,7 +9,7 @@ unpushed). Everything happens on this branch — `main` stays 1.x until riddl
 2.0 ships (BACKLOG #3).
 
 **Versions — no skew.** `build.sbt` `riddlVersion` is
-**`2.0.0-rc.10-2-ff3a59b4`**, matching the staged `../bin/riddlc` that
+**`2.0.0-rc.10-37-1d87a109`**, matching the staged `../bin/riddlc` that
 `riddlcPath` prefers. One value pins the binary *and* the test-suite
 libraries.
 
@@ -18,37 +18,42 @@ plugin only shells out to a binary, so it moves independently of the
 language version (`build.sbt:39`). That is not skew; do not "fix" it.
 (rc.10-2 of the plugin *is* published locally if a reason to bump appears.)
 
-**Verified at rc.10-2, by running it:** 187 models validate, 189 test cases
+**Verified at rc.10-37, by running it:** 187 models validate, 189 test cases
 pass, 7 templates parse, 2 pattern examples validate, round trip 187/187,
-0 errors, 150 warnings.
+0 errors, 96 warnings.
 
-**rc.9-54 → rc.10-2 was a pure version bump.** Identical results on every
-count, and — worth knowing for the next upgrade — **`.bast` bytes did not
-change at all**, so the BAST format is stable across that boundary. The
-earlier `.bast` question is closed: the committed bytes are what both
-binaries produce.
+**rc.9-54 → rc.10-2 was a pure version bump** (identical results, and
+`.bast` bytes unchanged — the BAST format was stable across that boundary).
+**rc.10-2 → rc.10-37 was not**, and that is the interesting one: it
+traverses saga step statements for the first time, which exposed 24
+findings in a file nothing had ever checked. See § Saga Steps in CLAUDE.md.
 
 Note the `patterns/` pair anyway: `verify-bast-roundtrip.sh` excludes the
 2 pattern examples (BACKLOG #3), so a `patterns/` source edit does **not**
 get its `.bast` refreshed by any gate — bastify those two by hand.
 
-**Warnings: 1233 → 150 this session.** Three passes, each verified:
+**Warnings: 1233 → 96.** Each pass verified by running it:
 
 | | fixed | remaining |
 |---|---:|---|
 | `as <shape>` ascriptions | 1043 | 0 — class eliminated |
 | too-short identifiers | 17 | 0 — class eliminated |
-| "is unused" | 23 | 139, **triaged in BACKLOG #1** |
+| saga reachability + cross-context | 24 | 0 — class eliminated |
+| "is unused" | 23 here, 54 upstream | 85, **triaged in BACKLOG #1** |
+
+The 54 went away because **riddl accepted the task filed from here** and
+exempted external contexts (`7e4c25b94`); the remaining 85 are 79 types,
+5 repositories, 1 record. The other 11 warnings are adaptor suggestions.
 
 Every ported processor in all 189 models now carries `as <shape>`. The
 convention and the arity table are in CLAUDE.md; the scripts are
 `scripts/collect-ascriptions.py`, `scripts/apply-ascriptions.py` and the
 general `scripts/collect-warnings.py`.
 
-**Do not re-triage the remaining 139** — BACKLOG #1 has the breakdown with
-evidence. The short version: 54 are inside `external context` blocks and
-are **correct as they stand**, 80 need per-model design judgment, and 5 are
-a real structural defect (repositories with no ports).
+**Do not re-triage the remaining 85** — BACKLOG #1 has the breakdown with
+evidence. The short version: 80 need per-model design judgment and 5 are a
+real structural defect (repositories with no ports). The external-context
+category is gone entirely, fixed upstream rather than here.
 
 The shape was never hand-derived — riddlc's own `--provide-tips` suggestion
 names both the shape and the insertion column, so the compiler's
@@ -64,13 +69,16 @@ reads that `common` block. **The `.conf` wins over the command line** —
 `riddlc -s true from <conf> validate` still printed zero. The gates were
 never in conflict, just differently configured.
 
-**In flight:** nothing half-done. The rc.10-2 upgrade is complete, as are
+**In flight:** nothing half-done. The rc.10-37 upgrade is complete, as are
 the ascription, short-identifier and result-wiring passes.
 
-**Filed upstream:** `../riddl/task/2026-08-05-suppress-unused-in-external-contexts.md`
-asks riddl to stop reporting unused types inside an `external context`. They
-are 54 of this corpus's 139 remaining unused warnings and none is
-actionable — see BACKLOG #1.
+**Filed upstream and landed.**
+`../riddl/task/2026-08-05-suppress-unused-in-external-contexts.md` argued
+that unused types inside an `external context` are not defects. riddl
+implemented it in `7e4c25b94`, and the effect matched the acceptance
+criterion exactly: unused fell 139 → 85, all 54 external-context ones gone,
+the 5 repository findings still reported. The task file is still in
+`../riddl/task/` — riddl's session may want to move it to `done/`.
 
 **One durable correction made this session:** CLAUDE.md said external
 contexts are marked `option is external` in the `with` block. That form has
@@ -89,7 +97,7 @@ future session chasing a syntax that does not exist.
   it: `./scripts/verify-bast-roundtrip.sh` then
   `git status --short -- '*.bast'` — empty means the committed bytes are
   right. Restore with `git checkout -- '*.bast'`; never delete them.
-  Full account in BACKLOG #6.
+  Full account in BACKLOG #7.
 - **`sbt test` can pass having run nothing** — sbt 2 routes it to
   `testQuick` and the suite reads `.riddl` at run time, so sbt cannot see a
   model edit. Use **`sbt checkAll`**.
