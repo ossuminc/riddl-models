@@ -350,6 +350,31 @@ to silence them would be invention. Leave them.
 - Use `morph entity X to state Y with command Z` for state changes
 - The `with command` provides the data source for the new state
 
+**Wiring a repository into a context** — a repository with a schema and a
+handler but **no ports** is unreachable, not merely unreferenced. Four
+things make it real, and all four are needed:
+
+1. an `inlet <Repo>From<Entity> is type <Entity>Event`
+2. an `as <shape>` ascription matching the resulting arity (`as sink` for
+   an inlet and no outlet)
+3. an outlet on the context's `<Entity>EventSplit`, plus `send` clauses
+   routing **only the events that repository persists** — its existing
+   handler already says which part of the lifecycle it owns
+4. a connector joining the two
+
+**Name that connector for the destination repository**, not the type:
+`'SpecimenRepository Storage'`, not `'LabOrderEvent Storage'`. A second
+repository fed by the same event type collides on the type alone — the
+same reason the convention names the two projector legs for the projector.
+
+**An adaptor cannot sit in a sink's upstream path.** `Adaptor` is not a
+`Streamlet` and the sink-upstream BFS is typed over `Streamlet`, so
+inserting one severs the sink's route back to a source. This directly
+contradicts riddlc's own "Consider an adaptor between external context X
+and Y" advisory, which is therefore only followable when the path is
+`entity → adaptor → external context` with no internal sink. See
+BACKLOG #1; do not "fix" the seven reactive-bbq sites.
+
 **`yield` vs `reply`** — a command yields an **event**, a query replies a
 **result**. Since riddlc **rc.10-45** these are distinct statements and the
 wrong pairing (`yield result`, `reply event`) is a hard **Error**:

@@ -20,7 +20,7 @@ language version (`build.sbt:39`). That is not skew; do not "fix" it.
 
 **Verified at rc.10-46, by running it:** 187 models validate, 189 test cases
 pass, 7 templates parse, 2 pattern examples validate, round trip 187/187,
-0 errors, 96 warnings.
+0 errors, 87 warnings.
 
 **Not every RC bump is cosmetic — check before assuming.** rc.9-54 → rc.10-2
 was pure (identical results, `.bast` bytes unchanged). The two since were
@@ -40,7 +40,7 @@ Note the `patterns/` pair anyway: `verify-bast-roundtrip.sh` excludes the
 2 pattern examples (BACKLOG #3), so a `patterns/` source edit does **not**
 get its `.bast` refreshed by any gate — bastify those two by hand.
 
-**Warnings: 1233 → 96.** Each pass verified by running it:
+**Warnings: 1233 → 87.** Each pass verified by running it:
 
 | | fixed | remaining |
 |---|---:|---|
@@ -48,21 +48,23 @@ get its `.bast` refreshed by any gate — bastify those two by hand.
 | too-short identifiers | 17 | 0 — class eliminated |
 | saga reachability + cross-context | 24 | 0 — class eliminated |
 | `yield result` → `reply result` | 406 | 0 — was a hard Error at rc.10-45 |
-| "is unused" | 23 here, 54 upstream | 85, **triaged in BACKLOG #1** |
+| "is unused" | 23 here, 54 upstream | 80, **triaged in BACKLOG #1** |
+| unwired repositories | 5 | 0 — class eliminated |
+| adaptor advisories | 4 | 7, **blocked upstream — do not fix** |
 
 The 54 went away because **riddl accepted the task filed from here** and
-exempted external contexts (`7e4c25b94`); the remaining 85 are 79 types,
-5 repositories, 1 record. The other 11 are adaptor suggestions.
+exempted external contexts (`7e4c25b94`). The 87 that remain are 79 unused
+types, 1 unused record, and the 7 blocked adaptor advisories.
 
 Every ported processor in all 189 models now carries `as <shape>`. The
 convention and the arity table are in CLAUDE.md; the scripts are
 `scripts/collect-ascriptions.py`, `scripts/apply-ascriptions.py` and the
 general `scripts/collect-warnings.py`.
 
-**Do not re-triage the remaining 85** — BACKLOG #1 has the breakdown with
-evidence. The short version: 80 need per-model design judgment and 5 are a
-real structural defect (repositories with no ports). The external-context
-category is gone entirely, fixed upstream rather than here.
+**Do not re-triage the remaining 87** — BACKLOG #1 has the breakdown with
+evidence, including which 10 of the 79 are the tractable subset. The 7
+adaptor advisories are **blocked by a riddlc rule conflict** and must not be
+"fixed": doing so trades a style warning for a completeness warning.
 
 The shape was never hand-derived — riddlc's own `--provide-tips` suggestion
 names both the shape and the insertion column, so the compiler's
@@ -79,7 +81,15 @@ reads that `common` block. **The `.conf` wins over the command line** —
 never in conflict, just differently configured.
 
 **In flight:** nothing half-done. The rc.10-46 upgrade is complete, as are
-the ascription, short-identifier and result-wiring passes.
+the ascription, short-identifier, result-wiring, adaptor-routing and
+repository-wiring passes.
+
+**A third task is filed and open:**
+`../riddl/task/2026-08-09-adaptor-advisory-conflicts-with-sink-upstream-check.md`
+— Rule 5 advises inserting an adaptor between an external context and a
+sink, but Check 3's BFS is typed over `Streamlet` and an `Adaptor` is not
+one, so the adaptor severs the sink's upstream path. Demonstrated: doing it
+as suggested took reactive-bbq from 7 findings to 8.
 
 **Two tasks filed upstream, both landed and closed** (in
 `../riddl/task/done/`):
