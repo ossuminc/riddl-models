@@ -560,7 +560,7 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.0.0-rc.10-45-a50496e0** (set by `riddlVersion` in
+Current version: **2.0.0-rc.10-46-286ef815** (set by `riddlVersion` in
 `build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
 While `release/2` is in flight `riddlcPath` prefers the staged
 `../bin/riddlc`, so that binary is what actually runs — check it with
@@ -641,7 +641,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.0.0-rc.10-45-a50496e0 | `riddlVersion` in `build.sbt` |
+| riddlc | 2.0.0-rc.10-46-286ef815 | `riddlVersion` in `build.sbt` |
 | sbt-riddl | 2.0.0-rc.9-48-fdc5c171 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
