@@ -9,7 +9,7 @@ unpushed). Everything happens on this branch — `main` stays 1.x until riddl
 2.0 ships (BACKLOG #3).
 
 **Versions — no skew.** `build.sbt` `riddlVersion` is
-**`2.0.0-rc.10-37-1d87a109`**, matching the staged `../bin/riddlc` that
+**`2.0.0-rc.10-45-a50496e0`**, matching the staged `../bin/riddlc` that
 `riddlcPath` prefers. One value pins the binary *and* the test-suite
 libraries.
 
@@ -18,32 +18,40 @@ plugin only shells out to a binary, so it moves independently of the
 language version (`build.sbt:39`). That is not skew; do not "fix" it.
 (rc.10-2 of the plugin *is* published locally if a reason to bump appears.)
 
-**Verified at rc.10-37, by running it:** 187 models validate, 189 test cases
+**Verified at rc.10-45, by running it:** 187 models validate, 189 test cases
 pass, 7 templates parse, 2 pattern examples validate, round trip 187/187,
-0 errors, 96 warnings.
+0 errors, 123 warnings (27 of them a riddl bug, filed — see below).
 
-**rc.9-54 → rc.10-2 was a pure version bump** (identical results, and
-`.bast` bytes unchanged — the BAST format was stable across that boundary).
-**rc.10-2 → rc.10-37 was not**, and that is the interesting one: it
-traverses saga step statements for the first time, which exposed 24
-findings in a file nothing had ever checked. See § Saga Steps in CLAUDE.md.
+**Not every RC bump is cosmetic — check before assuming.** rc.9-54 → rc.10-2
+was pure (identical results, `.bast` bytes unchanged). The two since were
+not: **rc.10-37** began traversing saga step statements, exposing 24
+findings in a file nothing had ever checked (§ Saga Steps in CLAUDE.md);
+**rc.10-45** split `yield` and `reply`, making `yield result` a hard Error
+and forcing a 406-site migration (§ `yield` vs `reply`).
+
+**`../riddl` no longer rewrites this corpus's `.bast`** — riddl's
+`470569319` stopped `RiddlModelsRoundTripTest` doing that. The trap below
+is kept because the lesson (look outside this repo) still holds, but the
+specific cause is fixed at the source.
 
 Note the `patterns/` pair anyway: `verify-bast-roundtrip.sh` excludes the
 2 pattern examples (BACKLOG #3), so a `patterns/` source edit does **not**
 get its `.bast` refreshed by any gate — bastify those two by hand.
 
-**Warnings: 1233 → 96.** Each pass verified by running it:
+**Warnings: 1233 → 123.** Each pass verified by running it:
 
 | | fixed | remaining |
 |---|---:|---|
 | `as <shape>` ascriptions | 1043 | 0 — class eliminated |
 | too-short identifiers | 17 | 0 — class eliminated |
 | saga reachability + cross-context | 24 | 0 — class eliminated |
+| `yield result` → `reply result` | 406 | 0 — was a hard Error at rc.10-45 |
 | "is unused" | 23 here, 54 upstream | 85, **triaged in BACKLOG #1** |
 
 The 54 went away because **riddl accepted the task filed from here** and
 exempted external contexts (`7e4c25b94`); the remaining 85 are 79 types,
-5 repositories, 1 record. The other 11 warnings are adaptor suggestions.
+5 repositories, 1 record. Of the other 38: 11 are adaptor suggestions and
+**27 are the riddl `reply` bug below**, not corpus defects.
 
 Every ported processor in all 189 models now carries `as <shape>`. The
 convention and the arity table are in CLAUDE.md; the scripts are
@@ -69,8 +77,18 @@ reads that `common` block. **The `.conf` wins over the command line** —
 `riddlc -s true from <conf> validate` still printed zero. The gates were
 never in conflict, just differently configured.
 
-**In flight:** nothing half-done. The rc.10-37 upgrade is complete, as are
+**In flight:** nothing half-done. The rc.10-45 upgrade is complete, as are
 the ascription, short-identifier and result-wiring passes.
+
+**Filed upstream, open:**
+`../riddl/task/2026-08-08-reply-not-counted-as-executable.md`. The 27
+`Handler … contains only prompt statements` / `… has no executable
+statements` warnings are a **riddl bug, not a corpus defect** —
+`classifyHandlers` (`ValidationPass.scala:5083`) counts `YieldStatement`
+but was never given a case for `ReplyStatement` when `30f95ad80` split the
+two. **Do not "fix" the 27 handlers** by padding them with `set`
+statements; they are correct. Expect 123 → 96 when riddl takes the
+one-line fix.
 
 **Filed upstream and landed.**
 `../riddl/task/2026-08-05-suppress-unused-in-external-contexts.md` argued
