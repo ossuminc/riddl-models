@@ -350,6 +350,38 @@ to silence them would be invention. Leave them.
 - Use `morph entity X to state Y with command Z` for state changes
 - The `with command` provides the data source for the new state
 
+**Mappings and `foreach`** (riddlc rc.10-57) — a key/value table is a
+`mapping`, not a string to be parsed:
+
+```riddl
+valueMap: mapping from String to String with {
+  briefly "Value map"
+  described as { |Source-value to target-value translations. }
+}
+...
+on command UpdateFieldMapping is {
+  foreach sourceValue, targetValue in field UpdateFieldMapping.valueMap {
+    do "record that sourceValue translates to targetValue"
+  }
+}
+```
+
+- `foreach <e> in <collection>` iterates a sequence; the **two-identifier**
+  form destructures a mapping into key and value.
+- The collection must be reachable by a `field` path — and **a path cannot
+  descend through an optional field** into its type. `Cmd.mapping.transformation.valueMap`
+  fails when `transformation` is `TransformRule?` and resolves when it is
+  `TransformRule`; depth is not the problem (the corpus has depth-3 refs
+  that resolve). Filed as
+  `../riddl/task/2026-08-10-path-cannot-descend-through-an-optional-field.md`.
+  Put the collection on the message itself when you need to walk it.
+- `ask query X of <processor>` also exists (rc.10-45) and counts as a saga
+  failure point. **Unused here on purpose** — a saga step must address its
+  own context, so asking an external system would reintroduce the
+  cross-context reference § Saga Steps removes.
+- `at` is only `described at <url>`; a mapping `at` lookup is filed
+  upstream, not implemented — do not reach for it.
+
 **Wiring a repository into a context** — a repository with a schema and a
 handler but **no ports** is unreachable, not merely unreferenced. Four
 things make it real, and all four are needed:
@@ -585,7 +617,7 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.0.0-rc.10-46-286ef815** (set by `riddlVersion` in
+Current version: **2.0.0-rc.10-57-e012ebb9** (set by `riddlVersion` in
 `build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
 While `release/2` is in flight `riddlcPath` prefers the staged
 `../bin/riddlc`, so that binary is what actually runs — check it with
@@ -666,7 +698,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.0.0-rc.10-46-286ef815 | `riddlVersion` in `build.sbt` |
+| riddlc | 2.0.0-rc.10-57-e012ebb9 | `riddlVersion` in `build.sbt` |
 | sbt-riddl | 2.0.0-rc.9-48-fdc5c171 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 

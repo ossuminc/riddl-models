@@ -9,7 +9,7 @@ unpushed). Everything happens on this branch — `main` stays 1.x until riddl
 2.0 ships (BACKLOG #3).
 
 **Versions — no skew.** `build.sbt` `riddlVersion` is
-**`2.0.0-rc.10-46-286ef815`**, matching the staged `../bin/riddlc` that
+**`2.0.0-rc.10-57-e012ebb9`**, matching the staged `../bin/riddlc` that
 `riddlcPath` prefers. One value pins the binary *and* the test-suite
 libraries.
 
@@ -18,7 +18,7 @@ plugin only shells out to a binary, so it moves independently of the
 language version (`build.sbt:39`). That is not skew; do not "fix" it.
 (rc.10-2 of the plugin *is* published locally if a reason to bump appears.)
 
-**Verified at rc.10-46, by running it:** 187 models validate, 189 test cases
+**Verified at rc.10-57, by running it:** 187 models validate, 189 test cases
 pass, 7 templates parse, 2 pattern examples validate, round trip 187/187,
 0 errors, 87 warnings.
 
@@ -80,11 +80,17 @@ reads that `common` block. **The `.conf` wins over the command line** —
 `riddlc -s true from <conf> validate` still printed zero. The gates were
 never in conflict, just differently configured.
 
-**In flight:** nothing half-done. The rc.10-46 upgrade is complete, as are
+**In flight:** nothing half-done. The rc.10-57 upgrade is complete, as are
 the ascription, short-identifier, result-wiring, adaptor-routing and
 repository-wiring passes.
 
-**A third task is filed and open:**
+**Two further tasks are filed and open:**
+`../riddl/task/2026-08-10-path-cannot-descend-through-an-optional-field.md`
+— a `field` path stops at an optional field rather than descending into its
+type; isolated by flipping `TransformRule?` to `TransformRule`, which makes
+the identical depth-3 path resolve. It constrains where `foreach` can reach.
+
+
 `../riddl/task/2026-08-09-adaptor-advisory-conflicts-with-sink-upstream-check.md`
 — Rule 5 advises inserting an adaptor between an external context and a
 sink, but Check 3's BFS is typed over `Streamlet` and an `Adaptor` is not
