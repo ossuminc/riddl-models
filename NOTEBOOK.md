@@ -4,6 +4,32 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
+**Incoming from riddl, 2026-08-12 — 97 `set` statements removed from repository
+handlers.** Done here rather than via a task file (Reid approved crossing the
+boundary) because riddl's new rule would otherwise have left its corpus gate red.
+
+riddlc now rejects `set` in a repository handler: a repository owns no state to
+write. These 97 lines existed only to silence riddlc's *"contains only prompt
+statements"* warning, and that warning has been fixed in the same riddl commit to
+**exempt repositories** — most of their on-clauses legitimately hold a single
+`do` standing in for the SQL that implements them. So the lines are no longer
+needed for the reason they were added, and their removal draws no new warning.
+
+Removed from 14 files across `hospitality/food-service/reactive-bbq` (90),
+`patterns/entity/event-sourced` (4) and `patterns/entity/aggregate-root` (3).
+**Not all `set` lines** — reactive-bbq has 145 and the other 55 are legitimate
+entity writes; each removed line was verified to sit at the exact location
+riddlc reported.
+
+Verified by re-validating the whole corpus: **884 messages, 0 errors — identical
+to the pre-change baseline once line numbers are stripped**, only positions
+moved. riddl's `RiddlModelsRoundTripTest` is 189/189 with `pendingModels` empty.
+
+Requires a riddlc at or after riddl `release/2` `dd5f539f0`+; on an older binary
+these models still validate (the `set`s were legal, just pointless).
+
+
+
 **Branch** `release/2`, clean and pushed (`origin/release/2` level, 0
 unpushed). Everything happens on this branch — `main` stays 1.x until riddl
 2.0 ships (BACKLOG #3).
