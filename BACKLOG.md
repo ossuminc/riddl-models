@@ -5,48 +5,82 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
-## 1. The 87 remaining warnings, already triaged
+## 1. Make reactive-bbq the reference model (ACTIVE CAMPAIGN)
 
-Down from 1233. Two whole classes were closed on 2026-08-09 — the five
-unwired repositories and four of the eleven adaptor advisories — leaving:
+The plan is `~/.claude/plans/wobbly-whistling-finch.md`, approved
+2026-08-12, with five scoping decisions taken the same day. The rules it is
+measured against are `docs/SIMULABILITY-AND-GENERATABILITY.md`, and
+`ReactiveBbqCompletenessTest` enforces them. **That suite is red on purpose
+— 3 of 10 rules pass — so `sbt checkAll` exits 1 until this campaign
+finishes. That is expected, not a breakage.**
 
-| count | category | verdict |
-|------:|----------|---------|
-| 79 | domain types/records never referenced | needs per-model judgment |
-| 7 | adaptor advisories, all reactive-bbq | **blocked upstream — do not fix** |
-| 1 | an unreferenced record | with the 79 |
+### Where it stopped
 
-**The 7 are deliberately left alone and must stay that way until riddl
-responds.** Following the advisory makes the model strictly worse: an
-`Adaptor` is not a `Streamlet`, and the sink-upstream BFS in
-`StreamingValidation` is typed over `Streamlet`, so an adaptor placed in
-the path severs the sink's route back to a source. Doing it exactly as
-suggested took reactive-bbq from 7 findings to 8. Filed as
-`../riddl/task/2026-08-09-adaptor-advisory-conflicts-with-sink-upstream-check.md`.
-The other four adaptor sites were fixable precisely because their path is
-`entity -> adaptor -> external context` with no internal sink.
+**Phase 0 (rules + harness) and part of Phase 1 are done.** FrontOfHouse is
+the first of the contexts to have its descriptions rewritten. Next context
+is Kitchen, then Bar, Loyalty, OnlineOrdering, Delivery, then backoffice and
+corporate.
 
-**The 79 are not mechanically fixable.** They are standalone vocabulary —
-`AcademicTerm`, `TrainerInfo`, `ActionItem`, `DailySchedule` — spread over
-48 models. Using one means deciding *where*: a new field on an existing
-message, or a capability the model does not expose. knowledge-management
-shows why they are left: `SearchQuery` and `SearchResult` plainly imply a
-search, but adding one invents a capability rather than repairing it.
-Reid's standing instruction covers this: if unsure, leave it, it is only a
-usage warning. **10 of the 79 have a near-duplicate declaration**
-(`AccountSummary` vs the projector's inline `AccountSummaryView`), where
-the fix is to share one shape — the tractable subset. Three of those carry
-a doubled suffix (`AccountSummaryViewView`, `DailyRevenueViewView`,
-`PolicyMetricsViewView`, 6 sites in 2 files) that is worth fixing on its
-own.
+Measured at rc.13 on 2026-08-12, by running it:
 
-`scripts/collect-warnings.py --grep "is unused"` reproduces the list, but
-**note it passes `--provide-tips`**, which riddl uses to gate an advisory
-tier: 95 further findings appear under it, 89 of them `Initialize<Entity>`
-placeholder commands with no `on command` clause. Those are deliberately
-not part of the 87 (riddl: "advisory … message types are often defined at
-context scope"). Not a blanket delete either — 37 `Initialize*` commands
-are genuinely told or sent somewhere.
+| item | state |
+|---|---|
+| reactive-bbq warnings | **18**, all `X populates Repository R but is not defined in it` (10 event, 8 command) |
+| degenerate descriptions left | **259** — restaurant 128, corporate 71, backoffice 60 |
+| `???` bodies | 20 (13 `Initialize<Entity>`, 7 `on init`) |
+| terms | 2 (rule wants >= 20) |
+| groups / `put` / `version` | 1 / 0 / 0 |
+| epic interaction blocks | no sequential/parallel/optional |
+
+**The degenerate-description metric is fields-only** (`name: Type with {`
+whose description adds no word beyond the identifier). An earlier count of
+247 for `restaurant/` used a wider matcher that also caught definition
+lines; the two numbers are not comparable. Reproduce with the detector
+inlined in the 2026-08-12 session, or rewrite it — it is ~20 lines of
+Python, not worth preserving as a script until it stabilises.
+
+### The five scoping decisions
+
+1. **Round-trip is hygiene, not a criterion.** BAST is a performance
+   optimisation for getting an AST into memory. The pipeline is text ->
+   validate with zero messages -> AST -> run, and **AST quality is the
+   whole game**.
+2. **Every degenerate description gets real domain intent** — invent it, it
+   is a restaurant. This is the largest item and the most important for
+   generatability: the deterministic generator emits `[[AI FILL: ...]]` and
+   the AI tier fills it from surrounding context, so a description that
+   restates its identifier IS the absence of context.
+3. **Coverage is once-each.** Statements and definitions matter far more
+   than exhaustive type expressions; use type expressions as the domain
+   warrants.
+4. **Canonical only, pinned by the test. Zero deprecation warnings.**
+5. **Let it grow**, splitting by MAJOR definition: one context per file, a
+   large entity in its own file, never a definition split across files, new
+   application contexts each in their own file.
+
+### Phases remaining
+
+- **1** — 18 populates-repository warnings; 20 `???`; the 259 descriptions
+- **2** — saga, correlation (A70), invariant/require, function/return,
+  constant, foreach, become, `void` streamlet, a healthy mix of type
+  expressions
+- **3** — companion `language-coverage/` model for what a restaurant cannot
+  justify (module, bast_import, replica, graph/table, nebula, method,
+  attachment/ULID, `described at`/`in file`)
+- **4** — UI per domain (groups, inputs, outputs, `put`) and every epic
+  interaction step kind
+- **5** — the corpus-wide populates-repository campaign, ~855 sites in the
+  other 186 models
+- **6** — upstream task for riddlc: a run-ending fitness summary, plus the
+  cycle check below
+
+### One rule with no check behind it
+
+**A cycle in the connector graph has no detection in riddlc** (verified
+2026-08-12: no cycle/circular/acyclic logic in
+`StreamingValidation.scala`), and it is precisely the model a discrete-event
+simulator cannot finish. Unconnected ports ARE checked (`:203`, `:583`).
+This belongs in the Phase 6 upstream task.
 
 ## 2. Pattern templates: 2 of 7 validate as whole models
 
@@ -95,9 +129,16 @@ and the suite reads `.riddl` files at **run** time — so sbt never sees a
 model edit as an input. A second `sbt test` reports success having run
 nothing.
 
-`sbt checkAll` (`riddlcValidate` then `Test/executeTests`) forces all 189
-and is the command to trust. Could be improved by declaring the model files
-as task inputs so sbt invalidates properly.
+**`sbt checkAll` is the command to trust, and as of 2026-08-12 it can
+actually fail.** It could not before: the alias ran `Test/executeTests`,
+which RUNS everything but yields its outcome as a VALUE, so sbt exited 0
+with seven failing assertions. `checkTests` in `build.sbt` now inspects
+`result.overall` and calls `sys.error`, and logs the suite count so a run
+that measured almost nothing is visible rather than merely green. Verified
+both directions.
+
+Could still be improved by declaring the model files as task inputs so sbt
+invalidates properly.
 
 ## 6. No CI in this repository
 

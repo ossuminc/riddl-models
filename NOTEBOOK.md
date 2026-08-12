@@ -4,201 +4,81 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Incoming from riddl, 2026-08-12 — 97 `set` statements removed from repository
-handlers.** Done here rather than via a task file (Reid approved crossing the
-boundary) because riddl's new rule would otherwise have left its corpus gate red.
+**Branch** `release/2`, tree clean, **5 commits unpushed** as of writing
+(push them). `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-riddlc now rejects `set` in a repository handler: a repository owns no state to
-write. These 97 lines existed only to silence riddlc's *"contains only prompt
-statements"* warning, and that warning has been fixed in the same riddl commit to
-**exempt repositories** — most of their on-clauses legitimately hold a single
-`do` standing in for the SQL that implements them. So the lines are no longer
-needed for the reason they were added, and their removal draws no new warning.
+**Versions, verified by running the binary, not recalled:** staged
+`../bin/riddlc` is **2.0.0-rc.13** (`d118041ce`), `riddlVersion` in
+`build.sbt` matches, and the local ivy libs match. `riddlcPath` prefers the
+staged binary, so that is what actually runs.
 
-Removed from 14 files across `hospitality/food-service/reactive-bbq` (90),
-`patterns/entity/event-sourced` (4) and `patterns/entity/aggregate-root` (3).
-**Not all `set` lines** — reactive-bbq has 145 and the other 55 are legitimate
-entity writes; each removed line was verified to sit at the exact location
-riddlc reported.
+**`sbt checkAll` EXITS 1, and that is correct.** `ReactiveBbqCompletenessTest`
+is red on purpose: it states the target for the active campaign and 3 of its
+10 rules pass. 187 models validate, 7 templates parse, 2 pattern examples
+validate, 192 assertions pass, 7 fail. **Do not "fix" the red suite by
+weakening it** — turn it green by finishing BACKLOG #1.
 
-Verified by re-validating the whole corpus: **884 messages, 0 errors — identical
-to the pre-change baseline once line numbers are stripped**, only positions
-moved. riddl's `RiddlModelsRoundTripTest` is 189/189 with `pendingModels` empty.
-
-Requires a riddlc at or after riddl `release/2` `dd5f539f0`+; on an older binary
-these models still validate (the `set`s were legal, just pointless).
-
-
-
-**Branch** `release/2`, clean and pushed (`origin/release/2` level, 0
-unpushed). Everything happens on this branch — `main` stays 1.x until riddl
-2.0 ships (BACKLOG #3).
-
-**Versions — no skew.** `build.sbt` `riddlVersion` is
-**`2.0.0-rc.10-57-e012ebb9`**, matching the staged `../bin/riddlc` that
-`riddlcPath` prefers. One value pins the binary *and* the test-suite
-libraries.
-
-`sbt-riddl` in `project/plugins.sbt` stays at **rc.9-48 on purpose** — the
-plugin only shells out to a binary, so it moves independently of the
-language version (`build.sbt:39`). That is not skew; do not "fix" it.
-(rc.10-2 of the plugin *is* published locally if a reason to bump appears.)
-
-**Verified at rc.10-57, by running it:** 187 models validate, 189 test cases
-pass, 7 templates parse, 2 pattern examples validate, round trip 187/187,
-0 errors, 87 warnings.
-
-**Not every RC bump is cosmetic — check before assuming.** rc.9-54 → rc.10-2
-was pure (identical results, `.bast` bytes unchanged). The two since were
-not: **rc.10-37** began traversing saga step statements, exposing 24
-findings in a file nothing had ever checked (§ Saga Steps in CLAUDE.md);
-**rc.10-45** split `yield` and `reply`, making `yield result` a hard Error
-and forcing a 406-site migration (§ `yield` vs `reply`). **rc.10-46** was
-purely riddl's fix for the fallout of that split — no corpus change, and
-`.riddl` and `.bast` both byte-identical across it.
-
-**`../riddl` no longer rewrites this corpus's `.bast`** — riddl's
-`470569319` stopped `RiddlModelsRoundTripTest` doing that. The trap below
-is kept because the lesson (look outside this repo) still holds, but the
-specific cause is fixed at the source.
-
-Note the `patterns/` pair anyway: `verify-bast-roundtrip.sh` excludes the
-2 pattern examples (BACKLOG #3), so a `patterns/` source edit does **not**
-get its `.bast` refreshed by any gate — bastify those two by hand.
-
-**Warnings: 1233 → 87.** Each pass verified by running it:
-
-| | fixed | remaining |
-|---|---:|---|
-| `as <shape>` ascriptions | 1043 | 0 — class eliminated |
-| too-short identifiers | 17 | 0 — class eliminated |
-| saga reachability + cross-context | 24 | 0 — class eliminated |
-| `yield result` → `reply result` | 406 | 0 — was a hard Error at rc.10-45 |
-| "is unused" | 23 here, 54 upstream | 80, **triaged in BACKLOG #1** |
-| unwired repositories | 5 | 0 — class eliminated |
-| adaptor advisories | 4 | 7, **blocked upstream — do not fix** |
-
-The 54 went away because **riddl accepted the task filed from here** and
-exempted external contexts (`7e4c25b94`). The 87 that remain are 79 unused
-types, 1 unused record, and the 7 blocked adaptor advisories.
-
-Every ported processor in all 189 models now carries `as <shape>`. The
-convention and the arity table are in CLAUDE.md; the scripts are
-`scripts/collect-ascriptions.py`, `scripts/apply-ascriptions.py` and the
-general `scripts/collect-warnings.py`.
-
-**Do not re-triage the remaining 87** — BACKLOG #1 has the breakdown with
-evidence, including which 10 of the 79 are the tractable subset. The 7
-adaptor advisories are **blocked by a riddlc rule conflict** and must not be
-"fixed": doing so trades a style warning for a completeness warning.
-
-The shape was never hand-derived — riddlc's own `--provide-tips` suggestion
-names both the shape and the insertion column, so the compiler's
-`shapeForArity` is the single source of truth. Re-run the pair after any
-change that adds ports; it is idempotent (a line already carrying an
-ascription is refused).
-
-**Why the CLI never showed these and the suite did.** They are `[style]`
-warnings: `riddlc validate <model>.riddl` prints them, `riddlc from
-<model>.conf validate` does not, because every `.conf` sets
-`show-style-warnings = false`. The suite calls the library directly and never
-reads that `common` block. **The `.conf` wins over the command line** —
-`riddlc -s true from <conf> validate` still printed zero. The gates were
-never in conflict, just differently configured.
-
-**In flight:** nothing half-done. The rc.10-57 upgrade is complete, as are
-the ascription, short-identifier, result-wiring, adaptor-routing and
-repository-wiring passes.
-
-**Two further tasks are filed and open:**
-`../riddl/task/2026-08-10-path-cannot-descend-through-an-optional-field.md`
-— a `field` path stops at an optional field rather than descending into its
-type; isolated by flipping `TransformRule?` to `TransformRule`, which makes
-the identical depth-3 path resolve. It constrains where `foreach` can reach.
-
-
-`../riddl/task/2026-08-09-adaptor-advisory-conflicts-with-sink-upstream-check.md`
-— Rule 5 advises inserting an adaptor between an external context and a
-sink, but Check 3's BFS is typed over `Streamlet` and an `Adaptor` is not
-one, so the adaptor severs the sink's upstream path. Demonstrated: doing it
-as suggested took reactive-bbq from 7 findings to 8.
-
-**Two tasks filed upstream, both landed and closed** (in
-`../riddl/task/done/`):
-
-- **`2026-08-08-reply-not-counted-as-executable.md`** — after the
-  `yield`/`reply` split, `classifyHandlers` counted `YieldStatement` but had
-  no case for `ReplyStatement`, so 27 correct handlers were reported as
-  prompt-only or empty. **The handlers were deliberately left untouched**
-  rather than padded with `set` statements, and riddl's `286ef8157` fixed
-  it — 123 → 96, confirmed here and recorded on the task. riddl's grep found
-  **two more** sites the split had missed (`valueReferencedDefs`,
-  `countValueFailPoints`).
-- **`2026-08-05-suppress-unused-in-external-contexts.md`** — see below.
-
-**Filed upstream and landed.**
-`../riddl/task/2026-08-05-suppress-unused-in-external-contexts.md` argued
-that unused types inside an `external context` are not defects. riddl
-implemented it in `7e4c25b94`, and the effect matched the acceptance
-criterion exactly: unused fell 139 → 85, all 54 external-context ones gone,
-the 5 repository findings still reported. The task file is still in
-`../riddl/task/` — riddl's session may want to move it to `done/`.
-
-**One durable correction made this session:** CLAUDE.md said external
-contexts are marked `option is external` in the `with` block. That form has
-**zero** occurrences; RIDDL 2.0 uses the keyword `external context X is {`,
-which all 13 external-context files use. The old text would have sent a
-future session chasing a syntax that does not exist.
+**In flight: the reactive-bbq reference-model campaign (BACKLOG #1).**
+Phase 0 and part of Phase 1 are done. Descriptions have been rewritten for
+**FrontOfHouse only**; the next context is Kitchen, then Bar, Loyalty,
+OnlineOrdering, Delivery, then backoffice and corporate. 259 degenerate
+descriptions remain. BACKLOG #1 carries the measured state, the five
+scoping decisions and the phase list — read it before touching anything.
 
 ### Traps
 
-- **Do not trust a `.bast` diff until it survives a regenerate.** Bastify is
-  deterministic, so a diff with clean `.riddl` means something rewrote them —
-  usually a restaged `../bin/riddlc` (that bit us on 2026-08-04). But on
-  2026-08-05, 181 `.bast` were rewritten by something never identified while
-  the binary provably had *not* moved, and the diff was 9 bytes of container
-  metadata with byte-identical recovered source. The one command that settles
-  it: `./scripts/verify-bast-roundtrip.sh` then
-  `git status --short -- '*.bast'` — empty means the committed bytes are
-  right. Restore with `git checkout -- '*.bast'`; never delete them.
-  Full account in BACKLOG #7.
-- **`sbt test` can pass having run nothing** — sbt 2 routes it to
-  `testQuick` and the suite reads `.riddl` at run time, so sbt cannot see a
-  model edit. Use **`sbt checkAll`**.
-- **`patterns/` is excluded from `riddlcValidate`** (`riddlcConfExclusions`).
-  That exclusion is why the templates rotted through the entire 2.0
-  migration unnoticed. `sbt verifyTemplates` now covers it and
-  `riddlcValidate` depends on it — do not remove that wiring.
-- **`scalaVersion` must track riddl's `V.scala`** (currently 3.9.0-RC4).
-  Newer TASTy is unreadable by an older compiler. riddl's own `build.sbt`
-  comment claiming 3.8.4 is stale; `project/*.scala` is the truth.
-- **Connector role words are collision-prone.** `<E>Commands` and
-  `<E>Persistence` are already an entity inlet (737) and a repository
-  handler (489). Check any new role word against every declared identifier.
+- **`checkAll` could not fail until 2026-08-12.** `Test/executeTests` yields
+  its outcome as a value; sbt exited 0 with seven failing assertions. Fixed
+  by `checkTests` in `build.sbt`. Third member of the family CLAUDE.md
+  records — scoverage measuring nothing, `sbt -batch` running one command of
+  seven. **The signal that something was skipped is absent, not wrong.**
+- **`option persistent()` on a cross-context connector is REQUIRED at
+  rc.13, not deprecated.** Checked on 2026-08-12 because it was asserted
+  otherwise: removing one produces a completeness warning AND a hard error,
+  and both checks are live at `StreamingValidation.scala:103` and `:364`.
+  reactive-bbq reports zero deprecation warnings.
+- **Hand-written RIDDL usually needs canonicalising.** prettify puts an
+  inlet and its outlet on ONE line where a human writes two. Run prettify
+  into a temp dir and copy back, or the round trip fails. Description edits
+  did not need it; port edits did.
+- **`riddlc` and the library API can disagree**, and `--provide-tips`
+  changes WHICH messages appear, not just whether tips show: it surfaces an
+  advisory completeness tier riddl gates deliberately (89 `Initialize<Entity>`
+  findings among them). Do not count warnings with `--provide-tips` and
+  compare against a run without it.
+- **`.bast` may be rewritten from outside this repo.** riddl's
+  `470569319` stopped `RiddlModelsRoundTripTest` doing that, but the lesson
+  stands: an unexplained `.bast` diff means look at `../riddl` first.
+- **`scalaVersion` must track riddl's** (3.9.0-RC4). Newer TASTy is
+  unreadable by an older compiler.
 
 ### Certainty
 
-Verified by command: git state, the version facts, all test/validate counts,
-round trip 187/187, that a full `.bast` regeneration changes nothing, that
-the 1233 warnings are identical at rc.9-48 and rc.9-54, that they are
-`[style]` warnings the `.conf` suppresses, and that `../bin/riddlc` did not
-move (`md5` before and after).
+Verified by command this session: git state and the 5 unpushed commits; the
+rc.13 binary, pin and libs; `checkAll` exit 1 with 7 failing rules; 187
+models validating; round trip 187/187; reactive-bbq at 18 warnings; 259
+degenerate descriptions; 20 `???`; that `option persistent()` is still
+required; that riddlc has no connector-cycle check.
 
-**Explained, after a wrong guess.** 181 `.bast` were rewritten at 10:09 on
-2026-08-05 by riddl's own `RiddlModelsRoundTripTest`, run from the `../riddl`
-checkout against this corpus — Reid asked for it, because riddl changes had
-produced a version bump. Four local candidates were tested first and none
-reproduced it, and a file-watcher theory was raised and disproved; the cause
-was never in this repository. **The lesson: this corpus is written to from
-outside**, so an unexplained `.bast` diff should prompt a look at `../riddl`
-before any local forensics.
+**Assumed, not verified:** that the remaining contexts' degenerate
+descriptions are as mechanical to rewrite as FrontOfHouse's were — Kitchen
+and Delivery may carry more genuine domain nuance. And the description
+detector is a heuristic: it flags only descriptions whose words are a subset
+of the identifier's, so it under-reports vague-but-not-identical prose.
 
 ### Pointers
 
-- **BACKLOG.md** — all open work, with evidence
-- **CLAUDE.md** — durable facts: connector naming, event-sourcing rules,
-  who may handle a `yields` command, the gates and their differences
-- `task/` is **empty**; everything is triaged and closed into `task/done/`
+- **BACKLOG.md #1** — the active campaign, with measured state and decisions
+- **docs/SIMULABILITY-AND-GENERATABILITY.md** — what disqualifies a model
+  from simulation and from generation, and which riddlc already checks
+- **CLAUDE.md** — durable syntax: saga steps, repository wiring, mappings
+  and `foreach`, `yield` vs `reply`, connector naming
+- `~/.claude/plans/wobbly-whistling-finch.md` — the approved plan
+- **`task/` has TWO UNTRIAGED files**: `2026-08-06-upgrade-riddl.md` and
+  `2026-08-08-reply-replaces-yield-for-query-results.md`. Neither was
+  triaged this session. The second looks already satisfied — the
+  `yield result` -> `reply result` migration landed at rc.10-45 — but
+  confirm rather than assume.
 
 Run `/ossuminc-skills:check-tasks` in the new session.
 
