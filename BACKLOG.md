@@ -16,28 +16,59 @@ finishes. That is expected, not a breakage.**
 
 ### Where it stopped
 
-**Phase 0 (rules + harness) and part of Phase 1 are done.** FrontOfHouse is
-the first of the contexts to have its descriptions rewritten. Next context
-is Kitchen, then Bar, Loyalty, OnlineOrdering, Delivery, then backoffice and
-corporate.
+**Phase 0 (rules + harness) and part of Phase 1 are done.** **FrontOfHouse
+and Kitchen** have had their descriptions rewritten and both read 0. Next
+context is **Bar**, then Loyalty, OnlineOrdering, Delivery, then backoffice
+and corporate.
 
 Measured at rc.13 on 2026-08-12, by running it:
 
 | item | state |
 |---|---|
 | reactive-bbq warnings | **18**, all `X populates Repository R but is not defined in it` (10 event, 8 command) |
-| degenerate descriptions left | **259** — restaurant 128, corporate 71, backoffice 60 |
+| degenerate descriptions left | **324** — restaurant 146, corporate 107, backoffice 71 |
 | `???` bodies | 20 (13 `Initialize<Entity>`, 7 `on init`) |
 | terms | 2 (rule wants >= 20) |
 | groups / `put` / `version` | 1 / 0 / 0 |
 | epic interaction blocks | no sequential/parallel/optional |
 
-**The degenerate-description metric is fields-only** (`name: Type with {`
-whose description adds no word beyond the identifier). An earlier count of
-247 for `restaurant/` used a wider matcher that also caught definition
-lines; the two numbers are not comparable. Reproduce with the detector
-inlined in the 2026-08-12 session, or rewrite it — it is ~20 lines of
-Python, not worth preserving as a script until it stabilises.
+#### The degenerate-description count is DETECTOR-RELATIVE
+
+Three detectors have now been used and they disagree; **no two of their
+numbers may be compared**, and none of them is "the" count:
+
+| detector | reactive-bbq total | rule |
+|---|---:|---|
+| pre-2026-08-12, wide | 247 (`restaurant/` alone) | also matched definition lines |
+| 2026-08-12, fields-only | 259 | description words ⊆ identifier words |
+| 2026-08-13, fields-only | **324** | same, plus a small structural stoplist |
+
+The current one is **`scripts/find-degenerate-descriptions.py`**, committed
+on 2026-08-13. The earlier decision not to keep it is reversed: three
+throwaway detectors produced three incomparable numbers, and re-deriving it
+each session is exactly what made the figures untrustworthy.
+
+```bash
+./scripts/find-degenerate-descriptions.py hospitality/food-service/reactive-bbq
+./scripts/find-degenerate-descriptions.py <path> --novel=0 -v   # list sites
+```
+
+It flags a field (`name: Type with {`) whose description contributes no word
+beyond the identifier's, after discarding a **structural-only** stoplist
+(`unique`, `identifier`, `optional`, `indicates`, …). Domain nouns are
+deliberately NOT in that stoplist: stripping `amount`, `status` or `station`
+would call real prose empty. `--novel=N` loosens it to "adds at most N
+words"; `N=0` is the reported figure.
+
+**It is a pointer to candidates, not a score.** It under-reports
+vague-but-not-identical prose in both directions, and its calibration check
+is that an already-rewritten context reads ~0 while a pending one does not.
+
+**A "0 remaining" claim means "0 under the detector then in use."** On
+2026-08-13 the stricter detector found **8** sites in FrontOfHouse that the
+2026-08-12 run had reported as 0 — not a regression, and not a false claim
+at the time. Re-run the current detector over contexts already marked done
+before trusting them.
 
 ### The five scoping decisions
 
