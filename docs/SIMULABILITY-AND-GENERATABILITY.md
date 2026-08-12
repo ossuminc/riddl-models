@@ -1,157 +1,97 @@
-# What a model needs before Synapify can simulate it and riddlg can generate from it
+# What disqualifies a model from being simulated, and from being generated
 
-These rules were **derived, not invented**. Each traces to an accepted item
-in `../RIDDL-Tools-To-Do-List.md` (Part B is riddlg, Part C is Synapify) or
-to `../RIDDL-Computational-Model.md`. The point of writing them down is that
-"suitable for simulation and code generation" then becomes something a test
-can assert, rather than something proved by running a tool and squinting at
-the output — and something riddlc could eventually report itself.
+## How to read this, and a correction
 
-`reactive-bbq` is the reference model these rules are enforced against, by
-`src/test/scala/com/ossuminc/riddl/models/ReactiveBbqCompletenessTest.scala`.
+An earlier version of this document derived its rules from
+`../RIDDL-Tools-To-Do-List.md` and claimed they were "derived, not invented".
+That was wrong twice over, and the corrections shape everything below:
 
-## Why rules rather than a tool run
+1. **The to-do list is a list of CHANGES.** It is necessary but nowhere near
+   sufficient, and it does not define "simulatable" or "generatable" at all.
+2. **The right question is not "what features does the tool support".** It is
+   **what would instantly disqualify a model** from being simulated or
+   generated. Absence of the disqualifiers is the definition. Enumerating a
+   tool's current feature support answers a different and much weaker
+   question — and in the simulator's case an out-of-date one, since the
+   simulator *must* eventually compile every statement type; where it does
+   not, that is a simulator gap, not a language rule.
 
-Running `riddlg gen …` proves the generator did not crash. It does not prove
-the model carried enough meaning to generate anything *useful*, and it cannot
-prove simulability at all — riddlg is not the simulator. Worse, Quarkus
-`gen code` is Pro-gated (exit 3 without `riddlg login`), so the most
-demanding generator cannot be part of an automated gate here.
+The pipeline both tools share is: **text → validate with zero messages →
+AST → run**. BAST is only a performance-optimised way to get an AST into
+memory; it is not itself a requirement. **Everything that matters is the
+quality of the AST.**
 
-The rules below are what the tools consume. Asserting them is stronger than
-asserting exit 0.
+Sources: `../RIDDL-Computational-Model.md` — 40 `Must preserve` clauses, one
+per definition, under each `§X.8 Degrees of freedom` — is the authority for
+generation. The simulation gate is reasoned from the same document plus the
+engine's own entry conditions in `synapify/sim-engine/`.
 
-## R1 — Nothing is a placeholder
+## The simulation gate
 
-**No `???` anywhere in the model.**
+Synapify's engine gates on one thing directly: `loadModel` and
+`createSimulation` return `Left` when `result.hasErrors`. Everything else is
+a property of the AST that would make a discrete-event run meaningless.
 
-`???` means "known to be incomplete". riddlc deliberately exempts a `???`
-body from most completeness checks, so a model full of them validates while
-being unrunnable. A simulator has nothing to execute and a generator has
-nothing to emit.
+| # | Disqualifier | Why it stops a simulation | Checked by riddlc today? |
+|---|---|---|---|
+| S1 | Any validation **error** | The engine refuses the model outright | yes — hard gate |
+| S2 | A handler with no executable statements | A message arrives and nothing happens; the processor is inert | yes (`has no executable statements`) |
+| S3 | A `???` body | Nothing to execute; "known to be incomplete" | partly — `???` is *exempted* from other checks, so it hides |
+| S4 | An inlet or outlet not joined by a connector | A message is emitted into nothing, or a port never receives | yes (`is not connected`, `has no connections to any connector`) |
+| S5 | A **cycle** in the connector graph | Messages circulate forever; the run never settles | **NO — no cycle check exists** |
+| S6 | A sink with no upstream source | Never receives anything; the branch is dead | yes |
+| S7 | A source with no downstream sink | Produces into the void | yes |
+| S8 | A command no handler handles | An injected message has no effect | advisory only (`--provide-tips`) |
+| S9 | An entity with no state, or no handler | Nothing to hold, or nothing to do | partly |
 
-*Source: Computational Model §0.3 ruling 2 — the generator emits `[[AI FILL:
-…]]` for what is vague, but only where the model expressed something. `???`
-expresses nothing.*
+S5 is the notable hole: riddlc has no cycle detection, and a cyclic
+connector graph is exactly the model a simulator cannot finish.
 
-## R2 — Every definition carries a brief **and** a description
+## The generation gate
 
-Not decoration. Per **B3's AI-context census**, the inputs to AI-assisted
-generation are exactly: in-scope **Terms**, **local description content**
-(inline doc blocks and file-based descriptions), and **options**, which are
-definitional. Explicitly excluded: comments, URL description content, and
-attachments.
+`§0.3` ruling 2 sets the shape: riddlg generates framework, structure and
+types **deterministically**, and emits `[[AI FILL: …]]` wherever the model is
+vague, for an AI to complete **from surrounding model context**. So the
+generation gate has two halves — what must be structurally present, and what
+must carry enough meaning for the AI tier to act on.
 
-So a missing description is a missing generator input.
+| # | Disqualifier | Why it stops generation |
+|---|---|---|
+| G1 | Any validation **error** | Nothing downstream is trustworthy |
+| G2 | A definition missing what its `§X.8 Must preserve` names | The generator cannot emit a conforming artifact. Examples from the 40: a **Type** must keep every constraint (bounds, patterns, ranges, precision, cardinality) and union discriminability; a **Function** must keep its signature, described behaviour and purity; a **Repository** must keep its schema shape and its command/query→Result contract; a **Use Case** must keep step structure and each composite's order semantics |
+| G3 | Descriptions that restate the identifier | The deterministic tier emits an AI FILL marker and the AI tier has no context to fill it. `orderId` described as `\|Order ID.` is worse than useless — it satisfies a presence check while starving the thing the description exists for |
+| G4 | Missing Terms | Terms are in the AI-context inclusion census and become hover-docs in generated code |
+| G5 | An Author with no contact data | `§B5` requires generated faults to carry "Notify: ⟨author⟩" with contact details |
+| G6 | Vague steps with no describing prose | AI translation blocks and falls to a human; some is intended, wholesale vagueness is not |
 
-**R2a — descriptions must say something.** A description of `|Order ID.` on
-a field named `orderId` satisfies presence and starves generation. The test
-enforces a floor: a description must be longer than its brief, and must not
-merely restate the definition's own name.
+**What is deliberately NOT a generation input** (the AI-context exclusion
+census): comments — author-to-author communication, and a stale
+"TODO: this is wrong" must never steer generation; URL description content —
+appendix material; and attachments — docs and tooling only.
 
-*Source: Part B item 3.*
+## What this means for reactive-bbq
 
-## R3 — The glossary is real
+reactive-bbq is the reference model for both tools, so it must clear both
+gates. `ReactiveBbqCompletenessTest` asserts the checkable ones. In priority
+order, from the decisions of 2026-08-12:
 
-**Terms are defined for the domain vocabulary**, not as a token gesture.
+1. **Zero messages of any kind**, including zero deprecation warnings. The
+   model is canonical, and the suite pins that.
+2. **Every description carries real domain intent.** This is the single
+   largest item and the most important for generatability — G3. Restating
+   the identifier is treated as a defect, not a pass.
+3. **No `???`**, no inert handlers, no unconnected ports, no cycles.
+4. **Every statement and definition kind exercised** — once each is enough.
+   Type expressions are used as the domain warrants rather than exhaustively;
+   missing *statements and definitions* matter far more than missing type
+   expressions.
 
-Synapify surfaces Terms as hover-docs and doc-comments in generated code
-(**C1**), and Terms are the first item in B3's inclusion census. A model with
-two terms for a four-domain business teaches a generator almost nothing.
+Humans mostly read generated documentation rather than the model source,
+which is a further argument for G3: the docs are only as good as the
+descriptions they are built from.
 
-*Source: Part C item 1; Part B item 3.*
+## Upstream
 
-## R4 — UI intent is expressed in the model
-
-For riddlg's UI generator (**B4**): groups become a component tree, inputs
-become controls emitting the modeled messages, and outputs become
-subscriptions rendering the modeled results **via `put` statements**.
-
-Therefore:
-
-- every application-intent context that has outputs uses `put`
-- every declared `input` and `output` is reachable from an epic step
-- groups exist per screen, not one group for an entire business
-
-*Source: Part B item 4.*
-
-## R5 — Epics are test specifications
-
-riddlg turns an Epic into a Feature, a Use Case into a Scenario using that
-case's **own user story** as the narrative, and interactions into steps
-(**B1**). The block kinds are not stylistic:
-
-| Construct | Generated meaning |
-|---|---|
-| sequential block | asserts order |
-| parallel block | order-tolerant "eventually" assertions |
-| optional block | spawns scenario variants |
-| refusal step | asserts InvariantViolated |
-| vague / arbitrary step | AI attempts translation; blocks for a human if it cannot (**B3**) |
-
-So every use case needs a user story, and a model intended to exercise the
-test generator must use each block kind at least once.
-
-*Source: Part B items 1 and 3.*
-
-## R6 — Personas are real users
-
-Load-test generation (**B2**) builds per-persona simulated actors scaled into
-load profiles. `user` definitions therefore need descriptions that
-characterise behaviour, not just a name.
-
-*Source: Part B item 2.*
-
-## R7 — Authors carry contact data
-
-When a generated artifact hits an impossible situation, the message must
-carry **"Notify: ⟨author⟩"** with contact details — which is why Author
-definitions hold contact data at all. The system must *not* auto-notify.
-
-*Source: Part B item 5.*
-
-## R8 — Identity is durable where it matters
-
-Generators should prefer a definition's ULID over its name as the durable
-identifier, so identity survives renames (**B6**). ULID attachments in
-metadata map an external tool's identity onto AST definitions.
-
-*Source: Part B item 6.*
-
-## R9 — Versions exist so staleness is detectable
-
-Synapify's git-based type-delta warning (**C2**) reports when a type's
-content changed but its containing scope's version did not. With no `version`
-anywhere, the check has nothing to compare against.
-
-*Source: Part C item 2.*
-
-## R10 — Clean under the validator
-
-**Zero errors and zero warnings**, at the pinned riddlc. A warning is riddl
-telling you the model says something it did not mean; a generator consuming
-it will faithfully reproduce the mistake.
-
-## R11 — Survives the round trip
-
-The model must survive `prettify` and `bastify`/`unbastify` byte-identically
-(`scripts/verify-bast-roundtrip.sh`). Synapify loads `.bast`, so anything
-that does not round-trip is something Synapify cannot see.
-
-## R12 — Canonical forms only
-
-No deprecated spellings — not `option is external`, not an `inlet_ref` as a
-`send` target. Generators and human readers both learn from this model, and a
-deprecated form teaches the wrong thing.
-
----
-
-## Applying these beyond reactive-bbq
-
-R1, R2, R10, R11 and R12 are reasonable for every model in the corpus.
-R3-R9 are specific to being a *reference* model for the two tools, and are
-enforced only against reactive-bbq.
-
-The intent is that these rules move upstream: riddlc reporting, at the end of
-a run, whether a model is fit for simulation and for generation and why not.
-That proposal is filed in `../riddl/task/`.
+S5 (cycle detection) and a run-ending summary — "this model is / is not fit
+for simulation, for generation, and why not" — are proposed to riddl in
+`../riddl/task/`.
