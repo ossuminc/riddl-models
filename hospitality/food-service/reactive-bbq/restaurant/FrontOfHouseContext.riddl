@@ -347,8 +347,9 @@ context FrontOfHouse is {
       |Stores and retrieves reservation data.
     }
   }
-  repository TableOrderRepository as sink is {
-    inlet TableOrderRepositoryFromTableOrder is type TableOrderEvent    schema TableOrderSchema is relational
+  repository TableOrderRepository as flow is {
+    inlet TableOrderRepositoryFromTableOrder is type TableOrderEvent    outlet TableOrderRepositoryResponses is type TableOrder.TableOrderResult
+    schema TableOrderSchema is relational
       of orders as type StoredTableOrder
         index on field StoredTableOrder.tableOrderId
         index on field StoredTableOrder.tableNumber
@@ -887,6 +888,40 @@ context FrontOfHouse is {
       |Sends payment events to the loyalty context.
     }
   }
+  adaptor PaymentGatewayAdapter from context PaymentGateway as flow is { 
+    inlet IncomingPaymentGatewayEvents is type PaymentGatewayEvent    outlet TranslatedPaymentGatewayEvents is type PaymentGatewayEvent
+    handler InboundPaymentGateway is {
+      on event PaymentGateway.PaymentAuthorized is {
+        send event PaymentGateway.PaymentAuthorized to outlet TranslatedPaymentGatewayEvents
+      }
+      on event PaymentGateway.PaymentCaptured is {
+        send event PaymentGateway.PaymentCaptured to outlet TranslatedPaymentGatewayEvents
+      }
+      on other is {
+        error "Unexpected message for adaptor PaymentGatewayAdapter"
+      }
+    } with {
+      briefly "Inbound PaymentGateway translation"
+      described as {
+        |Receives PaymentGateway events and forwards them to FrontOfHouse. This is the
+        |seam that keeps the payment provider plug-in replaceable: a different
+        |provider is absorbed here rather than in PaymentResultSink.
+      }
+    }
+  } with {
+    briefly "Anti-corruption layer for PaymentGateway"
+    described as {
+      |Stands between the external PaymentGateway and PaymentResultSink so the sink never names
+      |the provider's wire types directly.
+    }
+  }
+  connector 'PaymentGatewayEvent Stream' is from outlet FrontOfHouse.PaymentGatewayAdapter.TranslatedPaymentGatewayEvents to inlet FrontOfHouse.PaymentResultSink.IncomingPaymentResults with {
+    briefly "PaymentGateway events, translated, on their way to the sink"
+    described as {
+      |Carries authorization and capture results from the anti-corruption layer to the sink that
+      |applies them inside FrontOfHouse.
+    }
+  }
   processor PaymentResultSink as sink is {
     inlet IncomingPaymentResults is type PaymentGatewayEvent    handler PaymentResultHandler is {
       on event PaymentGateway.PaymentAuthorized is {
@@ -916,6 +951,37 @@ context FrontOfHouse is {
       |Receives payment authorization and capture results
       |from the external payment gateway for two-phase
       |payment processing.
+    }
+  }
+  adaptor NotificationServiceAdapter from context NotificationService as flow is { 
+    inlet IncomingNotificationServiceEvents is type NotificationEvent    outlet TranslatedNotificationServiceEvents is type NotificationEvent
+    handler InboundNotificationService is {
+      on event NotificationService.PushNotificationSent is {
+        send event NotificationService.PushNotificationSent to outlet TranslatedNotificationServiceEvents
+      }
+      on other is {
+        error "Unexpected message for adaptor NotificationServiceAdapter"
+      }
+    } with {
+      briefly "Inbound NotificationService translation"
+      described as {
+        |Receives NotificationService events and forwards them to FrontOfHouse. This is the
+        |seam that keeps the notification provider plug-in replaceable: a different
+        |provider is absorbed here rather than in NotificationAckSink.
+      }
+    }
+  } with {
+    briefly "Anti-corruption layer for NotificationService"
+    described as {
+      |Stands between the external NotificationService and NotificationAckSink so the sink never names
+      |the provider's wire types directly.
+    }
+  }
+  connector 'NotificationEvent Stream' is from outlet FrontOfHouse.NotificationServiceAdapter.TranslatedNotificationServiceEvents to inlet FrontOfHouse.NotificationAckSink.NotificationAcks with {
+    briefly "NotificationService events, translated, on their way to the sink"
+    described as {
+      |Carries push notification acknowledgements from the anti-corruption layer to the sink that
+      |applies them inside FrontOfHouse.
     }
   }
   processor NotificationAckSink as sink is {

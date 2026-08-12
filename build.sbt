@@ -25,6 +25,10 @@ lazy val verifyTemplates = taskKey[Unit](
     "substituting their {Placeholder} names"
 )
 
+lazy val checkTests = taskKey[Unit](
+  "Run every test and FAIL the build if any of them failed"
+)
+
 lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
   .configure(With.typical)  // Sets up Scala 3.3.x and resolvers
   .configure(With.noPublishing, With.Git, With.DynVer, With.noMiMa,
@@ -108,7 +112,28 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // tests -- and this suite reads .riddl files at RUN time, so sbt cannot see
     // a model change as an input. `sbt test` is therefore a weak gate for model
     // edits; `sbt checkAll` below forces the full suite.
-    Test / test := ((Test / test) dependsOn verifyTemplates).evaluated
+    Test / test := ((Test / test) dependsOn verifyTemplates).evaluated,
+
+    // `Test/executeTests` RUNS everything but yields its outcome as a VALUE, so
+    // sbt does not fail on a red test -- `checkAll` exited 0 with seven failing
+    // assertions until this was added (2026-08-12). Force the failure here.
+    //
+    // Def.uncached for the same reason verifyTemplates needs it: `Tests.Output`
+    // has no JsonFormat, and a cached Unit result would run once and never again.
+    checkTests := Def.uncached {
+      val result = (Test / executeTests).value
+      val log = streams.value.log
+      // Count the SUITES, so a run that quietly measured almost nothing is
+      // visible rather than merely "green" -- the trap CLAUDE.md records twice.
+      log.info(s"checkTests: ${result.events.size} suite(s), overall ${result.overall}")
+      result.overall match {
+        case TestResult.Passed => ()
+        case TestResult.Failed =>
+          sys.error("TESTS FAILED -- see the failures above; checkAll is not green")
+        case TestResult.Error =>
+          sys.error("TESTS ERRORED -- see the errors above; checkAll is not green")
+      }
+    }
   )
 
 // Command aliases (plugin provides validate, bastify, prettify)
@@ -118,6 +143,8 @@ addCommandAlias("r", "riddlcPrettify")
 addCommandAlias("vt", "verifyTemplates")
 
 // The whole-repository gate: patterns, the corpus through the CLI, and the
-// corpus again through the library API. executeTests rather than test, because
-// the latter skips tests sbt believes are unchanged.
-addCommandAlias("checkAll", "; riddlcValidate; Test/executeTests")
+// corpus again through the library API. `checkTests` rather than `Test/test`
+// because the latter skips tests sbt believes are unchanged, and rather than a
+// bare `Test/executeTests` because that yields its outcome as a value and so
+// exits 0 on a red suite.
+addCommandAlias("checkAll", "; riddlcValidate; checkTests")
