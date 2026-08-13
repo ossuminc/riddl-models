@@ -4,26 +4,31 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`, tree clean, **5 commits unpushed** as of writing
-(push them). `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
+**Branch** `release/2`, tree clean, **pushed** (`origin/release/2` is level).
+`main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
 **Versions, verified by running the binary, not recalled:** staged
 `../bin/riddlc` is **2.0.0-rc.13** (`d118041ce`), `riddlVersion` in
 `build.sbt` matches, and the local ivy libs match. `riddlcPath` prefers the
 staged binary, so that is what actually runs.
 
-**`sbt checkAll` EXITS 1, and that is correct.** `ReactiveBbqCompletenessTest`
-is red on purpose: it states the target for the active campaign and 3 of its
-10 rules pass. 187 models validate, 7 templates parse, 2 pattern examples
-validate, 192 assertions pass, 7 fail. **Do not "fix" the red suite by
-weakening it** — turn it green by finishing BACKLOG #1.
+**`sbt checkAll` EXITS 1, and that is still correct.**
+`ReactiveBbqCompletenessTest` is red on purpose: it states the target for the
+active campaign, and **5 of its 10 rules now pass** (was 3). **Do not "fix"
+the red suite by weakening it** — turn it green by finishing BACKLOG #1.
 
 **In flight: the reactive-bbq reference-model campaign (BACKLOG #1).**
-Phase 0 and part of Phase 1 are done. Descriptions have been rewritten for
-**FrontOfHouse only**; the next context is Kitchen, then Bar, Loyalty,
-OnlineOrdering, Delivery, then backoffice and corporate. 259 degenerate
-descriptions remain. BACKLOG #1 carries the measured state, the five
-scoping decisions and the phase list — read it before touching anything.
+**Phase 0 and ALL of Phase 1 are done** as of 2026-08-13. reactive-bbq
+validates **0 errors, 0 warnings**; 358 degenerate descriptions, 18
+populates-repository warnings and 20 `???` bodies are all gone. **Next is
+Phase 2.** BACKLOG #1 carries the measured state, the five scoping
+decisions and the phase list — read it before touching anything.
+
+**R2 is not the description metric.** R2 counts a `briefly` with no
+`described` within 3 lines — *presence*. The description campaign fixed
+*quality* of blocks that already existed. They are disjoint: 358 rewrites
+moved R2 by zero lines. Its 51 orphans are connectors and handlers, and
+Reid's call is that they are handled at the END of the plan.
 
 ### Traps
 
@@ -54,17 +59,24 @@ scoping decisions and the phase list — read it before touching anything.
 
 ### Certainty
 
-Verified by command this session: git state and the 5 unpushed commits; the
-rc.13 binary, pin and libs; `checkAll` exit 1 with 7 failing rules; 187
-models validating; round trip 187/187; reactive-bbq at 18 warnings; 259
-degenerate descriptions; 20 `???`; that `option persistent()` is still
-required; that riddlc has no connector-cycle check.
+Verified by command on 2026-08-13: the rc.13 binary, pin and libs;
+reactive-bbq at **0 errors / 0 warnings**; **0** degenerate descriptions;
+**0** `???`; `checkAll` exit 1 with **5** failing rules (R2, R3, R4, R5, R9);
+187 models validating; round trip 187/187 with only the one `.bast` moved;
+that a source processor's `on init` is optional (deleted one, revalidated);
+that the 13 `Initialize<Entity>` commands had **zero** `on command` clauses;
+that `grep -c 'tell command Persist'` was **0** corpus-wide before the fix;
+that `option persistent()` is still required; that riddlc has no
+connector-cycle check.
 
-**Assumed, not verified:** that the remaining contexts' degenerate
-descriptions are as mechanical to rewrite as FrontOfHouse's were — Kitchen
-and Delivery may carry more genuine domain nuance. And the description
-detector is a heuristic: it flags only descriptions whose words are a subset
-of the identifier's, so it under-reports vague-but-not-identical prose.
+Also checked: nothing in `../riddl` or `../synapify` references the 13
+removed `Initialize<Entity>` commands, so the removal is contained.
+
+**Assumed, not verified:** the description detector remains a heuristic that
+under-reports vague-but-not-identical prose, so "0 remaining" means 0 under
+`scripts/find-degenerate-descriptions.py` **as it stands today** — a
+stricter rewrite would find more, exactly as this session's did to
+FrontOfHouse after it was reported clean.
 
 ### Pointers
 

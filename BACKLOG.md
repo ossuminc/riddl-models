@@ -16,24 +16,42 @@ finishes. That is expected, not a breakage.**
 
 ### Where it stopped
 
-**Phase 0 (rules + harness) is done, and so is the largest item of Phase 1
-— the descriptions.** All 358 degenerate descriptions across every context
-of reactive-bbq were rewritten on 2026-08-12/13; the model now reads **0**
-under `scripts/find-degenerate-descriptions.py`.
+**Phase 0 (rules + harness) and ALL of Phase 1 are done** (2026-08-13).
+reactive-bbq validates with **0 errors and 0 warnings**, and
+`ReactiveBbqCompletenessTest` is at **5 of 10 rules green**, up from 3.
 
-What remains in Phase 1 is the **18 populates-repository warnings** and the
-**20 `???` bodies**.
+Next is **Phase 2**.
 
 Measured at rc.13 on 2026-08-13, by running it:
 
 | item | state |
 |---|---|
-| reactive-bbq warnings | **18**, all `X populates Repository R but is not defined in it` (10 event, 8 command) |
+| reactive-bbq errors / warnings | **0 / 0** (warnings were 18) |
 | degenerate descriptions left | **0** (was 358) |
-| `???` bodies | 20 (13 `Initialize<Entity>`, 7 `on init`) |
-| terms | 2 (rule wants >= 20) |
-| groups / `put` / `version` | 1 / 0 / 0 |
-| epic interaction blocks | no sequential/parallel/optional |
+| `???` bodies | **0** (was 20) |
+| rules green | **R1, R6, R7, R8, R10** — 5 of 10 |
+| rules red | R2 (51 orphan briefs), R3 (2 terms, wants ≥20), R4 (1 group, wants ≥4), R5 (no sequential/parallel/optional), R9 (no `version`) |
+
+#### Two things Phase 1 turned up that were defects, not tidying
+
+1. **218 `Persist<Event>` commands were dead.** Repositories declared them
+   and had `on command` clauses for them, but `grep -c 'tell command
+   Persist'` returned **0** across all 187 models. The FrontOfHouse and
+   Kitchen projectors were instead telling *raw entity events* to
+   repositories that have **zero `on event` clauses** — the message had no
+   handler to land in. Fixed by telling the Persist command; the reference
+   resolves unqualified.
+
+2. **13 `Initialize<Entity>` commands were never handled.** Declared, named
+   in an alternation, told once from a source's `on init`, and handled
+   nowhere — S3 *and* S8 in `docs/SIMULABILITY-AND-GENERATABILITY.md`.
+   **Removed rather than filled**: an event-sourced entity is created by its
+   first real command, and each initial state already does the work with
+   `on init { yield event <Creation> }`. Filling them would have invented a
+   startup protocol the domain does not have.
+
+   **A source processor's `on init` is optional** — verified by deleting one
+   and revalidating to 0/0. That is what made removal possible.
 
 #### R2 is NOT the description metric — they are disjoint
 
@@ -111,8 +129,8 @@ before trusting them.
 
 ### Phases remaining
 
-- **1** — 18 populates-repository warnings; 20 `???`. ~~The descriptions~~
-  **done 2026-08-13**, all 358.
+- ~~**1** — descriptions, 18 populates-repository warnings, 20 `???`~~
+  **DONE 2026-08-13.**
 - **2** — saga, correlation (A70), invariant/require, function/return,
   constant, foreach, become, `void` streamlet, a healthy mix of type
   expressions
