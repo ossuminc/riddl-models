@@ -16,21 +16,41 @@ finishes. That is expected, not a breakage.**
 
 ### Where it stopped
 
-**Phase 0 (rules + harness) and part of Phase 1 are done.** **FrontOfHouse
-and Kitchen** have had their descriptions rewritten and both read 0. Next
-context is **Bar**, then Loyalty, OnlineOrdering, Delivery, then backoffice
-and corporate.
+**Phase 0 (rules + harness) is done, and so is the largest item of Phase 1
+— the descriptions.** All 358 degenerate descriptions across every context
+of reactive-bbq were rewritten on 2026-08-12/13; the model now reads **0**
+under `scripts/find-degenerate-descriptions.py`.
 
-Measured at rc.13 on 2026-08-12, by running it:
+What remains in Phase 1 is the **18 populates-repository warnings** and the
+**20 `???` bodies**.
+
+Measured at rc.13 on 2026-08-13, by running it:
 
 | item | state |
 |---|---|
 | reactive-bbq warnings | **18**, all `X populates Repository R but is not defined in it` (10 event, 8 command) |
-| degenerate descriptions left | **324** — restaurant 146, corporate 107, backoffice 71 |
+| degenerate descriptions left | **0** (was 358) |
 | `???` bodies | 20 (13 `Initialize<Entity>`, 7 `on init`) |
 | terms | 2 (rule wants >= 20) |
 | groups / `put` / `version` | 1 / 0 / 0 |
 | epic interaction blocks | no sequential/parallel/optional |
+
+#### R2 is NOT the description metric — they are disjoint
+
+Worth knowing before sizing the rest of the plan, because it is easy to
+assume the description campaign moves `ReactiveBbqCompletenessTest`. It does
+not, and never could:
+
+- **R2 measures PRESENCE** — a `briefly` with no `described` on any of the
+  next 3 lines (`ReactiveBbqCompletenessTest.scala:112`). **51 orphans**,
+  all of them connectors and handlers: restaurant 30, corporate 11,
+  backoffice 10.
+- **The degenerate-description metric measures QUALITY** — it only looks at
+  *fields that already have* a description block.
+
+Closing all 51 R2 orphans does nothing for description quality, and the 358
+descriptions just rewritten moved R2 by zero lines. **Reid's call,
+2026-08-13: the orphans are handled at the end of the plan**, not now.
 
 #### The degenerate-description count is DETECTOR-RELATIVE
 
@@ -41,7 +61,7 @@ numbers may be compared**, and none of them is "the" count:
 |---|---:|---|
 | pre-2026-08-12, wide | 247 (`restaurant/` alone) | also matched definition lines |
 | 2026-08-12, fields-only | 259 | description words ⊆ identifier words |
-| 2026-08-13, fields-only | **324** | same, plus a small structural stoplist |
+| 2026-08-13, fields-only | **358**, now **0** | same, plus a small structural stoplist |
 
 The current one is **`scripts/find-degenerate-descriptions.py`**, committed
 on 2026-08-13. The earlier decision not to keep it is reversed: three
@@ -91,7 +111,8 @@ before trusting them.
 
 ### Phases remaining
 
-- **1** — 18 populates-repository warnings; 20 `???`; the 259 descriptions
+- **1** — 18 populates-repository warnings; 20 `???`. ~~The descriptions~~
+  **done 2026-08-13**, all 358.
 - **2** — saga, correlation (A70), invariant/require, function/return,
   constant, foreach, become, `void` streamlet, a healthy mix of type
   expressions
