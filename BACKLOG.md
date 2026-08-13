@@ -11,26 +11,37 @@ The plan is `~/.claude/plans/wobbly-whistling-finch.md`, approved
 2026-08-12, with five scoping decisions taken the same day. The rules it is
 measured against are `docs/SIMULABILITY-AND-GENERATABILITY.md`, and
 `ReactiveBbqCompletenessTest` enforces them. **That suite is red on purpose
-— 3 of 10 rules pass — so `sbt checkAll` exits 1 until this campaign
+— 5 of 10 rules pass — so `sbt checkAll` exits 1 until this campaign
 finishes. That is expected, not a breakage.**
 
 ### Where it stopped
 
-**Phase 0 (rules + harness) and ALL of Phase 1 are done** (2026-08-13).
-reactive-bbq validates with **0 errors and 0 warnings**, and
-`ReactiveBbqCompletenessTest` is at **5 of 10 rules green**, up from 3.
+**Phases 0, 1 and 2 are done** (2026-08-13), except `constant` which is
+blocked upstream (#1b). **Next is Phase 3.**
 
-Next is **Phase 2**.
-
-Measured at rc.13 on 2026-08-13, by running it:
+Measured at rc.13 on 2026-08-13, every row by running the command:
 
 | item | state |
 |---|---|
-| reactive-bbq errors / warnings | **0 / 0** (warnings were 18) |
+| reactive-bbq errors / warnings | **0 / 0**, CLI *and* library API (warnings were 18) |
 | degenerate descriptions left | **0** (was 358) |
 | `???` bodies | **0** (was 20) |
+| BAST round trip | **187/187**, zero `.bast` modified after regenerate-and-compare |
 | rules green | **R1, R6, R7, R8, R10** — 5 of 10 |
-| rules red | R2 (51 orphan briefs), R3 (2 terms, wants ≥20), R4 (1 group, wants ≥4), R5 (no sequential/parallel/optional), R9 (no `version`) |
+
+**What each remaining rule needs**, so the next session does not re-derive
+it. These do NOT map one-to-one onto the phases:
+
+| rule | red because | addressed by |
+|---|---|---|
+| R2 | **51** orphan briefs — a `briefly` with no `described` within 3 lines. All connectors and handlers: restaurant 30, corporate 11, backoffice 10 | **Reid's call: at the END of the plan**, not now |
+| R3 | 2 `term`s, wants **≥20** | its own pass — a glossary, not tied to a phase |
+| R4 | 1 `group`, wants **≥4**; no `put` | Phase 4 |
+| R5 | no `sequential` / `parallel` / `optional` interaction blocks | Phase 4 |
+| R9 | no `version` anywhere | its own one-liner; `version = "version" (natural \| identifier)`, at most one per scope |
+
+**R2 is NOT the description metric** — see the detector section below. The
+358 descriptions rewritten in Phase 1 moved R2 by zero lines.
 
 #### Two things Phase 1 turned up that were defects, not tidying
 

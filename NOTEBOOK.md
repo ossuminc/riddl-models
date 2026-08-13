@@ -4,120 +4,77 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`, tree clean, **pushed** (`origin/release/2` is level).
-`main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
+**Branch** `release/2`, tree **clean**, **0 unpushed** (`origin/release/2`
+level). `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Versions, verified by running the binary, not recalled:** staged
-`../bin/riddlc` is **2.0.0-rc.13** (`d118041ce`), `riddlVersion` in
-`build.sbt` matches, and the local ivy libs match. `riddlcPath` prefers the
-staged binary, so that is what actually runs.
+**Versions — run, not recalled:** staged `../bin/riddlc` is **2.0.0-rc.13**
+(`d118041ce`), `riddlVersion` in `build.sbt` matches, Scala **3.9.0-RC4**.
+`riddlcPath` prefers the staged binary, so that is what actually runs.
 
-**`sbt checkAll` EXITS 1, and that is still correct.**
-`ReactiveBbqCompletenessTest` is red on purpose: it states the target for the
-active campaign, and **5 of its 10 rules now pass** (was 3). **Do not "fix"
-the red suite by weakening it** — turn it green by finishing BACKLOG #1.
+**`sbt checkAll` EXITS 1 and that is correct.**
+`ReactiveBbqCompletenessTest` states the active campaign's target; **5 of 10
+rules pass** (was 3). **Do not weaken the suite to get green** — it turns
+green by finishing BACKLOG #1.
 
-**In flight: the reactive-bbq reference-model campaign (BACKLOG #1).**
-**Phases 0, 1 and 2 are done** as of 2026-08-13. reactive-bbq validates
-**0 errors, 0 warnings** by both the CLI *and* the library API; 358
-degenerate descriptions, 18 populates-repository warnings and 20 `???`
-bodies are gone, and saga / correlation / invariant / require / function /
-return / foreach / become / `as void` / range / Pattern / mapping / set all
-land. **Next is Phase 3** (the companion `language-coverage/` model).
-BACKLOG #1 carries the measured state, the five scoping decisions and the
-phase list — read it before touching anything.
+**In flight: BACKLOG #1, the reactive-bbq reference model. Phases 0, 1 and 2
+are DONE; next is Phase 3.** Verified today: reactive-bbq validates **0
+errors / 0 warnings** by CLI *and* library API, **0** degenerate
+descriptions, **0** `???`, round trip **187/187**. BACKLOG #1 carries the
+measured state, the five scoping decisions, and a table of **what each of
+the 5 red rules needs** — read it before touching anything.
 
-**One Phase 2 item is blocked upstream: `constant`.** It cannot survive a
-BAST round trip at rc.13 — bastify succeeds, unbastify fails, `.bast`
-unreadable. Isolated to a 13-node repro and filed as
-`../riddl/task/2026-08-13-constant-breaks-bast-round-trip.md`. reactive-bbq
-declares none; restore it when the fix lands (BACKLOG #1b).
-
-**R2 is not the description metric.** R2 counts a `briefly` with no
-`described` within 3 lines — *presence*. The description campaign fixed
-*quality* of blocks that already existed. They are disjoint: 358 rewrites
-moved R2 by zero lines. Its 51 orphans are connectors and handlers, and
-Reid's call is that they are handled at the END of the plan.
+**One item is blocked upstream:** `constant` cannot survive a BAST round
+trip at rc.13. reactive-bbq declares none. BACKLOG #1b; filed with a 13-node
+repro as `../riddl/task/2026-08-13-constant-breaks-bast-round-trip.md`.
 
 ### Traps
 
-- **`riddlc validate` is NOT the gate — the library API is stricter.** On
-  2026-08-13 the CLI called LoyaltyContext clean while `checkAll` reported a
-  **deprecation** (inline aggregation on `requires`/`returns`) and a
-  **usage** warning (the function was never called). Both were real. Run
-  `sbt checkAll` before believing a model is clean.
+- **`riddlc validate` is NOT the gate — the library API is stricter.** The
+  CLI called a file clean while `checkAll` reported a real deprecation
+  (inline aggregation on `requires`/`returns`) and a real usage warning.
+  Run `sbt checkAll` before believing a model is clean.
 - **A BAST failure can name the wrong construct.** `constant` breaks
-  deserialization and reports as `Invalid invariant condition kind: 67` in
-  the full model — and reactive-bbq contains exactly one `invariant`, so the
-  message sends you to the wrong place. Removing the invariant did not fix
-  it. **Bisect by file, then by construct within the file**; that is what
-  found it in minutes after the message had wasted longer.
-- **Structural edits need canonicalising; description edits do not.** Every
-  Phase 2 batch had files that differed from prettify (`reverted by` on its
-  own line, ` with {` with one leading space); none of the 358 description
-  edits ever did.
-
-- **`checkAll` could not fail until 2026-08-12.** `Test/executeTests` yields
-  its outcome as a value; sbt exited 0 with seven failing assertions. Fixed
-  by `checkTests` in `build.sbt`. Third member of the family CLAUDE.md
-  records — scoverage measuring nothing, `sbt -batch` running one command of
-  seven. **The signal that something was skipped is absent, not wrong.**
+  deserialization and reports as `Invalid invariant condition kind: 67`;
+  reactive-bbq contains exactly one `invariant`, so the message misdirects,
+  and removing that invariant did **not** help. **Bisect by file, then by
+  construct within the file.**
+- **Structural edits need canonicalising through prettify; description
+  edits never did.** Prettify puts `reverted by` on its own line and ` with
+  {` with one leading space. Run prettify into a temp dir and copy back.
 - **`option persistent()` on a cross-context connector is REQUIRED at
-  rc.13, not deprecated.** Checked on 2026-08-12 because it was asserted
-  otherwise: removing one produces a completeness warning AND a hard error,
-  and both checks are live at `StreamingValidation.scala:103` and `:364`.
-  reactive-bbq reports zero deprecation warnings.
-- **Hand-written RIDDL usually needs canonicalising.** prettify puts an
-  inlet and its outlet on ONE line where a human writes two. Run prettify
-  into a temp dir and copy back, or the round trip fails. Description edits
-  did not need it; port edits did.
-- **`riddlc` and the library API can disagree**, and `--provide-tips`
-  changes WHICH messages appear, not just whether tips show: it surfaces an
-  advisory completeness tier riddl gates deliberately (89 `Initialize<Entity>`
-  findings among them). Do not count warnings with `--provide-tips` and
-  compare against a run without it.
-- **`.bast` may be rewritten from outside this repo.** riddl's
-  `470569319` stopped `RiddlModelsRoundTripTest` doing that, but the lesson
-  stands: an unexplained `.bast` diff means look at `../riddl` first.
+  rc.13**, not deprecated — `StreamingValidation.scala:103` and `:364`.
+- **`.bast` may be rewritten from outside this repo.** An unexplained
+  `.bast` diff means look at `../riddl` first, and only believe a diff that
+  **survives** `./scripts/verify-bast-roundtrip.sh` + `git status -- '*.bast'`.
 - **`scalaVersion` must track riddl's** (3.9.0-RC4). Newer TASTy is
   unreadable by an older compiler.
 
 ### Certainty
 
-Verified by command on 2026-08-13: the rc.13 binary, pin and libs;
-reactive-bbq at **0 errors / 0 warnings**; **0** degenerate descriptions;
-**0** `???`; `checkAll` exit 1 with **5** failing rules (R2, R3, R4, R5, R9);
-187 models validating; round trip 187/187 with only the one `.bast` moved;
-that a source processor's `on init` is optional (deleted one, revalidated);
-that the 13 `Initialize<Entity>` commands had **zero** `on command` clauses;
-that `grep -c 'tell command Persist'` was **0** corpus-wide before the fix;
-that `option persistent()` is still required; that riddlc has no
-connector-cycle check.
+**Verified by command today:** git state and 0 unpushed; the rc.13 binary,
+pin and Scala version; reactive-bbq 0/0; 0 degenerate descriptions; 0 `???`;
+round trip 187/187 with no `.bast` modified; `checkAll` red on exactly R2,
+R3, R4, R5, R9; `task/` holds no untriaged files.
 
-Also checked: nothing in `../riddl` or `../synapify` references the 13
-removed `Initialize<Entity>` commands, so the removal is contained.
-
-**Assumed, not verified:** the description detector remains a heuristic that
-under-reports vague-but-not-identical prose, so "0 remaining" means 0 under
-`scripts/find-degenerate-descriptions.py` **as it stands today** — a
-stricter rewrite would find more, exactly as this session's did to
-FrontOfHouse after it was reported clean.
+**Assumed, not verified:** the description count is **detector-relative** —
+"0" means 0 under `scripts/find-degenerate-descriptions.py` as it stands
+today. A stricter rewrite would find more, exactly as happened to
+FrontOfHouse after it had been reported clean. Treat any "0 remaining" the
+same way.
 
 ### Pointers
 
-- **BACKLOG.md #1** — the active campaign, with measured state and decisions
-- **docs/SIMULABILITY-AND-GENERATABILITY.md** — what disqualifies a model
-  from simulation and from generation, and which riddlc already checks
-- **CLAUDE.md** — durable syntax: saga steps, repository wiring, mappings
-  and `foreach`, `yield` vs `reply`, connector naming
+- **BACKLOG.md #1** — the campaign: measured state, decisions, phases, and
+  what each red rule needs. #1b is the upstream `constant` blocker.
+- **CLAUDE.md** — durable syntax: saga steps, repository wiring, correlation,
+  `become` vs `morph`, functions, the arity/shape table, connector naming
+- **docs/SIMULABILITY-AND-GENERATABILITY.md** — the disqualifier rules
 - `~/.claude/plans/wobbly-whistling-finch.md` — the approved plan
-- **`task/` has TWO UNTRIAGED files**: `2026-08-06-upgrade-riddl.md` and
-  `2026-08-08-reply-replaces-yield-for-query-results.md`. Neither was
-  triaged this session. The second looks already satisfied — the
-  `yield result` -> `reply result` migration landed at rc.10-45 — but
-  confirm rather than assume.
 
-Run `/ossuminc-skills:check-tasks` in the new session.
+**`task/` is empty of untriaged files** — both were closed with verified
+Results into `task/done/` this session. Nothing awaits triage, but run
+`/ossuminc-skills:check-tasks` in the new session anyway, since other repos
+drop files here between sessions.
 
 ---
 
