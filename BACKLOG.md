@@ -11,7 +11,7 @@ The plan is `~/.claude/plans/wobbly-whistling-finch.md`, approved
 2026-08-12, with five scoping decisions taken the same day. The rules it is
 measured against are `docs/SIMULABILITY-AND-GENERATABILITY.md`, and
 `ReactiveBbqCompletenessTest` enforces them. **That suite is red on purpose
-— 7 of 10 rules pass — so `sbt checkAll` exits 1 until this campaign
+— 8 of 10 rules pass — so `sbt checkAll` exits 1 until this campaign
 finishes. That is expected, not a breakage.**
 
 ### Where it stopped
@@ -24,8 +24,16 @@ order because they need nothing from riddl.
 `method`, and `method` had the *identical* BAST defect as `constant` —
 both are fixed in riddl `4ca2906dc`, neither is in rc.13. Writing the
 companion model against rc.13 means authoring constructs already known to
-derail on `unbastify`. **Next unblocked work is Phase 4**, which needs
-only groups, `put` and epic interaction blocks.
+derail on `unbastify`.
+
+**Phase 4 is HALF DONE and its other half is blocked the same way.** The UI
+half landed (R4 green: 5 groups, 5 `put`s). The epic half was written,
+validated at 0 messages, and then **reverted** — all three interaction
+block kinds break the BAST round trip at rc.13 (#1c). So R5 stays red.
+
+**Everything now waits on one staged binary.** #1b, Phase 3 and #1c are all
+the same defect family and all clear together. The only unblocked work left
+in the campaign is R2 (deferred to the end by Reid) and Phase 5.
 
 Measured at rc.13 on 2026-08-13, every row by running the command:
 
@@ -36,7 +44,8 @@ Measured at rc.13 on 2026-08-13, every row by running the command:
 | `???` bodies | **0** (was 20) |
 | BAST round trip | **187/187**, zero `.bast` modified after regenerate-and-compare |
 | terms | **25** (was 2) |
-| rules green | **7 of 10** — see the roster below |
+| UI groups / `put` statements | **5** (was 1) / **5** (was 0) |
+| rules green | **8 of 10** — see the roster below |
 
 **The suite's 10 cases**, by their actual test names. An earlier version of
 this table named the green ones "R1, R6, R7, R8, R10", which was wrong:
@@ -50,7 +59,7 @@ carries no rule number at all. Read from a `checkAll` run 2026-08-13:
 | R1 no `???` placeholder bodies | green |
 | R2 every definition a full description, not only a brief | **red** |
 | R3 domain vocabulary as terms | green **(2026-08-13)** |
-| R4 UI intent with groups and `put` | **red** |
+| R4 UI intent with groups and `put` | green **(2026-08-13)** |
 | R5 every epic interaction block kind | **red** |
 | R5 every use case its own user story | green |
 | R9 a version so type-delta staleness is detectable | green **(2026-08-13)** |
@@ -62,8 +71,7 @@ it. These do NOT map one-to-one onto the phases:
 | rule | red because | addressed by |
 |---|---|---|
 | R2 | **51** orphan briefs — a `briefly` with no `described` within 3 lines. All connectors and handlers: restaurant 30, corporate 11, backoffice 10 | **Reid's call: at the END of the plan**, not now |
-| R4 | 1 `group`, wants **≥4**; no `put` | Phase 4 |
-| R5 | no `sequential` / `parallel` / `optional` interaction blocks | Phase 4 |
+| R5 | no `sequence` / `parallel` / `optional` interaction blocks | **BLOCKED upstream — #1c** |
 
 **R3 and R9 are done** (2026-08-13), both unblocked by rc.14 and taken
 while waiting for it:
@@ -196,7 +204,13 @@ before trusting them.
   attachment/ULID, `described at`/`in file`). **BLOCKED on rc.14** — its
   `method` hits the same BAST defect as `constant` (#1b).
 - **4** — UI per domain (groups, inputs, outputs, `put`) and every epic
-  interaction step kind. **Unblocked; next up.** Closes R4 and the red R5.
+  interaction step kind. **UI half DONE 2026-08-13** — R4 green. **Epic half
+  BLOCKED on rc.14** (#1c), so R5 stays red. Two pieces still owed when it
+  unblocks: the interaction blocks and specialized steps, and the split of
+  `RestaurantScreen` into a screen per role (host stand, server terminal,
+  kitchen display, storefront, delivery dispatch) — deferred because every
+  epic step references its inputs by path, so the split and the epic rewrite
+  should land together rather than churn the paths twice.
 - **5** — the corpus-wide populates-repository campaign, ~855 sites in the
   other 186 models
 - **6** — upstream task for riddlc: a run-ending fitness summary, plus the
@@ -209,6 +223,45 @@ before trusting them.
 `StreamingValidation.scala`), and it is precisely the model a discrete-event
 simulator cannot finish. Unconnected ports ARE checked (`:203`, `:583`).
 This belongs in the Phase 6 upstream task.
+
+## 1c. Interaction blocks are unusable at rc.13 — blocked on riddl
+
+**`sequence`, `parallel` and `optional` all break the BAST round trip**, the
+same defect family as `constant` (#1b): `validate` clean, `bastify` reports
+success, `unbastify` fails. Found 2026-08-13 while doing Phase 4.
+
+Isolated to an **8-node, 243-byte repro** — one epic, one case, one
+`sequence` wrapping two `for context … is` steps. Filed as
+`../riddl/task/2026-08-13-interaction-blocks-break-bast-round-trip.md`.
+
+**The tell is the node count going DOWN**: 9 nodes / 310 bytes without the
+block, 8 nodes / 243 bytes with it, for a file that only *adds* a construct.
+The writer appears to emit the block without its children. As with
+`constant`, the error names the derail point, not the cause — `Invalid
+string table index` in the small repro, `Reader exceeded node boundary …
+Last successful node: Connector` in full reactive-bbq.
+
+**This is why R5 is red and must stay red.** R5 cannot be satisfied without
+breaking the 187/187 round-trip gate. The Phase 4 epic work was written,
+validated at 0 messages, and then **reverted** rather than shipped broken —
+exactly as `constant` was. Restore it when the fix lands; the epic content
+is recoverable from this session's reverted diff, or simply rewritten.
+
+**What was learned doing it, so it is not re-derived:**
+
+- `sequence { … }` is the keyword, **not** `sequential` — the rule's name
+  and the grammar production differ.
+- A `show output X to user` step must be **witnessed** by a `put … to X`
+  somewhere, or riddlc reports the step unwitnessed. Outputs with no `put`
+  are unreachable, not merely undernourished.
+- **A user may interact only at the application boundary.** `step send …
+  from user U to context C` is a hard error; route through the app.
+- A `send` step also needs a wiring path to the receiver, and
+  `from context RestaurantApp to entity FrontOfHouse.TableOrder` was
+  reported unwitnessed **despite** the connector
+  `'TableOrderCommand Stream'` joining exactly those two. Not investigated —
+  it may be alternation-vs-member type matching. **Worth a look before
+  assuming the model is wrong.**
 
 ## 1b. `constant` is unusable at rc.13 — blocked on riddl
 

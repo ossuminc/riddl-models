@@ -4,39 +4,51 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`, **3 unpushed** commits (R9, R3, this record).
-`main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
+**Branch** `release/2`, **5 unpushed** commits (R9, R3, a record, R4, the
+`put`). `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
 **Versions — run, not recalled:** staged `../bin/riddlc` is **2.0.0-rc.13**
 (`d118041ce`), `riddlVersion` in `build.sbt` matches, Scala **3.9.0-RC4**.
 `riddlcPath` prefers the staged binary, so that is what actually runs.
 
 **`sbt checkAll` EXITS 1 and that is correct.**
-`ReactiveBbqCompletenessTest` states the active campaign's target; **7 of 10
-rules pass** (was 5). **Do not weaken the suite to get green** — it turns
-green by finishing BACKLOG #1. Red: **R2** (deferred to the end by Reid),
-**R4** and **R5**, both Phase 4.
+`ReactiveBbqCompletenessTest` states the active campaign's target; **8 of 10
+rules pass** (was 5). **Do not weaken the suite to get green.** Red: **R2**
+(deferred to the end by Reid) and **R5** (blocked upstream, #1c).
 
 **In flight: BACKLOG #1, the reactive-bbq reference model. Phases 0, 1 and 2
-are DONE, and so are R3 and R9. Next is Phase 4** — *not* Phase 3, which is
-blocked (below). Verified today: reactive-bbq validates **0 errors / 0
-warnings** by CLI *and* library API, **0** degenerate descriptions, **0**
-`???`, **25** terms, round trip **187/187**. BACKLOG #1 carries the measured
-state, the five scoping decisions, the true 10-case roster and what each red
-rule needs — read it before touching anything.
+are DONE, and so are R3, R9 and R4.** Verified today: reactive-bbq validates
+**0 errors / 0 warnings** by CLI *and* library API, **0** degenerate
+descriptions, **0** `???`, **25** terms, **5** groups, **5** `put`s, round
+trip **187/187**. BACKLOG #1 carries the measured state, the five scoping
+decisions, the true 10-case roster and what each red rule needs — read it
+before touching anything.
 
-**Two items are blocked on one upstream binary.** riddl fixed the `constant`
-BAST derailment in `4ca2906dc` (`NODE_CONSTANT`/`NODE_METHOD` given their
-own tags, `FORMAT_REVISION` 13 → 14), but it is **not in rc.13 and not in
-any tagged RC**, and our staged `../bin/riddlc` is `d118041ce` from
-2026-08-12 — older than the fix. Reid is having a binary staged; **do not
-file a task for it, he is directing that directly.** Blocked until it lands:
+**THE CAMPAIGN IS NOW ESSENTIALLY BLOCKED ON ONE STAGED BINARY.** Three
+separate items are the same defect family — a node written to BAST that
+cannot be read back — and all clear together:
 
-- **#1b** — restore the `constant` in `LoyaltyContext.riddl` and put the
-  `function` back on it. riddl asked for this; the ping is
-  `task/2026-08-13-constant-bast-fix-landed.md`.
-- **Phase 3** — its coverage list names `method`, which had the *identical*
-  defect. Writing it against rc.13 authors constructs known to derail.
+- **#1b `constant`** — fixed upstream in `4ca2906dc`, awaiting the binary.
+- **Phase 3** — its coverage list names `method`, fixed in the same commit.
+- **#1c interaction blocks** — `sequence`/`parallel`/`optional` ALL break
+  the round trip. **Found today, filed today**, with an 8-node repro:
+  `../riddl/task/2026-08-13-interaction-blocks-break-bast-round-trip.md`.
+  This is what keeps R5 red.
+
+Our staged `../bin/riddlc` is `d118041ce` (2026-08-12), which **predates**
+the fix (`4ca2906dc`, 2026-08-13) — checked with `git merge-base
+--is-ancestor`, not assumed. Reid is directing the staging himself; **do not
+file a task asking for the binary.**
+
+**When it lands:** regenerate every `.bast` (`sbt b`) in the same commit —
+revision 14 rejects revision-13 files by design — then restore the
+`constant`, write Phase 3, and redo the Phase 4 epic half.
+
+**The Phase 4 epic work was written and validated at 0 messages, then
+REVERTED** because of #1c. Do not assume it was never done; the lessons from
+it are recorded in BACKLOG #1c, including that the keyword is `sequence`
+(not `sequential`), that `show output` must be witnessed by a `put`, and
+that a user may only interact at the application boundary.
 
 **When the new binary lands, `.bast` regeneration is mandatory, not
 optional** — revision 14 rejects revision-13 files by design. `sbt b`
@@ -69,9 +81,18 @@ regenerates all 187; put it in the same commit.
 **Verified by command today:** git state; the rc.13 binary, pin and Scala
 version; that the staged binary **predates** the `constant`/`method` fix
 (`git merge-base --is-ancestor 4ca2906dc d118041ce` → false); reactive-bbq
-0/0 by CLI; 25 terms and 1 `version`; `checkAll` red on exactly R2, R4 and
-the interaction-block R5; prettify drift nil; bastify 187/187 with only
-`reactive-bbq.bast` changed; round trip 187/187 with 0 discrepancies.
+0/0 by CLI; 25 terms, 1 `version`, 5 groups, 5 `put`s; `checkAll` red on
+exactly R2 and the interaction-block R5; prettify drift nil; bastify 187/187
+with only `reactive-bbq.bast` changed; round trip 187/187 with 0
+discrepancies **after** the #1c revert. The #1c defect itself was reproduced
+down to 8 nodes with a negative control.
+
+**NOT verified, and worth an hour when the binary lands:** a `send` step
+`from context RestaurantApp to entity FrontOfHouse.TableOrder` was reported
+**unwitnessed** even though the connector `'TableOrderCommand Stream'` joins
+exactly those two. It may be alternation-vs-member type matching in the
+check, or it may be a real modelling gap. It was dropped rather than
+diagnosed — do not treat the model as guilty without looking.
 
 **Grammar checked, not assumed:** `version` is legal in `domain_content`
 and `processor_definition_contents`; `term` is legal in **any**
