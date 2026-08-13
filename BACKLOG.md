@@ -11,13 +11,21 @@ The plan is `~/.claude/plans/wobbly-whistling-finch.md`, approved
 2026-08-12, with five scoping decisions taken the same day. The rules it is
 measured against are `docs/SIMULABILITY-AND-GENERATABILITY.md`, and
 `ReactiveBbqCompletenessTest` enforces them. **That suite is red on purpose
-— 5 of 10 rules pass — so `sbt checkAll` exits 1 until this campaign
+— 7 of 10 rules pass — so `sbt checkAll` exits 1 until this campaign
 finishes. That is expected, not a breakage.**
 
 ### Where it stopped
 
 **Phases 0, 1 and 2 are done** (2026-08-13), except `constant` which is
-blocked upstream (#1b). **Next is Phase 3.**
+blocked upstream (#1b). **R3 and R9 are also done**, taken out of phase
+order because they need nothing from riddl.
+
+**Phase 3 is BLOCKED on the same binary as #1b.** Its coverage list names
+`method`, and `method` had the *identical* BAST defect as `constant` —
+both are fixed in riddl `4ca2906dc`, neither is in rc.13. Writing the
+companion model against rc.13 means authoring constructs already known to
+derail on `unbastify`. **Next unblocked work is Phase 4**, which needs
+only groups, `put` and epic interaction blocks.
 
 Measured at rc.13 on 2026-08-13, every row by running the command:
 
@@ -27,7 +35,26 @@ Measured at rc.13 on 2026-08-13, every row by running the command:
 | degenerate descriptions left | **0** (was 358) |
 | `???` bodies | **0** (was 20) |
 | BAST round trip | **187/187**, zero `.bast` modified after regenerate-and-compare |
-| rules green | **R1, R6, R7, R8, R10** — 5 of 10 |
+| terms | **25** (was 2) |
+| rules green | **7 of 10** — see the roster below |
+
+**The suite's 10 cases**, by their actual test names. An earlier version of
+this table named the green ones "R1, R6, R7, R8, R10", which was wrong:
+there are no R6/R7/R8 cases, there are **two** R5 cases, and one case
+carries no rule number at all. Read from a `checkAll` run 2026-08-13:
+
+| case | state |
+|---|---|
+| should exist as the reference model | green |
+| R10 validate with zero errors and zero warnings | green |
+| R1 no `???` placeholder bodies | green |
+| R2 every definition a full description, not only a brief | **red** |
+| R3 domain vocabulary as terms | green **(2026-08-13)** |
+| R4 UI intent with groups and `put` | **red** |
+| R5 every epic interaction block kind | **red** |
+| R5 every use case its own user story | green |
+| R9 a version so type-delta staleness is detectable | green **(2026-08-13)** |
+| R12 no deprecated spellings | green |
 
 **What each remaining rule needs**, so the next session does not re-derive
 it. These do NOT map one-to-one onto the phases:
@@ -35,10 +62,29 @@ it. These do NOT map one-to-one onto the phases:
 | rule | red because | addressed by |
 |---|---|---|
 | R2 | **51** orphan briefs — a `briefly` with no `described` within 3 lines. All connectors and handlers: restaurant 30, corporate 11, backoffice 10 | **Reid's call: at the END of the plan**, not now |
-| R3 | 2 `term`s, wants **≥20** | its own pass — a glossary, not tied to a phase |
 | R4 | 1 `group`, wants **≥4**; no `put` | Phase 4 |
 | R5 | no `sequential` / `parallel` / `optional` interaction blocks | Phase 4 |
-| R9 | no `version` anywhere | its own one-liner; `version = "version" (natural \| identifier)`, at most one per scope |
+
+**R3 and R9 are done** (2026-08-13), both unblocked by rc.14 and taken
+while waiting for it:
+
+- **R9** — one `version 1` in the `ReactiveBBQ` domain body. Reid's call:
+  top-level domain only. Per A53 a definition's precise version is its
+  versioned ancestors composed root-to-leaf and joined with `.`, so the
+  root declaration is the leading component for everything beneath it.
+  `version` is legal in `domain_content` and `processor_definition_contents`
+  — verified against the grammar and probed on a scaffold before editing.
+- **R3** — 2 → 25 terms. **A term goes on the definition whose own
+  description uses the word** (Reid's call), not in a domain glossary, so
+  most sit on *fields*. `term` is legal in any `with_metadata`, verified on
+  a scaffold. The words were found by scanning every `briefly`/`described`
+  line for jargon; the opaque ones were all in the low-frequency tail
+  (expo, pass, par, shrinkage, stocktake, cover, check, turn, walk-in,
+  no-show, void, comp, tier, tenure, earn rate, lead time, stock turn,
+  courier, coverage, labor, station, prep). High-frequency words like
+  `ticket` and `shift` are not jargon and were left alone.
+- **Both survive BAST** — round trip 187/187, 0 discrepancies, unlike
+  `constant` (#1b).
 
 **R2 is NOT the description metric** — see the detector section below. The
 358 descriptions rewritten in Phase 1 moved R2 by zero lines.
@@ -147,9 +193,10 @@ before trusting them.
   `constant`, which is blocked upstream — see #1b.**
 - **3** — companion `language-coverage/` model for what a restaurant cannot
   justify (module, bast_import, replica, graph/table, nebula, method,
-  attachment/ULID, `described at`/`in file`)
+  attachment/ULID, `described at`/`in file`). **BLOCKED on rc.14** — its
+  `method` hits the same BAST defect as `constant` (#1b).
 - **4** — UI per domain (groups, inputs, outputs, `put`) and every epic
-  interaction step kind
+  interaction step kind. **Unblocked; next up.** Closes R4 and the red R5.
 - **5** — the corpus-wide populates-repository campaign, ~855 sites in the
   other 186 models
 - **6** — upstream task for riddlc: a run-ending fitness summary, plus the

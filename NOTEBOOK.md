@@ -4,28 +4,43 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`, tree **clean**, **0 unpushed** (`origin/release/2`
-level). `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
+**Branch** `release/2`, **3 unpushed** commits (R9, R3, this record).
+`main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
 **Versions — run, not recalled:** staged `../bin/riddlc` is **2.0.0-rc.13**
 (`d118041ce`), `riddlVersion` in `build.sbt` matches, Scala **3.9.0-RC4**.
 `riddlcPath` prefers the staged binary, so that is what actually runs.
 
 **`sbt checkAll` EXITS 1 and that is correct.**
-`ReactiveBbqCompletenessTest` states the active campaign's target; **5 of 10
-rules pass** (was 3). **Do not weaken the suite to get green** — it turns
-green by finishing BACKLOG #1.
+`ReactiveBbqCompletenessTest` states the active campaign's target; **7 of 10
+rules pass** (was 5). **Do not weaken the suite to get green** — it turns
+green by finishing BACKLOG #1. Red: **R2** (deferred to the end by Reid),
+**R4** and **R5**, both Phase 4.
 
 **In flight: BACKLOG #1, the reactive-bbq reference model. Phases 0, 1 and 2
-are DONE; next is Phase 3.** Verified today: reactive-bbq validates **0
-errors / 0 warnings** by CLI *and* library API, **0** degenerate
-descriptions, **0** `???`, round trip **187/187**. BACKLOG #1 carries the
-measured state, the five scoping decisions, and a table of **what each of
-the 5 red rules needs** — read it before touching anything.
+are DONE, and so are R3 and R9. Next is Phase 4** — *not* Phase 3, which is
+blocked (below). Verified today: reactive-bbq validates **0 errors / 0
+warnings** by CLI *and* library API, **0** degenerate descriptions, **0**
+`???`, **25** terms, round trip **187/187**. BACKLOG #1 carries the measured
+state, the five scoping decisions, the true 10-case roster and what each red
+rule needs — read it before touching anything.
 
-**One item is blocked upstream:** `constant` cannot survive a BAST round
-trip at rc.13. reactive-bbq declares none. BACKLOG #1b; filed with a 13-node
-repro as `../riddl/task/2026-08-13-constant-breaks-bast-round-trip.md`.
+**Two items are blocked on one upstream binary.** riddl fixed the `constant`
+BAST derailment in `4ca2906dc` (`NODE_CONSTANT`/`NODE_METHOD` given their
+own tags, `FORMAT_REVISION` 13 → 14), but it is **not in rc.13 and not in
+any tagged RC**, and our staged `../bin/riddlc` is `d118041ce` from
+2026-08-12 — older than the fix. Reid is having a binary staged; **do not
+file a task for it, he is directing that directly.** Blocked until it lands:
+
+- **#1b** — restore the `constant` in `LoyaltyContext.riddl` and put the
+  `function` back on it. riddl asked for this; the ping is
+  `task/2026-08-13-constant-bast-fix-landed.md`.
+- **Phase 3** — its coverage list names `method`, which had the *identical*
+  defect. Writing it against rc.13 authors constructs known to derail.
+
+**When the new binary lands, `.bast` regeneration is mandatory, not
+optional** — revision 14 rejects revision-13 files by design. `sbt b`
+regenerates all 187; put it in the same commit.
 
 ### Traps
 
@@ -51,10 +66,17 @@ repro as `../riddl/task/2026-08-13-constant-breaks-bast-round-trip.md`.
 
 ### Certainty
 
-**Verified by command today:** git state and 0 unpushed; the rc.13 binary,
-pin and Scala version; reactive-bbq 0/0; 0 degenerate descriptions; 0 `???`;
-round trip 187/187 with no `.bast` modified; `checkAll` red on exactly R2,
-R3, R4, R5, R9; `task/` holds no untriaged files.
+**Verified by command today:** git state; the rc.13 binary, pin and Scala
+version; that the staged binary **predates** the `constant`/`method` fix
+(`git merge-base --is-ancestor 4ca2906dc d118041ce` → false); reactive-bbq
+0/0 by CLI; 25 terms and 1 `version`; `checkAll` red on exactly R2, R4 and
+the interaction-block R5; prettify drift nil; bastify 187/187 with only
+`reactive-bbq.bast` changed; round trip 187/187 with 0 discrepancies.
+
+**Grammar checked, not assumed:** `version` is legal in `domain_content`
+and `processor_definition_contents`; `term` is legal in **any**
+`with_metadata`, so it can sit on a field. Both were probed on a scaffold
+model before the real edit.
 
 **Assumed, not verified:** the description count is **detector-relative** —
 "0" means 0 under `scripts/find-degenerate-descriptions.py` as it stands
@@ -71,9 +93,12 @@ same way.
 - **docs/SIMULABILITY-AND-GENERATABILITY.md** — the disqualifier rules
 - `~/.claude/plans/wobbly-whistling-finch.md` — the approved plan
 
-**`task/` is empty of untriaged files** — both were closed with verified
-Results into `task/done/` this session. Nothing awaits triage, but run
-`/ossuminc-skills:check-tasks` in the new session anyway, since other repos
+**`task/` holds ONE open file**, triaged 2026-08-13 and deliberately left
+open: `2026-08-13-constant-bast-fix-landed.md`. It is riddl's ping that the
+`constant` fix landed, and it asks for the restore plus a round-trip re-run.
+**It cannot be actioned until the rc.14 binary is staged** — see the blocked
+items above. Close it in the same commit as the restore. Still run
+`/ossuminc-skills:check-tasks` in the new session, since other repos
 drop files here between sessions.
 
 ---

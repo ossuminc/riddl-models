@@ -517,6 +517,41 @@ one handler. Use `become` when nothing about the entity changed, only what
 the system does about it (reactive-bbq: a delivery under escalation is still
 in transit with the same order).
 
+**`term` — define a word where it is used, not in a glossary.** `term` is
+`meta_data`, so it is legal in **any** `with { }` block — including a
+**field's**, which is where most of them belong, because that is where the
+prose is. The convention (Reid's call, 2026-08-13) is:
+
+> A term goes on the definition whose own **description uses the word**.
+
+Not collected at the domain, and not bucketed per context: a hover-doc is
+only useful where a reader meets the word they do not know. reactive-bbq
+places 25 terms this way, most of them on fields.
+
+Pick the words by **evidence, not invention** — scan `briefly` and
+`described` text for jargon. In reactive-bbq the genuinely opaque words were
+all in the low-frequency tail (`expo`, `pass`, `par`, `shrinkage`, `cover`,
+`no-show`, `comp`, `tenure`, `lead time`, `courier`); the high-frequency
+words (`ticket`, `shift`, `campaign`) are ordinary English and need no term.
+Apply the rule to the term text too: if a definition uses another jargon
+word, that one is defined alongside it.
+
+Canonical form is `term Name is  "text"` — prettify emits **two** spaces
+after `is` and a trailing space, so hand-written terms always drift until
+prettify is run and copied back.
+
+**`version` — one per scope, composed root-to-leaf.** Grammar is
+`version = "version" (natural | identifier) [with_metadata]`, legal in
+`domain_content` and `processor_definition_contents` (so: domains and
+processors), **in the body, not the `with { }` block**. Per A53 a
+definition's precise version is its versioned ancestors composed
+root-to-leaf and joined with `.` — e.g. `Garibaldi.4.3` — and there is at
+most one per scope. It is the **model's** version, never the RIDDL language
+version. reactive-bbq declares exactly one, at the domain root.
+
+Both `term` and `version` survive the BAST round trip at rc.13 (187/187,
+0 discrepancies) — unlike `constant`, so do not assume by analogy.
+
 ### Connector Naming
 
 Name a connector for **what flows through it**, never for its endpoints —
