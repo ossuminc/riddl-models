@@ -266,6 +266,68 @@ context OnlineOrdering is {
       |Stores and retrieves online order data.
     }
   }
+  saga OnlineOrderCheckout is {
+    step StepSubmitOrder is  {
+      do "Close the cart and commit the order the guest assembled"
+      tell command SubmitOnlineOrder to entity OnlineOrdering.OnlineOrder
+    }
+    reverted by {
+      do "Release the order so the cart is not left stranded as committed"
+      tell command CancelOnlineOrder to entity OnlineOrdering.OnlineOrder
+    }
+ with {
+      briefly "Commit the cart"
+      described as {
+        |The first irreversible step from the guest's side: after it the cart
+        |can no longer be edited. Compensating means cancelling outright,
+        |because there is no state between "submitted" and "never happened".
+      }
+    }
+    step StepTakePayment is  {
+      do "Charge the card before any food is committed to"
+      tell command ProcessOnlinePayment to entity OnlineOrdering.OnlineOrder
+    }
+    reverted by {
+      do "Cancel the order, which is what releases the authorization"
+      tell command CancelOnlineOrder to entity OnlineOrdering.OnlineOrder
+    }
+ with {
+      briefly "Take payment"
+      described as {
+        |Online orders are paid before they are cooked, the reverse of a
+        |dine-in check. That ordering is what makes this saga worth having:
+        |payment can fail after the order is committed, and something has to
+        |put the order back.
+      }
+    }
+    step StepStartPreparation is  {
+      do "Release the paid order to the kitchen"
+      tell command MarkOnlineInPreparation to entity OnlineOrdering.OnlineOrder
+    }
+    reverted by {
+      do "Cancel the order; food already started is waste the restaurant eats"
+      tell command CancelOnlineOrder to entity OnlineOrdering.OnlineOrder
+    }
+ with {
+      briefly "Start preparation"
+      described as {
+        |The last step, and the only one whose compensation costs real money —
+        |reverting after the kitchen has fired wastes food already cooked.
+        |That asymmetry is why payment is taken first.
+      }
+    }
+  } with {
+    briefly "Online order checkout"
+    described as {
+      |Commit, pay, and release to the kitchen, with each step able to put the
+      |order back if a later one fails.
+      |
+      |Every step tells a command to this context's OWN aggregate. Calling the
+      |payment gateway is deliberately NOT a step's `tell`: that is an
+      |external system reached through an adaptor, and naming it here would
+      |cross a context boundary and bypass the anti-corruption layer.
+    }
+  }
   processor OnlineOrderEventSource as source is {
     outlet SubmittedOnlineOrderEvents is type OnlineOrderEvent
     handler OnlineOrderEventEmitter is {

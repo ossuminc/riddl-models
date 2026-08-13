@@ -1043,9 +1043,11 @@ event-sourced entity DeliveryOrder as flow is {
           }
           case "TrafficDelay" {
             tell command SendPushNotification to entity Restaurant.NotificationService
+            become entity Delivery.DeliveryOrder to handler InTransitEscalatedHandler
           }
           default {
             tell command SendPushNotification to entity Restaurant.NotificationService
+            become entity Delivery.DeliveryOrder to handler InTransitEscalatedHandler
           }
         }
       }
@@ -1077,6 +1079,39 @@ event-sourced entity DeliveryOrder as flow is {
         |handles various issue types including VehicleBreakdown
         |which morphs back to Pending for driver reassignment.
         |FailDelivery moves to the terminal Failed state.
+      }
+    }
+    handler InTransitEscalatedHandler is {
+      on command RecordDeliveryLocation is {
+        yield event DeliveryLocationRecorded
+        send event DeliveryLocationRecorded to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
+        do "push the position to the dispatcher watching this drop, not only
+          to the tracking map"
+      }
+      on command ConfirmDelivery is {
+        yield event DeliveryConfirmed
+        send event DeliveryConfirmed to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
+        do "clear the escalation: the driver recovered and the drop landed"
+      }
+      on command FailDelivery is {
+        yield event DeliveryMarkedFailed
+        send event DeliveryMarkedFailed to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
+        do "close the escalation as a failure and raise the refund"
+      }
+      on other is {
+        error "Unexpected message for an escalated in-transit delivery"
+      }
+    } with {
+      briefly "In transit, under escalation"
+      described as {
+        |The same InTransit state, watched differently. Entered with `become`
+        |rather than `morph` because nothing about the delivery has changed —
+        |the driver is still on the road with the same order — only what the
+        |restaurant does about it has.
+        |
+        |A `morph` here would be wrong twice over: it would claim a state the
+        |lifecycle does not have, and it would discard the escalation the
+        |moment the next location arrived.
       }
     }
   } with {

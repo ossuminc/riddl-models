@@ -245,6 +245,21 @@ context FrontOfHouse is {
           |The stored row to update.
         }
       }
+      visitSeatedAt: TimeStamp with {
+        briefly "Seated at"
+        described as {
+          |When the party actually sat down. Joined in from the seating event
+          |rather than read from the booking, because a table is given when
+          |one frees, not at the time the guest asked for.
+        }
+      }
+      visitClosedAt: TimeStamp with {
+        briefly "Closed at"
+        described as {
+          |When the visit ended. Held with the seating time because the pair
+          |is what turnover reporting needs, and neither is useful alone.
+        }
+      }
     } with {
       briefly "Persist VisitCompleted"
       described as {
@@ -567,6 +582,46 @@ context FrontOfHouse is {
   }
   projector ReservationBoard as merge is {
     updates repository FrontOfHouse.ReservationRepository
+    correlation VisitDwell by reservationId yields command PersistVisitCompleted is {
+      handler CollectVisitSpan is {
+        on e: event Reservation.PartySeated is {
+          set field visitSeatedAt to e.seatedAt
+        }
+        on e: event Reservation.VisitCompleted is {
+          set field visitClosedAt to e.completedAt
+        }
+      } with {
+        briefly "Fold the two ends of a visit"
+        described as {
+          |Each arrival fills one end of the span. Neither event alone can
+          |complete the write, which is the point: dwell time is not a
+          |property either of them carries.
+        }
+      }
+    } times out after "6 hours" {
+      do "abandon the join and flag the booking for a manager to close by hand"
+    }
+ with {
+      briefly "Join seating to visit end"
+      described as {
+        |Table dwell time is the interval between two events that arrive hours
+        |apart, so it exists only as a join. Correlating by reservationId is
+        |what lets the pair be written as one row.
+        |
+        |The key is deliberately the booking, not the table: two parties use
+        |the same table in one night, and a merged table serves one party
+        |under two numbers.
+        |
+        |**It does not join across the TableOrder stream**, though this
+        |projector receives one. A dine-in check carries no reservationId and
+        |should not — a walk-in has no booking at all — so the key would be
+        |unreachable from half the events. That is a domain fact, not a
+        |modelling shortcut.
+        |
+        |The timeout is 6 hours: longer than any real service, so firing it
+        |means the visit was never closed rather than that it ran late.
+      }
+    }
     inlet ReservationBoardFromReservation is type ReservationEvent    inlet ReservationBoardFromTableOrder is type TableOrderEvent    outlet ReservationBoardOut is type ReservationEvent
     record ReservationBoardEntry is  {
       reservationId: ReservationId with {

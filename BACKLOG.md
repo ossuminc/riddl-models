@@ -131,9 +131,10 @@ before trusting them.
 
 - ~~**1** — descriptions, 18 populates-repository warnings, 20 `???`~~
   **DONE 2026-08-13.**
-- **2** — saga, correlation (A70), invariant/require, function/return,
-  constant, foreach, become, `void` streamlet, a healthy mix of type
-  expressions
+- **2** — done except two items: `saga`, `correlation` (A70),
+  `invariant`/`require`, `function`/`return`, `foreach` and `become` all
+  land and validate 0/0. **Outstanding: `constant` (blocked upstream, see
+  below), the `void` streamlet, and a fuller mix of type expressions.**
 - **3** — companion `language-coverage/` model for what a restaurant cannot
   justify (module, bast_import, replica, graph/table, nebula, method,
   attachment/ULID, `described at`/`in file`)
@@ -151,6 +152,33 @@ before trusting them.
 `StreamingValidation.scala`), and it is precisely the model a discrete-event
 simulator cannot finish. Unconnected ports ARE checked (`:203`, `:583`).
 This belongs in the Phase 6 upstream task.
+
+## 1b. `constant` is unusable at rc.13 — blocked on riddl
+
+**A `constant` cannot survive a BAST round trip.** `validate` is clean,
+`bastify` reports success, and `unbastify` then **fails**, leaving an
+unreadable `.bast`. That matters beyond hygiene: riddl-mcp-server and
+synapify load these files.
+
+Isolated to a **13-node, 288-byte repro** — one `constant`, one `type`.
+Deleting just the `constant` makes the same file round-trip. Filed as
+`../riddl/task/2026-08-13-constant-breaks-bast-round-trip.md`.
+
+**The error names the wrong construct**, which is why this cost time. In the
+small repro it reads `Invalid string table index`; in full reactive-bbq the
+*same single constant* reads `Invalid invariant condition kind: 67` — and
+reactive-bbq does contain one `invariant`, so the message sent us to bisect
+that first. **Removing the invariant did not fix it.** The reader
+desynchronises on the `constant` node and misreports at the point of
+derailment.
+
+reactive-bbq therefore declares **no `constant`**; `PointsForSpend` inlines
+the earn rate, with a comment at the site pointing at the task. **Restore it
+when riddl lands the fix** — `constant` is on the Phase 2 coverage list.
+
+Everything else in the same batch round-trips cleanly: `saga`,
+`correlation`, `function`/`return`, `invariant`, `require`, `foreach`,
+`become`, and a second handler on one state.
 
 ## 2. Pattern templates: 2 of 7 validate as whole models
 
