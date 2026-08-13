@@ -286,10 +286,21 @@ riddl's `AST.scala`, by `(outlets, inlets)`:
 | ≥2 | 1 | `split` |
 | 1 | ≥2 | `merge` |
 | ≥2 | ≥2 | `router` |
-| 0 | 0 | *(none — portless processors carry no ascription)* |
+| 0 | 0 | `void` |
 
-Anything else is degenerate and derives `void`; the corpus has no such
-case. An ascription contradicting the arity is a hard **error**, so these
+`shapeForArity` is **total** — every non-negative arity has a shape and
+there is no fallback. Checked against `AST.scala` on 2026-08-13; an earlier
+version of this table claimed (0,0) carried no ascription, which is wrong:
+`(0, 0) => Void(loc)`, and `processor NightlyCloseOut as void is { ... }`
+validates and round-trips. reactive-bbq has one.
+
+Note also that a **sink is any pure drain and a source any pure origin**,
+whatever the port count: `(0, ≥1)` is `sink` and `(≥1, 0)` is `source`, so a
+fan-in drain or fan-out origin is expressible. Both used to be pinned to
+exactly one port, which wrongly rejected `repository R as sink` with two
+inlets.
+
+An ascription contradicting the arity is a hard **error**, so these
 are validated, not decorative. A processor with an `error-sink` inlet may
 be ascribed either with or without that inlet counted — both readings are
 accepted.
@@ -461,6 +472,50 @@ an entry in the context's `<X>Command` / `<X>Event` alternations.
 These rules only became visible in riddlc **rc.10-37**, which traverses
 saga step statements for the first time; before that a saga could contain
 anything and nothing checked it.
+
+**Functions** — three things that cost time on 2026-08-13:
+
+- **Inline aggregation on `requires`/`returns` is DEPRECATED.** Write named
+  types and reference them: `requires SpendForPoints` / `returns
+  PointsEarned`, not `requires { spendAmount: Decimal(10,2) ... }`.
+- **`call` needs the keyword**: `call function F(args)`, not `call F(args)`
+  — `function_ref = "function" path_identifier`.
+- A function nothing calls is reported **unused**, so declare it where it is
+  actually invoked from.
+
+**Only the library API reported both of those.** `riddlc validate` called
+the same file clean while `Riddl.parseAndValidate` (what `sbt test` and
+`checkAll` run) reported a deprecation and a usage warning. This is the
+CLI/library disagreement noted under "The gates" — it is real, and the
+library is the stricter of the two. **Do not conclude a model is clean from
+the CLI alone.**
+
+**`correlation`** lives **only in a projector** and joins events arriving
+apart in time:
+
+```riddl
+correlation VisitDwell by reservationId yields command PersistVisitCompleted is {
+  handler CollectVisitSpan is {
+    on e: event Reservation.PartySeated   is { set field visitSeatedAt to e.seatedAt }
+    on e: event Reservation.VisitCompleted is { set field visitClosedAt to e.completedAt }
+  }
+} times out after "6 hours" { do "escalate" }
+```
+
+- `by` names **key fields of the yielded command**; the folds set its
+  **non-key** fields, and every required non-key field must be set by some
+  fold or riddlc reports that the correlation "can never complete".
+- **The key must be reachable from every folded event.** That is the real
+  constraint on what can be joined — reactive-bbq cannot correlate a
+  reservation with a dine-in check because a walk-in check carries no
+  booking, and should not.
+- The timeout clause is **mandatory**; its duration is an ordinary string.
+
+**`become` vs `morph`** — `morph` changes the state record, `become` changes
+which handler is active within the same state. A state may declare more than
+one handler. Use `become` when nothing about the entity changed, only what
+the system does about it (reactive-bbq: a delivery under escalation is still
+in transit with the same order).
 
 ### Connector Naming
 

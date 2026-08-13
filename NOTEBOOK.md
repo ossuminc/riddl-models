@@ -18,11 +18,20 @@ active campaign, and **5 of its 10 rules now pass** (was 3). **Do not "fix"
 the red suite by weakening it** — turn it green by finishing BACKLOG #1.
 
 **In flight: the reactive-bbq reference-model campaign (BACKLOG #1).**
-**Phase 0 and ALL of Phase 1 are done** as of 2026-08-13. reactive-bbq
-validates **0 errors, 0 warnings**; 358 degenerate descriptions, 18
-populates-repository warnings and 20 `???` bodies are all gone. **Next is
-Phase 2.** BACKLOG #1 carries the measured state, the five scoping
-decisions and the phase list — read it before touching anything.
+**Phases 0, 1 and 2 are done** as of 2026-08-13. reactive-bbq validates
+**0 errors, 0 warnings** by both the CLI *and* the library API; 358
+degenerate descriptions, 18 populates-repository warnings and 20 `???`
+bodies are gone, and saga / correlation / invariant / require / function /
+return / foreach / become / `as void` / range / Pattern / mapping / set all
+land. **Next is Phase 3** (the companion `language-coverage/` model).
+BACKLOG #1 carries the measured state, the five scoping decisions and the
+phase list — read it before touching anything.
+
+**One Phase 2 item is blocked upstream: `constant`.** It cannot survive a
+BAST round trip at rc.13 — bastify succeeds, unbastify fails, `.bast`
+unreadable. Isolated to a 13-node repro and filed as
+`../riddl/task/2026-08-13-constant-breaks-bast-round-trip.md`. reactive-bbq
+declares none; restore it when the fix lands (BACKLOG #1b).
 
 **R2 is not the description metric.** R2 counts a `briefly` with no
 `described` within 3 lines — *presence*. The description campaign fixed
@@ -31,6 +40,22 @@ moved R2 by zero lines. Its 51 orphans are connectors and handlers, and
 Reid's call is that they are handled at the END of the plan.
 
 ### Traps
+
+- **`riddlc validate` is NOT the gate — the library API is stricter.** On
+  2026-08-13 the CLI called LoyaltyContext clean while `checkAll` reported a
+  **deprecation** (inline aggregation on `requires`/`returns`) and a
+  **usage** warning (the function was never called). Both were real. Run
+  `sbt checkAll` before believing a model is clean.
+- **A BAST failure can name the wrong construct.** `constant` breaks
+  deserialization and reports as `Invalid invariant condition kind: 67` in
+  the full model — and reactive-bbq contains exactly one `invariant`, so the
+  message sends you to the wrong place. Removing the invariant did not fix
+  it. **Bisect by file, then by construct within the file**; that is what
+  found it in minutes after the message had wasted longer.
+- **Structural edits need canonicalising; description edits do not.** Every
+  Phase 2 batch had files that differed from prettify (`reverted by` on its
+  own line, ` with {` with one leading space); none of the 358 description
+  edits ever did.
 
 - **`checkAll` could not fail until 2026-08-12.** `Test/executeTests` yields
   its outcome as a value; sbt exited 0 with seven failing assertions. Fixed

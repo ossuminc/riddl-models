@@ -131,10 +131,9 @@ before trusting them.
 
 - ~~**1** — descriptions, 18 populates-repository warnings, 20 `???`~~
   **DONE 2026-08-13.**
-- **2** — done except two items: `saga`, `correlation` (A70),
-  `invariant`/`require`, `function`/`return`, `foreach` and `become` all
-  land and validate 0/0. **Outstanding: `constant` (blocked upstream, see
-  below), the `void` streamlet, and a fuller mix of type expressions.**
+- ~~**2** — saga, correlation, invariant/require, function/return, foreach,
+  become, `void` streamlet, type expressions~~ **DONE 2026-08-13, except
+  `constant`, which is blocked upstream — see #1b.**
 - **3** — companion `language-coverage/` model for what a restaurant cannot
   justify (module, bast_import, replica, graph/table, nebula, method,
   attachment/ULID, `described at`/`in file`)
