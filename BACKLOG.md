@@ -21,26 +21,28 @@ finishes. That is expected, not a breakage.**
 and the interaction blocks are restored, and both survive the round trip in
 the full corpus.
 
-**Next is Phase 3**, now unblocked: `method` was fixed in the same rc.14
-change as `constant`. Then Phase 5.
+**Phase 3 is DONE** (#1e) — `language-coverage/` is committed and gated.
+**Remaining: Phase 5, and R2's orphan briefs.**
 
-**The one thing standing between the campaign and 9 of 10 is not ours.**
-R10 is red only because rc.14's new instance-addressing check does not
-resolve `Id` type aliases (#1d). **Do not model around it** — 72 of the 86
-distinct flagged messages already carry the id.
+**R10's upstream excuse is GONE, and R10 is still red — it is now OURS.**
+#1d was fixed on 2026-08-14 and the 49 errors it exposed are cleared, so
+reactive-bbq has **zero errors**. R10 demands zero *messages*, and 134
+completeness messages remain: the residual bare operands of **#11**, chiefly
+the query answers whose `*Result` types wrap a base record with no id field.
+**Closing #11 for reactive-bbq is what turns R10 green.**
 
 Measured at **rc.14** on 2026-08-14, every row by running the command:
 
 | item | state |
 |---|---|
-| reactive-bbq errors / warnings | **0 errors**; 111 completeness messages, ALL from upstream #1d |
+| reactive-bbq errors / warnings | **0 errors**; 134 completeness messages, now OURS (#11), not upstream |
 | degenerate descriptions left | **0** (was 358) |
 | `???` bodies | **0** (was 20) |
-| BAST round trip | **187/187**, 0 discrepancies, at BAST revision 16 |
+| BAST round trip | **187/188** at revision 17; the one discrepancy is `shown by` losing its URL through BAST, filed upstream |
 | interaction blocks / `constant` | restored and surviving BAST (#1b, #1c closed) |
 | terms | **25** (was 2) |
 | UI groups / `put` statements | **5** (was 1) / **5** (was 0) |
-| rules green | **8 of 10** — R5 green 2026-08-14; R10 red only from an upstream defect |
+| rules green | **8 of 10** — R2 and R10 red, both now ours |
 
 **The suite's 10 cases**, by their actual test names. An earlier version of
 this table named the green ones "R1, R6, R7, R8, R10", which was wrong:
@@ -66,7 +68,7 @@ it. These do NOT map one-to-one onto the phases:
 | rule | red because | addressed by |
 |---|---|---|
 | R2 | **51** orphan briefs — a `briefly` with no `described` within 3 lines. All connectors and handlers: restaurant 30, corporate 11, backoffice 10 | **Reid's call: at the END of the plan**, not now |
-| R10 | 111 messages from rc.14's new instance-addressing check | **NOT OURS — upstream, #1d.** Do not model around it |
+| R10 | 134 completeness messages, the residual bare operands | **#11** — mostly the wrapped-base-record `*Result` types |
 
 **R3 and R9 are done** (2026-08-13), both unblocked by rc.14 and taken
 while waiting for it:
@@ -456,7 +458,16 @@ are not re-litigated: a user may interact only at the application boundary
 (`send … from user U to context C` is a hard error), and a `show output X to
 user` step must be witnessed by a `put … to X`.
 
-## 10. `sbt v` is RED — 16 of 187 models fail, all from ONE rc.14 check
+## ~~10. `sbt v` is RED~~ — FIXED 2026-08-14, zero errors corpus-wide
+
+All 49 cleared: 16 wrong-entity aliases retyped, 2 correctly-named aliases
+pointed at their entities (which also cleared 38 unrelated "instance is
+unspecified" messages), 27 `tell` sites annotated `by <field>`. Detail in
+`task/done/2026-08-14-alias-fix-exposes-49-addressing-defects.md`.
+
+Historical detail follows.
+
+## 10-historical. `sbt v` was RED — 16 of 187 models, all from ONE rc.14 check
 
 **Measured 2026-08-14 by running `sbt v`. This is pre-existing and was not
 recorded anywhere** — the campaign has been measuring reactive-bbq, which is
@@ -522,11 +533,21 @@ fields or the model should type them differently. **Worth asking riddl**, since
 **Do not "fix" this by weakening anything.** The check found 13 genuine defects
 in one run.
 
-## 1e. Phase 3 is BUILT and HELD — riddlc's source emitter loses six constructs
+## ~~1e. Phase 3 HELD~~ — LANDED 2026-08-14
 
-**The `language-coverage/` model is complete and validates clean (0 messages at
-rc.14), and is deliberately NOT committed.** Reid's call, 2026-08-14: nothing
-enters riddl-models that its own gates cannot check.
+**`language-coverage/` is committed and inside every gate.** riddl fixed all six
+emitter defects it found (`2ebe24a6c`, `80bb93b40`); each was re-verified here
+rather than assumed. One of the six was **refuted and the refutation was right**:
+`figma` on a domain or context is a legitimate validation error, and prettify
+writing nothing on a validation error is correct — the probe that "found" it had
+suppressed stderr.
+
+**It has since found a seventh:** `shown by` loses its URL scheme and host
+through BAST (`https://ossum.tech/x` returns as `file:///x`), which is the one
+round-trip discrepancy in the corpus. Filed upstream. The model is doing exactly
+what it was built for.
+
+Historical detail follows.
 
 **Where it is:** `language-coverage/` in the working tree, **untracked**, with
 its `.conf` renamed to `language-coverage.conf.held` so no gate discovers it
@@ -576,3 +597,37 @@ a deprecation message, contradicting scoping decision 4 and turning R12 red.
 **Also found while probing, and worth keeping:** `described at` **rejects a
 trailing slash** — `https://ossum.tech/docs/riddl/` fails, the same URL without
 it parses, though the EBNF's `url_path` admits `/`. Reported in the same task.
+
+
+## 11. 495 bare message operands remain, and 269 need MODEL changes
+
+From `task/2026-08-14-bare-message-operands-now-warn-corpus-wide.md`, which is
+**still open** — 15,273 were migrated, these were deliberately not.
+
+- **269 entity query answers.** `reply result R` / `tell result R to entity`
+  where R wraps a base record and has no fields to construct from —
+  `MarketplaceOrderResult` has exactly one field, `marketplaceOrderData`. riddl
+  has ruled a wrapped base record does **not** satisfy the addressing check
+  either, so this is the SAME job as the 13 `*Result` types plus
+  `RecordLoyaltyActivity` from the alias task. **Do it once, not twice.**
+- **162 `on init`/`on other`** — no value in scope. An entity's creation event
+  cannot be sourced from the state it is about to populate. May be genuinely
+  unsayable; worth asking riddl whether `on init` should be exempt as
+  field-less messages already are.
+- **~64 handlers emitting an unrelated message** where no field of the handled
+  message feeds the target. A domain decision each.
+
+**riddl will not flip the bare form to an Error until this is clean**, so there
+is no deadline — but they are waiting on us.
+
+## 12. Phase 5's population is no longer measurable by the validator
+
+The populates-repository warning **only fires on a `MessageRef` operand**, so
+migrating to the `ValueRef` arm blinded it: 863 -> 9 corpus-wide with no model
+change. Verified by reverting a single site and watching the warning return.
+
+**The number, taken before the migration, is 854.** Those sites are still
+defective. Filed upstream
+(`2026-08-14-valueref-migration-blinds-the-populates-repository-check.md`);
+until it is fixed, enumerate them from git history at commit `5002d44f~1`, not
+from a validator run.
