@@ -16,36 +16,31 @@ finishes. That is expected, not a breakage.**
 
 ### Where it stopped
 
-**Phases 0, 1 and 2 are done** (2026-08-13), except `constant` which is
-blocked upstream (#1b). **R3 and R9 are also done**, taken out of phase
-order because they need nothing from riddl.
+**Phases 0, 1, 2 and 4 are done**, and so are R3, R9, R4 and R5.
+**#1b and #1c are CLOSED** — rc.14 fixed both BAST defects, the `constant`
+and the interaction blocks are restored, and both survive the round trip in
+the full corpus.
 
-**Phase 3 is BLOCKED on the same binary as #1b.** Its coverage list names
-`method`, and `method` had the *identical* BAST defect as `constant` —
-both are fixed in riddl `4ca2906dc`, neither is in rc.13. Writing the
-companion model against rc.13 means authoring constructs already known to
-derail on `unbastify`.
+**Next is Phase 3**, now unblocked: `method` was fixed in the same rc.14
+change as `constant`. Then Phase 5.
 
-**Phase 4 is HALF DONE and its other half is blocked the same way.** The UI
-half landed (R4 green: 5 groups, 5 `put`s). The epic half was written,
-validated at 0 messages, and then **reverted** — all three interaction
-block kinds break the BAST round trip at rc.13 (#1c). So R5 stays red.
+**The one thing standing between the campaign and 9 of 10 is not ours.**
+R10 is red only because rc.14's new instance-addressing check does not
+resolve `Id` type aliases (#1d). **Do not model around it** — 72 of the 86
+distinct flagged messages already carry the id.
 
-**Everything now waits on one staged binary.** #1b, Phase 3 and #1c are all
-the same defect family and all clear together. The only unblocked work left
-in the campaign is R2 (deferred to the end by Reid) and Phase 5.
-
-Measured at rc.13 on 2026-08-13, every row by running the command:
+Measured at **rc.14** on 2026-08-14, every row by running the command:
 
 | item | state |
 |---|---|
-| reactive-bbq errors / warnings | **0 / 0**, CLI *and* library API (warnings were 18) |
+| reactive-bbq errors / warnings | **0 errors**; 111 completeness messages, ALL from upstream #1d |
 | degenerate descriptions left | **0** (was 358) |
 | `???` bodies | **0** (was 20) |
-| BAST round trip | **187/187**, zero `.bast` modified after regenerate-and-compare |
+| BAST round trip | **187/187**, 0 discrepancies, at BAST revision 16 |
+| interaction blocks / `constant` | restored and surviving BAST (#1b, #1c closed) |
 | terms | **25** (was 2) |
 | UI groups / `put` statements | **5** (was 1) / **5** (was 0) |
-| rules green | **8 of 10** — see the roster below |
+| rules green | **8 of 10** — R5 green 2026-08-14; R10 red only from an upstream defect |
 
 **The suite's 10 cases**, by their actual test names. An earlier version of
 this table named the green ones "R1, R6, R7, R8, R10", which was wrong:
@@ -55,12 +50,12 @@ carries no rule number at all. Read from a `checkAll` run 2026-08-13:
 | case | state |
 |---|---|
 | should exist as the reference model | green |
-| R10 validate with zero errors and zero warnings | green |
+| R10 validate with zero errors and zero warnings | **red — upstream, see #1d** |
 | R1 no `???` placeholder bodies | green |
 | R2 every definition a full description, not only a brief | **red** |
 | R3 domain vocabulary as terms | green **(2026-08-13)** |
 | R4 UI intent with groups and `put` | green **(2026-08-13)** |
-| R5 every epic interaction block kind | **red** |
+| R5 every epic interaction block kind | green **(2026-08-14)** |
 | R5 every use case its own user story | green |
 | R9 a version so type-delta staleness is detectable | green **(2026-08-13)** |
 | R12 no deprecated spellings | green |
@@ -71,7 +66,7 @@ it. These do NOT map one-to-one onto the phases:
 | rule | red because | addressed by |
 |---|---|---|
 | R2 | **51** orphan briefs — a `briefly` with no `described` within 3 lines. All connectors and handlers: restaurant 30, corporate 11, backoffice 10 | **Reid's call: at the END of the plan**, not now |
-| R5 | no `sequence` / `parallel` / `optional` interaction blocks | **BLOCKED upstream — #1c** |
+| R10 | 111 messages from rc.14's new instance-addressing check | **NOT OURS — upstream, #1d.** Do not model around it |
 
 **R3 and R9 are done** (2026-08-13), both unblocked by rc.14 and taken
 while waiting for it:
@@ -201,8 +196,8 @@ before trusting them.
   `constant`, which is blocked upstream — see #1b.**
 - **3** — companion `language-coverage/` model for what a restaurant cannot
   justify (module, bast_import, replica, graph/table, nebula, method,
-  attachment/ULID, `described at`/`in file`). **BLOCKED on rc.14** — its
-  `method` hits the same BAST defect as `constant` (#1b).
+  attachment/ULID, `described at`/`in file`). **UNBLOCKED at rc.14** — its
+  `method` was fixed in the same change as `constant`. **Next up.**
 - **4** — UI per domain (groups, inputs, outputs, `put`) and every epic
   interaction step kind. **UI half DONE 2026-08-13** — R4 green. **Epic half
   BLOCKED on rc.14** (#1c), so R5 stays red. Two pieces still owed when it
@@ -211,6 +206,9 @@ before trusting them.
   kitchen display, storefront, delivery dispatch) — deferred because every
   epic step references its inputs by path, so the split and the epic rewrite
   should land together rather than churn the paths twice.
+  **DONE 2026-08-14 except the RestaurantScreen split**, which is still owed:
+  R4 and R5 are both green, but RestaurantApp still has one screen carrying
+  host, server, kitchen, storefront and delivery controls.
 - **5** — the corpus-wide populates-repository campaign, ~855 sites in the
   other 186 models
 - **6** — upstream task for riddlc: a run-ending fitness summary, plus the
@@ -224,71 +222,65 @@ before trusting them.
 simulator cannot finish. Unconnected ports ARE checked (`:203`, `:583`).
 This belongs in the Phase 6 upstream task.
 
-## 1c. Interaction blocks are unusable at rc.13 — blocked on riddl
+## 1d. rc.14's instance-addressing check does not resolve `Id` aliases
 
-**`sequence`, `parallel` and `optional` all break the BAST round trip**, the
-same defect family as `constant` (#1b): `validate` clean, `bastify` reports
-success, `unbastify` fails. Found 2026-08-13 while doing Phase 4.
+**This is why R10 is red, and it is NOT the model's fault. Do not fix it by
+editing models.**
 
-Isolated to an **8-node, 243-byte repro** — one epic, one case, one
-`sequence` wrapping two `for context … is` steps. Filed as
-`../riddl/task/2026-08-13-interaction-blocks-break-bast-round-trip.md`.
+rc.14 added a completeness check: a message told to an entity should carry a
+field typed `Id(<Entity>)`. It compares the field's *written* type, not its
+resolved one, so a field typed by a named alias is not recognised — and the
+alias IS the documented idiom (CLAUDE.md § RIDDL Style item 7,
+`type OrderId is Id(Order)`), used corpus-wide.
 
-**The tell is the node count going DOWN**: 9 nodes / 310 bytes without the
-block, 8 nodes / 243 bytes with it, for a file that only *adds* a construct.
-The writer appears to emit the block without its children. As with
-`constant`, the error names the derail point, not the cause — `Invalid
-string table index` in the small repro, `Reader exceeded node boundary …
-Last successful node: Connector` in full reactive-bbq.
+Isolated to a two-command repro, filed as
+`../riddl/task/2026-08-14-instance-addressing-check-does-not-resolve-id-aliases.md`:
 
-**This is why R5 is red and must stay red.** R5 cannot be satisfied without
-breaking the 187/187 round-trip gate. The Phase 4 epic work was written,
-validated at 0 messages, and then **reverted** rather than shipped broken —
-exactly as `constant` was. Restore it when the fix lands; the epic content
-is recoverable from this session's reverted diff, or simply rewritten.
+| command | field type | flagged? |
+|---|---|---|
+| `DirectCmd` | `thingId: Id(C.Thing)` inline | no |
+| `AliasCmd` | `thingId: ThingId`, `type ThingId is Id(C.Thing)` | **yes** |
 
-**What was learned doing it, so it is not re-derived:**
+reactive-bbq went **0 → 111 messages** on the rc.14 upgrade. Of **86 distinct
+flagged messages, 72 carry a `*Id`-typed field** and are false positives.
 
-- `sequence { … }` is the keyword, **not** `sequential` — the rule's name
-  and the grammar production differ.
-- A `show output X to user` step must be **witnessed** by a `put … to X`
-  somewhere, or riddlc reports the step unwitnessed. Outputs with no `put`
-  are unreachable, not merely undernourished.
-- **A user may interact only at the application boundary.** `step send …
-  from user U to context C` is a hard error; route through the app.
-- A `send` step also needs a wiring path to the receiver, and
-  `from context RestaurantApp to entity FrontOfHouse.TableOrder` was
-  reported unwitnessed **despite** the connector
-  `'TableOrderCommand Stream'` joining exactly those two. Not investigated —
-  it may be alternation-vs-member type matching. **Worth a look before
-  assuming the model is wrong.**
+**The other 14 look genuine and are ours to fix once the noise is gone:** the
+13 `*Result` types plus `RecordLoyaltyActivity`. The Results wrap a base
+record (`result ReservationResult is { reservation: ReservationBase }`)
+rather than naming an id, so they may deserve the message — riddl was asked
+whether a nested record should satisfy the check.
 
-## 1b. `constant` is unusable at rc.13 — blocked on riddl
+**It also aborts `sbt checkAll`**, because the same check fires twice in
+`patterns/entity/*/example.riddl` and `verifyTemplates` gates before the
+suite. Until it is fixed, get the rule state with:
 
-**A `constant` cannot survive a BAST round trip.** `validate` is clean,
-`bastify` reports success, and `unbastify` then **fails**, leaving an
-unreadable `.bast`. That matters beyond hygiene: riddl-mcp-server and
-synapify load these files.
+```bash
+sbt 'Test/testOnly *ReactiveBbqCompletenessTest'
+```
 
-Isolated to a **13-node, 288-byte repro** — one `constant`, one `type`.
-Deleting just the `constant` makes the same file round-trip. Filed as
-`../riddl/task/2026-08-13-constant-breaks-bast-round-trip.md`.
+## ~~1b. `constant`~~ and ~~1c. interaction blocks~~ — BOTH CLOSED 2026-08-14
 
-**The error names the wrong construct**, which is why this cost time. In the
-small repro it reads `Invalid string table index`; in full reactive-bbq the
-*same single constant* reads `Invalid invariant condition kind: 67` — and
-reactive-bbq does contain one `invariant`, so the message sent us to bisect
-that first. **Removing the invariant did not fix it.** The reader
-desynchronises on the `constant` node and misreports at the point of
-derailment.
+Both were the same defect family: a node written to BAST that could not be
+read back. **rc.14 fixed both**, and both are restored and verified in the
+full corpus, not just in repros.
 
-reactive-bbq therefore declares **no `constant`**; `PointsForSpend` inlines
-the earn rate, with a comment at the site pointing at the task. **Restore it
-when riddl lands the fix** — `constant` is on the Phase 2 coverage list.
+- **`constant`** — `PointsPerDollar` is back in the Loyalty context and
+  `PointsForSpend` refers to it instead of an inlined 10. riddl's cause:
+  `writeConstant` emitted `NODE_FIELD`, stranding the value bytes.
+- **Interaction blocks** — `sequence`/`parallel`/`optional` restored in
+  `DineInExperience`, **R5 green**. riddl's cause: `InteractionContainer`
+  extends `Container` but not `Branch`, so the writer wrote a child count and
+  never the children. Their sweep found two more of the same shape
+  (`InvariantBlock`, and `relationship` writing no discriminator at all —
+  the corpus uses `relationship` zero times, so nothing here was affected).
 
-Everything else in the same batch round-trips cleanly: `saga`,
-`correlation`, `function`/`return`, `invariant`, `require`, `foreach`,
-`become`, and a second handler on one state.
+**The lesson worth keeping: a BAST error names where the reader DERAILED, not
+what derailed it.** Bisect file-first, then construct-within-file, and
+distrust the construct named. Both defects were found that way, the second in
+a single pass because the first had taught the method. A second tell, specific
+to this family: **the node count going DOWN when a construct is added** means
+children are being lost.
+
 
 ## 2. Pattern templates: 2 of 7 validate as whole models
 

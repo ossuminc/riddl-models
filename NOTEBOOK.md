@@ -4,56 +4,49 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`, **pushed** to `origin/release/2` (2026-08-13; this
-record may be one commit ahead of it — check with `git status -sb` rather
-than trusting this line). `main` stays 1.x until riddl 2.0 ships (#4).
+**Branch** `release/2`. Pushed through 2026-08-13; **this session's commits
+are ahead** — check `git status -sb` rather than trusting this line. `main`
+stays 1.x until riddl 2.0 ships (#4).
 
-**Versions — run, not recalled:** staged `../bin/riddlc` is **2.0.0-rc.13**
-(`d118041ce`), `riddlVersion` in `build.sbt` matches, Scala **3.9.0-RC4**.
+**Versions — run, not recalled:** staged `../bin/riddlc` is **2.0.0-rc.14**
+(`dd42a4903`), `riddlVersion` in `build.sbt` matches, Scala **3.9.0-RC4**
+(unchanged, checked against riddl's `project/Dependencies.scala`).
 `riddlcPath` prefers the staged binary, so that is what actually runs.
+**BAST format revision is 16.**
 
-**`sbt checkAll` EXITS 1 and that is correct.**
-`ReactiveBbqCompletenessTest` states the active campaign's target; **8 of 10
-rules pass** (was 5). **Do not weaken the suite to get green.** Red: **R2**
-(deferred to the end by Reid) and **R5** (blocked upstream, #1c).
+**`sbt checkAll` ABORTS BEFORE THE SUITE RUNS — this is new, and not a
+corpus regression.** `verifyTemplates` gates first and fails on the two
+pattern examples, because of the upstream defect in #1d. Until that is
+fixed, get the real rule state with:
 
-**In flight: BACKLOG #1, the reactive-bbq reference model. Phases 0, 1 and 2
-are DONE, and so are R3, R9 and R4.** Verified today: reactive-bbq validates
-**0 errors / 0 warnings** by CLI *and* library API, **0** degenerate
-descriptions, **0** `???`, **25** terms, **5** groups, **5** `put`s, round
-trip **187/187**. BACKLOG #1 carries the measured state, the five scoping
-decisions, the true 10-case roster and what each red rule needs — read it
-before touching anything.
+```bash
+sbt 'Test/testOnly *ReactiveBbqCompletenessTest'
+```
 
-**THE CAMPAIGN IS NOW ESSENTIALLY BLOCKED ON ONE STAGED BINARY.** Three
-separate items are the same defect family — a node written to BAST that
-cannot be read back — and all clear together:
+**8 of 10 rules pass** (was 5 yesterday). Red: **R2**, deferred to the end
+of the plan by Reid, and **R10, which is red for an upstream reason (#1d)
+and must NOT be fixed by editing models.** Absent #1d this is 9 of 10.
+**Do not weaken the suite to get green.**
 
-- **#1b `constant`** — fixed upstream in `4ca2906dc`, awaiting the binary.
-- **Phase 3** — its coverage list names `method`, fixed in the same commit.
-- **#1c interaction blocks** — `sequence`/`parallel`/`optional` ALL break
-  the round trip. **Found today, filed today**, with an 8-node repro:
-  `../riddl/task/2026-08-13-interaction-blocks-break-bast-round-trip.md`.
-  This is what keeps R5 red.
+**In flight: BACKLOG #1, the reactive-bbq reference model. Phases 0, 1, 2
+and 4 are DONE, and so are R3, R9, R4 and R5. Next is Phase 3**, unblocked
+at rc.14. Verified today: **0 errors**, 111 completeness messages all from
+#1d, **0** degenerate descriptions, **0** `???`, **25** terms, **5** groups,
+**5** `put`s, round trip **187/187** at revision 16. BACKLOG #1 carries the
+measured state, the five scoping decisions, the true 10-case roster and what
+each red rule needs — read it before touching anything.
 
-Our staged `../bin/riddlc` is `d118041ce` (2026-08-12), which **predates**
-the fix (`4ca2906dc`, 2026-08-13) — checked with `git merge-base
---is-ancestor`, not assumed. Reid is directing the staging himself; **do not
-file a task asking for the binary.**
+**Yesterday's two blockers are CLOSED.** rc.14 fixed both BAST defects. The
+`constant` is restored in `LoyaltyContext.riddl` and the interaction blocks
+in `DineInExperience`; both survive the round trip in the full corpus, and
+both task files are in `task/done/` with verified Results.
 
-**When it lands:** regenerate every `.bast` (`sbt b`) in the same commit —
-revision 14 rejects revision-13 files by design — then restore the
-`constant`, write Phase 3, and redo the Phase 4 epic half.
-
-**The Phase 4 epic work was written and validated at 0 messages, then
-REVERTED** because of #1c. Do not assume it was never done; the lessons from
-it are recorded in BACKLOG #1c, including that the keyword is `sequence`
-(not `sequential`), that `show output` must be witnessed by a `put`, and
-that a user may only interact at the application boundary.
-
-**When the new binary lands, `.bast` regeneration is mandatory, not
-optional** — revision 14 rejects revision-13 files by design. `sbt b`
-regenerates all 187; put it in the same commit.
+**The one open task is the big one:** riddlg wants bare message-refs
+converted to the constructor form (`send event Foo(a = b)` rather than
+`send event Foo`) — 1068 of 1088 `AI FILL` markers in generated Java trace
+to it. **Do not start it without reading its own caveat:** riddl expects
+**BAST revision 17** for exactly this message-value design, and asked us not
+to regenerate `.bast` twice. Decide the sequencing before touching models.
 
 ### Traps
 
@@ -61,16 +54,25 @@ regenerates all 187; put it in the same commit.
   CLI called a file clean while `checkAll` reported a real deprecation
   (inline aggregation on `requires`/`returns`) and a real usage warning.
   Run `sbt checkAll` before believing a model is clean.
-- **A BAST failure can name the wrong construct.** `constant` breaks
-  deserialization and reports as `Invalid invariant condition kind: 67`;
-  reactive-bbq contains exactly one `invariant`, so the message misdirects,
-  and removing that invariant did **not** help. **Bisect by file, then by
-  construct within the file.**
+- **A BAST failure names where the reader DERAILED, not what derailed it.**
+  Proven twice: `constant` reported `Invalid invariant condition kind: 67`
+  in a model with exactly one `invariant`, and removing that invariant did
+  **not** help; the interaction blocks reported `Invalid string table index`.
+  **Bisect by file, then by construct within the file.** A second tell for
+  this family: **the node count going DOWN when a construct is added** means
+  children are being lost.
+- **`sbt bastify` covers 187 models, but 189 `.bast` are tracked.**
+  `riddlcConfExclusions` excludes `patterns/`, whose two example `.bast`
+  must be regenerated by hand from their own directories. A revision bump
+  that misses them leaves files riddlc refuses to read.
 - **Structural edits need canonicalising through prettify; description
   edits never did.** Prettify puts `reverted by` on its own line and ` with
   {` with one leading space. Run prettify into a temp dir and copy back.
-- **`option persistent()` on a cross-context connector is REQUIRED at
-  rc.13**, not deprecated — `StreamingValidation.scala:103` and `:364`.
+- **A cross-context connector must still be persistent, but the SPELLING
+  changed at rc.14**: `persistent connector X is ...` as a keyword prefix.
+  `option persistent()` is now deprecated, and `riddlcPrettify` migrates it
+  across the corpus. `patterns/` is excluded from that task, so it needed
+  hand-migration — remember that whenever a syntax migration lands.
 - **`.bast` may be rewritten from outside this repo.** An unexplained
   `.bast` diff means look at `../riddl` first, and only believe a diff that
   **survives** `./scripts/verify-bast-roundtrip.sh` + `git status -- '*.bast'`.
@@ -79,21 +81,27 @@ regenerates all 187; put it in the same commit.
 
 ### Certainty
 
-**Verified by command today:** git state; the rc.13 binary, pin and Scala
-version; that the staged binary **predates** the `constant`/`method` fix
-(`git merge-base --is-ancestor 4ca2906dc d118041ce` → false); reactive-bbq
-0/0 by CLI; 25 terms, 1 `version`, 5 groups, 5 `put`s; `checkAll` red on
-exactly R2 and the interaction-block R5; prettify drift nil; bastify 187/187
-with only `reactive-bbq.bast` changed; round trip 187/187 with 0
-discrepancies **after** the #1c revert. The #1c defect itself was reproduced
-down to 8 nodes with a negative control.
+**Verified by command today (2026-08-14):** the rc.14 binary and pin; Scala
+unchanged; that rc.14 contains BOTH BAST fixes (`4ca2906dc`, `78a025362`);
+`option persistent()` gone corpus-wide; all **189** tracked `.bast` readable
+at revision 16, counted by iterating every file rather than sampling; that
+`sbt bastify` output is byte-identical to a per-directory run, so the
+path-baking trap does not bite; round trip **187/187**, 0 discrepancies,
+with the `constant` AND the interaction blocks restored;
+`Test/testOnly *ReactiveBbqCompletenessTest` → **succeeded 8, failed 2**;
+the corpus uses `relationship` **zero** times, so riddl's third BAST defect
+never touched us.
 
-**NOT verified, and worth an hour when the binary lands:** a `send` step
-`from context RestaurantApp to entity FrontOfHouse.TableOrder` was reported
-**unwitnessed** even though the connector `'TableOrderCommand Stream'` joins
-exactly those two. It may be alternation-vs-member type matching in the
-check, or it may be a real modelling gap. It was dropped rather than
-diagnosed — do not treat the model as guilty without looking.
+**#1d isolated, not inferred:** a field typed `Id(C.Thing)` inline passes
+the new check; the same type via `type ThingId is Id(C.Thing)` is flagged.
+72 of 86 distinct flagged messages carry a `*Id` field.
+
+**NOT verified, still open:** a `send` step `from context RestaurantApp to
+entity FrontOfHouse.TableOrder` was reported **unwitnessed** even though the
+connector `'TableOrderCommand Stream'` joins exactly those two. It may be
+alternation-vs-member type matching in the check, or a real modelling gap.
+It was dropped rather than diagnosed — do not treat the model as guilty
+without looking.
 
 **Grammar checked, not assumed:** `version` is legal in `domain_content`
 and `processor_definition_contents`; `term` is legal in **any**
@@ -109,19 +117,23 @@ same way.
 ### Pointers
 
 - **BACKLOG.md #1** — the campaign: measured state, decisions, phases, and
-  what each red rule needs. #1b is the upstream `constant` blocker.
+  what each red rule needs. **#1d is the upstream blocker keeping R10 red**;
+  #1b and #1c are closed.
 - **CLAUDE.md** — durable syntax: saga steps, repository wiring, correlation,
   `become` vs `morph`, functions, the arity/shape table, connector naming
 - **docs/SIMULABILITY-AND-GENERATABILITY.md** — the disqualifier rules
 - `~/.claude/plans/wobbly-whistling-finch.md` — the approved plan
 
-**`task/` holds ONE open file**, triaged 2026-08-13 and deliberately left
-open: `2026-08-13-constant-bast-fix-landed.md`. It is riddl's ping that the
-`constant` fix landed, and it asks for the restore plus a round-trip re-run.
-**It cannot be actioned until the rc.14 binary is staged** — see the blocked
-items above. Close it in the same commit as the restore. Still run
+**`task/` holds ONE open file**, triaged 2026-08-14:
+`2026-08-14-reactive-bbq-names-message-types-where-values-are-required.md`
+from riddlg — the constructor-form conversion. It is large and has a timing
+caveat (BAST revision 17), so read it before starting rather than treating
+it as mechanical.
+
+Two were closed today with verified Results into `task/done/`: the
+`constant` fix ping and the rc.14 `.bast` regeneration. Still run
 `/ossuminc-skills:check-tasks` in the new session, since other repos
-drop files here between sessions.
+drop files here between sessions — three arrived in two days.
 
 ---
 

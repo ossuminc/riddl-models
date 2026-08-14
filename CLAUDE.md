@@ -517,6 +517,21 @@ one handler. Use `become` when nothing about the entity changed, only what
 the system does about it (reactive-bbq: a delivery under escalation is still
 in transit with the same order).
 
+**`persistent connector`, not `option persistent()`** (rc.14). A connector
+crossing a context boundary must still be persistent, but the spelling is now
+a keyword prefix:
+
+```riddl
+persistent connector 'OrderEvent Storage' is from outlet X to inlet Y with {
+  briefly "..."
+}
+```
+
+`option persistent()` is deprecated and the message names the replacement.
+`riddlcPrettify` migrates the whole corpus, but **`patterns/` is excluded**
+(`riddlcConfExclusions`), so its sites need hand-migration — true of any
+future syntax migration too.
+
 **`term` — define a word where it is used, not in a glossary.** `term` is
 `meta_data`, so it is legal in **any** `with { }` block — including a
 **field's**, which is where most of them belong, because that is where the
@@ -707,7 +722,7 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.0.0-rc.10-57-e012ebb9** (set by `riddlVersion` in
+Current version: **2.0.0-rc.14** (set by `riddlVersion` in
 `build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
 While `release/2` is in flight `riddlcPath` prefers the staged
 `../bin/riddlc`, so that binary is what actually runs — check it with
@@ -788,7 +803,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.0.0-rc.10-57-e012ebb9 | `riddlVersion` in `build.sbt` |
+| riddlc | 2.0.0-rc.14 | `riddlVersion` in `build.sbt` |
 | sbt-riddl | 2.0.0-rc.9-48-fdc5c171 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
