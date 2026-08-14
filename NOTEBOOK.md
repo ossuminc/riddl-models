@@ -4,8 +4,9 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`, **5 unpushed** commits (R9, R3, a record, R4, the
-`put`). `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
+**Branch** `release/2`, **pushed** to `origin/release/2` (2026-08-13; this
+record may be one commit ahead of it — check with `git status -sb` rather
+than trusting this line). `main` stays 1.x until riddl 2.0 ships (#4).
 
 **Versions — run, not recalled:** staged `../bin/riddlc` is **2.0.0-rc.13**
 (`d118041ce`), `riddlVersion` in `build.sbt` matches, Scala **3.9.0-RC4**.
