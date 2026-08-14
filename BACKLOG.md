@@ -394,3 +394,64 @@ rule stronger than this item's original form: a `.bast` diff is only meaningful
 if it **survives** a regenerate-and-compare. Restore with
 `git checkout -- '*.bast'` (never delete them) and re-run that check before
 believing a diff.
+
+---
+
+## 8. Model defects found while triaging riddlg's task — verified, not yet fixed
+
+These came out of `task/2026-08-14-reactive-bbq-names-message-types-where-
+values-are-required.md`. **Each was checked against the model here**, so the
+next session does not re-derive them. They are independent of that task's
+main ask and can be fixed without it.
+
+1. **`SubmittedOrders` is an inlet spelled as an outlet.** riddlg reported it
+   as "names no outlet declared in the model", which is a **misdiagnosis** —
+   the port exists. `FrontOfHouseContext.riddl:822` declares
+   `inlet SubmittedOrders`, and `TableOrder.riddl:790` says
+   `send event OrderSubmitted to outlet FrontOfHouse.OrderSplitter.SubmittedOrders`.
+   Wrong port *kind*, right port.
+   **riddlc validates this cleanly**, which is itself worth reporting upstream:
+   a `send … to outlet <an-inlet>` should not pass.
+
+2. **Five entities declare a `morph`/`become` but have exactly one state**, so
+   there is no transition to make: `Shift`, `MenuItem`, `MenuRelease`,
+   `PurchaseOrder`, `Campaign` — counted with
+   `grep -cE '^\s*(initial )?state \w+'` and `grep -cE '^\s*(morph|become) '`,
+   which return 1 and 1 for each. **riddlg's task says "4 entities" and then
+   lists five**; five is right.
+   Either declare the states the entity moves between, or drop the transition.
+   Declaring them is probably correct — an entity worth morphing has a
+   lifecycle — but that is a modelling decision, not a mechanical fix.
+
+3. **`saga OnlineOrdering.OnlineOrderCheckout` states no timeout**, so a run
+   is bounded by riddlg's built-in 60s default rather than by the model.
+   Verified: zero `timeout`/`times out` in the saga body. Lower priority.
+
+## 9. Unexplained: a `send` epic step across an existing connector reads as unwitnessed
+
+While writing the Phase 4 epics, this step was rejected:
+
+```riddl
+step send command Restaurant.FrontOfHouse.TableOrder.CreateOrder
+     from context Restaurant.RestaurantApp to entity Restaurant.FrontOfHouse.TableOrder
+```
+
+> no wiring (connector/adaptor/tell) path from 'Restaurant.RestaurantApp'
+> reaches 'Restaurant.FrontOfHouse.TableOrder'
+
+**But the connector exists.** `restaurant/domain.riddl:331` declares
+`'TableOrderCommand Stream' is from outlet RestaurantApp.AppTableOrderCommands
+to inlet FrontOfHouse.TableOrder.TableOrderCommands` — exactly those two
+endpoints. The connector carries the `TableOrderCommand` alternation and
+`CreateOrder` is a member of it, so **alternation-vs-member matching in the
+reachability check is the leading hypothesis**.
+
+**It was dropped, not diagnosed** — the step was removed to get the epic
+green. Do not assume the model is at fault. Worth an hour; if it is a riddlc
+gap it should be filed, and if it is ours the same shape may be wrong
+elsewhere.
+
+Two related rules that ARE correct and were learned at the same time, so they
+are not re-litigated: a user may interact only at the application boundary
+(`send … from user U to context C` is a hard error), and a `show output X to
+user` step must be witnessed by a `put … to X`.
