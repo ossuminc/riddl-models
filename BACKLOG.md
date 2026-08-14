@@ -455,3 +455,124 @@ Two related rules that ARE correct and were learned at the same time, so they
 are not re-litigated: a user may interact only at the application boundary
 (`send … from user U to context C` is a hard error), and a `show output X to
 user` step must be witnessed by a `put … to X`.
+
+## 10. `sbt v` is RED — 16 of 187 models fail, all from ONE rc.14 check
+
+**Measured 2026-08-14 by running `sbt v`. This is pre-existing and was not
+recorded anywhere** — the campaign has been measuring reactive-bbq, which is
+unaffected, so nobody had run the corpus-wide CLI gate since the rc.14
+upgrade. Nothing in this session caused it; the only local change was an
+untracked directory, and the run counts 187 models, not 188.
+
+Every failure is rc.14's instance-addressing check, in its **other** failure
+mode from #1d — not "no id found" but *"Event 'X' carries 2 fields typed
+'Id(E)' (a, b), so which instance this addresses is ambiguous"*. **Three
+classes, and only one of them is ours:**
+
+**Class A — two genuine instances of the same entity (10 sites).** The model
+is right and the language cannot say which instance is addressed. Merges,
+transfers and renewals inherently name two:
+
+| model | event | fields |
+|---|---|---|
+| shopping-cart | `CartsMerged` | targetCartId, sourceCartId |
+| patient-registration | `PatientsMerged` | survivingPatientId, mergedPatientId |
+| digital-wallet | `FundsReceived` | walletId, senderWalletId |
+| game-economy | `CurrencyTransferred` | walletId, targetWalletId |
+| emergency-dispatch | `IncidentsLinked` | incidentId, linkedIncidentId |
+| demand-planning | `ForecastSuperseded` | forecastId, newForecastId |
+| policy-administration | `RenewalProcessed` | policyId, newPolicyId |
+| treaty-management | `TreatyRenewed` | treatyId, newTreatyId |
+| member-enrollment | `EnrollmentTransferred` | enrollmentId, newEnrollmentId |
+| audience-management | `LookalikeConfigured` | segmentId, sourceSegmentId |
+
+This is exactly what riddl's `task/done/2026-08-13-tell-to-an-entity-cannot-
+name-which-instance.md` is about. **Do not edit these models** — inventing a
+single id would destroy the domain meaning of a merge.
+
+**Class B — a CHILD id wrongly typed as the PARENT's Id (13 sites, 8 models).
+These are OURS and they are real defects.** riddlc is correct: a task is not a
+shift, a report is not an exam, a rider is not a policy.
+
+| model | event | the wrong field |
+|---|---|---|
+| case-management | `CourtDateCancelled` | `dateId: Id(LegalCase)` |
+| case-management | `TeamMemberRemoved` | `memberId: Id(LegalCase)` |
+| nursing-workflow | `TaskCreated`, `TaskCompleted` | `taskId: Id(NurseShift)` |
+| nursing-workflow | `PatientsAssigned` | `assignmentId: Id(NurseShift)` |
+| radiology-workflow | `DraftReportCreated`, `ReportFinalized`, `AddendumAdded` | `reportId: Id(ImagingExam)` |
+| policy-lifecycle | `BeneficiaryRemoved` | `beneficiaryId: Id(LifePolicy)` |
+| policy-lifecycle | `RiderRemoved` | `riderId: Id(LifePolicy)` |
+| member-enrollment | `EnrollmentConfirmed` | `memberId: Id(Enrollment)` |
+| supply-chain | `ShipmentReceived` | `receiptId`/`purchaseOrderId` both `Id(SupplyOrder)` |
+
+Fixing means deciding what each child actually is — a distinct entity with its
+own `Id`, or a plain identifier — which is a modelling decision per site, not
+a mechanical retype. **Not started; needs Reid's call on how far to take it**
+(some of these children may deserve promoting to real entities).
+
+**Class C — an actor reference, same entity, not the addressee (3 sites).**
+identity-management's `IdentitySuspended`/`IdentityDeactivated`/
+`IdentityReactivated` carry `suspendedBy`/`deactivatedBy`/`reactivatedBy`
+typed `Id(Identity)`. Those genuinely ARE identities — the admin who acted —
+but they are not addressing candidates. Either the check should exclude actor
+fields or the model should type them differently. **Worth asking riddl**, since
+"who did it" typed as the same entity is a common and correct shape.
+
+**Do not "fix" this by weakening anything.** The check found 13 genuine defects
+in one run.
+
+## 1e. Phase 3 is BUILT and HELD — riddlc's source emitter loses six constructs
+
+**The `language-coverage/` model is complete and validates clean (0 messages at
+rc.14), and is deliberately NOT committed.** Reid's call, 2026-08-14: nothing
+enters riddl-models that its own gates cannot check.
+
+**Where it is:** `language-coverage/` in the working tree, **untracked**, with
+its `.conf` renamed to `language-coverage.conf.held` so no gate discovers it
+(they all enumerate `.conf`). `language-coverage/HELD.md` states this and lists
+the four steps to land it. **It is untracked, so `git clean -fdx` would destroy
+it** — that is the standing risk of holding it this way.
+
+**Why it is held.** Building it found **six defects in riddlc's source
+emitter**, shared by `prettify` and `unbastify`. Filed with repros and code
+pointers as `../riddl/task/2026-08-14-prettify-emitter-drops-method-and-shown-
+by.md`, with a request to bundle the fixes into the BAST rev 17 change so this
+repo regenerates once rather than twice.
+
+| construct | emitter behaviour |
+|---|---|
+| `method` | **silently omitted** — BAST 11 nodes in, 9 out |
+| `shown by` | **silently omitted** — 8 nodes in, 7 out |
+| `table of T of [a,b]` | emits `table of T[ a, b ]` — **does not reparse** |
+| `attachment N is <mime> …` | emits the mime type **quoted** — does not reparse |
+| `figma` on a domain or context | **writes no file**, exits **7**, prints no error |
+| `replica of X` | emits `replica ofX` — cosmetic, node count unchanged |
+
+`figma` on a **group** or **type** is fine. The BAST *writer* is correct in
+every case; this is an emitter-only class, unlike #1b/#1c which were writer
+defects.
+
+**Two lessons worth more than the model:**
+
+1. **`reparses` is NOT `round-trips`.** `method` and `shown by` reparse
+   perfectly *because they are gone*. Any check of this kind needs a content
+   assertion as well as a parse.
+2. **The node-count tell generalises.** Add the construct, bastify, and watch
+   the count — it caught all six, exactly as it caught #1b/#1c.
+
+**What the model covers**, once landed: `module`, `version`, `graph of`,
+`table of`, all three `replica of` arms, `method`, the three `attachment`
+forms, `described at`, `described in file`, `figma`, `shown by`. Grepped
+2026-08-14: the corpus uses **none** of them. Two apparent exceptions were
+prose, not syntax — `table of` matched *"no table of that size"* and all 11
+`attachment` hits were field names.
+
+**`nebula` is deliberately NOT covered.** The grammar marks it DEPRECATED
+(`ebnf-grammar.ebnf:68-71`, "Use `module` instead"), and covering it would emit
+a deprecation message, contradicting scoping decision 4 and turning R12 red.
+`module` is its replacement and is covered instead.
+
+**Also found while probing, and worth keeping:** `described at` **rejects a
+trailing slash** — `https://ossum.tech/docs/riddl/` fails, the same URL without
+it parses, though the EBNF's `url_path` admits `/`. Reported in the same task.
