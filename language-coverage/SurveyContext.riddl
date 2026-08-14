@@ -1,0 +1,190 @@
+// The survey bounded context.
+// Its metadata block is where the three `attachment` forms and the
+// `described in file` description form are exercised.
+context Cartography is {
+  include "types.riddl"
+  include "SurveyStation.riddl"
+  repository StationRepository as flow is {
+    inlet StationRepositoryFromStation is type SurveyStation.StationEvent
+    outlet StationRepositoryResponses is type SurveyStation.StationResult
+    record StoredStation is {
+      stationId: StationId with {
+        briefly "stationId"
+        described as {
+          |The stationId column of the stored station row.
+        }
+      }
+      regionCode: RegionCode with {
+        briefly "regionCode"
+        described as {
+          |The regionCode column of the stored station row.
+        }
+      }
+    } with {
+      briefly "Stored station row"
+      described as {
+        |The persistence shape of station data as this repository stores
+        |it.
+      }
+    }
+    schema StationData is relational
+      of stations as type StoredStation
+        index on field StoredStation.stationId
+        index on field StoredStation.regionCode
+ with {
+      briefly "Station data schema"
+      described as {
+        |Relational schema for persisting station rows, indexed by station
+        |and by the region a station reports under.
+      }
+    }
+    command PersistStationCommissioned is {
+      stationId: StationId with {
+        briefly "ID"
+        described as {
+          |The stored row to write.
+        }
+      }
+    } with {
+      briefly "Persist StationCommissioned"
+      described as {
+        |Instructs this repository to apply StationCommissioned to the
+        |stored row. A persistence command, not a domain command: it
+        |declares no `yields` because storing a row records no new entity
+        |state.
+      }
+    }
+    command PersistStationRetired is {
+      stationId: StationId with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+    } with {
+      briefly "Persist StationRetired"
+      described as {
+        |Instructs this repository to apply StationRetired to the stored
+        |row. A persistence command, not a domain command: it declares no
+        |`yields` because storing a row records no new entity state.
+      }
+    }
+    handler StationPersistence is {
+      on command PersistStationCommissioned is {
+        do "insert row into StationData.stations with stationId and
+          regionCode"
+      }
+      on command PersistStationRetired is {
+        do "delete the row from StationData.stations where stationId
+          matches, because a retired station is published from the
+          archive rather than the live sheet"
+      }
+      on query SurveyStation.GetStation is {
+        do "look up the stored station row by GetStation.queriedStationId"
+        reply result SurveyStation.StationResult
+      }
+      on command LogStationEvent is {
+        do "append the station event to the Cartography event log"
+      }
+    } with {
+      briefly "Station persistence"
+      described as {
+        |Writes station rows and answers the station summary query.
+      }
+    }
+  } with {
+    briefly "Station repository"
+    described as {
+      |Stores station rows and answers queries about them.
+    }
+  }
+  processor StationEventSource as source is {
+    outlet PublishedStationEvents is type SurveyStation.StationEvent
+    handler StationEventEmitter is {
+      on other is {
+        error "Unexpected message for source StationEventSource"
+      }
+      on event SurveyStation.StationCommissioned is {
+        send event SurveyStation.StationCommissioned to outlet PublishedStationEvents
+      }
+      on event SurveyStation.ReadingRecorded is {
+        send event SurveyStation.ReadingRecorded to outlet PublishedStationEvents
+      }
+      on event SurveyStation.StationRetired is {
+        send event SurveyStation.StationRetired to outlet PublishedStationEvents
+      }
+    } with {
+      briefly "Station event emitter"
+      described as {
+        |Publishes station lifecycle events onto the context's wire.
+      }
+    }
+  } with {
+    briefly "Station event source"
+    described as {
+      |Publishes the station entity's events so the rest of the context
+      |can observe them.
+    }
+  }
+  // ---- Local event log for station events ----
+  command LogStationEvent is {
+    loggedStationId: String(1, 50) with {
+      briefly "ID"
+      described as {
+        |Identifier of the station the logged event concerns.
+      }
+    }
+    loggedStationEventType: String(1, 50) with {
+      briefly "Event type"
+      described as {
+        |The event's name, recorded as text because the log keeps every
+        |kind of station event in one place and must not bind to any
+        |single event's shape.
+      }
+    }
+  } with {
+    briefly "Log station event"
+    described as {
+      |Append a published station event to this context's event log.
+    }
+  }
+  processor StationEventLog as sink is {
+    inlet IncomingStationLog is type SurveyStation.StationEvent
+    handler StationLogIntake is {
+      on other is {
+        tell command LogStationEvent to repository Cartography.StationRepository
+        do "append the station event to the context event log"
+      }
+    } with {
+      briefly "Station log intake"
+      described as {
+        |Routes every published station event into the context's own
+        |durable event log.
+      }
+    }
+  } with {
+    briefly "Station event log"
+    described as {
+      |Durable local log of the station events this context publishes.
+    }
+  }
+  connector StationToLog is from outlet Cartography.StationEventSource.PublishedStationEvents to inlet Cartography.StationEventLog.IncomingStationLog with {
+    briefly "Station events to the context log"
+    described as {
+      |Wires published station events into the context's event log.
+    }
+  }
+  connector 'StationEvent Storage' is from outlet Cartography.SurveyStation.StationEvents to inlet Cartography.StationRepository.StationRepositoryFromStation with {
+    briefly "Station events on their way to storage"
+    described as {
+      |Carries the station's published events to the repository that
+      |persists them.
+    }
+  }
+} with {
+  briefly "Terrain survey context"
+  described in file "survey-protocol.md"
+  attachment ULID is "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+  attachment SurveyProtocol is text/markdown in file "survey-protocol.md"
+  attachment DatumNote is text/plain as "All elevations are relative to the national vertical datum, not to sea level."
+}
