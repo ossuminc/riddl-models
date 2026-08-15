@@ -599,7 +599,17 @@ trailing slash** — `https://ossum.tech/docs/riddl/` fails, the same URL withou
 it parses, though the EBNF's `url_path` admits `/`. Reported in the same task.
 
 
-## 11. 495 bare message operands remain, and 269 need MODEL changes
+## ~~11. 495 bare message operands~~ — CLOSED 2026-08-15
+
+All 495 became `prompt(...)` typed holes; the corpus validates with zero errors
+under the Error severity. **What survives is the modelling half**: the `*Result`
+types wrap a base record and carry no id field, which is why they needed a
+prompt rather than a constructor, and which still costs 259 completeness
+messages and keeps R10 red. Tracked as #13.
+
+Historical detail follows.
+
+## 11-historical. 495 bare message operands, 269 needing MODEL changes
 
 From `task/2026-08-14-bare-message-operands-now-warn-corpus-wide.md`, which is
 **still open** — 15,273 were migrated, these were deliberately not.
@@ -620,7 +630,15 @@ From `task/2026-08-14-bare-message-operands-now-warn-corpus-wide.md`, which is
 **riddl will not flip the bare form to an Error until this is clean**, so there
 is no deadline — but they are waiting on us.
 
-## 12. Phase 5's population is no longer measurable by the validator
+## ~~12. Phase 5 unmeasurable~~ — RESOLVED 2026-08-15
+
+riddl un-blinded the check; it reports **863** corpus-wide, matching the
+baseline recorded here before it went blind. Phase 5 is measurable again from
+the validator, and the recorded number was independently confirmed correct.
+
+Historical detail follows.
+
+## 12-historical. Phase 5's population was not measurable by the validator
 
 The populates-repository warning **only fires on a `MessageRef` operand**, so
 migrating to the `ValueRef` arm blinded it: 863 -> 9 corpus-wide with no model
@@ -631,3 +649,36 @@ defective. Filed upstream
 (`2026-08-14-valueref-migration-blinds-the-populates-repository-check.md`);
 until it is fixed, enumerate them from git history at commit `5002d44f~1`, not
 from a validator run.
+
+
+## 13. `*Result` types wrap a base record and carry no id — 259 completeness
+
+The one modelling job left from the message-value migration, and **what keeps
+R10 red**.
+
+`result MarketplaceOrderResult is { marketplaceOrderData: MarketplaceOrderData }`
+has no id field, so riddlc cannot tell which instance it addresses, and there
+was nothing to construct it from — which is why those 269 sites needed a
+`prompt(...)` rather than a constructor.
+
+riddl ruled (2026-08-14) that a **nested record does NOT satisfy** the
+addressing check: the id must be a field of the record actually named, because
+seeing through nesting is an unbounded search. So the fix is to give each
+`*Result` a field typed with the relevant id.
+
+This is the SAME job as the 13 `*Result` types plus `RecordLoyaltyActivity`
+riddl asked about in the alias task. **Do it once, not twice.**
+
+## 14. 90 `MessageFlowPass` warnings — UPSTREAM, do not model around it
+
+`MessageFlowPass` cannot resolve a `let`-local's message type and reports the
+binding name as if it were a type. **0 before the `prompt(...)` migration, 90
+after.** Filed as
+`../riddl/task/2026-08-15-messageflowpass-cannot-resolve-a-let-local.md`.
+
+45 of reactive-bbq's 58 warnings are these, so R10 cannot go green on our work
+alone.
+
+**Four scaffolds failed to reproduce it** — the trigger is not simply "a
+`let`-local in a `tell`". The report says so rather than guessing, and points at
+`education/corporate-training/training-administration/Training.riddl:784`.

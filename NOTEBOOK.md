@@ -5,73 +5,66 @@ Development journal for active work on the riddl-models repository.
 ## HANDOFF
 
 **Branch** `release/2`, pushed. `main` stays 1.x until riddl 2.0 ships
-(BACKLOG #4). Verify with `git status -sb` rather than trusting this line.
+(BACKLOG #4). Verify with `git status -sb`.
 
 **Versions — run, not recalled:** staged `../bin/riddlc` is
-**2.0.0-rc.14-28-1f2c496d**; `riddlVersion` in `build.sbt` matches. **BAST
-revision 17**, all 188 `.bast` regenerated. Check with `../bin/riddlc info`.
+**2.0.0-rc.14-121-fe768026** (`fe7680264`); `riddlVersion` in `build.sbt`
+matches. Check with `../bin/riddlc info` — the binary is what actually runs.
 
 ### Where things stand
 
-**The corpus validates with ZERO errors** — the 49 addressing errors are gone
-and so is the upstream defect that caused them. `sbt v` is green.
+**The corpus validates with ZERO errors, and the BAST round trip is 188/188
+with zero discrepancies.** Both migrations riddl asked for are finished and
+every task file is closed; `task/` is empty.
 
-**The bare-operand migration is 15,273 -> 495 done** (BACKLOG #11). Four passes:
-forward the handled message (10,298), construct from it (3,595), construct the
-morph record (622), and turn a lookup's `do` prose into a `let ... = prompt(...)`
-(272). The corpus is prettified and re-bastified after all of it.
+**Migration 2 is DONE.** The bare message operand is now an **Error**, and the
+last 495 sites became `prompt(...)` typed holes (Reid's call), each with prose
+describing the real derivation. Totals across the two days: 10,298 forwarded,
+3,595 constructed, 622 morph records, 272 + 557 `let`/`prompt`.
 
-**The 495 that remain are a MODELLING job, not a spelling one**, and 269 of them
-are the same job as the `*Result` types riddl asked about: those results wrap a
-base record and have no fields to construct from. Do it once, not twice.
+**What remains is warnings and completeness, not errors:**
 
-**R10 is now OURS.** It was red on an upstream defect; that is fixed, and it is
-still red because reactive-bbq carries 134 of those residual messages. Closing
-#11 for reactive-bbq turns R10 green. The suite is **8 of 10** — R2 (orphan
-briefs, deferred to the end of the plan by Reid) and R10.
+- **863 populates-repository warnings** — Phase 5, and they are REAL. They
+  reappeared when riddl un-blinded that check, matching the baseline we
+  recorded on 2026-08-14 before the blind spot swallowed them.
+- **90 `MessageFlowPass` warnings** — **upstream, filed**, caused purely by
+  `let`-locals (0 → 90). Do not model around it.
+- **259 completeness** — chiefly the `*Result` types that wrap a base record
+  and carry no id field. Still the same single modelling job riddl asked about;
+  BACKLOG #11.
+
+**The suite is 8 of 10**, unchanged: **R2** (orphan briefs, deferred to the end
+of the plan by Reid) and **R10** (zero errors *and warnings* — reactive-bbq has
+0 errors but 58 warnings, 45 of them the upstream MessageFlowPass gap).
 
 ### Traps that already bit someone
 
-- **`reparses` is not `round-trips`.** An emitter that omits a construct
-  produces output that parses perfectly, because the construct is gone. Assert
-  on content, not just on a successful parse.
-- **Do not parse an include fragment standalone to test a round trip.** A
-  fragment is not a valid root and will always "fail"; parse the `.conf` entry
-  point. This cost real time by looking like an emitter defect.
-- **A partial constructor draws NO message from riddlc.** Omitted fields are
-  invisible, so a constructor can be as underspecified as a bare ref and say
-  nothing. Do not read "no warning" as "fully stated".
-- **A value-ref identifier starting with `to` fails to parse** — the `to`
-  separator is matched without a word boundary. Four bindings are spelled
-  participle-first to dodge it; normalise them when riddl fixes it.
-- **Migrating to `ValueRef` BLINDS the populates-repository check** (#12). It
-  only fires on a `MessageRef`. 863 -> 9 with no model change.
+- **`git checkout -- .` to reset a scripted pass also reverts your unrelated
+  edits.** It cost the version pin and three hand-fixes here, silently. Commit
+  or stash the hand-edits before reverting a bulk pass.
+- **`reparses` is not `round-trips`**, and **never parse an include fragment
+  standalone** — it is not a valid root and will always "fail". Parse the
+  `.conf` entry point.
+- **A partial constructor draws NO message.** Omitted fields are invisible, so
+  "no warning" does not mean "fully stated".
 - **A BAST error names where the reader DERAILED, never what derailed it.**
   Node count changing when a construct is added is the reliable tell.
 
 ### Certainty
 
-**Verified by command this session:** zero errors corpus-wide, twice, after
-every pass; each migration script's output checked by riddlc before the next
-pass; bastify 188/188; round trip **187/188**, the one discrepancy diagnosed to
-`shown by` losing its URL scheme through BAST and filed; the suite at 8/10 with
-both failures attributed.
+**Verified by command this session:** the staged binary's version and commit
+BEFORE any edit; zero errors corpus-wide after prettify; bastify 188/188; round
+trip **188/188, zero discrepancies**; the suite at 8/10 with both failures
+attributed; the 863 warnings matching the recorded pre-migration baseline.
 
-**Two of my own script defects were caught by validation, not by reading** — a
-field index that merged same-named definitions and hoisted nested aggregation
-children, and a backward search that crossed a clause boundary and emptied a
-handler. Both were reverted and re-run rather than patched forward. **Validate
-after every scripted pass; do not batch them.**
+**Stated as unknown rather than guessed:** the `MessageFlowPass` trigger. Four
+scaffolds failed to reproduce it, so the upstream report says so explicitly and
+hands riddl the corpus site instead of a theory.
 
 ### `task/`
 
-**One open:** `2026-08-14-bare-message-operands-now-warn-corpus-wide.md` —
-riddl is waiting on us to finish #11 before flipping the bare form to an Error.
-No deadline attached. Three closed today with verified Results.
-
-**Four defects filed upstream today**, all with repros and negative controls:
-the `to`-prefix parse failure, the populates-repository blinding, `shown by`
-losing its URL through BAST, and the six emitter defects (fixed same day).
+**Empty.** Five task files closed today with verified Results. Two defects filed
+upstream (`MessageFlowPass`; and yesterday's set, all now fixed).
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
