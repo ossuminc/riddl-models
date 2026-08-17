@@ -18,7 +18,7 @@ enablePlugins(RiddlSbtPlugin)
 // perfected the binary is staged at ../bin/riddlc and the libraries arrive by
 // `sbt publishLocal` from that checkout, so this moves in step with riddl
 // rather than tracking published releases.
-lazy val riddlVersion = "2.0.0-rc.14-161-b102ecba"
+lazy val riddlVersion = "2.0.0-rc.15"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -61,16 +61,17 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
     ),
 
-    // That version is STAGED, not published, so it cannot be downloaded. Use a
-    // staged ../bin/riddlc when one is there, and fall back to the download
-    // otherwise -- which is what will happen once the version ships, and what
-    // happens for anyone who does not keep a riddl checkout beside this one.
-    // Without this, `sbt v` fails on `riddlcBinary` with a bare "Nonzero exit
-    // value: 56" from the download.
-    riddlcPath := {
-      val staged = baseDirectory.value.getParentFile / "bin" / "riddlc"
-      if (staged.exists() && staged.canExecute) Some(staged) else None
-    },
+    // riddlVersion is a PUBLISHED release again (2.0.0-rc.15), so the plugin
+    // downloads it and every machine validates against the same bytes.
+    //
+    // This deliberately no longer prefers a staged ../bin/riddlc. That
+    // preference existed only because release/2's RCs were unpublished, and it
+    // silently wins over the pin -- on 2026-08-17 the staged binary was
+    // 2.0.0-rc.14-164-gd1d87009f, BEFORE the rc.15 tag, so pinning rc.15 while
+    // keeping it would have validated the corpus against the older compiler and
+    // reported success. If an unpublished staged RC is ever needed again, put
+    // the override back, but check `../bin/riddlc info` against the pin first.
+    riddlcPath := None,
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),
