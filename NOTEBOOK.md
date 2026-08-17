@@ -4,67 +4,62 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`, pushed. `main` stays 1.x until riddl 2.0 ships
-(BACKLOG #4). Verify with `git status -sb`.
+**Branch** `release/2`. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Versions — run, not recalled:** staged `../bin/riddlc` is
-**2.0.0-rc.14-121-fe768026** (`fe7680264`); `riddlVersion` in `build.sbt`
-matches. Check with `../bin/riddlc info` — the binary is what actually runs.
+**Versions:** `riddlVersion = "2.0.0-rc.15"` — a **published** release, so the
+plugin downloads it and `riddlcPath := None`. **The staged `../bin/riddlc`
+override is deliberately gone**; it was `rc.14-164`, BEFORE the rc.15 tag, and
+it wins over the pin, so keeping it would have validated against the older
+compiler and reported success. If an unpublished RC is ever needed again, put
+the override back — and check `../bin/riddlc info` against the pin first.
 
 ### Where things stand
 
-**The corpus validates with ZERO errors, and the BAST round trip is 188/188
-with zero discrepancies.** Both migrations riddl asked for are finished and
-every task file is closed; `task/` is empty.
+**The corpus validates 188/188 with ZERO errors**, `verify-templates.py` is
+2 examples + 7 templates with 0 failing, and the BAST round trip is 188/188
+with zero discrepancies. **The whole repository is green except the campaign
+suite.**
 
-**Migration 2 is DONE.** The bare message operand is now an **Error**, and the
-last 495 sites became `prompt(...)` typed holes (Reid's call), each with prose
-describing the real derivation. Totals across the two days: 10,298 forwarded,
-3,595 constructed, 622 morph records, 272 + 557 `let`/`prompt`.
+`sbt checkAll` fails on exactly two cases, both known and both tracked:
 
-**What remains is warnings and completeness, not errors:**
+- **R2** — 51 orphan briefs. Reid deferred these to the END of the plan.
+- **R10** — zero errors *and warnings*. reactive-bbq now has **0 errors, 1
+  warning, 15 completeness**, so R10 is 16 items away, all of them BACKLOG #13
+  (the `*Result` types carrying no id field) plus one reachability warning on
+  the new `ToNotificationService` adaptor.
 
-- **863 populates-repository warnings** — Phase 5, and they are REAL. They
-  reappeared when riddl un-blinded that check, matching the baseline we
-  recorded on 2026-08-14 before the blind spot swallowed them.
-- **90 `MessageFlowPass` warnings** — **upstream, filed**, caused purely by
-  `let`-locals (0 → 90). Do not model around it.
-- **259 completeness** — chiefly the `*Result` types that wrap a base record
-  and carry no id field. Still the same single modelling job riddl asked about;
-  BACKLOG #11.
-
-**The suite is 8 of 10**, unchanged: **R2** (orphan briefs, deferred to the end
-of the plan by Reid) and **R10** (zero errors *and warnings* — reactive-bbq has
-0 errors but 58 warnings, 45 of them the upstream MessageFlowPass gap).
+**R10 is now genuinely close.** It was 111 messages three days ago.
 
 ### Traps that already bit someone
 
-- **`git checkout -- .` to reset a scripted pass also reverts your unrelated
-  edits.** It cost the version pin and three hand-fixes here, silently. Commit
-  or stash the hand-edits before reverting a bulk pass.
-- **`reparses` is not `round-trips`**, and **never parse an include fragment
-  standalone** — it is not a valid root and will always "fail". Parse the
-  `.conf` entry point.
-- **A partial constructor draws NO message.** Omitted fields are invisible, so
-  "no warning" does not mean "fully stated".
-- **A BAST error names where the reader DERAILED, never what derailed it.**
-  Node count changing when a construct is added is the reliable tell.
+- **A staged binary silently outranks the version pin.** `riddlcPath` preferred
+  `../bin/riddlc`, so an "upgrade" could measure the wrong compiler and pass.
+  Removed; verify any binary with `info` before trusting a measurement.
+- **Shell cwd persists between Bash calls.** A "corpus-wide" sweep once ran
+  from inside one model and reported 81 messages instead of 1,310. If a total
+  moves by an order of magnitude, suspect the harness before the corpus.
+- **`git checkout -- .` to reset a scripted pass also reverts unrelated edits.**
+  It cost the version pin and three hand-fixes. Commit first.
+- **`patterns/` is excluded from every corpus sweep**, so it silently rots
+  through migrations. It was red for two separate changes nobody noticed.
+  `verify-templates.py` is the only thing that looks at it.
+- **prettify writes NOTHING when a model has a validation Error**, so a model
+  cannot be canonicalised until it is clean. Bastify does not gate that way.
 
 ### Certainty
 
-**Verified by command this session:** the staged binary's version and commit
-BEFORE any edit; zero errors corpus-wide after prettify; bastify 188/188; round
-trip **188/188, zero discrepancies**; the suite at 8/10 with both failures
-attributed; the 863 warnings matching the recorded pre-migration baseline.
-
-**Stated as unknown rather than guessed:** the `MessageFlowPass` trigger. Four
-scaffolds failed to reproduce it, so the upstream report says so explicitly and
-hands riddl the corpus site instead of a theory.
+**Verified by command this session:** the downloaded binary is rc.15 at
+`61f50224`, the tag commit, checked BEFORE any measurement; the staged binary is
+an ancestor-check away from the tag (`git merge-base --is-ancestor` says it
+precedes rc.15); zero errors across 188 models, twice, before and after
+prettify; round trip 188/188; templates gate 0 failing.
 
 ### `task/`
 
-**Empty.** Five task files closed today with verified Results. Two defects filed
-upstream (`MessageFlowPass`; and yesterday's set, all now fixed).
+**One open:** `2026-08-16-constructors-omit-declared-fields.md` (riddlg). Its
+biggest item is DONE — all 269 rejection reasons supplied — but two remain:
+~113 other omitted constructor arguments and ~312 `morph` field omissions.
+riddlg owes a re-measurement of `GapAuditSpec` against the current corpus.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 

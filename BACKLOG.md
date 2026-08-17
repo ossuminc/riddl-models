@@ -669,7 +669,13 @@ seeing through nesting is an unbounded search. So the fix is to give each
 This is the SAME job as the 13 `*Result` types plus `RecordLoyaltyActivity`
 riddl asked about in the alias task. **Do it once, not twice.**
 
-## 14. 90 `MessageFlowPass` warnings — UPSTREAM, do not model around it
+## ~~14. 90 `MessageFlowPass` warnings~~ — FIXED UPSTREAM in rc.15
+
+Gone. Corpus warnings fell 971 -> 869 and reactive-bbq's 58 -> 1 on the upgrade.
+
+Historical detail follows.
+
+## 14-historical. 90 `MessageFlowPass` warnings
 
 `MessageFlowPass` cannot resolve a `let`-local's message type and reports the
 binding name as if it were a type. **0 before the `prompt(...)` migration, 90
@@ -682,3 +688,22 @@ alone.
 **Four scaffolds failed to reproduce it** — the trigger is not simply "a
 `let`-local in a `tell`". The report says so rather than guessing, and points at
 `education/corporate-training/training-administration/Training.riddl:784`.
+
+
+## 15. R10 is 16 items away, and they are all #13 plus one connector
+
+reactive-bbq now validates with **0 errors, 1 warning, 15 completeness** — down
+from 111 messages on 2026-08-14. R10 demands zero of everything, so what stands
+between the campaign and 9 of 10 is now enumerable:
+
+- **13 `*Result` types + 2 Campaign commands carry no id field** — this is #13,
+  unchanged, and it is the whole of the completeness count.
+- **1 warning**: the new `ToNotificationService` adaptor's tell target
+  `Restaurant.NotificationService` is not reachable via a connector. It replaced
+  five identical warnings inside the DeliveryOrder entity, so the count fell
+  5 -> 1, but the question it raises — how an external context is reached — is
+  unsettled. CLAUDE.md records that `tell ... to adaptor X` was tried and made
+  things worse, so this needs thought rather than a reflex connector.
+
+Doing #13 turns R10 into a one-warning problem. R2 (51 orphan briefs) remains
+Reid's end-of-plan item.
