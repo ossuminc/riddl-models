@@ -56,10 +56,10 @@ prettify; round trip 188/188; templates gate 0 failing.
 
 ### `task/`
 
-**One open:** `2026-08-16-constructors-omit-declared-fields.md` (riddlg). Its
-biggest item is DONE — all 269 rejection reasons supplied — but two remain:
-~113 other omitted constructor arguments and ~312 `morph` field omissions.
-riddlg owes a re-measurement of `GapAuditSpec` against the current corpus.
+**EMPTY.** The riddlg constructor task closed 2026-08-18: every declared field
+of every constructed message and morph record in reactive-bbq is now supplied,
+verified with a paren-balanced scanner rather than a regex. riddlg still owes a
+`GapAuditSpec` re-measurement, which only they can run.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 

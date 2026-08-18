@@ -707,3 +707,22 @@ between the campaign and 9 of 10 is now enumerable:
 
 Doing #13 turns R10 into a one-warning problem. R2 (51 orphan briefs) remains
 Reid's end-of-plan item.
+
+
+## 16. reactive-bbq carries 247 `prompt()` typed holes — expected, not debt
+
+Recorded so nobody "fixes" them by inventing values. Every declared field of
+every constructed message and morph record in reactive-bbq is supplied
+(2026-08-18, `77a4f564`); 247 of those values are `prompt("...")` typed holes.
+
+That is the sanctioned spelling for a value the model genuinely decides at
+generation time, and riddl's own constant work describes it that way. The
+alternative is not a better model, it is an invented one — the thing riddlg
+explicitly asked us not to do.
+
+**The measurement trap, since it cost real time:** a naive
+`\(([^)]*)\)` constructor regex cannot see past the nested parens of a
+`prompt(...)` argument, so it reports fields as unsupplied when they are not,
+and a second edit pass driven by it will CORRUPT lines it already filled. Use a
+paren-balanced scanner (`scratchpad/gap2.py` pattern) for any future sweep of
+constructor arguments.
