@@ -18,7 +18,7 @@ enablePlugins(RiddlSbtPlugin)
 // perfected the binary is staged at ../bin/riddlc and the libraries arrive by
 // `sbt publishLocal` from that checkout, so this moves in step with riddl
 // rather than tracking published releases.
-lazy val riddlVersion = "2.0.0-rc.16"
+lazy val riddlVersion = "2.0.0-rc.16-18-3005b2ef"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -61,17 +61,20 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
     ),
 
-    // riddlVersion is a PUBLISHED release again (2.0.0-rc.15), so the plugin
-    // downloads it and every machine validates against the same bytes.
+    // riddlVersion is an UNPUBLISHED staged RC again (2.0.0-rc.16-18-3005b2ef),
+    // so it cannot be downloaded and the staged ../bin/riddlc is the only way to
+    // run it. The override is therefore back -- deliberately, and temporarily.
     //
-    // This deliberately no longer prefers a staged ../bin/riddlc. That
-    // preference existed only because release/2's RCs were unpublished, and it
-    // silently wins over the pin -- on 2026-08-17 the staged binary was
-    // 2.0.0-rc.14-164-gd1d87009f, BEFORE the rc.15 tag, so pinning rc.15 while
-    // keeping it would have validated the corpus against the older compiler and
-    // reported success. If an unpublished staged RC is ever needed again, put
-    // the override back, but check `../bin/riddlc info` against the pin first.
-    riddlcPath := None,
+    // It carries a real hazard, so check before trusting any measurement: this
+    // path WINS over `riddlVersion`. On 2026-08-17 the staged binary was
+    // rc.14-164, BEFORE the rc.15 tag, and had this override been in place then,
+    // pinning rc.15 would have validated the corpus against the older compiler
+    // and reported success. Always confirm `../bin/riddlc info` matches the pin.
+    // When the version publishes, set this back to None.
+    riddlcPath := {
+      val staged = baseDirectory.value.getParentFile / "bin" / "riddlc"
+      if (staged.exists() && staged.canExecute) Some(staged) else None
+    },
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),
