@@ -6,9 +6,9 @@ Development journal for active work on the riddl-models repository.
 
 **Branch** `release/2`. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Versions:** `riddlVersion = "2.0.0-rc.15"` — a **published** release, so the
+**Versions:** `riddlVersion = "2.0.0-rc.16"` — a **published** release, so the
 plugin downloads it and `riddlcPath := None`. **The staged `../bin/riddlc`
-override is deliberately gone**; it was `rc.14-164`, BEFORE the rc.15 tag, and
+override is deliberately gone**; it was `rc.14-164`, BEFORE the rc.15 tag (still the reason this override is gone), and
 it wins over the pin, so keeping it would have validated against the older
 compiler and reported success. If an unpublished RC is ever needed again, put
 the override back — and check `../bin/riddlc info` against the pin first.

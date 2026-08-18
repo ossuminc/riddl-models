@@ -726,3 +726,33 @@ explicitly asked us not to do.
 and a second edit pass driven by it will CORRUPT lines it already filled. Use a
 paren-balanced scanner (`scratchpad/gap2.py` pattern) for any future sweep of
 constructor arguments.
+
+
+## 17. rc.16's Completeness 4b is a REGRESSION — do not model around it
+
+`Handler 'X' in Repository 'Y' handles messages but does not dispatch to any
+entity via 'tell'`. Filed by riddl-examples as an rc.16 regression with a root
+cause: `ValidationPass.scala:4589-4610`, a check deliberately restricted to
+Sinks that now fires on repositories and projectors. We appended corroboration
+rather than opening a second ticket.
+
+**It hit us 3 times in 190 entry points, not because our repositories are
+better but because most already carry an unrelated `tell` in the same handler**
+— they pass incidentally.
+
+Two were worth fixing anyway and are fixed: the `patterns/` examples' results
+wrapped a base record with no id, so `CartResult` and `AccountResult` now carry
+one. **If 4b is reverted we may return those two repositories to `reply`** —
+both spellings are idiomatic here — but the id fields stay, because they are
+#13's shape.
+
+**The third is deliberately unfixed.** drug-supply-chain's
+`SerializationRepository` answers a projection-backed metrics query; there is no
+entity instance to address and no id that would mean anything on the result.
+Inventing a target would be worse than the message. It is completeness, not an
+error, and blocks nothing.
+
+**Worth remembering:** this reached us as a `sbt v` failure even though the
+corpus was clean, because `verify-templates.py` fails the examples on ANY
+finding. That is the third time `patterns/` has caught something the 188-model
+sweep could not see.
