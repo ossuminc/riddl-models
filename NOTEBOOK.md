@@ -4,62 +4,80 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
+**Branch** `release/2`, pushed. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Versions:** `riddlVersion = "2.0.0-rc.16"` — a **published** release, so the
-plugin downloads it and `riddlcPath := None`. **The staged `../bin/riddlc`
-override is deliberately gone**; it was `rc.14-164`, BEFORE the rc.15 tag (still the reason this override is gone), and
-it wins over the pin, so keeping it would have validated against the older
-compiler and reported success. If an unpublished RC is ever needed again, put
-the override back — and check `../bin/riddlc info` against the pin first.
+**Versions:** `riddlVersion = "2.0.0-rc.16-18-3005b2ef"`, an **unpublished staged
+RC**, so `riddlcPath` points at `../bin/riddlc` again. **That setting wins over
+the pin** — run `../bin/riddlc info` and compare before trusting any measurement.
+Set it back to `None` when the version publishes.
 
 ### Where things stand
 
-**The corpus validates 188/188 with ZERO errors**, `verify-templates.py` is
-2 examples + 7 templates with 0 failing, and the BAST round trip is 188/188
-with zero discrepancies. **The whole repository is green except the campaign
-suite.**
+**The corpus is DONE bar two upstream bugs.** 1,669 messages -> 24, and every
+remaining one is a riddlc contradiction, not a corpus defect:
 
-`sbt checkAll` fails on exactly two cases, both known and both tracked:
+| | before | now |
+|---|---:|---:|
+| error | 445 | **0** |
+| warning | 869 | **12** (upstream) |
+| completeness | 275 | **0** |
+| usage | 80 | **0** |
+| style | 0 | **12** (upstream) |
 
-- **R2** — 51 orphan briefs. Reid deferred these to the END of the plan.
-- **R10** — zero errors *and warnings*. reactive-bbq now has **0 errors, 1
-  warning, 15 completeness**, so R10 is 16 items away, all of them BACKLOG #13
-  (the `*Result` types carrying no id field) plus one reachability warning on
-  the new `ToNotificationService` adaptor.
+`sbt v` green, patterns 2 examples + 7 templates 0 failing, BAST round trip
+**188/188**. `checkAll` red only on **R2** (orphan briefs, Reid's end-of-plan
+item) and **R10**, which is now blocked *entirely* by the two upstream bugs —
+reactive-bbq's 19 remaining messages are all of that kind.
 
-**R10 is now genuinely close.** It was 111 messages three days ago.
+### The two upstream bugs, both filed with repros
 
-### Traps that already bit someone
+1. **`persistent` is required AND not needed** on a connector wholly inside an
+   external context. Toggling the keyword swaps an Error for a Warning with no
+   third option. Reid's reading, which the paths confirm: both ends are `Ext.*`,
+   so the "not needed" warning is right and the Error is the bug — it fires on
+   *touching* an external context when it should require *crossing*. We keep
+   `persistent` because an Error is worse. 12 sites.
+   `../riddl/task/2026-08-18-two-checks-contradict-on-a-connector-inside-an-external-context.md`
+   plus a 22-line repro beside it.
+2. **"Consider an adaptor" is unsatisfiable** — the adaptor is already behind the
+   boundary (`FrontOfHouseContext.riddl:132`), and landing on it is now an Error.
+   This is riddl's own unruled [1.6]. 12 sites.
 
-- **A staged binary silently outranks the version pin.** `riddlcPath` preferred
-  `../bin/riddlc`, so an "upgrade" could measure the wrong compiler and pass.
-  Removed; verify any binary with `info` before trusting a measurement.
-- **Shell cwd persists between Bash calls.** A "corpus-wide" sweep once ran
-  from inside one model and reported 81 messages instead of 1,310. If a total
-  moves by an order of magnitude, suspect the harness before the corpus.
-- **`git checkout -- .` to reset a scripted pass also reverts unrelated edits.**
-  It cost the version pin and three hand-fixes. Commit first.
-- **`patterns/` is excluded from every corpus sweep**, so it silently rots
-  through migrations. It was red for two separate changes nobody noticed.
-  `verify-templates.py` is the only thing that looks at it.
-- **prettify writes NOTHING when a model has a validation Error**, so a model
-  cannot be canonicalised until it is clean. Bastify does not gate that way.
+**Do not try to fix either in the corpus.** Both were verified to have no legal
+spelling.
+
+### What changed, and the traps in it
+
+- **430 cross-context connectors** moved onto context portlets, with a relay
+  handler and an intra-context connector. See CLAUDE.md § "The context IS the
+  port" — including why repointing the connector *alone* makes things worse.
+- **863 repository writes** now go through `Persist` commands.
+- **257 messages** gained the id field they address by; **26** schemas gained an
+  index; **3,270 lines** of unused types deleted.
+
+Traps worth keeping:
+- **A corpus-wide regex under-reaches silently.** The addressing pass missed 8
+  single-line `result X is { ... }` declarations because it required the brace to
+  end the line. Always check the residue rather than the count.
+- **Insert order matters:** rewriting statements by recorded line number AFTER
+  inserting declarations rewrites nothing, because the numbers have moved.
+- **Scope a rename to its clause.** Renaming a shadowed binding file-wide also
+  renamed a constructor field called `checkIn`.
+- **Nested `prompt(...)` breaks a naive `\(([^)]*)\)`** constructor regex — it
+  under-reports supplied fields and corrupts lines on a second pass.
+- **Shell cwd persists between commands.** A "corpus-wide" sweep once reported 81
+  messages instead of 1,310 because it ran inside one model.
 
 ### Certainty
 
-**Verified by command this session:** the downloaded binary is rc.15 at
-`61f50224`, the tag commit, checked BEFORE any measurement; the staged binary is
-an ancestor-check away from the tag (`git merge-base --is-ancestor` says it
-precedes rc.15); zero errors across 188 models, twice, before and after
-prettify; round trip 188/188; templates gate 0 failing.
+Every number above was measured by sweeping all 188 entry points with the staged
+binary after each pass; nothing is carried over from an earlier run. The two
+upstream bugs were each verified by toggling the input and observing both
+messages.
 
 ### `task/`
 
-**EMPTY.** The riddlg constructor task closed 2026-08-18: every declared field
-of every constructed message and morph record in reactive-bbq is now supplied,
-verified with a paren-balanced scanner rather than a regex. riddlg still owes a
-`GapAuditSpec` re-measurement, which only they can run.
+**Empty.** Two bugs filed to `../riddl/task/` today.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 

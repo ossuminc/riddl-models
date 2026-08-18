@@ -756,3 +756,25 @@ error, and blocks nothing.
 corpus was clean, because `verify-templates.py` fails the examples on ANY
 finding. That is the third time `patterns/` has caught something the 188-model
 sweep could not see.
+
+
+## 18. Two riddlc contradictions block the last 24 messages — UPSTREAM
+
+The corpus is otherwise at zero. **Neither can be fixed here**; both were
+verified to have no legal spelling, and both are filed to `../riddl/task/`.
+
+1. **`persistent` required and not needed** (12 warnings). A connector wholly
+   inside an `external context` draws an Error without the keyword and a Warning
+   with it. Reid's reading, confirmed by the paths: both ends are `Ext.*`, so the
+   Error is the bug — it should require *crossing* a boundary, not *touching* an
+   external context. **We keep `persistent`.** A 22-line repro sits beside the
+   task file.
+
+2. **"Consider an adaptor" is unsatisfiable** (12 style). The adaptor already
+   sits behind the boundary; landing a cross-context connector on it is now an
+   Error. This is riddl's own unruled **[1.6]**, and CLAUDE.md has recorded this
+   advisory as one not to follow since 2026-08-09.
+
+**R10 is now blocked only by these.** reactive-bbq's 19 remaining messages are
+all of these two kinds, so when riddl fixes them R10 goes green without any
+corpus change. R2 (51 orphan briefs) remains Reid's end-of-plan item.
