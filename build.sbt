@@ -18,7 +18,7 @@ enablePlugins(RiddlSbtPlugin)
 // perfected the binary is staged at ../bin/riddlc and the libraries arrive by
 // `sbt publishLocal` from that checkout, so this moves in step with riddl
 // rather than tracking published releases.
-lazy val riddlVersion = "2.0.0-rc.16-18-3005b2ef"
+lazy val riddlVersion = "2.0.0-rc.16-19-e2ff856d"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
