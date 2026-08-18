@@ -335,12 +335,12 @@ The older `option is external` inside the `with` block is **gone**: there
 are **zero** occurrences of it across the corpus, and all 13 external
 context files use the keyword form.
 
-**Their types are unreferenced on purpose.** An external context documents
-the payloads the outside system exchanges — `PaymentRequest`,
-`DrugProduct`, `MFAChallenge` — so nothing inside the model needs to name
-them. That produces 54 "Type 'X' is unused" usage warnings, and those are
-**not defects**: suppressing them or wiring the types into adaptors purely
-to silence them would be invention. Leave them.
+**Unused types are DELETED, not kept as documentation** (Reid, 2026-08-18).
+The earlier rule here said the opposite — that unreferenced external-context
+payload types were deliberate and should be left alone. They are gone: 3,270
+lines across the corpus, run to a fixed point because removing one type
+uncovers the next. The corpus now reports zero `usage` messages, and that is
+the standard to hold.
 
 **Messaging**:
 - Inside an event-sourced entity, `yield event X` records the event —
@@ -567,6 +567,73 @@ version. reactive-bbq declares exactly one, at the domain root.
 Both `term` and `version` survive the BAST round trip at rc.13 (187/187,
 0 discrepancies) — unlike `constant`, so do not assume by analogy.
 
+
+### The context IS the port at its own boundary
+
+**A cross-context connector must terminate on the CONTEXT'S OWN portlet** — an
+Error since riddlc `2.0.0-rc.16-18`. Reaching past the boundary onto a contained
+entity, repository or adaptor binds a peer to that definition's existence and to
+its current message set.
+
+Intra-context, none of this applies: inside one context a connector may drive a
+contained entity's own inlet directly.
+
+The shape that satisfies it — and this is riddl's guide taken literally, *context
+inlet → handler → context outlet*:
+
+```riddl
+context OrderContext is {
+  inlet  OrderCommandsIn  is type Order.OrderCommand
+  outlet OrderCommandsFwd is type Order.OrderCommand
+  handler OrderContextBoundary is {
+    on placeOrder: command Order.PlaceOrder is {
+      send placeOrder to outlet OrderContext.OrderCommandsFwd
+    }
+  }
+  connector 'OrderCommand Intake' is from outlet OrderContext.OrderCommandsFwd
+                                     to inlet OrderContext.Order.OrderCommands
+}
+```
+
+Three things that are easy to get wrong, each learned by validation refusing the
+alternative:
+
+- **Repointing the connector alone makes things WORSE.** The connector into the
+  entity was its only one, and a `tell` does not count for reachability, so 30
+  "not reachable via any connector" warnings appear in its place. The relay
+  connector is what prevents that.
+- **`on other` cannot take a binding**, so a relay cannot be written generically.
+- **An alternation binding is a value, not a message.** `on x: command
+  OrderCommand` binds a value of a `one of {...}` type and `send x` rejects it —
+  the relay needs **one clause per concrete member**.
+- **Qualify the outlet**: the same connector names a portlet in BOTH contexts it
+  joins, so an unqualified `send x to outlet Foo` is ambiguous.
+
+### A repository is written through its OWN `Persist` commands
+
+**The type that populates a repository must be defined IN it.** So a sender never
+tells a raw entity event to a repository; it tells the repository's own
+`Persist<Event>` command, which the repository declares and handles:
+
+```riddl
+tell command OrderContext.OrderRepository.PersistOrderPlaced(
+    orderId = orderPlaced.orderId) to repository OrderContext.OrderRepository
+```
+
+The command reference must carry the **full repository path** or it will not
+resolve from a projector. Moving the events themselves into the repository —
+riddlc's literal suggestion — is wrong: an entity owns its events, and the
+`Persist` command is precisely the indirection that lets the repository own what
+writes it.
+
+### Every message names the instance it addresses
+
+A message told to an entity carries a field typed `Id(<Entity>)`. **A wrapped
+base record does NOT satisfy this** (riddl, 2026-08-14): the id must be a field of
+the record actually named, because seeing through nesting is an unbounded search.
+Where two ids of the same entity are genuinely present, `tell … by <field>` names
+which one addresses it.
+
 ### Connector Naming
 
 Name a connector for **what flows through it**, never for its endpoints —
@@ -722,11 +789,16 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.0.0-rc.14** (set by `riddlVersion` in
+Current version: **2.0.0-rc.16-18-3005b2ef** (set by `riddlVersion` in
 `build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
-While `release/2` is in flight `riddlcPath` prefers the staged
-`../bin/riddlc`, so that binary is what actually runs — check it with
-`../bin/riddlc info` rather than trusting the pin.
+
+**`riddlcPath` WINS over the pin, so verify the binary, never the pin.** When
+`riddlVersion` names an unpublished staged RC the override points at
+`../bin/riddlc`; when it names a published release the override must be set to
+`None` so the plugin downloads it. On 2026-08-17 the staged binary was
+`rc.14-164`, older than the pinned `rc.15`, and had the override still been in
+place the corpus would have been validated against the wrong compiler and
+reported success. Always run `../bin/riddlc info` and compare.
 
 ### Model Include Structure
 
