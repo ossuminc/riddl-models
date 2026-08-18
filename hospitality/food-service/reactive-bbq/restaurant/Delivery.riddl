@@ -856,11 +856,11 @@ event-sourced entity DeliveryOrder as flow is {
     }
     handler PendingHandler is {
       on assignDriver: command AssignDriver is {
-        yield event DriverAssigned(deliveryId = assignDriver.deliveryId, driverId = assignDriver.driverId, driverName = assignDriver.driverName)
-        send event DriverAssigned(deliveryId = assignDriver.deliveryId, driverId = assignDriver.driverId, driverName = assignDriver.driverName) to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
+        yield event DriverAssigned(deliveryId = assignDriver.deliveryId, driverId = assignDriver.driverId, driverName = assignDriver.driverName, assignedAt = prompt("the assigned at of this driver assigned"))
+        send event DriverAssigned(deliveryId = assignDriver.deliveryId, driverId = assignDriver.driverId, driverName = assignDriver.driverName, assignedAt = prompt("the assigned at of this driver assigned")) to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on driverAssigned: event DriverAssigned is {
-        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.DriverAssignedState with record DeliveryOrder.DriverAssignedData(assignedAt = driverAssigned.assignedAt)
+        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.DriverAssignedState with record DeliveryOrder.DriverAssignedData(assignedAt = driverAssigned.assignedAt, base = PendingData.base, assignedDriverId = prompt("the assigned driver id of this driver assigned data"), assignedDriverName = prompt("the assigned driver name of this driver assigned data"))
         do "DriverAssigned event triggers push notification to
           driver via NotificationService streaming topology"
         set state DriverAssignedState to "base, assignedDriverId, assignedDriverName, assignedAt"
@@ -870,7 +870,7 @@ event-sourced entity DeliveryOrder as flow is {
         send event DeliveryMarkedFailed(deliveryId = failDelivery.deliveryId, failureReason = failDelivery.failureReason, failedAt = failDelivery.failedAt) to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on deliveryMarkedFailed: event DeliveryMarkedFailed is {
-        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData(failureReason = deliveryMarkedFailed.failureReason, failedAt = deliveryMarkedFailed.failedAt)
+        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData(failureReason = deliveryMarkedFailed.failureReason, failedAt = deliveryMarkedFailed.failedAt, base = PendingData.base, lastDriverId = prompt("the last driver id of this failed data"))
         set state Failed to "base, failureReason, failedAt, lastDriverId = none"
       }
       on createDelivery: command CreateDelivery is {
@@ -931,7 +931,7 @@ event-sourced entity DeliveryOrder as flow is {
         send event DriverDispatched(deliveryId = dispatchDriver.deliveryId, dispatchedAt = dispatchDriver.dispatchedAt) to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on driverDispatched: event DriverDispatched is {
-        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.InTransit with record DeliveryOrder.InTransitData(dispatchedAt = driverDispatched.dispatchedAt)
+        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.InTransit with record DeliveryOrder.InTransitData(dispatchedAt = driverDispatched.dispatchedAt, base = DriverAssignedData.base, assignedDriverId = DriverAssignedData.assignedDriverId, assignedDriverName = DriverAssignedData.assignedDriverName, lastKnownLocation = prompt("the last known location of this in transit data"))
         do "DriverDispatched event triggers push notification to
           customer via NotificationService streaming topology"
         set state InTransit to "base, assignedDriverId, assignedDriverName, dispatchedAt, lastKnownLocation = none"
@@ -941,7 +941,7 @@ event-sourced entity DeliveryOrder as flow is {
         send event DeliveryMarkedFailed(deliveryId = failDelivery.deliveryId, failureReason = failDelivery.failureReason, failedAt = failDelivery.failedAt) to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on deliveryMarkedFailed: event DeliveryMarkedFailed is {
-        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData(failureReason = deliveryMarkedFailed.failureReason, failedAt = deliveryMarkedFailed.failedAt)
+        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData(failureReason = deliveryMarkedFailed.failureReason, failedAt = deliveryMarkedFailed.failedAt, base = DriverAssignedData.base, lastDriverId = prompt("the last driver id of this failed data"))
       }
       on createDelivery: command CreateDelivery is {
         error "DeliveryOrder does not accept CreateDelivery in this state"
@@ -1007,7 +1007,7 @@ event-sourced entity DeliveryOrder as flow is {
         send event DeliveryConfirmed(deliveryId = confirmDelivery.deliveryId, confirmedAt = confirmDelivery.confirmedAt) to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on deliveryConfirmed: event DeliveryConfirmed is {
-        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Delivered with record DeliveryOrder.DeliveredData(confirmedAt = deliveryConfirmed.confirmedAt)
+        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Delivered with record DeliveryOrder.DeliveredData(confirmedAt = deliveryConfirmed.confirmedAt, base = InTransitData.base, assignedDriverId = InTransitData.assignedDriverId, assignedDriverName = InTransitData.assignedDriverName)
         do "DeliveryConfirmed event triggers push notification
           to customer via NotificationService streaming topology"
         set state DeliveryOrder.Delivered to "base, assignedDriverId, assignedDriverName, confirmedAt"
@@ -1058,7 +1058,7 @@ event-sourced entity DeliveryOrder as flow is {
         send event DeliveryMarkedFailed(deliveryId = failDelivery.deliveryId, failureReason = failDelivery.failureReason, failedAt = failDelivery.failedAt) to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on deliveryMarkedFailed: event DeliveryMarkedFailed is {
-        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData(failureReason = deliveryMarkedFailed.failureReason, failedAt = deliveryMarkedFailed.failedAt)
+        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData(failureReason = deliveryMarkedFailed.failureReason, failedAt = deliveryMarkedFailed.failedAt, base = InTransitData.base, lastDriverId = prompt("the last driver id of this failed data"))
       }
       on createDelivery: command CreateDelivery is {
         error "DeliveryOrder does not accept CreateDelivery in this state"
@@ -1239,8 +1239,8 @@ event-sourced entity DeliveryOrder as flow is {
   }
   handler DeliveryCreationHandler is {
     on createDelivery: command CreateDelivery is {
-      yield event DeliveryCreated(deliveryId = createDelivery.deliveryId, sourceOnlineOrderId = createDelivery.sourceOnlineOrderId, deliveryDestination = createDelivery.deliveryDestination)
-      send event DeliveryCreated(deliveryId = createDelivery.deliveryId, sourceOnlineOrderId = createDelivery.sourceOnlineOrderId, deliveryDestination = createDelivery.deliveryDestination) to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
+      yield event DeliveryCreated(deliveryId = createDelivery.deliveryId, sourceOnlineOrderId = createDelivery.sourceOnlineOrderId, deliveryDestination = createDelivery.deliveryDestination, createdAt = prompt("the created at of this delivery created"))
+      send event DeliveryCreated(deliveryId = createDelivery.deliveryId, sourceOnlineOrderId = createDelivery.sourceOnlineOrderId, deliveryDestination = createDelivery.deliveryDestination, createdAt = prompt("the created at of this delivery created")) to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       do "query available drivers by GeoLocation proximity to
         restaurant and select nearest with status = available"
     }
