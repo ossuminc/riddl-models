@@ -6,78 +6,66 @@ Development journal for active work on the riddl-models repository.
 
 **Branch** `release/2`, pushed. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Versions:** `riddlVersion = "2.0.0-rc.16-18-3005b2ef"`, an **unpublished staged
-RC**, so `riddlcPath` points at `../bin/riddlc` again. **That setting wins over
-the pin** — run `../bin/riddlc info` and compare before trusting any measurement.
-Set it back to `None` when the version publishes.
+**Versions:** `riddlVersion = "2.0.0-rc.17"`, staged at `../bin/riddlc`, so
+`riddlcPath` points there. **That setting wins over the pin** — run
+`../bin/riddlc info` and compare before trusting any measurement. Set it to
+`None` when rc.17 publishes.
 
-### Where things stand
+### The corpus is CLEAN and the gate is GREEN
 
-**The corpus is DONE bar two upstream bugs.** 1,669 messages -> 24, and every
-remaining one is a riddlc contradiction, not a corpus defect:
+```
+188 models: 0 errors, 0 warnings, 0 completeness, 0 usage, 0 style
+patterns:   2 examples + 7 templates, 0 failing
+BAST:       188/188 round trip, 0 discrepancies
+checkAll:   ALL 10 RULES PASS
+```
 
-| | before | now |
-|---|---:|---:|
-| error | 445 | **0** |
-| warning | 869 | **12** (upstream) |
-| completeness | 275 | **0** |
-| usage | 80 | **0** |
-| style | 0 | **12** (upstream) |
+This is the first time `checkAll` has been fully green. **R10 and R2 are both
+green**, so BACKLOG #1's campaign is complete on its own terms.
 
-`sbt v` green, patterns 2 examples + 7 templates 0 failing, BAST round trip
-**188/188**. `checkAll` red only on **R2** (orphan briefs, Reid's end-of-plan
-item) and **R10**, which is now blocked *entirely* by the two upstream bugs —
-reactive-bbq's 19 remaining messages are all of that kind.
+### How it got here, in one pass over three days
 
-### The two upstream bugs, both filed with repros
+1,669 messages at rc.16-18 → 0. The durable rules are in CLAUDE.md; the shape of
+the work was:
 
-1. **`persistent` is required AND not needed** on a connector wholly inside an
-   external context. Toggling the keyword swaps an Error for a Warning with no
-   third option. Reid's reading, which the paths confirm: both ends are `Ext.*`,
-   so the "not needed" warning is right and the Error is the bug — it fires on
-   *touching* an external context when it should require *crossing*. We keep
-   `persistent` because an Error is worse. 12 sites.
-   `../riddl/task/2026-08-18-two-checks-contradict-on-a-connector-inside-an-external-context.md`
-   plus a 22-line repro beside it.
-2. **"Consider an adaptor" is unsatisfiable** — the adaptor is already behind the
-   boundary (`FrontOfHouseContext.riddl:132`), and landing on it is now an Error.
-   This is riddl's own unruled [1.6]. 12 sites.
+- **430 cross-context connectors** onto context portlets, each with a relay
+  handler and an inward connector
+- **863 repository writes** through the repository's own `Persist` commands (758
+  created)
+- **257 messages** given the id field they address by; **26** schemas indexed
+- **3,270 lines** of unused types deleted
+- **51 orphan briefs** described — R2, Reid's end-of-plan item
+- **12 `persistent` keywords** removed once rc.17 stopped demanding them
 
-**Do not try to fix either in the corpus.** Both were verified to have no legal
-spelling.
+### Traps this produced — all cost real time
 
-### What changed, and the traps in it
-
-- **430 cross-context connectors** moved onto context portlets, with a relay
-  handler and an intra-context connector. See CLAUDE.md § "The context IS the
-  port" — including why repointing the connector *alone* makes things worse.
-- **863 repository writes** now go through `Persist` commands.
-- **257 messages** gained the id field they address by; **26** schemas gained an
-  index; **3,270 lines** of unused types deleted.
-
-Traps worth keeping:
-- **A corpus-wide regex under-reaches silently.** The addressing pass missed 8
-  single-line `result X is { ... }` declarations because it required the brace to
-  end the line. Always check the residue rather than the count.
-- **Insert order matters:** rewriting statements by recorded line number AFTER
-  inserting declarations rewrites nothing, because the numbers have moved.
-- **Scope a rename to its clause.** Renaming a shadowed binding file-wide also
-  renamed a constructor field called `checkIn`.
-- **Nested `prompt(...)` breaks a naive `\(([^)]*)\)`** constructor regex — it
-  under-reports supplied fields and corrupts lines on a second pass.
-- **Shell cwd persists between commands.** A "corpus-wide" sweep once reported 81
-  messages instead of 1,310 because it ran inside one model.
+- **A staged binary can predate the fix it was staged for.** rc.16-19 was NEWER
+  than the version we were asked to upgrade to and still lacked both fixes. Four
+  independent checks agreed it was absent; the repro is what proved it.
+- **A corpus-wide regex under-reaches silently.** Eight single-line `result X is
+  { ... }` declarations were skipped because the pattern required the brace to
+  end the line. Check the residue, never the count.
+- **`\b` after a quote never matches** — a rename pass reported 0 files for that
+  reason alone, and only the unchanged count revealed it.
+- **Insert order matters:** rewriting by recorded line number AFTER inserting
+  lines rewrites nothing.
+- **Scope a rename to its clause** — a file-wide one also renamed a constructor
+  field called `checkIn`.
+- **Nested `prompt(...)` breaks a naive `\(([^)]*)\)`** constructor regex; it
+  under-reports and corrupts on a second pass.
+- **Shell cwd persists between commands.** One "corpus-wide" sweep reported 81
+  messages instead of 1,310 because it ran inside a single model.
 
 ### Certainty
 
-Every number above was measured by sweeping all 188 entry points with the staged
-binary after each pass; nothing is carried over from an earlier run. The two
-upstream bugs were each verified by toggling the input and observing both
-messages.
+Every figure above was measured by sweeping all 188 entry points with the staged
+binary, re-checked after prettify, and `checkAll` was run to completion. Nothing
+is carried from an earlier run.
 
 ### `task/`
 
-**Empty.** Two bugs filed to `../riddl/task/` today.
+**Empty.** Three task files closed today; two upstream defects we filed were
+fixed in rc.17 and their tasks are in `../riddl/task/done/`.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 

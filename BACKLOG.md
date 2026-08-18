@@ -758,7 +758,20 @@ finding. That is the third time `patterns/` has caught something the 188-model
 sweep could not see.
 
 
-## 18. Two riddlc contradictions block the last 24 messages — UPSTREAM
+## ~~18. Two riddlc contradictions~~ — FIXED in rc.17, corpus at ZERO
+
+Both were fixed upstream in `c075f1af0`, on the reading Reid gave: the
+`persistent` check must fire on **crossing** an external context, not touching
+one. With the Error gone the keyword was simply removable, and the adaptor
+advisory stopped firing on its own.
+
+**The corpus now validates with zero messages of any kind and `checkAll` is
+fully green — all 10 rules.** BACKLOG #1's campaign is complete: R10 and R2 are
+both green, and #13's addressing work landed with it.
+
+Historical detail follows.
+
+## 18-historical. Two riddlc contradictions blocked the last 24 messages
 
 The corpus is otherwise at zero. **Neither can be fixed here**; both were
 verified to have no legal spelling, and both are filed to `../riddl/task/`.
