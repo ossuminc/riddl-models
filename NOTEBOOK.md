@@ -6,66 +6,68 @@ Development journal for active work on the riddl-models repository.
 
 **Branch** `release/2`, pushed. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Versions:** `riddlVersion = "2.0.0-rc.17"`, staged at `../bin/riddlc`, so
-`riddlcPath` points there. **That setting wins over the pin** — run
-`../bin/riddlc info` and compare before trusting any measurement. Set it to
-`None` when rc.17 publishes.
+**Versions:** `riddlVersion = "2.0.0-rc.17-10-59e5d7f5"`, an **unpublished staged
+RC** at `../bin/riddlc` (with `riddlc.rc17.bak` beside it). `riddlcPath` points
+there and **wins over the pin** — run `../bin/riddlc info` and compare before
+trusting any measurement.
 
-### The corpus is CLEAN and the gate is GREEN
+### State: corpus CLEAN, one gate half blocked
 
 ```
 188 models: 0 errors, 0 warnings, 0 completeness, 0 usage, 0 style
 patterns:   2 examples + 7 templates, 0 failing
 BAST:       188/188 round trip, 0 discrepancies
-checkAll:   ALL 10 RULES PASS
+checkAll:   CLI half green (188/188); TEST half CANNOT RUN
 ```
 
-This is the first time `checkAll` has been fully green. **R10 and R2 are both
-green**, so BACKLOG #1's campaign is complete on its own terms.
+**The test half needs `sbt publishLocal` from the riddl checkout.** The suite
+links `riddl-language`/`riddl-passes`/`riddl-utils` at the pinned version, and
+rc.17-10 is staged as a binary but never published, so the libraries do not
+resolve. This is the first time the pin has been a *staged* build while the
+suite needed libraries — worth remembering as its own failure mode.
 
-### How it got here, in one pass over three days
+### What landed today
 
-1,669 messages at rc.16-18 → 0. The durable rules are in CLAUDE.md; the shape of
-the work was:
+rc.17-10 added an Error: a `send` must name a message the portlet's type admits.
+**569 findings across 23 models, now 0.**
 
-- **430 cross-context connectors** onto context portlets, each with a relay
-  handler and an inward connector
-- **863 repository writes** through the repository's own `Persist` commands (758
-  created)
-- **257 messages** given the id field they address by; **26** schemas indexed
-- **3,270 lines** of unused types deleted
-- **51 orphan briefs** described — R2, Reid's end-of-plan item
-- **12 `persistent` keywords** removed once rc.17 stopped demanding them
+- **564 were mechanical** — an event alternation listing only the success events
+  while its emitter also publishes the `*Rejected` ones. 187 members added.
+- **5 were not**, and the task file's "check the direction before widening"
+  earned its keep. A processor was forwarding its OWN message onto a channel
+  typed for another context's messages. **The tell that widening is wrong: the
+  added member produces an unresolvable path**, because the event belongs to a
+  different context.
+- Reid ruled per site: **delete the dead path** (reactive-bbq) and **translate at
+  the boundary** (assembly-operations).
 
-### Traps this produced — all cost real time
+reactive-bbq lost `OrderSplitter`, `OnlineOrderPipeline`, `DeliveryIntake` and a
+dead `OrderEventSource`. They were not merely mistyped but dead — `TicketQueue`
+handles a *Kitchen* event and the stream delivered a *FrontOfHouse* one it never
+handled, while the adaptors already did the real work by `tell`. Each queue now
+feeds from its own context's event source.
 
-- **A staged binary can predate the fix it was staged for.** rc.16-19 was NEWER
-  than the version we were asked to upgrade to and still lacked both fixes. Four
-  independent checks agreed it was absent; the repro is what proved it.
-- **A corpus-wide regex under-reaches silently.** Eight single-line `result X is
-  { ... }` declarations were skipped because the pattern required the brace to
-  end the line. Check the residue, never the count.
-- **`\b` after a quote never matches** — a rename pass reported 0 files for that
-  reason alone, and only the unchanged count revealed it.
-- **Insert order matters:** rewriting by recorded line number AFTER inserting
-  lines rewrites nothing.
-- **Scope a rename to its clause** — a file-wide one also renamed a constructor
-  field called `checkIn`.
-- **Nested `prompt(...)` breaks a naive `\(([^)]*)\)`** constructor regex; it
-  under-reports and corrupts on a second pass.
-- **Shell cwd persists between commands.** One "corpus-wide" sweep reported 81
-  messages instead of 1,310 because it ran inside a single model.
+### Traps, all of which cost time today
 
-### Certainty
-
-Every figure above was measured by sweeping all 188 entry points with the staged
-binary, re-checked after prettify, and `checkAll` was run to completion. Nothing
-is carried from an earlier run.
+- **prettify jams several declarations onto one line.** A regex using `[^\n]*`
+  to drop a connector deleted its neighbours, including type declarations. Split
+  a line into declarations before editing it.
+- **Deleting a "dead" source can break 100 senders.** `OnlineOrderEventSource`
+  looked orphaned because its only *connector* was removed; it still had 100
+  `send` statements. Count senders, not just connectors.
+- **Removing a statement can empty its clause**, and an empty `on ... is { }`
+  does not parse. Removing a connector can orphan its `with { }` block the same
+  way.
+- **A source with two outlets is still a `source`**, not a split — splits need an
+  inlet.
+- Earlier, standing: a staged binary can predate the fix it was staged for; a
+  corpus-wide regex under-reaches silently; shell cwd persists between commands.
 
 ### `task/`
 
-**Empty.** Three task files closed today; two upstream defects we filed were
-fixed in rc.17 and their tasks are in `../riddl/task/done/`.
+**Empty.** Both of today's task files closed with verified Results, including a
+correction: the two "redundant" duplicate fields were not redundant, they
+differed in type.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 

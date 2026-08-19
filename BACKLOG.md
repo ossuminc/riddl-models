@@ -791,3 +791,23 @@ verified to have no legal spelling, and both are filed to `../riddl/task/`.
 **R10 is now blocked only by these.** reactive-bbq's 19 remaining messages are
 all of these two kinds, so when riddl fixes them R10 goes green without any
 corpus change. R2 (51 orphan briefs) remains Reid's end-of-plan item.
+
+
+## 19. `sbt checkAll`'s test half needs riddl libraries published
+
+The suite links `riddl-language`, `riddl-passes` and `riddl-utils` at
+`riddlVersion`. When that pin names a **staged, unpublished** RC — as it does now
+at `2.0.0-rc.17-10-59e5d7f5` — the libraries do not resolve and `checkTests`
+cannot run at all:
+
+```
+not found: .../riddl-utils_3/2.0.0-rc.17-10-59e5d7f5/riddl-utils_3-...pom
+```
+
+`sbt publishLocal` from the riddl checkout fixes it. The CLI half
+(`riddlcValidate`) is unaffected because `riddlcPath` uses the staged binary
+directly, which is why the corpus can be fully verified while the suite is dark.
+
+**Worth deciding:** whether `riddlVersion` should keep serving both roles. A
+staged binary and a published library set are now routinely different things, and
+the pin cannot name both.
