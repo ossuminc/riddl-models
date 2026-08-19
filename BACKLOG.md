@@ -793,7 +793,17 @@ all of these two kinds, so when riddl fixes them R10 goes green without any
 corpus change. R2 (51 orphan briefs) remains Reid's end-of-plan item.
 
 
-## 19. `sbt checkAll`'s test half needs riddl libraries published
+## ~~19. `sbt checkAll`'s test half needs riddl libraries published~~ — RESOLVED
+
+rc.19 is published, so the libraries resolve and both halves of `checkAll` run
+green. The underlying question stands and is worth deciding before the next
+staged-only RC: **`riddlVersion` names both the binary and the libraries, and a
+staged RC is a binary only.** While the pin names one, the corpus can be fully
+verified with the test suite dark.
+
+Historical detail follows.
+
+## 19-historical. checkAll's test half needed riddl libraries published
 
 The suite links `riddl-language`, `riddl-passes` and `riddl-utils` at
 `riddlVersion`. When that pin names a **staged, unpublished** RC — as it does now

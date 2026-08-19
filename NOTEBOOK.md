@@ -6,68 +6,59 @@ Development journal for active work on the riddl-models repository.
 
 **Branch** `release/2`, pushed. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Versions:** `riddlVersion = "2.0.0-rc.17-10-59e5d7f5"`, an **unpublished staged
-RC** at `../bin/riddlc` (with `riddlc.rc17.bak` beside it). `riddlcPath` points
-there and **wins over the pin** — run `../bin/riddlc info` and compare before
-trusting any measurement.
+**Versions:** `riddlVersion = "2.0.0-rc.19"` — a **published** release, so
+`riddlcPath := None` and the plugin downloads it. Restore the staged override only
+for an unpublished RC, and check `../bin/riddlc info` against the pin when you do:
+that path wins over `riddlVersion`.
 
-### State: corpus CLEAN, one gate half blocked
+### State: everything green
 
 ```
 188 models: 0 errors, 0 warnings, 0 completeness, 0 usage, 0 style
 patterns:   2 examples + 7 templates, 0 failing
 BAST:       188/188 round trip, 0 discrepancies
-checkAll:   CLI half green (188/188); TEST half CANNOT RUN
+checkAll:   ALL 10 RULES PASS -- both halves
 ```
 
-**The test half needs `sbt publishLocal` from the riddl checkout.** The suite
-links `riddl-language`/`riddl-passes`/`riddl-utils` at the pinned version, and
-rc.17-10 is staged as a binary but never published, so the libraries do not
-resolve. This is the first time the pin has been a *staged* build while the
-suite needed libraries — worth remembering as its own failure mode.
+### What rc.19 needed
 
-### What landed today
+A new `forward` statement, and a narrowing: only `yield`/`reply`,
+`error`/`require` and `forward` now discharge a `yields`/`replies` obligation —
+`send`/`tell` no longer do. 177 findings across 12 models, all cleared.
 
-rc.17-10 added an Error: a `send` must name a message the portlet's type admits.
-**569 findings across 23 models, now 0.**
+**Every one was delegation**, so all became `forward`. The conversion was gated on
+shape — a clause qualified only if its sole executable statement passed the
+HANDLED binding on — and the classifier found **zero** of the decline-by-recording
+sites the task warned would need a semantic decision. Most were the context
+boundary relays from rc.16; they were always delegating and now say so.
 
-- **564 were mechanical** — an event alternation listing only the success events
-  while its emitter also publishes the `*Rejected` ones. 187 members added.
-- **5 were not**, and the task file's "check the direction before widening"
-  earned its keep. A processor was forwarding its OWN message onto a channel
-  typed for another context's messages. **The tell that widening is wrong: the
-  added member produces an unresolvable path**, because the event belongs to a
-  different context.
-- Reid ruled per site: **delete the dead path** (reactive-bbq) and **translate at
-  the boundary** (assembly-operations).
+### The library trap, resolved but worth keeping
 
-reactive-bbq lost `OrderSplitter`, `OnlineOrderPipeline`, `DeliveryIntake` and a
-dead `OrderEventSource`. They were not merely mistyped but dead — `TicketQueue`
-handles a *Kitchen* event and the stream delivered a *FrontOfHouse* one it never
-handled, while the adaptors already did the real work by `tell`. Each queue now
-feeds from its own context's event source.
+`riddlVersion` names BOTH the riddlc binary and the test-suite libraries. A
+**staged** RC is a binary only, so at rc.17-10 `checkTests` could not resolve
+`riddl-utils` and did not run at all — while `riddlcValidate` stayed green. The
+corpus can therefore be fully verified with the suite dark. rc.19 is published, so
+both halves run again (BACKLOG #19 closed).
 
-### Traps, all of which cost time today
+### Traps that have cost real time
 
-- **prettify jams several declarations onto one line.** A regex using `[^\n]*`
-  to drop a connector deleted its neighbours, including type declarations. Split
-  a line into declarations before editing it.
-- **Deleting a "dead" source can break 100 senders.** `OnlineOrderEventSource`
-  looked orphaned because its only *connector* was removed; it still had 100
-  `send` statements. Count senders, not just connectors.
-- **Removing a statement can empty its clause**, and an empty `on ... is { }`
-  does not parse. Removing a connector can orphan its `with { }` block the same
-  way.
-- **A source with two outlets is still a `source`**, not a split — splits need an
-  inlet.
-- Earlier, standing: a staged binary can predate the fix it was staged for; a
-  corpus-wide regex under-reaches silently; shell cwd persists between commands.
+- **A staged binary can predate the fix it was staged for**, and can be NEWER
+  than the version you were asked to upgrade to. Verify with `riddlc info` and, if
+  a fix is claimed, with a repro.
+- **prettify jams several declarations onto one line** — a regex using `[^\n]*`
+  to drop one deletes its neighbours.
+- **A "dead" source may still have senders.** Count `send` statements, not just
+  connectors.
+- **Removing a statement can empty its clause**, and an empty `on … is { }` does
+  not parse; removing a connector can orphan its `with { }` block.
+- **A source with two outlets is still a `source`** — splits need an inlet.
+- **A corpus-wide regex under-reaches silently**; check the residue, not the count.
+- **Shell cwd persists between commands** — one "corpus-wide" sweep measured a
+  single model and reported 81 messages instead of 1,310.
 
 ### `task/`
 
-**Empty.** Both of today's task files closed with verified Results, including a
-correction: the two "redundant" duplicate fields were not redundant, they
-differed in type.
+**Empty.** Today's task closed with verified Results.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
