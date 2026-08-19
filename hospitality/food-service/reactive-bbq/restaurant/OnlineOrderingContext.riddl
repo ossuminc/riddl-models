@@ -2,41 +2,31 @@
 context OnlineOrdering as router is {
   inlet DeliveryToOnlineIn is type DeliveryEvent  outlet DeliveryToOnlineOut is type DeliveryEvent
   inlet OnlineOrderCommandStreamIn is type OnlineOrderCommand  outlet OnlineOrderCommandStreamOut is type OnlineOrderCommand
-  inlet OnlineToDeliveryIn is type DeliveryEvent  outlet OnlineToDeliveryOut is type DeliveryEvent
-  inlet OnlineToKitchenIn is type KitchenTicketEvent  outlet OnlineToKitchenOut is type KitchenTicketEvent
   inlet OnlineOrderResultStreamIn is type OnlineOrder.OnlineOrderResult  outlet OnlineOrderResultStreamOut is type OnlineOrder.OnlineOrderResult
   handler OnlineOrderingBoundary is {
     on deliveryCreated: event DeliveryOrder.DeliveryCreated is {
       send deliveryCreated to outlet OnlineOrdering.DeliveryToOnlineOut
-      send deliveryCreated to outlet OnlineOrdering.OnlineToDeliveryOut
     }
     on driverAssigned: event DeliveryOrder.DriverAssigned is {
       send driverAssigned to outlet OnlineOrdering.DeliveryToOnlineOut
-      send driverAssigned to outlet OnlineOrdering.OnlineToDeliveryOut
     }
     on driverDispatched: event DeliveryOrder.DriverDispatched is {
       send driverDispatched to outlet OnlineOrdering.DeliveryToOnlineOut
-      send driverDispatched to outlet OnlineOrdering.OnlineToDeliveryOut
     }
     on deliveryLocationRecorded: event DeliveryOrder.DeliveryLocationRecorded is {
       send deliveryLocationRecorded to outlet OnlineOrdering.DeliveryToOnlineOut
-      send deliveryLocationRecorded to outlet OnlineOrdering.OnlineToDeliveryOut
     }
     on deliveryConfirmed: event DeliveryOrder.DeliveryConfirmed is {
       send deliveryConfirmed to outlet OnlineOrdering.DeliveryToOnlineOut
-      send deliveryConfirmed to outlet OnlineOrdering.OnlineToDeliveryOut
     }
     on deliveryPaymentRecorded: event DeliveryOrder.DeliveryPaymentRecorded is {
       send deliveryPaymentRecorded to outlet OnlineOrdering.DeliveryToOnlineOut
-      send deliveryPaymentRecorded to outlet OnlineOrdering.OnlineToDeliveryOut
     }
     on deliveryIssueReported: event DeliveryOrder.DeliveryIssueReported is {
       send deliveryIssueReported to outlet OnlineOrdering.DeliveryToOnlineOut
-      send deliveryIssueReported to outlet OnlineOrdering.OnlineToDeliveryOut
     }
     on deliveryMarkedFailed: event DeliveryOrder.DeliveryMarkedFailed is {
       send deliveryMarkedFailed to outlet OnlineOrdering.DeliveryToOnlineOut
-      send deliveryMarkedFailed to outlet OnlineOrdering.OnlineToDeliveryOut
     }
     on browseMenu: command OnlineOrder.BrowseMenu is {
       send browseMenu to outlet OnlineOrdering.OnlineOrderCommandStreamOut
@@ -71,24 +61,6 @@ context OnlineOrdering as router is {
     on cancelOnlineOrder: command OnlineOrder.CancelOnlineOrder is {
       send cancelOnlineOrder to outlet OnlineOrdering.OnlineOrderCommandStreamOut
     }
-    on ticketReceived: event Kitchen.KitchenTicket.TicketReceived is {
-      send ticketReceived to outlet OnlineOrdering.OnlineToKitchenOut
-    }
-    on stationAssigned: event Kitchen.KitchenTicket.StationAssigned is {
-      send stationAssigned to outlet OnlineOrdering.OnlineToKitchenOut
-    }
-    on preparationStarted: event Kitchen.KitchenTicket.PreparationStarted is {
-      send preparationStarted to outlet OnlineOrdering.OnlineToKitchenOut
-    }
-    on itemMarkedReady: event Kitchen.KitchenTicket.ItemMarkedReady is {
-      send itemMarkedReady to outlet OnlineOrdering.OnlineToKitchenOut
-    }
-    on ticketApproved: event Kitchen.KitchenTicket.TicketApproved is {
-      send ticketApproved to outlet OnlineOrdering.OnlineToKitchenOut
-    }
-    on serverNotified: event Kitchen.KitchenTicket.ServerNotified is {
-      send serverNotified to outlet OnlineOrdering.OnlineToKitchenOut
-    }
     on onlineOrderResult: result OnlineOrder.OnlineOrderResult is {
       send onlineOrderResult to outlet OnlineOrdering.OnlineOrderResultStreamOut
     }
@@ -103,10 +75,10 @@ context OnlineOrdering as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'DeliveryToOnline Intake' is from outlet OnlineOrdering.DeliveryToOnlineOut to inlet OnlineOrdering.DeliveryEventSink.IncomingDeliveryEvents  connector 'OnlineOrderCommand Stream Intake' is from outlet OnlineOrdering.OnlineOrderCommandStreamOut to inlet OnlineOrdering.OnlineOrder.OnlineOrderCommands  connector 'OnlineToDelivery Egress' is from outlet OnlineOrdering.OnlineOrderPipeline.DeliveryFulfillments to inlet OnlineOrdering.OnlineToDeliveryIn  connector 'OnlineToKitchen Egress' is from outlet OnlineOrdering.OnlineOrderPipeline.KitchenOrders to inlet OnlineOrdering.OnlineToKitchenIn  connector 'OnlineOrderResult Stream Egress' is from outlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryResponses to inlet OnlineOrdering.OnlineOrderResultStreamIn  include "online-types.riddl"
+  connector 'DeliveryToOnline Intake' is from outlet OnlineOrdering.DeliveryToOnlineOut to inlet OnlineOrdering.DeliveryEventSink.IncomingDeliveryEvents  connector 'OnlineOrderCommand Stream Intake' is from outlet OnlineOrdering.OnlineOrderCommandStreamOut to inlet OnlineOrdering.OnlineOrder.OnlineOrderCommands  connector 'OnlineOrderResult Stream Egress' is from outlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryResponses to inlet OnlineOrdering.OnlineOrderResultStreamIn  include "online-types.riddl"
   include "OnlineOrder.riddl"
   repository OnlineOrderRepository as flow is {
-    inlet OnlineOrderRepositoryFromOnlineOrder is type OnlineOrderEvent    outlet OnlineOrderRepositoryResponses is type OnlineOrder.OnlineOrderResult
+    inlet OnlineOrderRepositoryFromOnlineOrder is type OnlineOrderEvent  outlet OnlineOrderRepositoryResponses is type OnlineOrder.OnlineOrderResult
     record StoredOnlineOrder is  {
       onlineOrderId: OnlineOrderId with {
         briefly "onlineOrderId"
@@ -437,6 +409,48 @@ context OnlineOrdering as router is {
       |cross a context boundary and bypass the anti-corruption layer.
     }
   }
+  command LogOnlineOrderEvent is {
+    loggedOnlineOrderId: String(1, 50) with {
+      briefly "ID"
+      described as {
+        |Identifier of the online order the logged event concerns.
+      }
+    }
+  } with {
+    briefly "Log online order event"
+    described as {
+      |Append a published online order event to this context's event log.
+    }
+  }
+  processor OnlineOrderEventLog as sink is {
+    inlet IncomingOnlineOrderLog is type OnlineOrderEvent
+    handler OnlineOrderLogIntake is {
+      on other is {
+        let logOnlineOrderEvent: type LogOnlineOrderEvent = prompt("the online order event to append to this context's log")
+        tell logOnlineOrderEvent to repository OnlineOrdering.OnlineOrderRepository
+        do "append the online order event to the context event log"
+      }
+    } with {
+      briefly "OnlineOrder log intake"
+      described as {
+        |Routes every published online order event into the context's own
+        |durable event log.
+      }
+    }
+  } with {
+    briefly "OnlineOrder event log"
+    described as {
+      |Durable local log of the online order events this context publishes.
+      |It replaces the raw event stream that used to carry these to the
+      |kitchen and delivery contexts, which the adaptors already translate.
+    }
+  }
+  connector OnlineOrderToLog is from outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents to inlet OnlineOrdering.OnlineOrderEventLog.IncomingOnlineOrderLog with {
+    briefly "OnlineOrder event log connector"
+    described as {
+      |Wires published online order events to the context's event log.
+    }
+  }
   processor OnlineOrderEventSource as source is {
     outlet SubmittedOnlineOrderEvents is type OnlineOrderEvent
     handler OnlineOrderEventEmitter is {
@@ -459,35 +473,6 @@ context OnlineOrdering as router is {
       |Emits online order submission events from the
       |OnlineOrder entity into the streaming topology for
       |kitchen routing.
-    }
-  }
-  processor OnlineOrderPipeline as split is {
-    inlet SubmittedOnlineOrders is type OnlineOrderEvent    outlet KitchenOrders is type KitchenTicketEvent
-    outlet DeliveryFulfillments is type DeliveryEvent
-    handler OnlineOrderPipelineHandler is {
-      on onlineOrderSubmitted: event OnlineOrder.OnlineOrderSubmitted is {
-        do "convert online order cart items to kitchen ticket
-          format and forward to kitchen queue"
-        send onlineOrderSubmitted to outlet KitchenOrders
-      }
-      on fulfillmentSelected: event OnlineOrder.FulfillmentSelected is {
-        send fulfillmentSelected to outlet DeliveryFulfillments
-        tell event OnlineOrder.DeliveryRouted(onlineOrderId = fulfillmentSelected.onlineOrderId, deliveryRoutedAt = prompt("the delivery routed at of this delivery routed")) to entity OnlineOrdering.OnlineOrder
-      }
-    } with {
-      briefly "Online order pipeline handler"
-      described as {
-        |Converts online orders to kitchen tickets and
-        |merges with dine-in orders for unified processing.
-      }
-    }
-  } with {
-    briefly "Online order pipeline"
-    described as {
-      |Processes submitted online orders in FIFO order,
-      |converting cart items to kitchen tickets. Ensures
-      |online orders are queued fairly alongside dine-in
-      |orders during peak hours.
     }
   }
   adaptor ToKitchen to context Restaurant.Kitchen is { 
@@ -551,7 +536,7 @@ context OnlineOrdering as router is {
     }
   }
   processor DeliveryEventSink as sink is {
-    inlet IncomingDeliveryEvents is type DeliveryEvent    handler DeliveryEventIntake is {
+    inlet IncomingDeliveryEvents is type DeliveryEvent  handler DeliveryEventIntake is {
       on driverDispatched: event Restaurant.Delivery.DeliveryOrder.DriverDispatched is {
         tell command OnlineOrder.MarkOutForDelivery(dispatchedAt = driverDispatched.dispatchedAt, onlineOrderId = prompt("the online order id of this mark out for delivery")) to entity OnlineOrdering.OnlineOrder
         do "update online order status to out for delivery"
@@ -578,13 +563,6 @@ context OnlineOrdering as router is {
     described as {
       |Receives delivery events from the streaming topology
       |for delivery status updates to online orders.
-    }
-  }
-  connector OnlineSourceToPipeline is from outlet OnlineOrdering.OnlineOrderEventSource.SubmittedOnlineOrderEvents to inlet OnlineOrdering.OnlineOrderPipeline.SubmittedOnlineOrders with {
-    briefly "Source to pipeline connector"
-    described as {
-      |Wires online order events from the source into the
-      |order pipeline for kitchen routing.
     }
   }
   connector 'OnlineOrderEvent Storage' is from outlet OnlineOrdering.OnlineOrder.OnlineOrderEvents to inlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryFromOnlineOrder with {

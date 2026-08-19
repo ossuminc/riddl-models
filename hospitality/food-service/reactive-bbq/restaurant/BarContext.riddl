@@ -1,28 +1,22 @@
 // Bar bounded context
 context Bar as router is {
-  inlet OrderToBarIn is type DrinkOrderEvent  outlet OrderToBarOut is type DrinkOrderEvent
   inlet DrinkOrderCommandStreamIn is type DrinkOrderCommand  outlet DrinkOrderCommandStreamOut is type DrinkOrderCommand
   inlet BarToFOHIn is type DrinkOrderEvent  outlet BarToFOHOut is type DrinkOrderEvent
   inlet DrinkOrderResultStreamIn is type DrinkOrder.DrinkOrderResult  outlet DrinkOrderResultStreamOut is type DrinkOrder.DrinkOrderResult
   handler BarBoundary is {
     on drinkOrderReceived: event Bar.DrinkOrder.DrinkOrderReceived is {
-      send drinkOrderReceived to outlet Bar.OrderToBarOut
       send drinkOrderReceived to outlet Bar.BarToFOHOut
     }
     on drinkPrepared: event Bar.DrinkOrder.DrinkPrepared is {
-      send drinkPrepared to outlet Bar.OrderToBarOut
       send drinkPrepared to outlet Bar.BarToFOHOut
     }
     on drinkMarkedReady: event Bar.DrinkOrder.DrinkMarkedReady is {
-      send drinkMarkedReady to outlet Bar.OrderToBarOut
       send drinkMarkedReady to outlet Bar.BarToFOHOut
     }
     on serverNotifiedDrinksReady: event Bar.DrinkOrder.ServerNotifiedDrinksReady is {
-      send serverNotifiedDrinksReady to outlet Bar.OrderToBarOut
       send serverNotifiedDrinksReady to outlet Bar.BarToFOHOut
     }
     on drinkOrderCompleted: event Bar.DrinkOrder.DrinkOrderCompleted is {
-      send drinkOrderCompleted to outlet Bar.OrderToBarOut
       send drinkOrderCompleted to outlet Bar.BarToFOHOut
     }
     on receiveDrinkOrder: command DrinkOrder.ReceiveDrinkOrder is {
@@ -54,10 +48,10 @@ context Bar as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'OrderToBar Intake' is from outlet Bar.OrderToBarOut to inlet Bar.DrinkOrderQueue.IncomingDrinks  connector 'DrinkOrderCommand Stream Intake' is from outlet Bar.DrinkOrderCommandStreamOut to inlet Bar.DrinkOrder.DrinkOrderCommands  connector 'BarToFOH Egress' is from outlet Bar.DrinkOrderEventSource.DrinkOrderEvents to inlet Bar.BarToFOHIn  connector 'DrinkOrderResult Stream Egress' is from outlet Bar.DrinkOrderRepository.DrinkOrderRepositoryResponses to inlet Bar.DrinkOrderResultStreamIn  include "bar-types.riddl"
+connector 'DrinkOrderCommand Stream Intake' is from outlet Bar.DrinkOrderCommandStreamOut to inlet Bar.DrinkOrder.DrinkOrderCommands  connector 'BarToFOH Egress' is from outlet Bar.DrinkOrderEventSource.DrinkOrderEvents to inlet Bar.BarToFOHIn  connector 'DrinkOrderResult Stream Egress' is from outlet Bar.DrinkOrderRepository.DrinkOrderRepositoryResponses to inlet Bar.DrinkOrderResultStreamIn  include "bar-types.riddl"
   include "DrinkOrder.riddl"
   repository DrinkOrderRepository as flow is {
-    inlet DrinkOrderRepositoryFromDrinkOrder is type DrinkOrderEvent    outlet DrinkOrderRepositoryResponses is type DrinkOrder.DrinkOrderResult
+    inlet DrinkOrderRepositoryFromDrinkOrder is type DrinkOrderEvent  outlet DrinkOrderRepositoryResponses is type DrinkOrder.DrinkOrderResult
     record StoredDrinkOrder is  {
       drinkOrderId: DrinkOrderId with {
         briefly "drinkOrderId"
@@ -194,6 +188,7 @@ context Bar as router is {
     }
   }
   processor DrinkOrderEventSource as source is {
+    outlet DrinkOrderEventsToQueue is type DrinkOrderEvent
     outlet DrinkOrderEvents is type DrinkOrderEvent
     handler DrinkOrderEventEmitter is {
       on other is {
@@ -201,18 +196,23 @@ context Bar as router is {
       }
       on drinkOrderReceived: event DrinkOrder.DrinkOrderReceived is {
         send drinkOrderReceived to outlet DrinkOrderEvents
+        send drinkOrderReceived to outlet DrinkOrderEventsToQueue
       }
       on drinkPrepared: event DrinkOrder.DrinkPrepared is {
         send drinkPrepared to outlet DrinkOrderEvents
+        send drinkPrepared to outlet DrinkOrderEventsToQueue
       }
       on drinkMarkedReady: event DrinkOrder.DrinkMarkedReady is {
         send drinkMarkedReady to outlet DrinkOrderEvents
+        send drinkMarkedReady to outlet DrinkOrderEventsToQueue
       }
       on serverNotifiedDrinksReady: event DrinkOrder.ServerNotifiedDrinksReady is {
         send serverNotifiedDrinksReady to outlet DrinkOrderEvents
+        send serverNotifiedDrinksReady to outlet DrinkOrderEventsToQueue
       }
       on drinkOrderCompleted: event DrinkOrder.DrinkOrderCompleted is {
         send drinkOrderCompleted to outlet DrinkOrderEvents
+        send drinkOrderCompleted to outlet DrinkOrderEventsToQueue
       }
     } with {
       briefly "Drink order event emitter"
@@ -227,7 +227,7 @@ context Bar as router is {
     }
   }
   processor DrinkOrderQueue as sink is {
-    inlet IncomingDrinks is type DrinkOrderEvent    handler DrinkQueueHandler is {
+    inlet IncomingDrinks is type DrinkOrderEvent  handler DrinkQueueHandler is {
       on drinkOrderReceived: event DrinkOrder.DrinkOrderReceived is {
         do "enqueue drink order for bartender preparation
           in FIFO sequence"
@@ -289,6 +289,13 @@ context Bar as router is {
       |Carries what leaves DrinkOrderEvents2 to DrinkOrderRepositoryFromDrinkOrder, which is where it is acted on.
       |The pipe states the route; the endpoints state who owns each end.
     }
+  }
+  connector 'DrinkOrderEvent Queue Feed' is from outlet Bar.DrinkOrderEventSource.DrinkOrderEventsToQueue to inlet Bar.DrinkOrderQueue.IncomingDrinks with {
+  briefly "This context's own events to its queue"
+  described as {
+  |The queue works on events this context publishes, not on the raw events
+  |another context happened to forward.
+  }
   }
 } with {
   briefly "Bar context"
