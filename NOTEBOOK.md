@@ -6,10 +6,11 @@ Development journal for active work on the riddl-models repository.
 
 **Branch** `release/2`, pushed. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Versions:** `riddlVersion = "2.0.0-rc.19"` — a **published** release, so
-`riddlcPath := None` and the plugin downloads it. Restore the staged override only
-for an unpublished RC, and check `../bin/riddlc info` against the pin when you do:
-that path wins over `riddlVersion`.
+**Versions:** `riddlVersion = "2.0.0-rc.19-3-003aab99"` — an **unpublished
+staged** RC, so `riddlcPath` points at `../bin/riddlc`. That path wins over the
+pin, so verify with `../bin/riddlc info`. **`checkTests` cannot run while the pin
+names a staged build** — a staged RC is a binary only and the suite's libraries do
+not resolve (BACKLOG #19). Set the override back to `None` when it publishes.
 
 ### State: everything green
 
@@ -17,8 +18,23 @@ that path wins over `riddlVersion`.
 188 models: 0 errors, 0 warnings, 0 completeness, 0 usage, 0 style
 patterns:   2 examples + 7 templates, 0 failing
 BAST:       188/188 round trip, 0 discrepancies
-checkAll:   ALL 10 RULES PASS -- both halves
+checkAll:   CLI half green; TEST half dark (staged RC, see below)
 ```
+
+### What rc.19-3 needed
+
+`error` is now terminal, so anything after one in the same block is unreachable.
+**268 findings, all in reactive-bbq**, all one idiom: refuse AND publish a
+rejection event, written in the order that reads naturally but does not execute.
+Every site now transmits first and refuses last.
+
+That reorder had only just become legal — A23 previously counted a `send` as an
+effect and banned transmissions ahead of a refusal, so neither order validated.
+It now bans only local state transformation (`set`, `morph`, `terminate`).
+
+Checked as a reorder rather than a deletion: 269 rejection sends and 338 `error`
+statements before and after, and a re-scan finds zero transmissions still
+following an error.
 
 ### What rc.19 needed
 
