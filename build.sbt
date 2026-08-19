@@ -18,7 +18,7 @@ enablePlugins(RiddlSbtPlugin)
 // perfected the binary is staged at ../bin/riddlc and the libraries arrive by
 // `sbt publishLocal` from that checkout, so this moves in step with riddl
 // rather than tracking published releases.
-lazy val riddlVersion = "2.0.0-rc.17-10-59e5d7f5"
+lazy val riddlVersion = "2.0.0-rc.19"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -61,20 +61,14 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
     ),
 
-    // riddlVersion is an UNPUBLISHED staged RC again (2.0.0-rc.16-18-3005b2ef),
-    // so it cannot be downloaded and the staged ../bin/riddlc is the only way to
-    // run it. The override is therefore back -- deliberately, and temporarily.
+    // riddlVersion is a PUBLISHED release again (2.0.0-rc.19), so the plugin
+    // downloads it and the test-suite libraries resolve too -- a staged RC is a
+    // BINARY only, which is why checkTests could not run at rc.17-10 (BACKLOG #19).
     //
-    // It carries a real hazard, so check before trusting any measurement: this
-    // path WINS over `riddlVersion`. On 2026-08-17 the staged binary was
-    // rc.14-164, BEFORE the rc.15 tag, and had this override been in place then,
-    // pinning rc.15 would have validated the corpus against the older compiler
-    // and reported success. Always confirm `../bin/riddlc info` matches the pin.
-    // When the version publishes, set this back to None.
-    riddlcPath := {
-      val staged = baseDirectory.value.getParentFile / "bin" / "riddlc"
-      if (staged.exists() && staged.canExecute) Some(staged) else None
-    },
+    // Restore the staged override only for an unpublished RC, and check
+    // `../bin/riddlc info` against the pin when you do: that path WINS over
+    // riddlVersion, so it can silently validate against the wrong compiler.
+    riddlcPath := None,
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),
