@@ -6,11 +6,20 @@ Development journal for active work on the riddl-models repository.
 
 **Branch** `release/2`, pushed. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Versions:** `riddlVersion = "2.0.0-rc.19-5-1d329772"` — an **unpublished
-staged** RC, so `riddlcPath` points at `../bin/riddlc`. That path wins over the
-pin, so verify with `../bin/riddlc info`. **`checkTests` cannot run while the pin
-names a staged build** — a staged RC is a binary only and the suite's libraries do
-not resolve (BACKLOG #19). Set the override back to `None` when it publishes.
+**Versions:** `riddlVersion = "2.0.0-rc.20"` — a **published** release, so
+`riddlcPath := None` and the plugin downloads it, which also keeps `checkTests`
+alive. Restore the staged override only for an unpublished RC; two traps if you
+do, both paid for: that path **wins over the pin**, and a `git checkout -- .`
+reverts the pin **silently** — on 2026-08-19 it left the pin naming rc.19-3 while
+rc.19-5 was doing the validating.
+
+
+### State: everything green, on rc.20
+
+Upgraded 2026-08-20 and the corpus needed **no changes** — the first upgrade in
+this series that cost nothing. Two upstream items are open and neither blocks:
+`terminate` is not yet terminal (our repro still passes, task filed), and the
+`.bast` regeneration waits on 2.0.0 actually shipping.
 
 ### State: everything green
 
@@ -18,7 +27,7 @@ not resolve (BACKLOG #19). Set the override back to `None` when it publishes.
 188 models: 0 errors, 0 warnings, 0 completeness, 0 usage, 0 style
 patterns:   2 examples + 7 templates, 0 failing
 BAST:       188/188 round trip, 0 discrepancies
-checkAll:   CLI half green; TEST half dark (staged RC, see below)
+checkAll:   ALL 10 RULES PASS -- both halves
 ```
 
 ### `on term` / `terminate` are exercised now (2026-08-20)
