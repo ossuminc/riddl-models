@@ -6,7 +6,7 @@ Development journal for active work on the riddl-models repository.
 
 **Branch** `release/2`, pushed. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Versions:** `riddlVersion = "2.0.0-rc.19-3-003aab99"` — an **unpublished
+**Versions:** `riddlVersion = "2.0.0-rc.19-5-1d329772"` — an **unpublished
 staged** RC, so `riddlcPath` points at `../bin/riddlc`. That path wins over the
 pin, so verify with `../bin/riddlc info`. **`checkTests` cannot run while the pin
 names a staged build** — a staged RC is a binary only and the suite's libraries do
@@ -20,6 +20,23 @@ patterns:   2 examples + 7 templates, 0 failing
 BAST:       188/188 round trip, 0 discrepancies
 checkAll:   CLI half green; TEST half dark (staged RC, see below)
 ```
+
+### What rc.19-5 needed
+
+A StyleWarning where a clause answers for a message that never declared what it
+answers with — A19 makes the declaration the contract, so a generator derives the
+return type from it and never from the body. **450 sites, all cleared**, the type
+taken from the `let` that typed the value or from the message ref itself.
+
+**A wrong declaration is worse than none** (the converse is already an Error), so
+each was validated rather than assumed. One site needed a decision: `GetReturn`
+had a second clause in the same entity doing `tell ... to entity` — telling itself
+— which a `replies` declaration turned into an Error, since a `tell` no longer
+discharges. It replies now. Only such site in 190 models.
+
+**`.conf` sets `show-style-warnings = false`**, so `riddlc from <model>.conf
+validate` reports ZERO of these. Validate the `.riddl` directly, which our sweep
+already does.
 
 ### What rc.19-3 needed
 
