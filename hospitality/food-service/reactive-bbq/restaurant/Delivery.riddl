@@ -1019,7 +1019,21 @@ event-sourced entity DeliveryOrder as flow is {
         do "DeliveryConfirmed event triggers push notification
           to customer via NotificationService streaming topology"
         set state DeliveryOrder.Delivered to "base, assignedDriverId, assignedDriverName, confirmedAt"
-        terminate self.id
+        terminate self.id with (deliveryClosureReason = "delivered and confirmed by the customer", deliveryClosedAt = deliveryConfirmed.confirmedAt)
+      }
+      on term(deliveryClosureReason: String(1,500), deliveryClosedAt: TimeStamp) is {
+        do "release the driver assignment and the vehicle hold this delivery was
+          holding, and hand dispatch the reason and time it ended so the driver's
+          shift reconciles against something other than a gap"
+      } with {
+        briefly "What ending a delivery releases"
+        described as {
+          |A delivery holds a driver and a vehicle for as long as it exists, so its
+          |destruction is the moment those come back. It takes the reason and the
+          |time because dispatch reconciles a shift from them: a delivery that ended
+          |because the customer took it reads differently from one that failed, and
+          |the difference is not recoverable once the aggregate is gone.
+        }
       }
       on recordDeliveryPayment: command RecordDeliveryPayment is {
         yield event DeliveryPaymentRecorded(deliveryId = recordDeliveryPayment.deliveryId, deliveryTip = recordDeliveryPayment.deliveryTip, deliveryPaidAt = recordDeliveryPayment.deliveryPaidAt)
