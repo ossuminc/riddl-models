@@ -18,7 +18,7 @@ enablePlugins(RiddlSbtPlugin)
 // perfected the binary is staged at ../bin/riddlc and the libraries arrive by
 // `sbt publishLocal` from that checkout, so this moves in step with riddl
 // rather than tracking published releases.
-lazy val riddlVersion = "2.0.0-rc.19-3-003aab99"
+lazy val riddlVersion = "2.0.0-rc.20"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -61,16 +61,17 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
     ),
 
-    // riddlVersion is an UNPUBLISHED staged RC again (2.0.0-rc.19-3-003aab99),
-    // so the staged ../bin/riddlc is the only way to run it. Two consequences,
-    // both previously paid for: this path WINS over riddlVersion, so verify with
-    // `../bin/riddlc info` before trusting a measurement; and a staged RC is a
-    // BINARY only, so the test-suite libraries do not resolve and `checkTests`
-    // cannot run (BACKLOG #19). Set this back to None when the version publishes.
-    riddlcPath := {
-      val staged = baseDirectory.value.getParentFile / "bin" / "riddlc"
-      if (staged.exists() && staged.canExecute) Some(staged) else None
-    },
+    // riddlVersion is a PUBLISHED release again (2.0.0-rc.20), so the plugin
+    // downloads it and the test-suite libraries resolve too -- a staged RC is a
+    // BINARY only, which is why checkTests goes dark whenever the pin names one
+    // (BACKLOG #19).
+    //
+    // Restore the staged override only for an unpublished RC. Two traps if you
+    // do: this path WINS over riddlVersion, so verify `../bin/riddlc info`
+    // against the pin; and a `git checkout -- .` reverts the pin silently, which
+    // happened on 2026-08-19 and left the pin naming rc.19-3 while rc.19-5 was
+    // doing the validating.
+    riddlcPath := None,
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),
