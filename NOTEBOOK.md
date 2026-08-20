@@ -21,6 +21,26 @@ BAST:       188/188 round trip, 0 discrepancies
 checkAll:   CLI half green; TEST half dark (staged RC, see below)
 ```
 
+### `on term` / `terminate` are exercised now (2026-08-20)
+
+riddlg found the corpus used `on term` **zero** times, so a whole lowering path
+was generated and never validated. Three entities use it now, chosen by one test:
+**destruction has to release something.**
+
+- **DeliveryOrder** — parameterised. A delivery holds a driver and a vehicle, so
+  its end is when those return; it carries the reason and time because dispatch
+  reconciles a shift from them.
+- **TableOrder** and **Cart** — plain. A closed order holds a table and a server;
+  an abandoned cart holds inventory reservations. Each ends exactly one way.
+
+**subscription-management was deliberately left out** — a cancelled subscription
+is kept for billing history, so it is a state, not a death.
+
+Also found: `TableOrder` had `set state` AFTER its `terminate`. Accepted today,
+but the same latent shape as the statements after `error` that rc.19-3 made an
+Error. Moved last, and flagged upstream as a question about whether `terminate`
+should be terminal too.
+
 ### What rc.19-5 needed
 
 A StyleWarning where a clause answers for a message that never declared what it
@@ -91,7 +111,13 @@ both halves run again (BACKLOG #19 closed).
 
 ### `task/`
 
-**Empty.** Today's task closed with verified Results.
+**One open, deliberately: `2026-08-20-regenerate-checked-in-bast-after-2.0.0.md`.**
+It is BLOCKED on its own precondition — it says to act *after* 2.0.0 ships, and
+the newest release is still `2.0.0-rc.19` (prerelease). Its premise is also
+already false here: the committed `.bast` are at revision 19 (header `0013`), the
+round trip passes 188/188 and `git status` shows none modified, because they are
+regenerated as part of the gate chain every session. Re-verify in one command
+when 2.0.0 lands.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
