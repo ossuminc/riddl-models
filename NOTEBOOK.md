@@ -36,10 +36,13 @@ was generated and never validated. Three entities use it now, chosen by one test
 **subscription-management was deliberately left out** — a cancelled subscription
 is kept for billing history, so it is a state, not a death.
 
-Also found: `TableOrder` had `set state` AFTER its `terminate`. Accepted today,
-but the same latent shape as the statements after `error` that rc.19-3 made an
-Error. Moved last, and flagged upstream as a question about whether `terminate`
-should be terminal too.
+Also found: `TableOrder` had `set state` AFTER its `terminate`. **Reid ruled
+2026-08-20 that this must be an Error**, and it is now filed upstream as
+`../riddl/task/2026-08-20-statements-after-terminate-must-be-an-error.md` with a
+repro. The asymmetry is exact — the same statement draws 0 errors after
+`terminate` and 1 after `error`, because rc.19-3's unreachability check only
+looks at `error`. The corpus has **zero** sites of this shape now, so the check
+costs nothing to ship.
 
 ### What rc.19-5 needed
 
