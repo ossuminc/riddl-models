@@ -821,3 +821,72 @@ directly, which is why the corpus can be fully verified while the suite is dark.
 **Worth deciding:** whether `riddlVersion` should keep serving both roles. A
 staged binary and a published library set are now routinely different things, and
 the pin cannot name both.
+
+
+## 20. The rc.21 delivery campaign — 7,071 warnings, 2 shapes need a ruling
+
+Measured 2026-08-22 against `2.0.0-rc.21`, sweeping all 188 entry points:
+
+```
+6,107  Event told to a target that declares no clause receiving it
+   64  Command, same
+  900  inlet admits a type its owner handles nowhere
+```
+
+**Zero errors** — nothing fails to validate. But riddlg cannot generate code for
+a message sent to something that does not handle it, so Reid ruled these get
+fixed by model change, not by softening the check.
+
+### DONE already: the 207 Results (`7073726b`)
+
+All 207 were one shape — inside `on query`, an entity telling the answer to
+**itself**. Every one became `reply`, which also required the `replies`
+declaration the rc.19-5 rule wants. **None wanted the `on result` clause** the
+task warned against.
+
+### RULED — the 900 inlets (Reid, 2026-08-22)
+
+**Implement the `on` clauses. Do not delete inlets.** An inlet's type is often an
+**alternation**, so the clause set must cover **every member**. An inlet may be
+deleted only on proof that nothing connected to the feeding outlet — *including
+through a merge* — ever sends that type, and proving that is harder than writing
+the clauses.
+
+### NEEDS A RULING — two shapes, options and impacts recorded
+
+Reid asked for examples and trade-offs before deciding; both are written up in
+NOTEBOOK § HANDOFF with the code. In brief:
+
+1. **An entity's command handler tells ITSELF the event**
+   (`commerce/marketplace/order-orchestration/MarketplaceOrder.riddl:652`).
+   `CreateOrder` declares no `yields` (`:47`), the entity has no
+   `on event OrderCreated`, and the context's split and projector DO handle it
+   (`OrchestrationContext.riddl:426,:467`). Options: convert to `yield` (correct
+   event-sourced idiom, largest change), add `on event` (smallest, but models a
+   self-dispatch), or delete the tell (the `morph` already changed state).
+2. **A split forwards an event AND tells the entity back**
+   (`OrchestrationContext.riddl:516`). Options: delete the tell (it already
+   routes to repository and analytics), add `on event` (creates
+   entity → split → entity, and **riddlc has no cycle detection**), or retarget.
+
+**Sample proportions** (25 models, ~987 sites): 294 processor→entity,
+266 processor→repository, 251 entity→itself, 169 repository→entity, 7 adaptor.
+
+## 21. RIDDL has no value expression for absent, arithmetic, or enumerator
+
+Found 2026-08-22 finishing the `set`-value work (#16 in `task/done`), and the
+reason 22 prose strings survive in reactive-bbq:
+
+- **absent** — `presentedBillTotal = none`, `orderItems = empty`. No literal
+  exists, so the field is simply omitted from the constructor.
+- **arithmetic** — `pointBalance + accrualPoints`. `value` has no arithmetic, so
+  these stay `prompt(...)` holes.
+- **enumerator** — `shiftStatus = Open` does not resolve, **bare or qualified**
+  (`ShiftStatus.Open` was tried and also fails), even though the field's type is
+  that enum. Also `prompt(...)` for now.
+
+The remaining 10 are `String(1,30)` display-status fields where a string literal
+genuinely IS the value — not defects.
+
+**Worth asking riddl** whether an enumerator should be nameable in a value
+position; the other two are honest gaps.

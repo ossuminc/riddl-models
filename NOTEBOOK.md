@@ -4,132 +4,77 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`, pushed. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
+**Branch** `release/2`. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Versions:** `riddlVersion = "2.0.0-rc.20"` — a **published** release, so
-`riddlcPath := None` and the plugin downloads it, which also keeps `checkTests`
-alive. Restore the staged override only for an unpublished RC; two traps if you
-do, both paid for: that path **wins over the pin**, and a `git checkout -- .`
-reverts the pin **silently** — on 2026-08-19 it left the pin naming rc.19-3 while
-rc.19-5 was doing the validating.
+**Build state, verified this session:** `riddlVersion = "2.0.0-rc.21"`, which is
+**published**, so `riddlcPath := None` and the plugin downloads it — this keeps
+the test half of `checkAll` alive. `../bin/riddlc info` also reads `2.0.0-rc.21`
+(`ad5ac1d4`), so pin and staged binary agree. Restore the staged override only
+for an unpublished RC; it **wins over the pin**, and a `git checkout -- .`
+reverts the pin **silently** (that happened on 2026-08-19).
 
+### In flight: the rc.21 delivery campaign, 2 of 4 parts done
 
-### State: everything green, on rc.20
+rc.21 added two checks and they report **7,071 completeness warnings, 0 errors**.
+Reid's ruling: *correct is correct* — the corpus changes, because riddlg cannot
+generate code for a message sent to something that does not handle it.
 
-Upgraded 2026-08-20 and the corpus needed **no changes** — the first upgrade in
-this series that cost nothing. Two upstream items are open and neither blocks:
-`terminate` is not yet terminal (our repro still passes, task filed), and the
-`.bast` regeneration waits on 2.0.0 actually shipping.
-
-### State: everything green
+Verified by sweeping all 188 entry points just now:
 
 ```
-188 models: 0 errors, 0 warnings, 0 completeness, 0 usage, 0 style
-patterns:   2 examples + 7 templates, 0 failing
-BAST:       188/188 round trip, 0 discrepancies
-checkAll:   ALL 10 RULES PASS -- both halves
+6,107  Event told to a target with no clause receiving it
+   64  Command, same
+  900  inlet admits a type its owner handles nowhere
 ```
 
-### `on term` / `terminate` are exercised now (2026-08-20)
+- **DONE — 207 Result tells** (`7073726b`). All one shape: an entity telling
+  itself the answer inside `on query`. Became `reply` + the `replies` declaration.
+- **DONE — 128 prose-string `set` values** (`150f3c6f`), a separate riddlg task.
+- **RULED, NOT STARTED — the 900 inlets.** Implement `on` clauses for **every
+  member** of each inlet's type, which is often an alternation. Delete an inlet
+  only on proof nothing feeding it — *including through a merge* — ever sends
+  that type. See BACKLOG #20.
+- **BLOCKED ON A RULING — the 6,171 Event/Command tells.** Two shapes, with code,
+  options and impacts in BACKLOG #20. Reid has the write-up and has not chosen.
+  **Do not batch these**; the cheap fix (adding `on event` to whatever is told)
+  can silence thousands of warnings and leave the model saying something nobody
+  meant, which is the task file's own warning.
 
-riddlg found the corpus used `on term` **zero** times, so a whole lowering path
-was generated and never validated. Three entities use it now, chosen by one test:
-**destruction has to release something.**
+### Traps
 
-- **DeliveryOrder** — parameterised. A delivery holds a driver and a vehicle, so
-  its end is when those return; it carries the reason and time because dispatch
-  reconciles a shift from them.
-- **TableOrder** and **Cart** — plain. A closed order holds a table and a server;
-  an abandoned cart holds inventory reservations. Each ends exactly one way.
-
-**subscription-management was deliberately left out** — a cancelled subscription
-is kept for billing history, so it is a state, not a death.
-
-Also found: `TableOrder` had `set state` AFTER its `terminate`. **Reid ruled
-2026-08-20 that this must be an Error**, and it is now filed upstream as
-`../riddl/task/2026-08-20-statements-after-terminate-must-be-an-error.md` with a
-repro. The asymmetry is exact — the same statement draws 0 errors after
-`terminate` and 1 after `error`, because rc.19-3's unreachability check only
-looks at `error`. The corpus has **zero** sites of this shape now, so the check
-costs nothing to ship.
-
-### What rc.19-5 needed
-
-A StyleWarning where a clause answers for a message that never declared what it
-answers with — A19 makes the declaration the contract, so a generator derives the
-return type from it and never from the body. **450 sites, all cleared**, the type
-taken from the `let` that typed the value or from the message ref itself.
-
-**A wrong declaration is worse than none** (the converse is already an Error), so
-each was validated rather than assumed. One site needed a decision: `GetReturn`
-had a second clause in the same entity doing `tell ... to entity` — telling itself
-— which a `replies` declaration turned into an Error, since a `tell` no longer
-discharges. It replies now. Only such site in 190 models.
-
-**`.conf` sets `show-style-warnings = false`**, so `riddlc from <model>.conf
-validate` reports ZERO of these. Validate the `.riddl` directly, which our sweep
-already does.
-
-### What rc.19-3 needed
-
-`error` is now terminal, so anything after one in the same block is unreachable.
-**268 findings, all in reactive-bbq**, all one idiom: refuse AND publish a
-rejection event, written in the order that reads naturally but does not execute.
-Every site now transmits first and refuses last.
-
-That reorder had only just become legal — A23 previously counted a `send` as an
-effect and banned transmissions ahead of a refusal, so neither order validated.
-It now bans only local state transformation (`set`, `morph`, `terminate`).
-
-Checked as a reorder rather than a deletion: 269 rejection sends and 338 `error`
-statements before and after, and a re-scan finds zero transmissions still
-following an error.
-
-### What rc.19 needed
-
-A new `forward` statement, and a narrowing: only `yield`/`reply`,
-`error`/`require` and `forward` now discharge a `yields`/`replies` obligation —
-`send`/`tell` no longer do. 177 findings across 12 models, all cleared.
-
-**Every one was delegation**, so all became `forward`. The conversion was gated on
-shape — a clause qualified only if its sole executable statement passed the
-HANDLED binding on — and the classifier found **zero** of the decline-by-recording
-sites the task warned would need a semantic decision. Most were the context
-boundary relays from rc.16; they were always delegating and now say so.
-
-### The library trap, resolved but worth keeping
-
-`riddlVersion` names BOTH the riddlc binary and the test-suite libraries. A
-**staged** RC is a binary only, so at rc.17-10 `checkTests` could not resolve
-`riddl-utils` and did not run at all — while `riddlcValidate` stayed green. The
-corpus can therefore be fully verified with the suite dark. rc.19 is published, so
-both halves run again (BACKLOG #19 closed).
-
-### Traps that have cost real time
-
-- **A staged binary can predate the fix it was staged for**, and can be NEWER
-  than the version you were asked to upgrade to. Verify with `riddlc info` and, if
-  a fix is claimed, with a repro.
-- **prettify jams several declarations onto one line** — a regex using `[^\n]*`
-  to drop one deletes its neighbours.
-- **A "dead" source may still have senders.** Count `send` statements, not just
+- **Zero means zero of EVERY severity**, style included. Clearing one class
+  raises another: the 207 `reply` conversions immediately produced 207 style
+  warnings about undeclared `replies`.
+- **`.conf` sets `show-style-warnings = false`** — validate the `.riddl` directly
+  or style warnings are invisible and a sweep reports a false zero.
+- **prettify jams several declarations onto one line.** A regex using `[^\n]*`
+  or `^`-anchoring will delete or miss neighbours. Split a line into declarations.
+- **State names collide across entities** (`InPreparation` is on two), so a
+  bare-name index resolves to the wrong record. Key by `Entity.State`.
+- **A "dead" source may still have senders** — count `send` statements, not just
   connectors.
-- **Removing a statement can empty its clause**, and an empty `on … is { }` does
-  not parse; removing a connector can orphan its `with { }` block.
-- **A source with two outlets is still a `source`** — splits need an inlet.
-- **A corpus-wide regex under-reaches silently**; check the residue, not the count.
-- **Shell cwd persists between commands** — one "corpus-wide" sweep measured a
-  single model and reported 81 messages instead of 1,310.
+- **`riddlc validate <file>` differs from `from <conf> validate`** — the latter
+  suppresses style.
 
-### `task/`
+### Certainty
 
-**One open, deliberately: `2026-08-20-regenerate-checked-in-bast-after-2.0.0.md`.**
-It is BLOCKED on its own precondition — it says to act *after* 2.0.0 ships, and
-the newest release is still `2.0.0-rc.19` (prerelease). Its premise is also
-already false here: the committed `.bast` are at revision 19 (header `0013`), the
-round trip passes 188/188 and `git status` shows none modified, because they are
-regenerated as part of the gate chain every session. Re-verify in one command
-when 2.0.0 lands.
+**Verified by command this session:** the pin and staged binary both rc.21; tree
+clean; the 7,071 split above; 0 errors after every pass; the two code examples in
+BACKLOG #20 read from source with line numbers.
+
+**Assumed, not verified:** the shape proportions in BACKLOG #20 come from a
+**25-model sample**, not the full corpus. Re-measure before relying on them to
+size the work.
+
+### `task/` — three files, all awaiting triage
+
+- `2026-08-22-handle-the-messages-you-are-told.md` — **in progress**, the campaign
+  above; Results not yet appended
+- `2026-08-20-set-state-values-are-prose-strings.md` — **work done**, Results not
+  yet appended, and its counts are wrong (128 sites not 91; 6 blocked not 18)
+- `2026-08-20-regenerate-checked-in-bast-after-2.0.0.md` — **blocked** on 2.0.0
+  actually shipping; newest release is rc.21, a prerelease. Its premise is also
+  already false here: the `.bast` are at revision 19 and round-trip green.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
