@@ -852,25 +852,41 @@ deleted only on proof that nothing connected to the feeding outlet — *includin
 through a merge* — ever sends that type, and proving that is harder than writing
 the clauses.
 
-### NEEDS A RULING — two shapes, options and impacts recorded
+### RULED — both tell shapes (Reid, 2026-08-22)
 
-Reid asked for examples and trade-offs before deciding; both are written up in
-NOTEBOOK § HANDOFF with the code. In brief:
+Reid's rationale, and it decides both: **"handling the event is important to be
+able to persist it."** An event nothing handles cannot be applied on replay, so
+the entity that owns the event is the thing that must carry the clause.
 
-1. **An entity's command handler tells ITSELF the event**
-   (`commerce/marketplace/order-orchestration/MarketplaceOrder.riddl:652`).
-   `CreateOrder` declares no `yields` (`:47`), the entity has no
-   `on event OrderCreated`, and the context's split and projector DO handle it
-   (`OrchestrationContext.riddl:426,:467`). Options: convert to `yield` (correct
-   event-sourced idiom, largest change), add `on event` (smallest, but models a
-   self-dispatch), or delete the tell (the `morph` already changed state).
-2. **A split forwards an event AND tells the entity back**
-   (`OrchestrationContext.riddl:516`). Options: delete the tell (it already
-   routes to repository and analytics), add `on event` (creates
-   entity → split → entity, and **riddlc has no cycle detection**), or retarget.
+**Shape 1 — an entity's command handler tells ITSELF the event → option A,
+convert to `yield`.** This is the correct event-sourced idiom and the largest
+change, because it is not a one-line substitution. Each site needs all four of
+riddlc's event-sourced rules satisfied at once (CLAUDE.md § Event-Sourced
+Entities):
 
-**Sample proportions** (25 models, ~987 sites): 294 processor→entity,
-266 processor→repository, 251 entity→itself, 169 repository→entity, 7 adaptor.
+1. the **command's type** declares `yields event E` — `CreateOrder` at
+   `commerce/marketplace/order-orchestration/MarketplaceOrder.riddl:47` declares
+   none today
+2. the entity gains an `on event E` clause to apply on replay
+3. the `morph`/`set` **moves out of the `on command` clause into `on event`** —
+   at `:652` the `morph` currently sits beside the `tell`, and only `on event`
+   may mutate state
+4. the `tell … to entity <self>` goes away, replaced by `yield event E(…)`
+
+The 251 entity→itself sites in the sample are this shape. Expect the count to
+move — that proportion is from **25 models, not the corpus**.
+
+**Shape 2 — a split forwards an event AND tells the entity back → option B,
+add `on event` to the entity** (`OrchestrationContext.riddl:516`). Keep the
+tell; give the entity the clause that receives it. Accepted consequence: this
+creates **entity → split → entity**, and **riddlc has no cycle detection**, so
+nothing will warn if a future edit makes that loop do real work. The clause
+should apply the event, not re-emit.
+
+The two rulings converge on the same end state — **every entity carries an
+`on event` clause for each of its own events** — which is also what the 900
+inlets need. Do the inlets and shape 2 together where they touch the same
+handler.
 
 ## 21. RIDDL has no value expression for absent, arithmetic, or enumerator
 

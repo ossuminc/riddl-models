@@ -34,11 +34,13 @@ Verified by sweeping all 188 entry points just now:
   member** of each inlet's type, which is often an alternation. Delete an inlet
   only on proof nothing feeding it — *including through a merge* — ever sends
   that type. See BACKLOG #20.
-- **BLOCKED ON A RULING — the 6,171 Event/Command tells.** Two shapes, with code,
-  options and impacts in BACKLOG #20. Reid has the write-up and has not chosen.
-  **Do not batch these**; the cheap fix (adding `on event` to whatever is told)
-  can silence thousands of warnings and leave the model saying something nobody
-  meant, which is the task file's own warning.
+- **RULED, NOT STARTED — the 6,171 Event/Command tells.** Reid ruled both shapes
+  on 2026-08-22: a self-tell becomes a `yield` (with the `yields` declaration,
+  an `on event` clause, and the `morph` moved into it); a split's tell-back
+  stays and the entity gains the `on event` clause. Rationale: *handling the
+  event is important to be able to persist it*. Both land in the same place as
+  the inlets — every entity carries an `on event` clause for each of its own
+  events. Full detail with line numbers in BACKLOG #20.
 
 ### Traps
 
