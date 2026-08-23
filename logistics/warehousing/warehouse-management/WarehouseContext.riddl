@@ -30,9 +30,6 @@ context WarehouseContext as router is {
     on releaseFromQuarantine: command Inventory.ReleaseFromQuarantine is {
       forward releaseFromQuarantine to outlet WarehouseContext.InventoryCommandStreamOut
     }
-    on initializeInventory: command Inventory.InitializeInventory is {
-      send initializeInventory to outlet WarehouseContext.InventoryCommandStreamOut
-    }
     on inventoryEntityResult: result Inventory.InventoryEntityResult is {
       send inventoryEntityResult to outlet WarehouseContext.StockItemResultStreamOut
     }
@@ -207,7 +204,32 @@ context WarehouseContext as router is {
   // Include the Inventory entity
   include "Inventory.riddl"
   // Repository for inventory persistence and queries
-  repository InventoryRepository as merge is {
+  type InventoryRepositoryCommand is one of {
+    WarehouseContext.InventoryRepository.PersistInventoryAdjusted or WarehouseContext.InventoryRepository.PersistInventoryQuarantined or WarehouseContext.InventoryRepository.PersistInventoryReceived or WarehouseContext.InventoryRepository.PersistInventoryReleasedFromQuarantine or WarehouseContext.InventoryRepository.PersistInventoryReserved or WarehouseContext.InventoryRepository.PersistInventoryShipped or WarehouseContext.InventoryRepository.PersistInventoryTransferred or WarehouseContext.InventoryRepository.PersistLocationUpdated or WarehouseContext.InventoryRepository.PersistReservationReleased
+  } with {
+    briefly "Anything that writes InventoryRepository"
+    described as {
+      |The persistence commands InventoryRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository InventoryRepository as flow is {
+    inlet InventoryRepositoryFromInventoryProjector is type InventoryRepositoryCommand
+    command PersistLocationUpdated is  {
+      inventoryId: InventoryId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row LocationUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist LocationUpdated"
+      described as {
+        |Instructs this repository to apply LocationUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistInventoryAdjusted is  {
       inventoryId: InventoryId with {
         briefly "Row addressed"
@@ -350,7 +372,7 @@ context WarehouseContext as router is {
         |The relational schema persisting inventory records for this repository.
       }
     }
-    inlet InventoryRepositoryFromInventory is type InventoryEvent    inlet InventoryRepositoryFromInventoryProjector is type InventoryEvent    outlet InventoryRepositoryResponses is type Inventory.InventoryEntityResult
+    outlet InventoryRepositoryResponses is type Inventory.InventoryEntityResult
     // Queries
     query GetInventoryById is  { inventoryId: InventoryId } with {
       briefly "Retrieve inventory by its unique identifier"
@@ -447,6 +469,9 @@ context WarehouseContext as router is {
     }
     // Handler for queries
     handler InventoryQueryHandler is {
+      on persistLocationUpdated: command PersistLocationUpdated is {
+        do "apply LocationUpdated to the stored row"
+      }
       on persistInventoryAdjusted: command PersistInventoryAdjusted is {
         do "apply InventoryAdjusted to the stored row"
       }
@@ -597,8 +622,9 @@ context WarehouseContext as router is {
     }
   }
   projector InventoryProjector as flow is {
+    outlet InventoryProjectorToRepository is type InventoryRepositoryCommand
     updates repository WarehouseContext.InventoryRepository
-    inlet InventoryProjectorFromInventory is type InventoryEvent    outlet InventoryProjectorOut is type InventoryEvent
+    inlet InventoryProjectorFromInventory is type InventoryEvent
     // Record types for projections
     record InventoryLevelProjection is  {
       productId: ProductId
@@ -646,6 +672,10 @@ context WarehouseContext as router is {
     }
     // Handler for processing inventory events into projections
     handler ProjectionHandler is {
+      on locationUpdated: event Inventory.LocationUpdated is {
+        tell command WarehouseContext.InventoryRepository.PersistLocationUpdated(inventoryId = locationUpdated.inventoryId) to repository WarehouseContext.InventoryRepository
+        do "apply LocationUpdated to the InventoryProjector projection"
+      }
       on inventoryReceived: event Inventory.InventoryReceived is {
         tell command WarehouseContext.InventoryRepository.PersistInventoryReceived(inventoryId = inventoryReceived.inventoryId) to repository WarehouseContext.InventoryRepository
       }
@@ -694,116 +724,43 @@ context WarehouseContext as router is {
       |Union of Inventory events for streaming.
     }
   }
-  processor InventoryEventSource as source is {
-    outlet InventoryEvents is type InventoryEvent
-    handler InventoryEventEmitter is {
-      on init is {
-        let initializeInventory: type Inventory.InitializeInventory = prompt("the initialize inventory that brings this this into existence")
-        tell initializeInventory to entity WarehouseContext.Inventory
-      }
-      on other is {
-        error "Unexpected message for source InventoryEventSource"
-      }
-      on inventoryReceived: event Inventory.InventoryReceived is {
-        send inventoryReceived to outlet InventoryEvents
-      }
-      on inventoryShipped: event Inventory.InventoryShipped is {
-        send inventoryShipped to outlet InventoryEvents
-      }
-      on inventoryAdjusted: event Inventory.InventoryAdjusted is {
-        send inventoryAdjusted to outlet InventoryEvents
-      }
-    } with {
-      briefly "Event emitter"
-      described as {
-        |Emits Inventory events to the stream.
-      }
-    }
-  } with {
-    briefly "Inventory event source"
-    described as {
-      |Publishes Inventory events to the event stream.
-    }
-  }
-  processor InventoryEventSink as sink is {
-    inlet IncomingInventoryEvents is type InventoryEvent    handler InventoryEventReceiver is {
-      on init is { ??? }
-      on other is {
-        error "Unexpected message for sink InventoryEventSink"
-      }
-      on inventoryReceived: event Inventory.InventoryReceived is {
-        tell inventoryReceived to repository WarehouseContext.InventoryRepository
-      }
-      on inventoryShipped: event Inventory.InventoryShipped is {
-        tell inventoryShipped to repository WarehouseContext.InventoryRepository
-      }
-      on inventoryAdjusted: event Inventory.InventoryAdjusted is {
-        tell inventoryAdjusted to repository WarehouseContext.InventoryRepository
-      }
-    } with {
-      briefly "Event receiver"
-      described as {
-        |Receives Inventory events for persistence.
-      }
-    }
-  } with {
-    briefly "Inventory event sink"
-    described as {
-      |Receives Inventory events from streaming.
-    }
-  }
-  connector InventoryEventPipeline is from outlet WarehouseContext.InventoryEventSource.InventoryEvents to inlet WarehouseContext.InventoryEventSink.IncomingInventoryEvents with {
-    briefly "Inventory event pipeline"
-    described as {
-      |Wires Inventory event source to sink.
-    }
-  }
-  processor InventoryEventSplit as split is {
-    inlet InventoryEventSplitIn is type InventoryEvent    outlet InventoryEventSplitToInventoryRepository is type InventoryEvent
+  processor InventoryEventSplit as flow is {
+    inlet InventoryEventSplitIn is type InventoryEvent
     outlet InventoryEventSplitToInventoryProjector is type InventoryEvent
     handler InventoryEventSplitHandler is {
       on inventoryReceived: event Inventory.InventoryReceived is {
-        send inventoryReceived to outlet InventoryEventSplitToInventoryRepository
         send inventoryReceived to outlet InventoryEventSplitToInventoryProjector
         tell inventoryReceived to entity WarehouseContext.Inventory
       }
       on inventoryAdjusted: event Inventory.InventoryAdjusted is {
-        send inventoryAdjusted to outlet InventoryEventSplitToInventoryRepository
         send inventoryAdjusted to outlet InventoryEventSplitToInventoryProjector
         tell inventoryAdjusted to entity WarehouseContext.Inventory
       }
       on inventoryReserved: event Inventory.InventoryReserved is {
-        send inventoryReserved to outlet InventoryEventSplitToInventoryRepository
         send inventoryReserved to outlet InventoryEventSplitToInventoryProjector
         tell inventoryReserved to entity WarehouseContext.Inventory
       }
       on reservationReleased: event Inventory.ReservationReleased is {
-        send reservationReleased to outlet InventoryEventSplitToInventoryRepository
         send reservationReleased to outlet InventoryEventSplitToInventoryProjector
         tell reservationReleased to entity WarehouseContext.Inventory
       }
       on inventoryTransferred: event Inventory.InventoryTransferred is {
-        send inventoryTransferred to outlet InventoryEventSplitToInventoryRepository
         send inventoryTransferred to outlet InventoryEventSplitToInventoryProjector
         tell inventoryTransferred to entity WarehouseContext.Inventory
       }
       on locationUpdated: event Inventory.LocationUpdated is {
-        send locationUpdated to outlet InventoryEventSplitToInventoryRepository
         send locationUpdated to outlet InventoryEventSplitToInventoryProjector
         tell locationUpdated to entity WarehouseContext.Inventory
       }
       on inventoryShipped: event Inventory.InventoryShipped is {
-        send inventoryShipped to outlet InventoryEventSplitToInventoryRepository
         send inventoryShipped to outlet InventoryEventSplitToInventoryProjector
         tell inventoryShipped to entity WarehouseContext.Inventory
       }
       on inventoryQuarantined: event Inventory.InventoryQuarantined is {
-        send inventoryQuarantined to outlet InventoryEventSplitToInventoryRepository
         send inventoryQuarantined to outlet InventoryEventSplitToInventoryProjector
         tell inventoryQuarantined to entity WarehouseContext.Inventory
       }
       on inventoryReleasedFromQuarantine: event Inventory.InventoryReleasedFromQuarantine is {
-        send inventoryReleasedFromQuarantine to outlet InventoryEventSplitToInventoryRepository
         send inventoryReleasedFromQuarantine to outlet InventoryEventSplitToInventoryProjector
         tell inventoryReleasedFromQuarantine to entity WarehouseContext.Inventory
       }
@@ -825,14 +782,11 @@ context WarehouseContext as router is {
   connector 'InventoryEvent Stream' is from outlet WarehouseContext.Inventory.InventoryEvents2 to inlet WarehouseContext.InventoryEventSplit.InventoryEventSplitIn with {
     briefly "Inventory events, fanned out to storage and read models"
   }
-  connector 'InventoryEvent Storage' is from outlet WarehouseContext.InventoryEventSplit.InventoryEventSplitToInventoryRepository to inlet WarehouseContext.InventoryRepository.InventoryRepositoryFromInventory with {
-    briefly "Inventory events on their way to storage"
-  }
   connector 'InventoryProjector Feed' is from outlet WarehouseContext.InventoryEventSplit.InventoryEventSplitToInventoryProjector to inlet WarehouseContext.InventoryProjector.InventoryProjectorFromInventory with {
     briefly "Inventory events feeding the InventoryProjector projection"
   }
-  connector 'InventoryProjector Storage' is from outlet WarehouseContext.InventoryProjector.InventoryProjectorOut to inlet WarehouseContext.InventoryRepository.InventoryRepositoryFromInventoryProjector with {
-    briefly "The InventoryProjector projection on its way to storage"
+  connector 'InventoryProjector Storage' is from outlet WarehouseContext.InventoryProjector.InventoryProjectorToRepository to inlet WarehouseContext.InventoryRepository.InventoryRepositoryFromInventoryProjector with {
+    briefly "InventoryProjector updates on their way to storage"
   }
 } with {
   briefly "Bounded context for warehouse operations"

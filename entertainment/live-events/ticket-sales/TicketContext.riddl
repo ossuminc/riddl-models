@@ -12,25 +12,22 @@ context TicketContext as router is {
       send releaseTickets to outlet TicketContext.TicketCommandStreamOut
     }
     on purchaseTicket: command Ticket.PurchaseTicket is {
-      send purchaseTicket to outlet TicketContext.TicketCommandStreamOut
+      forward purchaseTicket to outlet TicketContext.TicketCommandStreamOut
     }
     on reserveTicket: command Ticket.ReserveTicket is {
-      send reserveTicket to outlet TicketContext.TicketCommandStreamOut
+      forward reserveTicket to outlet TicketContext.TicketCommandStreamOut
     }
     on transferTicket: command Ticket.TransferTicket is {
-      send transferTicket to outlet TicketContext.TicketCommandStreamOut
+      forward transferTicket to outlet TicketContext.TicketCommandStreamOut
     }
     on refundTicket: command Ticket.RefundTicket is {
-      send refundTicket to outlet TicketContext.TicketCommandStreamOut
+      forward refundTicket to outlet TicketContext.TicketCommandStreamOut
     }
     on cancelReservation: command Ticket.CancelReservation is {
-      send cancelReservation to outlet TicketContext.TicketCommandStreamOut
+      forward cancelReservation to outlet TicketContext.TicketCommandStreamOut
     }
     on scanTicket: command Ticket.ScanTicket is {
-      send scanTicket to outlet TicketContext.TicketCommandStreamOut
-    }
-    on initializeTicket: command Ticket.InitializeTicket is {
-      send initializeTicket to outlet TicketContext.TicketCommandStreamOut
+      forward scanTicket to outlet TicketContext.TicketCommandStreamOut
     }
     on ticketResult: result Ticket.TicketResult is {
       send ticketResult to outlet TicketContext.TicketResultStreamOut
@@ -137,7 +134,62 @@ context TicketContext as router is {
     }
   }
   // Repository for ticket persistence
-  repository TicketRepository as merge is {
+  type TicketRepositoryCommand is one of {
+    TicketContext.TicketRepository.PersistEventCreated or TicketContext.TicketRepository.PersistReservationCancelled or TicketContext.TicketRepository.PersistTicketPurchased or TicketContext.TicketRepository.PersistTicketRefunded or TicketContext.TicketRepository.PersistTicketReserved or TicketContext.TicketRepository.PersistTicketScanned or TicketContext.TicketRepository.PersistTicketTransferred or TicketContext.TicketRepository.PersistTicketsReleased
+  } with {
+    briefly "Anything that writes TicketRepository"
+    described as {
+      |The persistence commands TicketRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository TicketRepository as flow is {
+    inlet TicketRepositoryFromSalesMetrics is type TicketRepositoryCommand
+    command PersistReservationCancelled is  {
+      ticketId: TicketId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ReservationCancelled applies to.
+        }
+      }
+    } with {
+      briefly "Persist ReservationCancelled"
+      described as {
+        |Instructs this repository to apply ReservationCancelled to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistTicketReserved is  {
+      ticketId: TicketId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TicketReserved applies to.
+        }
+      }
+    } with {
+      briefly "Persist TicketReserved"
+      described as {
+        |Instructs this repository to apply TicketReserved to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistTicketScanned is  {
+      ticketId: TicketId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TicketScanned applies to.
+        }
+      }
+    } with {
+      briefly "Persist TicketScanned"
+      described as {
+        |Instructs this repository to apply TicketScanned to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistEventCreated is  {
       eventId: EventId with {
         briefly "Row addressed"
@@ -213,7 +265,7 @@ context TicketContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet TicketRepositoryFromTicket is type TicketEvent    inlet TicketRepositoryFromSalesMetrics is type TicketEvent    outlet TicketRepositoryResponses is type Ticket.TicketResult
+    outlet TicketRepositoryResponses is type Ticket.TicketResult
     record StoredTicket is  {
       ticketId: TicketId with {
         briefly "ticketId"
@@ -257,6 +309,15 @@ context TicketContext as router is {
       }
     }
     handler TicketPersistence is {
+      on persistReservationCancelled: command PersistReservationCancelled is {
+        do "apply ReservationCancelled to the stored row"
+      }
+      on persistTicketReserved: command PersistTicketReserved is {
+        do "apply TicketReserved to the stored row"
+      }
+      on persistTicketScanned: command PersistTicketScanned is {
+        do "apply TicketScanned to the stored row"
+      }
       on persistEventCreated: command PersistEventCreated is {
         do "apply EventCreated to the stored row"
       }
@@ -279,30 +340,6 @@ context TicketContext as router is {
       on query GetDailySalesMetrics is {
         let dailySalesMetricsView: type DailySalesMetricsView = prompt("read the daily sales metrics projection")
         reply dailySalesMetricsView
-      }
-      on createEvent: command Ticket.CreateEvent is {
-        tell event Ticket.EventCreated(eventId = createEvent.eventId, name = createEvent.name, venueId = createEvent.venueId, venueName = createEvent.venueName, eventDate = createEvent.eventDate) to entity TicketContext.Ticket
-      }
-      on releaseTickets: command Ticket.ReleaseTickets is {
-        tell event Ticket.TicketsReleased(eventId = releaseTickets.eventId, tierName = releaseTickets.tierName, quantity = releaseTickets.quantity) to entity TicketContext.Ticket
-      }
-      on reserveTicket: command Ticket.ReserveTicket is {
-        tell event Ticket.TicketReserved(ticketId = reserveTicket.ticketId, buyerId = reserveTicket.buyerId, expiresAt = reserveTicket.expiresAt) to entity TicketContext.Ticket
-      }
-      on purchaseTicket: command Ticket.PurchaseTicket is {
-        tell event Ticket.TicketPurchased(ticketId = purchaseTicket.ticketId, buyerId = purchaseTicket.buyerId, amountPaid = purchaseTicket.amountPaid) to entity TicketContext.Ticket
-      }
-      on transferTicket: command Ticket.TransferTicket is {
-        tell event Ticket.TicketTransferred(ticketId = transferTicket.ticketId, fromBuyerId = transferTicket.fromBuyerId, toBuyerId = transferTicket.toBuyerId) to entity TicketContext.Ticket
-      }
-      on refundTicket: command Ticket.RefundTicket is {
-        tell event Ticket.TicketRefunded(ticketId = refundTicket.ticketId, buyerId = refundTicket.buyerId, reason = refundTicket.reason) to entity TicketContext.Ticket
-      }
-      on cancelReservation: command Ticket.CancelReservation is {
-        tell event Ticket.ReservationCancelled(ticketId = cancelReservation.ticketId) to entity TicketContext.Ticket
-      }
-      on scanTicket: command Ticket.ScanTicket is {
-        tell event Ticket.TicketScanned(ticketId = scanTicket.ticketId, gateId = scanTicket.gateId, scannedAt = scanTicket.scannedAt) to entity TicketContext.Ticket
       }
     } with {
       briefly "Persists ticket events to storage"
@@ -372,8 +409,9 @@ context TicketContext as router is {
     }
   }
   projector SalesMetrics as flow is {
+    outlet SalesMetricsToRepository is type TicketRepositoryCommand
     updates repository TicketContext.TicketRepository
-    inlet SalesMetricsFromTicket is type TicketEvent    outlet SalesMetricsOut is type TicketEvent
+    inlet SalesMetricsFromTicket is type TicketEvent
     record EventSalesMetrics is  {
       eventId: EventId with {
         briefly "Event identifier"
@@ -543,6 +581,18 @@ context TicketContext as router is {
       }
     }
     handler SalesMetricsHandler is {
+      on reservationCancelled: event Ticket.ReservationCancelled is {
+        tell command TicketContext.TicketRepository.PersistReservationCancelled(ticketId = reservationCancelled.ticketId) to repository TicketContext.TicketRepository
+        do "apply ReservationCancelled to the SalesMetrics projection"
+      }
+      on ticketReserved: event Ticket.TicketReserved is {
+        tell command TicketContext.TicketRepository.PersistTicketReserved(ticketId = ticketReserved.ticketId) to repository TicketContext.TicketRepository
+        do "apply TicketReserved to the SalesMetrics projection"
+      }
+      on ticketScanned: event Ticket.TicketScanned is {
+        tell command TicketContext.TicketRepository.PersistTicketScanned(ticketId = ticketScanned.ticketId) to repository TicketContext.TicketRepository
+        do "apply TicketScanned to the SalesMetrics projection"
+      }
       on ticketPurchased: event Ticket.TicketPurchased is {
         tell command TicketContext.TicketRepository.PersistTicketPurchased(ticketId = ticketPurchased.ticketId) to repository TicketContext.TicketRepository
       }
@@ -572,111 +622,39 @@ context TicketContext as router is {
       | sales velocity, revenue, and inventory levels in real-time.
     }
   }
-  processor TicketEventSource as source is {
-    outlet TicketEvents is type TicketEvent
-    handler TicketEventEmitter is {
-      on init is {
-        let initializeTicket: type InitializeTicket = prompt("the initialize ticket that brings this this into existence")
-        tell initializeTicket to entity TicketContext.Ticket
-      }
-      on other is {
-        error "Unexpected message for source TicketEventSource"
-      }
-      on eventCreated: event Ticket.EventCreated is {
-        send eventCreated to outlet TicketEvents
-      }
-      on ticketPurchased: event Ticket.TicketPurchased is {
-        send ticketPurchased to outlet TicketEvents
-      }
-      on ticketRefunded: event Ticket.TicketRefunded is {
-        send ticketRefunded to outlet TicketEvents
-      }
-      on ticketScanned: event Ticket.TicketScanned is {
-        send ticketScanned to outlet TicketEvents
-      }
-    } with {
-      briefly "Ticket event emitter"
-      described as {
-        |Emits ticket lifecycle events into the streaming topology.
-      }
-    }
-  } with {
-    briefly "Ticket event source"
-    described as {
-      |Publishes ticket entity events for streaming.
-    }
-  }
-  processor TicketEventSink as sink is {
-    inlet IncomingTicketEvents is type TicketEvent    handler TicketEventReceiver is {
-      on init is { ??? }
-      on other is {
-        error "Unexpected message for sink TicketEventSink"
-      }
-      on eventCreated: event Ticket.EventCreated is {
-        tell eventCreated to repository TicketContext.TicketRepository
-      }
-      on ticketScanned: event Ticket.TicketScanned is {
-        tell ticketScanned to repository TicketContext.TicketRepository
-      }
-    } with {
-      briefly "Ticket event receiver"
-      described as {
-        |Receives ticket events and persists them.
-      }
-    }
-  } with {
-    briefly "Ticket event sink"
-    described as {
-      |Receives ticket events from the streaming topology.
-    }
-  }
-  connector TicketEventPipeline is from outlet TicketContext.TicketEventSource.TicketEvents to inlet TicketContext.TicketEventSink.IncomingTicketEvents with {
-    briefly "Ticket event pipeline"
-    described as {
-      |Wires ticket events from source to sink.
-    }
-  }
-  processor TicketEventSplit as split is {
-    inlet TicketEventSplitIn is type TicketEvent    outlet TicketEventSplitToTicketRepository is type TicketEvent
+  processor TicketEventSplit as flow is {
+    inlet TicketEventSplitIn is type TicketEvent
     outlet TicketEventSplitToSalesMetrics is type TicketEvent
     handler TicketEventSplitHandler is {
       on eventCreated: event Ticket.EventCreated is {
-        send eventCreated to outlet TicketEventSplitToTicketRepository
         send eventCreated to outlet TicketEventSplitToSalesMetrics
         tell eventCreated to entity TicketContext.Ticket
       }
       on ticketsReleased: event Ticket.TicketsReleased is {
-        send ticketsReleased to outlet TicketEventSplitToTicketRepository
         send ticketsReleased to outlet TicketEventSplitToSalesMetrics
         tell ticketsReleased to entity TicketContext.Ticket
       }
       on ticketPurchased: event Ticket.TicketPurchased is {
-        send ticketPurchased to outlet TicketEventSplitToTicketRepository
         send ticketPurchased to outlet TicketEventSplitToSalesMetrics
         tell ticketPurchased to entity TicketContext.Ticket
       }
       on ticketReserved: event Ticket.TicketReserved is {
-        send ticketReserved to outlet TicketEventSplitToTicketRepository
         send ticketReserved to outlet TicketEventSplitToSalesMetrics
         tell ticketReserved to entity TicketContext.Ticket
       }
       on ticketTransferred: event Ticket.TicketTransferred is {
-        send ticketTransferred to outlet TicketEventSplitToTicketRepository
         send ticketTransferred to outlet TicketEventSplitToSalesMetrics
         tell ticketTransferred to entity TicketContext.Ticket
       }
       on ticketRefunded: event Ticket.TicketRefunded is {
-        send ticketRefunded to outlet TicketEventSplitToTicketRepository
         send ticketRefunded to outlet TicketEventSplitToSalesMetrics
         tell ticketRefunded to entity TicketContext.Ticket
       }
       on reservationCancelled: event Ticket.ReservationCancelled is {
-        send reservationCancelled to outlet TicketEventSplitToTicketRepository
         send reservationCancelled to outlet TicketEventSplitToSalesMetrics
         tell reservationCancelled to entity TicketContext.Ticket
       }
       on ticketScanned: event Ticket.TicketScanned is {
-        send ticketScanned to outlet TicketEventSplitToTicketRepository
         send ticketScanned to outlet TicketEventSplitToSalesMetrics
         tell ticketScanned to entity TicketContext.Ticket
       }
@@ -698,14 +676,11 @@ context TicketContext as router is {
   connector 'TicketEvent Stream' is from outlet TicketContext.Ticket.TicketEvents2 to inlet TicketContext.TicketEventSplit.TicketEventSplitIn with {
     briefly "Ticket events, fanned out to storage and read models"
   }
-  connector 'TicketEvent Storage' is from outlet TicketContext.TicketEventSplit.TicketEventSplitToTicketRepository to inlet TicketContext.TicketRepository.TicketRepositoryFromTicket with {
-    briefly "Ticket events on their way to storage"
-  }
   connector 'SalesMetrics Feed' is from outlet TicketContext.TicketEventSplit.TicketEventSplitToSalesMetrics to inlet TicketContext.SalesMetrics.SalesMetricsFromTicket with {
     briefly "Ticket events feeding the SalesMetrics projection"
   }
-  connector 'SalesMetrics Storage' is from outlet TicketContext.SalesMetrics.SalesMetricsOut to inlet TicketContext.TicketRepository.TicketRepositoryFromSalesMetrics with {
-    briefly "The SalesMetrics projection on its way to storage"
+  connector 'SalesMetrics Storage' is from outlet TicketContext.SalesMetrics.SalesMetricsToRepository to inlet TicketContext.TicketRepository.TicketRepositoryFromSalesMetrics with {
+    briefly "SalesMetrics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for ticket sales"

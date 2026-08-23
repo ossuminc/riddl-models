@@ -27,9 +27,6 @@ context PolicyContext as router is {
     on declineRenewal: command Policy.DeclineRenewal is {
       send declineRenewal to outlet PolicyContext.PolicyCommandStreamOut
     }
-    on initializePolicy: command Policy.InitializePolicy is {
-      send initializePolicy to outlet PolicyContext.PolicyCommandStreamOut
-    }
     on policyResult: result Policy.PolicyResult is {
       send policyResult to outlet PolicyContext.PolicyResultStreamOut
     }
@@ -194,7 +191,62 @@ context PolicyContext as router is {
   include "types.riddl"
   include "Policy.riddl"
   // Repository for policy persistence
-  repository PolicyRepository as merge is {
+  type PolicyRepositoryCommand is one of {
+    PolicyContext.PolicyRepository.PersistBillingUpdated or PolicyContext.PolicyRepository.PersistEndorsementAdded or PolicyContext.PolicyRepository.PersistPolicyCancelled or PolicyContext.PolicyRepository.PersistPolicyIssued or PolicyContext.PolicyRepository.PersistPolicyReinstated or PolicyContext.PolicyRepository.PersistRenewalDeclined or PolicyContext.PolicyRepository.PersistRenewalOfferGenerated or PolicyContext.PolicyRepository.PersistRenewalProcessed
+  } with {
+    briefly "Anything that writes PolicyRepository"
+    described as {
+      |The persistence commands PolicyRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository PolicyRepository as flow is {
+    inlet PolicyRepositoryFromPolicyMetricsProjector is type PolicyRepositoryCommand
+    command PersistBillingUpdated is  {
+      policyId: PolicyId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row BillingUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist BillingUpdated"
+      described as {
+        |Instructs this repository to apply BillingUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistRenewalDeclined is  {
+      policyId: PolicyId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row RenewalDeclined applies to.
+        }
+      }
+    } with {
+      briefly "Persist RenewalDeclined"
+      described as {
+        |Instructs this repository to apply RenewalDeclined to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistRenewalOfferGenerated is  {
+      policyId: PolicyId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row RenewalOfferGenerated applies to.
+        }
+      }
+    } with {
+      briefly "Persist RenewalOfferGenerated"
+      described as {
+        |Instructs this repository to apply RenewalOfferGenerated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistEndorsementAdded is  {
       policyId: PolicyId with {
         briefly "Row addressed"
@@ -270,7 +322,7 @@ context PolicyContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet PolicyRepositoryFromPolicy is type PolicyEvent    inlet PolicyRepositoryFromPolicyMetricsProjector is type PolicyEvent    outlet PolicyRepositoryResponses is type Policy.PolicyResult
+    outlet PolicyRepositoryResponses is type Policy.PolicyResult
     record StoredPolicy is  {
       policyId: PolicyId with {
         briefly "policyId"
@@ -302,6 +354,15 @@ context PolicyContext as router is {
       }
     }
     handler PolicyPersistence is {
+      on persistBillingUpdated: command PersistBillingUpdated is {
+        do "apply BillingUpdated to the stored row"
+      }
+      on persistRenewalDeclined: command PersistRenewalDeclined is {
+        do "apply RenewalDeclined to the stored row"
+      }
+      on persistRenewalOfferGenerated: command PersistRenewalOfferGenerated is {
+        do "apply RenewalOfferGenerated to the stored row"
+      }
       on persistEndorsementAdded: command PersistEndorsementAdded is {
         do "apply EndorsementAdded to the stored row"
       }
@@ -324,30 +385,6 @@ context PolicyContext as router is {
       on query GetPortfolioSummary is {
         let portfolioSummaryView: type PortfolioSummaryView = prompt("read the portfolio summary projection")
         reply portfolioSummaryView
-      }
-      on issuePolicy: command Policy.IssuePolicy is {
-        tell event Policy.PolicyIssued(policyId = issuePolicy.policyId, details = issuePolicy.details, billingSchedule = issuePolicy.billingSchedule, issuedBy = issuePolicy.issuedBy) to entity PolicyContext.Policy
-      }
-      on addEndorsement: command Policy.AddEndorsement is {
-        tell event Policy.EndorsementAdded(policyId = addEndorsement.policyId, endorsement = addEndorsement.endorsement) to entity PolicyContext.Policy
-      }
-      on processRenewal: command Policy.ProcessRenewal is {
-        tell event Policy.RenewalProcessed(policyId = processRenewal.policyId, renewalOffer = processRenewal.renewalOffer) to entity PolicyContext.Policy by policyId
-      }
-      on declineRenewal: command Policy.DeclineRenewal is {
-        tell event Policy.RenewalDeclined(policyId = declineRenewal.policyId, renewalId = declineRenewal.renewalId, declineReason = declineRenewal.declineReason) to entity PolicyContext.Policy
-      }
-      on cancelPolicy: command Policy.CancelPolicy is {
-        tell event Policy.PolicyCancelled(policyId = cancelPolicy.policyId, cancellationDate = cancelPolicy.cancellationDate, reason = cancelPolicy.reason) to entity PolicyContext.Policy
-      }
-      on reinstatPolicy: command Policy.ReinstatPolicy is {
-        tell event Policy.PolicyReinstated(policyId = reinstatPolicy.policyId, reinstatementDate = reinstatPolicy.reinstatementDate, approvedBy = reinstatPolicy.approvedBy) to entity PolicyContext.Policy
-      }
-      on updateBilling: command Policy.UpdateBilling is {
-        tell event Policy.BillingUpdated(policyId = updateBilling.policyId, newSchedule = updateBilling.newSchedule) to entity PolicyContext.Policy
-      }
-      on generateRenewalOffer: command Policy.GenerateRenewalOffer is {
-        tell event Policy.RenewalOfferGenerated(policyId = generateRenewalOffer.policyId) to entity PolicyContext.Policy
       }
     } with {
       briefly "Persists policy commands"
@@ -416,8 +453,9 @@ context PolicyContext as router is {
     }
   }
   projector PolicyMetricsProjector as flow is {
+    outlet PolicyMetricsProjectorToRepository is type PolicyRepositoryCommand
     updates repository PolicyContext.PolicyRepository
-    inlet PolicyMetricsProjectorFromPolicy is type PolicyEvent    outlet PolicyMetricsProjectorOut is type PolicyEvent
+    inlet PolicyMetricsProjectorFromPolicy is type PolicyEvent
     record PolicyMetricsView is  {
       policyId: PolicyId with {
         briefly "Policy"
@@ -535,6 +573,18 @@ context PolicyContext as router is {
       }
     }
     handler MetricsHandler is {
+      on billingUpdated: event Policy.BillingUpdated is {
+        tell command PolicyContext.PolicyRepository.PersistBillingUpdated(policyId = billingUpdated.policyId) to repository PolicyContext.PolicyRepository
+        do "apply BillingUpdated to the PolicyMetricsProjector projection"
+      }
+      on renewalDeclined: event Policy.RenewalDeclined is {
+        tell command PolicyContext.PolicyRepository.PersistRenewalDeclined(policyId = renewalDeclined.policyId) to repository PolicyContext.PolicyRepository
+        do "apply RenewalDeclined to the PolicyMetricsProjector projection"
+      }
+      on renewalOfferGenerated: event Policy.RenewalOfferGenerated is {
+        tell command PolicyContext.PolicyRepository.PersistRenewalOfferGenerated(policyId = renewalOfferGenerated.policyId) to repository PolicyContext.PolicyRepository
+        do "apply RenewalOfferGenerated to the PolicyMetricsProjector projection"
+      }
       on policyIssued: event Policy.PolicyIssued is {
         tell command PolicyContext.PolicyRepository.PersistPolicyIssued(policyId = policyIssued.policyId) to repository PolicyContext.PolicyRepository
       }
@@ -563,112 +613,39 @@ context PolicyContext as router is {
       | dashboards, reporting, and portfolio analysis.
     }
   }
-  processor PolicyEventSource as source is {
-    outlet PolicyEvents is type PolicyEvent
-    handler PolicyEventEmitter is {
-      on init is {
-        let initializePolicy: type InitializePolicy = prompt("the initialize policy that brings this this into existence")
-        tell initializePolicy to entity PolicyContext.Policy
-      }
-      on other is {
-        error "Unexpected message for source PolicyEventSource"
-      }
-      on policyIssued: event Policy.PolicyIssued is {
-        send policyIssued to outlet PolicyEvents
-      }
-      on policyCancelled: event Policy.PolicyCancelled is {
-        send policyCancelled to outlet PolicyEvents
-      }
-      on renewalProcessed: event Policy.RenewalProcessed is {
-        send renewalProcessed to outlet PolicyEvents
-      }
-      on policyReinstated: event Policy.PolicyReinstated is {
-        send policyReinstated to outlet PolicyEvents
-      }
-    } with {
-      briefly "Policy event emitter"
-      described as {
-        |Emits policy lifecycle events into the streaming
-        |topology.
-      }
-    }
-  } with {
-    briefly "Policy event source"
-    described as {
-      |Publishes policy entity events for streaming.
-    }
-  }
-  processor PolicyEventSink as sink is {
-    inlet IncomingPolicyEvents is type PolicyEvent    handler PolicyEventReceiver is {
-      on init is { ??? }
-      on other is {
-        error "Unexpected message for sink PolicyEventSink"
-      }
-      on policyIssued: event Policy.PolicyIssued is {
-        tell policyIssued to repository PolicyContext.PolicyRepository
-      }
-      on policyCancelled: event Policy.PolicyCancelled is {
-        tell policyCancelled to repository PolicyContext.PolicyRepository
-      }
-    } with {
-      briefly "Policy event receiver"
-      described as {
-        |Receives policy events and persists them.
-      }
-    }
-  } with {
-    briefly "Policy event sink"
-    described as {
-      |Receives policy events from the streaming topology.
-    }
-  }
-  connector PolicyEventPipeline is from outlet PolicyContext.PolicyEventSource.PolicyEvents to inlet PolicyContext.PolicyEventSink.IncomingPolicyEvents with {
-    briefly "Policy event pipeline"
-    described as {
-      |Wires policy events from source to sink.
-    }
-  }
-  processor PolicyEventSplit as split is {
-    inlet PolicyEventSplitIn is type PolicyEvent    outlet PolicyEventSplitToPolicyRepository is type PolicyEvent
+  processor PolicyEventSplit as flow is {
+    inlet PolicyEventSplitIn is type PolicyEvent
     outlet PolicyEventSplitToPolicyMetricsProjector is type PolicyEvent
     handler PolicyEventSplitHandler is {
       on policyIssued: event Policy.PolicyIssued is {
-        send policyIssued to outlet PolicyEventSplitToPolicyRepository
         send policyIssued to outlet PolicyEventSplitToPolicyMetricsProjector
         tell policyIssued to entity PolicyContext.Policy
       }
       on endorsementAdded: event Policy.EndorsementAdded is {
-        send endorsementAdded to outlet PolicyEventSplitToPolicyRepository
         send endorsementAdded to outlet PolicyEventSplitToPolicyMetricsProjector
         tell endorsementAdded to entity PolicyContext.Policy
       }
       on renewalProcessed: event Policy.RenewalProcessed is {
-        send renewalProcessed to outlet PolicyEventSplitToPolicyRepository
         send renewalProcessed to outlet PolicyEventSplitToPolicyMetricsProjector
         tell renewalProcessed to entity PolicyContext.Policy by policyId
       }
       on renewalDeclined: event Policy.RenewalDeclined is {
-        send renewalDeclined to outlet PolicyEventSplitToPolicyRepository
         send renewalDeclined to outlet PolicyEventSplitToPolicyMetricsProjector
         tell renewalDeclined to entity PolicyContext.Policy
       }
       on policyCancelled: event Policy.PolicyCancelled is {
-        send policyCancelled to outlet PolicyEventSplitToPolicyRepository
         send policyCancelled to outlet PolicyEventSplitToPolicyMetricsProjector
         tell policyCancelled to entity PolicyContext.Policy
       }
       on policyReinstated: event Policy.PolicyReinstated is {
-        send policyReinstated to outlet PolicyEventSplitToPolicyRepository
         send policyReinstated to outlet PolicyEventSplitToPolicyMetricsProjector
         tell policyReinstated to entity PolicyContext.Policy
       }
       on billingUpdated: event Policy.BillingUpdated is {
-        send billingUpdated to outlet PolicyEventSplitToPolicyRepository
         send billingUpdated to outlet PolicyEventSplitToPolicyMetricsProjector
         tell billingUpdated to entity PolicyContext.Policy
       }
       on renewalOfferGenerated: event Policy.RenewalOfferGenerated is {
-        send renewalOfferGenerated to outlet PolicyEventSplitToPolicyRepository
         send renewalOfferGenerated to outlet PolicyEventSplitToPolicyMetricsProjector
         tell renewalOfferGenerated to entity PolicyContext.Policy
       }
@@ -690,14 +667,11 @@ context PolicyContext as router is {
   connector 'PolicyEvent Stream' is from outlet PolicyContext.Policy.PolicyEvents2 to inlet PolicyContext.PolicyEventSplit.PolicyEventSplitIn with {
     briefly "Policy events, fanned out to storage and read models"
   }
-  connector 'PolicyEvent Storage' is from outlet PolicyContext.PolicyEventSplit.PolicyEventSplitToPolicyRepository to inlet PolicyContext.PolicyRepository.PolicyRepositoryFromPolicy with {
-    briefly "Policy events on their way to storage"
-  }
   connector 'PolicyMetricsProjector Feed' is from outlet PolicyContext.PolicyEventSplit.PolicyEventSplitToPolicyMetricsProjector to inlet PolicyContext.PolicyMetricsProjector.PolicyMetricsProjectorFromPolicy with {
     briefly "Policy events feeding the PolicyMetricsProjector projection"
   }
-  connector 'PolicyMetricsProjector Storage' is from outlet PolicyContext.PolicyMetricsProjector.PolicyMetricsProjectorOut to inlet PolicyContext.PolicyRepository.PolicyRepositoryFromPolicyMetricsProjector with {
-    briefly "The PolicyMetricsProjector projection on its way to storage"
+  connector 'PolicyMetricsProjector Storage' is from outlet PolicyContext.PolicyMetricsProjector.PolicyMetricsProjectorToRepository to inlet PolicyContext.PolicyRepository.PolicyRepositoryFromPolicyMetricsProjector with {
+    briefly "PolicyMetricsProjector updates on their way to storage"
   }
 } with {
   briefly "Bounded context for policy administration"

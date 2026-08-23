@@ -27,9 +27,6 @@ context AssetContext as router is {
     on disposeAsset: command Asset.DisposeAsset is {
       send disposeAsset to outlet AssetContext.AssetCommandStreamOut
     }
-    on initializeAsset: command Asset.InitializeAsset is {
-      send initializeAsset to outlet AssetContext.AssetCommandStreamOut
-    }
     on assetResult: result Asset.AssetResult is {
       send assetResult to outlet AssetContext.AssetResultStreamOut
     }
@@ -215,7 +212,17 @@ context AssetContext as router is {
   include "types.riddl"
   include "Asset.riddl"
   // Repository for asset persistence
-  repository AssetRepository as merge is {
+  type AssetRepositoryCommand is one of {
+    AssetContext.AssetRepository.PersistAssetDecommissioned or AssetContext.AssetRepository.PersistAssetDisposed or AssetContext.AssetRepository.PersistAssetInstalled or AssetContext.AssetRepository.PersistAssetRegistered or AssetContext.AssetRepository.PersistAssetTransferred or AssetContext.AssetRepository.PersistDepreciationScheduled or AssetContext.AssetRepository.PersistMaintenanceRecorded or AssetContext.AssetRepository.PersistValuationUpdated
+  } with {
+    briefly "Anything that writes AssetRepository"
+    described as {
+      |The persistence commands AssetRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository AssetRepository as flow is {
+    inlet AssetRepositoryFromAssetValuationProjector is type AssetRepositoryCommand
     command PersistAssetDecommissioned is  {
       assetId: AssetId with {
         briefly "Row addressed"
@@ -336,7 +343,7 @@ context AssetContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet AssetRepositoryFromAsset is type AssetEvent    inlet AssetRepositoryFromAssetValuationProjector is type AssetEvent    inlet AssetRepositoryFromDepreciationReportProjector is type AssetEvent    inlet AssetRepositoryFromUtilizationProjector is type AssetEvent    outlet AssetRepositoryResponses is type Asset.AssetResult
+    outlet AssetRepositoryResponses is type Asset.AssetResult
     record StoredAsset is  {
       assetId: AssetId with {
         briefly "assetId"
@@ -417,34 +424,6 @@ context AssetContext as router is {
         let utilizationMetricsView: type UtilizationMetricsView = prompt("read the utilization metrics projection")
         reply utilizationMetricsView
       }
-      on command Asset.RegisterAsset is {
-        do "Store new asset record"
-      }
-      on command Asset.InstallAsset is {
-        do "Update asset with installation details"
-      }
-      on transferAsset: command Asset.TransferAsset is {
-        tell event Asset.AssetTransferred(assetId = transferAsset.assetId, transfer = transferAsset.transfer) to entity AssetContext.Asset
-        do "Update asset location and transfer history"
-      }
-      on updateValuation: command Asset.UpdateValuation is {
-        tell event Asset.ValuationUpdated(assetId = updateValuation.assetId, valuation = updateValuation.valuation) to entity AssetContext.Asset
-        do "Update asset financial values"
-      }
-      on scheduleDepreciation: command Asset.ScheduleDepreciation is {
-        tell event Asset.DepreciationScheduled(assetId = scheduleDepreciation.assetId, schedule = scheduleDepreciation.schedule) to entity AssetContext.Asset
-        do "Store depreciation schedule"
-      }
-      on recordMaintenance: command Asset.RecordMaintenance is {
-        tell event Asset.MaintenanceRecorded(assetId = recordMaintenance.assetId, maintenance = recordMaintenance.maintenance) to entity AssetContext.Asset
-        do "Add maintenance entry to history"
-      }
-      on command Asset.DecommissionAsset is {
-        do "Update asset to decommissioned status"
-      }
-      on command Asset.DisposeAsset is {
-        do "Update asset to disposed and archive"
-      }
     } with {
       briefly "Persists asset commands"
       described as {
@@ -486,8 +465,9 @@ context AssetContext as router is {
     }
   }
   projector AssetValuationProjector as flow is {
+    outlet AssetValuationProjectorToRepository is type AssetRepositoryCommand
     updates repository AssetContext.AssetRepository
-    inlet AssetValuationProjectorFromAsset is type AssetEvent    outlet AssetValuationProjectorOut is type AssetEvent
+    inlet AssetValuationProjectorFromAsset is type AssetEvent
     record ValuationSummary is  {
       totalAssets: Natural with {
         briefly "Total"
@@ -526,6 +506,22 @@ context AssetContext as router is {
       }
     }
     handler ValuationHandler is {
+      on assetDecommissioned: event Asset.AssetDecommissioned is {
+        tell command AssetContext.AssetRepository.PersistAssetDecommissioned(assetId = assetDecommissioned.assetId) to repository AssetContext.AssetRepository
+        do "apply AssetDecommissioned to the AssetValuationProjector projection"
+      }
+      on assetInstalled: event Asset.AssetInstalled is {
+        tell command AssetContext.AssetRepository.PersistAssetInstalled(assetId = assetInstalled.assetId) to repository AssetContext.AssetRepository
+        do "apply AssetInstalled to the AssetValuationProjector projection"
+      }
+      on assetTransferred: event Asset.AssetTransferred is {
+        tell command AssetContext.AssetRepository.PersistAssetTransferred(assetId = assetTransferred.assetId) to repository AssetContext.AssetRepository
+        do "apply AssetTransferred to the AssetValuationProjector projection"
+      }
+      on maintenanceRecorded: event Asset.MaintenanceRecorded is {
+        tell command AssetContext.AssetRepository.PersistMaintenanceRecorded(assetId = maintenanceRecorded.assetId) to repository AssetContext.AssetRepository
+        do "apply MaintenanceRecorded to the AssetValuationProjector projection"
+      }
       on assetRegistered: event Asset.AssetRegistered is {
         tell command AssetContext.AssetRepository.PersistAssetRegistered(assetId = assetRegistered.assetId) to repository AssetContext.AssetRepository
         do "Add new asset to valuation totals"
@@ -581,9 +577,9 @@ context AssetContext as router is {
       |Read model view carrying the depreciation report projection.
     }
   }
-  projector DepreciationReportProjector as flow is {
+  projector DepreciationReportProjector as sink is {
     updates repository AssetContext.AssetRepository
-    inlet DepreciationReportProjectorFromAsset is type AssetEvent    outlet DepreciationReportProjectorOut is type AssetEvent
+    inlet DepreciationReportProjectorFromAsset is type AssetEvent
     record DepreciationReport is  {
       periodStart: Date with {
         briefly "Period start"
@@ -622,6 +618,26 @@ context AssetContext as router is {
       }
     }
     handler DepreciationHandler is {
+      on assetDisposed: event Asset.AssetDisposed is {
+        tell command AssetContext.AssetRepository.PersistAssetDisposed(assetId = assetDisposed.assetId) to repository AssetContext.AssetRepository
+        do "apply AssetDisposed to the DepreciationReportProjector projection"
+      }
+      on assetInstalled: event Asset.AssetInstalled is {
+        tell command AssetContext.AssetRepository.PersistAssetInstalled(assetId = assetInstalled.assetId) to repository AssetContext.AssetRepository
+        do "apply AssetInstalled to the DepreciationReportProjector projection"
+      }
+      on assetRegistered: event Asset.AssetRegistered is {
+        tell command AssetContext.AssetRepository.PersistAssetRegistered(assetId = assetRegistered.assetId) to repository AssetContext.AssetRepository
+        do "apply AssetRegistered to the DepreciationReportProjector projection"
+      }
+      on assetTransferred: event Asset.AssetTransferred is {
+        tell command AssetContext.AssetRepository.PersistAssetTransferred(assetId = assetTransferred.assetId) to repository AssetContext.AssetRepository
+        do "apply AssetTransferred to the DepreciationReportProjector projection"
+      }
+      on maintenanceRecorded: event Asset.MaintenanceRecorded is {
+        tell command AssetContext.AssetRepository.PersistMaintenanceRecorded(assetId = maintenanceRecorded.assetId) to repository AssetContext.AssetRepository
+        do "apply MaintenanceRecorded to the DepreciationReportProjector projection"
+      }
       on depreciationScheduled: event Asset.DepreciationScheduled is {
         tell command AssetContext.AssetRepository.PersistDepreciationScheduled(assetId = depreciationScheduled.assetId) to repository AssetContext.AssetRepository
         do "Add asset to depreciation tracking"
@@ -673,9 +689,9 @@ context AssetContext as router is {
       |Read model view carrying the utilization metrics projection.
     }
   }
-  projector UtilizationProjector as flow is {
+  projector UtilizationProjector as sink is {
     updates repository AssetContext.AssetRepository
-    inlet UtilizationProjectorFromAsset is type AssetEvent    outlet UtilizationProjectorOut is type AssetEvent
+    inlet UtilizationProjectorFromAsset is type AssetEvent
     record UtilizationMetrics is  {
       activeAssets: Natural with {
         briefly "Active"
@@ -714,6 +730,18 @@ context AssetContext as router is {
       }
     }
     handler UtilizationHandler is {
+      on assetRegistered: event Asset.AssetRegistered is {
+        tell command AssetContext.AssetRepository.PersistAssetRegistered(assetId = assetRegistered.assetId) to repository AssetContext.AssetRepository
+        do "apply AssetRegistered to the UtilizationProjector projection"
+      }
+      on depreciationScheduled: event Asset.DepreciationScheduled is {
+        tell command AssetContext.AssetRepository.PersistDepreciationScheduled(assetId = depreciationScheduled.assetId) to repository AssetContext.AssetRepository
+        do "apply DepreciationScheduled to the UtilizationProjector projection"
+      }
+      on valuationUpdated: event Asset.ValuationUpdated is {
+        tell command AssetContext.AssetRepository.PersistValuationUpdated(assetId = valuationUpdated.assetId) to repository AssetContext.AssetRepository
+        do "apply ValuationUpdated to the UtilizationProjector projection"
+      }
       on assetInstalled: event Asset.AssetInstalled is {
         tell command AssetContext.AssetRepository.PersistAssetInstalled(assetId = assetInstalled.assetId) to repository AssetContext.AssetRepository
         do "Increment active asset count"
@@ -756,152 +784,55 @@ context AssetContext as router is {
       |persistence.
     }
   }
-  processor AssetEventSource as source is {
-    outlet AssetEvents is type AssetEvent
-    handler AssetSourceHandler is {
-      on assetRegistered: event Asset.AssetRegistered is {
-        send assetRegistered to outlet AssetEvents
-      }
-      on assetInstalled: event Asset.AssetInstalled is {
-        send assetInstalled to outlet AssetEvents
-      }
-      on assetTransferred: event Asset.AssetTransferred is {
-        send assetTransferred to outlet AssetEvents
-      }
-      on valuationUpdated: event Asset.ValuationUpdated is {
-        send valuationUpdated to outlet AssetEvents
-      }
-      on depreciationScheduled: event Asset.DepreciationScheduled is {
-        send depreciationScheduled to outlet AssetEvents
-      }
-      on maintenanceRecorded: event Asset.MaintenanceRecorded is {
-        send maintenanceRecorded to outlet AssetEvents
-      }
-      on assetDecommissioned: event Asset.AssetDecommissioned is {
-        send assetDecommissioned to outlet AssetEvents
-      }
-      on assetDisposed: event Asset.AssetDisposed is {
-        send assetDisposed to outlet AssetEvents
-      }
-      on other is {
-        error "Unexpected message for source AssetEventSource"
-      }
-    } with {
-      briefly "Asset source handler"
-      described as {
-        |Publishes Asset events onto the outlet.
-      }
-    }
-  } with {
-    briefly "Asset event source"
-    described as {
-      |Publishes Asset entity events into the streaming topology.
-    }
-  }
-  processor AssetEventSink as sink is {
-    inlet AssetInlet is type AssetEvent    handler AssetSinkHandler is {
-      on assetRegistered: event Asset.AssetRegistered is {
-        tell assetRegistered to repository AssetContext.AssetRepository
-      }
-      on assetInstalled: event Asset.AssetInstalled is {
-        tell assetInstalled to repository AssetContext.AssetRepository
-      }
-      on assetTransferred: event Asset.AssetTransferred is {
-        tell assetTransferred to repository AssetContext.AssetRepository
-      }
-      on valuationUpdated: event Asset.ValuationUpdated is {
-        tell valuationUpdated to repository AssetContext.AssetRepository
-      }
-      on depreciationScheduled: event Asset.DepreciationScheduled is {
-        tell depreciationScheduled to repository AssetContext.AssetRepository
-      }
-      on maintenanceRecorded: event Asset.MaintenanceRecorded is {
-        tell maintenanceRecorded to repository AssetContext.AssetRepository
-      }
-      on assetDecommissioned: event Asset.AssetDecommissioned is {
-        tell assetDecommissioned to repository AssetContext.AssetRepository
-      }
-      on assetDisposed: event Asset.AssetDisposed is {
-        tell assetDisposed to repository AssetContext.AssetRepository
-      }
-      on other is {
-        error "Unexpected message for sink AssetEventSink"
-      }
-    } with {
-      briefly "Asset sink handler"
-      described as {
-        |Persists Asset events via the repository.
-      }
-    }
-  } with {
-    briefly "Asset event sink"
-    described as {
-      |Receives Asset events for persistence.
-    }
-  }
-  connector AssetEventFlow is from outlet AssetContext.AssetEventSource.AssetEvents to inlet AssetContext.AssetEventSink.AssetInlet with {
-    briefly "Asset event flow"
-    described as {
-      |Connects the Asset source to its sink.
-    }
-  }
   processor AssetEventSplit as split is {
-    inlet AssetEventSplitIn is type AssetEvent    outlet AssetEventSplitToAssetRepository is type AssetEvent
+    inlet AssetEventSplitIn is type AssetEvent
     outlet AssetEventSplitToAssetValuationProjector is type AssetEvent
     outlet AssetEventSplitToDepreciationReportProjector is type AssetEvent
     outlet AssetEventSplitToUtilizationProjector is type AssetEvent
     handler AssetEventSplitHandler is {
       on assetRegistered: event Asset.AssetRegistered is {
-        send assetRegistered to outlet AssetEventSplitToAssetRepository
         send assetRegistered to outlet AssetEventSplitToAssetValuationProjector
         send assetRegistered to outlet AssetEventSplitToDepreciationReportProjector
         send assetRegistered to outlet AssetEventSplitToUtilizationProjector
         tell assetRegistered to entity AssetContext.Asset
       }
       on assetInstalled: event Asset.AssetInstalled is {
-        send assetInstalled to outlet AssetEventSplitToAssetRepository
         send assetInstalled to outlet AssetEventSplitToAssetValuationProjector
         send assetInstalled to outlet AssetEventSplitToDepreciationReportProjector
         send assetInstalled to outlet AssetEventSplitToUtilizationProjector
         tell assetInstalled to entity AssetContext.Asset
       }
       on assetTransferred: event Asset.AssetTransferred is {
-        send assetTransferred to outlet AssetEventSplitToAssetRepository
         send assetTransferred to outlet AssetEventSplitToAssetValuationProjector
         send assetTransferred to outlet AssetEventSplitToDepreciationReportProjector
         send assetTransferred to outlet AssetEventSplitToUtilizationProjector
         tell assetTransferred to entity AssetContext.Asset
       }
       on valuationUpdated: event Asset.ValuationUpdated is {
-        send valuationUpdated to outlet AssetEventSplitToAssetRepository
         send valuationUpdated to outlet AssetEventSplitToAssetValuationProjector
         send valuationUpdated to outlet AssetEventSplitToDepreciationReportProjector
         send valuationUpdated to outlet AssetEventSplitToUtilizationProjector
         tell valuationUpdated to entity AssetContext.Asset
       }
       on depreciationScheduled: event Asset.DepreciationScheduled is {
-        send depreciationScheduled to outlet AssetEventSplitToAssetRepository
         send depreciationScheduled to outlet AssetEventSplitToAssetValuationProjector
         send depreciationScheduled to outlet AssetEventSplitToDepreciationReportProjector
         send depreciationScheduled to outlet AssetEventSplitToUtilizationProjector
         tell depreciationScheduled to entity AssetContext.Asset
       }
       on maintenanceRecorded: event Asset.MaintenanceRecorded is {
-        send maintenanceRecorded to outlet AssetEventSplitToAssetRepository
         send maintenanceRecorded to outlet AssetEventSplitToAssetValuationProjector
         send maintenanceRecorded to outlet AssetEventSplitToDepreciationReportProjector
         send maintenanceRecorded to outlet AssetEventSplitToUtilizationProjector
         tell maintenanceRecorded to entity AssetContext.Asset
       }
       on assetDecommissioned: event Asset.AssetDecommissioned is {
-        send assetDecommissioned to outlet AssetEventSplitToAssetRepository
         send assetDecommissioned to outlet AssetEventSplitToAssetValuationProjector
         send assetDecommissioned to outlet AssetEventSplitToDepreciationReportProjector
         send assetDecommissioned to outlet AssetEventSplitToUtilizationProjector
         tell assetDecommissioned to entity AssetContext.Asset
       }
       on assetDisposed: event Asset.AssetDisposed is {
-        send assetDisposed to outlet AssetEventSplitToAssetRepository
         send assetDisposed to outlet AssetEventSplitToAssetValuationProjector
         send assetDisposed to outlet AssetEventSplitToDepreciationReportProjector
         send assetDisposed to outlet AssetEventSplitToUtilizationProjector
@@ -925,9 +856,6 @@ context AssetContext as router is {
   connector 'AssetEvent Stream' is from outlet AssetContext.Asset.AssetEvents2 to inlet AssetContext.AssetEventSplit.AssetEventSplitIn with {
     briefly "Asset events, fanned out to storage and read models"
   }
-  connector 'AssetEvent Storage' is from outlet AssetContext.AssetEventSplit.AssetEventSplitToAssetRepository to inlet AssetContext.AssetRepository.AssetRepositoryFromAsset with {
-    briefly "Asset events on their way to storage"
-  }
   connector 'AssetValuationProjector Feed' is from outlet AssetContext.AssetEventSplit.AssetEventSplitToAssetValuationProjector to inlet AssetContext.AssetValuationProjector.AssetValuationProjectorFromAsset with {
     briefly "Asset events feeding the AssetValuationProjector projection"
   }
@@ -937,14 +865,8 @@ context AssetContext as router is {
   connector 'UtilizationProjector Feed' is from outlet AssetContext.AssetEventSplit.AssetEventSplitToUtilizationProjector to inlet AssetContext.UtilizationProjector.UtilizationProjectorFromAsset with {
     briefly "Asset events feeding the UtilizationProjector projection"
   }
-  connector 'AssetValuationProjector Storage' is from outlet AssetContext.AssetValuationProjector.AssetValuationProjectorOut to inlet AssetContext.AssetRepository.AssetRepositoryFromAssetValuationProjector with {
-    briefly "The AssetValuationProjector projection on its way to storage"
-  }
-  connector 'DepreciationReportProjector Storage' is from outlet AssetContext.DepreciationReportProjector.DepreciationReportProjectorOut to inlet AssetContext.AssetRepository.AssetRepositoryFromDepreciationReportProjector with {
-    briefly "The DepreciationReportProjector projection on its way to storage"
-  }
-  connector 'UtilizationProjector Storage' is from outlet AssetContext.UtilizationProjector.UtilizationProjectorOut to inlet AssetContext.AssetRepository.AssetRepositoryFromUtilizationProjector with {
-    briefly "The UtilizationProjector projection on its way to storage"
+  connector 'AssetValuationProjector Storage' is from outlet AssetContext.AssetValuationProjector.AssetValuationProjectorToRepository to inlet AssetContext.AssetRepository.AssetRepositoryFromAssetValuationProjector with {
+    briefly "AssetValuationProjector updates on their way to storage"
   }
 } with {
   briefly "Bounded context for asset lifecycle management"

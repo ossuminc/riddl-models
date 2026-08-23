@@ -36,9 +36,6 @@ context FabricContext as router is {
     on shipFabric: command FabricLot.ShipFabric is {
       send shipFabric to outlet FabricContext.FabricLotCommandStreamOut
     }
-    on initializeFabricLot: command FabricLot.InitializeFabricLot is {
-      send initializeFabricLot to outlet FabricContext.FabricLotCommandStreamOut
-    }
     on fabricLotResult: result FabricLot.FabricLotResult is {
       send fabricLotResult to outlet FabricContext.FabricLotResultStreamOut
     }
@@ -224,7 +221,77 @@ context FabricContext as router is {
   include "types.riddl"
   include "FabricLot.riddl"
   // Repository for fabric lot persistence
-  repository FabricLotRepository as merge is {
+  type FabricLotRepositoryCommand is one of {
+    FabricContext.FabricLotRepository.PersistDyeingCompleted or FabricContext.FabricLotRepository.PersistDyeingStarted or FabricContext.FabricLotRepository.PersistFabricGraded or FabricContext.FabricLotRepository.PersistFabricLotCreated or FabricContext.FabricLotRepository.PersistFabricShipped or FabricContext.FabricLotRepository.PersistFinishingApplied or FabricContext.FabricLotRepository.PersistFinishingCompleted or FabricContext.FabricLotRepository.PersistWarpingStarted or FabricContext.FabricLotRepository.PersistWeavingCompleted or FabricContext.FabricLotRepository.PersistWeavingDefectRecorded or FabricContext.FabricLotRepository.PersistWeavingStarted
+  } with {
+    briefly "Anything that writes FabricLotRepository"
+    described as {
+      |The persistence commands FabricLotRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository FabricLotRepository as flow is {
+    inlet FabricLotRepositoryFromLoomEfficiencyAnalytics is type FabricLotRepositoryCommand
+    command PersistFabricLotCreated is  {
+      fabricLotId: FabricLotId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row FabricLotCreated applies to.
+        }
+      }
+    } with {
+      briefly "Persist FabricLotCreated"
+      described as {
+        |Instructs this repository to apply FabricLotCreated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistFinishingApplied is  {
+      fabricLotId: FabricLotId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row FinishingApplied applies to.
+        }
+      }
+    } with {
+      briefly "Persist FinishingApplied"
+      described as {
+        |Instructs this repository to apply FinishingApplied to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistFinishingCompleted is  {
+      fabricLotId: FabricLotId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row FinishingCompleted applies to.
+        }
+      }
+    } with {
+      briefly "Persist FinishingCompleted"
+      described as {
+        |Instructs this repository to apply FinishingCompleted to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistWarpingStarted is  {
+      fabricLotId: FabricLotId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row WarpingStarted applies to.
+        }
+      }
+    } with {
+      briefly "Persist WarpingStarted"
+      described as {
+        |Instructs this repository to apply WarpingStarted to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistDyeingCompleted is  {
       fabricLotId: FabricLotId with {
         briefly "Row addressed"
@@ -330,7 +397,7 @@ context FabricContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet FabricLotRepositoryFromFabricLot is type FabricLotEvent    inlet FabricLotRepositoryFromLoomEfficiencyAnalytics is type FabricLotEvent    inlet FabricLotRepositoryFromDyeLotConsistencyAnalytics is type FabricLotEvent    inlet FabricLotRepositoryFromGradingYieldAnalytics is type FabricLotEvent    outlet FabricLotRepositoryResponses is type FabricLot.FabricLotResult
+    outlet FabricLotRepositoryResponses is type FabricLot.FabricLotResult
     record StoredFabricLot is  {
       fabricLotId: FabricLotId with {
         briefly "fabricLotId"
@@ -362,6 +429,18 @@ context FabricContext as router is {
       }
     }
     handler FabricLotPersistence is {
+      on persistFabricLotCreated: command PersistFabricLotCreated is {
+        do "apply FabricLotCreated to the stored row"
+      }
+      on persistFinishingApplied: command PersistFinishingApplied is {
+        do "apply FinishingApplied to the stored row"
+      }
+      on persistFinishingCompleted: command PersistFinishingCompleted is {
+        do "apply FinishingCompleted to the stored row"
+      }
+      on persistWarpingStarted: command PersistWarpingStarted is {
+        do "apply WarpingStarted to the stored row"
+      }
       on persistDyeingCompleted: command PersistDyeingCompleted is {
         do "apply DyeingCompleted to the stored row"
       }
@@ -394,48 +473,6 @@ context FabricContext as router is {
       on query GetGradingMetrics is {
         let gradingMetricsView: type GradingMetricsView = prompt("read the grading metrics projection")
         reply gradingMetricsView
-      }
-      on createFabricLot: command FabricLot.CreateFabricLot is {
-        tell event FabricLot.FabricLotCreated(fabricLotId = createFabricLot.fabricLotId, styleNumber = createFabricLot.styleNumber, customerOrder = createFabricLot.customerOrder, weavingSpec = createFabricLot.weavingSpec, targetYards = createFabricLot.targetYards) to entity FabricContext.FabricLot
-        do "Store new fabric lot"
-      }
-      on startWarping: command FabricLot.StartWarping is {
-        tell event FabricLot.WarpingStarted(fabricLotId = startWarping.fabricLotId, beamId = startWarping.beamId, yarnLots = startWarping.yarnLots, operatorId = startWarping.operatorId) to entity FabricContext.FabricLot
-        do "Update with warping info"
-      }
-      on startWeaving: command FabricLot.StartWeaving is {
-        tell event FabricLot.WeavingStarted(fabricLotId = startWeaving.fabricLotId, loomId = startWeaving.loomId, operatorId = startWeaving.operatorId) to entity FabricContext.FabricLot
-        do "Update with loom assignment"
-      }
-      on recordWeavingDefect: command FabricLot.RecordWeavingDefect is {
-        tell event FabricLot.WeavingDefectRecorded(fabricLotId = recordWeavingDefect.fabricLotId, defect = recordWeavingDefect.defect) to entity FabricContext.FabricLot
-        do "Store weaving defect"
-      }
-      on completeWeaving: command FabricLot.CompleteWeaving is {
-        tell event FabricLot.WeavingCompleted(fabricLotId = completeWeaving.fabricLotId, actualYards = completeWeaving.actualYards, dimensions = completeWeaving.dimensions) to entity FabricContext.FabricLot
-        do "Update weaving completion"
-      }
-      on startDyeing: command FabricLot.StartDyeing is {
-        tell event FabricLot.DyeingStarted(fabricLotId = startDyeing.fabricLotId, dyeFormula = startDyeing.dyeFormula, technicianId = startDyeing.technicianId) to entity FabricContext.FabricLot
-        do "Update to dyeing status"
-      }
-      on completeDyeing: command FabricLot.CompleteDyeing is {
-        tell event FabricLot.DyeingCompleted(fabricLotId = completeDyeing.fabricLotId, colorMatchPassed = completeDyeing.colorMatchPassed, colorfastnessRating = completeDyeing.colorfastnessRating, technicianId = completeDyeing.technicianId) to entity FabricContext.FabricLot
-        do "Update dyeing completion"
-      }
-      on command FabricLot.ApplyFinishing is {
-        do "Update to finishing status"
-      }
-      on completeFinishing: command FabricLot.CompleteFinishing is {
-        tell event FabricLot.FinishingCompleted(fabricLotId = completeFinishing.fabricLotId, finalDimensions = completeFinishing.finalDimensions, shrinkagePercent = completeFinishing.shrinkagePercent, operatorId = completeFinishing.operatorId) to entity FabricContext.FabricLot
-        do "Update finishing completion"
-      }
-      on command FabricLot.GradeFabric is {
-        do "Store fabric grade"
-      }
-      on shipFabric: command FabricLot.ShipFabric is {
-        tell event FabricLot.FabricShipped(fabricLotId = shipFabric.fabricLotId, shippingInfo = shipFabric.shippingInfo) to entity FabricContext.FabricLot
-        do "Update to shipped status"
       }
     } with {
       briefly "Persists fabric lot events"
@@ -478,8 +515,9 @@ context FabricContext as router is {
     }
   }
   projector LoomEfficiencyAnalytics as flow is {
+    outlet LoomEfficiencyAnalyticsToRepository is type FabricLotRepositoryCommand
     updates repository FabricContext.FabricLotRepository
-    inlet LoomEfficiencyAnalyticsFromFabricLot is type FabricLotEvent    outlet LoomEfficiencyAnalyticsOut is type FabricLotEvent
+    inlet LoomEfficiencyAnalyticsFromFabricLot is type FabricLotEvent
     record LoomMetrics is  {
       loomId: LoomId with {
         briefly "Loom"
@@ -530,6 +568,38 @@ context FabricContext as router is {
       }
     }
     handler LoomEfficiencyHandler is {
+      on dyeingCompleted: event FabricLot.DyeingCompleted is {
+        tell command FabricContext.FabricLotRepository.PersistDyeingCompleted(fabricLotId = dyeingCompleted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply DyeingCompleted to the LoomEfficiencyAnalytics projection"
+      }
+      on dyeingStarted: event FabricLot.DyeingStarted is {
+        tell command FabricContext.FabricLotRepository.PersistDyeingStarted(fabricLotId = dyeingStarted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply DyeingStarted to the LoomEfficiencyAnalytics projection"
+      }
+      on fabricGraded: event FabricLot.FabricGraded is {
+        tell command FabricContext.FabricLotRepository.PersistFabricGraded(fabricLotId = fabricGraded.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FabricGraded to the LoomEfficiencyAnalytics projection"
+      }
+      on fabricLotCreated: event FabricLot.FabricLotCreated is {
+        tell command FabricContext.FabricLotRepository.PersistFabricLotCreated(fabricLotId = fabricLotCreated.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FabricLotCreated to the LoomEfficiencyAnalytics projection"
+      }
+      on fabricShipped: event FabricLot.FabricShipped is {
+        tell command FabricContext.FabricLotRepository.PersistFabricShipped(fabricLotId = fabricShipped.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FabricShipped to the LoomEfficiencyAnalytics projection"
+      }
+      on finishingApplied: event FabricLot.FinishingApplied is {
+        tell command FabricContext.FabricLotRepository.PersistFinishingApplied(fabricLotId = finishingApplied.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FinishingApplied to the LoomEfficiencyAnalytics projection"
+      }
+      on finishingCompleted: event FabricLot.FinishingCompleted is {
+        tell command FabricContext.FabricLotRepository.PersistFinishingCompleted(fabricLotId = finishingCompleted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FinishingCompleted to the LoomEfficiencyAnalytics projection"
+      }
+      on warpingStarted: event FabricLot.WarpingStarted is {
+        tell command FabricContext.FabricLotRepository.PersistWarpingStarted(fabricLotId = warpingStarted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply WarpingStarted to the LoomEfficiencyAnalytics projection"
+      }
       on weavingStarted: event FabricLot.WeavingStarted is {
         tell command FabricContext.FabricLotRepository.PersistWeavingStarted(fabricLotId = weavingStarted.fabricLotId) to repository FabricContext.FabricLotRepository
         do "Record loom start time"
@@ -581,9 +651,9 @@ context FabricContext as router is {
       |Read model view carrying the dye lot metrics projection.
     }
   }
-  projector DyeLotConsistencyAnalytics as flow is {
+  projector DyeLotConsistencyAnalytics as sink is {
     updates repository FabricContext.FabricLotRepository
-    inlet DyeLotConsistencyAnalyticsFromFabricLot is type FabricLotEvent    outlet DyeLotConsistencyAnalyticsOut is type FabricLotEvent
+    inlet DyeLotConsistencyAnalyticsFromFabricLot is type FabricLotEvent
     record DyeLotMetrics is  {
       dyeLotId: DyeLotId with {
         briefly "Dye lot"
@@ -634,6 +704,42 @@ context FabricContext as router is {
       }
     }
     handler DyeLotConsistencyHandler is {
+      on fabricGraded: event FabricLot.FabricGraded is {
+        tell command FabricContext.FabricLotRepository.PersistFabricGraded(fabricLotId = fabricGraded.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FabricGraded to the DyeLotConsistencyAnalytics projection"
+      }
+      on fabricLotCreated: event FabricLot.FabricLotCreated is {
+        tell command FabricContext.FabricLotRepository.PersistFabricLotCreated(fabricLotId = fabricLotCreated.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FabricLotCreated to the DyeLotConsistencyAnalytics projection"
+      }
+      on fabricShipped: event FabricLot.FabricShipped is {
+        tell command FabricContext.FabricLotRepository.PersistFabricShipped(fabricLotId = fabricShipped.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FabricShipped to the DyeLotConsistencyAnalytics projection"
+      }
+      on finishingApplied: event FabricLot.FinishingApplied is {
+        tell command FabricContext.FabricLotRepository.PersistFinishingApplied(fabricLotId = finishingApplied.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FinishingApplied to the DyeLotConsistencyAnalytics projection"
+      }
+      on finishingCompleted: event FabricLot.FinishingCompleted is {
+        tell command FabricContext.FabricLotRepository.PersistFinishingCompleted(fabricLotId = finishingCompleted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FinishingCompleted to the DyeLotConsistencyAnalytics projection"
+      }
+      on warpingStarted: event FabricLot.WarpingStarted is {
+        tell command FabricContext.FabricLotRepository.PersistWarpingStarted(fabricLotId = warpingStarted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply WarpingStarted to the DyeLotConsistencyAnalytics projection"
+      }
+      on weavingCompleted: event FabricLot.WeavingCompleted is {
+        tell command FabricContext.FabricLotRepository.PersistWeavingCompleted(fabricLotId = weavingCompleted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply WeavingCompleted to the DyeLotConsistencyAnalytics projection"
+      }
+      on weavingDefectRecorded: event FabricLot.WeavingDefectRecorded is {
+        tell command FabricContext.FabricLotRepository.PersistWeavingDefectRecorded(fabricLotId = weavingDefectRecorded.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply WeavingDefectRecorded to the DyeLotConsistencyAnalytics projection"
+      }
+      on weavingStarted: event FabricLot.WeavingStarted is {
+        tell command FabricContext.FabricLotRepository.PersistWeavingStarted(fabricLotId = weavingStarted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply WeavingStarted to the DyeLotConsistencyAnalytics projection"
+      }
       on dyeingStarted: event FabricLot.DyeingStarted is {
         tell command FabricContext.FabricLotRepository.PersistDyeingStarted(fabricLotId = dyeingStarted.fabricLotId) to repository FabricContext.FabricLotRepository
         do "Track dye lot usage"
@@ -681,9 +787,9 @@ context FabricContext as router is {
       |Read model view carrying the grading metrics projection.
     }
   }
-  projector GradingYieldAnalytics as flow is {
+  projector GradingYieldAnalytics as sink is {
     updates repository FabricContext.FabricLotRepository
-    inlet GradingYieldAnalyticsFromFabricLot is type FabricLotEvent    outlet GradingYieldAnalyticsOut is type FabricLotEvent
+    inlet GradingYieldAnalyticsFromFabricLot is type FabricLotEvent
     record GradingMetrics is  {
       periodStart: Date with {
         briefly "Period start"
@@ -758,6 +864,42 @@ context FabricContext as router is {
       }
     }
     handler GradingYieldHandler is {
+      on dyeingCompleted: event FabricLot.DyeingCompleted is {
+        tell command FabricContext.FabricLotRepository.PersistDyeingCompleted(fabricLotId = dyeingCompleted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply DyeingCompleted to the GradingYieldAnalytics projection"
+      }
+      on dyeingStarted: event FabricLot.DyeingStarted is {
+        tell command FabricContext.FabricLotRepository.PersistDyeingStarted(fabricLotId = dyeingStarted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply DyeingStarted to the GradingYieldAnalytics projection"
+      }
+      on fabricLotCreated: event FabricLot.FabricLotCreated is {
+        tell command FabricContext.FabricLotRepository.PersistFabricLotCreated(fabricLotId = fabricLotCreated.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FabricLotCreated to the GradingYieldAnalytics projection"
+      }
+      on finishingApplied: event FabricLot.FinishingApplied is {
+        tell command FabricContext.FabricLotRepository.PersistFinishingApplied(fabricLotId = finishingApplied.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FinishingApplied to the GradingYieldAnalytics projection"
+      }
+      on finishingCompleted: event FabricLot.FinishingCompleted is {
+        tell command FabricContext.FabricLotRepository.PersistFinishingCompleted(fabricLotId = finishingCompleted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply FinishingCompleted to the GradingYieldAnalytics projection"
+      }
+      on warpingStarted: event FabricLot.WarpingStarted is {
+        tell command FabricContext.FabricLotRepository.PersistWarpingStarted(fabricLotId = warpingStarted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply WarpingStarted to the GradingYieldAnalytics projection"
+      }
+      on weavingCompleted: event FabricLot.WeavingCompleted is {
+        tell command FabricContext.FabricLotRepository.PersistWeavingCompleted(fabricLotId = weavingCompleted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply WeavingCompleted to the GradingYieldAnalytics projection"
+      }
+      on weavingDefectRecorded: event FabricLot.WeavingDefectRecorded is {
+        tell command FabricContext.FabricLotRepository.PersistWeavingDefectRecorded(fabricLotId = weavingDefectRecorded.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply WeavingDefectRecorded to the GradingYieldAnalytics projection"
+      }
+      on weavingStarted: event FabricLot.WeavingStarted is {
+        tell command FabricContext.FabricLotRepository.PersistWeavingStarted(fabricLotId = weavingStarted.fabricLotId) to repository FabricContext.FabricLotRepository
+        do "apply WeavingStarted to the GradingYieldAnalytics projection"
+      }
       on fabricGraded: event FabricLot.FabricGraded is {
         tell command FabricContext.FabricLotRepository.PersistFabricGraded(fabricLotId = fabricGraded.fabricLotId) to repository FabricContext.FabricLotRepository
         do "Update grading statistics"
@@ -788,191 +930,73 @@ context FabricContext as router is {
       |persistence.
     }
   }
-  processor FabricLotEventSource as source is {
-    outlet FabricLotEvents is type FabricLotEvent
-    handler FabricLotSourceHandler is {
-      on fabricLotCreated: event FabricLot.FabricLotCreated is {
-        send fabricLotCreated to outlet FabricLotEvents
-      }
-      on warpingStarted: event FabricLot.WarpingStarted is {
-        send warpingStarted to outlet FabricLotEvents
-      }
-      on weavingStarted: event FabricLot.WeavingStarted is {
-        send weavingStarted to outlet FabricLotEvents
-      }
-      on weavingDefectRecorded: event FabricLot.WeavingDefectRecorded is {
-        send weavingDefectRecorded to outlet FabricLotEvents
-      }
-      on weavingCompleted: event FabricLot.WeavingCompleted is {
-        send weavingCompleted to outlet FabricLotEvents
-      }
-      on dyeingStarted: event FabricLot.DyeingStarted is {
-        send dyeingStarted to outlet FabricLotEvents
-      }
-      on dyeingCompleted: event FabricLot.DyeingCompleted is {
-        send dyeingCompleted to outlet FabricLotEvents
-      }
-      on finishingApplied: event FabricLot.FinishingApplied is {
-        send finishingApplied to outlet FabricLotEvents
-      }
-      on finishingCompleted: event FabricLot.FinishingCompleted is {
-        send finishingCompleted to outlet FabricLotEvents
-      }
-      on fabricGraded: event FabricLot.FabricGraded is {
-        send fabricGraded to outlet FabricLotEvents
-      }
-      on fabricShipped: event FabricLot.FabricShipped is {
-        send fabricShipped to outlet FabricLotEvents
-      }
-      on other is {
-        error "Unexpected message for source FabricLotEventSource"
-      }
-    } with {
-      briefly "FabricLot source handler"
-      described as {
-        |Publishes FabricLot events onto the outlet.
-      }
-    }
-  } with {
-    briefly "FabricLot event source"
-    described as {
-      |Publishes FabricLot entity events into the streaming topology.
-    }
-  }
-  processor FabricLotEventSink as sink is {
-    inlet FabricLotInlet is type FabricLotEvent    handler FabricLotSinkHandler is {
-      on fabricLotCreated: event FabricLot.FabricLotCreated is {
-        tell fabricLotCreated to repository FabricContext.FabricLotRepository
-      }
-      on warpingStarted: event FabricLot.WarpingStarted is {
-        tell warpingStarted to repository FabricContext.FabricLotRepository
-      }
-      on weavingStarted: event FabricLot.WeavingStarted is {
-        tell weavingStarted to repository FabricContext.FabricLotRepository
-      }
-      on weavingDefectRecorded: event FabricLot.WeavingDefectRecorded is {
-        tell weavingDefectRecorded to repository FabricContext.FabricLotRepository
-      }
-      on weavingCompleted: event FabricLot.WeavingCompleted is {
-        tell weavingCompleted to repository FabricContext.FabricLotRepository
-      }
-      on dyeingStarted: event FabricLot.DyeingStarted is {
-        tell dyeingStarted to repository FabricContext.FabricLotRepository
-      }
-      on dyeingCompleted: event FabricLot.DyeingCompleted is {
-        tell dyeingCompleted to repository FabricContext.FabricLotRepository
-      }
-      on finishingApplied: event FabricLot.FinishingApplied is {
-        tell finishingApplied to repository FabricContext.FabricLotRepository
-      }
-      on finishingCompleted: event FabricLot.FinishingCompleted is {
-        tell finishingCompleted to repository FabricContext.FabricLotRepository
-      }
-      on fabricGraded: event FabricLot.FabricGraded is {
-        tell fabricGraded to repository FabricContext.FabricLotRepository
-      }
-      on fabricShipped: event FabricLot.FabricShipped is {
-        tell fabricShipped to repository FabricContext.FabricLotRepository
-      }
-      on other is {
-        error "Unexpected message for sink FabricLotEventSink"
-      }
-    } with {
-      briefly "FabricLot sink handler"
-      described as {
-        |Persists FabricLot events via the repository.
-      }
-    }
-  } with {
-    briefly "FabricLot event sink"
-    described as {
-      |Receives FabricLot events for persistence.
-    }
-  }
-  connector FabricLotEventFlow is from outlet FabricContext.FabricLotEventSource.FabricLotEvents to inlet FabricContext.FabricLotEventSink.FabricLotInlet with {
-    briefly "FabricLot event flow"
-    described as {
-      |Connects the FabricLot source to its sink.
-    }
-  }
   processor FabricLotEventSplit as split is {
-    inlet FabricLotEventSplitIn is type FabricLotEvent    outlet FabricLotEventSplitToFabricLotRepository is type FabricLotEvent
+    inlet FabricLotEventSplitIn is type FabricLotEvent
     outlet FabricLotEventSplitToLoomEfficiencyAnalytics is type FabricLotEvent
     outlet FabricLotEventSplitToDyeLotConsistencyAnalytics is type FabricLotEvent
     outlet FabricLotEventSplitToGradingYieldAnalytics is type FabricLotEvent
     handler FabricLotEventSplitHandler is {
       on fabricLotCreated: event FabricLot.FabricLotCreated is {
-        send fabricLotCreated to outlet FabricLotEventSplitToFabricLotRepository
         send fabricLotCreated to outlet FabricLotEventSplitToLoomEfficiencyAnalytics
         send fabricLotCreated to outlet FabricLotEventSplitToDyeLotConsistencyAnalytics
         send fabricLotCreated to outlet FabricLotEventSplitToGradingYieldAnalytics
         tell fabricLotCreated to entity FabricContext.FabricLot
       }
       on warpingStarted: event FabricLot.WarpingStarted is {
-        send warpingStarted to outlet FabricLotEventSplitToFabricLotRepository
         send warpingStarted to outlet FabricLotEventSplitToLoomEfficiencyAnalytics
         send warpingStarted to outlet FabricLotEventSplitToDyeLotConsistencyAnalytics
         send warpingStarted to outlet FabricLotEventSplitToGradingYieldAnalytics
         tell warpingStarted to entity FabricContext.FabricLot
       }
       on weavingStarted: event FabricLot.WeavingStarted is {
-        send weavingStarted to outlet FabricLotEventSplitToFabricLotRepository
         send weavingStarted to outlet FabricLotEventSplitToLoomEfficiencyAnalytics
         send weavingStarted to outlet FabricLotEventSplitToDyeLotConsistencyAnalytics
         send weavingStarted to outlet FabricLotEventSplitToGradingYieldAnalytics
         tell weavingStarted to entity FabricContext.FabricLot
       }
       on weavingDefectRecorded: event FabricLot.WeavingDefectRecorded is {
-        send weavingDefectRecorded to outlet FabricLotEventSplitToFabricLotRepository
         send weavingDefectRecorded to outlet FabricLotEventSplitToLoomEfficiencyAnalytics
         send weavingDefectRecorded to outlet FabricLotEventSplitToDyeLotConsistencyAnalytics
         send weavingDefectRecorded to outlet FabricLotEventSplitToGradingYieldAnalytics
         tell weavingDefectRecorded to entity FabricContext.FabricLot
       }
       on weavingCompleted: event FabricLot.WeavingCompleted is {
-        send weavingCompleted to outlet FabricLotEventSplitToFabricLotRepository
         send weavingCompleted to outlet FabricLotEventSplitToLoomEfficiencyAnalytics
         send weavingCompleted to outlet FabricLotEventSplitToDyeLotConsistencyAnalytics
         send weavingCompleted to outlet FabricLotEventSplitToGradingYieldAnalytics
         tell weavingCompleted to entity FabricContext.FabricLot
       }
       on dyeingStarted: event FabricLot.DyeingStarted is {
-        send dyeingStarted to outlet FabricLotEventSplitToFabricLotRepository
         send dyeingStarted to outlet FabricLotEventSplitToLoomEfficiencyAnalytics
         send dyeingStarted to outlet FabricLotEventSplitToDyeLotConsistencyAnalytics
         send dyeingStarted to outlet FabricLotEventSplitToGradingYieldAnalytics
         tell dyeingStarted to entity FabricContext.FabricLot
       }
       on dyeingCompleted: event FabricLot.DyeingCompleted is {
-        send dyeingCompleted to outlet FabricLotEventSplitToFabricLotRepository
         send dyeingCompleted to outlet FabricLotEventSplitToLoomEfficiencyAnalytics
         send dyeingCompleted to outlet FabricLotEventSplitToDyeLotConsistencyAnalytics
         send dyeingCompleted to outlet FabricLotEventSplitToGradingYieldAnalytics
         tell dyeingCompleted to entity FabricContext.FabricLot
       }
       on finishingApplied: event FabricLot.FinishingApplied is {
-        send finishingApplied to outlet FabricLotEventSplitToFabricLotRepository
         send finishingApplied to outlet FabricLotEventSplitToLoomEfficiencyAnalytics
         send finishingApplied to outlet FabricLotEventSplitToDyeLotConsistencyAnalytics
         send finishingApplied to outlet FabricLotEventSplitToGradingYieldAnalytics
         tell finishingApplied to entity FabricContext.FabricLot
       }
       on finishingCompleted: event FabricLot.FinishingCompleted is {
-        send finishingCompleted to outlet FabricLotEventSplitToFabricLotRepository
         send finishingCompleted to outlet FabricLotEventSplitToLoomEfficiencyAnalytics
         send finishingCompleted to outlet FabricLotEventSplitToDyeLotConsistencyAnalytics
         send finishingCompleted to outlet FabricLotEventSplitToGradingYieldAnalytics
         tell finishingCompleted to entity FabricContext.FabricLot
       }
       on fabricGraded: event FabricLot.FabricGraded is {
-        send fabricGraded to outlet FabricLotEventSplitToFabricLotRepository
         send fabricGraded to outlet FabricLotEventSplitToLoomEfficiencyAnalytics
         send fabricGraded to outlet FabricLotEventSplitToDyeLotConsistencyAnalytics
         send fabricGraded to outlet FabricLotEventSplitToGradingYieldAnalytics
         tell fabricGraded to entity FabricContext.FabricLot
       }
       on fabricShipped: event FabricLot.FabricShipped is {
-        send fabricShipped to outlet FabricLotEventSplitToFabricLotRepository
         send fabricShipped to outlet FabricLotEventSplitToLoomEfficiencyAnalytics
         send fabricShipped to outlet FabricLotEventSplitToDyeLotConsistencyAnalytics
         send fabricShipped to outlet FabricLotEventSplitToGradingYieldAnalytics
@@ -996,9 +1020,6 @@ context FabricContext as router is {
   connector 'FabricLotEvent Stream' is from outlet FabricContext.FabricLot.FabricLotEvents2 to inlet FabricContext.FabricLotEventSplit.FabricLotEventSplitIn with {
     briefly "FabricLot events, fanned out to storage and read models"
   }
-  connector 'FabricLotEvent Storage' is from outlet FabricContext.FabricLotEventSplit.FabricLotEventSplitToFabricLotRepository to inlet FabricContext.FabricLotRepository.FabricLotRepositoryFromFabricLot with {
-    briefly "FabricLot events on their way to storage"
-  }
   connector 'LoomEfficiencyAnalytics Feed' is from outlet FabricContext.FabricLotEventSplit.FabricLotEventSplitToLoomEfficiencyAnalytics to inlet FabricContext.LoomEfficiencyAnalytics.LoomEfficiencyAnalyticsFromFabricLot with {
     briefly "FabricLot events feeding the LoomEfficiencyAnalytics projection"
   }
@@ -1008,14 +1029,8 @@ context FabricContext as router is {
   connector 'GradingYieldAnalytics Feed' is from outlet FabricContext.FabricLotEventSplit.FabricLotEventSplitToGradingYieldAnalytics to inlet FabricContext.GradingYieldAnalytics.GradingYieldAnalyticsFromFabricLot with {
     briefly "FabricLot events feeding the GradingYieldAnalytics projection"
   }
-  connector 'LoomEfficiencyAnalytics Storage' is from outlet FabricContext.LoomEfficiencyAnalytics.LoomEfficiencyAnalyticsOut to inlet FabricContext.FabricLotRepository.FabricLotRepositoryFromLoomEfficiencyAnalytics with {
-    briefly "The LoomEfficiencyAnalytics projection on its way to storage"
-  }
-  connector 'DyeLotConsistencyAnalytics Storage' is from outlet FabricContext.DyeLotConsistencyAnalytics.DyeLotConsistencyAnalyticsOut to inlet FabricContext.FabricLotRepository.FabricLotRepositoryFromDyeLotConsistencyAnalytics with {
-    briefly "The DyeLotConsistencyAnalytics projection on its way to storage"
-  }
-  connector 'GradingYieldAnalytics Storage' is from outlet FabricContext.GradingYieldAnalytics.GradingYieldAnalyticsOut to inlet FabricContext.FabricLotRepository.FabricLotRepositoryFromGradingYieldAnalytics with {
-    briefly "The GradingYieldAnalytics projection on its way to storage"
+  connector 'LoomEfficiencyAnalytics Storage' is from outlet FabricContext.LoomEfficiencyAnalytics.LoomEfficiencyAnalyticsToRepository to inlet FabricContext.FabricLotRepository.FabricLotRepositoryFromLoomEfficiencyAnalytics with {
+    briefly "LoomEfficiencyAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for fabric production"

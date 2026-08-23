@@ -21,9 +21,6 @@ context CustomerSuccessContext as router is {
     on recordChurn: command CustomerAccount.RecordChurn is {
       send recordChurn to outlet CustomerSuccessContext.CustomerAccountCommandStreamOut
     }
-    on initializeCustomerAccount: command CustomerAccount.InitializeCustomerAccount is {
-      send initializeCustomerAccount to outlet CustomerSuccessContext.CustomerAccountCommandStreamOut
-    }
     on customerAccountResult: result CustomerAccount.CustomerAccountResult is {
       send customerAccountResult to outlet CustomerSuccessContext.CustomerAccountResultStreamOut
     }
@@ -128,7 +125,62 @@ context CustomerSuccessContext as router is {
   include "types.riddl"
   include "CustomerAccount.riddl"
   // Repository for persisting customer account data
-  repository CustomerAccountRepository as merge is {
+  type CustomerAccountRepositoryCommand is one of {
+    CustomerSuccessContext.CustomerAccountRepository.PersistAccountFlaggedAtRisk or CustomerSuccessContext.CustomerAccountRepository.PersistCustomerChurned or CustomerSuccessContext.CustomerAccountRepository.PersistCustomerOnboarded or CustomerSuccessContext.CustomerAccountRepository.PersistHealthScoreUpdated or CustomerSuccessContext.CustomerAccountRepository.PersistRenewalInitiated or CustomerSuccessContext.CustomerAccountRepository.PersistTouchpointRecorded
+  } with {
+    briefly "Anything that writes CustomerAccountRepository"
+    described as {
+      |The persistence commands CustomerAccountRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository CustomerAccountRepository as flow is {
+    inlet CustomerAccountRepositoryFromHealthScoreTrendsProjector is type CustomerAccountRepositoryCommand
+    command PersistCustomerOnboarded is  {
+      accountId: AccountId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row CustomerOnboarded applies to.
+        }
+      }
+    } with {
+      briefly "Persist CustomerOnboarded"
+      described as {
+        |Instructs this repository to apply CustomerOnboarded to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistRenewalInitiated is  {
+      accountId: AccountId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row RenewalInitiated applies to.
+        }
+      }
+    } with {
+      briefly "Persist RenewalInitiated"
+      described as {
+        |Instructs this repository to apply RenewalInitiated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistTouchpointRecorded is  {
+      accountId: AccountId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TouchpointRecorded applies to.
+        }
+      }
+    } with {
+      briefly "Persist TouchpointRecorded"
+      described as {
+        |Instructs this repository to apply TouchpointRecorded to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistAccountFlaggedAtRisk is  {
       accountId: AccountId with {
         briefly "Row addressed"
@@ -196,7 +248,7 @@ context CustomerSuccessContext as router is {
         |The relational schema persisting customer account records for this repository.
       }
     }
-    inlet CustomerAccountRepositoryFromCustomerAccount is type CustomerAccountEvent    inlet CustomerAccountRepositoryFromHealthScoreTrendsProjector is type CustomerAccountEvent    inlet CustomerAccountRepositoryFromChurnMetricsProjector is type CustomerAccountEvent    outlet CustomerAccountRepositoryResponses is type CustomerAccount.CustomerAccountResult
+    outlet CustomerAccountRepositoryResponses is type CustomerAccount.CustomerAccountResult
     query FindAccountById is  {
       accountId: AccountId with {
         briefly "Account ID"
@@ -371,6 +423,15 @@ context CustomerSuccessContext as router is {
       }
     }
     handler CustomerAccountRepositoryHandler is {
+      on persistCustomerOnboarded: command PersistCustomerOnboarded is {
+        do "apply CustomerOnboarded to the stored row"
+      }
+      on persistRenewalInitiated: command PersistRenewalInitiated is {
+        do "apply RenewalInitiated to the stored row"
+      }
+      on persistTouchpointRecorded: command PersistTouchpointRecorded is {
+        do "apply TouchpointRecorded to the stored row"
+      }
       on persistAccountFlaggedAtRisk: command PersistAccountFlaggedAtRisk is {
         do "apply AccountFlaggedAtRisk to the stored row"
       }
@@ -446,8 +507,9 @@ context CustomerSuccessContext as router is {
     }
   }
   projector HealthScoreTrendsProjector as flow is {
+    outlet HealthScoreTrendsProjectorToRepository is type CustomerAccountRepositoryCommand
     updates repository CustomerSuccessContext.CustomerAccountRepository
-    inlet HealthScoreTrendsProjectorFromCustomerAccount is type CustomerAccountEvent    outlet HealthScoreTrendsProjectorOut is type CustomerAccountEvent
+    inlet HealthScoreTrendsProjectorFromCustomerAccount is type CustomerAccountEvent
     record HealthScoreTrend is  {
       accountId: AccountId with {
         briefly "Account"
@@ -578,6 +640,18 @@ context CustomerSuccessContext as router is {
       }
     }
     handler HealthScoreTrendsHandler is {
+      on customerOnboarded: event CustomerAccount.CustomerOnboarded is {
+        tell command CustomerSuccessContext.CustomerAccountRepository.PersistCustomerOnboarded(accountId = customerOnboarded.accountId) to repository CustomerSuccessContext.CustomerAccountRepository
+        do "apply CustomerOnboarded to the HealthScoreTrendsProjector projection"
+      }
+      on renewalInitiated: event CustomerAccount.RenewalInitiated is {
+        tell command CustomerSuccessContext.CustomerAccountRepository.PersistRenewalInitiated(accountId = renewalInitiated.accountId) to repository CustomerSuccessContext.CustomerAccountRepository
+        do "apply RenewalInitiated to the HealthScoreTrendsProjector projection"
+      }
+      on touchpointRecorded: event CustomerAccount.TouchpointRecorded is {
+        tell command CustomerSuccessContext.CustomerAccountRepository.PersistTouchpointRecorded(accountId = touchpointRecorded.accountId) to repository CustomerSuccessContext.CustomerAccountRepository
+        do "apply TouchpointRecorded to the HealthScoreTrendsProjector projection"
+      }
       on healthScoreUpdated: event CustomerAccount.HealthScoreUpdated is {
         tell command CustomerSuccessContext.CustomerAccountRepository.PersistHealthScoreUpdated(accountId = healthScoreUpdated.accountId) to repository CustomerSuccessContext.CustomerAccountRepository
       }
@@ -629,9 +703,9 @@ context CustomerSuccessContext as router is {
       |Read model view carrying the churn metrics state projection.
     }
   }
-  projector ChurnMetricsProjector as flow is {
+  projector ChurnMetricsProjector as sink is {
     updates repository CustomerSuccessContext.CustomerAccountRepository
-    inlet ChurnMetricsProjectorFromCustomerAccount is type CustomerAccountEvent    outlet ChurnMetricsProjectorOut is type CustomerAccountEvent
+    inlet ChurnMetricsProjectorFromCustomerAccount is type CustomerAccountEvent
     record ChurnMetric is  {
       period: String(1,20) with {
         briefly "Period"
@@ -805,6 +879,18 @@ context CustomerSuccessContext as router is {
       }
     }
     handler ChurnMetricsHandler is {
+      on customerOnboarded: event CustomerAccount.CustomerOnboarded is {
+        tell command CustomerSuccessContext.CustomerAccountRepository.PersistCustomerOnboarded(accountId = customerOnboarded.accountId) to repository CustomerSuccessContext.CustomerAccountRepository
+        do "apply CustomerOnboarded to the ChurnMetricsProjector projection"
+      }
+      on renewalInitiated: event CustomerAccount.RenewalInitiated is {
+        tell command CustomerSuccessContext.CustomerAccountRepository.PersistRenewalInitiated(accountId = renewalInitiated.accountId) to repository CustomerSuccessContext.CustomerAccountRepository
+        do "apply RenewalInitiated to the ChurnMetricsProjector projection"
+      }
+      on touchpointRecorded: event CustomerAccount.TouchpointRecorded is {
+        tell command CustomerSuccessContext.CustomerAccountRepository.PersistTouchpointRecorded(accountId = touchpointRecorded.accountId) to repository CustomerSuccessContext.CustomerAccountRepository
+        do "apply TouchpointRecorded to the ChurnMetricsProjector projection"
+      }
       on customerChurned: event CustomerAccount.CustomerChurned is {
         tell command CustomerSuccessContext.CustomerAccountRepository.PersistCustomerChurned(accountId = customerChurned.accountId) to repository CustomerSuccessContext.CustomerAccountRepository
       }
@@ -926,42 +1012,36 @@ context CustomerSuccessContext as router is {
     }
   }
   processor CustomerAccountEventSplit as split is {
-    inlet CustomerAccountEventSplitIn is type CustomerAccountEvent    outlet CustomerAccountEventSplitToCustomerAccountRepository is type CustomerAccountEvent
+    inlet CustomerAccountEventSplitIn is type CustomerAccountEvent
     outlet CustomerAccountEventSplitToHealthScoreTrendsProjector is type CustomerAccountEvent
     outlet CustomerAccountEventSplitToChurnMetricsProjector is type CustomerAccountEvent
     handler CustomerAccountEventSplitHandler is {
       on customerOnboarded: event CustomerAccount.CustomerOnboarded is {
-        send customerOnboarded to outlet CustomerAccountEventSplitToCustomerAccountRepository
         send customerOnboarded to outlet CustomerAccountEventSplitToHealthScoreTrendsProjector
         send customerOnboarded to outlet CustomerAccountEventSplitToChurnMetricsProjector
         tell customerOnboarded to entity CustomerSuccessContext.CustomerAccount
       }
       on healthScoreUpdated: event CustomerAccount.HealthScoreUpdated is {
-        send healthScoreUpdated to outlet CustomerAccountEventSplitToCustomerAccountRepository
         send healthScoreUpdated to outlet CustomerAccountEventSplitToHealthScoreTrendsProjector
         send healthScoreUpdated to outlet CustomerAccountEventSplitToChurnMetricsProjector
         tell healthScoreUpdated to entity CustomerSuccessContext.CustomerAccount
       }
       on touchpointRecorded: event CustomerAccount.TouchpointRecorded is {
-        send touchpointRecorded to outlet CustomerAccountEventSplitToCustomerAccountRepository
         send touchpointRecorded to outlet CustomerAccountEventSplitToHealthScoreTrendsProjector
         send touchpointRecorded to outlet CustomerAccountEventSplitToChurnMetricsProjector
         tell touchpointRecorded to entity CustomerSuccessContext.CustomerAccount
       }
       on accountFlaggedAtRisk: event CustomerAccount.AccountFlaggedAtRisk is {
-        send accountFlaggedAtRisk to outlet CustomerAccountEventSplitToCustomerAccountRepository
         send accountFlaggedAtRisk to outlet CustomerAccountEventSplitToHealthScoreTrendsProjector
         send accountFlaggedAtRisk to outlet CustomerAccountEventSplitToChurnMetricsProjector
         tell accountFlaggedAtRisk to entity CustomerSuccessContext.CustomerAccount
       }
       on renewalInitiated: event CustomerAccount.RenewalInitiated is {
-        send renewalInitiated to outlet CustomerAccountEventSplitToCustomerAccountRepository
         send renewalInitiated to outlet CustomerAccountEventSplitToHealthScoreTrendsProjector
         send renewalInitiated to outlet CustomerAccountEventSplitToChurnMetricsProjector
         tell renewalInitiated to entity CustomerSuccessContext.CustomerAccount
       }
       on customerChurned: event CustomerAccount.CustomerChurned is {
-        send customerChurned to outlet CustomerAccountEventSplitToCustomerAccountRepository
         send customerChurned to outlet CustomerAccountEventSplitToHealthScoreTrendsProjector
         send customerChurned to outlet CustomerAccountEventSplitToChurnMetricsProjector
         tell customerChurned to entity CustomerSuccessContext.CustomerAccount
@@ -984,20 +1064,14 @@ context CustomerSuccessContext as router is {
   connector 'CustomerAccountEvent Stream' is from outlet CustomerSuccessContext.CustomerAccount.CustomerAccountEvents to inlet CustomerSuccessContext.CustomerAccountEventSplit.CustomerAccountEventSplitIn with {
     briefly "CustomerAccount events, fanned out to storage and read models"
   }
-  connector 'CustomerAccountEvent Storage' is from outlet CustomerSuccessContext.CustomerAccountEventSplit.CustomerAccountEventSplitToCustomerAccountRepository to inlet CustomerSuccessContext.CustomerAccountRepository.CustomerAccountRepositoryFromCustomerAccount with {
-    briefly "CustomerAccount events on their way to storage"
-  }
   connector 'HealthScoreTrendsProjector Feed' is from outlet CustomerSuccessContext.CustomerAccountEventSplit.CustomerAccountEventSplitToHealthScoreTrendsProjector to inlet CustomerSuccessContext.HealthScoreTrendsProjector.HealthScoreTrendsProjectorFromCustomerAccount with {
     briefly "CustomerAccount events feeding the HealthScoreTrendsProjector projection"
   }
   connector 'ChurnMetricsProjector Feed' is from outlet CustomerSuccessContext.CustomerAccountEventSplit.CustomerAccountEventSplitToChurnMetricsProjector to inlet CustomerSuccessContext.ChurnMetricsProjector.ChurnMetricsProjectorFromCustomerAccount with {
     briefly "CustomerAccount events feeding the ChurnMetricsProjector projection"
   }
-  connector 'HealthScoreTrendsProjector Storage' is from outlet CustomerSuccessContext.HealthScoreTrendsProjector.HealthScoreTrendsProjectorOut to inlet CustomerSuccessContext.CustomerAccountRepository.CustomerAccountRepositoryFromHealthScoreTrendsProjector with {
-    briefly "The HealthScoreTrendsProjector projection on its way to storage"
-  }
-  connector 'ChurnMetricsProjector Storage' is from outlet CustomerSuccessContext.ChurnMetricsProjector.ChurnMetricsProjectorOut to inlet CustomerSuccessContext.CustomerAccountRepository.CustomerAccountRepositoryFromChurnMetricsProjector with {
-    briefly "The ChurnMetricsProjector projection on its way to storage"
+  connector 'HealthScoreTrendsProjector Storage' is from outlet CustomerSuccessContext.HealthScoreTrendsProjector.HealthScoreTrendsProjectorToRepository to inlet CustomerSuccessContext.CustomerAccountRepository.CustomerAccountRepositoryFromHealthScoreTrendsProjector with {
+    briefly "HealthScoreTrendsProjector updates on their way to storage"
   }
 } with {
   briefly "Customer success context"

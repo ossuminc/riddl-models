@@ -30,9 +30,6 @@ context DeliveryContext as router is {
     on returnToSender: command Delivery.ReturnToSender is {
       send returnToSender to outlet DeliveryContext.DeliveryCommandStreamOut
     }
-    on initializeDelivery: command Delivery.InitializeDelivery is {
-      send initializeDelivery to outlet DeliveryContext.DeliveryCommandStreamOut
-    }
     on deliveryResult: result Delivery.DeliveryResult is {
       send deliveryResult to outlet DeliveryContext.DeliveryOrderResultStreamOut
     }
@@ -270,7 +267,92 @@ context DeliveryContext as router is {
   }
   include "types.riddl"
   include "Delivery.riddl"
-  repository DeliveryRepository as merge is {
+  type DeliveryRepositoryCommand is one of {
+    DeliveryContext.DeliveryRepository.PersistAssignedToRoute or DeliveryContext.DeliveryRepository.PersistDeliveryAttempted or DeliveryContext.DeliveryRepository.PersistDeliveryCompleted or DeliveryContext.DeliveryRepository.PersistDeliveryCreated or DeliveryContext.DeliveryRepository.PersistDeliveryFailed or DeliveryContext.DeliveryRepository.PersistDeliveryRescheduled or DeliveryContext.DeliveryRepository.PersistETAUpdated or DeliveryContext.DeliveryRepository.PersistMarkedOutForDelivery or DeliveryContext.DeliveryRepository.PersistReturnInitiated
+  } with {
+    briefly "Anything that writes DeliveryRepository"
+    described as {
+      |The persistence commands DeliveryRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository DeliveryRepository as flow is {
+    inlet DeliveryRepositoryFromDeliveryAnalytics is type DeliveryRepositoryCommand
+    command PersistAssignedToRoute is  {
+      deliveryId: DeliveryId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row AssignedToRoute applies to.
+        }
+      }
+    } with {
+      briefly "Persist AssignedToRoute"
+      described as {
+        |Instructs this repository to apply AssignedToRoute to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistDeliveryRescheduled is  {
+      deliveryId: DeliveryId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row DeliveryRescheduled applies to.
+        }
+      }
+    } with {
+      briefly "Persist DeliveryRescheduled"
+      described as {
+        |Instructs this repository to apply DeliveryRescheduled to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistETAUpdated is  {
+      deliveryId: DeliveryId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ETAUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist ETAUpdated"
+      described as {
+        |Instructs this repository to apply ETAUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistMarkedOutForDelivery is  {
+      deliveryId: DeliveryId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row MarkedOutForDelivery applies to.
+        }
+      }
+    } with {
+      briefly "Persist MarkedOutForDelivery"
+      described as {
+        |Instructs this repository to apply MarkedOutForDelivery to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistReturnInitiated is  {
+      deliveryId: DeliveryId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ReturnInitiated applies to.
+        }
+      }
+    } with {
+      briefly "Persist ReturnInitiated"
+      described as {
+        |Instructs this repository to apply ReturnInitiated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistDeliveryAttempted is  {
       deliveryId: DeliveryId with {
         briefly "Row addressed"
@@ -331,7 +413,7 @@ context DeliveryContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet DeliveryRepositoryFromDelivery is type DeliveryEvent    inlet DeliveryRepositoryFromDeliveryAnalytics is type DeliveryEvent    outlet DeliveryRepositoryResponses is type Delivery.DeliveryResult
+    outlet DeliveryRepositoryResponses is type Delivery.DeliveryResult
     record StoredDelivery is  {
       deliveryId: DeliveryId with {
         briefly "deliveryId"
@@ -382,6 +464,21 @@ context DeliveryContext as router is {
       }
     }
     handler DeliveryPersistence is {
+      on persistAssignedToRoute: command PersistAssignedToRoute is {
+        do "apply AssignedToRoute to the stored row"
+      }
+      on persistDeliveryRescheduled: command PersistDeliveryRescheduled is {
+        do "apply DeliveryRescheduled to the stored row"
+      }
+      on persistETAUpdated: command PersistETAUpdated is {
+        do "apply ETAUpdated to the stored row"
+      }
+      on persistMarkedOutForDelivery: command PersistMarkedOutForDelivery is {
+        do "apply MarkedOutForDelivery to the stored row"
+      }
+      on persistReturnInitiated: command PersistReturnInitiated is {
+        do "apply ReturnInitiated to the stored row"
+      }
       on persistDeliveryAttempted: command PersistDeliveryAttempted is {
         do "apply DeliveryAttempted to the stored row"
       }
@@ -397,30 +494,6 @@ context DeliveryContext as router is {
       on query GetDailyMetrics is {
         let dailyMetricsView: type DailyMetricsView = prompt("read the daily metrics projection")
         reply dailyMetricsView
-      }
-      on createDelivery: command Delivery.CreateDelivery is {
-        tell event Delivery.DeliveryCreated(deliveryId = createDelivery.deliveryId, packageInfo = createDelivery.packageInfo, address = createDelivery.address, priority = createDelivery.priority) to entity DeliveryContext.Delivery
-      }
-      on assignToRoute: command Delivery.AssignToRoute is {
-        tell event Delivery.AssignedToRoute(deliveryId = assignToRoute.deliveryId, routeId = assignToRoute.routeId, driver = assignToRoute.driver, stopNumber = assignToRoute.stopNumber, estimatedArrival = assignToRoute.estimatedArrival) to entity DeliveryContext.Delivery
-      }
-      on markOutForDelivery: command Delivery.MarkOutForDelivery is {
-        tell event Delivery.MarkedOutForDelivery(deliveryId = markOutForDelivery.deliveryId, departedAt = markOutForDelivery.departedAt) to entity DeliveryContext.Delivery
-      }
-      on updateETA: command Delivery.UpdateETA is {
-        tell event Delivery.ETAUpdated(deliveryId = updateETA.deliveryId, newETA = updateETA.newETA) to entity DeliveryContext.Delivery
-      }
-      on attemptDelivery: command Delivery.AttemptDelivery is {
-        tell event Delivery.DeliveryAttempted(deliveryId = attemptDelivery.deliveryId, attempt = attemptDelivery.attempt) to entity DeliveryContext.Delivery
-      }
-      on completeDelivery: command Delivery.CompleteDelivery is {
-        tell event Delivery.DeliveryCompleted(deliveryId = completeDelivery.deliveryId, proof = completeDelivery.proof) to entity DeliveryContext.Delivery
-      }
-      on failDelivery: command Delivery.FailDelivery is {
-        tell event Delivery.DeliveryFailed(deliveryId = failDelivery.deliveryId, reason = failDelivery.reason, action = failDelivery.action) to entity DeliveryContext.Delivery
-      }
-      on rescheduleDelivery: command Delivery.RescheduleDelivery is {
-        tell event Delivery.DeliveryRescheduled(deliveryId = rescheduleDelivery.deliveryId, newWindow = rescheduleDelivery.newWindow) to entity DeliveryContext.Delivery
       }
     } with {
       briefly "Persists delivery commands"
@@ -461,8 +534,9 @@ context DeliveryContext as router is {
     }
   }
   projector DeliveryAnalytics as flow is {
+    outlet DeliveryAnalyticsToRepository is type DeliveryRepositoryCommand
     updates repository DeliveryContext.DeliveryRepository
-    inlet DeliveryAnalyticsFromDelivery is type DeliveryEvent    outlet DeliveryAnalyticsOut is type DeliveryEvent
+    inlet DeliveryAnalyticsFromDelivery is type DeliveryEvent
     record DailyMetrics is  {
       totalDeliveries: Natural with {
         briefly "Total"
@@ -507,6 +581,26 @@ context DeliveryContext as router is {
       }
     }
     handler AnalyticsHandler is {
+      on assignedToRoute: event Delivery.AssignedToRoute is {
+        tell command DeliveryContext.DeliveryRepository.PersistAssignedToRoute(deliveryId = assignedToRoute.deliveryId) to repository DeliveryContext.DeliveryRepository
+        do "apply AssignedToRoute to the DeliveryAnalytics projection"
+      }
+      on deliveryRescheduled: event Delivery.DeliveryRescheduled is {
+        tell command DeliveryContext.DeliveryRepository.PersistDeliveryRescheduled(deliveryId = deliveryRescheduled.deliveryId) to repository DeliveryContext.DeliveryRepository
+        do "apply DeliveryRescheduled to the DeliveryAnalytics projection"
+      }
+      on eTAUpdated: event Delivery.ETAUpdated is {
+        tell command DeliveryContext.DeliveryRepository.PersistETAUpdated(deliveryId = eTAUpdated.deliveryId) to repository DeliveryContext.DeliveryRepository
+        do "apply ETAUpdated to the DeliveryAnalytics projection"
+      }
+      on markedOutForDelivery: event Delivery.MarkedOutForDelivery is {
+        tell command DeliveryContext.DeliveryRepository.PersistMarkedOutForDelivery(deliveryId = markedOutForDelivery.deliveryId) to repository DeliveryContext.DeliveryRepository
+        do "apply MarkedOutForDelivery to the DeliveryAnalytics projection"
+      }
+      on returnInitiated: event Delivery.ReturnInitiated is {
+        tell command DeliveryContext.DeliveryRepository.PersistReturnInitiated(deliveryId = returnInitiated.deliveryId) to repository DeliveryContext.DeliveryRepository
+        do "apply ReturnInitiated to the DeliveryAnalytics projection"
+      }
       on deliveryCreated: event Delivery.DeliveryCreated is {
         tell command DeliveryContext.DeliveryRepository.PersistDeliveryCreated(deliveryId = deliveryCreated.deliveryId) to repository DeliveryContext.DeliveryRepository
       }
@@ -539,116 +633,43 @@ context DeliveryContext as router is {
       |Union of Delivery events for streaming.
     }
   }
-  processor DeliveryEventSource as source is {
-    outlet DeliveryEvents is type DeliveryEvent
-    handler DeliveryEventEmitter is {
-      on init is {
-        let initializeDelivery: type Delivery.InitializeDelivery = prompt("the initialize delivery that brings this this into existence")
-        tell initializeDelivery to entity DeliveryContext.Delivery
-      }
-      on other is {
-        error "Unexpected message for source DeliveryEventSource"
-      }
-      on deliveryCreated: event Delivery.DeliveryCreated is {
-        send deliveryCreated to outlet DeliveryEvents
-      }
-      on deliveryCompleted: event Delivery.DeliveryCompleted is {
-        send deliveryCompleted to outlet DeliveryEvents
-      }
-      on deliveryFailed: event Delivery.DeliveryFailed is {
-        send deliveryFailed to outlet DeliveryEvents
-      }
-    } with {
-      briefly "Event emitter"
-      described as {
-        |Emits Delivery events to the stream.
-      }
-    }
-  } with {
-    briefly "Delivery event source"
-    described as {
-      |Publishes Delivery events to the event stream.
-    }
-  }
-  processor DeliveryEventSink as sink is {
-    inlet IncomingDeliveryEvents is type DeliveryEvent    handler DeliveryEventReceiver is {
-      on init is { ??? }
-      on other is {
-        error "Unexpected message for sink DeliveryEventSink"
-      }
-      on deliveryCreated: event Delivery.DeliveryCreated is {
-        tell deliveryCreated to repository DeliveryContext.DeliveryRepository
-      }
-      on deliveryCompleted: event Delivery.DeliveryCompleted is {
-        tell deliveryCompleted to repository DeliveryContext.DeliveryRepository
-      }
-      on deliveryFailed: event Delivery.DeliveryFailed is {
-        tell deliveryFailed to repository DeliveryContext.DeliveryRepository
-      }
-    } with {
-      briefly "Event receiver"
-      described as {
-        |Receives Delivery events for persistence.
-      }
-    }
-  } with {
-    briefly "Delivery event sink"
-    described as {
-      |Receives Delivery events from streaming.
-    }
-  }
-  connector DeliveryEventPipeline is from outlet DeliveryContext.DeliveryEventSource.DeliveryEvents to inlet DeliveryContext.DeliveryEventSink.IncomingDeliveryEvents with {
-    briefly "Delivery event pipeline"
-    described as {
-      |Wires Delivery event source to sink.
-    }
-  }
-  processor DeliveryEventSplit as split is {
-    inlet DeliveryEventSplitIn is type DeliveryEvent    outlet DeliveryEventSplitToDeliveryRepository is type DeliveryEvent
+  processor DeliveryEventSplit as flow is {
+    inlet DeliveryEventSplitIn is type DeliveryEvent
     outlet DeliveryEventSplitToDeliveryAnalytics is type DeliveryEvent
     handler DeliveryEventSplitHandler is {
       on deliveryCreated: event Delivery.DeliveryCreated is {
-        send deliveryCreated to outlet DeliveryEventSplitToDeliveryRepository
         send deliveryCreated to outlet DeliveryEventSplitToDeliveryAnalytics
         tell deliveryCreated to entity DeliveryContext.Delivery
       }
       on assignedToRoute: event Delivery.AssignedToRoute is {
-        send assignedToRoute to outlet DeliveryEventSplitToDeliveryRepository
         send assignedToRoute to outlet DeliveryEventSplitToDeliveryAnalytics
         tell assignedToRoute to entity DeliveryContext.Delivery
       }
       on markedOutForDelivery: event Delivery.MarkedOutForDelivery is {
-        send markedOutForDelivery to outlet DeliveryEventSplitToDeliveryRepository
         send markedOutForDelivery to outlet DeliveryEventSplitToDeliveryAnalytics
         tell markedOutForDelivery to entity DeliveryContext.Delivery
       }
       on eTAUpdated: event Delivery.ETAUpdated is {
-        send eTAUpdated to outlet DeliveryEventSplitToDeliveryRepository
         send eTAUpdated to outlet DeliveryEventSplitToDeliveryAnalytics
         tell eTAUpdated to entity DeliveryContext.Delivery
       }
       on deliveryAttempted: event Delivery.DeliveryAttempted is {
-        send deliveryAttempted to outlet DeliveryEventSplitToDeliveryRepository
         send deliveryAttempted to outlet DeliveryEventSplitToDeliveryAnalytics
         tell deliveryAttempted to entity DeliveryContext.Delivery
       }
       on deliveryCompleted: event Delivery.DeliveryCompleted is {
-        send deliveryCompleted to outlet DeliveryEventSplitToDeliveryRepository
         send deliveryCompleted to outlet DeliveryEventSplitToDeliveryAnalytics
         tell deliveryCompleted to entity DeliveryContext.Delivery
       }
       on deliveryFailed: event Delivery.DeliveryFailed is {
-        send deliveryFailed to outlet DeliveryEventSplitToDeliveryRepository
         send deliveryFailed to outlet DeliveryEventSplitToDeliveryAnalytics
         tell deliveryFailed to entity DeliveryContext.Delivery
       }
       on deliveryRescheduled: event Delivery.DeliveryRescheduled is {
-        send deliveryRescheduled to outlet DeliveryEventSplitToDeliveryRepository
         send deliveryRescheduled to outlet DeliveryEventSplitToDeliveryAnalytics
         tell deliveryRescheduled to entity DeliveryContext.Delivery
       }
       on returnInitiated: event Delivery.ReturnInitiated is {
-        send returnInitiated to outlet DeliveryEventSplitToDeliveryRepository
         send returnInitiated to outlet DeliveryEventSplitToDeliveryAnalytics
         tell returnInitiated to entity DeliveryContext.Delivery
       }
@@ -670,14 +691,11 @@ context DeliveryContext as router is {
   connector 'DeliveryEvent Stream' is from outlet DeliveryContext.Delivery.DeliveryEvents2 to inlet DeliveryContext.DeliveryEventSplit.DeliveryEventSplitIn with {
     briefly "Delivery events, fanned out to storage and read models"
   }
-  connector 'DeliveryEvent Storage' is from outlet DeliveryContext.DeliveryEventSplit.DeliveryEventSplitToDeliveryRepository to inlet DeliveryContext.DeliveryRepository.DeliveryRepositoryFromDelivery with {
-    briefly "Delivery events on their way to storage"
-  }
   connector 'DeliveryAnalytics Feed' is from outlet DeliveryContext.DeliveryEventSplit.DeliveryEventSplitToDeliveryAnalytics to inlet DeliveryContext.DeliveryAnalytics.DeliveryAnalyticsFromDelivery with {
     briefly "Delivery events feeding the DeliveryAnalytics projection"
   }
-  connector 'DeliveryAnalytics Storage' is from outlet DeliveryContext.DeliveryAnalytics.DeliveryAnalyticsOut to inlet DeliveryContext.DeliveryRepository.DeliveryRepositoryFromDeliveryAnalytics with {
-    briefly "The DeliveryAnalytics projection on its way to storage"
+  connector 'DeliveryAnalytics Storage' is from outlet DeliveryContext.DeliveryAnalytics.DeliveryAnalyticsToRepository to inlet DeliveryContext.DeliveryRepository.DeliveryRepositoryFromDeliveryAnalytics with {
+    briefly "DeliveryAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for last mile delivery"

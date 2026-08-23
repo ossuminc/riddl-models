@@ -198,7 +198,17 @@ context SupplyContext as router is {
   // ==========================================================================
   // Repository
   // ==========================================================================
-  repository InventoryRepository as merge is {
+  type InventoryRepositoryCommand is one of {
+    SupplyContext.InventoryRepository.PersistOrderPlaced or SupplyContext.InventoryRepository.PersistRequisitionCreated or SupplyContext.InventoryRepository.PersistShipmentReceived or SupplyContext.InventoryRepository.PersistSuppliesIssued
+  } with {
+    briefly "Anything that writes InventoryRepository"
+    described as {
+      |The persistence commands InventoryRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository InventoryRepository as flow is {
+    inlet InventoryRepositoryFromInventoryMetricsProjector is type InventoryRepositoryCommand
     command PersistOrderPlaced is  {
       purchaseOrderId: PurchaseOrderId with {
         briefly "Row addressed"
@@ -281,7 +291,7 @@ context SupplyContext as router is {
         |The relational schema persisting supply order records for this repository.
       }
     }
-    inlet InventoryRepositoryFromSupplyOrder is type SupplyOrderEvent    inlet InventoryRepositoryFromInventoryMetricsProjector is type SupplyOrderEvent    outlet InventoryRepositoryResponses is type SupplyOrder.SupplyOrderResult
+    outlet InventoryRepositoryResponses is type SupplyOrder.SupplyOrderResult
     query GetItemById is  { itemId: ItemId } with {
       briefly "Retrieve item by ID"
       described as {
@@ -496,8 +506,9 @@ context SupplyContext as router is {
     }
   }
   projector InventoryMetricsProjector as flow is {
+    outlet InventoryMetricsProjectorToRepository is type InventoryRepositoryCommand
     updates repository SupplyContext.InventoryRepository
-    inlet InventoryMetricsProjectorFromSupplyOrder is type SupplyOrderEvent    outlet InventoryMetricsProjectorOut is type SupplyOrderEvent
+    inlet InventoryMetricsProjectorFromSupplyOrder is type SupplyOrderEvent
     record MetricsSummary is  {
       locationCode: String
       totalItemCount: Integer
@@ -599,103 +610,27 @@ context SupplyContext as router is {
       |persistence.
     }
   }
-  processor SupplyOrderEventSource as source is {
-    outlet SupplyOrderEvents is type SupplyOrderEvent
-    handler SupplyOrderSourceHandler is {
-      on requisitionCreated: event SupplyOrder.RequisitionCreated is {
-        send requisitionCreated to outlet SupplyOrderEvents
-      }
-      on requisitionApproved: event SupplyOrder.RequisitionApproved is {
-        send requisitionApproved to outlet SupplyOrderEvents
-      }
-      on orderPlaced: event SupplyOrder.OrderPlaced is {
-        send orderPlaced to outlet SupplyOrderEvents
-      }
-      on shipmentReceived: event SupplyOrder.ShipmentReceived is {
-        send shipmentReceived to outlet SupplyOrderEvents
-      }
-      on suppliesIssued: event SupplyOrder.SuppliesIssued is {
-        send suppliesIssued to outlet SupplyOrderEvents
-      }
-      on other is {
-        error "Unexpected message for source SupplyOrderEventSource"
-      }
-    } with {
-      briefly "SupplyOrder source handler"
-      described as {
-        |Publishes SupplyOrder events onto the outlet.
-      }
-    }
-  } with {
-    briefly "SupplyOrder event source"
-    described as {
-      |Publishes SupplyOrder entity events into the streaming topology.
-    }
-  }
-  processor SupplyOrderEventSink as sink is {
-    inlet SupplyOrderInlet is type SupplyOrderEvent    handler SupplyOrderSinkHandler is {
-      on requisitionCreated: event SupplyOrder.RequisitionCreated is {
-        tell requisitionCreated to repository SupplyContext.InventoryRepository
-      }
-      on requisitionApproved: event SupplyOrder.RequisitionApproved is {
-        tell requisitionApproved to repository SupplyContext.InventoryRepository
-      }
-      on orderPlaced: event SupplyOrder.OrderPlaced is {
-        tell orderPlaced to repository SupplyContext.InventoryRepository
-      }
-      on shipmentReceived: event SupplyOrder.ShipmentReceived is {
-        tell shipmentReceived to repository SupplyContext.InventoryRepository
-      }
-      on suppliesIssued: event SupplyOrder.SuppliesIssued is {
-        tell suppliesIssued to repository SupplyContext.InventoryRepository
-      }
-      on other is {
-        error "Unexpected message for sink SupplyOrderEventSink"
-      }
-    } with {
-      briefly "SupplyOrder sink handler"
-      described as {
-        |Persists SupplyOrder events via the repository.
-      }
-    }
-  } with {
-    briefly "SupplyOrder event sink"
-    described as {
-      |Receives SupplyOrder events for persistence.
-    }
-  }
-  connector SupplyOrderEventFlow is from outlet SupplyContext.SupplyOrderEventSource.SupplyOrderEvents to inlet SupplyContext.SupplyOrderEventSink.SupplyOrderInlet with {
-    briefly "SupplyOrder event flow"
-    described as {
-      |Connects the SupplyOrder source to its sink.
-    }
-  }
-  processor SupplyOrderEventSplit as split is {
-    inlet SupplyOrderEventSplitIn is type SupplyOrderEvent    outlet SupplyOrderEventSplitToInventoryRepository is type SupplyOrderEvent
+  processor SupplyOrderEventSplit as flow is {
+    inlet SupplyOrderEventSplitIn is type SupplyOrderEvent
     outlet SupplyOrderEventSplitToInventoryMetricsProjector is type SupplyOrderEvent
     handler SupplyOrderEventSplitHandler is {
       on requisitionCreated: event SupplyOrder.RequisitionCreated is {
-        send requisitionCreated to outlet SupplyOrderEventSplitToInventoryRepository
         send requisitionCreated to outlet SupplyOrderEventSplitToInventoryMetricsProjector
         tell requisitionCreated to entity SupplyContext.SupplyOrder
       }
       on requisitionApproved: event SupplyOrder.RequisitionApproved is {
-        send requisitionApproved to outlet SupplyOrderEventSplitToInventoryRepository
         send requisitionApproved to outlet SupplyOrderEventSplitToInventoryMetricsProjector
         tell requisitionApproved to entity SupplyContext.SupplyOrder
       }
       on orderPlaced: event SupplyOrder.OrderPlaced is {
-        send orderPlaced to outlet SupplyOrderEventSplitToInventoryRepository
         send orderPlaced to outlet SupplyOrderEventSplitToInventoryMetricsProjector
         tell orderPlaced to entity SupplyContext.SupplyOrder
       }
       on shipmentReceived: event SupplyOrder.ShipmentReceived is {
-        send shipmentReceived to outlet SupplyOrderEventSplitToInventoryRepository
         send shipmentReceived to outlet SupplyOrderEventSplitToInventoryMetricsProjector
         tell shipmentReceived to entity SupplyContext.SupplyOrder
       }
       on suppliesIssued: event SupplyOrder.SuppliesIssued is {
-        send suppliesIssued to outlet SupplyOrderEventSplitToInventoryRepository
         send suppliesIssued to outlet SupplyOrderEventSplitToInventoryMetricsProjector
         tell suppliesIssued to entity SupplyContext.SupplyOrder
       }
@@ -717,14 +652,11 @@ context SupplyContext as router is {
   connector 'SupplyOrderEvent Stream' is from outlet SupplyContext.SupplyOrder.SupplyOrderEvents2 to inlet SupplyContext.SupplyOrderEventSplit.SupplyOrderEventSplitIn with {
     briefly "SupplyOrder events, fanned out to storage and read models"
   }
-  connector 'SupplyOrderEvent Storage' is from outlet SupplyContext.SupplyOrderEventSplit.SupplyOrderEventSplitToInventoryRepository to inlet SupplyContext.InventoryRepository.InventoryRepositoryFromSupplyOrder with {
-    briefly "SupplyOrder events on their way to storage"
-  }
   connector 'InventoryMetricsProjector Feed' is from outlet SupplyContext.SupplyOrderEventSplit.SupplyOrderEventSplitToInventoryMetricsProjector to inlet SupplyContext.InventoryMetricsProjector.InventoryMetricsProjectorFromSupplyOrder with {
     briefly "SupplyOrder events feeding the InventoryMetricsProjector projection"
   }
-  connector 'InventoryMetricsProjector Storage' is from outlet SupplyContext.InventoryMetricsProjector.InventoryMetricsProjectorOut to inlet SupplyContext.InventoryRepository.InventoryRepositoryFromInventoryMetricsProjector with {
-    briefly "The InventoryMetricsProjector projection on its way to storage"
+  connector 'InventoryMetricsProjector Storage' is from outlet SupplyContext.InventoryMetricsProjector.InventoryMetricsProjectorToRepository to inlet SupplyContext.InventoryRepository.InventoryRepositoryFromInventoryMetricsProjector with {
+    briefly "InventoryMetricsProjector updates on their way to storage"
   }
 } with {
   briefly "Bounded context for hospital supply chain operations"

@@ -28,9 +28,6 @@ context LabContext as router is {
     on cancelOrder: command LabOrder.CancelOrder is {
       send cancelOrder to outlet LabContext.LabOrderCommandStreamOut
     }
-    on initializeLabOrder: command LabOrder.InitializeLabOrder is {
-      send initializeLabOrder to outlet LabContext.LabOrderCommandStreamOut
-    }
     on labOrderResult: result LabOrder.LabOrderResult is {
       send labOrderResult to outlet LabContext.LabOrderResultStreamOut
     }
@@ -279,7 +276,32 @@ context LabContext as router is {
   include "types.riddl"
   include "LabOrder.riddl"
   // Repository for lab order persistence
-  repository LabOrderRepository as merge is {
+  type LabOrderRepositoryCommand is one of {
+    LabContext.LabOrderRepository.PersistCriticalValueReported or LabContext.LabOrderRepository.PersistLabOrderPlaced or LabContext.LabOrderRepository.PersistOrderCancelled or LabContext.LabOrderRepository.PersistResultRecorded or LabContext.LabOrderRepository.PersistResultVerified or LabContext.LabOrderRepository.PersistSpecimenCollected or LabContext.LabOrderRepository.PersistSpecimenReceived or LabContext.LabOrderRepository.PersistTestingStarted
+  } with {
+    briefly "Anything that writes LabOrderRepository"
+    described as {
+      |The persistence commands LabOrderRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository LabOrderRepository as flow is {
+    inlet LabOrderRepositoryFromTurnaroundTimeAnalytics is type LabOrderRepositoryCommand
+    command PersistTestingStarted is  {
+      orderId: LabOrderId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TestingStarted applies to.
+        }
+      }
+    } with {
+      briefly "Persist TestingStarted"
+      described as {
+        |Instructs this repository to apply TestingStarted to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistCriticalValueReported is  {
       orderId: LabOrderId with {
         briefly "Row addressed"
@@ -385,7 +407,7 @@ context LabContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet LabOrderRepositoryFromLabOrder is type LabOrderEvent    inlet LabOrderRepositoryFromTurnaroundTimeAnalytics is type LabOrderEvent    inlet LabOrderRepositoryFromVolumeAnalytics is type LabOrderEvent    inlet LabOrderRepositoryFromCriticalValueTracking is type LabOrderEvent    outlet LabOrderRepositoryResponses is type LabOrder.LabOrderResult
+    outlet LabOrderRepositoryResponses is type LabOrder.LabOrderResult
     record StoredLabOrder is  {
       labOrderId: LabOrderId with {
         briefly "labOrderId"
@@ -429,6 +451,9 @@ context LabContext as router is {
       }
     }
     handler LabOrderPersistence is {
+      on persistTestingStarted: command PersistTestingStarted is {
+        do "apply TestingStarted to the stored row"
+      }
       on persistCriticalValueReported: command PersistCriticalValueReported is {
         do "apply CriticalValueReported to the stored row"
       }
@@ -462,33 +487,9 @@ context LabContext as router is {
         let criticalValueMetricsView: type CriticalValueMetricsView = prompt("read the critical value metrics projection")
         reply criticalValueMetricsView
       }
-      on placeLabOrder: command LabOrder.PlaceLabOrder is {
-        tell event LabOrder.LabOrderPlaced(orderId = placeLabOrder.orderId, patient = placeLabOrder.patient, orderingProvider = placeLabOrder.orderingProvider, facilityId = placeLabOrder.facilityId, orderDetails = placeLabOrder.orderDetails, orderedAt = placeLabOrder.orderedAt) to entity LabContext.LabOrder
-      }
       on collectSpecimen: command LabContext.LabOrder.CollectSpecimen is {
         send event LabOrder.SpecimenCollected(orderId = collectSpecimen.orderId, specimen = collectSpecimen.specimen) to outlet LabOrderEventSplitToSpecimenRepository
         tell event LabOrder.SpecimenCollected(orderId = collectSpecimen.orderId, specimen = collectSpecimen.specimen) to entity LabContext.LabOrder
-      }
-      on receiveSpecimen: command LabOrder.ReceiveSpecimen is {
-        send event LabOrder.SpecimenReceived(orderId = receiveSpecimen.orderId, specimenId = receiveSpecimen.specimenId, receivedBy = receiveSpecimen.receivedBy, receivedAt = receiveSpecimen.receivedAt, specimenCondition = receiveSpecimen.specimenCondition) to outlet LabOrderEventSplitToSpecimenRepository
-        tell event LabOrder.SpecimenReceived(orderId = receiveSpecimen.orderId, specimenId = receiveSpecimen.specimenId, receivedBy = receiveSpecimen.receivedBy, receivedAt = receiveSpecimen.receivedAt, specimenCondition = receiveSpecimen.specimenCondition) to entity LabContext.LabOrder
-      }
-      on startTesting: command LabOrder.StartTesting is {
-        tell event LabOrder.TestingStarted(orderId = startTesting.orderId, testId = startTesting.testId, startedBy = startTesting.startedBy, startedAt = startTesting.startedAt, analyzerId = startTesting.analyzerId) to entity LabContext.LabOrder
-      }
-      on recordResult: command LabOrder.RecordResult is {
-        send event LabOrder.ResultRecorded(orderId = recordResult.orderId, result = recordResult.result) to outlet LabOrderEventSplitToResultRepository
-        tell event LabOrder.ResultRecorded(orderId = recordResult.orderId, result = recordResult.result) to entity LabContext.LabOrder
-      }
-      on verifyResult: command LabOrder.VerifyResult is {
-        send event LabOrder.ResultVerified(orderId = verifyResult.orderId, resultId = verifyResult.resultId, verifiedBy = verifyResult.verifiedBy, verifiedAt = verifyResult.verifiedAt, comments = verifyResult.comments) to outlet LabOrderEventSplitToResultRepository
-        tell event LabOrder.ResultVerified(orderId = verifyResult.orderId, resultId = verifyResult.resultId, verifiedBy = verifyResult.verifiedBy, verifiedAt = verifyResult.verifiedAt, comments = verifyResult.comments) to entity LabContext.LabOrder
-      }
-      on reportCriticalValue: command LabOrder.ReportCriticalValue is {
-        tell event LabOrder.CriticalValueReported(orderId = reportCriticalValue.orderId, criticalValue = reportCriticalValue.criticalValue) to entity LabContext.LabOrder
-      }
-      on cancelOrder: command LabOrder.CancelOrder is {
-        tell event LabOrder.OrderCancelled(orderId = cancelOrder.orderId, cancelledBy = cancelOrder.cancelledBy, cancelledAt = cancelOrder.cancelledAt, reason = cancelOrder.reason) to entity LabContext.LabOrder
       }
     } with {
       briefly "Persists lab order events"
@@ -505,7 +506,7 @@ context LabContext as router is {
   }
   // Repository for specimen tracking
   repository SpecimenRepository as sink is {
-    inlet SpecimenRepositoryFromLabOrder is type LabOrderEvent    schema SpecimenData is relational
+    schema SpecimenData is relational
       of specimens as type SpecimenInfo
         index on field SpecimenInfo.specimenId
         index on field SpecimenInfo.collectedAt
@@ -518,9 +519,6 @@ context LabContext as router is {
     handler SpecimenPersistence is {
       on collectSpecimen: command LabContext.LabOrder.CollectSpecimen is {
         tell event LabOrder.SpecimenCollected(orderId = collectSpecimen.orderId, specimen = collectSpecimen.specimen) to entity LabContext.LabOrder
-      }
-      on receiveSpecimen: command LabOrder.ReceiveSpecimen is {
-        tell event LabOrder.SpecimenReceived(orderId = receiveSpecimen.orderId, specimenId = receiveSpecimen.specimenId, receivedBy = receiveSpecimen.receivedBy, receivedAt = receiveSpecimen.receivedAt, specimenCondition = receiveSpecimen.specimenCondition) to entity LabContext.LabOrder
       }
     } with {
       briefly "Persists specimen data"
@@ -536,7 +534,7 @@ context LabContext as router is {
   }
   // Repository for test results
   repository ResultRepository as sink is {
-    inlet ResultRepositoryFromLabOrder is type LabOrderEvent    schema ResultData is relational
+    schema ResultData is relational
       of results as type TestResult
         index on field TestResult.resultId
         index on field TestResult.testId
@@ -548,12 +546,6 @@ context LabContext as router is {
       }
     }
     handler ResultPersistence is {
-      on recordResult: command LabOrder.RecordResult is {
-        tell event LabOrder.ResultRecorded(orderId = recordResult.orderId, result = recordResult.result) to entity LabContext.LabOrder
-      }
-      on verifyResult: command LabOrder.VerifyResult is {
-        tell event LabOrder.ResultVerified(orderId = verifyResult.orderId, resultId = verifyResult.resultId, verifiedBy = verifyResult.verifiedBy, verifiedAt = verifyResult.verifiedAt, comments = verifyResult.comments) to entity LabContext.LabOrder
-      }
     } with {
       briefly "Persists result data"
       described as {
@@ -594,8 +586,9 @@ context LabContext as router is {
     }
   }
   projector TurnaroundTimeAnalytics as flow is {
+    outlet TurnaroundTimeAnalyticsToRepository is type LabOrderRepositoryCommand
     updates repository LabContext.LabOrderRepository
-    inlet TurnaroundTimeAnalyticsFromLabOrder is type LabOrderEvent    outlet TurnaroundTimeAnalyticsOut is type LabOrderEvent
+    inlet TurnaroundTimeAnalyticsFromLabOrder is type LabOrderEvent
     record TATMetrics is  {
       testCode: String(1,20) with {
         briefly "Test"
@@ -652,6 +645,18 @@ context LabContext as router is {
       }
     }
     handler TATHandler is {
+      on criticalValueReported: event LabOrder.CriticalValueReported is {
+        tell command LabContext.LabOrderRepository.PersistCriticalValueReported(orderId = criticalValueReported.orderId) to repository LabContext.LabOrderRepository
+        do "apply CriticalValueReported to the TurnaroundTimeAnalytics projection"
+      }
+      on orderCancelled: event LabOrder.OrderCancelled is {
+        tell command LabContext.LabOrderRepository.PersistOrderCancelled(orderId = orderCancelled.orderId) to repository LabContext.LabOrderRepository
+        do "apply OrderCancelled to the TurnaroundTimeAnalytics projection"
+      }
+      on testingStarted: event LabOrder.TestingStarted is {
+        tell command LabContext.LabOrderRepository.PersistTestingStarted(orderId = testingStarted.orderId) to repository LabContext.LabOrderRepository
+        do "apply TestingStarted to the TurnaroundTimeAnalytics projection"
+      }
       on labOrderPlaced: event LabOrder.LabOrderPlaced is {
         tell command LabContext.LabOrderRepository.PersistLabOrderPlaced(orderId = labOrderPlaced.orderId) to repository LabContext.LabOrderRepository
       }
@@ -706,9 +711,9 @@ context LabContext as router is {
       |Read model view carrying the volume metrics projection.
     }
   }
-  projector VolumeAnalytics as flow is {
+  projector VolumeAnalytics as sink is {
     updates repository LabContext.LabOrderRepository
-    inlet VolumeAnalyticsFromLabOrder is type LabOrderEvent    outlet VolumeAnalyticsOut is type LabOrderEvent
+    inlet VolumeAnalyticsFromLabOrder is type LabOrderEvent
     record VolumeMetrics is  {
       period: String(1,20) with {
         briefly "Period"
@@ -771,6 +776,22 @@ context LabContext as router is {
       }
     }
     handler VolumeHandler is {
+      on criticalValueReported: event LabOrder.CriticalValueReported is {
+        tell command LabContext.LabOrderRepository.PersistCriticalValueReported(orderId = criticalValueReported.orderId) to repository LabContext.LabOrderRepository
+        do "apply CriticalValueReported to the VolumeAnalytics projection"
+      }
+      on resultVerified: event LabOrder.ResultVerified is {
+        tell command LabContext.LabOrderRepository.PersistResultVerified(orderId = resultVerified.orderId) to repository LabContext.LabOrderRepository
+        do "apply ResultVerified to the VolumeAnalytics projection"
+      }
+      on specimenReceived: event LabOrder.SpecimenReceived is {
+        tell command LabContext.LabOrderRepository.PersistSpecimenReceived(orderId = specimenReceived.orderId) to repository LabContext.LabOrderRepository
+        do "apply SpecimenReceived to the VolumeAnalytics projection"
+      }
+      on testingStarted: event LabOrder.TestingStarted is {
+        tell command LabContext.LabOrderRepository.PersistTestingStarted(orderId = testingStarted.orderId) to repository LabContext.LabOrderRepository
+        do "apply TestingStarted to the VolumeAnalytics projection"
+      }
       on labOrderPlaced: event LabOrder.LabOrderPlaced is {
         tell command LabContext.LabOrderRepository.PersistLabOrderPlaced(orderId = labOrderPlaced.orderId) to repository LabContext.LabOrderRepository
       }
@@ -822,9 +843,9 @@ context LabContext as router is {
       |Read model view carrying the critical value metrics projection.
     }
   }
-  projector CriticalValueTracking as flow is {
+  projector CriticalValueTracking as sink is {
     updates repository LabContext.LabOrderRepository
-    inlet CriticalValueTrackingFromLabOrder is type LabOrderEvent    outlet CriticalValueTrackingOut is type LabOrderEvent
+    inlet CriticalValueTrackingFromLabOrder is type LabOrderEvent
     record CriticalValueMetrics is  {
       period: String(1,20) with {
         briefly "Period"
@@ -875,6 +896,34 @@ context LabContext as router is {
       }
     }
     handler CriticalValueHandler is {
+      on labOrderPlaced: event LabOrder.LabOrderPlaced is {
+        tell command LabContext.LabOrderRepository.PersistLabOrderPlaced(orderId = labOrderPlaced.orderId) to repository LabContext.LabOrderRepository
+        do "apply LabOrderPlaced to the CriticalValueTracking projection"
+      }
+      on orderCancelled: event LabOrder.OrderCancelled is {
+        tell command LabContext.LabOrderRepository.PersistOrderCancelled(orderId = orderCancelled.orderId) to repository LabContext.LabOrderRepository
+        do "apply OrderCancelled to the CriticalValueTracking projection"
+      }
+      on resultRecorded: event LabOrder.ResultRecorded is {
+        tell command LabContext.LabOrderRepository.PersistResultRecorded(orderId = resultRecorded.orderId) to repository LabContext.LabOrderRepository
+        do "apply ResultRecorded to the CriticalValueTracking projection"
+      }
+      on resultVerified: event LabOrder.ResultVerified is {
+        tell command LabContext.LabOrderRepository.PersistResultVerified(orderId = resultVerified.orderId) to repository LabContext.LabOrderRepository
+        do "apply ResultVerified to the CriticalValueTracking projection"
+      }
+      on specimenCollected: event LabOrder.SpecimenCollected is {
+        tell command LabContext.LabOrderRepository.PersistSpecimenCollected(orderId = specimenCollected.orderId) to repository LabContext.LabOrderRepository
+        do "apply SpecimenCollected to the CriticalValueTracking projection"
+      }
+      on specimenReceived: event LabOrder.SpecimenReceived is {
+        tell command LabContext.LabOrderRepository.PersistSpecimenReceived(orderId = specimenReceived.orderId) to repository LabContext.LabOrderRepository
+        do "apply SpecimenReceived to the CriticalValueTracking projection"
+      }
+      on testingStarted: event LabOrder.TestingStarted is {
+        tell command LabContext.LabOrderRepository.PersistTestingStarted(orderId = testingStarted.orderId) to repository LabContext.LabOrderRepository
+        do "apply TestingStarted to the CriticalValueTracking projection"
+      }
       on criticalValueReported: event LabOrder.CriticalValueReported is {
         tell command LabContext.LabOrderRepository.PersistCriticalValueReported(orderId = criticalValueReported.orderId) to repository LabContext.LabOrderRepository
       }
@@ -972,64 +1021,56 @@ context LabContext as router is {
     }
   }
   processor LabOrderEventSplit as split is {
-    inlet LabOrderEventSplitIn is type LabOrderEvent    outlet LabOrderEventSplitToLabOrderRepository is type LabOrderEvent
+    inlet LabOrderEventSplitIn is type LabOrderEvent
     outlet LabOrderEventSplitToTurnaroundTimeAnalytics is type LabOrderEvent
     outlet LabOrderEventSplitToVolumeAnalytics is type LabOrderEvent
     outlet LabOrderEventSplitToCriticalValueTracking is type LabOrderEvent
-    outlet LabOrderEventSplitToSpecimenRepository is type LabOrderEvent
-    outlet LabOrderEventSplitToResultRepository is type LabOrderEvent
+
+
     handler LabOrderEventSplitHandler is {
       on labOrderPlaced: event LabOrder.LabOrderPlaced is {
-        send labOrderPlaced to outlet LabOrderEventSplitToLabOrderRepository
         send labOrderPlaced to outlet LabOrderEventSplitToTurnaroundTimeAnalytics
         send labOrderPlaced to outlet LabOrderEventSplitToVolumeAnalytics
         send labOrderPlaced to outlet LabOrderEventSplitToCriticalValueTracking
         tell labOrderPlaced to entity LabContext.LabOrder
       }
       on specimenCollected: event LabOrder.SpecimenCollected is {
-        send specimenCollected to outlet LabOrderEventSplitToLabOrderRepository
         send specimenCollected to outlet LabOrderEventSplitToTurnaroundTimeAnalytics
         send specimenCollected to outlet LabOrderEventSplitToVolumeAnalytics
         send specimenCollected to outlet LabOrderEventSplitToCriticalValueTracking
         tell specimenCollected to entity LabContext.LabOrder
       }
       on specimenReceived: event LabOrder.SpecimenReceived is {
-        send specimenReceived to outlet LabOrderEventSplitToLabOrderRepository
         send specimenReceived to outlet LabOrderEventSplitToTurnaroundTimeAnalytics
         send specimenReceived to outlet LabOrderEventSplitToVolumeAnalytics
         send specimenReceived to outlet LabOrderEventSplitToCriticalValueTracking
         tell specimenReceived to entity LabContext.LabOrder
       }
       on testingStarted: event LabOrder.TestingStarted is {
-        send testingStarted to outlet LabOrderEventSplitToLabOrderRepository
         send testingStarted to outlet LabOrderEventSplitToTurnaroundTimeAnalytics
         send testingStarted to outlet LabOrderEventSplitToVolumeAnalytics
         send testingStarted to outlet LabOrderEventSplitToCriticalValueTracking
         tell testingStarted to entity LabContext.LabOrder
       }
       on resultRecorded: event LabOrder.ResultRecorded is {
-        send resultRecorded to outlet LabOrderEventSplitToLabOrderRepository
         send resultRecorded to outlet LabOrderEventSplitToTurnaroundTimeAnalytics
         send resultRecorded to outlet LabOrderEventSplitToVolumeAnalytics
         send resultRecorded to outlet LabOrderEventSplitToCriticalValueTracking
         tell resultRecorded to entity LabContext.LabOrder
       }
       on resultVerified: event LabOrder.ResultVerified is {
-        send resultVerified to outlet LabOrderEventSplitToLabOrderRepository
         send resultVerified to outlet LabOrderEventSplitToTurnaroundTimeAnalytics
         send resultVerified to outlet LabOrderEventSplitToVolumeAnalytics
         send resultVerified to outlet LabOrderEventSplitToCriticalValueTracking
         tell resultVerified to entity LabContext.LabOrder
       }
       on criticalValueReported: event LabOrder.CriticalValueReported is {
-        send criticalValueReported to outlet LabOrderEventSplitToLabOrderRepository
         send criticalValueReported to outlet LabOrderEventSplitToTurnaroundTimeAnalytics
         send criticalValueReported to outlet LabOrderEventSplitToVolumeAnalytics
         send criticalValueReported to outlet LabOrderEventSplitToCriticalValueTracking
         tell criticalValueReported to entity LabContext.LabOrder
       }
       on orderCancelled: event LabOrder.OrderCancelled is {
-        send orderCancelled to outlet LabOrderEventSplitToLabOrderRepository
         send orderCancelled to outlet LabOrderEventSplitToTurnaroundTimeAnalytics
         send orderCancelled to outlet LabOrderEventSplitToVolumeAnalytics
         send orderCancelled to outlet LabOrderEventSplitToCriticalValueTracking
@@ -1053,9 +1094,6 @@ context LabContext as router is {
   connector 'LabOrderEvent Stream' is from outlet LabContext.LabOrder.LabOrderEvents2 to inlet LabContext.LabOrderEventSplit.LabOrderEventSplitIn with {
     briefly "LabOrder events, fanned out to storage and read models"
   }
-  connector 'LabOrderEvent Storage' is from outlet LabContext.LabOrderEventSplit.LabOrderEventSplitToLabOrderRepository to inlet LabContext.LabOrderRepository.LabOrderRepositoryFromLabOrder with {
-    briefly "LabOrder events on their way to storage"
-  }
   connector 'TurnaroundTimeAnalytics Feed' is from outlet LabContext.LabOrderEventSplit.LabOrderEventSplitToTurnaroundTimeAnalytics to inlet LabContext.TurnaroundTimeAnalytics.TurnaroundTimeAnalyticsFromLabOrder with {
     briefly "LabOrder events feeding the TurnaroundTimeAnalytics projection"
   }
@@ -1065,23 +1103,11 @@ context LabContext as router is {
   connector 'CriticalValueTracking Feed' is from outlet LabContext.LabOrderEventSplit.LabOrderEventSplitToCriticalValueTracking to inlet LabContext.CriticalValueTracking.CriticalValueTrackingFromLabOrder with {
     briefly "LabOrder events feeding the CriticalValueTracking projection"
   }
-  connector 'TurnaroundTimeAnalytics Storage' is from outlet LabContext.TurnaroundTimeAnalytics.TurnaroundTimeAnalyticsOut to inlet LabContext.LabOrderRepository.LabOrderRepositoryFromTurnaroundTimeAnalytics with {
-    briefly "The TurnaroundTimeAnalytics projection on its way to storage"
-  }
-  connector 'VolumeAnalytics Storage' is from outlet LabContext.VolumeAnalytics.VolumeAnalyticsOut to inlet LabContext.LabOrderRepository.LabOrderRepositoryFromVolumeAnalytics with {
-    briefly "The VolumeAnalytics projection on its way to storage"
-  }
-  connector 'CriticalValueTracking Storage' is from outlet LabContext.CriticalValueTracking.CriticalValueTrackingOut to inlet LabContext.LabOrderRepository.LabOrderRepositoryFromCriticalValueTracking with {
-    briefly "The CriticalValueTracking projection on its way to storage"
-  }
   connector 'SendCriticalAlert Stream' is from outlet LabContext.LabOrder.LabOrderToPhysicianNotification to inlet LabContext.ToPhysicianNotificationService.OutgoingCriticalAlerts with {
     briefly "Critical alerts from the lab order to its adaptor"
   }
-  connector 'SpecimenRepository Storage' is from outlet LabContext.LabOrderEventSplit.LabOrderEventSplitToSpecimenRepository to inlet LabContext.SpecimenRepository.SpecimenRepositoryFromLabOrder with {
-    briefly "Specimen lifecycle events on their way to specimen storage"
-  }
-  connector 'ResultRepository Storage' is from outlet LabContext.LabOrderEventSplit.LabOrderEventSplitToResultRepository to inlet LabContext.ResultRepository.ResultRepositoryFromLabOrder with {
-    briefly "Test result events on their way to result storage"
+  connector 'TurnaroundTimeAnalytics Storage' is from outlet LabContext.TurnaroundTimeAnalytics.TurnaroundTimeAnalyticsToRepository to inlet LabContext.LabOrderRepository.LabOrderRepositoryFromTurnaroundTimeAnalytics with {
+    briefly "TurnaroundTimeAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for laboratory orders"

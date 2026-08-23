@@ -27,9 +27,6 @@ context CNCContext as router is {
     on updateMetrics: command CNCMachine.UpdateMetrics is {
       send updateMetrics to outlet CNCContext.CNCMachineCommandStreamOut
     }
-    on initializeCNCMachine: command CNCMachine.InitializeCNCMachine is {
-      send initializeCNCMachine to outlet CNCContext.CNCMachineCommandStreamOut
-    }
     on cNCMachineResult: result CNCMachine.CNCMachineResult is {
       send cNCMachineResult to outlet CNCContext.CNCMachineResultStreamOut
     }
@@ -221,7 +218,32 @@ context CNCContext as router is {
   include "types.riddl"
   include "CNCMachine.riddl"
   // Repository for CNC data persistence
-  repository CNCRepository as merge is {
+  type CNCRepositoryCommand is one of {
+    CNCContext.CNCRepository.PersistAlarmCleared or CNCContext.CNCRepository.PersistAlarmRaised or CNCContext.CNCRepository.PersistCycleCompleted or CNCContext.CNCRepository.PersistCyclePaused or CNCContext.CNCRepository.PersistCycleStarted or CNCContext.CNCRepository.PersistMachineSetup or CNCContext.CNCRepository.PersistMetricsUpdated or CNCContext.CNCRepository.PersistProgramLoaded
+  } with {
+    briefly "Anything that writes CNCRepository"
+    described as {
+      |The persistence commands CNCRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository CNCRepository as flow is {
+    inlet CNCRepositoryFromMachineUtilization is type CNCRepositoryCommand
+    command PersistMetricsUpdated is  {
+      machineId: MachineId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row MetricsUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist MetricsUpdated"
+      described as {
+        |Instructs this repository to apply MetricsUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistAlarmCleared is  {
       machineId: MachineId with {
         briefly "Row addressed"
@@ -327,7 +349,7 @@ context CNCContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet CNCRepositoryFromCNCMachine is type CNCMachineEvent    inlet CNCRepositoryFromMachineUtilization is type CNCMachineEvent    inlet CNCRepositoryFromCycleTimeAnalytics is type CNCMachineEvent    inlet CNCRepositoryFromOEEAnalytics is type CNCMachineEvent    inlet CNCRepositoryFromAlarmAnalytics is type CNCMachineEvent    outlet CNCRepositoryResponses is type CNCMachine.CNCMachineResult
+    outlet CNCRepositoryResponses is type CNCMachine.CNCMachineResult
     record StoredCNCMachine is  {
       cNCMachineId: UUID with {
         briefly "cNCMachineId"
@@ -364,6 +386,9 @@ context CNCContext as router is {
       }
     }
     handler CNCPersistence is {
+      on persistMetricsUpdated: command PersistMetricsUpdated is {
+        do "apply MetricsUpdated to the stored row"
+      }
       on persistAlarmCleared: command PersistAlarmCleared is {
         do "apply AlarmCleared to the stored row"
       }
@@ -400,33 +425,6 @@ context CNCContext as router is {
       on query GetAlarmStats is {
         let alarmStatsView: type AlarmStatsView = prompt("read the alarm stats projection")
         reply alarmStatsView
-      }
-      on loadProgram: command CNCMachine.LoadProgram is {
-        tell event CNCMachine.ProgramLoaded(machineId = loadProgram.machineId, program = loadProgram.program, loadedBy = loadProgram.loadedBy) to entity CNCContext.CNCMachine
-      }
-      on command CNCMachine.SetupMachine is {
-        do "Store machine setup"
-      }
-      on startCycle: command CNCMachine.StartCycle is {
-        tell event CNCMachine.CycleStarted(machineId = startCycle.machineId, cycleType = startCycle.cycleType, workOrderId = startCycle.workOrderId, startedBy = startCycle.startedBy) to entity CNCContext.CNCMachine
-        do "Store cycle start"
-      }
-      on command CNCMachine.PauseCycle is {
-        do "Store cycle pause"
-      }
-      on completeCycle: command CNCMachine.CompleteCycle is {
-        tell event CNCMachine.CycleCompleted(machineId = completeCycle.machineId, partsProduced = completeCycle.partsProduced, scrappedParts = completeCycle.scrappedParts, completedBy = completeCycle.completedBy) to entity CNCContext.CNCMachine
-        do "Store cycle completion"
-      }
-      on command CNCMachine.ReportAlarm is {
-        do "Store alarm event"
-      }
-      on command CNCMachine.ClearAlarm is {
-        do "Store alarm resolution"
-      }
-      on updateMetrics: command CNCMachine.UpdateMetrics is {
-        tell event CNCMachine.MetricsUpdated(machineId = updateMetrics.machineId, metrics = updateMetrics.metrics) to entity CNCContext.CNCMachine
-        do "Store metrics snapshot"
       }
     } with {
       briefly "Persists CNC machine events"
@@ -469,8 +467,9 @@ context CNCContext as router is {
     }
   }
   projector MachineUtilization as flow is {
+    outlet MachineUtilizationToRepository is type CNCRepositoryCommand
     updates repository CNCContext.CNCRepository
-    inlet MachineUtilizationFromCNCMachine is type CNCMachineEvent    outlet MachineUtilizationOut is type CNCMachineEvent
+    inlet MachineUtilizationFromCNCMachine is type CNCMachineEvent
     record UtilizationStats is  {
       machineId: MachineId with {
         briefly "Machine"
@@ -533,6 +532,14 @@ context CNCContext as router is {
       }
     }
     handler UtilizationHandler is {
+      on metricsUpdated: event CNCMachine.MetricsUpdated is {
+        tell command CNCContext.CNCRepository.PersistMetricsUpdated(machineId = metricsUpdated.machineId) to repository CNCContext.CNCRepository
+        do "apply MetricsUpdated to the MachineUtilization projection"
+      }
+      on programLoaded: event CNCMachine.ProgramLoaded is {
+        tell command CNCContext.CNCRepository.PersistProgramLoaded(machineId = programLoaded.machineId) to repository CNCContext.CNCRepository
+        do "apply ProgramLoaded to the MachineUtilization projection"
+      }
       on cycleStarted: event CNCMachine.CycleStarted is {
         tell command CNCContext.CNCRepository.PersistCycleStarted(machineId = cycleStarted.machineId) to repository CNCContext.CNCRepository
         do "Update run time tracking"
@@ -596,9 +603,9 @@ context CNCContext as router is {
       |Read model view carrying the cycle time stats projection.
     }
   }
-  projector CycleTimeAnalytics as flow is {
+  projector CycleTimeAnalytics as sink is {
     updates repository CNCContext.CNCRepository
-    inlet CycleTimeAnalyticsFromCNCMachine is type CNCMachineEvent    outlet CycleTimeAnalyticsOut is type CNCMachineEvent
+    inlet CycleTimeAnalyticsFromCNCMachine is type CNCMachineEvent
     record CycleTimeStats is  {
       programId: ProgramId with {
         briefly "Program"
@@ -661,6 +668,30 @@ context CNCContext as router is {
       }
     }
     handler CycleTimeHandler is {
+      on alarmCleared: event CNCMachine.AlarmCleared is {
+        tell command CNCContext.CNCRepository.PersistAlarmCleared(machineId = alarmCleared.machineId) to repository CNCContext.CNCRepository
+        do "apply AlarmCleared to the CycleTimeAnalytics projection"
+      }
+      on alarmRaised: event CNCMachine.AlarmRaised is {
+        tell command CNCContext.CNCRepository.PersistAlarmRaised(machineId = alarmRaised.machineId) to repository CNCContext.CNCRepository
+        do "apply AlarmRaised to the CycleTimeAnalytics projection"
+      }
+      on cyclePaused: event CNCMachine.CyclePaused is {
+        tell command CNCContext.CNCRepository.PersistCyclePaused(machineId = cyclePaused.machineId) to repository CNCContext.CNCRepository
+        do "apply CyclePaused to the CycleTimeAnalytics projection"
+      }
+      on cycleStarted: event CNCMachine.CycleStarted is {
+        tell command CNCContext.CNCRepository.PersistCycleStarted(machineId = cycleStarted.machineId) to repository CNCContext.CNCRepository
+        do "apply CycleStarted to the CycleTimeAnalytics projection"
+      }
+      on machineSetup: event CNCMachine.MachineSetup is {
+        tell command CNCContext.CNCRepository.PersistMachineSetup(machineId = machineSetup.machineId) to repository CNCContext.CNCRepository
+        do "apply MachineSetup to the CycleTimeAnalytics projection"
+      }
+      on metricsUpdated: event CNCMachine.MetricsUpdated is {
+        tell command CNCContext.CNCRepository.PersistMetricsUpdated(machineId = metricsUpdated.machineId) to repository CNCContext.CNCRepository
+        do "apply MetricsUpdated to the CycleTimeAnalytics projection"
+      }
       on cycleCompleted: event CNCMachine.CycleCompleted is {
         tell command CNCContext.CNCRepository.PersistCycleCompleted(machineId = cycleCompleted.machineId) to repository CNCContext.CNCRepository
         do "Update cycle time statistics"
@@ -708,9 +739,9 @@ context CNCContext as router is {
       |Read model view carrying the oee stats projection.
     }
   }
-  projector OEEAnalytics as flow is {
+  projector OEEAnalytics as sink is {
     updates repository CNCContext.CNCRepository
-    inlet OEEAnalyticsFromCNCMachine is type CNCMachineEvent    outlet OEEAnalyticsOut is type CNCMachineEvent
+    inlet OEEAnalyticsFromCNCMachine is type CNCMachineEvent
     record OEEStats is  {
       machineId: MachineId with {
         briefly "Machine"
@@ -791,6 +822,18 @@ context CNCContext as router is {
       }
     }
     handler OEEHandler is {
+      on cyclePaused: event CNCMachine.CyclePaused is {
+        tell command CNCContext.CNCRepository.PersistCyclePaused(machineId = cyclePaused.machineId) to repository CNCContext.CNCRepository
+        do "apply CyclePaused to the OEEAnalytics projection"
+      }
+      on metricsUpdated: event CNCMachine.MetricsUpdated is {
+        tell command CNCContext.CNCRepository.PersistMetricsUpdated(machineId = metricsUpdated.machineId) to repository CNCContext.CNCRepository
+        do "apply MetricsUpdated to the OEEAnalytics projection"
+      }
+      on programLoaded: event CNCMachine.ProgramLoaded is {
+        tell command CNCContext.CNCRepository.PersistProgramLoaded(machineId = programLoaded.machineId) to repository CNCContext.CNCRepository
+        do "apply ProgramLoaded to the OEEAnalytics projection"
+      }
       on cycleStarted: event CNCMachine.CycleStarted is {
         tell command CNCContext.CNCRepository.PersistCycleStarted(machineId = cycleStarted.machineId) to repository CNCContext.CNCRepository
         do "Track availability - production started"
@@ -851,9 +894,9 @@ context CNCContext as router is {
       |Read model view carrying the alarm stats projection.
     }
   }
-  projector AlarmAnalytics as flow is {
+  projector AlarmAnalytics as sink is {
     updates repository CNCContext.CNCRepository
-    inlet AlarmAnalyticsFromCNCMachine is type CNCMachineEvent    outlet AlarmAnalyticsOut is type CNCMachineEvent
+    inlet AlarmAnalyticsFromCNCMachine is type CNCMachineEvent
     record AlarmStats is  {
       machineId: MachineId with {
         briefly "Machine"
@@ -904,6 +947,30 @@ context CNCContext as router is {
       }
     }
     handler AlarmStatsHandler is {
+      on cycleCompleted: event CNCMachine.CycleCompleted is {
+        tell command CNCContext.CNCRepository.PersistCycleCompleted(machineId = cycleCompleted.machineId) to repository CNCContext.CNCRepository
+        do "apply CycleCompleted to the AlarmAnalytics projection"
+      }
+      on cyclePaused: event CNCMachine.CyclePaused is {
+        tell command CNCContext.CNCRepository.PersistCyclePaused(machineId = cyclePaused.machineId) to repository CNCContext.CNCRepository
+        do "apply CyclePaused to the AlarmAnalytics projection"
+      }
+      on cycleStarted: event CNCMachine.CycleStarted is {
+        tell command CNCContext.CNCRepository.PersistCycleStarted(machineId = cycleStarted.machineId) to repository CNCContext.CNCRepository
+        do "apply CycleStarted to the AlarmAnalytics projection"
+      }
+      on machineSetup: event CNCMachine.MachineSetup is {
+        tell command CNCContext.CNCRepository.PersistMachineSetup(machineId = machineSetup.machineId) to repository CNCContext.CNCRepository
+        do "apply MachineSetup to the AlarmAnalytics projection"
+      }
+      on metricsUpdated: event CNCMachine.MetricsUpdated is {
+        tell command CNCContext.CNCRepository.PersistMetricsUpdated(machineId = metricsUpdated.machineId) to repository CNCContext.CNCRepository
+        do "apply MetricsUpdated to the AlarmAnalytics projection"
+      }
+      on programLoaded: event CNCMachine.ProgramLoaded is {
+        tell command CNCContext.CNCRepository.PersistProgramLoaded(machineId = programLoaded.machineId) to repository CNCContext.CNCRepository
+        do "apply ProgramLoaded to the AlarmAnalytics projection"
+      }
       on alarmRaised: event CNCMachine.AlarmRaised is {
         tell command CNCContext.CNCRepository.PersistAlarmRaised(machineId = alarmRaised.machineId) to repository CNCContext.CNCRepository
         do "Increment alarm occurrence count"
@@ -934,104 +1001,14 @@ context CNCContext as router is {
       |persistence.
     }
   }
-  processor CNCMachineEventSource as source is {
-    outlet CNCMachineEvents is type CNCMachineEvent
-    handler CNCMachineSourceHandler is {
-      on programLoaded: event CNCMachine.ProgramLoaded is {
-        send programLoaded to outlet CNCMachineEvents
-      }
-      on machineSetup: event CNCMachine.MachineSetup is {
-        send machineSetup to outlet CNCMachineEvents
-      }
-      on cycleStarted: event CNCMachine.CycleStarted is {
-        send cycleStarted to outlet CNCMachineEvents
-      }
-      on cyclePaused: event CNCMachine.CyclePaused is {
-        send cyclePaused to outlet CNCMachineEvents
-      }
-      on cycleCompleted: event CNCMachine.CycleCompleted is {
-        send cycleCompleted to outlet CNCMachineEvents
-      }
-      on alarmRaised: event CNCMachine.AlarmRaised is {
-        send alarmRaised to outlet CNCMachineEvents
-      }
-      on alarmCleared: event CNCMachine.AlarmCleared is {
-        send alarmCleared to outlet CNCMachineEvents
-      }
-      on metricsUpdated: event CNCMachine.MetricsUpdated is {
-        send metricsUpdated to outlet CNCMachineEvents
-      }
-      on other is {
-        error "Unexpected message for source CNCMachineEventSource"
-      }
-    } with {
-      briefly "CNCMachine source handler"
-      described as {
-        |Publishes CNCMachine events onto the outlet.
-      }
-    }
-  } with {
-    briefly "CNCMachine event source"
-    described as {
-      |Publishes CNCMachine entity events into the streaming topology.
-    }
-  }
-  processor CNCMachineEventSink as sink is {
-    inlet CNCMachineInlet is type CNCMachineEvent    handler CNCMachineSinkHandler is {
-      on programLoaded: event CNCMachine.ProgramLoaded is {
-        tell programLoaded to repository CNCContext.CNCRepository
-      }
-      on machineSetup: event CNCMachine.MachineSetup is {
-        tell machineSetup to repository CNCContext.CNCRepository
-      }
-      on cycleStarted: event CNCMachine.CycleStarted is {
-        tell cycleStarted to repository CNCContext.CNCRepository
-      }
-      on cyclePaused: event CNCMachine.CyclePaused is {
-        tell cyclePaused to repository CNCContext.CNCRepository
-      }
-      on cycleCompleted: event CNCMachine.CycleCompleted is {
-        tell cycleCompleted to repository CNCContext.CNCRepository
-      }
-      on alarmRaised: event CNCMachine.AlarmRaised is {
-        tell alarmRaised to repository CNCContext.CNCRepository
-      }
-      on alarmCleared: event CNCMachine.AlarmCleared is {
-        tell alarmCleared to repository CNCContext.CNCRepository
-      }
-      on metricsUpdated: event CNCMachine.MetricsUpdated is {
-        tell metricsUpdated to repository CNCContext.CNCRepository
-      }
-      on other is {
-        error "Unexpected message for sink CNCMachineEventSink"
-      }
-    } with {
-      briefly "CNCMachine sink handler"
-      described as {
-        |Persists CNCMachine events via the repository.
-      }
-    }
-  } with {
-    briefly "CNCMachine event sink"
-    described as {
-      |Receives CNCMachine events for persistence.
-    }
-  }
-  connector CNCMachineEventFlow is from outlet CNCContext.CNCMachineEventSource.CNCMachineEvents to inlet CNCContext.CNCMachineEventSink.CNCMachineInlet with {
-    briefly "CNCMachine event flow"
-    described as {
-      |Connects the CNCMachine source to its sink.
-    }
-  }
   processor CNCMachineEventSplit as split is {
-    inlet CNCMachineEventSplitIn is type CNCMachineEvent    outlet CNCMachineEventSplitToCNCRepository is type CNCMachineEvent
+    inlet CNCMachineEventSplitIn is type CNCMachineEvent
     outlet CNCMachineEventSplitToMachineUtilization is type CNCMachineEvent
     outlet CNCMachineEventSplitToCycleTimeAnalytics is type CNCMachineEvent
     outlet CNCMachineEventSplitToOEEAnalytics is type CNCMachineEvent
     outlet CNCMachineEventSplitToAlarmAnalytics is type CNCMachineEvent
     handler CNCMachineEventSplitHandler is {
       on programLoaded: event CNCMachine.ProgramLoaded is {
-        send programLoaded to outlet CNCMachineEventSplitToCNCRepository
         send programLoaded to outlet CNCMachineEventSplitToMachineUtilization
         send programLoaded to outlet CNCMachineEventSplitToCycleTimeAnalytics
         send programLoaded to outlet CNCMachineEventSplitToOEEAnalytics
@@ -1039,7 +1016,6 @@ context CNCContext as router is {
         tell programLoaded to entity CNCContext.CNCMachine
       }
       on machineSetup: event CNCMachine.MachineSetup is {
-        send machineSetup to outlet CNCMachineEventSplitToCNCRepository
         send machineSetup to outlet CNCMachineEventSplitToMachineUtilization
         send machineSetup to outlet CNCMachineEventSplitToCycleTimeAnalytics
         send machineSetup to outlet CNCMachineEventSplitToOEEAnalytics
@@ -1047,7 +1023,6 @@ context CNCContext as router is {
         tell machineSetup to entity CNCContext.CNCMachine
       }
       on cycleStarted: event CNCMachine.CycleStarted is {
-        send cycleStarted to outlet CNCMachineEventSplitToCNCRepository
         send cycleStarted to outlet CNCMachineEventSplitToMachineUtilization
         send cycleStarted to outlet CNCMachineEventSplitToCycleTimeAnalytics
         send cycleStarted to outlet CNCMachineEventSplitToOEEAnalytics
@@ -1055,7 +1030,6 @@ context CNCContext as router is {
         tell cycleStarted to entity CNCContext.CNCMachine
       }
       on cyclePaused: event CNCMachine.CyclePaused is {
-        send cyclePaused to outlet CNCMachineEventSplitToCNCRepository
         send cyclePaused to outlet CNCMachineEventSplitToMachineUtilization
         send cyclePaused to outlet CNCMachineEventSplitToCycleTimeAnalytics
         send cyclePaused to outlet CNCMachineEventSplitToOEEAnalytics
@@ -1063,7 +1037,6 @@ context CNCContext as router is {
         tell cyclePaused to entity CNCContext.CNCMachine
       }
       on cycleCompleted: event CNCMachine.CycleCompleted is {
-        send cycleCompleted to outlet CNCMachineEventSplitToCNCRepository
         send cycleCompleted to outlet CNCMachineEventSplitToMachineUtilization
         send cycleCompleted to outlet CNCMachineEventSplitToCycleTimeAnalytics
         send cycleCompleted to outlet CNCMachineEventSplitToOEEAnalytics
@@ -1071,7 +1044,6 @@ context CNCContext as router is {
         tell cycleCompleted to entity CNCContext.CNCMachine
       }
       on alarmRaised: event CNCMachine.AlarmRaised is {
-        send alarmRaised to outlet CNCMachineEventSplitToCNCRepository
         send alarmRaised to outlet CNCMachineEventSplitToMachineUtilization
         send alarmRaised to outlet CNCMachineEventSplitToCycleTimeAnalytics
         send alarmRaised to outlet CNCMachineEventSplitToOEEAnalytics
@@ -1079,7 +1051,6 @@ context CNCContext as router is {
         tell alarmRaised to entity CNCContext.CNCMachine
       }
       on alarmCleared: event CNCMachine.AlarmCleared is {
-        send alarmCleared to outlet CNCMachineEventSplitToCNCRepository
         send alarmCleared to outlet CNCMachineEventSplitToMachineUtilization
         send alarmCleared to outlet CNCMachineEventSplitToCycleTimeAnalytics
         send alarmCleared to outlet CNCMachineEventSplitToOEEAnalytics
@@ -1087,7 +1058,6 @@ context CNCContext as router is {
         tell alarmCleared to entity CNCContext.CNCMachine
       }
       on metricsUpdated: event CNCMachine.MetricsUpdated is {
-        send metricsUpdated to outlet CNCMachineEventSplitToCNCRepository
         send metricsUpdated to outlet CNCMachineEventSplitToMachineUtilization
         send metricsUpdated to outlet CNCMachineEventSplitToCycleTimeAnalytics
         send metricsUpdated to outlet CNCMachineEventSplitToOEEAnalytics
@@ -1112,9 +1082,6 @@ context CNCContext as router is {
   connector 'CNCMachineEvent Stream' is from outlet CNCContext.CNCMachine.CNCMachineEvents2 to inlet CNCContext.CNCMachineEventSplit.CNCMachineEventSplitIn with {
     briefly "CNCMachine events, fanned out to storage and read models"
   }
-  connector 'CNCMachineEvent Storage' is from outlet CNCContext.CNCMachineEventSplit.CNCMachineEventSplitToCNCRepository to inlet CNCContext.CNCRepository.CNCRepositoryFromCNCMachine with {
-    briefly "CNCMachine events on their way to storage"
-  }
   connector 'MachineUtilization Feed' is from outlet CNCContext.CNCMachineEventSplit.CNCMachineEventSplitToMachineUtilization to inlet CNCContext.MachineUtilization.MachineUtilizationFromCNCMachine with {
     briefly "CNCMachine events feeding the MachineUtilization projection"
   }
@@ -1127,17 +1094,8 @@ context CNCContext as router is {
   connector 'AlarmAnalytics Feed' is from outlet CNCContext.CNCMachineEventSplit.CNCMachineEventSplitToAlarmAnalytics to inlet CNCContext.AlarmAnalytics.AlarmAnalyticsFromCNCMachine with {
     briefly "CNCMachine events feeding the AlarmAnalytics projection"
   }
-  connector 'MachineUtilization Storage' is from outlet CNCContext.MachineUtilization.MachineUtilizationOut to inlet CNCContext.CNCRepository.CNCRepositoryFromMachineUtilization with {
-    briefly "The MachineUtilization projection on its way to storage"
-  }
-  connector 'CycleTimeAnalytics Storage' is from outlet CNCContext.CycleTimeAnalytics.CycleTimeAnalyticsOut to inlet CNCContext.CNCRepository.CNCRepositoryFromCycleTimeAnalytics with {
-    briefly "The CycleTimeAnalytics projection on its way to storage"
-  }
-  connector 'OEEAnalytics Storage' is from outlet CNCContext.OEEAnalytics.OEEAnalyticsOut to inlet CNCContext.CNCRepository.CNCRepositoryFromOEEAnalytics with {
-    briefly "The OEEAnalytics projection on its way to storage"
-  }
-  connector 'AlarmAnalytics Storage' is from outlet CNCContext.AlarmAnalytics.AlarmAnalyticsOut to inlet CNCContext.CNCRepository.CNCRepositoryFromAlarmAnalytics with {
-    briefly "The AlarmAnalytics projection on its way to storage"
+  connector 'MachineUtilization Storage' is from outlet CNCContext.MachineUtilization.MachineUtilizationToRepository to inlet CNCContext.CNCRepository.CNCRepositoryFromMachineUtilization with {
+    briefly "MachineUtilization updates on their way to storage"
   }
 } with {
   briefly "Bounded context for CNC operations"

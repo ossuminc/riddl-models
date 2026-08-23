@@ -115,7 +115,62 @@ context PrescriptionContext as router is {
   // ───────────────────────────────────────────────────────────────────────────
   // Repository
   // ───────────────────────────────────────────────────────────────────────────
-  repository PrescriptionRepository as merge is {
+  type PrescriptionRepositoryCommand is one of {
+    PrescriptionContext.PrescriptionRepository.PersistHoldReleased or PrescriptionContext.PrescriptionRepository.PersistPrescriptionOnHold or PrescriptionContext.PrescriptionRepository.PersistPrescriptionReceived or PrescriptionContext.PrescriptionRepository.PersistPrescriptionSuspended or PrescriptionContext.PrescriptionRepository.PersistPrescriptionTransferred or PrescriptionContext.PrescriptionRepository.PersistPrescriptionVerified or PrescriptionContext.PrescriptionRepository.PersistRefillApproved or PrescriptionContext.PrescriptionRepository.PersistRefillRequested
+  } with {
+    briefly "Anything that writes PrescriptionRepository"
+    described as {
+      |The persistence commands PrescriptionRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository PrescriptionRepository as flow is {
+    inlet PrescriptionRepositoryFromRefillRateProjector is type PrescriptionRepositoryCommand
+    command PersistPrescriptionReceived is  {
+      prescriptionId: PrescriptionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row PrescriptionReceived applies to.
+        }
+      }
+    } with {
+      briefly "Persist PrescriptionReceived"
+      described as {
+        |Instructs this repository to apply PrescriptionReceived to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistPrescriptionSuspended is  {
+      prescriptionId: PrescriptionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row PrescriptionSuspended applies to.
+        }
+      }
+    } with {
+      briefly "Persist PrescriptionSuspended"
+      described as {
+        |Instructs this repository to apply PrescriptionSuspended to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistPrescriptionVerified is  {
+      prescriptionId: PrescriptionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row PrescriptionVerified applies to.
+        }
+      }
+    } with {
+      briefly "Persist PrescriptionVerified"
+      described as {
+        |Instructs this repository to apply PrescriptionVerified to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistHoldReleased is  {
       prescriptionId: PrescriptionId with {
         briefly "Row addressed"
@@ -213,7 +268,7 @@ context PrescriptionContext as router is {
         |The relational schema persisting prescription records for this repository.
       }
     }
-    inlet PrescriptionRepositoryFromPrescription is type PrescriptionEvent    inlet PrescriptionRepositoryFromRefillRateProjector is type PrescriptionEvent    inlet PrescriptionRepositoryFromTransferMetricsProjector is type PrescriptionEvent    inlet PrescriptionRepositoryFromHoldAnalysisProjector is type PrescriptionEvent    outlet PrescriptionRepositoryResponses is type Prescription.PrescriptionQueryResult
+    outlet PrescriptionRepositoryResponses is type Prescription.PrescriptionQueryResult
     // Prescription queries
     query FindPrescriptionById replies result PrescriptionResult is  {
       prescriptionId: PrescriptionId with {
@@ -469,6 +524,15 @@ context PrescriptionContext as router is {
       }
     }
     handler RepositoryHandler is {
+      on persistPrescriptionReceived: command PersistPrescriptionReceived is {
+        do "apply PrescriptionReceived to the stored row"
+      }
+      on persistPrescriptionSuspended: command PersistPrescriptionSuspended is {
+        do "apply PrescriptionSuspended to the stored row"
+      }
+      on persistPrescriptionVerified: command PersistPrescriptionVerified is {
+        do "apply PrescriptionVerified to the stored row"
+      }
       on persistHoldReleased: command PersistHoldReleased is {
         do "apply HoldReleased to the stored row"
       }
@@ -569,8 +633,9 @@ context PrescriptionContext as router is {
     }
   }
   projector RefillRateProjector as flow is {
+    outlet RefillRateProjectorToRepository is type PrescriptionRepositoryCommand
     updates repository PrescriptionContext.PrescriptionRepository
-    inlet RefillRateProjectorFromPrescription is type PrescriptionEvent    outlet RefillRateProjectorOut is type PrescriptionEvent
+    inlet RefillRateProjectorFromPrescription is type PrescriptionEvent
     record RefillRateMetrics is  {
       pharmacyId: PharmacyId with {
         briefly "Pharmacy"
@@ -639,6 +704,30 @@ context PrescriptionContext as router is {
       }
     }
     handler RefillRateHandler is {
+      on holdReleased: event Prescription.HoldReleased is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistHoldReleased(prescriptionId = holdReleased.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply HoldReleased to the RefillRateProjector projection"
+      }
+      on prescriptionOnHold: event Prescription.PrescriptionOnHold is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionOnHold(prescriptionId = prescriptionOnHold.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionOnHold to the RefillRateProjector projection"
+      }
+      on prescriptionReceived: event Prescription.PrescriptionReceived is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionReceived(prescriptionId = prescriptionReceived.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionReceived to the RefillRateProjector projection"
+      }
+      on prescriptionSuspended: event Prescription.PrescriptionSuspended is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionSuspended(prescriptionId = prescriptionSuspended.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionSuspended to the RefillRateProjector projection"
+      }
+      on prescriptionTransferred: event Prescription.PrescriptionTransferred is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionTransferred(prescriptionId = prescriptionTransferred.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionTransferred to the RefillRateProjector projection"
+      }
+      on prescriptionVerified: event Prescription.PrescriptionVerified is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionVerified(prescriptionId = prescriptionVerified.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionVerified to the RefillRateProjector projection"
+      }
       on refillRequested: event Prescription.RefillRequested is {
         tell command PrescriptionContext.PrescriptionRepository.PersistRefillRequested(prescriptionId = refillRequested.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
       }
@@ -683,9 +772,9 @@ context PrescriptionContext as router is {
       |Read model view carrying the transfer metrics projection.
     }
   }
-  projector TransferMetricsProjector as flow is {
+  projector TransferMetricsProjector as sink is {
     updates repository PrescriptionContext.PrescriptionRepository
-    inlet TransferMetricsProjectorFromPrescription is type PrescriptionEvent    outlet TransferMetricsProjectorOut is type PrescriptionEvent
+    inlet TransferMetricsProjectorFromPrescription is type PrescriptionEvent
     record TransferReasonCount is  {
       transferReason: TransferReason with {
         briefly "Reason"
@@ -792,6 +881,34 @@ context PrescriptionContext as router is {
       }
     }
     handler TransferMetricsHandler is {
+      on holdReleased: event Prescription.HoldReleased is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistHoldReleased(prescriptionId = holdReleased.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply HoldReleased to the TransferMetricsProjector projection"
+      }
+      on prescriptionOnHold: event Prescription.PrescriptionOnHold is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionOnHold(prescriptionId = prescriptionOnHold.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionOnHold to the TransferMetricsProjector projection"
+      }
+      on prescriptionReceived: event Prescription.PrescriptionReceived is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionReceived(prescriptionId = prescriptionReceived.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionReceived to the TransferMetricsProjector projection"
+      }
+      on prescriptionSuspended: event Prescription.PrescriptionSuspended is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionSuspended(prescriptionId = prescriptionSuspended.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionSuspended to the TransferMetricsProjector projection"
+      }
+      on prescriptionVerified: event Prescription.PrescriptionVerified is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionVerified(prescriptionId = prescriptionVerified.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionVerified to the TransferMetricsProjector projection"
+      }
+      on refillApproved: event Prescription.RefillApproved is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistRefillApproved(prescriptionId = refillApproved.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply RefillApproved to the TransferMetricsProjector projection"
+      }
+      on refillRequested: event Prescription.RefillRequested is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistRefillRequested(prescriptionId = refillRequested.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply RefillRequested to the TransferMetricsProjector projection"
+      }
       on prescriptionTransferred: event Prescription.PrescriptionTransferred is {
         tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionTransferred(prescriptionId = prescriptionTransferred.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
       }
@@ -833,9 +950,9 @@ context PrescriptionContext as router is {
       |Read model view carrying the hold analysis metrics projection.
     }
   }
-  projector HoldAnalysisProjector as flow is {
+  projector HoldAnalysisProjector as sink is {
     updates repository PrescriptionContext.PrescriptionRepository
-    inlet HoldAnalysisProjectorFromPrescription is type PrescriptionEvent    outlet HoldAnalysisProjectorOut is type PrescriptionEvent
+    inlet HoldAnalysisProjectorFromPrescription is type PrescriptionEvent
     record HoldReasonCount is  {
       holdReason: HoldReason with {
         briefly "Reason"
@@ -923,6 +1040,30 @@ context PrescriptionContext as router is {
       }
     }
     handler HoldAnalysisHandler is {
+      on prescriptionReceived: event Prescription.PrescriptionReceived is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionReceived(prescriptionId = prescriptionReceived.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionReceived to the HoldAnalysisProjector projection"
+      }
+      on prescriptionSuspended: event Prescription.PrescriptionSuspended is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionSuspended(prescriptionId = prescriptionSuspended.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionSuspended to the HoldAnalysisProjector projection"
+      }
+      on prescriptionTransferred: event Prescription.PrescriptionTransferred is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionTransferred(prescriptionId = prescriptionTransferred.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionTransferred to the HoldAnalysisProjector projection"
+      }
+      on prescriptionVerified: event Prescription.PrescriptionVerified is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionVerified(prescriptionId = prescriptionVerified.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply PrescriptionVerified to the HoldAnalysisProjector projection"
+      }
+      on refillApproved: event Prescription.RefillApproved is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistRefillApproved(prescriptionId = refillApproved.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply RefillApproved to the HoldAnalysisProjector projection"
+      }
+      on refillRequested: event Prescription.RefillRequested is {
+        tell command PrescriptionContext.PrescriptionRepository.PersistRefillRequested(prescriptionId = refillRequested.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
+        do "apply RefillRequested to the HoldAnalysisProjector projection"
+      }
       on prescriptionOnHold: event Prescription.PrescriptionOnHold is {
         tell command PrescriptionContext.PrescriptionRepository.PersistPrescriptionOnHold(prescriptionId = prescriptionOnHold.prescriptionId) to repository PrescriptionContext.PrescriptionRepository
       }
@@ -951,152 +1092,55 @@ context PrescriptionContext as router is {
       |persistence.
     }
   }
-  processor PrescriptionEventSource as source is {
-    outlet PrescriptionEvents is type PrescriptionEvent
-    handler PrescriptionSourceHandler is {
-      on prescriptionReceived: event Prescription.PrescriptionReceived is {
-        send prescriptionReceived to outlet PrescriptionEvents
-      }
-      on prescriptionVerified: event Prescription.PrescriptionVerified is {
-        send prescriptionVerified to outlet PrescriptionEvents
-      }
-      on refillRequested: event Prescription.RefillRequested is {
-        send refillRequested to outlet PrescriptionEvents
-      }
-      on refillApproved: event Prescription.RefillApproved is {
-        send refillApproved to outlet PrescriptionEvents
-      }
-      on prescriptionOnHold: event Prescription.PrescriptionOnHold is {
-        send prescriptionOnHold to outlet PrescriptionEvents
-      }
-      on holdReleased: event Prescription.HoldReleased is {
-        send holdReleased to outlet PrescriptionEvents
-      }
-      on prescriptionTransferred: event Prescription.PrescriptionTransferred is {
-        send prescriptionTransferred to outlet PrescriptionEvents
-      }
-      on prescriptionSuspended: event Prescription.PrescriptionSuspended is {
-        send prescriptionSuspended to outlet PrescriptionEvents
-      }
-      on other is {
-        error "Unexpected message for source PrescriptionEventSource"
-      }
-    } with {
-      briefly "Prescription source handler"
-      described as {
-        |Publishes Prescription events onto the outlet.
-      }
-    }
-  } with {
-    briefly "Prescription event source"
-    described as {
-      |Publishes Prescription entity events into the streaming topology.
-    }
-  }
-  processor PrescriptionEventSink as sink is {
-    inlet PrescriptionInlet is type PrescriptionEvent    handler PrescriptionSinkHandler is {
-      on prescriptionReceived: event Prescription.PrescriptionReceived is {
-        tell prescriptionReceived to repository PrescriptionContext.PrescriptionRepository
-      }
-      on prescriptionVerified: event Prescription.PrescriptionVerified is {
-        tell prescriptionVerified to repository PrescriptionContext.PrescriptionRepository
-      }
-      on refillRequested: event Prescription.RefillRequested is {
-        tell refillRequested to repository PrescriptionContext.PrescriptionRepository
-      }
-      on refillApproved: event Prescription.RefillApproved is {
-        tell refillApproved to repository PrescriptionContext.PrescriptionRepository
-      }
-      on prescriptionOnHold: event Prescription.PrescriptionOnHold is {
-        tell prescriptionOnHold to repository PrescriptionContext.PrescriptionRepository
-      }
-      on holdReleased: event Prescription.HoldReleased is {
-        tell holdReleased to repository PrescriptionContext.PrescriptionRepository
-      }
-      on prescriptionTransferred: event Prescription.PrescriptionTransferred is {
-        tell prescriptionTransferred to repository PrescriptionContext.PrescriptionRepository
-      }
-      on prescriptionSuspended: event Prescription.PrescriptionSuspended is {
-        tell prescriptionSuspended to repository PrescriptionContext.PrescriptionRepository
-      }
-      on other is {
-        error "Unexpected message for sink PrescriptionEventSink"
-      }
-    } with {
-      briefly "Prescription sink handler"
-      described as {
-        |Persists Prescription events via the repository.
-      }
-    }
-  } with {
-    briefly "Prescription event sink"
-    described as {
-      |Receives Prescription events for persistence.
-    }
-  }
-  connector PrescriptionEventFlow is from outlet PrescriptionContext.PrescriptionEventSource.PrescriptionEvents to inlet PrescriptionContext.PrescriptionEventSink.PrescriptionInlet with {
-    briefly "Prescription event flow"
-    described as {
-      |Connects the Prescription source to its sink.
-    }
-  }
   processor PrescriptionEventSplit as split is {
-    inlet PrescriptionEventSplitIn is type PrescriptionEvent    outlet PrescriptionEventSplitToPrescriptionRepository is type PrescriptionEvent
+    inlet PrescriptionEventSplitIn is type PrescriptionEvent
     outlet PrescriptionEventSplitToRefillRateProjector is type PrescriptionEvent
     outlet PrescriptionEventSplitToTransferMetricsProjector is type PrescriptionEvent
     outlet PrescriptionEventSplitToHoldAnalysisProjector is type PrescriptionEvent
     handler PrescriptionEventSplitHandler is {
       on prescriptionReceived: event Prescription.PrescriptionReceived is {
-        send prescriptionReceived to outlet PrescriptionEventSplitToPrescriptionRepository
         send prescriptionReceived to outlet PrescriptionEventSplitToRefillRateProjector
         send prescriptionReceived to outlet PrescriptionEventSplitToTransferMetricsProjector
         send prescriptionReceived to outlet PrescriptionEventSplitToHoldAnalysisProjector
         tell prescriptionReceived to entity PrescriptionContext.Prescription
       }
       on prescriptionVerified: event Prescription.PrescriptionVerified is {
-        send prescriptionVerified to outlet PrescriptionEventSplitToPrescriptionRepository
         send prescriptionVerified to outlet PrescriptionEventSplitToRefillRateProjector
         send prescriptionVerified to outlet PrescriptionEventSplitToTransferMetricsProjector
         send prescriptionVerified to outlet PrescriptionEventSplitToHoldAnalysisProjector
         tell prescriptionVerified to entity PrescriptionContext.Prescription
       }
       on refillRequested: event Prescription.RefillRequested is {
-        send refillRequested to outlet PrescriptionEventSplitToPrescriptionRepository
         send refillRequested to outlet PrescriptionEventSplitToRefillRateProjector
         send refillRequested to outlet PrescriptionEventSplitToTransferMetricsProjector
         send refillRequested to outlet PrescriptionEventSplitToHoldAnalysisProjector
         tell refillRequested to entity PrescriptionContext.Prescription
       }
       on refillApproved: event Prescription.RefillApproved is {
-        send refillApproved to outlet PrescriptionEventSplitToPrescriptionRepository
         send refillApproved to outlet PrescriptionEventSplitToRefillRateProjector
         send refillApproved to outlet PrescriptionEventSplitToTransferMetricsProjector
         send refillApproved to outlet PrescriptionEventSplitToHoldAnalysisProjector
         tell refillApproved to entity PrescriptionContext.Prescription
       }
       on prescriptionOnHold: event Prescription.PrescriptionOnHold is {
-        send prescriptionOnHold to outlet PrescriptionEventSplitToPrescriptionRepository
         send prescriptionOnHold to outlet PrescriptionEventSplitToRefillRateProjector
         send prescriptionOnHold to outlet PrescriptionEventSplitToTransferMetricsProjector
         send prescriptionOnHold to outlet PrescriptionEventSplitToHoldAnalysisProjector
         tell prescriptionOnHold to entity PrescriptionContext.Prescription
       }
       on holdReleased: event Prescription.HoldReleased is {
-        send holdReleased to outlet PrescriptionEventSplitToPrescriptionRepository
         send holdReleased to outlet PrescriptionEventSplitToRefillRateProjector
         send holdReleased to outlet PrescriptionEventSplitToTransferMetricsProjector
         send holdReleased to outlet PrescriptionEventSplitToHoldAnalysisProjector
         tell holdReleased to entity PrescriptionContext.Prescription
       }
       on prescriptionTransferred: event Prescription.PrescriptionTransferred is {
-        send prescriptionTransferred to outlet PrescriptionEventSplitToPrescriptionRepository
         send prescriptionTransferred to outlet PrescriptionEventSplitToRefillRateProjector
         send prescriptionTransferred to outlet PrescriptionEventSplitToTransferMetricsProjector
         send prescriptionTransferred to outlet PrescriptionEventSplitToHoldAnalysisProjector
         tell prescriptionTransferred to entity PrescriptionContext.Prescription
       }
       on prescriptionSuspended: event Prescription.PrescriptionSuspended is {
-        send prescriptionSuspended to outlet PrescriptionEventSplitToPrescriptionRepository
         send prescriptionSuspended to outlet PrescriptionEventSplitToRefillRateProjector
         send prescriptionSuspended to outlet PrescriptionEventSplitToTransferMetricsProjector
         send prescriptionSuspended to outlet PrescriptionEventSplitToHoldAnalysisProjector
@@ -1120,9 +1164,6 @@ context PrescriptionContext as router is {
   connector 'PrescriptionEvent Stream' is from outlet PrescriptionContext.Prescription.PrescriptionEvents2 to inlet PrescriptionContext.PrescriptionEventSplit.PrescriptionEventSplitIn with {
     briefly "Prescription events, fanned out to storage and read models"
   }
-  connector 'PrescriptionEvent Storage' is from outlet PrescriptionContext.PrescriptionEventSplit.PrescriptionEventSplitToPrescriptionRepository to inlet PrescriptionContext.PrescriptionRepository.PrescriptionRepositoryFromPrescription with {
-    briefly "Prescription events on their way to storage"
-  }
   connector 'RefillRateProjector Feed' is from outlet PrescriptionContext.PrescriptionEventSplit.PrescriptionEventSplitToRefillRateProjector to inlet PrescriptionContext.RefillRateProjector.RefillRateProjectorFromPrescription with {
     briefly "Prescription events feeding the RefillRateProjector projection"
   }
@@ -1132,14 +1173,8 @@ context PrescriptionContext as router is {
   connector 'HoldAnalysisProjector Feed' is from outlet PrescriptionContext.PrescriptionEventSplit.PrescriptionEventSplitToHoldAnalysisProjector to inlet PrescriptionContext.HoldAnalysisProjector.HoldAnalysisProjectorFromPrescription with {
     briefly "Prescription events feeding the HoldAnalysisProjector projection"
   }
-  connector 'RefillRateProjector Storage' is from outlet PrescriptionContext.RefillRateProjector.RefillRateProjectorOut to inlet PrescriptionContext.PrescriptionRepository.PrescriptionRepositoryFromRefillRateProjector with {
-    briefly "The RefillRateProjector projection on its way to storage"
-  }
-  connector 'TransferMetricsProjector Storage' is from outlet PrescriptionContext.TransferMetricsProjector.TransferMetricsProjectorOut to inlet PrescriptionContext.PrescriptionRepository.PrescriptionRepositoryFromTransferMetricsProjector with {
-    briefly "The TransferMetricsProjector projection on its way to storage"
-  }
-  connector 'HoldAnalysisProjector Storage' is from outlet PrescriptionContext.HoldAnalysisProjector.HoldAnalysisProjectorOut to inlet PrescriptionContext.PrescriptionRepository.PrescriptionRepositoryFromHoldAnalysisProjector with {
-    briefly "The HoldAnalysisProjector projection on its way to storage"
+  connector 'RefillRateProjector Storage' is from outlet PrescriptionContext.RefillRateProjector.RefillRateProjectorToRepository to inlet PrescriptionContext.PrescriptionRepository.PrescriptionRepositoryFromRefillRateProjector with {
+    briefly "RefillRateProjector updates on their way to storage"
   }
 } with {
   briefly "Prescription Management context"

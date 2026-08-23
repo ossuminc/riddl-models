@@ -27,9 +27,6 @@ context MerchantContext as router is {
     on terminateMerchant: command Merchant.TerminateMerchant is {
       send terminateMerchant to outlet MerchantContext.MerchantCommandStreamOut
     }
-    on initializeMerchant: command Merchant.InitializeMerchant is {
-      send initializeMerchant to outlet MerchantContext.MerchantCommandStreamOut
-    }
     on merchantResult: result Merchant.MerchantResult is {
       send merchantResult to outlet MerchantContext.MerchantResultStreamOut
     }
@@ -293,7 +290,77 @@ context MerchantContext as router is {
   include "types.riddl"
   include "Merchant.riddl"
   // Repository for merchant persistence
-  repository MerchantRepository as merge is {
+  type MerchantRepositoryCommand is one of {
+    MerchantContext.MerchantRepository.PersistApplicationApproved or MerchantContext.MerchantRepository.PersistApplicationDeclined or MerchantContext.MerchantRepository.PersistApplicationSubmitted or MerchantContext.MerchantRepository.PersistMerchantActivated or MerchantContext.MerchantRepository.PersistMerchantReactivated or MerchantContext.MerchantRepository.PersistMerchantSuspended or MerchantContext.MerchantRepository.PersistMerchantTerminated or MerchantContext.MerchantRepository.PersistPricingUpdated
+  } with {
+    briefly "Anything that writes MerchantRepository"
+    described as {
+      |The persistence commands MerchantRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository MerchantRepository as flow is {
+    inlet MerchantRepositoryFromMerchantAnalytics is type MerchantRepositoryCommand
+    command PersistApplicationDeclined is  {
+      merchantId: MerchantId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ApplicationDeclined applies to.
+        }
+      }
+    } with {
+      briefly "Persist ApplicationDeclined"
+      described as {
+        |Instructs this repository to apply ApplicationDeclined to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistMerchantReactivated is  {
+      merchantId: MerchantId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row MerchantReactivated applies to.
+        }
+      }
+    } with {
+      briefly "Persist MerchantReactivated"
+      described as {
+        |Instructs this repository to apply MerchantReactivated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistMerchantSuspended is  {
+      merchantId: MerchantId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row MerchantSuspended applies to.
+        }
+      }
+    } with {
+      briefly "Persist MerchantSuspended"
+      described as {
+        |Instructs this repository to apply MerchantSuspended to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistPricingUpdated is  {
+      merchantId: MerchantId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row PricingUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist PricingUpdated"
+      described as {
+        |Instructs this repository to apply PricingUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistApplicationApproved is  {
       merchantId: MerchantId with {
         briefly "Row addressed"
@@ -354,7 +421,7 @@ context MerchantContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet MerchantRepositoryFromMerchant is type MerchantEvent    inlet MerchantRepositoryFromMerchantAnalytics is type MerchantEvent    outlet MerchantRepositoryResponses is type Merchant.MerchantResult
+    outlet MerchantRepositoryResponses is type Merchant.MerchantResult
     record StoredMerchant is  {
       merchantId: MerchantId with {
         briefly "merchantId"
@@ -385,6 +452,18 @@ context MerchantContext as router is {
       }
     }
     handler MerchantPersistence is {
+      on persistApplicationDeclined: command PersistApplicationDeclined is {
+        do "apply ApplicationDeclined to the stored row"
+      }
+      on persistMerchantReactivated: command PersistMerchantReactivated is {
+        do "apply MerchantReactivated to the stored row"
+      }
+      on persistMerchantSuspended: command PersistMerchantSuspended is {
+        do "apply MerchantSuspended to the stored row"
+      }
+      on persistPricingUpdated: command PersistPricingUpdated is {
+        do "apply PricingUpdated to the stored row"
+      }
       on persistApplicationApproved: command PersistApplicationApproved is {
         do "apply ApplicationApproved to the stored row"
       }
@@ -400,30 +479,6 @@ context MerchantContext as router is {
       on query GetMerchantStats is {
         let merchantStatsView: type MerchantStatsView = prompt("read the merchant stats projection")
         reply merchantStatsView
-      }
-      on submitApplication: command Merchant.SubmitApplication is {
-        tell event Merchant.ApplicationSubmitted(merchantId = submitApplication.merchantId, business = submitApplication.business, contact = submitApplication.contact) to entity MerchantContext.Merchant
-      }
-      on approveApplication: command Merchant.ApproveApplication is {
-        tell event Merchant.ApplicationApproved(merchantId = approveApplication.merchantId, decision = approveApplication.decision, pricing = approveApplication.pricing) to entity MerchantContext.Merchant
-      }
-      on declineApplication: command Merchant.DeclineApplication is {
-        tell event Merchant.ApplicationDeclined(merchantId = declineApplication.merchantId, reason = declineApplication.reason) to entity MerchantContext.Merchant
-      }
-      on activateMerchant: command Merchant.ActivateMerchant is {
-        tell event Merchant.MerchantActivated(merchantId = activateMerchant.merchantId, activatedBy = activateMerchant.activatedBy) to entity MerchantContext.Merchant
-      }
-      on updatePricing: command Merchant.UpdatePricing is {
-        tell event Merchant.PricingUpdated(merchantId = updatePricing.merchantId, newPricing = updatePricing.newPricing, effectiveDate = updatePricing.effectiveDate) to entity MerchantContext.Merchant
-      }
-      on suspendMerchant: command Merchant.SuspendMerchant is {
-        tell event Merchant.MerchantSuspended(merchantId = suspendMerchant.merchantId, reason = suspendMerchant.reason) to entity MerchantContext.Merchant
-      }
-      on reactivateMerchant: command Merchant.ReactivateMerchant is {
-        tell event Merchant.MerchantReactivated(merchantId = reactivateMerchant.merchantId, notes = reactivateMerchant.notes) to entity MerchantContext.Merchant
-      }
-      on terminateMerchant: command Merchant.TerminateMerchant is {
-        tell event Merchant.MerchantTerminated(merchantId = terminateMerchant.merchantId, reason = terminateMerchant.reason) to entity MerchantContext.Merchant
       }
     } with {
       briefly "Persists merchant commands"
@@ -466,8 +521,9 @@ context MerchantContext as router is {
     }
   }
   projector MerchantAnalytics as flow is {
+    outlet MerchantAnalyticsToRepository is type MerchantRepositoryCommand
     updates repository MerchantContext.MerchantRepository
-    inlet MerchantAnalyticsFromMerchant is type MerchantEvent    outlet MerchantAnalyticsOut is type MerchantEvent
+    inlet MerchantAnalyticsFromMerchant is type MerchantEvent
     record MerchantStats is  {
       totalApplications: Natural with {
         briefly "Applications"
@@ -512,6 +568,22 @@ context MerchantContext as router is {
       }
     }
     handler AnalyticsHandler is {
+      on applicationDeclined: event Merchant.ApplicationDeclined is {
+        tell command MerchantContext.MerchantRepository.PersistApplicationDeclined(merchantId = applicationDeclined.merchantId) to repository MerchantContext.MerchantRepository
+        do "apply ApplicationDeclined to the MerchantAnalytics projection"
+      }
+      on merchantReactivated: event Merchant.MerchantReactivated is {
+        tell command MerchantContext.MerchantRepository.PersistMerchantReactivated(merchantId = merchantReactivated.merchantId) to repository MerchantContext.MerchantRepository
+        do "apply MerchantReactivated to the MerchantAnalytics projection"
+      }
+      on merchantSuspended: event Merchant.MerchantSuspended is {
+        tell command MerchantContext.MerchantRepository.PersistMerchantSuspended(merchantId = merchantSuspended.merchantId) to repository MerchantContext.MerchantRepository
+        do "apply MerchantSuspended to the MerchantAnalytics projection"
+      }
+      on pricingUpdated: event Merchant.PricingUpdated is {
+        tell command MerchantContext.MerchantRepository.PersistPricingUpdated(merchantId = pricingUpdated.merchantId) to repository MerchantContext.MerchantRepository
+        do "apply PricingUpdated to the MerchantAnalytics projection"
+      }
       on applicationSubmitted: event Merchant.ApplicationSubmitted is {
         tell command MerchantContext.MerchantRepository.PersistApplicationSubmitted(merchantId = applicationSubmitted.merchantId) to repository MerchantContext.MerchantRepository
       }
@@ -536,112 +608,39 @@ context MerchantContext as router is {
       |Maintains merchant portfolio analytics data.
     }
   }
-  processor MerchantEventSource as source is {
-    outlet MerchantEvents is type MerchantEvent
-    handler MerchantEventEmitter is {
-      on init is {
-        let initializeMerchant: type InitializeMerchant = prompt("the initialize merchant that brings this this into existence")
-        tell initializeMerchant to entity MerchantContext.Merchant
-      }
-      on other is {
-        error "Unexpected message for source MerchantEventSource"
-      }
-      on applicationSubmitted: event Merchant.ApplicationSubmitted is {
-        send applicationSubmitted to outlet MerchantEvents
-      }
-      on merchantActivated: event Merchant.MerchantActivated is {
-        send merchantActivated to outlet MerchantEvents
-      }
-      on merchantSuspended: event Merchant.MerchantSuspended is {
-        send merchantSuspended to outlet MerchantEvents
-      }
-      on merchantTerminated: event Merchant.MerchantTerminated is {
-        send merchantTerminated to outlet MerchantEvents
-      }
-    } with {
-      briefly "Merchant event emitter"
-      described as {
-        |Emits merchant lifecycle events into the streaming
-        |topology.
-      }
-    }
-  } with {
-    briefly "Merchant event source"
-    described as {
-      |Publishes merchant entity events for streaming.
-    }
-  }
-  processor MerchantEventSink as sink is {
-    inlet IncomingMerchantEvents is type MerchantEvent    handler MerchantEventReceiver is {
-      on init is { ??? }
-      on other is {
-        error "Unexpected message for sink MerchantEventSink"
-      }
-      on applicationSubmitted: event Merchant.ApplicationSubmitted is {
-        tell applicationSubmitted to repository MerchantContext.MerchantRepository
-      }
-      on merchantTerminated: event Merchant.MerchantTerminated is {
-        tell merchantTerminated to repository MerchantContext.MerchantRepository
-      }
-    } with {
-      briefly "Merchant event receiver"
-      described as {
-        |Receives merchant events and persists them.
-      }
-    }
-  } with {
-    briefly "Merchant event sink"
-    described as {
-      |Receives merchant events from the streaming topology.
-    }
-  }
-  connector MerchantEventPipeline is from outlet MerchantContext.MerchantEventSource.MerchantEvents to inlet MerchantContext.MerchantEventSink.IncomingMerchantEvents with {
-    briefly "Merchant event pipeline"
-    described as {
-      |Wires merchant events from source to sink.
-    }
-  }
-  processor MerchantEventSplit as split is {
-    inlet MerchantEventSplitIn is type MerchantEvent    outlet MerchantEventSplitToMerchantRepository is type MerchantEvent
+  processor MerchantEventSplit as flow is {
+    inlet MerchantEventSplitIn is type MerchantEvent
     outlet MerchantEventSplitToMerchantAnalytics is type MerchantEvent
     handler MerchantEventSplitHandler is {
       on applicationSubmitted: event Merchant.ApplicationSubmitted is {
-        send applicationSubmitted to outlet MerchantEventSplitToMerchantRepository
         send applicationSubmitted to outlet MerchantEventSplitToMerchantAnalytics
         tell applicationSubmitted to entity MerchantContext.Merchant
       }
       on applicationApproved: event Merchant.ApplicationApproved is {
-        send applicationApproved to outlet MerchantEventSplitToMerchantRepository
         send applicationApproved to outlet MerchantEventSplitToMerchantAnalytics
         tell applicationApproved to entity MerchantContext.Merchant
       }
       on applicationDeclined: event Merchant.ApplicationDeclined is {
-        send applicationDeclined to outlet MerchantEventSplitToMerchantRepository
         send applicationDeclined to outlet MerchantEventSplitToMerchantAnalytics
         tell applicationDeclined to entity MerchantContext.Merchant
       }
       on merchantActivated: event Merchant.MerchantActivated is {
-        send merchantActivated to outlet MerchantEventSplitToMerchantRepository
         send merchantActivated to outlet MerchantEventSplitToMerchantAnalytics
         tell merchantActivated to entity MerchantContext.Merchant
       }
       on pricingUpdated: event Merchant.PricingUpdated is {
-        send pricingUpdated to outlet MerchantEventSplitToMerchantRepository
         send pricingUpdated to outlet MerchantEventSplitToMerchantAnalytics
         tell pricingUpdated to entity MerchantContext.Merchant
       }
       on merchantSuspended: event Merchant.MerchantSuspended is {
-        send merchantSuspended to outlet MerchantEventSplitToMerchantRepository
         send merchantSuspended to outlet MerchantEventSplitToMerchantAnalytics
         tell merchantSuspended to entity MerchantContext.Merchant
       }
       on merchantReactivated: event Merchant.MerchantReactivated is {
-        send merchantReactivated to outlet MerchantEventSplitToMerchantRepository
         send merchantReactivated to outlet MerchantEventSplitToMerchantAnalytics
         tell merchantReactivated to entity MerchantContext.Merchant
       }
       on merchantTerminated: event Merchant.MerchantTerminated is {
-        send merchantTerminated to outlet MerchantEventSplitToMerchantRepository
         send merchantTerminated to outlet MerchantEventSplitToMerchantAnalytics
         tell merchantTerminated to entity MerchantContext.Merchant
       }
@@ -663,14 +662,11 @@ context MerchantContext as router is {
   connector 'MerchantEvent Stream' is from outlet MerchantContext.Merchant.MerchantEvents2 to inlet MerchantContext.MerchantEventSplit.MerchantEventSplitIn with {
     briefly "Merchant events, fanned out to storage and read models"
   }
-  connector 'MerchantEvent Storage' is from outlet MerchantContext.MerchantEventSplit.MerchantEventSplitToMerchantRepository to inlet MerchantContext.MerchantRepository.MerchantRepositoryFromMerchant with {
-    briefly "Merchant events on their way to storage"
-  }
   connector 'MerchantAnalytics Feed' is from outlet MerchantContext.MerchantEventSplit.MerchantEventSplitToMerchantAnalytics to inlet MerchantContext.MerchantAnalytics.MerchantAnalyticsFromMerchant with {
     briefly "Merchant events feeding the MerchantAnalytics projection"
   }
-  connector 'MerchantAnalytics Storage' is from outlet MerchantContext.MerchantAnalytics.MerchantAnalyticsOut to inlet MerchantContext.MerchantRepository.MerchantRepositoryFromMerchantAnalytics with {
-    briefly "The MerchantAnalytics projection on its way to storage"
+  connector 'MerchantAnalytics Storage' is from outlet MerchantContext.MerchantAnalytics.MerchantAnalyticsToRepository to inlet MerchantContext.MerchantRepository.MerchantRepositoryFromMerchantAnalytics with {
+    briefly "MerchantAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for merchant acquiring"

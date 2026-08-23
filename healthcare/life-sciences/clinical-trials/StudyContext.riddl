@@ -123,7 +123,62 @@ context StudyContext as router is {
     }
   }
   include "ClinicalStudy.riddl"
-  repository StudyRepository as merge is {
+  type StudyRepositoryCommand is one of {
+    StudyContext.StudyRepository.PersistDataSubmitted or StudyContext.StudyRepository.PersistSiteActivated or StudyContext.StudyRepository.PersistStudyClosed or StudyContext.StudyRepository.PersistStudyCreated or StudyContext.StudyRepository.PersistStudyStatusUpdated or StudyContext.StudyRepository.PersistSubjectEnrolled or StudyContext.StudyRepository.PersistVisitRecorded
+  } with {
+    briefly "Anything that writes StudyRepository"
+    described as {
+      |The persistence commands StudyRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository StudyRepository as flow is {
+    inlet StudyRepositoryFromEnrollmentMetricsProjector is type StudyRepositoryCommand
+    command PersistDataSubmitted is  {
+      studyId: StudyId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row DataSubmitted applies to.
+        }
+      }
+    } with {
+      briefly "Persist DataSubmitted"
+      described as {
+        |Instructs this repository to apply DataSubmitted to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistStudyStatusUpdated is  {
+      studyId: StudyId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row StudyStatusUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist StudyStatusUpdated"
+      described as {
+        |Instructs this repository to apply StudyStatusUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistVisitRecorded is  {
+      studyId: StudyId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row VisitRecorded applies to.
+        }
+      }
+    } with {
+      briefly "Persist VisitRecorded"
+      described as {
+        |Instructs this repository to apply VisitRecorded to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistSiteActivated is  {
       studyId: StudyId with {
         briefly "Row addressed"
@@ -206,7 +261,7 @@ context StudyContext as router is {
         |The relational schema persisting clinical study records for this repository.
       }
     }
-    inlet StudyRepositoryFromClinicalStudy is type ClinicalStudyEvent    inlet StudyRepositoryFromEnrollmentMetricsProjector is type ClinicalStudyEvent    outlet StudyRepositoryResponses is type ClinicalStudy.ClinicalStudyResult
+    outlet StudyRepositoryResponses is type ClinicalStudy.ClinicalStudyResult
     type StudyRecord is {
       studyId: StudyId
       protocol: StudyProtocol
@@ -264,6 +319,15 @@ context StudyContext as router is {
       }
     }
     handler StudyRepositoryHandler is {
+      on persistDataSubmitted: command PersistDataSubmitted is {
+        do "apply DataSubmitted to the stored row"
+      }
+      on persistStudyStatusUpdated: command PersistStudyStatusUpdated is {
+        do "apply StudyStatusUpdated to the stored row"
+      }
+      on persistVisitRecorded: command PersistVisitRecorded is {
+        do "apply VisitRecorded to the stored row"
+      }
       on persistSiteActivated: command PersistSiteActivated is {
         do "apply SiteActivated to the stored row"
       }
@@ -339,8 +403,9 @@ context StudyContext as router is {
     }
   }
   projector EnrollmentMetricsProjector as flow is {
+    outlet EnrollmentMetricsProjectorToRepository is type StudyRepositoryCommand
     updates repository StudyContext.StudyRepository
-    inlet EnrollmentMetricsProjectorFromClinicalStudy is type ClinicalStudyEvent    outlet EnrollmentMetricsProjectorOut is type ClinicalStudyEvent
+    inlet EnrollmentMetricsProjectorFromClinicalStudy is type ClinicalStudyEvent
     record EnrollmentState is  {
       studyId: StudyId
       totalSites: Integer
@@ -359,6 +424,18 @@ context StudyContext as router is {
       }
     }
     handler MetricsProjectorHandler is {
+      on dataSubmitted: event ClinicalStudy.DataSubmitted is {
+        tell command StudyContext.StudyRepository.PersistDataSubmitted(studyId = dataSubmitted.studyId) to repository StudyContext.StudyRepository
+        do "apply DataSubmitted to the EnrollmentMetricsProjector projection"
+      }
+      on studyStatusUpdated: event ClinicalStudy.StudyStatusUpdated is {
+        tell command StudyContext.StudyRepository.PersistStudyStatusUpdated(studyId = studyStatusUpdated.studyId) to repository StudyContext.StudyRepository
+        do "apply StudyStatusUpdated to the EnrollmentMetricsProjector projection"
+      }
+      on visitRecorded: event ClinicalStudy.VisitRecorded is {
+        tell command StudyContext.StudyRepository.PersistVisitRecorded(studyId = visitRecorded.studyId) to repository StudyContext.StudyRepository
+        do "apply VisitRecorded to the EnrollmentMetricsProjector projection"
+      }
       on subjectEnrolled: event ClinicalStudy.SubjectEnrolled is {
         tell command StudyContext.StudyRepository.PersistSubjectEnrolled(studyId = subjectEnrolled.studyId) to repository StudyContext.StudyRepository
       }
@@ -396,125 +473,35 @@ context StudyContext as router is {
       |persistence.
     }
   }
-  processor ClinicalStudyEventSource as source is {
-    outlet ClinicalStudyEvents is type ClinicalStudyEvent
-    handler ClinicalStudySourceHandler is {
-      on studyCreated: event ClinicalStudy.StudyCreated is {
-        send studyCreated to outlet ClinicalStudyEvents
-      }
-      on siteActivated: event ClinicalStudy.SiteActivated is {
-        send siteActivated to outlet ClinicalStudyEvents
-      }
-      on subjectEnrolled: event ClinicalStudy.SubjectEnrolled is {
-        send subjectEnrolled to outlet ClinicalStudyEvents
-      }
-      on visitRecorded: event ClinicalStudy.VisitRecorded is {
-        send visitRecorded to outlet ClinicalStudyEvents
-      }
-      on dataSubmitted: event ClinicalStudy.DataSubmitted is {
-        send dataSubmitted to outlet ClinicalStudyEvents
-      }
-      on studyClosed: event ClinicalStudy.StudyClosed is {
-        send studyClosed to outlet ClinicalStudyEvents
-      }
-      on studyStatusUpdated: event ClinicalStudy.StudyStatusUpdated is {
-        send studyStatusUpdated to outlet ClinicalStudyEvents
-      }
-      on other is {
-        error "Unexpected message for source ClinicalStudyEventSource"
-      }
-    } with {
-      briefly "ClinicalStudy source handler"
-      described as {
-        |Publishes ClinicalStudy events onto the outlet.
-      }
-    }
-  } with {
-    briefly "ClinicalStudy event source"
-    described as {
-      |Publishes ClinicalStudy entity events into the streaming topology.
-    }
-  }
-  processor ClinicalStudyEventSink as sink is {
-    inlet ClinicalStudyInlet is type ClinicalStudyEvent    handler ClinicalStudySinkHandler is {
-      on studyCreated: event ClinicalStudy.StudyCreated is {
-        tell studyCreated to repository StudyContext.StudyRepository
-      }
-      on siteActivated: event ClinicalStudy.SiteActivated is {
-        tell siteActivated to repository StudyContext.StudyRepository
-      }
-      on subjectEnrolled: event ClinicalStudy.SubjectEnrolled is {
-        tell subjectEnrolled to repository StudyContext.StudyRepository
-      }
-      on visitRecorded: event ClinicalStudy.VisitRecorded is {
-        tell visitRecorded to repository StudyContext.StudyRepository
-      }
-      on dataSubmitted: event ClinicalStudy.DataSubmitted is {
-        tell dataSubmitted to repository StudyContext.StudyRepository
-      }
-      on studyClosed: event ClinicalStudy.StudyClosed is {
-        tell studyClosed to repository StudyContext.StudyRepository
-      }
-      on studyStatusUpdated: event ClinicalStudy.StudyStatusUpdated is {
-        tell studyStatusUpdated to repository StudyContext.StudyRepository
-      }
-      on other is {
-        error "Unexpected message for sink ClinicalStudyEventSink"
-      }
-    } with {
-      briefly "ClinicalStudy sink handler"
-      described as {
-        |Persists ClinicalStudy events via the repository.
-      }
-    }
-  } with {
-    briefly "ClinicalStudy event sink"
-    described as {
-      |Receives ClinicalStudy events for persistence.
-    }
-  }
-  connector ClinicalStudyEventFlow is from outlet StudyContext.ClinicalStudyEventSource.ClinicalStudyEvents to inlet StudyContext.ClinicalStudyEventSink.ClinicalStudyInlet with {
-    briefly "ClinicalStudy event flow"
-    described as {
-      |Connects the ClinicalStudy source to its sink.
-    }
-  }
-  processor ClinicalStudyEventSplit as split is {
-    inlet ClinicalStudyEventSplitIn is type ClinicalStudyEvent    outlet ClinicalStudyEventSplitToStudyRepository is type ClinicalStudyEvent
+  processor ClinicalStudyEventSplit as flow is {
+    inlet ClinicalStudyEventSplitIn is type ClinicalStudyEvent
     outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector is type ClinicalStudyEvent
     handler ClinicalStudyEventSplitHandler is {
       on studyCreated: event ClinicalStudy.StudyCreated is {
-        send studyCreated to outlet ClinicalStudyEventSplitToStudyRepository
         send studyCreated to outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector
         tell studyCreated to entity StudyContext.ClinicalStudy
       }
       on siteActivated: event ClinicalStudy.SiteActivated is {
-        send siteActivated to outlet ClinicalStudyEventSplitToStudyRepository
         send siteActivated to outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector
         tell siteActivated to entity StudyContext.ClinicalStudy
       }
       on subjectEnrolled: event ClinicalStudy.SubjectEnrolled is {
-        send subjectEnrolled to outlet ClinicalStudyEventSplitToStudyRepository
         send subjectEnrolled to outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector
         tell subjectEnrolled to entity StudyContext.ClinicalStudy
       }
       on visitRecorded: event ClinicalStudy.VisitRecorded is {
-        send visitRecorded to outlet ClinicalStudyEventSplitToStudyRepository
         send visitRecorded to outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector
         tell visitRecorded to entity StudyContext.ClinicalStudy
       }
       on dataSubmitted: event ClinicalStudy.DataSubmitted is {
-        send dataSubmitted to outlet ClinicalStudyEventSplitToStudyRepository
         send dataSubmitted to outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector
         tell dataSubmitted to entity StudyContext.ClinicalStudy
       }
       on studyClosed: event ClinicalStudy.StudyClosed is {
-        send studyClosed to outlet ClinicalStudyEventSplitToStudyRepository
         send studyClosed to outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector
         tell studyClosed to entity StudyContext.ClinicalStudy
       }
       on studyStatusUpdated: event ClinicalStudy.StudyStatusUpdated is {
-        send studyStatusUpdated to outlet ClinicalStudyEventSplitToStudyRepository
         send studyStatusUpdated to outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector
         tell studyStatusUpdated to entity StudyContext.ClinicalStudy
       }
@@ -536,14 +523,11 @@ context StudyContext as router is {
   connector 'ClinicalStudyEvent Stream' is from outlet StudyContext.ClinicalStudy.ClinicalStudyEvents2 to inlet StudyContext.ClinicalStudyEventSplit.ClinicalStudyEventSplitIn with {
     briefly "ClinicalStudy events, fanned out to storage and read models"
   }
-  connector 'ClinicalStudyEvent Storage' is from outlet StudyContext.ClinicalStudyEventSplit.ClinicalStudyEventSplitToStudyRepository to inlet StudyContext.StudyRepository.StudyRepositoryFromClinicalStudy with {
-    briefly "ClinicalStudy events on their way to storage"
-  }
   connector 'EnrollmentMetricsProjector Feed' is from outlet StudyContext.ClinicalStudyEventSplit.ClinicalStudyEventSplitToEnrollmentMetricsProjector to inlet StudyContext.EnrollmentMetricsProjector.EnrollmentMetricsProjectorFromClinicalStudy with {
     briefly "ClinicalStudy events feeding the EnrollmentMetricsProjector projection"
   }
-  connector 'EnrollmentMetricsProjector Storage' is from outlet StudyContext.EnrollmentMetricsProjector.EnrollmentMetricsProjectorOut to inlet StudyContext.StudyRepository.StudyRepositoryFromEnrollmentMetricsProjector with {
-    briefly "The EnrollmentMetricsProjector projection on its way to storage"
+  connector 'EnrollmentMetricsProjector Storage' is from outlet StudyContext.EnrollmentMetricsProjector.EnrollmentMetricsProjectorToRepository to inlet StudyContext.StudyRepository.StudyRepositoryFromEnrollmentMetricsProjector with {
+    briefly "EnrollmentMetricsProjector updates on their way to storage"
   }
 } with {
   briefly "Bounded context for clinical study operations"

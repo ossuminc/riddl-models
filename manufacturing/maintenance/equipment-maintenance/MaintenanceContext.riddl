@@ -5,25 +5,22 @@ context MaintenanceContext as router is {
   inlet MaintenanceOrderResultStreamIn is type MaintenanceOrder.MaintenanceOrderResult  outlet MaintenanceOrderResultStreamOut is type MaintenanceOrder.MaintenanceOrderResult
   handler MaintenanceContextBoundary is {
     on createMaintenanceOrder: command MaintenanceOrder.CreateMaintenanceOrder is {
-      send createMaintenanceOrder to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
+      forward createMaintenanceOrder to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
     }
     on assignTechnician: command MaintenanceOrder.AssignTechnician is {
-      send assignTechnician to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
+      forward assignTechnician to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
     }
     on startMaintenance: command MaintenanceOrder.StartMaintenance is {
-      send startMaintenance to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
+      forward startMaintenance to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
     }
     on recordSpareUsage: command MaintenanceOrder.RecordSpareUsage is {
-      send recordSpareUsage to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
+      forward recordSpareUsage to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
     }
     on completeMaintenance: command MaintenanceOrder.CompleteMaintenance is {
-      send completeMaintenance to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
+      forward completeMaintenance to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
     }
     on cancelOrder: command MaintenanceOrder.CancelOrder is {
-      send cancelOrder to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
-    }
-    on initializeMaintenanceOrder: command MaintenanceOrder.InitializeMaintenanceOrder is {
-      send initializeMaintenanceOrder to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
+      forward cancelOrder to outlet MaintenanceContext.MaintenanceOrderCommandStreaOut
     }
     on maintenanceOrderResult: result MaintenanceOrder.MaintenanceOrderResult is {
       send maintenanceOrderResult to outlet MaintenanceContext.MaintenanceOrderResultStreamOut
@@ -121,7 +118,62 @@ context MaintenanceContext as router is {
     }
   }
   // Repository for maintenance persistence
-  repository MaintenanceRepository as merge is {
+  type MaintenanceRepositoryCommand is one of {
+    MaintenanceContext.MaintenanceRepository.PersistMaintenanceCompleted or MaintenanceContext.MaintenanceRepository.PersistMaintenanceOrderCreated or MaintenanceContext.MaintenanceRepository.PersistMaintenanceStarted or MaintenanceContext.MaintenanceRepository.PersistOrderCancelled or MaintenanceContext.MaintenanceRepository.PersistSpareUsageRecorded or MaintenanceContext.MaintenanceRepository.PersistTechnicianAssigned
+  } with {
+    briefly "Anything that writes MaintenanceRepository"
+    described as {
+      |The persistence commands MaintenanceRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository MaintenanceRepository as flow is {
+    inlet MaintenanceRepositoryFromMaintenanceMetrics is type MaintenanceRepositoryCommand
+    command PersistMaintenanceStarted is  {
+      orderId: MaintenanceOrderId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row MaintenanceStarted applies to.
+        }
+      }
+    } with {
+      briefly "Persist MaintenanceStarted"
+      described as {
+        |Instructs this repository to apply MaintenanceStarted to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistOrderCancelled is  {
+      orderId: MaintenanceOrderId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row OrderCancelled applies to.
+        }
+      }
+    } with {
+      briefly "Persist OrderCancelled"
+      described as {
+        |Instructs this repository to apply OrderCancelled to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistTechnicianAssigned is  {
+      orderId: MaintenanceOrderId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TechnicianAssigned applies to.
+        }
+      }
+    } with {
+      briefly "Persist TechnicianAssigned"
+      described as {
+        |Instructs this repository to apply TechnicianAssigned to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistMaintenanceCompleted is  {
       orderId: MaintenanceOrderId with {
         briefly "Row addressed"
@@ -167,7 +219,7 @@ context MaintenanceContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet MaintenanceRepositoryFromMaintenanceOrder is type MaintenanceOrderEvent    inlet MaintenanceRepositoryFromMaintenanceMetrics is type MaintenanceOrderEvent    outlet MaintenanceRepositoryResponses is type MaintenanceOrder.MaintenanceOrderResult
+    outlet MaintenanceRepositoryResponses is type MaintenanceOrder.MaintenanceOrderResult
     record StoredMaintenanceOrder is  {
       maintenanceOrderId: MaintenanceOrderId with {
         briefly "maintenanceOrderId"
@@ -211,6 +263,15 @@ context MaintenanceContext as router is {
       }
     }
     handler MaintenancePersistence is {
+      on persistMaintenanceStarted: command PersistMaintenanceStarted is {
+        do "apply MaintenanceStarted to the stored row"
+      }
+      on persistOrderCancelled: command PersistOrderCancelled is {
+        do "apply OrderCancelled to the stored row"
+      }
+      on persistTechnicianAssigned: command PersistTechnicianAssigned is {
+        do "apply TechnicianAssigned to the stored row"
+      }
       on persistMaintenanceCompleted: command PersistMaintenanceCompleted is {
         do "apply MaintenanceCompleted to the stored row"
       }
@@ -227,30 +288,6 @@ context MaintenanceContext as router is {
       on query GetMaintenanceWorkMetrics is {
         let maintenanceWorkMetricsView: type MaintenanceWorkMetricsView = prompt("read the maintenance work metrics projection")
         reply maintenanceWorkMetricsView
-      }
-      on createMaintenanceOrder: command MaintenanceOrder.CreateMaintenanceOrder is {
-        tell event MaintenanceOrder.MaintenanceOrderCreated(orderId = createMaintenanceOrder.orderId, equipmentId = createMaintenanceOrder.equipmentId, equipmentName = createMaintenanceOrder.equipmentName, maintenanceType = createMaintenanceOrder.maintenanceType, priority = createMaintenanceOrder.priority, scheduledDate = createMaintenanceOrder.scheduledDate) to entity MaintenanceContext.MaintenanceOrder
-        do "Persist new maintenance order to database"
-      }
-      on assignTechnician: command MaintenanceOrder.AssignTechnician is {
-        tell event MaintenanceOrder.TechnicianAssigned(orderId = assignTechnician.orderId, technicianId = assignTechnician.technicianId, technicianName = assignTechnician.technicianName) to entity MaintenanceContext.MaintenanceOrder
-        do "Update order with technician assignment"
-      }
-      on startMaintenance: command MaintenanceOrder.StartMaintenance is {
-        tell event MaintenanceOrder.MaintenanceStarted(orderId = startMaintenance.orderId, startedAt = startMaintenance.startedAt, downtimeStart = startMaintenance.downtimeStart) to entity MaintenanceContext.MaintenanceOrder
-        do "Update order status and start labor tracking"
-      }
-      on recordSpareUsage: command MaintenanceOrder.RecordSpareUsage is {
-        tell event MaintenanceOrder.SpareUsageRecorded(orderId = recordSpareUsage.orderId, sparePartId = recordSpareUsage.sparePartId, partNumber = recordSpareUsage.partNumber, quantity = recordSpareUsage.quantity) to entity MaintenanceContext.MaintenanceOrder
-        do "Record spare parts usage on order"
-      }
-      on completeMaintenance: command MaintenanceOrder.CompleteMaintenance is {
-        tell event MaintenanceOrder.MaintenanceCompleted(orderId = completeMaintenance.orderId, completedAt = completeMaintenance.completedAt, equipmentStatus = completeMaintenance.equipmentStatus) to entity MaintenanceContext.MaintenanceOrder
-        do "Update order to completed with final metrics"
-      }
-      on cancelOrder: command MaintenanceOrder.CancelOrder is {
-        tell event MaintenanceOrder.OrderCancelled(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledBy = cancelOrder.cancelledBy) to entity MaintenanceContext.MaintenanceOrder
-        do "Update order to cancelled status"
       }
     } with {
       briefly "Persists maintenance events to storage"
@@ -320,8 +357,9 @@ context MaintenanceContext as router is {
     }
   }
   projector MaintenanceMetrics as flow is {
+    outlet MaintenanceMetricsToRepository is type MaintenanceRepositoryCommand
     updates repository MaintenanceContext.MaintenanceRepository
-    inlet MaintenanceMetricsFromMaintenanceOrder is type MaintenanceOrderEvent    outlet MaintenanceMetricsOut is type MaintenanceOrderEvent
+    inlet MaintenanceMetricsFromMaintenanceOrder is type MaintenanceOrderEvent
     record EquipmentReliabilityMetrics is  {
       equipmentId: EquipmentId with {
         briefly "Equipment ID"
@@ -469,6 +507,18 @@ context MaintenanceContext as router is {
       }
     }
     handler MetricsHandler is {
+      on maintenanceStarted: event MaintenanceOrder.MaintenanceStarted is {
+        tell command MaintenanceContext.MaintenanceRepository.PersistMaintenanceStarted(orderId = maintenanceStarted.orderId) to repository MaintenanceContext.MaintenanceRepository
+        do "apply MaintenanceStarted to the MaintenanceMetrics projection"
+      }
+      on orderCancelled: event MaintenanceOrder.OrderCancelled is {
+        tell command MaintenanceContext.MaintenanceRepository.PersistOrderCancelled(orderId = orderCancelled.orderId) to repository MaintenanceContext.MaintenanceRepository
+        do "apply OrderCancelled to the MaintenanceMetrics projection"
+      }
+      on technicianAssigned: event MaintenanceOrder.TechnicianAssigned is {
+        tell command MaintenanceContext.MaintenanceRepository.PersistTechnicianAssigned(orderId = technicianAssigned.orderId) to repository MaintenanceContext.MaintenanceRepository
+        do "apply TechnicianAssigned to the MaintenanceMetrics projection"
+      }
       on maintenanceOrderCreated: event MaintenanceOrder.MaintenanceOrderCreated is {
         tell command MaintenanceContext.MaintenanceRepository.PersistMaintenanceOrderCreated(orderId = maintenanceOrderCreated.orderId) to repository MaintenanceContext.MaintenanceRepository
         do "Update order counts by type"
@@ -505,114 +555,31 @@ context MaintenanceContext as router is {
       |persistence.
     }
   }
-  processor MaintenanceOrderEventSource as source is {
-    outlet MaintenanceOrderEvents is type MaintenanceOrderEvent
-    handler MaintenanceOrderSourceHandler is {
-      on maintenanceOrderCreated: event MaintenanceOrder.MaintenanceOrderCreated is {
-        send maintenanceOrderCreated to outlet MaintenanceOrderEvents
-      }
-      on technicianAssigned: event MaintenanceOrder.TechnicianAssigned is {
-        send technicianAssigned to outlet MaintenanceOrderEvents
-      }
-      on maintenanceStarted: event MaintenanceOrder.MaintenanceStarted is {
-        send maintenanceStarted to outlet MaintenanceOrderEvents
-      }
-      on spareUsageRecorded: event MaintenanceOrder.SpareUsageRecorded is {
-        send spareUsageRecorded to outlet MaintenanceOrderEvents
-      }
-      on maintenanceCompleted: event MaintenanceOrder.MaintenanceCompleted is {
-        send maintenanceCompleted to outlet MaintenanceOrderEvents
-      }
-      on orderCancelled: event MaintenanceOrder.OrderCancelled is {
-        send orderCancelled to outlet MaintenanceOrderEvents
-      }
-      on other is {
-        error "Unexpected message for source MaintenanceOrderEventSource"
-      }
-    } with {
-      briefly "MaintenanceOrder source handler"
-      described as {
-        |Publishes MaintenanceOrder events onto the outlet.
-      }
-    }
-  } with {
-    briefly "MaintenanceOrder event source"
-    described as {
-      |Publishes MaintenanceOrder entity events into the streaming topology.
-    }
-  }
-  processor MaintenanceOrderEventSink as sink is {
-    inlet MaintenanceOrderInlet is type MaintenanceOrderEvent    handler MaintenanceOrderSinkHandler is {
-      on maintenanceOrderCreated: event MaintenanceOrder.MaintenanceOrderCreated is {
-        tell maintenanceOrderCreated to repository MaintenanceContext.MaintenanceRepository
-      }
-      on technicianAssigned: event MaintenanceOrder.TechnicianAssigned is {
-        tell technicianAssigned to repository MaintenanceContext.MaintenanceRepository
-      }
-      on maintenanceStarted: event MaintenanceOrder.MaintenanceStarted is {
-        tell maintenanceStarted to repository MaintenanceContext.MaintenanceRepository
-      }
-      on spareUsageRecorded: event MaintenanceOrder.SpareUsageRecorded is {
-        tell spareUsageRecorded to repository MaintenanceContext.MaintenanceRepository
-      }
-      on maintenanceCompleted: event MaintenanceOrder.MaintenanceCompleted is {
-        tell maintenanceCompleted to repository MaintenanceContext.MaintenanceRepository
-      }
-      on orderCancelled: event MaintenanceOrder.OrderCancelled is {
-        tell orderCancelled to repository MaintenanceContext.MaintenanceRepository
-      }
-      on other is {
-        error "Unexpected message for sink MaintenanceOrderEventSink"
-      }
-    } with {
-      briefly "MaintenanceOrder sink handler"
-      described as {
-        |Persists MaintenanceOrder events via the repository.
-      }
-    }
-  } with {
-    briefly "MaintenanceOrder event sink"
-    described as {
-      |Receives MaintenanceOrder events for persistence.
-    }
-  }
-  connector MaintenanceOrderEventFlow is from outlet MaintenanceContext.MaintenanceOrderEventSource.MaintenanceOrderEvents to inlet MaintenanceContext.MaintenanceOrderEventSink.MaintenanceOrderInlet with {
-    briefly "MaintenanceOrder event flow"
-    described as {
-      |Connects the MaintenanceOrder source to its sink.
-    }
-  }
-  processor MaintenanceOrderEventSplit as split is {
-    inlet MaintenanceOrderEventSplitIn is type MaintenanceOrderEvent    outlet MaintenanceOrderEventSplitToMaintenanceRepository is type MaintenanceOrderEvent
+  processor MaintenanceOrderEventSplit as flow is {
+    inlet MaintenanceOrderEventSplitIn is type MaintenanceOrderEvent
     outlet MaintenanceOrderEventSplitToMaintenanceMetrics is type MaintenanceOrderEvent
     handler MaintenanceOrderEventSplitHandler is {
       on maintenanceOrderCreated: event MaintenanceOrder.MaintenanceOrderCreated is {
-        send maintenanceOrderCreated to outlet MaintenanceOrderEventSplitToMaintenanceRepository
         send maintenanceOrderCreated to outlet MaintenanceOrderEventSplitToMaintenanceMetrics
         tell maintenanceOrderCreated to entity MaintenanceContext.MaintenanceOrder
       }
       on technicianAssigned: event MaintenanceOrder.TechnicianAssigned is {
-        send technicianAssigned to outlet MaintenanceOrderEventSplitToMaintenanceRepository
         send technicianAssigned to outlet MaintenanceOrderEventSplitToMaintenanceMetrics
         tell technicianAssigned to entity MaintenanceContext.MaintenanceOrder
       }
       on maintenanceStarted: event MaintenanceOrder.MaintenanceStarted is {
-        send maintenanceStarted to outlet MaintenanceOrderEventSplitToMaintenanceRepository
         send maintenanceStarted to outlet MaintenanceOrderEventSplitToMaintenanceMetrics
         tell maintenanceStarted to entity MaintenanceContext.MaintenanceOrder
       }
       on spareUsageRecorded: event MaintenanceOrder.SpareUsageRecorded is {
-        send spareUsageRecorded to outlet MaintenanceOrderEventSplitToMaintenanceRepository
         send spareUsageRecorded to outlet MaintenanceOrderEventSplitToMaintenanceMetrics
         tell spareUsageRecorded to entity MaintenanceContext.MaintenanceOrder
       }
       on maintenanceCompleted: event MaintenanceOrder.MaintenanceCompleted is {
-        send maintenanceCompleted to outlet MaintenanceOrderEventSplitToMaintenanceRepository
         send maintenanceCompleted to outlet MaintenanceOrderEventSplitToMaintenanceMetrics
         tell maintenanceCompleted to entity MaintenanceContext.MaintenanceOrder
       }
       on orderCancelled: event MaintenanceOrder.OrderCancelled is {
-        send orderCancelled to outlet MaintenanceOrderEventSplitToMaintenanceRepository
         send orderCancelled to outlet MaintenanceOrderEventSplitToMaintenanceMetrics
         tell orderCancelled to entity MaintenanceContext.MaintenanceOrder
       }
@@ -634,14 +601,11 @@ context MaintenanceContext as router is {
   connector 'MaintenanceOrderEvent Stream' is from outlet MaintenanceContext.MaintenanceOrder.MaintenanceOrderEvents2 to inlet MaintenanceContext.MaintenanceOrderEventSplit.MaintenanceOrderEventSplitIn with {
     briefly "MaintenanceOrder events, fanned out to storage and read models"
   }
-  connector 'MaintenanceOrderEvent Storage' is from outlet MaintenanceContext.MaintenanceOrderEventSplit.MaintenanceOrderEventSplitToMaintenanceRepository to inlet MaintenanceContext.MaintenanceRepository.MaintenanceRepositoryFromMaintenanceOrder with {
-    briefly "MaintenanceOrder events on their way to storage"
-  }
   connector 'MaintenanceMetrics Feed' is from outlet MaintenanceContext.MaintenanceOrderEventSplit.MaintenanceOrderEventSplitToMaintenanceMetrics to inlet MaintenanceContext.MaintenanceMetrics.MaintenanceMetricsFromMaintenanceOrder with {
     briefly "MaintenanceOrder events feeding the MaintenanceMetrics projection"
   }
-  connector 'MaintenanceMetrics Storage' is from outlet MaintenanceContext.MaintenanceMetrics.MaintenanceMetricsOut to inlet MaintenanceContext.MaintenanceRepository.MaintenanceRepositoryFromMaintenanceMetrics with {
-    briefly "The MaintenanceMetrics projection on its way to storage"
+  connector 'MaintenanceMetrics Storage' is from outlet MaintenanceContext.MaintenanceMetrics.MaintenanceMetricsToRepository to inlet MaintenanceContext.MaintenanceRepository.MaintenanceRepositoryFromMaintenanceMetrics with {
+    briefly "MaintenanceMetrics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for equipment maintenance"

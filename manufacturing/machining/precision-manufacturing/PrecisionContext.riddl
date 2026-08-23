@@ -27,9 +27,6 @@ context PrecisionContext as router is {
     on updateInspectionPlan: command PrecisionPart.UpdateInspectionPlan is {
       send updateInspectionPlan to outlet PrecisionContext.PrecisionPartCommandStreamOut
     }
-    on initializePrecisionPart: command PrecisionPart.InitializePrecisionPart is {
-      send initializePrecisionPart to outlet PrecisionContext.PrecisionPartCommandStreamOut
-    }
     on precisionPartResult: result PrecisionPart.PrecisionPartResult is {
       send precisionPartResult to outlet PrecisionContext.PrecisionPartResultStreamOut
     }
@@ -230,7 +227,47 @@ context PrecisionContext as router is {
   include "types.riddl"
   include "PrecisionPart.riddl"
   // Repository for measurement and certification persistence
-  repository MeasurementRepository as merge is {
+  type MeasurementRepositoryCommand is one of {
+    PrecisionContext.MeasurementRepository.PersistCMMResultRecorded or PrecisionContext.MeasurementRepository.PersistInspectionPlanCreated or PrecisionContext.MeasurementRepository.PersistInspectionPlanUpdated or PrecisionContext.MeasurementRepository.PersistMeasurementRecorded or PrecisionContext.MeasurementRepository.PersistPartCertified or PrecisionContext.MeasurementRepository.PersistPartScrapped or PrecisionContext.MeasurementRepository.PersistReworkInitiated or PrecisionContext.MeasurementRepository.PersistToleranceEvaluated
+  } with {
+    briefly "Anything that writes MeasurementRepository"
+    described as {
+      |The persistence commands MeasurementRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository MeasurementRepository as flow is {
+    inlet MeasurementRepositoryFromSPCAnalytics is type MeasurementRepositoryCommand
+    command PersistInspectionPlanCreated is  {
+      partId: PartId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row InspectionPlanCreated applies to.
+        }
+      }
+    } with {
+      briefly "Persist InspectionPlanCreated"
+      described as {
+        |Instructs this repository to apply InspectionPlanCreated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistInspectionPlanUpdated is  {
+      partId: PartId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row InspectionPlanUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist InspectionPlanUpdated"
+      described as {
+        |Instructs this repository to apply InspectionPlanUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistCMMResultRecorded is  {
       partId: PartId with {
         briefly "Row addressed"
@@ -321,7 +358,7 @@ context PrecisionContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet MeasurementRepositoryFromPrecisionPart is type PrecisionPartEvent    inlet MeasurementRepositoryFromSPCAnalytics is type PrecisionPartEvent    inlet MeasurementRepositoryFromGageTracking is type PrecisionPartEvent    outlet MeasurementRepositoryResponses is type PrecisionPart.PrecisionPartResult
+    outlet MeasurementRepositoryResponses is type PrecisionPart.PrecisionPartResult
     record StoredPrecisionPart is  {
       precisionPartId: UUID with {
         briefly "precisionPartId"
@@ -359,6 +396,12 @@ context PrecisionContext as router is {
       }
     }
     handler MeasurementPersistence is {
+      on persistInspectionPlanCreated: command PersistInspectionPlanCreated is {
+        do "apply InspectionPlanCreated to the stored row"
+      }
+      on persistInspectionPlanUpdated: command PersistInspectionPlanUpdated is {
+        do "apply InspectionPlanUpdated to the stored row"
+      }
       on persistCMMResultRecorded: command PersistCMMResultRecorded is {
         do "apply CMMResultRecorded to the stored row"
       }
@@ -392,35 +435,6 @@ context PrecisionContext as router is {
       on query GetGageUsageStats is {
         let gageUsageStatsView: type GageUsageStatsView = prompt("read the gage usage stats projection")
         reply gageUsageStatsView
-      }
-      on createInspectionPlan: command PrecisionPart.CreateInspectionPlan is {
-        tell event PrecisionPart.InspectionPlanCreated(partId = createInspectionPlan.partId, inspectionPlan = createInspectionPlan.inspectionPlan) to entity PrecisionContext.PrecisionPart
-        do "Store new inspection plan"
-      }
-      on recordMeasurement: command PrecisionPart.RecordMeasurement is {
-        tell event PrecisionPart.MeasurementRecorded(partId = recordMeasurement.partId, measurement = recordMeasurement.measurement) to entity PrecisionContext.PrecisionPart
-        do "Store measurement record"
-      }
-      on command PrecisionPart.EvaluateTolerance is {
-        do "Update tolerance evaluation"
-      }
-      on recordCMMResult: command PrecisionPart.RecordCMMResult is {
-        tell event PrecisionPart.CMMResultRecorded(partId = recordCMMResult.partId, cmmResult = recordCMMResult.cmmResult) to entity PrecisionContext.PrecisionPart
-        do "Store CMM inspection result"
-      }
-      on updateInspectionPlan: command PrecisionPart.UpdateInspectionPlan is {
-        tell event PrecisionPart.InspectionPlanUpdated(partId = updateInspectionPlan.partId, inspectionPlan = updateInspectionPlan.inspectionPlan, reason = updateInspectionPlan.reason) to entity PrecisionContext.PrecisionPart
-        do "Update inspection plan"
-      }
-      on initiateRework: command PrecisionPart.InitiateRework is {
-        tell event PrecisionPart.ReworkInitiated(partId = initiateRework.partId, rework = initiateRework.rework) to entity PrecisionContext.PrecisionPart
-        do "Update to rework status"
-      }
-      on command PrecisionPart.ScrapPart is {
-        do "Update to scrapped status"
-      }
-      on command PrecisionPart.CertifyPart is {
-        do "Store certification record"
       }
     } with {
       briefly "Persists measurement commands"
@@ -515,8 +529,9 @@ context PrecisionContext as router is {
     }
   }
   projector SPCAnalytics as flow is {
+    outlet SPCAnalyticsToRepository is type MeasurementRepositoryCommand
     updates repository PrecisionContext.MeasurementRepository
-    inlet SPCAnalyticsFromPrecisionPart is type PrecisionPartEvent    outlet SPCAnalyticsOut is type PrecisionPartEvent
+    inlet SPCAnalyticsFromPrecisionPart is type PrecisionPartEvent
     record SPCChartData is  {
       featureId: FeatureId with {
         briefly "Feature"
@@ -671,6 +686,14 @@ context PrecisionContext as router is {
       }
     }
     handler SPCHandler is {
+      on inspectionPlanCreated: event PrecisionPart.InspectionPlanCreated is {
+        tell command PrecisionContext.MeasurementRepository.PersistInspectionPlanCreated(partId = inspectionPlanCreated.partId) to repository PrecisionContext.MeasurementRepository
+        do "apply InspectionPlanCreated to the SPCAnalytics projection"
+      }
+      on inspectionPlanUpdated: event PrecisionPart.InspectionPlanUpdated is {
+        tell command PrecisionContext.MeasurementRepository.PersistInspectionPlanUpdated(partId = inspectionPlanUpdated.partId) to repository PrecisionContext.MeasurementRepository
+        do "apply InspectionPlanUpdated to the SPCAnalytics projection"
+      }
       on measurementRecorded: event PrecisionPart.MeasurementRecorded is {
         tell command PrecisionContext.MeasurementRepository.PersistMeasurementRecorded(partId = measurementRecorded.partId) to repository PrecisionContext.MeasurementRepository
         do "Update SPC chart data points"
@@ -735,9 +758,9 @@ context PrecisionContext as router is {
       |Read model view carrying the gage usage stats projection.
     }
   }
-  projector GageTracking as flow is {
+  projector GageTracking as sink is {
     updates repository PrecisionContext.MeasurementRepository
-    inlet GageTrackingFromPrecisionPart is type PrecisionPartEvent    outlet GageTrackingOut is type PrecisionPartEvent
+    inlet GageTrackingFromPrecisionPart is type PrecisionPartEvent
     record GageUsageStats is  {
       gageId: GageId with {
         briefly "Gage"
@@ -776,6 +799,30 @@ context PrecisionContext as router is {
       }
     }
     handler GageTrackingHandler is {
+      on inspectionPlanCreated: event PrecisionPart.InspectionPlanCreated is {
+        tell command PrecisionContext.MeasurementRepository.PersistInspectionPlanCreated(partId = inspectionPlanCreated.partId) to repository PrecisionContext.MeasurementRepository
+        do "apply InspectionPlanCreated to the GageTracking projection"
+      }
+      on inspectionPlanUpdated: event PrecisionPart.InspectionPlanUpdated is {
+        tell command PrecisionContext.MeasurementRepository.PersistInspectionPlanUpdated(partId = inspectionPlanUpdated.partId) to repository PrecisionContext.MeasurementRepository
+        do "apply InspectionPlanUpdated to the GageTracking projection"
+      }
+      on partCertified: event PrecisionPart.PartCertified is {
+        tell command PrecisionContext.MeasurementRepository.PersistPartCertified(partId = partCertified.partId) to repository PrecisionContext.MeasurementRepository
+        do "apply PartCertified to the GageTracking projection"
+      }
+      on partScrapped: event PrecisionPart.PartScrapped is {
+        tell command PrecisionContext.MeasurementRepository.PersistPartScrapped(partId = partScrapped.partId) to repository PrecisionContext.MeasurementRepository
+        do "apply PartScrapped to the GageTracking projection"
+      }
+      on reworkInitiated: event PrecisionPart.ReworkInitiated is {
+        tell command PrecisionContext.MeasurementRepository.PersistReworkInitiated(partId = reworkInitiated.partId) to repository PrecisionContext.MeasurementRepository
+        do "apply ReworkInitiated to the GageTracking projection"
+      }
+      on toleranceEvaluated: event PrecisionPart.ToleranceEvaluated is {
+        tell command PrecisionContext.MeasurementRepository.PersistToleranceEvaluated(partId = toleranceEvaluated.partId) to repository PrecisionContext.MeasurementRepository
+        do "apply ToleranceEvaluated to the GageTracking projection"
+      }
       on measurementRecorded: event PrecisionPart.MeasurementRecorded is {
         tell command PrecisionContext.MeasurementRepository.PersistMeasurementRecorded(partId = measurementRecorded.partId) to repository PrecisionContext.MeasurementRepository
         do "Update gage usage count and last used"
@@ -806,144 +853,47 @@ context PrecisionContext as router is {
       |persistence.
     }
   }
-  processor PrecisionPartEventSource as source is {
-    outlet PrecisionPartEvents is type PrecisionPartEvent
-    handler PrecisionPartSourceHandler is {
-      on inspectionPlanCreated: event PrecisionPart.InspectionPlanCreated is {
-        send inspectionPlanCreated to outlet PrecisionPartEvents
-      }
-      on measurementRecorded: event PrecisionPart.MeasurementRecorded is {
-        send measurementRecorded to outlet PrecisionPartEvents
-      }
-      on toleranceEvaluated: event PrecisionPart.ToleranceEvaluated is {
-        send toleranceEvaluated to outlet PrecisionPartEvents
-      }
-      on reworkInitiated: event PrecisionPart.ReworkInitiated is {
-        send reworkInitiated to outlet PrecisionPartEvents
-      }
-      on partScrapped: event PrecisionPart.PartScrapped is {
-        send partScrapped to outlet PrecisionPartEvents
-      }
-      on partCertified: event PrecisionPart.PartCertified is {
-        send partCertified to outlet PrecisionPartEvents
-      }
-      on cMMResultRecorded: event PrecisionPart.CMMResultRecorded is {
-        send cMMResultRecorded to outlet PrecisionPartEvents
-      }
-      on inspectionPlanUpdated: event PrecisionPart.InspectionPlanUpdated is {
-        send inspectionPlanUpdated to outlet PrecisionPartEvents
-      }
-      on other is {
-        error "Unexpected message for source PrecisionPartEventSource"
-      }
-    } with {
-      briefly "PrecisionPart source handler"
-      described as {
-        |Publishes PrecisionPart events onto the outlet.
-      }
-    }
-  } with {
-    briefly "PrecisionPart event source"
-    described as {
-      |Publishes PrecisionPart entity events into the streaming topology.
-    }
-  }
-  processor PrecisionPartEventSink as sink is {
-    inlet PrecisionPartInlet is type PrecisionPartEvent    handler PrecisionPartSinkHandler is {
-      on inspectionPlanCreated: event PrecisionPart.InspectionPlanCreated is {
-        tell inspectionPlanCreated to repository PrecisionContext.MeasurementRepository
-      }
-      on measurementRecorded: event PrecisionPart.MeasurementRecorded is {
-        tell measurementRecorded to repository PrecisionContext.MeasurementRepository
-      }
-      on toleranceEvaluated: event PrecisionPart.ToleranceEvaluated is {
-        tell toleranceEvaluated to repository PrecisionContext.MeasurementRepository
-      }
-      on reworkInitiated: event PrecisionPart.ReworkInitiated is {
-        tell reworkInitiated to repository PrecisionContext.MeasurementRepository
-      }
-      on partScrapped: event PrecisionPart.PartScrapped is {
-        tell partScrapped to repository PrecisionContext.MeasurementRepository
-      }
-      on partCertified: event PrecisionPart.PartCertified is {
-        tell partCertified to repository PrecisionContext.MeasurementRepository
-      }
-      on cMMResultRecorded: event PrecisionPart.CMMResultRecorded is {
-        tell cMMResultRecorded to repository PrecisionContext.MeasurementRepository
-      }
-      on inspectionPlanUpdated: event PrecisionPart.InspectionPlanUpdated is {
-        tell inspectionPlanUpdated to repository PrecisionContext.MeasurementRepository
-      }
-      on other is {
-        error "Unexpected message for sink PrecisionPartEventSink"
-      }
-    } with {
-      briefly "PrecisionPart sink handler"
-      described as {
-        |Persists PrecisionPart events via the repository.
-      }
-    }
-  } with {
-    briefly "PrecisionPart event sink"
-    described as {
-      |Receives PrecisionPart events for persistence.
-    }
-  }
-  connector PrecisionPartEventFlow is from outlet PrecisionContext.PrecisionPartEventSource.PrecisionPartEvents to inlet PrecisionContext.PrecisionPartEventSink.PrecisionPartInlet with {
-    briefly "PrecisionPart event flow"
-    described as {
-      |Connects the PrecisionPart source to its sink.
-    }
-  }
   processor PrecisionPartEventSplit as split is {
-    inlet PrecisionPartEventSplitIn is type PrecisionPartEvent    outlet PrecisionPartEventSplitToMeasurementRepository is type PrecisionPartEvent
+    inlet PrecisionPartEventSplitIn is type PrecisionPartEvent
     outlet PrecisionPartEventSplitToSPCAnalytics is type PrecisionPartEvent
     outlet PrecisionPartEventSplitToGageTracking is type PrecisionPartEvent
     handler PrecisionPartEventSplitHandler is {
       on inspectionPlanCreated: event PrecisionPart.InspectionPlanCreated is {
-        send inspectionPlanCreated to outlet PrecisionPartEventSplitToMeasurementRepository
         send inspectionPlanCreated to outlet PrecisionPartEventSplitToSPCAnalytics
         send inspectionPlanCreated to outlet PrecisionPartEventSplitToGageTracking
         tell inspectionPlanCreated to entity PrecisionContext.PrecisionPart
       }
       on measurementRecorded: event PrecisionPart.MeasurementRecorded is {
-        send measurementRecorded to outlet PrecisionPartEventSplitToMeasurementRepository
         send measurementRecorded to outlet PrecisionPartEventSplitToSPCAnalytics
         send measurementRecorded to outlet PrecisionPartEventSplitToGageTracking
         tell measurementRecorded to entity PrecisionContext.PrecisionPart
       }
       on toleranceEvaluated: event PrecisionPart.ToleranceEvaluated is {
-        send toleranceEvaluated to outlet PrecisionPartEventSplitToMeasurementRepository
         send toleranceEvaluated to outlet PrecisionPartEventSplitToSPCAnalytics
         send toleranceEvaluated to outlet PrecisionPartEventSplitToGageTracking
         tell toleranceEvaluated to entity PrecisionContext.PrecisionPart
       }
       on reworkInitiated: event PrecisionPart.ReworkInitiated is {
-        send reworkInitiated to outlet PrecisionPartEventSplitToMeasurementRepository
         send reworkInitiated to outlet PrecisionPartEventSplitToSPCAnalytics
         send reworkInitiated to outlet PrecisionPartEventSplitToGageTracking
         tell reworkInitiated to entity PrecisionContext.PrecisionPart
       }
       on partScrapped: event PrecisionPart.PartScrapped is {
-        send partScrapped to outlet PrecisionPartEventSplitToMeasurementRepository
         send partScrapped to outlet PrecisionPartEventSplitToSPCAnalytics
         send partScrapped to outlet PrecisionPartEventSplitToGageTracking
         tell partScrapped to entity PrecisionContext.PrecisionPart
       }
       on partCertified: event PrecisionPart.PartCertified is {
-        send partCertified to outlet PrecisionPartEventSplitToMeasurementRepository
         send partCertified to outlet PrecisionPartEventSplitToSPCAnalytics
         send partCertified to outlet PrecisionPartEventSplitToGageTracking
         tell partCertified to entity PrecisionContext.PrecisionPart
       }
       on cMMResultRecorded: event PrecisionPart.CMMResultRecorded is {
-        send cMMResultRecorded to outlet PrecisionPartEventSplitToMeasurementRepository
         send cMMResultRecorded to outlet PrecisionPartEventSplitToSPCAnalytics
         send cMMResultRecorded to outlet PrecisionPartEventSplitToGageTracking
         tell cMMResultRecorded to entity PrecisionContext.PrecisionPart
       }
       on inspectionPlanUpdated: event PrecisionPart.InspectionPlanUpdated is {
-        send inspectionPlanUpdated to outlet PrecisionPartEventSplitToMeasurementRepository
         send inspectionPlanUpdated to outlet PrecisionPartEventSplitToSPCAnalytics
         send inspectionPlanUpdated to outlet PrecisionPartEventSplitToGageTracking
         tell inspectionPlanUpdated to entity PrecisionContext.PrecisionPart
@@ -966,20 +916,14 @@ context PrecisionContext as router is {
   connector 'PrecisionPartEvent Stream' is from outlet PrecisionContext.PrecisionPart.PrecisionPartEvents2 to inlet PrecisionContext.PrecisionPartEventSplit.PrecisionPartEventSplitIn with {
     briefly "PrecisionPart events, fanned out to storage and read models"
   }
-  connector 'PrecisionPartEvent Storage' is from outlet PrecisionContext.PrecisionPartEventSplit.PrecisionPartEventSplitToMeasurementRepository to inlet PrecisionContext.MeasurementRepository.MeasurementRepositoryFromPrecisionPart with {
-    briefly "PrecisionPart events on their way to storage"
-  }
   connector 'SPCAnalytics Feed' is from outlet PrecisionContext.PrecisionPartEventSplit.PrecisionPartEventSplitToSPCAnalytics to inlet PrecisionContext.SPCAnalytics.SPCAnalyticsFromPrecisionPart with {
     briefly "PrecisionPart events feeding the SPCAnalytics projection"
   }
   connector 'GageTracking Feed' is from outlet PrecisionContext.PrecisionPartEventSplit.PrecisionPartEventSplitToGageTracking to inlet PrecisionContext.GageTracking.GageTrackingFromPrecisionPart with {
     briefly "PrecisionPart events feeding the GageTracking projection"
   }
-  connector 'SPCAnalytics Storage' is from outlet PrecisionContext.SPCAnalytics.SPCAnalyticsOut to inlet PrecisionContext.MeasurementRepository.MeasurementRepositoryFromSPCAnalytics with {
-    briefly "The SPCAnalytics projection on its way to storage"
-  }
-  connector 'GageTracking Storage' is from outlet PrecisionContext.GageTracking.GageTrackingOut to inlet PrecisionContext.MeasurementRepository.MeasurementRepositoryFromGageTracking with {
-    briefly "The GageTracking projection on its way to storage"
+  connector 'SPCAnalytics Storage' is from outlet PrecisionContext.SPCAnalytics.SPCAnalyticsToRepository to inlet PrecisionContext.MeasurementRepository.MeasurementRepositoryFromSPCAnalytics with {
+    briefly "SPCAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for precision manufacturing"

@@ -33,9 +33,6 @@ context BatchContext as router is {
     on rejectBatch: command Batch.RejectBatch is {
       send rejectBatch to outlet BatchContext.BatchCommandStreamOut
     }
-    on initializeBatch: command Batch.InitializeBatch is {
-      send initializeBatch to outlet BatchContext.BatchCommandStreamOut
-    }
     on batchResult: result Batch.BatchResult is {
       send batchResult to outlet BatchContext.DrugBatchResultStreamOut
     }
@@ -224,7 +221,62 @@ context BatchContext as router is {
   include "types.riddl"
   include "Batch.riddl"
   // Repository for batch persistence
-  repository BatchRepository as merge is {
+  type BatchRepositoryCommand is one of {
+    BatchContext.BatchRepository.PersistBatchCompleted or BatchContext.BatchRepository.PersistBatchCreated or BatchContext.BatchRepository.PersistBatchDischarged or BatchContext.BatchRepository.PersistBatchHeld or BatchContext.BatchRepository.PersistBatchHoldReleased or BatchContext.BatchRepository.PersistBatchRejected or BatchContext.BatchRepository.PersistIngredientCharged or BatchContext.BatchRepository.PersistParameterRecorded or BatchContext.BatchRepository.PersistPhaseAdvanced or BatchContext.BatchRepository.PersistProcessingStarted
+  } with {
+    briefly "Anything that writes BatchRepository"
+    described as {
+      |The persistence commands BatchRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository BatchRepository as flow is {
+    inlet BatchRepositoryFromBatchYieldAnalytics is type BatchRepositoryCommand
+    command PersistIngredientCharged is  {
+      batchId: BatchId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row IngredientCharged applies to.
+        }
+      }
+    } with {
+      briefly "Persist IngredientCharged"
+      described as {
+        |Instructs this repository to apply IngredientCharged to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistParameterRecorded is  {
+      batchId: BatchId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ParameterRecorded applies to.
+        }
+      }
+    } with {
+      briefly "Persist ParameterRecorded"
+      described as {
+        |Instructs this repository to apply ParameterRecorded to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistPhaseAdvanced is  {
+      batchId: BatchId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row PhaseAdvanced applies to.
+        }
+      }
+    } with {
+      briefly "Persist PhaseAdvanced"
+      described as {
+        |Instructs this repository to apply PhaseAdvanced to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistBatchCompleted is  {
       batchId: BatchId with {
         briefly "Row addressed"
@@ -330,7 +382,7 @@ context BatchContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet BatchRepositoryFromBatch is type BatchEvent    inlet BatchRepositoryFromBatchYieldAnalytics is type BatchEvent    inlet BatchRepositoryFromCycleTimeAnalytics is type BatchEvent    inlet BatchRepositoryFromEquipmentUtilization is type BatchEvent    outlet BatchRepositoryResponses is type Batch.BatchResult
+    outlet BatchRepositoryResponses is type Batch.BatchResult
     record StoredBatch is  {
       batchId: BatchId with {
         briefly "batchId"
@@ -369,6 +421,15 @@ context BatchContext as router is {
       }
     }
     handler BatchPersistence is {
+      on persistIngredientCharged: command PersistIngredientCharged is {
+        do "apply IngredientCharged to the stored row"
+      }
+      on persistParameterRecorded: command PersistParameterRecorded is {
+        do "apply ParameterRecorded to the stored row"
+      }
+      on persistPhaseAdvanced: command PersistPhaseAdvanced is {
+        do "apply PhaseAdvanced to the stored row"
+      }
       on persistBatchCompleted: command PersistBatchCompleted is {
         do "apply BatchCompleted to the stored row"
       }
@@ -402,42 +463,6 @@ context BatchContext as router is {
         let utilizationMetricsView: type UtilizationMetricsView = prompt("read the utilization metrics projection")
         reply utilizationMetricsView
       }
-      on createBatch: command Batch.CreateBatch is {
-        tell event Batch.BatchCreated(batchId = createBatch.batchId, recipe = createBatch.recipe, vessel = createBatch.vessel, schedule = createBatch.schedule, plannedQuantity = createBatch.plannedQuantity, createdBy = createBatch.createdBy) to entity BatchContext.Batch
-        do "Store new batch record"
-      }
-      on command Batch.ChargeIngredient is {
-        do "Store ingredient charge record"
-      }
-      on startProcessing: command Batch.StartProcessing is {
-        tell event Batch.ProcessingStarted(batchId = startProcessing.batchId, startedBy = startProcessing.startedBy) to entity BatchContext.Batch
-        do "Update batch to processing"
-      }
-      on recordParameter: command Batch.RecordParameter is {
-        tell event Batch.ParameterRecorded(batchId = recordParameter.batchId, parameter = recordParameter.parameter) to entity BatchContext.Batch
-        do "Store parameter reading"
-      }
-      on command Batch.AdvancePhase is {
-        do "Update phase completion"
-      }
-      on command Batch.HoldBatch is {
-        do "Update batch to held status"
-      }
-      on releaseBatchHold: command Batch.ReleaseBatchHold is {
-        tell event Batch.BatchHoldReleased(batchId = releaseBatchHold.batchId, releasedBy = releaseBatchHold.releasedBy, releaseNotes = releaseBatchHold.releaseNotes) to entity BatchContext.Batch
-        do "Update batch from held status"
-      }
-      on command Batch.DischargeBatch is {
-        do "Store discharge record"
-      }
-      on completeBatch: command Batch.CompleteBatch is {
-        tell event Batch.BatchCompleted(batchId = completeBatch.batchId, completion = completeBatch.completion, genealogy = completeBatch.genealogy) to entity BatchContext.Batch
-        do "Update batch to completed"
-      }
-      on rejectBatch: command Batch.RejectBatch is {
-        tell event Batch.BatchRejected(batchId = rejectBatch.batchId, rejection = rejectBatch.rejection) to entity BatchContext.Batch
-        do "Update batch to rejected"
-      }
     } with {
       briefly "Persists batch commands"
       described as {
@@ -453,7 +478,7 @@ context BatchContext as router is {
   }
   // Repository for batch genealogy and traceability
   repository GenealogyRepository as sink is {
-    inlet GenealogyRepositoryFromBatch is type BatchEvent    schema GenealogyData is relational
+    schema GenealogyData is relational
       of genealogy as type BatchGenealogy
         index on field BatchGenealogy.batchId
         index on field BatchGenealogy.rawMaterialLots
@@ -464,17 +489,6 @@ context BatchContext as router is {
       }
     }
     handler GenealogyPersistence is {
-      on createBatch: command Batch.CreateBatch is {
-        tell event Batch.BatchCreated(batchId = createBatch.batchId, recipe = createBatch.recipe, vessel = createBatch.vessel, schedule = createBatch.schedule, plannedQuantity = createBatch.plannedQuantity, createdBy = createBatch.createdBy) to entity BatchContext.Batch
-        do "Initialize genealogy record"
-      }
-      on command Batch.ChargeIngredient is {
-        do "Link raw material lot to batch"
-      }
-      on completeBatch: command Batch.CompleteBatch is {
-        tell event Batch.BatchCompleted(batchId = completeBatch.batchId, completion = completeBatch.completion, genealogy = completeBatch.genealogy) to entity BatchContext.Batch
-        do "Finalize genealogy record"
-      }
     } with {
       briefly "Persists genealogy data"
       described as {
@@ -516,8 +530,9 @@ context BatchContext as router is {
     }
   }
   projector BatchYieldAnalytics as flow is {
+    outlet BatchYieldAnalyticsToRepository is type BatchRepositoryCommand
     updates repository BatchContext.BatchRepository
-    inlet BatchYieldAnalyticsFromBatch is type BatchEvent    outlet BatchYieldAnalyticsOut is type BatchEvent
+    inlet BatchYieldAnalyticsFromBatch is type BatchEvent
     record YieldMetrics is  {
       recipeId: RecipeId with {
         briefly "Recipe"
@@ -574,6 +589,38 @@ context BatchContext as router is {
       }
     }
     handler YieldHandler is {
+      on batchCreated: event Batch.BatchCreated is {
+        tell command BatchContext.BatchRepository.PersistBatchCreated(batchId = batchCreated.batchId) to repository BatchContext.BatchRepository
+        do "apply BatchCreated to the BatchYieldAnalytics projection"
+      }
+      on batchDischarged: event Batch.BatchDischarged is {
+        tell command BatchContext.BatchRepository.PersistBatchDischarged(batchId = batchDischarged.batchId) to repository BatchContext.BatchRepository
+        do "apply BatchDischarged to the BatchYieldAnalytics projection"
+      }
+      on batchHeld: event Batch.BatchHeld is {
+        tell command BatchContext.BatchRepository.PersistBatchHeld(batchId = batchHeld.batchId) to repository BatchContext.BatchRepository
+        do "apply BatchHeld to the BatchYieldAnalytics projection"
+      }
+      on batchHoldReleased: event Batch.BatchHoldReleased is {
+        tell command BatchContext.BatchRepository.PersistBatchHoldReleased(batchId = batchHoldReleased.batchId) to repository BatchContext.BatchRepository
+        do "apply BatchHoldReleased to the BatchYieldAnalytics projection"
+      }
+      on ingredientCharged: event Batch.IngredientCharged is {
+        tell command BatchContext.BatchRepository.PersistIngredientCharged(batchId = ingredientCharged.batchId) to repository BatchContext.BatchRepository
+        do "apply IngredientCharged to the BatchYieldAnalytics projection"
+      }
+      on parameterRecorded: event Batch.ParameterRecorded is {
+        tell command BatchContext.BatchRepository.PersistParameterRecorded(batchId = parameterRecorded.batchId) to repository BatchContext.BatchRepository
+        do "apply ParameterRecorded to the BatchYieldAnalytics projection"
+      }
+      on phaseAdvanced: event Batch.PhaseAdvanced is {
+        tell command BatchContext.BatchRepository.PersistPhaseAdvanced(batchId = phaseAdvanced.batchId) to repository BatchContext.BatchRepository
+        do "apply PhaseAdvanced to the BatchYieldAnalytics projection"
+      }
+      on processingStarted: event Batch.ProcessingStarted is {
+        tell command BatchContext.BatchRepository.PersistProcessingStarted(batchId = processingStarted.batchId) to repository BatchContext.BatchRepository
+        do "apply ProcessingStarted to the BatchYieldAnalytics projection"
+      }
       on batchCompleted: event Batch.BatchCompleted is {
         tell command BatchContext.BatchRepository.PersistBatchCompleted(batchId = batchCompleted.batchId) to repository BatchContext.BatchRepository
         do "Update yield metrics for recipe"
@@ -621,9 +668,9 @@ context BatchContext as router is {
       |Read model view carrying the cycle time metrics projection.
     }
   }
-  projector CycleTimeAnalytics as flow is {
+  projector CycleTimeAnalytics as sink is {
     updates repository BatchContext.BatchRepository
-    inlet CycleTimeAnalyticsFromBatch is type BatchEvent    outlet CycleTimeAnalyticsOut is type BatchEvent
+    inlet CycleTimeAnalyticsFromBatch is type BatchEvent
     record CycleTimeMetrics is  {
       vesselId: VesselId with {
         briefly "Vessel"
@@ -680,6 +727,22 @@ context BatchContext as router is {
       }
     }
     handler CycleTimeHandler is {
+      on batchRejected: event Batch.BatchRejected is {
+        tell command BatchContext.BatchRepository.PersistBatchRejected(batchId = batchRejected.batchId) to repository BatchContext.BatchRepository
+        do "apply BatchRejected to the CycleTimeAnalytics projection"
+      }
+      on ingredientCharged: event Batch.IngredientCharged is {
+        tell command BatchContext.BatchRepository.PersistIngredientCharged(batchId = ingredientCharged.batchId) to repository BatchContext.BatchRepository
+        do "apply IngredientCharged to the CycleTimeAnalytics projection"
+      }
+      on parameterRecorded: event Batch.ParameterRecorded is {
+        tell command BatchContext.BatchRepository.PersistParameterRecorded(batchId = parameterRecorded.batchId) to repository BatchContext.BatchRepository
+        do "apply ParameterRecorded to the CycleTimeAnalytics projection"
+      }
+      on phaseAdvanced: event Batch.PhaseAdvanced is {
+        tell command BatchContext.BatchRepository.PersistPhaseAdvanced(batchId = phaseAdvanced.batchId) to repository BatchContext.BatchRepository
+        do "apply PhaseAdvanced to the CycleTimeAnalytics projection"
+      }
       on batchCreated: event Batch.BatchCreated is {
         tell command BatchContext.BatchRepository.PersistBatchCreated(batchId = batchCreated.batchId) to repository BatchContext.BatchRepository
         do "Start cycle time tracking"
@@ -743,9 +806,9 @@ context BatchContext as router is {
       |Read model view carrying the utilization metrics projection.
     }
   }
-  projector EquipmentUtilization as flow is {
+  projector EquipmentUtilization as sink is {
     updates repository BatchContext.BatchRepository
-    inlet EquipmentUtilizationFromBatch is type BatchEvent    outlet EquipmentUtilizationOut is type BatchEvent
+    inlet EquipmentUtilizationFromBatch is type BatchEvent
     record UtilizationMetrics is  {
       vesselId: VesselId with {
         briefly "Vessel"
@@ -808,6 +871,34 @@ context BatchContext as router is {
       }
     }
     handler UtilizationHandler is {
+      on batchCreated: event Batch.BatchCreated is {
+        tell command BatchContext.BatchRepository.PersistBatchCreated(batchId = batchCreated.batchId) to repository BatchContext.BatchRepository
+        do "apply BatchCreated to the EquipmentUtilization projection"
+      }
+      on batchDischarged: event Batch.BatchDischarged is {
+        tell command BatchContext.BatchRepository.PersistBatchDischarged(batchId = batchDischarged.batchId) to repository BatchContext.BatchRepository
+        do "apply BatchDischarged to the EquipmentUtilization projection"
+      }
+      on batchHeld: event Batch.BatchHeld is {
+        tell command BatchContext.BatchRepository.PersistBatchHeld(batchId = batchHeld.batchId) to repository BatchContext.BatchRepository
+        do "apply BatchHeld to the EquipmentUtilization projection"
+      }
+      on batchHoldReleased: event Batch.BatchHoldReleased is {
+        tell command BatchContext.BatchRepository.PersistBatchHoldReleased(batchId = batchHoldReleased.batchId) to repository BatchContext.BatchRepository
+        do "apply BatchHoldReleased to the EquipmentUtilization projection"
+      }
+      on ingredientCharged: event Batch.IngredientCharged is {
+        tell command BatchContext.BatchRepository.PersistIngredientCharged(batchId = ingredientCharged.batchId) to repository BatchContext.BatchRepository
+        do "apply IngredientCharged to the EquipmentUtilization projection"
+      }
+      on parameterRecorded: event Batch.ParameterRecorded is {
+        tell command BatchContext.BatchRepository.PersistParameterRecorded(batchId = parameterRecorded.batchId) to repository BatchContext.BatchRepository
+        do "apply ParameterRecorded to the EquipmentUtilization projection"
+      }
+      on phaseAdvanced: event Batch.PhaseAdvanced is {
+        tell command BatchContext.BatchRepository.PersistPhaseAdvanced(batchId = phaseAdvanced.batchId) to repository BatchContext.BatchRepository
+        do "apply PhaseAdvanced to the EquipmentUtilization projection"
+      }
       on processingStarted: event Batch.ProcessingStarted is {
         tell command BatchContext.BatchRepository.PersistProcessingStarted(batchId = processingStarted.batchId) to repository BatchContext.BatchRepository
         do "Update vessel utilization start"
@@ -842,182 +933,68 @@ context BatchContext as router is {
       |persistence.
     }
   }
-  processor BatchEventSource as source is {
-    outlet BatchEvents is type BatchEvent
-    handler BatchSourceHandler is {
-      on batchCreated: event Batch.BatchCreated is {
-        send batchCreated to outlet BatchEvents
-      }
-      on ingredientCharged: event Batch.IngredientCharged is {
-        send ingredientCharged to outlet BatchEvents
-      }
-      on processingStarted: event Batch.ProcessingStarted is {
-        send processingStarted to outlet BatchEvents
-      }
-      on parameterRecorded: event Batch.ParameterRecorded is {
-        send parameterRecorded to outlet BatchEvents
-      }
-      on phaseAdvanced: event Batch.PhaseAdvanced is {
-        send phaseAdvanced to outlet BatchEvents
-      }
-      on batchHeld: event Batch.BatchHeld is {
-        send batchHeld to outlet BatchEvents
-      }
-      on batchHoldReleased: event Batch.BatchHoldReleased is {
-        send batchHoldReleased to outlet BatchEvents
-      }
-      on batchDischarged: event Batch.BatchDischarged is {
-        send batchDischarged to outlet BatchEvents
-      }
-      on batchCompleted: event Batch.BatchCompleted is {
-        send batchCompleted to outlet BatchEvents
-      }
-      on batchRejected: event Batch.BatchRejected is {
-        send batchRejected to outlet BatchEvents
-      }
-      on other is {
-        error "Unexpected message for source BatchEventSource"
-      }
-    } with {
-      briefly "Batch source handler"
-      described as {
-        |Publishes Batch events onto the outlet.
-      }
-    }
-  } with {
-    briefly "Batch event source"
-    described as {
-      |Publishes Batch entity events into the streaming topology.
-    }
-  }
-  processor BatchEventSink as sink is {
-    inlet BatchInlet is type BatchEvent    handler BatchSinkHandler is {
-      on batchCreated: event Batch.BatchCreated is {
-        tell batchCreated to repository BatchContext.BatchRepository
-      }
-      on ingredientCharged: event Batch.IngredientCharged is {
-        tell ingredientCharged to repository BatchContext.BatchRepository
-      }
-      on processingStarted: event Batch.ProcessingStarted is {
-        tell processingStarted to repository BatchContext.BatchRepository
-      }
-      on parameterRecorded: event Batch.ParameterRecorded is {
-        tell parameterRecorded to repository BatchContext.BatchRepository
-      }
-      on phaseAdvanced: event Batch.PhaseAdvanced is {
-        tell phaseAdvanced to repository BatchContext.BatchRepository
-      }
-      on batchHeld: event Batch.BatchHeld is {
-        tell batchHeld to repository BatchContext.BatchRepository
-      }
-      on batchHoldReleased: event Batch.BatchHoldReleased is {
-        tell batchHoldReleased to repository BatchContext.BatchRepository
-      }
-      on batchDischarged: event Batch.BatchDischarged is {
-        tell batchDischarged to repository BatchContext.BatchRepository
-      }
-      on batchCompleted: event Batch.BatchCompleted is {
-        tell batchCompleted to repository BatchContext.BatchRepository
-      }
-      on batchRejected: event Batch.BatchRejected is {
-        tell batchRejected to repository BatchContext.BatchRepository
-      }
-      on other is {
-        error "Unexpected message for sink BatchEventSink"
-      }
-    } with {
-      briefly "Batch sink handler"
-      described as {
-        |Persists Batch events via the repository.
-      }
-    }
-  } with {
-    briefly "Batch event sink"
-    described as {
-      |Receives Batch events for persistence.
-    }
-  }
-  connector BatchEventFlow is from outlet BatchContext.BatchEventSource.BatchEvents to inlet BatchContext.BatchEventSink.BatchInlet with {
-    briefly "Batch event flow"
-    described as {
-      |Connects the Batch source to its sink.
-    }
-  }
   processor BatchEventSplit as split is {
-    inlet BatchEventSplitIn is type BatchEvent    outlet BatchEventSplitToBatchRepository is type BatchEvent
+    inlet BatchEventSplitIn is type BatchEvent
     outlet BatchEventSplitToBatchYieldAnalytics is type BatchEvent
     outlet BatchEventSplitToCycleTimeAnalytics is type BatchEvent
     outlet BatchEventSplitToEquipmentUtilization is type BatchEvent
-    outlet BatchEventSplitToGenealogyRepository is type BatchEvent
+
     handler BatchEventSplitHandler is {
       on batchCreated: event Batch.BatchCreated is {
-        send batchCreated to outlet BatchEventSplitToBatchRepository
-        send batchCreated to outlet BatchEventSplitToGenealogyRepository
         send batchCreated to outlet BatchEventSplitToBatchYieldAnalytics
         send batchCreated to outlet BatchEventSplitToCycleTimeAnalytics
         send batchCreated to outlet BatchEventSplitToEquipmentUtilization
         tell batchCreated to entity BatchContext.Batch
       }
       on ingredientCharged: event Batch.IngredientCharged is {
-        send ingredientCharged to outlet BatchEventSplitToBatchRepository
-        send ingredientCharged to outlet BatchEventSplitToGenealogyRepository
         send ingredientCharged to outlet BatchEventSplitToBatchYieldAnalytics
         send ingredientCharged to outlet BatchEventSplitToCycleTimeAnalytics
         send ingredientCharged to outlet BatchEventSplitToEquipmentUtilization
         tell ingredientCharged to entity BatchContext.Batch
       }
       on processingStarted: event Batch.ProcessingStarted is {
-        send processingStarted to outlet BatchEventSplitToBatchRepository
         send processingStarted to outlet BatchEventSplitToBatchYieldAnalytics
         send processingStarted to outlet BatchEventSplitToCycleTimeAnalytics
         send processingStarted to outlet BatchEventSplitToEquipmentUtilization
         tell processingStarted to entity BatchContext.Batch
       }
       on parameterRecorded: event Batch.ParameterRecorded is {
-        send parameterRecorded to outlet BatchEventSplitToBatchRepository
         send parameterRecorded to outlet BatchEventSplitToBatchYieldAnalytics
         send parameterRecorded to outlet BatchEventSplitToCycleTimeAnalytics
         send parameterRecorded to outlet BatchEventSplitToEquipmentUtilization
         tell parameterRecorded to entity BatchContext.Batch
       }
       on phaseAdvanced: event Batch.PhaseAdvanced is {
-        send phaseAdvanced to outlet BatchEventSplitToBatchRepository
         send phaseAdvanced to outlet BatchEventSplitToBatchYieldAnalytics
         send phaseAdvanced to outlet BatchEventSplitToCycleTimeAnalytics
         send phaseAdvanced to outlet BatchEventSplitToEquipmentUtilization
         tell phaseAdvanced to entity BatchContext.Batch
       }
       on batchHeld: event Batch.BatchHeld is {
-        send batchHeld to outlet BatchEventSplitToBatchRepository
         send batchHeld to outlet BatchEventSplitToBatchYieldAnalytics
         send batchHeld to outlet BatchEventSplitToCycleTimeAnalytics
         send batchHeld to outlet BatchEventSplitToEquipmentUtilization
         tell batchHeld to entity BatchContext.Batch
       }
       on batchHoldReleased: event Batch.BatchHoldReleased is {
-        send batchHoldReleased to outlet BatchEventSplitToBatchRepository
         send batchHoldReleased to outlet BatchEventSplitToBatchYieldAnalytics
         send batchHoldReleased to outlet BatchEventSplitToCycleTimeAnalytics
         send batchHoldReleased to outlet BatchEventSplitToEquipmentUtilization
         tell batchHoldReleased to entity BatchContext.Batch
       }
       on batchDischarged: event Batch.BatchDischarged is {
-        send batchDischarged to outlet BatchEventSplitToBatchRepository
-        send batchDischarged to outlet BatchEventSplitToGenealogyRepository
         send batchDischarged to outlet BatchEventSplitToBatchYieldAnalytics
         send batchDischarged to outlet BatchEventSplitToCycleTimeAnalytics
         send batchDischarged to outlet BatchEventSplitToEquipmentUtilization
         tell batchDischarged to entity BatchContext.Batch
       }
       on batchCompleted: event Batch.BatchCompleted is {
-        send batchCompleted to outlet BatchEventSplitToBatchRepository
         send batchCompleted to outlet BatchEventSplitToBatchYieldAnalytics
         send batchCompleted to outlet BatchEventSplitToCycleTimeAnalytics
         send batchCompleted to outlet BatchEventSplitToEquipmentUtilization
         tell batchCompleted to entity BatchContext.Batch
       }
       on batchRejected: event Batch.BatchRejected is {
-        send batchRejected to outlet BatchEventSplitToBatchRepository
         send batchRejected to outlet BatchEventSplitToBatchYieldAnalytics
         send batchRejected to outlet BatchEventSplitToCycleTimeAnalytics
         send batchRejected to outlet BatchEventSplitToEquipmentUtilization
@@ -1041,9 +1018,6 @@ context BatchContext as router is {
   connector 'BatchEvent Stream' is from outlet BatchContext.Batch.BatchEvents2 to inlet BatchContext.BatchEventSplit.BatchEventSplitIn with {
     briefly "Batch events, fanned out to storage and read models"
   }
-  connector 'BatchEvent Storage' is from outlet BatchContext.BatchEventSplit.BatchEventSplitToBatchRepository to inlet BatchContext.BatchRepository.BatchRepositoryFromBatch with {
-    briefly "Batch events on their way to storage"
-  }
   connector 'BatchYieldAnalytics Feed' is from outlet BatchContext.BatchEventSplit.BatchEventSplitToBatchYieldAnalytics to inlet BatchContext.BatchYieldAnalytics.BatchYieldAnalyticsFromBatch with {
     briefly "Batch events feeding the BatchYieldAnalytics projection"
   }
@@ -1053,17 +1027,8 @@ context BatchContext as router is {
   connector 'EquipmentUtilization Feed' is from outlet BatchContext.BatchEventSplit.BatchEventSplitToEquipmentUtilization to inlet BatchContext.EquipmentUtilization.EquipmentUtilizationFromBatch with {
     briefly "Batch events feeding the EquipmentUtilization projection"
   }
-  connector 'BatchYieldAnalytics Storage' is from outlet BatchContext.BatchYieldAnalytics.BatchYieldAnalyticsOut to inlet BatchContext.BatchRepository.BatchRepositoryFromBatchYieldAnalytics with {
-    briefly "The BatchYieldAnalytics projection on its way to storage"
-  }
-  connector 'CycleTimeAnalytics Storage' is from outlet BatchContext.CycleTimeAnalytics.CycleTimeAnalyticsOut to inlet BatchContext.BatchRepository.BatchRepositoryFromCycleTimeAnalytics with {
-    briefly "The CycleTimeAnalytics projection on its way to storage"
-  }
-  connector 'EquipmentUtilization Storage' is from outlet BatchContext.EquipmentUtilization.EquipmentUtilizationOut to inlet BatchContext.BatchRepository.BatchRepositoryFromEquipmentUtilization with {
-    briefly "The EquipmentUtilization projection on its way to storage"
-  }
-  connector 'GenealogyRepository Storage' is from outlet BatchContext.BatchEventSplit.BatchEventSplitToGenealogyRepository to inlet BatchContext.GenealogyRepository.GenealogyRepositoryFromBatch with {
-    briefly "Batch lineage events on their way to genealogy storage"
+  connector 'BatchYieldAnalytics Storage' is from outlet BatchContext.BatchYieldAnalytics.BatchYieldAnalyticsToRepository to inlet BatchContext.BatchRepository.BatchRepositoryFromBatchYieldAnalytics with {
+    briefly "BatchYieldAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for batch processing"

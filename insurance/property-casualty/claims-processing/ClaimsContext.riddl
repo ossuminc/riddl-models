@@ -27,9 +27,6 @@ context ClaimsContext as router is {
     on closeClaim: command Claim.CloseClaim is {
       forward closeClaim to outlet ClaimsContext.ClaimCommandStreamOut
     }
-    on initializeClaim: command Claim.InitializeClaim is {
-      send initializeClaim to outlet ClaimsContext.ClaimCommandStreamOut
-    }
     on claimResult: result Claim.ClaimResult is {
       send claimResult to outlet ClaimsContext.ClaimResultStreamOut
     }
@@ -130,8 +127,18 @@ context ClaimsContext as router is {
     }
   }
   // Repository for claims persistence
-  repository ClaimRepository as merge is {
-    inlet ClaimRepositoryFromClaim is type ClaimEvent    inlet ClaimRepositoryFromLossRatioProjector is type ClaimEvent    inlet ClaimRepositoryFromCycleTimeProjector is type ClaimEvent    outlet ClaimRepositoryResponses is type Claim.ClaimResult
+  type ClaimRepositoryCommand is one of {
+    ClaimsContext.ClaimRepository.PersistAdjusterAssigned or ClaimsContext.ClaimRepository.PersistClaimApproved or ClaimsContext.ClaimRepository.PersistClaimClosed or ClaimsContext.ClaimRepository.PersistClaimDenied or ClaimsContext.ClaimRepository.PersistClaimFiled or ClaimsContext.ClaimRepository.PersistInvestigationUpdated or ClaimsContext.ClaimRepository.PersistPaymentIssued or ClaimsContext.ClaimRepository.PersistReserveEstablished
+  } with {
+    briefly "Anything that writes ClaimRepository"
+    described as {
+      |The persistence commands ClaimRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository ClaimRepository as flow is {
+    inlet ClaimRepositoryFromLossRatioProjector is type ClaimRepositoryCommand
+    outlet ClaimRepositoryResponses is type Claim.ClaimResult
     record StoredClaim is  {
       claimId: ClaimId with {
         briefly "claimId"
@@ -392,8 +399,9 @@ context ClaimsContext as router is {
     }
   }
   projector LossRatioProjector as flow is {
+    outlet LossRatioProjectorToRepository is type ClaimRepositoryCommand
     updates repository ClaimsContext.ClaimRepository
-    inlet LossRatioProjectorFromClaim is type ClaimEvent    outlet LossRatioProjectorOut is type ClaimEvent
+    inlet LossRatioProjectorFromClaim is type ClaimEvent
     record LossRatioMetric is  {
       periodStart: Date with {
         briefly "Period start"
@@ -451,6 +459,22 @@ context ClaimsContext as router is {
       }
     }
     handler LossRatioHandler is {
+      on adjusterAssigned: event Claim.AdjusterAssigned is {
+        tell command ClaimsContext.ClaimRepository.PersistAdjusterAssigned(adjusterId = adjusterAssigned.adjusterId) to repository ClaimsContext.ClaimRepository
+        do "apply AdjusterAssigned to the LossRatioProjector projection"
+      }
+      on claimApproved: event Claim.ClaimApproved is {
+        tell command ClaimsContext.ClaimRepository.PersistClaimApproved(claimId = claimApproved.claimId) to repository ClaimsContext.ClaimRepository
+        do "apply ClaimApproved to the LossRatioProjector projection"
+      }
+      on claimDenied: event Claim.ClaimDenied is {
+        tell command ClaimsContext.ClaimRepository.PersistClaimDenied(denialReason = claimDenied.denialReason) to repository ClaimsContext.ClaimRepository
+        do "apply ClaimDenied to the LossRatioProjector projection"
+      }
+      on investigationUpdated: event Claim.InvestigationUpdated is {
+        tell command ClaimsContext.ClaimRepository.PersistInvestigationUpdated(claimId = investigationUpdated.claimId) to repository ClaimsContext.ClaimRepository
+        do "apply InvestigationUpdated to the LossRatioProjector projection"
+      }
       on claimFiled: event Claim.ClaimFiled is {
         tell command ClaimsContext.ClaimRepository.PersistClaimFiled(claimId = claimFiled.claimId) to repository ClaimsContext.ClaimRepository
       }
@@ -531,9 +555,9 @@ context ClaimsContext as router is {
       |Read model view carrying the claim cycle tracking projection.
     }
   }
-  projector CycleTimeProjector as flow is {
+  projector CycleTimeProjector as sink is {
     updates repository ClaimsContext.ClaimRepository
-    inlet CycleTimeProjectorFromClaim is type ClaimEvent    outlet CycleTimeProjectorOut is type ClaimEvent
+    inlet CycleTimeProjectorFromClaim is type ClaimEvent
     record CycleTimeMetric is  {
       periodStart: Date with {
         briefly "Period start"
@@ -641,6 +665,18 @@ context ClaimsContext as router is {
       }
     }
     handler CycleTimeHandler is {
+      on claimApproved: event Claim.ClaimApproved is {
+        tell command ClaimsContext.ClaimRepository.PersistClaimApproved(claimId = claimApproved.claimId) to repository ClaimsContext.ClaimRepository
+        do "apply ClaimApproved to the CycleTimeProjector projection"
+      }
+      on claimDenied: event Claim.ClaimDenied is {
+        tell command ClaimsContext.ClaimRepository.PersistClaimDenied(denialReason = claimDenied.denialReason) to repository ClaimsContext.ClaimRepository
+        do "apply ClaimDenied to the CycleTimeProjector projection"
+      }
+      on paymentIssued: event Claim.PaymentIssued is {
+        tell command ClaimsContext.ClaimRepository.PersistPaymentIssued(claimId = paymentIssued.claimId) to repository ClaimsContext.ClaimRepository
+        do "apply PaymentIssued to the CycleTimeProjector projection"
+      }
       on claimFiled: event Claim.ClaimFiled is {
         tell command ClaimsContext.ClaimRepository.PersistClaimFiled(claimId = claimFiled.claimId) to repository ClaimsContext.ClaimRepository
       }
@@ -671,123 +707,47 @@ context ClaimsContext as router is {
       | improvement and staffing decisions.
     }
   }
-  processor ClaimEventSource as source is {
-    outlet ClaimEvents is type ClaimEvent
-    handler ClaimEventEmitter is {
-      on init is {
-        let initializeClaim: type InitializeClaim = prompt("the initialize claim that brings this this into existence")
-        tell initializeClaim to entity Claim
-      }
-      on other is {
-        error "Unexpected message for source ClaimEventSource"
-      }
-      on claimFiled: event Claim.ClaimFiled is {
-        send claimFiled to outlet ClaimEvents
-      }
-      on claimApproved: event Claim.ClaimApproved is {
-        send claimApproved to outlet ClaimEvents
-      }
-      on paymentIssued: event Claim.PaymentIssued is {
-        send paymentIssued to outlet ClaimEvents
-      }
-      on claimDenied: event Claim.ClaimDenied is {
-        send claimDenied to outlet ClaimEvents
-      }
-      on claimClosed: event Claim.ClaimClosed is {
-        send claimClosed to outlet ClaimEvents
-      }
-    } with {
-      briefly "Claim event emitter"
-      described as {
-        |Emits claim lifecycle events into the streaming
-        |topology.
-      }
-    }
-  } with {
-    briefly "Claim event source"
-    described as {
-      |Publishes claim entity events for streaming.
-    }
-  }
-  processor ClaimEventSink as sink is {
-    inlet IncomingClaimEvents is type ClaimEvent    handler ClaimEventReceiver is {
-      on init is { ??? }
-      on other is {
-        error "Unexpected message for sink ClaimEventSink"
-      }
-      on claimFiled: event Claim.ClaimFiled is {
-        tell claimFiled to repository ClaimsContext.ClaimRepository
-      }
-      on claimClosed: event Claim.ClaimClosed is {
-        tell claimClosed to repository ClaimsContext.ClaimRepository
-      }
-    } with {
-      briefly "Claim event receiver"
-      described as {
-        |Receives claim events and persists them.
-      }
-    }
-  } with {
-    briefly "Claim event sink"
-    described as {
-      |Receives claim events from the streaming topology.
-    }
-  }
-  connector ClaimEventPipeline is from outlet ClaimsContext.ClaimEventSource.ClaimEvents to inlet ClaimsContext.ClaimEventSink.IncomingClaimEvents with {
-    briefly "Claim event pipeline"
-    described as {
-      |Wires claim events from source to sink.
-    }
-  }
   processor ClaimEventSplit as split is {
-    inlet ClaimEventSplitIn is type ClaimEvent    outlet ClaimEventSplitToClaimRepository is type ClaimEvent
+    inlet ClaimEventSplitIn is type ClaimEvent
     outlet ClaimEventSplitToLossRatioProjector is type ClaimEvent
     outlet ClaimEventSplitToCycleTimeProjector is type ClaimEvent
     handler ClaimEventSplitHandler is {
       on claimFiled: event Claim.ClaimFiled is {
-        send claimFiled to outlet ClaimEventSplitToClaimRepository
         send claimFiled to outlet ClaimEventSplitToLossRatioProjector
         send claimFiled to outlet ClaimEventSplitToCycleTimeProjector
         tell claimFiled to entity ClaimsContext.Claim
       }
       on adjusterAssigned: event Claim.AdjusterAssigned is {
-        send adjusterAssigned to outlet ClaimEventSplitToClaimRepository
         send adjusterAssigned to outlet ClaimEventSplitToLossRatioProjector
         send adjusterAssigned to outlet ClaimEventSplitToCycleTimeProjector
         tell adjusterAssigned to entity ClaimsContext.Claim
       }
       on investigationUpdated: event Claim.InvestigationUpdated is {
-        send investigationUpdated to outlet ClaimEventSplitToClaimRepository
         send investigationUpdated to outlet ClaimEventSplitToLossRatioProjector
         send investigationUpdated to outlet ClaimEventSplitToCycleTimeProjector
         tell investigationUpdated to entity ClaimsContext.Claim
       }
       on reserveEstablished: event Claim.ReserveEstablished is {
-        send reserveEstablished to outlet ClaimEventSplitToClaimRepository
         send reserveEstablished to outlet ClaimEventSplitToLossRatioProjector
         send reserveEstablished to outlet ClaimEventSplitToCycleTimeProjector
         tell reserveEstablished to entity ClaimsContext.Claim
       }
       on claimApproved: event Claim.ClaimApproved is {
-        send claimApproved to outlet ClaimEventSplitToClaimRepository
         send claimApproved to outlet ClaimEventSplitToLossRatioProjector
         send claimApproved to outlet ClaimEventSplitToCycleTimeProjector
         tell claimApproved to entity ClaimsContext.Claim
       }
       on paymentIssued: event Claim.PaymentIssued is {
-        send paymentIssued to outlet ClaimEventSplitToClaimRepository
         send paymentIssued to outlet ClaimEventSplitToLossRatioProjector
         send paymentIssued to outlet ClaimEventSplitToCycleTimeProjector
         tell paymentIssued to entity ClaimsContext.Claim
       }
       on claimDenied: event Claim.ClaimDenied is {
-        send claimDenied to outlet ClaimEventSplitToClaimRepository
         send claimDenied to outlet ClaimEventSplitToLossRatioProjector
         send claimDenied to outlet ClaimEventSplitToCycleTimeProjector
         tell claimDenied to entity ClaimsContext.Claim
       }
       on claimClosed: event Claim.ClaimClosed is {
-        send claimClosed to outlet ClaimEventSplitToClaimRepository
         send claimClosed to outlet ClaimEventSplitToLossRatioProjector
         send claimClosed to outlet ClaimEventSplitToCycleTimeProjector
         tell claimClosed to entity ClaimsContext.Claim
@@ -810,20 +770,14 @@ context ClaimsContext as router is {
   connector 'ClaimEvent Stream' is from outlet ClaimsContext.Claim.ClaimEvents2 to inlet ClaimsContext.ClaimEventSplit.ClaimEventSplitIn with {
     briefly "Claim events, fanned out to storage and read models"
   }
-  connector 'ClaimEvent Storage' is from outlet ClaimsContext.ClaimEventSplit.ClaimEventSplitToClaimRepository to inlet ClaimsContext.ClaimRepository.ClaimRepositoryFromClaim with {
-    briefly "Claim events on their way to storage"
-  }
   connector 'LossRatioProjector Feed' is from outlet ClaimsContext.ClaimEventSplit.ClaimEventSplitToLossRatioProjector to inlet ClaimsContext.LossRatioProjector.LossRatioProjectorFromClaim with {
     briefly "Claim events feeding the LossRatioProjector projection"
   }
   connector 'CycleTimeProjector Feed' is from outlet ClaimsContext.ClaimEventSplit.ClaimEventSplitToCycleTimeProjector to inlet ClaimsContext.CycleTimeProjector.CycleTimeProjectorFromClaim with {
     briefly "Claim events feeding the CycleTimeProjector projection"
   }
-  connector 'LossRatioProjector Storage' is from outlet ClaimsContext.LossRatioProjector.LossRatioProjectorOut to inlet ClaimsContext.ClaimRepository.ClaimRepositoryFromLossRatioProjector with {
-    briefly "The LossRatioProjector projection on its way to storage"
-  }
-  connector 'CycleTimeProjector Storage' is from outlet ClaimsContext.CycleTimeProjector.CycleTimeProjectorOut to inlet ClaimsContext.ClaimRepository.ClaimRepositoryFromCycleTimeProjector with {
-    briefly "The CycleTimeProjector projection on its way to storage"
+  connector 'LossRatioProjector Storage' is from outlet ClaimsContext.LossRatioProjector.LossRatioProjectorToRepository to inlet ClaimsContext.ClaimRepository.ClaimRepositoryFromLossRatioProjector with {
+    briefly "LossRatioProjector updates on their way to storage"
   }
 } with {
   briefly "Bounded context for claims processing operations"

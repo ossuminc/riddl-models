@@ -2,7 +2,7 @@
 // The primary aggregate for deployment lifecycle management
 entity Deployment as flow is {
   type DeploymentCommand is one of {
-    Deployment.InitiateDeployment or Deployment.ApproveDeployment or Deployment.ExecuteDeployment or Deployment.VerifyDeployment or Deployment.CompleteDeployment or Deployment.RollbackDeployment or Deployment.InitializeDeployment
+    Deployment.InitiateDeployment or Deployment.ApproveDeployment or Deployment.ExecuteDeployment or Deployment.VerifyDeployment or Deployment.CompleteDeployment or Deployment.RollbackDeployment
   } with {
     briefly "Deployment command alternation"
     described as {
@@ -11,7 +11,7 @@ entity Deployment as flow is {
   }
   inlet DeploymentCommands is type DeploymentCommand  outlet DeploymentEvents is type DeploymentEvent
   // Commands
-  command InitiateDeployment is  {
+  command InitiateDeployment yields event DeploymentInitiated is  {
     deploymentId: DeploymentId with {
       briefly "Deployment identifier"
       described as {
@@ -68,7 +68,7 @@ entity Deployment as flow is {
       | AwaitingApproval state; otherwise it proceeds directly to execution.
     }
   }
-  command ApproveDeployment is  {
+  command ApproveDeployment yields event DeploymentApproved is  {
     deploymentId: DeploymentId with {
       briefly "Deployment identifier"
       described as {
@@ -94,7 +94,7 @@ entity Deployment as flow is {
       | Only deployments in AwaitingApproval state can be approved.
     }
   }
-  command ExecuteDeployment is  {
+  command ExecuteDeployment yields event DeploymentStarted is  {
     deploymentId: DeploymentId with {
       briefly "Deployment identifier"
       described as {
@@ -108,7 +108,7 @@ entity Deployment as flow is {
       | This initiates communication with infrastructure services.
     }
   }
-  command VerifyDeployment is  {
+  command VerifyDeployment yields event DeploymentVerified is  {
     deploymentId: DeploymentId with {
       briefly "Deployment identifier"
       described as {
@@ -146,7 +146,7 @@ entity Deployment as flow is {
       | If verification passes, the deployment can be completed.
     }
   }
-  command CompleteDeployment is  {
+  command CompleteDeployment yields event DeploymentCompleted is  {
     deploymentId: DeploymentId with {
       briefly "Deployment identifier"
       described as {
@@ -165,7 +165,7 @@ entity Deployment as flow is {
       |Finalizes a deployment after successful verification.
     }
   }
-  command RollbackDeployment is  {
+  command RollbackDeployment yields event DeploymentRolledBack is  {
     deploymentId: DeploymentId with {
       briefly "Deployment identifier"
       described as {
@@ -869,12 +869,6 @@ entity Deployment as flow is {
       |State data for a deployment that was rolled back.
     }
   }
-  command InitializeDeployment is  { ??? } with {
-    briefly "Initialize Deployment"
-    described as {
-      |Initializes the Deployment entity.
-    }
-  }
   // Queries
   query GetDeployment replies result DeploymentQueryResult is {
     deploymentId: DeploymentId with {
@@ -1041,29 +1035,47 @@ entity Deployment as flow is {
   }
   // Handler
   handler DeploymentHandler is {
+    on deploymentApproved: event DeploymentApproved is {
+      do "apply DeploymentApproved to the deployment so it can be persisted and replayed"
+    }
+    on deploymentCompleted: event DeploymentCompleted is {
+      do "apply DeploymentCompleted to the deployment so it can be persisted and replayed"
+    }
+    on deploymentInitiated: event DeploymentInitiated is {
+      do "apply DeploymentInitiated to the deployment so it can be persisted and replayed"
+    }
+    on deploymentRolledBack: event DeploymentRolledBack is {
+      do "apply DeploymentRolledBack to the deployment so it can be persisted and replayed"
+    }
+    on deploymentStarted: event DeploymentStarted is {
+      do "apply DeploymentStarted to the deployment so it can be persisted and replayed"
+    }
+    on deploymentVerified: event DeploymentVerified is {
+      do "apply DeploymentVerified to the deployment so it can be persisted and replayed"
+    }
     on initiateDeployment: command InitiateDeployment is {
       morph entity Deployment to state Deployment.PendingState with record Deployment.PendingData(deploymentId = initiateDeployment.deploymentId, artifactId = initiateDeployment.artifactId, targetEnvironment = initiateDeployment.targetEnvironment, deploymentStrategy = initiateDeployment.deploymentStrategy, healthCheckUrl = initiateDeployment.healthCheckUrl, timeoutMinutes = initiateDeployment.timeoutMinutes, requiresApproval = initiateDeployment.requiresApproval, initiatedBy = initiateDeployment.initiatedBy)
-      tell event DeploymentInitiated(deploymentId = initiateDeployment.deploymentId, artifactId = initiateDeployment.artifactId, targetEnvironment = initiateDeployment.targetEnvironment, initiatedBy = initiateDeployment.initiatedBy) to entity Deployment
+      yield event DeploymentInitiated(deploymentId = initiateDeployment.deploymentId, artifactId = initiateDeployment.artifactId, targetEnvironment = initiateDeployment.targetEnvironment, initiatedBy = initiateDeployment.initiatedBy)
     }
     on approveDeployment: command ApproveDeployment is {
       morph entity Deployment to state Deployment.ApprovedState with record Deployment.ApprovedData(deploymentId = approveDeployment.deploymentId, approvedBy = approveDeployment.approvedBy, approvalNotes = approveDeployment.approvalNotes)
-      tell event DeploymentApproved(deploymentId = approveDeployment.deploymentId, approvedBy = approveDeployment.approvedBy, approvalNotes = approveDeployment.approvalNotes) to entity Deployment
+      yield event DeploymentApproved(deploymentId = approveDeployment.deploymentId, approvedBy = approveDeployment.approvedBy, approvalNotes = approveDeployment.approvalNotes)
     }
     on executeDeployment: command ExecuteDeployment is {
       morph entity Deployment to state Deployment.InProgressState with record Deployment.InProgressData(deploymentId = executeDeployment.deploymentId)
-      tell event DeploymentStarted(deploymentId = executeDeployment.deploymentId) to entity Deployment
+      yield event DeploymentStarted(deploymentId = executeDeployment.deploymentId)
     }
     on verifyDeployment: command VerifyDeployment is {
       morph entity Deployment to state Deployment.VerifyingState with record Deployment.VerifyingData(deploymentId = verifyDeployment.deploymentId)
-      tell event DeploymentVerified(deploymentId = verifyDeployment.deploymentId, healthCheckPassed = verifyDeployment.healthCheckPassed) to entity Deployment
+      yield event DeploymentVerified(deploymentId = verifyDeployment.deploymentId, healthCheckPassed = verifyDeployment.healthCheckPassed)
     }
     on completeDeployment: command CompleteDeployment is {
       morph entity Deployment to state Deployment.CompletedState with record Deployment.CompletedData(deploymentId = completeDeployment.deploymentId, completedAt = completeDeployment.completedAt)
-      tell event DeploymentCompleted(deploymentId = completeDeployment.deploymentId, completedAt = completeDeployment.completedAt) to entity Deployment
+      yield event DeploymentCompleted(deploymentId = completeDeployment.deploymentId, completedAt = completeDeployment.completedAt)
     }
     on rollbackDeployment: command RollbackDeployment is {
       morph entity Deployment to state Deployment.RolledBackState with record Deployment.RolledBackData(deploymentId = rollbackDeployment.deploymentId, rolledBackBy = rollbackDeployment.rolledBackBy)
-      tell event DeploymentRolledBack(deploymentId = rollbackDeployment.deploymentId, rolledBackBy = rollbackDeployment.rolledBackBy) to entity Deployment
+      yield event DeploymentRolledBack(deploymentId = rollbackDeployment.deploymentId, rolledBackBy = rollbackDeployment.rolledBackBy)
     }
     on getDeployment: query GetDeployment is {
       reply result DeploymentQueryResult(deploymentId = getDeployment.deploymentId)

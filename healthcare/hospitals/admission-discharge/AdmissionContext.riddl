@@ -24,9 +24,6 @@ context AdmissionContext as router is {
     on completeDischarge: command Admission.CompleteDischarge is {
       send completeDischarge to outlet AdmissionContext.AdmissionCommandStreamOut
     }
-    on initializeAdmission: command Admission.InitializeAdmission is {
-      send initializeAdmission to outlet AdmissionContext.AdmissionCommandStreamOut
-    }
     on admissionResult: result Admission.AdmissionResult is {
       send admissionResult to outlet AdmissionContext.AdmissionResultStreamOut
     }
@@ -286,7 +283,62 @@ context AdmissionContext as router is {
   include "types.riddl"
   include "Admission.riddl"
   // Repository for admission persistence
-  repository AdmissionRepository as merge is {
+  type AdmissionRepositoryCommand is one of {
+    AdmissionContext.AdmissionRepository.PersistAdmissionCreated or AdmissionContext.AdmissionRepository.PersistBedAssigned or AdmissionContext.AdmissionRepository.PersistConditionUpdated or AdmissionContext.AdmissionRepository.PersistDischargeCompleted or AdmissionContext.AdmissionRepository.PersistDischargeInitiated or AdmissionContext.AdmissionRepository.PersistPatientTransferred or AdmissionContext.AdmissionRepository.PersistTransferRequested
+  } with {
+    briefly "Anything that writes AdmissionRepository"
+    described as {
+      |The persistence commands AdmissionRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository AdmissionRepository as flow is {
+    inlet AdmissionRepositoryFromBedOccupancyProjector is type AdmissionRepositoryCommand
+    command PersistConditionUpdated is  {
+      admissionId: AdmissionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ConditionUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist ConditionUpdated"
+      described as {
+        |Instructs this repository to apply ConditionUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistDischargeInitiated is  {
+      admissionId: AdmissionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row DischargeInitiated applies to.
+        }
+      }
+    } with {
+      briefly "Persist DischargeInitiated"
+      described as {
+        |Instructs this repository to apply DischargeInitiated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistTransferRequested is  {
+      admissionId: AdmissionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TransferRequested applies to.
+        }
+      }
+    } with {
+      briefly "Persist TransferRequested"
+      described as {
+        |Instructs this repository to apply TransferRequested to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistAdmissionCreated is  {
       admissionId: AdmissionId with {
         briefly "Row addressed"
@@ -347,7 +399,7 @@ context AdmissionContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet AdmissionRepositoryFromAdmission is type AdmissionEvent    inlet AdmissionRepositoryFromBedOccupancyProjector is type AdmissionEvent    inlet AdmissionRepositoryFromLengthOfStayProjector is type AdmissionEvent    inlet AdmissionRepositoryFromThroughputProjector is type AdmissionEvent    outlet AdmissionRepositoryResponses is type Admission.AdmissionResult
+    outlet AdmissionRepositoryResponses is type Admission.AdmissionResult
     record StoredAdmission is  {
       admissionId: AdmissionId with {
         briefly "admissionId"
@@ -378,6 +430,15 @@ context AdmissionContext as router is {
       }
     }
     handler AdmissionPersistence is {
+      on persistConditionUpdated: command PersistConditionUpdated is {
+        do "apply ConditionUpdated to the stored row"
+      }
+      on persistDischargeInitiated: command PersistDischargeInitiated is {
+        do "apply DischargeInitiated to the stored row"
+      }
+      on persistTransferRequested: command PersistTransferRequested is {
+        do "apply TransferRequested to the stored row"
+      }
       on persistAdmissionCreated: command PersistAdmissionCreated is {
         do "apply AdmissionCreated to the stored row"
       }
@@ -402,30 +463,6 @@ context AdmissionContext as router is {
         let throughputStatsView: type ThroughputStatsView = prompt("read the throughput stats projection")
         reply throughputStatsView
       }
-      on createAdmission: command Admission.CreateAdmission is {
-        tell event Admission.AdmissionCreated(admissionId = createAdmission.admissionId, patientId = createAdmission.patientId, admissionType = createAdmission.admissionType, admittingPhysicianId = createAdmission.admittingPhysicianId, attendingPhysicianId = createAdmission.attendingPhysicianId, admitDiagnosis = createAdmission.admitDiagnosis) to entity AdmissionContext.Admission
-      }
-      on assignBed: command Admission.AssignBed is {
-        send event Admission.BedAssigned(admissionId = assignBed.admissionId) to outlet AdmissionEventSplitToBedCensusRepository
-        tell event Admission.BedAssigned(admissionId = assignBed.admissionId) to entity AdmissionContext.Admission
-      }
-      on requestTransfer: command Admission.RequestTransfer is {
-        tell event Admission.TransferRequested(admissionId = requestTransfer.admissionId) to entity AdmissionContext.Admission
-      }
-      on transferPatient: command Admission.TransferPatient is {
-        send event Admission.PatientTransferred(admissionId = transferPatient.admissionId) to outlet AdmissionEventSplitToBedCensusRepository
-        tell event Admission.PatientTransferred(admissionId = transferPatient.admissionId) to entity AdmissionContext.Admission
-      }
-      on updateCondition: command Admission.UpdateCondition is {
-        tell event Admission.ConditionUpdated(admissionId = updateCondition.admissionId, notes = updateCondition.notes) to entity AdmissionContext.Admission
-      }
-      on initiateDischarge: command Admission.InitiateDischarge is {
-        tell event Admission.DischargeInitiated(admissionId = initiateDischarge.admissionId) to entity AdmissionContext.Admission
-      }
-      on completeDischarge: command Admission.CompleteDischarge is {
-        send event Admission.DischargeCompleted(admissionId = completeDischarge.admissionId) to outlet AdmissionEventSplitToBedCensusRepository
-        tell event Admission.DischargeCompleted(admissionId = completeDischarge.admissionId) to entity AdmissionContext.Admission
-      }
     } with {
       briefly "Persists admission commands"
       described as {
@@ -441,7 +478,7 @@ context AdmissionContext as router is {
   }
   // Repository for bed census
   repository BedCensusRepository as sink is {
-    inlet BedCensusRepositoryFromAdmission is type AdmissionEvent    schema BedCensusData is relational
+    schema BedCensusData is relational
       of beds as type BedAssignment
         index on field BedAssignment.bedId
         index on field BedAssignment.unitId
@@ -452,15 +489,6 @@ context AdmissionContext as router is {
       }
     }
     handler BedCensusPersistence is {
-      on assignBed: command Admission.AssignBed is {
-        tell event Admission.BedAssigned(admissionId = assignBed.admissionId) to entity AdmissionContext.Admission
-      }
-      on transferPatient: command Admission.TransferPatient is {
-        tell event Admission.PatientTransferred(admissionId = transferPatient.admissionId) to entity AdmissionContext.Admission
-      }
-      on completeDischarge: command Admission.CompleteDischarge is {
-        tell event Admission.DischargeCompleted(admissionId = completeDischarge.admissionId) to entity AdmissionContext.Admission
-      }
     } with {
       briefly "Maintains bed census"
       described as {
@@ -502,8 +530,9 @@ context AdmissionContext as router is {
     }
   }
   projector BedOccupancyProjector as flow is {
+    outlet BedOccupancyProjectorToRepository is type AdmissionRepositoryCommand
     updates repository AdmissionContext.AdmissionRepository
-    inlet BedOccupancyProjectorFromAdmission is type AdmissionEvent    outlet BedOccupancyProjectorOut is type AdmissionEvent
+    inlet BedOccupancyProjectorFromAdmission is type AdmissionEvent
     record OccupancyStats is  {
       unitId: UnitId with {
         briefly "Unit"
@@ -560,6 +589,22 @@ context AdmissionContext as router is {
       }
     }
     handler OccupancyHandler is {
+      on admissionCreated: event Admission.AdmissionCreated is {
+        tell command AdmissionContext.AdmissionRepository.PersistAdmissionCreated(admissionId = admissionCreated.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply AdmissionCreated to the BedOccupancyProjector projection"
+      }
+      on conditionUpdated: event Admission.ConditionUpdated is {
+        tell command AdmissionContext.AdmissionRepository.PersistConditionUpdated(admissionId = conditionUpdated.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply ConditionUpdated to the BedOccupancyProjector projection"
+      }
+      on dischargeInitiated: event Admission.DischargeInitiated is {
+        tell command AdmissionContext.AdmissionRepository.PersistDischargeInitiated(admissionId = dischargeInitiated.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply DischargeInitiated to the BedOccupancyProjector projection"
+      }
+      on transferRequested: event Admission.TransferRequested is {
+        tell command AdmissionContext.AdmissionRepository.PersistTransferRequested(admissionId = transferRequested.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply TransferRequested to the BedOccupancyProjector projection"
+      }
       on bedAssigned: event Admission.BedAssigned is {
         tell command AdmissionContext.AdmissionRepository.PersistBedAssigned(admissionId = bedAssigned.admissionId) to repository AdmissionContext.AdmissionRepository
       }
@@ -608,9 +653,9 @@ context AdmissionContext as router is {
       |Read model view carrying the los stats projection.
     }
   }
-  projector LengthOfStayProjector as flow is {
+  projector LengthOfStayProjector as sink is {
     updates repository AdmissionContext.AdmissionRepository
-    inlet LengthOfStayProjectorFromAdmission is type AdmissionEvent    outlet LengthOfStayProjectorOut is type AdmissionEvent
+    inlet LengthOfStayProjectorFromAdmission is type AdmissionEvent
     record LOSStats is  {
       filterUnitId: UnitId? with {
         briefly "Unit"
@@ -673,6 +718,30 @@ context AdmissionContext as router is {
       }
     }
     handler LOSHandler is {
+      on admissionCreated: event Admission.AdmissionCreated is {
+        tell command AdmissionContext.AdmissionRepository.PersistAdmissionCreated(admissionId = admissionCreated.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply AdmissionCreated to the LengthOfStayProjector projection"
+      }
+      on bedAssigned: event Admission.BedAssigned is {
+        tell command AdmissionContext.AdmissionRepository.PersistBedAssigned(admissionId = bedAssigned.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply BedAssigned to the LengthOfStayProjector projection"
+      }
+      on conditionUpdated: event Admission.ConditionUpdated is {
+        tell command AdmissionContext.AdmissionRepository.PersistConditionUpdated(admissionId = conditionUpdated.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply ConditionUpdated to the LengthOfStayProjector projection"
+      }
+      on dischargeInitiated: event Admission.DischargeInitiated is {
+        tell command AdmissionContext.AdmissionRepository.PersistDischargeInitiated(admissionId = dischargeInitiated.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply DischargeInitiated to the LengthOfStayProjector projection"
+      }
+      on patientTransferred: event Admission.PatientTransferred is {
+        tell command AdmissionContext.AdmissionRepository.PersistPatientTransferred(admissionId = patientTransferred.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply PatientTransferred to the LengthOfStayProjector projection"
+      }
+      on transferRequested: event Admission.TransferRequested is {
+        tell command AdmissionContext.AdmissionRepository.PersistTransferRequested(admissionId = transferRequested.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply TransferRequested to the LengthOfStayProjector projection"
+      }
       on dischargeCompleted: event Admission.DischargeCompleted is {
         tell command AdmissionContext.AdmissionRepository.PersistDischargeCompleted(admissionId = dischargeCompleted.admissionId) to repository AdmissionContext.AdmissionRepository
       }
@@ -715,9 +784,9 @@ context AdmissionContext as router is {
       |Read model view carrying the throughput stats projection.
     }
   }
-  projector ThroughputProjector as flow is {
+  projector ThroughputProjector as sink is {
     updates repository AdmissionContext.AdmissionRepository
-    inlet ThroughputProjectorFromAdmission is type AdmissionEvent    outlet ThroughputProjectorOut is type AdmissionEvent
+    inlet ThroughputProjectorFromAdmission is type AdmissionEvent
     record ThroughputStats is  {
       periodDate: Date with {
         briefly "Date"
@@ -774,6 +843,18 @@ context AdmissionContext as router is {
       }
     }
     handler ThroughputHandler is {
+      on conditionUpdated: event Admission.ConditionUpdated is {
+        tell command AdmissionContext.AdmissionRepository.PersistConditionUpdated(admissionId = conditionUpdated.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply ConditionUpdated to the ThroughputProjector projection"
+      }
+      on dischargeInitiated: event Admission.DischargeInitiated is {
+        tell command AdmissionContext.AdmissionRepository.PersistDischargeInitiated(admissionId = dischargeInitiated.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply DischargeInitiated to the ThroughputProjector projection"
+      }
+      on transferRequested: event Admission.TransferRequested is {
+        tell command AdmissionContext.AdmissionRepository.PersistTransferRequested(admissionId = transferRequested.admissionId) to repository AdmissionContext.AdmissionRepository
+        do "apply TransferRequested to the ThroughputProjector projection"
+      }
       on admissionCreated: event Admission.AdmissionCreated is {
         tell command AdmissionContext.AdmissionRepository.PersistAdmissionCreated(admissionId = admissionCreated.admissionId) to repository AdmissionContext.AdmissionRepository
       }
@@ -877,56 +958,49 @@ context AdmissionContext as router is {
     }
   }
   processor AdmissionEventSplit as split is {
-    inlet AdmissionEventSplitIn is type AdmissionEvent    outlet AdmissionEventSplitToAdmissionRepository is type AdmissionEvent
+    inlet AdmissionEventSplitIn is type AdmissionEvent
     outlet AdmissionEventSplitToBedOccupancyProjector is type AdmissionEvent
     outlet AdmissionEventSplitToLengthOfStayProjector is type AdmissionEvent
     outlet AdmissionEventSplitToThroughputProjector is type AdmissionEvent
-    outlet AdmissionEventSplitToBedCensusRepository is type AdmissionEvent
+
     handler AdmissionEventSplitHandler is {
       on admissionCreated: event Admission.AdmissionCreated is {
-        send admissionCreated to outlet AdmissionEventSplitToAdmissionRepository
         send admissionCreated to outlet AdmissionEventSplitToBedOccupancyProjector
         send admissionCreated to outlet AdmissionEventSplitToLengthOfStayProjector
         send admissionCreated to outlet AdmissionEventSplitToThroughputProjector
         tell admissionCreated to entity AdmissionContext.Admission
       }
       on bedAssigned: event Admission.BedAssigned is {
-        send bedAssigned to outlet AdmissionEventSplitToAdmissionRepository
         send bedAssigned to outlet AdmissionEventSplitToBedOccupancyProjector
         send bedAssigned to outlet AdmissionEventSplitToLengthOfStayProjector
         send bedAssigned to outlet AdmissionEventSplitToThroughputProjector
         tell bedAssigned to entity AdmissionContext.Admission
       }
       on transferRequested: event Admission.TransferRequested is {
-        send transferRequested to outlet AdmissionEventSplitToAdmissionRepository
         send transferRequested to outlet AdmissionEventSplitToBedOccupancyProjector
         send transferRequested to outlet AdmissionEventSplitToLengthOfStayProjector
         send transferRequested to outlet AdmissionEventSplitToThroughputProjector
         tell transferRequested to entity AdmissionContext.Admission
       }
       on patientTransferred: event Admission.PatientTransferred is {
-        send patientTransferred to outlet AdmissionEventSplitToAdmissionRepository
         send patientTransferred to outlet AdmissionEventSplitToBedOccupancyProjector
         send patientTransferred to outlet AdmissionEventSplitToLengthOfStayProjector
         send patientTransferred to outlet AdmissionEventSplitToThroughputProjector
         tell patientTransferred to entity AdmissionContext.Admission
       }
       on conditionUpdated: event Admission.ConditionUpdated is {
-        send conditionUpdated to outlet AdmissionEventSplitToAdmissionRepository
         send conditionUpdated to outlet AdmissionEventSplitToBedOccupancyProjector
         send conditionUpdated to outlet AdmissionEventSplitToLengthOfStayProjector
         send conditionUpdated to outlet AdmissionEventSplitToThroughputProjector
         tell conditionUpdated to entity AdmissionContext.Admission
       }
       on dischargeInitiated: event Admission.DischargeInitiated is {
-        send dischargeInitiated to outlet AdmissionEventSplitToAdmissionRepository
         send dischargeInitiated to outlet AdmissionEventSplitToBedOccupancyProjector
         send dischargeInitiated to outlet AdmissionEventSplitToLengthOfStayProjector
         send dischargeInitiated to outlet AdmissionEventSplitToThroughputProjector
         tell dischargeInitiated to entity AdmissionContext.Admission
       }
       on dischargeCompleted: event Admission.DischargeCompleted is {
-        send dischargeCompleted to outlet AdmissionEventSplitToAdmissionRepository
         send dischargeCompleted to outlet AdmissionEventSplitToBedOccupancyProjector
         send dischargeCompleted to outlet AdmissionEventSplitToLengthOfStayProjector
         send dischargeCompleted to outlet AdmissionEventSplitToThroughputProjector
@@ -950,9 +1024,6 @@ context AdmissionContext as router is {
   connector 'AdmissionEvent Stream' is from outlet AdmissionContext.Admission.AdmissionEvents2 to inlet AdmissionContext.AdmissionEventSplit.AdmissionEventSplitIn with {
     briefly "Admission events, fanned out to storage and read models"
   }
-  connector 'AdmissionEvent Storage' is from outlet AdmissionContext.AdmissionEventSplit.AdmissionEventSplitToAdmissionRepository to inlet AdmissionContext.AdmissionRepository.AdmissionRepositoryFromAdmission with {
-    briefly "Admission events on their way to storage"
-  }
   connector 'BedOccupancyProjector Feed' is from outlet AdmissionContext.AdmissionEventSplit.AdmissionEventSplitToBedOccupancyProjector to inlet AdmissionContext.BedOccupancyProjector.BedOccupancyProjectorFromAdmission with {
     briefly "Admission events feeding the BedOccupancyProjector projection"
   }
@@ -962,17 +1033,8 @@ context AdmissionContext as router is {
   connector 'ThroughputProjector Feed' is from outlet AdmissionContext.AdmissionEventSplit.AdmissionEventSplitToThroughputProjector to inlet AdmissionContext.ThroughputProjector.ThroughputProjectorFromAdmission with {
     briefly "Admission events feeding the ThroughputProjector projection"
   }
-  connector 'BedOccupancyProjector Storage' is from outlet AdmissionContext.BedOccupancyProjector.BedOccupancyProjectorOut to inlet AdmissionContext.AdmissionRepository.AdmissionRepositoryFromBedOccupancyProjector with {
-    briefly "The BedOccupancyProjector projection on its way to storage"
-  }
-  connector 'LengthOfStayProjector Storage' is from outlet AdmissionContext.LengthOfStayProjector.LengthOfStayProjectorOut to inlet AdmissionContext.AdmissionRepository.AdmissionRepositoryFromLengthOfStayProjector with {
-    briefly "The LengthOfStayProjector projection on its way to storage"
-  }
-  connector 'ThroughputProjector Storage' is from outlet AdmissionContext.ThroughputProjector.ThroughputProjectorOut to inlet AdmissionContext.AdmissionRepository.AdmissionRepositoryFromThroughputProjector with {
-    briefly "The ThroughputProjector projection on its way to storage"
-  }
-  connector 'BedCensusRepository Storage' is from outlet AdmissionContext.AdmissionEventSplit.AdmissionEventSplitToBedCensusRepository to inlet AdmissionContext.BedCensusRepository.BedCensusRepositoryFromAdmission with {
-    briefly "Bed occupancy events on their way to census storage"
+  connector 'BedOccupancyProjector Storage' is from outlet AdmissionContext.BedOccupancyProjector.BedOccupancyProjectorToRepository to inlet AdmissionContext.AdmissionRepository.AdmissionRepositoryFromBedOccupancyProjector with {
+    briefly "BedOccupancyProjector updates on their way to storage"
   }
 } with {
   briefly "Bounded context for hospital admissions"

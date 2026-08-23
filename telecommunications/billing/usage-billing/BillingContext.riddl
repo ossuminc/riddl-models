@@ -197,7 +197,17 @@ context BillingContext as router is {
   include "BillingAccount.riddl"
   // === Event Union Type ===
   // === Repository ===
-  repository BillingAccountRepository as merge is {
+  type BillingAccountRepositoryCommand is one of {
+    BillingContext.BillingAccountRepository.PersistAccountClosed or BillingContext.BillingAccountRepository.PersistAccountCreated or BillingContext.BillingAccountRepository.PersistAccountReactivated or BillingContext.BillingAccountRepository.PersistAccountSuspended or BillingContext.BillingAccountRepository.PersistCreditApplied or BillingContext.BillingAccountRepository.PersistCustomerInfoUpdated or BillingContext.BillingAccountRepository.PersistInvoiceGenerated or BillingContext.BillingAccountRepository.PersistPaymentApplied or BillingContext.BillingAccountRepository.PersistRatePlanChanged or BillingContext.BillingAccountRepository.PersistUsageRecorded
+  } with {
+    briefly "Anything that writes BillingAccountRepository"
+    described as {
+      |The persistence commands BillingAccountRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository BillingAccountRepository as flow is {
+    inlet BillingAccountRepositoryFromAccountSummaryProjector is type BillingAccountRepositoryCommand
     command PersistAccountClosed is  {
       accountId: AccountId with {
         briefly "Row addressed"
@@ -370,7 +380,7 @@ context BillingContext as router is {
         |The relational schema persisting billing account records for this repository.
       }
     }
-    inlet BillingAccountRepositoryFromBillingAccount is type BillingAccountEvent    inlet BillingAccountRepositoryFromAccountSummaryProjector is type BillingAccountEvent    inlet BillingAccountRepositoryFromRevenueAnalyticsProjector is type BillingAccountEvent    outlet BillingAccountRepositoryResponses is type BillingAccount.BillingAccountResult
+    outlet BillingAccountRepositoryResponses is type BillingAccount.BillingAccountResult
     query FindAccountById replies result AccountResult is  {
       accountId: AccountId with {
         briefly "Account"
@@ -623,8 +633,9 @@ context BillingContext as router is {
     }
   }
   projector AccountSummaryProjector as flow is {
+    outlet AccountSummaryProjectorToRepository is type BillingAccountRepositoryCommand
     updates repository BillingContext.BillingAccountRepository
-    inlet AccountSummaryProjectorFromBillingAccount is type BillingAccountEvent    outlet AccountSummaryProjectorOut is type BillingAccountEvent
+    inlet AccountSummaryProjectorFromBillingAccount is type BillingAccountEvent
     record AccountSummaryView is  {
       accountId: AccountId with {
         briefly "Account"
@@ -777,9 +788,9 @@ context BillingContext as router is {
       |Read model view carrying the daily revenue view projection.
     }
   }
-  projector RevenueAnalyticsProjector as flow is {
+  projector RevenueAnalyticsProjector as sink is {
     updates repository BillingContext.BillingAccountRepository
-    inlet RevenueAnalyticsProjectorFromBillingAccount is type BillingAccountEvent    outlet RevenueAnalyticsProjectorOut is type BillingAccountEvent
+    inlet RevenueAnalyticsProjectorFromBillingAccount is type BillingAccountEvent
     record DailyRevenueView is  {
       date: Date with {
         briefly "Date"
@@ -855,6 +866,34 @@ context BillingContext as router is {
       }
     }
     handler RevenueHandler is {
+      on accountClosed: event BillingAccount.AccountClosed is {
+        tell command BillingContext.BillingAccountRepository.PersistAccountClosed(accountId = accountClosed.accountId) to repository BillingContext.BillingAccountRepository
+        do "apply AccountClosed to the RevenueAnalyticsProjector projection"
+      }
+      on accountCreated: event BillingAccount.AccountCreated is {
+        tell command BillingContext.BillingAccountRepository.PersistAccountCreated(accountId = accountCreated.accountId) to repository BillingContext.BillingAccountRepository
+        do "apply AccountCreated to the RevenueAnalyticsProjector projection"
+      }
+      on accountReactivated: event BillingAccount.AccountReactivated is {
+        tell command BillingContext.BillingAccountRepository.PersistAccountReactivated(accountId = accountReactivated.accountId) to repository BillingContext.BillingAccountRepository
+        do "apply AccountReactivated to the RevenueAnalyticsProjector projection"
+      }
+      on accountSuspended: event BillingAccount.AccountSuspended is {
+        tell command BillingContext.BillingAccountRepository.PersistAccountSuspended(accountId = accountSuspended.accountId) to repository BillingContext.BillingAccountRepository
+        do "apply AccountSuspended to the RevenueAnalyticsProjector projection"
+      }
+      on creditApplied: event BillingAccount.CreditApplied is {
+        tell command BillingContext.BillingAccountRepository.PersistCreditApplied(accountId = creditApplied.accountId) to repository BillingContext.BillingAccountRepository
+        do "apply CreditApplied to the RevenueAnalyticsProjector projection"
+      }
+      on customerInfoUpdated: event BillingAccount.CustomerInfoUpdated is {
+        tell command BillingContext.BillingAccountRepository.PersistCustomerInfoUpdated(accountId = customerInfoUpdated.accountId) to repository BillingContext.BillingAccountRepository
+        do "apply CustomerInfoUpdated to the RevenueAnalyticsProjector projection"
+      }
+      on ratePlanChanged: event BillingAccount.RatePlanChanged is {
+        tell command BillingContext.BillingAccountRepository.PersistRatePlanChanged(accountId = ratePlanChanged.accountId) to repository BillingContext.BillingAccountRepository
+        do "apply RatePlanChanged to the RevenueAnalyticsProjector projection"
+      }
       on invoiceGenerated: event BillingAccount.InvoiceGenerated is {
         tell command BillingContext.BillingAccountRepository.PersistInvoiceGenerated(accountId = invoiceGenerated.accountId) to repository BillingContext.BillingAccountRepository
       }
@@ -888,168 +927,57 @@ context BillingContext as router is {
       |persistence.
     }
   }
-  processor BillingAccountEventSource as source is {
-    outlet BillingAccountEvents is type BillingAccountEvent
-    handler BillingAccountSourceHandler is {
-      on accountCreated: event BillingAccount.AccountCreated is {
-        send accountCreated to outlet BillingAccountEvents
-      }
-      on customerInfoUpdated: event BillingAccount.CustomerInfoUpdated is {
-        send customerInfoUpdated to outlet BillingAccountEvents
-      }
-      on ratePlanChanged: event BillingAccount.RatePlanChanged is {
-        send ratePlanChanged to outlet BillingAccountEvents
-      }
-      on usageRecorded: event BillingAccount.UsageRecorded is {
-        send usageRecorded to outlet BillingAccountEvents
-      }
-      on invoiceGenerated: event BillingAccount.InvoiceGenerated is {
-        send invoiceGenerated to outlet BillingAccountEvents
-      }
-      on paymentApplied: event BillingAccount.PaymentApplied is {
-        send paymentApplied to outlet BillingAccountEvents
-      }
-      on creditApplied: event BillingAccount.CreditApplied is {
-        send creditApplied to outlet BillingAccountEvents
-      }
-      on accountSuspended: event BillingAccount.AccountSuspended is {
-        send accountSuspended to outlet BillingAccountEvents
-      }
-      on accountReactivated: event BillingAccount.AccountReactivated is {
-        send accountReactivated to outlet BillingAccountEvents
-      }
-      on accountClosed: event BillingAccount.AccountClosed is {
-        send accountClosed to outlet BillingAccountEvents
-      }
-      on other is {
-        error "Unexpected message for source BillingAccountEventSource"
-      }
-    } with {
-      briefly "BillingAccount source handler"
-      described as {
-        |Publishes BillingAccount events onto the outlet.
-      }
-    }
-  } with {
-    briefly "BillingAccount event source"
-    described as {
-      |Publishes BillingAccount entity events into the streaming topology.
-    }
-  }
-  processor BillingAccountEventSink as sink is {
-    inlet BillingAccountInlet is type BillingAccountEvent    handler BillingAccountSinkHandler is {
-      on accountCreated: event BillingAccount.AccountCreated is {
-        tell accountCreated to repository BillingContext.BillingAccountRepository
-      }
-      on customerInfoUpdated: event BillingAccount.CustomerInfoUpdated is {
-        tell customerInfoUpdated to repository BillingContext.BillingAccountRepository
-      }
-      on ratePlanChanged: event BillingAccount.RatePlanChanged is {
-        tell ratePlanChanged to repository BillingContext.BillingAccountRepository
-      }
-      on usageRecorded: event BillingAccount.UsageRecorded is {
-        tell usageRecorded to repository BillingContext.BillingAccountRepository
-      }
-      on invoiceGenerated: event BillingAccount.InvoiceGenerated is {
-        tell invoiceGenerated to repository BillingContext.BillingAccountRepository
-      }
-      on paymentApplied: event BillingAccount.PaymentApplied is {
-        tell paymentApplied to repository BillingContext.BillingAccountRepository
-      }
-      on creditApplied: event BillingAccount.CreditApplied is {
-        tell creditApplied to repository BillingContext.BillingAccountRepository
-      }
-      on accountSuspended: event BillingAccount.AccountSuspended is {
-        tell accountSuspended to repository BillingContext.BillingAccountRepository
-      }
-      on accountReactivated: event BillingAccount.AccountReactivated is {
-        tell accountReactivated to repository BillingContext.BillingAccountRepository
-      }
-      on accountClosed: event BillingAccount.AccountClosed is {
-        tell accountClosed to repository BillingContext.BillingAccountRepository
-      }
-      on other is {
-        error "Unexpected message for sink BillingAccountEventSink"
-      }
-    } with {
-      briefly "BillingAccount sink handler"
-      described as {
-        |Persists BillingAccount events via the repository.
-      }
-    }
-  } with {
-    briefly "BillingAccount event sink"
-    described as {
-      |Receives BillingAccount events for persistence.
-    }
-  }
-  connector BillingAccountEventFlow is from outlet BillingContext.BillingAccountEventSource.BillingAccountEvents to inlet BillingContext.BillingAccountEventSink.BillingAccountInlet with {
-    briefly "BillingAccount event flow"
-    described as {
-      |Connects the BillingAccount source to its sink.
-    }
-  }
   processor BillingAccountEventSplit as split is {
-    inlet BillingAccountEventSplitIn is type BillingAccountEvent    outlet BillingAccountEventSplitToBillingAccountRepository is type BillingAccountEvent
+    inlet BillingAccountEventSplitIn is type BillingAccountEvent
     outlet BillingAccountEventSplitToAccountSummaryProjector is type BillingAccountEvent
     outlet BillingAccountEventSplitToRevenueAnalyticsProjector is type BillingAccountEvent
     handler BillingAccountEventSplitHandler is {
       on accountCreated: event BillingAccount.AccountCreated is {
-        send accountCreated to outlet BillingAccountEventSplitToBillingAccountRepository
         send accountCreated to outlet BillingAccountEventSplitToAccountSummaryProjector
         send accountCreated to outlet BillingAccountEventSplitToRevenueAnalyticsProjector
         tell accountCreated to entity BillingContext.BillingAccount
       }
       on customerInfoUpdated: event BillingAccount.CustomerInfoUpdated is {
-        send customerInfoUpdated to outlet BillingAccountEventSplitToBillingAccountRepository
         send customerInfoUpdated to outlet BillingAccountEventSplitToAccountSummaryProjector
         send customerInfoUpdated to outlet BillingAccountEventSplitToRevenueAnalyticsProjector
         tell customerInfoUpdated to entity BillingContext.BillingAccount
       }
       on ratePlanChanged: event BillingAccount.RatePlanChanged is {
-        send ratePlanChanged to outlet BillingAccountEventSplitToBillingAccountRepository
         send ratePlanChanged to outlet BillingAccountEventSplitToAccountSummaryProjector
         send ratePlanChanged to outlet BillingAccountEventSplitToRevenueAnalyticsProjector
         tell ratePlanChanged to entity BillingContext.BillingAccount
       }
       on usageRecorded: event BillingAccount.UsageRecorded is {
-        send usageRecorded to outlet BillingAccountEventSplitToBillingAccountRepository
         send usageRecorded to outlet BillingAccountEventSplitToAccountSummaryProjector
         send usageRecorded to outlet BillingAccountEventSplitToRevenueAnalyticsProjector
         tell usageRecorded to entity BillingContext.BillingAccount
       }
       on invoiceGenerated: event BillingAccount.InvoiceGenerated is {
-        send invoiceGenerated to outlet BillingAccountEventSplitToBillingAccountRepository
         send invoiceGenerated to outlet BillingAccountEventSplitToAccountSummaryProjector
         send invoiceGenerated to outlet BillingAccountEventSplitToRevenueAnalyticsProjector
         tell invoiceGenerated to entity BillingContext.BillingAccount
       }
       on paymentApplied: event BillingAccount.PaymentApplied is {
-        send paymentApplied to outlet BillingAccountEventSplitToBillingAccountRepository
         send paymentApplied to outlet BillingAccountEventSplitToAccountSummaryProjector
         send paymentApplied to outlet BillingAccountEventSplitToRevenueAnalyticsProjector
         tell paymentApplied to entity BillingContext.BillingAccount
       }
       on creditApplied: event BillingAccount.CreditApplied is {
-        send creditApplied to outlet BillingAccountEventSplitToBillingAccountRepository
         send creditApplied to outlet BillingAccountEventSplitToAccountSummaryProjector
         send creditApplied to outlet BillingAccountEventSplitToRevenueAnalyticsProjector
         tell creditApplied to entity BillingContext.BillingAccount
       }
       on accountSuspended: event BillingAccount.AccountSuspended is {
-        send accountSuspended to outlet BillingAccountEventSplitToBillingAccountRepository
         send accountSuspended to outlet BillingAccountEventSplitToAccountSummaryProjector
         send accountSuspended to outlet BillingAccountEventSplitToRevenueAnalyticsProjector
         tell accountSuspended to entity BillingContext.BillingAccount
       }
       on accountReactivated: event BillingAccount.AccountReactivated is {
-        send accountReactivated to outlet BillingAccountEventSplitToBillingAccountRepository
         send accountReactivated to outlet BillingAccountEventSplitToAccountSummaryProjector
         send accountReactivated to outlet BillingAccountEventSplitToRevenueAnalyticsProjector
         tell accountReactivated to entity BillingContext.BillingAccount
       }
       on accountClosed: event BillingAccount.AccountClosed is {
-        send accountClosed to outlet BillingAccountEventSplitToBillingAccountRepository
         send accountClosed to outlet BillingAccountEventSplitToAccountSummaryProjector
         send accountClosed to outlet BillingAccountEventSplitToRevenueAnalyticsProjector
         tell accountClosed to entity BillingContext.BillingAccount
@@ -1072,20 +1000,14 @@ context BillingContext as router is {
   connector 'BillingAccountEvent Stream' is from outlet BillingContext.BillingAccount.BillingAccountEvents2 to inlet BillingContext.BillingAccountEventSplit.BillingAccountEventSplitIn with {
     briefly "BillingAccount events, fanned out to storage and read models"
   }
-  connector 'BillingAccountEvent Storage' is from outlet BillingContext.BillingAccountEventSplit.BillingAccountEventSplitToBillingAccountRepository to inlet BillingContext.BillingAccountRepository.BillingAccountRepositoryFromBillingAccount with {
-    briefly "BillingAccount events on their way to storage"
-  }
   connector 'AccountSummaryProjector Feed' is from outlet BillingContext.BillingAccountEventSplit.BillingAccountEventSplitToAccountSummaryProjector to inlet BillingContext.AccountSummaryProjector.AccountSummaryProjectorFromBillingAccount with {
     briefly "BillingAccount events feeding the AccountSummaryProjector projection"
   }
   connector 'RevenueAnalyticsProjector Feed' is from outlet BillingContext.BillingAccountEventSplit.BillingAccountEventSplitToRevenueAnalyticsProjector to inlet BillingContext.RevenueAnalyticsProjector.RevenueAnalyticsProjectorFromBillingAccount with {
     briefly "BillingAccount events feeding the RevenueAnalyticsProjector projection"
   }
-  connector 'AccountSummaryProjector Storage' is from outlet BillingContext.AccountSummaryProjector.AccountSummaryProjectorOut to inlet BillingContext.BillingAccountRepository.BillingAccountRepositoryFromAccountSummaryProjector with {
-    briefly "The AccountSummaryProjector projection on its way to storage"
-  }
-  connector 'RevenueAnalyticsProjector Storage' is from outlet BillingContext.RevenueAnalyticsProjector.RevenueAnalyticsProjectorOut to inlet BillingContext.BillingAccountRepository.BillingAccountRepositoryFromRevenueAnalyticsProjector with {
-    briefly "The RevenueAnalyticsProjector projection on its way to storage"
+  connector 'AccountSummaryProjector Storage' is from outlet BillingContext.AccountSummaryProjector.AccountSummaryProjectorToRepository to inlet BillingContext.BillingAccountRepository.BillingAccountRepositoryFromAccountSummaryProjector with {
+    briefly "AccountSummaryProjector updates on their way to storage"
   }
 } with {
   briefly "Bounded context for telecommunications usage billing"

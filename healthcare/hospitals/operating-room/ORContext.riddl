@@ -30,9 +30,6 @@ context ORContext as router is {
     on cancelCase: command SurgicalCase.CancelCase is {
       send cancelCase to outlet ORContext.SurgicalCaseCommandStreamOut
     }
-    on initializeSurgicalCase: command SurgicalCase.InitializeSurgicalCase is {
-      send initializeSurgicalCase to outlet ORContext.SurgicalCaseCommandStreamOut
-    }
     on surgicalCaseResult: result SurgicalCase.SurgicalCaseResult is {
       send surgicalCaseResult to outlet ORContext.SurgicalCaseResultStreamOut
     }
@@ -215,7 +212,77 @@ context ORContext as router is {
   include "types.riddl"
   include "SurgicalCase.riddl"
   // Repository for surgical case persistence
-  repository SurgicalCaseRepository as merge is {
+  type SurgicalCaseRepositoryCommand is one of {
+    ORContext.SurgicalCaseRepository.PersistCaseCancelled or ORContext.SurgicalCaseRepository.PersistCaseConfirmed or ORContext.SurgicalCaseRepository.PersistCaseScheduled or ORContext.SurgicalCaseRepository.PersistDischargedFromPACU or ORContext.SurgicalCaseRepository.PersistInRecovery or ORContext.SurgicalCaseRepository.PersistPatientInOR or ORContext.SurgicalCaseRepository.PersistPreOpStarted or ORContext.SurgicalCaseRepository.PersistSurgeryCompleted or ORContext.SurgicalCaseRepository.PersistSurgeryStarted
+  } with {
+    briefly "Anything that writes SurgicalCaseRepository"
+    described as {
+      |The persistence commands SurgicalCaseRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository SurgicalCaseRepository as flow is {
+    inlet SurgicalCaseRepositoryFromORUtilizationProjector is type SurgicalCaseRepositoryCommand
+    command PersistCaseConfirmed is  {
+      caseId: CaseId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row CaseConfirmed applies to.
+        }
+      }
+    } with {
+      briefly "Persist CaseConfirmed"
+      described as {
+        |Instructs this repository to apply CaseConfirmed to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistDischargedFromPACU is  {
+      caseId: CaseId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row DischargedFromPACU applies to.
+        }
+      }
+    } with {
+      briefly "Persist DischargedFromPACU"
+      described as {
+        |Instructs this repository to apply DischargedFromPACU to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistInRecovery is  {
+      caseId: CaseId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row InRecovery applies to.
+        }
+      }
+    } with {
+      briefly "Persist InRecovery"
+      described as {
+        |Instructs this repository to apply InRecovery to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistPreOpStarted is  {
+      caseId: CaseId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row PreOpStarted applies to.
+        }
+      }
+    } with {
+      briefly "Persist PreOpStarted"
+      described as {
+        |Instructs this repository to apply PreOpStarted to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistCaseCancelled is  {
       caseId: CaseId with {
         briefly "Row addressed"
@@ -291,7 +358,7 @@ context ORContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet SurgicalCaseRepositoryFromSurgicalCase is type SurgicalCaseEvent    inlet SurgicalCaseRepositoryFromORUtilizationProjector is type SurgicalCaseEvent    inlet SurgicalCaseRepositoryFromCaseDurationProjector is type SurgicalCaseEvent    inlet SurgicalCaseRepositoryFromTurnoverTimeProjector is type SurgicalCaseEvent    inlet SurgicalCaseRepositoryFromCancellationRateProjector is type SurgicalCaseEvent    inlet SurgicalCaseRepositoryFromFirstCaseStartProjector is type SurgicalCaseEvent    outlet SurgicalCaseRepositoryResponses is type SurgicalCase.SurgicalCaseResult
+    outlet SurgicalCaseRepositoryResponses is type SurgicalCase.SurgicalCaseResult
     record StoredSurgicalCase is  {
       surgicalCaseId: UUID with {
         briefly "surgicalCaseId"
@@ -335,6 +402,18 @@ context ORContext as router is {
       }
     }
     handler SurgicalCasePersistence is {
+      on persistCaseConfirmed: command PersistCaseConfirmed is {
+        do "apply CaseConfirmed to the stored row"
+      }
+      on persistDischargedFromPACU: command PersistDischargedFromPACU is {
+        do "apply DischargedFromPACU to the stored row"
+      }
+      on persistInRecovery: command PersistInRecovery is {
+        do "apply InRecovery to the stored row"
+      }
+      on persistPreOpStarted: command PersistPreOpStarted is {
+        do "apply PreOpStarted to the stored row"
+      }
       on persistCaseCancelled: command PersistCaseCancelled is {
         do "apply CaseCancelled to the stored row"
       }
@@ -370,35 +449,6 @@ context ORContext as router is {
         let firstCaseStatsView: type FirstCaseStatsView = prompt("read the first case stats projection")
         reply firstCaseStatsView
       }
-      on scheduleCase: command SurgicalCase.ScheduleCase is {
-        send event SurgicalCase.CaseScheduled(caseId = scheduleCase.caseId, patientId = scheduleCase.patientId, primarySurgeonId = scheduleCase.primarySurgeonId, procedureName = scheduleCase.procedureName, scheduledDate = scheduleCase.scheduledDate, scheduledStartTime = scheduleCase.scheduledStartTime, roomId = scheduleCase.roomId, priority = scheduleCase.priority) to outlet SurgicalCaseEventSplitToORScheduleRepository
-        tell event SurgicalCase.CaseScheduled(caseId = scheduleCase.caseId, patientId = scheduleCase.patientId, primarySurgeonId = scheduleCase.primarySurgeonId, procedureName = scheduleCase.procedureName, scheduledDate = scheduleCase.scheduledDate, scheduledStartTime = scheduleCase.scheduledStartTime, roomId = scheduleCase.roomId, priority = scheduleCase.priority) to entity ORContext.SurgicalCase
-      }
-      on confirmCase: command SurgicalCase.ConfirmCase is {
-        tell event SurgicalCase.CaseConfirmed(caseId = confirmCase.caseId, anesthesiologistId = confirmCase.anesthesiologistId, surgicalTeam = confirmCase.surgicalTeam) to entity ORContext.SurgicalCase
-      }
-      on startPreOp: command SurgicalCase.StartPreOp is {
-        tell event SurgicalCase.PreOpStarted(caseId = startPreOp.caseId, preOpArrivalTime = startPreOp.preOpArrivalTime, preOpBayNumber = startPreOp.preOpBayNumber) to entity ORContext.SurgicalCase
-      }
-      on bringToOR: command SurgicalCase.BringToOR is {
-        tell event SurgicalCase.PatientInOR(caseId = bringToOR.caseId, inRoomTime = bringToOR.inRoomTime) to entity ORContext.SurgicalCase
-      }
-      on startSurgery: command SurgicalCase.StartSurgery is {
-        tell event SurgicalCase.SurgeryStarted(caseId = startSurgery.caseId, procedureStartTime = startSurgery.procedureStartTime, anesthesiaStartTime = startSurgery.anesthesiaStartTime) to entity ORContext.SurgicalCase
-      }
-      on completeSurgery: command SurgicalCase.CompleteSurgery is {
-        tell event SurgicalCase.SurgeryCompleted(caseId = completeSurgery.caseId, procedureEndTime = completeSurgery.procedureEndTime, proceduresPerformed = completeSurgery.proceduresPerformed, complications = completeSurgery.complications, estimatedBloodLoss = completeSurgery.estimatedBloodLoss) to entity ORContext.SurgicalCase
-      }
-      on moveToRecovery: command SurgicalCase.MoveToRecovery is {
-        tell event SurgicalCase.InRecovery(caseId = moveToRecovery.caseId, pacuArrivalTime = moveToRecovery.pacuArrivalTime, pacuBayNumber = moveToRecovery.pacuBayNumber) to entity ORContext.SurgicalCase
-      }
-      on dischargeFromPACU: command SurgicalCase.DischargeFromPACU is {
-        tell event SurgicalCase.DischargedFromPACU(caseId = dischargeFromPACU.caseId, pacuDischargeTime = dischargeFromPACU.pacuDischargeTime, disposition = dischargeFromPACU.disposition, aldeeteScore = dischargeFromPACU.aldeeteScore) to entity ORContext.SurgicalCase
-      }
-      on cancelCase: command SurgicalCase.CancelCase is {
-        send event SurgicalCase.CaseCancelled(caseId = cancelCase.caseId, cancellationReason = cancelCase.cancellationReason, cancellationDetails = cancelCase.cancellationDetails, cancelledBy = cancelCase.cancelledBy, cancelledAt = cancelCase.cancelledAt, rescheduleRequested = cancelCase.rescheduleRequested) to outlet SurgicalCaseEventSplitToORScheduleRepository
-        tell event SurgicalCase.CaseCancelled(caseId = cancelCase.caseId, cancellationReason = cancelCase.cancellationReason, cancellationDetails = cancelCase.cancellationDetails, cancelledBy = cancelCase.cancelledBy, cancelledAt = cancelCase.cancelledAt, rescheduleRequested = cancelCase.rescheduleRequested) to entity ORContext.SurgicalCase
-      }
     } with {
       briefly "Persists surgical case events"
       described as {
@@ -414,7 +464,7 @@ context ORContext as router is {
   }
   // Repository for OR schedule
   repository ORScheduleRepository as sink is {
-    inlet ORScheduleRepositoryFromSurgicalCase is type SurgicalCaseEvent    schema ORScheduleData is relational
+    schema ORScheduleData is relational
       of schedules as type RoomAssignment
         index on field RoomAssignment.roomId
         index on field RoomAssignment.assignedDate
@@ -426,12 +476,6 @@ context ORContext as router is {
       }
     }
     handler SchedulePersistence is {
-      on scheduleCase: command SurgicalCase.ScheduleCase is {
-        tell event SurgicalCase.CaseScheduled(caseId = scheduleCase.caseId, patientId = scheduleCase.patientId, primarySurgeonId = scheduleCase.primarySurgeonId, procedureName = scheduleCase.procedureName, scheduledDate = scheduleCase.scheduledDate, scheduledStartTime = scheduleCase.scheduledStartTime, roomId = scheduleCase.roomId, priority = scheduleCase.priority) to entity ORContext.SurgicalCase
-      }
-      on cancelCase: command SurgicalCase.CancelCase is {
-        tell event SurgicalCase.CaseCancelled(caseId = cancelCase.caseId, cancellationReason = cancelCase.cancellationReason, cancellationDetails = cancelCase.cancellationDetails, cancelledBy = cancelCase.cancelledBy, cancelledAt = cancelCase.cancelledAt, rescheduleRequested = cancelCase.rescheduleRequested) to entity ORContext.SurgicalCase
-      }
     } with {
       briefly "Persists OR schedule"
       described as {
@@ -473,8 +517,9 @@ context ORContext as router is {
     }
   }
   projector ORUtilizationProjector as flow is {
+    outlet ORUtilizationProjectorToRepository is type SurgicalCaseRepositoryCommand
     updates repository ORContext.SurgicalCaseRepository
-    inlet ORUtilizationProjectorFromSurgicalCase is type SurgicalCaseEvent    outlet ORUtilizationProjectorOut is type SurgicalCaseEvent
+    inlet ORUtilizationProjectorFromSurgicalCase is type SurgicalCaseEvent
     record UtilizationStats is  {
       roomId: RoomId with {
         briefly "Room"
@@ -543,6 +588,30 @@ context ORContext as router is {
       }
     }
     handler UtilizationHandler is {
+      on caseConfirmed: event SurgicalCase.CaseConfirmed is {
+        tell command ORContext.SurgicalCaseRepository.PersistCaseConfirmed(caseId = caseConfirmed.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply CaseConfirmed to the ORUtilizationProjector projection"
+      }
+      on dischargedFromPACU: event SurgicalCase.DischargedFromPACU is {
+        tell command ORContext.SurgicalCaseRepository.PersistDischargedFromPACU(caseId = dischargedFromPACU.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply DischargedFromPACU to the ORUtilizationProjector projection"
+      }
+      on inRecovery: event SurgicalCase.InRecovery is {
+        tell command ORContext.SurgicalCaseRepository.PersistInRecovery(caseId = inRecovery.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply InRecovery to the ORUtilizationProjector projection"
+      }
+      on patientInOR: event SurgicalCase.PatientInOR is {
+        tell command ORContext.SurgicalCaseRepository.PersistPatientInOR(caseId = patientInOR.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply PatientInOR to the ORUtilizationProjector projection"
+      }
+      on preOpStarted: event SurgicalCase.PreOpStarted is {
+        tell command ORContext.SurgicalCaseRepository.PersistPreOpStarted(caseId = preOpStarted.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply PreOpStarted to the ORUtilizationProjector projection"
+      }
+      on surgeryStarted: event SurgicalCase.SurgeryStarted is {
+        tell command ORContext.SurgicalCaseRepository.PersistSurgeryStarted(caseId = surgeryStarted.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply SurgeryStarted to the ORUtilizationProjector projection"
+      }
       on caseScheduled: event SurgicalCase.CaseScheduled is {
         tell command ORContext.SurgicalCaseRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.SurgicalCaseRepository
       }
@@ -591,9 +660,9 @@ context ORContext as router is {
       |Read model view carrying the duration stats projection.
     }
   }
-  projector CaseDurationProjector as flow is {
+  projector CaseDurationProjector as sink is {
     updates repository ORContext.SurgicalCaseRepository
-    inlet CaseDurationProjectorFromSurgicalCase is type SurgicalCaseEvent    outlet CaseDurationProjectorOut is type SurgicalCaseEvent
+    inlet CaseDurationProjectorFromSurgicalCase is type SurgicalCaseEvent
     record DurationStats is  {
       procedureId: ProcedureId with {
         briefly "Procedure"
@@ -668,6 +737,38 @@ context ORContext as router is {
       }
     }
     handler DurationHandler is {
+      on caseCancelled: event SurgicalCase.CaseCancelled is {
+        tell command ORContext.SurgicalCaseRepository.PersistCaseCancelled(caseId = caseCancelled.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply CaseCancelled to the CaseDurationProjector projection"
+      }
+      on caseConfirmed: event SurgicalCase.CaseConfirmed is {
+        tell command ORContext.SurgicalCaseRepository.PersistCaseConfirmed(caseId = caseConfirmed.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply CaseConfirmed to the CaseDurationProjector projection"
+      }
+      on caseScheduled: event SurgicalCase.CaseScheduled is {
+        tell command ORContext.SurgicalCaseRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply CaseScheduled to the CaseDurationProjector projection"
+      }
+      on dischargedFromPACU: event SurgicalCase.DischargedFromPACU is {
+        tell command ORContext.SurgicalCaseRepository.PersistDischargedFromPACU(caseId = dischargedFromPACU.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply DischargedFromPACU to the CaseDurationProjector projection"
+      }
+      on inRecovery: event SurgicalCase.InRecovery is {
+        tell command ORContext.SurgicalCaseRepository.PersistInRecovery(caseId = inRecovery.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply InRecovery to the CaseDurationProjector projection"
+      }
+      on patientInOR: event SurgicalCase.PatientInOR is {
+        tell command ORContext.SurgicalCaseRepository.PersistPatientInOR(caseId = patientInOR.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply PatientInOR to the CaseDurationProjector projection"
+      }
+      on preOpStarted: event SurgicalCase.PreOpStarted is {
+        tell command ORContext.SurgicalCaseRepository.PersistPreOpStarted(caseId = preOpStarted.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply PreOpStarted to the CaseDurationProjector projection"
+      }
+      on surgeryStarted: event SurgicalCase.SurgeryStarted is {
+        tell command ORContext.SurgicalCaseRepository.PersistSurgeryStarted(caseId = surgeryStarted.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply SurgeryStarted to the CaseDurationProjector projection"
+      }
       on surgeryCompleted: event SurgicalCase.SurgeryCompleted is {
         tell command ORContext.SurgicalCaseRepository.PersistSurgeryCompleted(caseId = surgeryCompleted.caseId) to repository ORContext.SurgicalCaseRepository
       }
@@ -710,9 +811,9 @@ context ORContext as router is {
       |Read model view carrying the turnover stats projection.
     }
   }
-  projector TurnoverTimeProjector as flow is {
+  projector TurnoverTimeProjector as sink is {
     updates repository ORContext.SurgicalCaseRepository
-    inlet TurnoverTimeProjectorFromSurgicalCase is type SurgicalCaseEvent    outlet TurnoverTimeProjectorOut is type SurgicalCaseEvent
+    inlet TurnoverTimeProjectorFromSurgicalCase is type SurgicalCaseEvent
     record TurnoverStats is  {
       roomId: RoomId with {
         briefly "Room"
@@ -781,6 +882,34 @@ context ORContext as router is {
       }
     }
     handler TurnoverHandler is {
+      on caseCancelled: event SurgicalCase.CaseCancelled is {
+        tell command ORContext.SurgicalCaseRepository.PersistCaseCancelled(caseId = caseCancelled.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply CaseCancelled to the TurnoverTimeProjector projection"
+      }
+      on caseConfirmed: event SurgicalCase.CaseConfirmed is {
+        tell command ORContext.SurgicalCaseRepository.PersistCaseConfirmed(caseId = caseConfirmed.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply CaseConfirmed to the TurnoverTimeProjector projection"
+      }
+      on caseScheduled: event SurgicalCase.CaseScheduled is {
+        tell command ORContext.SurgicalCaseRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply CaseScheduled to the TurnoverTimeProjector projection"
+      }
+      on dischargedFromPACU: event SurgicalCase.DischargedFromPACU is {
+        tell command ORContext.SurgicalCaseRepository.PersistDischargedFromPACU(caseId = dischargedFromPACU.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply DischargedFromPACU to the TurnoverTimeProjector projection"
+      }
+      on inRecovery: event SurgicalCase.InRecovery is {
+        tell command ORContext.SurgicalCaseRepository.PersistInRecovery(caseId = inRecovery.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply InRecovery to the TurnoverTimeProjector projection"
+      }
+      on preOpStarted: event SurgicalCase.PreOpStarted is {
+        tell command ORContext.SurgicalCaseRepository.PersistPreOpStarted(caseId = preOpStarted.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply PreOpStarted to the TurnoverTimeProjector projection"
+      }
+      on surgeryStarted: event SurgicalCase.SurgeryStarted is {
+        tell command ORContext.SurgicalCaseRepository.PersistSurgeryStarted(caseId = surgeryStarted.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply SurgeryStarted to the TurnoverTimeProjector projection"
+      }
       on patientInOR: event SurgicalCase.PatientInOR is {
         tell command ORContext.SurgicalCaseRepository.PersistPatientInOR(caseId = patientInOR.caseId) to repository ORContext.SurgicalCaseRepository
       }
@@ -826,9 +955,9 @@ context ORContext as router is {
       |Read model view carrying the cancellation stats projection.
     }
   }
-  projector CancellationRateProjector as flow is {
+  projector CancellationRateProjector as sink is {
     updates repository ORContext.SurgicalCaseRepository
-    inlet CancellationRateProjectorFromSurgicalCase is type SurgicalCaseEvent    outlet CancellationRateProjectorOut is type SurgicalCaseEvent
+    inlet CancellationRateProjectorFromSurgicalCase is type SurgicalCaseEvent
     record CancellationStats is  {
       periodStart: Date with {
         briefly "Start"
@@ -897,6 +1026,34 @@ context ORContext as router is {
       }
     }
     handler CancellationHandler is {
+      on caseConfirmed: event SurgicalCase.CaseConfirmed is {
+        tell command ORContext.SurgicalCaseRepository.PersistCaseConfirmed(caseId = caseConfirmed.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply CaseConfirmed to the CancellationRateProjector projection"
+      }
+      on dischargedFromPACU: event SurgicalCase.DischargedFromPACU is {
+        tell command ORContext.SurgicalCaseRepository.PersistDischargedFromPACU(caseId = dischargedFromPACU.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply DischargedFromPACU to the CancellationRateProjector projection"
+      }
+      on inRecovery: event SurgicalCase.InRecovery is {
+        tell command ORContext.SurgicalCaseRepository.PersistInRecovery(caseId = inRecovery.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply InRecovery to the CancellationRateProjector projection"
+      }
+      on patientInOR: event SurgicalCase.PatientInOR is {
+        tell command ORContext.SurgicalCaseRepository.PersistPatientInOR(caseId = patientInOR.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply PatientInOR to the CancellationRateProjector projection"
+      }
+      on preOpStarted: event SurgicalCase.PreOpStarted is {
+        tell command ORContext.SurgicalCaseRepository.PersistPreOpStarted(caseId = preOpStarted.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply PreOpStarted to the CancellationRateProjector projection"
+      }
+      on surgeryCompleted: event SurgicalCase.SurgeryCompleted is {
+        tell command ORContext.SurgicalCaseRepository.PersistSurgeryCompleted(caseId = surgeryCompleted.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply SurgeryCompleted to the CancellationRateProjector projection"
+      }
+      on surgeryStarted: event SurgicalCase.SurgeryStarted is {
+        tell command ORContext.SurgicalCaseRepository.PersistSurgeryStarted(caseId = surgeryStarted.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply SurgeryStarted to the CancellationRateProjector projection"
+      }
       on caseScheduled: event SurgicalCase.CaseScheduled is {
         tell command ORContext.SurgicalCaseRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.SurgicalCaseRepository
       }
@@ -942,9 +1099,9 @@ context ORContext as router is {
       |Read model view carrying the first case stats projection.
     }
   }
-  projector FirstCaseStartProjector as flow is {
+  projector FirstCaseStartProjector as sink is {
     updates repository ORContext.SurgicalCaseRepository
-    inlet FirstCaseStartProjectorFromSurgicalCase is type SurgicalCaseEvent    outlet FirstCaseStartProjectorOut is type SurgicalCaseEvent
+    inlet FirstCaseStartProjectorFromSurgicalCase is type SurgicalCaseEvent
     record FirstCaseStats is  {
       roomId: RoomId with {
         briefly "Room"
@@ -995,6 +1152,38 @@ context ORContext as router is {
       }
     }
     handler FirstCaseHandler is {
+      on caseCancelled: event SurgicalCase.CaseCancelled is {
+        tell command ORContext.SurgicalCaseRepository.PersistCaseCancelled(caseId = caseCancelled.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply CaseCancelled to the FirstCaseStartProjector projection"
+      }
+      on caseConfirmed: event SurgicalCase.CaseConfirmed is {
+        tell command ORContext.SurgicalCaseRepository.PersistCaseConfirmed(caseId = caseConfirmed.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply CaseConfirmed to the FirstCaseStartProjector projection"
+      }
+      on caseScheduled: event SurgicalCase.CaseScheduled is {
+        tell command ORContext.SurgicalCaseRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply CaseScheduled to the FirstCaseStartProjector projection"
+      }
+      on dischargedFromPACU: event SurgicalCase.DischargedFromPACU is {
+        tell command ORContext.SurgicalCaseRepository.PersistDischargedFromPACU(caseId = dischargedFromPACU.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply DischargedFromPACU to the FirstCaseStartProjector projection"
+      }
+      on inRecovery: event SurgicalCase.InRecovery is {
+        tell command ORContext.SurgicalCaseRepository.PersistInRecovery(caseId = inRecovery.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply InRecovery to the FirstCaseStartProjector projection"
+      }
+      on patientInOR: event SurgicalCase.PatientInOR is {
+        tell command ORContext.SurgicalCaseRepository.PersistPatientInOR(caseId = patientInOR.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply PatientInOR to the FirstCaseStartProjector projection"
+      }
+      on preOpStarted: event SurgicalCase.PreOpStarted is {
+        tell command ORContext.SurgicalCaseRepository.PersistPreOpStarted(caseId = preOpStarted.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply PreOpStarted to the FirstCaseStartProjector projection"
+      }
+      on surgeryCompleted: event SurgicalCase.SurgeryCompleted is {
+        tell command ORContext.SurgicalCaseRepository.PersistSurgeryCompleted(caseId = surgeryCompleted.caseId) to repository ORContext.SurgicalCaseRepository
+        do "apply SurgeryCompleted to the FirstCaseStartProjector projection"
+      }
       on surgeryStarted: event SurgicalCase.SurgeryStarted is {
         tell command ORContext.SurgicalCaseRepository.PersistSurgeryStarted(caseId = surgeryStarted.caseId) to repository ORContext.SurgicalCaseRepository
       }
@@ -1092,16 +1281,15 @@ context ORContext as router is {
     }
   }
   processor SurgicalCaseEventSplit as split is {
-    inlet SurgicalCaseEventSplitIn is type SurgicalCaseEvent    outlet SurgicalCaseEventSplitToSurgicalCaseRepository is type SurgicalCaseEvent
+    inlet SurgicalCaseEventSplitIn is type SurgicalCaseEvent
     outlet SurgicalCaseEventSplitToORUtilizationProjector is type SurgicalCaseEvent
     outlet SurgicalCaseEventSplitToCaseDurationProjector is type SurgicalCaseEvent
     outlet SurgicalCaseEventSplitToTurnoverTimeProjector is type SurgicalCaseEvent
     outlet SurgicalCaseEventSplitToCancellationRateProjector is type SurgicalCaseEvent
     outlet SurgicalCaseEventSplitToFirstCaseStartProjector is type SurgicalCaseEvent
-    outlet SurgicalCaseEventSplitToORScheduleRepository is type SurgicalCaseEvent
+
     handler SurgicalCaseEventSplitHandler is {
       on caseScheduled: event SurgicalCase.CaseScheduled is {
-        send caseScheduled to outlet SurgicalCaseEventSplitToSurgicalCaseRepository
         send caseScheduled to outlet SurgicalCaseEventSplitToORUtilizationProjector
         send caseScheduled to outlet SurgicalCaseEventSplitToCaseDurationProjector
         send caseScheduled to outlet SurgicalCaseEventSplitToTurnoverTimeProjector
@@ -1110,7 +1298,6 @@ context ORContext as router is {
         tell caseScheduled to entity ORContext.SurgicalCase
       }
       on caseConfirmed: event SurgicalCase.CaseConfirmed is {
-        send caseConfirmed to outlet SurgicalCaseEventSplitToSurgicalCaseRepository
         send caseConfirmed to outlet SurgicalCaseEventSplitToORUtilizationProjector
         send caseConfirmed to outlet SurgicalCaseEventSplitToCaseDurationProjector
         send caseConfirmed to outlet SurgicalCaseEventSplitToTurnoverTimeProjector
@@ -1119,7 +1306,6 @@ context ORContext as router is {
         tell caseConfirmed to entity ORContext.SurgicalCase
       }
       on preOpStarted: event SurgicalCase.PreOpStarted is {
-        send preOpStarted to outlet SurgicalCaseEventSplitToSurgicalCaseRepository
         send preOpStarted to outlet SurgicalCaseEventSplitToORUtilizationProjector
         send preOpStarted to outlet SurgicalCaseEventSplitToCaseDurationProjector
         send preOpStarted to outlet SurgicalCaseEventSplitToTurnoverTimeProjector
@@ -1128,7 +1314,6 @@ context ORContext as router is {
         tell preOpStarted to entity ORContext.SurgicalCase
       }
       on patientInOR: event SurgicalCase.PatientInOR is {
-        send patientInOR to outlet SurgicalCaseEventSplitToSurgicalCaseRepository
         send patientInOR to outlet SurgicalCaseEventSplitToORUtilizationProjector
         send patientInOR to outlet SurgicalCaseEventSplitToCaseDurationProjector
         send patientInOR to outlet SurgicalCaseEventSplitToTurnoverTimeProjector
@@ -1137,7 +1322,6 @@ context ORContext as router is {
         tell patientInOR to entity ORContext.SurgicalCase
       }
       on surgeryStarted: event SurgicalCase.SurgeryStarted is {
-        send surgeryStarted to outlet SurgicalCaseEventSplitToSurgicalCaseRepository
         send surgeryStarted to outlet SurgicalCaseEventSplitToORUtilizationProjector
         send surgeryStarted to outlet SurgicalCaseEventSplitToCaseDurationProjector
         send surgeryStarted to outlet SurgicalCaseEventSplitToTurnoverTimeProjector
@@ -1146,7 +1330,6 @@ context ORContext as router is {
         tell surgeryStarted to entity ORContext.SurgicalCase
       }
       on surgeryCompleted: event SurgicalCase.SurgeryCompleted is {
-        send surgeryCompleted to outlet SurgicalCaseEventSplitToSurgicalCaseRepository
         send surgeryCompleted to outlet SurgicalCaseEventSplitToORUtilizationProjector
         send surgeryCompleted to outlet SurgicalCaseEventSplitToCaseDurationProjector
         send surgeryCompleted to outlet SurgicalCaseEventSplitToTurnoverTimeProjector
@@ -1155,7 +1338,6 @@ context ORContext as router is {
         tell surgeryCompleted to entity ORContext.SurgicalCase
       }
       on inRecovery: event SurgicalCase.InRecovery is {
-        send inRecovery to outlet SurgicalCaseEventSplitToSurgicalCaseRepository
         send inRecovery to outlet SurgicalCaseEventSplitToORUtilizationProjector
         send inRecovery to outlet SurgicalCaseEventSplitToCaseDurationProjector
         send inRecovery to outlet SurgicalCaseEventSplitToTurnoverTimeProjector
@@ -1164,7 +1346,6 @@ context ORContext as router is {
         tell inRecovery to entity ORContext.SurgicalCase
       }
       on dischargedFromPACU: event SurgicalCase.DischargedFromPACU is {
-        send dischargedFromPACU to outlet SurgicalCaseEventSplitToSurgicalCaseRepository
         send dischargedFromPACU to outlet SurgicalCaseEventSplitToORUtilizationProjector
         send dischargedFromPACU to outlet SurgicalCaseEventSplitToCaseDurationProjector
         send dischargedFromPACU to outlet SurgicalCaseEventSplitToTurnoverTimeProjector
@@ -1173,7 +1354,6 @@ context ORContext as router is {
         tell dischargedFromPACU to entity ORContext.SurgicalCase
       }
       on caseCancelled: event SurgicalCase.CaseCancelled is {
-        send caseCancelled to outlet SurgicalCaseEventSplitToSurgicalCaseRepository
         send caseCancelled to outlet SurgicalCaseEventSplitToORUtilizationProjector
         send caseCancelled to outlet SurgicalCaseEventSplitToCaseDurationProjector
         send caseCancelled to outlet SurgicalCaseEventSplitToTurnoverTimeProjector
@@ -1199,9 +1379,6 @@ context ORContext as router is {
   connector 'SurgicalCaseEvent Stream' is from outlet ORContext.SurgicalCase.SurgicalCaseEvents2 to inlet ORContext.SurgicalCaseEventSplit.SurgicalCaseEventSplitIn with {
     briefly "SurgicalCase events, fanned out to storage and read models"
   }
-  connector 'SurgicalCaseEvent Storage' is from outlet ORContext.SurgicalCaseEventSplit.SurgicalCaseEventSplitToSurgicalCaseRepository to inlet ORContext.SurgicalCaseRepository.SurgicalCaseRepositoryFromSurgicalCase with {
-    briefly "SurgicalCase events on their way to storage"
-  }
   connector 'ORUtilizationProjector Feed' is from outlet ORContext.SurgicalCaseEventSplit.SurgicalCaseEventSplitToORUtilizationProjector to inlet ORContext.ORUtilizationProjector.ORUtilizationProjectorFromSurgicalCase with {
     briefly "SurgicalCase events feeding the ORUtilizationProjector projection"
   }
@@ -1217,23 +1394,8 @@ context ORContext as router is {
   connector 'FirstCaseStartProjector Feed' is from outlet ORContext.SurgicalCaseEventSplit.SurgicalCaseEventSplitToFirstCaseStartProjector to inlet ORContext.FirstCaseStartProjector.FirstCaseStartProjectorFromSurgicalCase with {
     briefly "SurgicalCase events feeding the FirstCaseStartProjector projection"
   }
-  connector 'ORUtilizationProjector Storage' is from outlet ORContext.ORUtilizationProjector.ORUtilizationProjectorOut to inlet ORContext.SurgicalCaseRepository.SurgicalCaseRepositoryFromORUtilizationProjector with {
-    briefly "The ORUtilizationProjector projection on its way to storage"
-  }
-  connector 'CaseDurationProjector Storage' is from outlet ORContext.CaseDurationProjector.CaseDurationProjectorOut to inlet ORContext.SurgicalCaseRepository.SurgicalCaseRepositoryFromCaseDurationProjector with {
-    briefly "The CaseDurationProjector projection on its way to storage"
-  }
-  connector 'TurnoverTimeProjector Storage' is from outlet ORContext.TurnoverTimeProjector.TurnoverTimeProjectorOut to inlet ORContext.SurgicalCaseRepository.SurgicalCaseRepositoryFromTurnoverTimeProjector with {
-    briefly "The TurnoverTimeProjector projection on its way to storage"
-  }
-  connector 'CancellationRateProjector Storage' is from outlet ORContext.CancellationRateProjector.CancellationRateProjectorOut to inlet ORContext.SurgicalCaseRepository.SurgicalCaseRepositoryFromCancellationRateProjector with {
-    briefly "The CancellationRateProjector projection on its way to storage"
-  }
-  connector 'FirstCaseStartProjector Storage' is from outlet ORContext.FirstCaseStartProjector.FirstCaseStartProjectorOut to inlet ORContext.SurgicalCaseRepository.SurgicalCaseRepositoryFromFirstCaseStartProjector with {
-    briefly "The FirstCaseStartProjector projection on its way to storage"
-  }
-  connector 'ORScheduleRepository Storage' is from outlet ORContext.SurgicalCaseEventSplit.SurgicalCaseEventSplitToORScheduleRepository to inlet ORContext.ORScheduleRepository.ORScheduleRepositoryFromSurgicalCase with {
-    briefly "Case scheduling events on their way to schedule storage"
+  connector 'ORUtilizationProjector Storage' is from outlet ORContext.ORUtilizationProjector.ORUtilizationProjectorToRepository to inlet ORContext.SurgicalCaseRepository.SurgicalCaseRepositoryFromORUtilizationProjector with {
+    briefly "ORUtilizationProjector updates on their way to storage"
   }
 } with {
   briefly "Bounded context for operating room management"

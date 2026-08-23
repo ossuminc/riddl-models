@@ -200,7 +200,17 @@ context RadiologyContext as router is {
   // ==========================================================================
   // Repository
   // ==========================================================================
-  repository ExamRepository as merge is {
+  type ExamRepositoryCommand is one of {
+    RadiologyContext.ExamRepository.PersistAcquisitionCompleted or RadiologyContext.ExamRepository.PersistAcquisitionStarted or RadiologyContext.ExamRepository.PersistCriticalFindingReported or RadiologyContext.ExamRepository.PersistDraftReportCreated or RadiologyContext.ExamRepository.PersistExamOrdered or RadiologyContext.ExamRepository.PersistExamScheduled or RadiologyContext.ExamRepository.PersistReportFinalized
+  } with {
+    briefly "Anything that writes ExamRepository"
+    described as {
+      |The persistence commands ExamRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository ExamRepository as flow is {
+    inlet ExamRepositoryFromTurnaroundTimeProjector is type ExamRepositoryCommand
     command PersistAcquisitionCompleted is  {
       examId: ExamId with {
         briefly "Row addressed"
@@ -328,7 +338,7 @@ context RadiologyContext as router is {
         |The relational schema persisting imaging exam records for this repository.
       }
     }
-    inlet ExamRepositoryFromImagingExam is type ImagingExamEvent    inlet ExamRepositoryFromTurnaroundTimeProjector is type ImagingExamEvent    inlet ExamRepositoryFromModalityUtilizationProjector is type ImagingExamEvent    inlet ExamRepositoryFromCriticalFindingProjector is type ImagingExamEvent    inlet ExamRepositoryFromRadiologistProductivityProjector is type ImagingExamEvent    outlet ExamRepositoryResponses is type ImagingExam.ImagingExamResult
+    outlet ExamRepositoryResponses is type ImagingExam.ImagingExamResult
     // Exam queries
     query FindExamById replies result ImagingExamResult is  { examId: ExamId } with {
       briefly "Find exam by identifier"
@@ -579,8 +589,9 @@ context RadiologyContext as router is {
     }
   }
   projector TurnaroundTimeProjector as flow is {
+    outlet TurnaroundTimeProjectorToRepository is type ExamRepositoryCommand
     updates repository RadiologyContext.ExamRepository
-    inlet TurnaroundTimeProjectorFromImagingExam is type ImagingExamEvent    outlet TurnaroundTimeProjectorOut is type ImagingExamEvent
+    inlet TurnaroundTimeProjectorFromImagingExam is type ImagingExamEvent
     record TurnaroundTimeRecord is  {
       examId: ExamId
       modalityType: ModalityType
@@ -663,9 +674,9 @@ context RadiologyContext as router is {
       |Read model view carrying the utilization record projection.
     }
   }
-  projector ModalityUtilizationProjector as flow is {
+  projector ModalityUtilizationProjector as sink is {
     updates repository RadiologyContext.ExamRepository
-    inlet ModalityUtilizationProjectorFromImagingExam is type ImagingExamEvent    outlet ModalityUtilizationProjectorOut is type ImagingExamEvent
+    inlet ModalityUtilizationProjectorFromImagingExam is type ImagingExamEvent
     record UtilizationRecord is  {
       modalityId: ModalityId
       modalityType: ModalityType
@@ -741,9 +752,9 @@ context RadiologyContext as router is {
       |Read model view carrying the critical finding record projection.
     }
   }
-  projector CriticalFindingProjector as flow is {
+  projector CriticalFindingProjector as sink is {
     updates repository RadiologyContext.ExamRepository
-    inlet CriticalFindingProjectorFromImagingExam is type ImagingExamEvent    outlet CriticalFindingProjectorOut is type ImagingExamEvent
+    inlet CriticalFindingProjectorFromImagingExam is type ImagingExamEvent
     record CriticalFindingRecord is  {
       findingId: String
       examId: ExamId
@@ -811,9 +822,9 @@ context RadiologyContext as router is {
       |Read model view carrying the productivity record projection.
     }
   }
-  projector RadiologistProductivityProjector as flow is {
+  projector RadiologistProductivityProjector as sink is {
     updates repository RadiologyContext.ExamRepository
-    inlet RadiologistProductivityProjectorFromImagingExam is type ImagingExamEvent    outlet RadiologistProductivityProjectorOut is type ImagingExamEvent
+    inlet RadiologistProductivityProjectorFromImagingExam is type ImagingExamEvent
     record ProductivityRecord is  {
       radiologistId: PhysicianId
       date: Date
@@ -870,110 +881,14 @@ context RadiologyContext as router is {
       |persistence.
     }
   }
-  processor ImagingExamEventSource as source is {
-    outlet ImagingExamEvents is type ImagingExamEvent
-    handler ImagingExamSourceHandler is {
-      on examOrdered: event ImagingExam.ExamOrdered is {
-        send examOrdered to outlet ImagingExamEvents
-      }
-      on examScheduled: event ImagingExam.ExamScheduled is {
-        send examScheduled to outlet ImagingExamEvents
-      }
-      on patientCheckedIn: event ImagingExam.PatientCheckedIn is {
-        send patientCheckedIn to outlet ImagingExamEvents
-      }
-      on acquisitionStarted: event ImagingExam.AcquisitionStarted is {
-        send acquisitionStarted to outlet ImagingExamEvents
-      }
-      on acquisitionCompleted: event ImagingExam.AcquisitionCompleted is {
-        send acquisitionCompleted to outlet ImagingExamEvents
-      }
-      on draftReportCreated: event ImagingExam.DraftReportCreated is {
-        send draftReportCreated to outlet ImagingExamEvents
-      }
-      on reportFinalized: event ImagingExam.ReportFinalized is {
-        send reportFinalized to outlet ImagingExamEvents
-      }
-      on addendumAdded: event ImagingExam.AddendumAdded is {
-        send addendumAdded to outlet ImagingExamEvents
-      }
-      on criticalFindingReported: event ImagingExam.CriticalFindingReported is {
-        send criticalFindingReported to outlet ImagingExamEvents
-      }
-      on other is {
-        error "Unexpected message for source ImagingExamEventSource"
-      }
-    } with {
-      briefly "ImagingExam source handler"
-      described as {
-        |Publishes ImagingExam events onto the outlet.
-      }
-    }
-  } with {
-    briefly "ImagingExam event source"
-    described as {
-      |Publishes ImagingExam entity events into the streaming topology.
-    }
-  }
-  processor ImagingExamEventSink as sink is {
-    inlet ImagingExamInlet is type ImagingExamEvent    handler ImagingExamSinkHandler is {
-      on examOrdered: event ImagingExam.ExamOrdered is {
-        tell examOrdered to repository RadiologyContext.ExamRepository
-      }
-      on examScheduled: event ImagingExam.ExamScheduled is {
-        tell examScheduled to repository RadiologyContext.ExamRepository
-      }
-      on patientCheckedIn: event ImagingExam.PatientCheckedIn is {
-        tell patientCheckedIn to repository RadiologyContext.ExamRepository
-      }
-      on acquisitionStarted: event ImagingExam.AcquisitionStarted is {
-        tell acquisitionStarted to repository RadiologyContext.ExamRepository
-      }
-      on acquisitionCompleted: event ImagingExam.AcquisitionCompleted is {
-        tell acquisitionCompleted to repository RadiologyContext.ExamRepository
-      }
-      on draftReportCreated: event ImagingExam.DraftReportCreated is {
-        tell draftReportCreated to repository RadiologyContext.ExamRepository
-      }
-      on reportFinalized: event ImagingExam.ReportFinalized is {
-        tell reportFinalized to repository RadiologyContext.ExamRepository
-      }
-      on addendumAdded: event ImagingExam.AddendumAdded is {
-        tell addendumAdded to repository RadiologyContext.ExamRepository
-      }
-      on criticalFindingReported: event ImagingExam.CriticalFindingReported is {
-        tell criticalFindingReported to repository RadiologyContext.ExamRepository
-      }
-      on other is {
-        error "Unexpected message for sink ImagingExamEventSink"
-      }
-    } with {
-      briefly "ImagingExam sink handler"
-      described as {
-        |Persists ImagingExam events via the repository.
-      }
-    }
-  } with {
-    briefly "ImagingExam event sink"
-    described as {
-      |Receives ImagingExam events for persistence.
-    }
-  }
-  connector ImagingExamEventFlow is from outlet RadiologyContext.ImagingExamEventSource.ImagingExamEvents to inlet RadiologyContext.ImagingExamEventSink.ImagingExamInlet with {
-    briefly "ImagingExam event flow"
-    described as {
-      |Connects the ImagingExam source to its sink.
-    }
-  }
   processor ImagingExamEventSplit as split is {
-    inlet ImagingExamEventSplitIn is type ImagingExamEvent    outlet ImagingExamEventSplitToExamRepository is type ImagingExamEvent
+    inlet ImagingExamEventSplitIn is type ImagingExamEvent
     outlet ImagingExamEventSplitToTurnaroundTimeProjector is type ImagingExamEvent
     outlet ImagingExamEventSplitToModalityUtilizationProjector is type ImagingExamEvent
     outlet ImagingExamEventSplitToCriticalFindingProjector is type ImagingExamEvent
     outlet ImagingExamEventSplitToRadiologistProductivityProjector is type ImagingExamEvent
     handler ImagingExamEventSplitHandler is {
       on examOrdered: event ImagingExam.ExamOrdered is {
-        send examOrdered to outlet ImagingExamEventSplitToExamRepository
         send examOrdered to outlet ImagingExamEventSplitToTurnaroundTimeProjector
         send examOrdered to outlet ImagingExamEventSplitToModalityUtilizationProjector
         send examOrdered to outlet ImagingExamEventSplitToCriticalFindingProjector
@@ -981,7 +896,6 @@ context RadiologyContext as router is {
         tell examOrdered to entity RadiologyContext.ImagingExam
       }
       on examScheduled: event ImagingExam.ExamScheduled is {
-        send examScheduled to outlet ImagingExamEventSplitToExamRepository
         send examScheduled to outlet ImagingExamEventSplitToTurnaroundTimeProjector
         send examScheduled to outlet ImagingExamEventSplitToModalityUtilizationProjector
         send examScheduled to outlet ImagingExamEventSplitToCriticalFindingProjector
@@ -989,7 +903,6 @@ context RadiologyContext as router is {
         tell examScheduled to entity RadiologyContext.ImagingExam
       }
       on patientCheckedIn: event ImagingExam.PatientCheckedIn is {
-        send patientCheckedIn to outlet ImagingExamEventSplitToExamRepository
         send patientCheckedIn to outlet ImagingExamEventSplitToTurnaroundTimeProjector
         send patientCheckedIn to outlet ImagingExamEventSplitToModalityUtilizationProjector
         send patientCheckedIn to outlet ImagingExamEventSplitToCriticalFindingProjector
@@ -997,7 +910,6 @@ context RadiologyContext as router is {
         tell patientCheckedIn to entity RadiologyContext.ImagingExam
       }
       on acquisitionStarted: event ImagingExam.AcquisitionStarted is {
-        send acquisitionStarted to outlet ImagingExamEventSplitToExamRepository
         send acquisitionStarted to outlet ImagingExamEventSplitToTurnaroundTimeProjector
         send acquisitionStarted to outlet ImagingExamEventSplitToModalityUtilizationProjector
         send acquisitionStarted to outlet ImagingExamEventSplitToCriticalFindingProjector
@@ -1005,7 +917,6 @@ context RadiologyContext as router is {
         tell acquisitionStarted to entity RadiologyContext.ImagingExam
       }
       on acquisitionCompleted: event ImagingExam.AcquisitionCompleted is {
-        send acquisitionCompleted to outlet ImagingExamEventSplitToExamRepository
         send acquisitionCompleted to outlet ImagingExamEventSplitToTurnaroundTimeProjector
         send acquisitionCompleted to outlet ImagingExamEventSplitToModalityUtilizationProjector
         send acquisitionCompleted to outlet ImagingExamEventSplitToCriticalFindingProjector
@@ -1013,7 +924,6 @@ context RadiologyContext as router is {
         tell acquisitionCompleted to entity RadiologyContext.ImagingExam
       }
       on draftReportCreated: event ImagingExam.DraftReportCreated is {
-        send draftReportCreated to outlet ImagingExamEventSplitToExamRepository
         send draftReportCreated to outlet ImagingExamEventSplitToTurnaroundTimeProjector
         send draftReportCreated to outlet ImagingExamEventSplitToModalityUtilizationProjector
         send draftReportCreated to outlet ImagingExamEventSplitToCriticalFindingProjector
@@ -1021,7 +931,6 @@ context RadiologyContext as router is {
         tell draftReportCreated to entity RadiologyContext.ImagingExam
       }
       on reportFinalized: event ImagingExam.ReportFinalized is {
-        send reportFinalized to outlet ImagingExamEventSplitToExamRepository
         send reportFinalized to outlet ImagingExamEventSplitToTurnaroundTimeProjector
         send reportFinalized to outlet ImagingExamEventSplitToModalityUtilizationProjector
         send reportFinalized to outlet ImagingExamEventSplitToCriticalFindingProjector
@@ -1029,7 +938,6 @@ context RadiologyContext as router is {
         tell reportFinalized to entity RadiologyContext.ImagingExam
       }
       on addendumAdded: event ImagingExam.AddendumAdded is {
-        send addendumAdded to outlet ImagingExamEventSplitToExamRepository
         send addendumAdded to outlet ImagingExamEventSplitToTurnaroundTimeProjector
         send addendumAdded to outlet ImagingExamEventSplitToModalityUtilizationProjector
         send addendumAdded to outlet ImagingExamEventSplitToCriticalFindingProjector
@@ -1037,7 +945,6 @@ context RadiologyContext as router is {
         tell addendumAdded to entity RadiologyContext.ImagingExam
       }
       on criticalFindingReported: event ImagingExam.CriticalFindingReported is {
-        send criticalFindingReported to outlet ImagingExamEventSplitToExamRepository
         send criticalFindingReported to outlet ImagingExamEventSplitToTurnaroundTimeProjector
         send criticalFindingReported to outlet ImagingExamEventSplitToModalityUtilizationProjector
         send criticalFindingReported to outlet ImagingExamEventSplitToCriticalFindingProjector
@@ -1062,9 +969,6 @@ context RadiologyContext as router is {
   connector 'ImagingExamEvent Stream' is from outlet RadiologyContext.ImagingExam.ImagingExamEvents2 to inlet RadiologyContext.ImagingExamEventSplit.ImagingExamEventSplitIn with {
     briefly "ImagingExam events, fanned out to storage and read models"
   }
-  connector 'ImagingExamEvent Storage' is from outlet RadiologyContext.ImagingExamEventSplit.ImagingExamEventSplitToExamRepository to inlet RadiologyContext.ExamRepository.ExamRepositoryFromImagingExam with {
-    briefly "ImagingExam events on their way to storage"
-  }
   connector 'TurnaroundTimeProjector Feed' is from outlet RadiologyContext.ImagingExamEventSplit.ImagingExamEventSplitToTurnaroundTimeProjector to inlet RadiologyContext.TurnaroundTimeProjector.TurnaroundTimeProjectorFromImagingExam with {
     briefly "ImagingExam events feeding the TurnaroundTimeProjector projection"
   }
@@ -1077,17 +981,8 @@ context RadiologyContext as router is {
   connector 'RadiologistProductivityProjector Feed' is from outlet RadiologyContext.ImagingExamEventSplit.ImagingExamEventSplitToRadiologistProductivityProjector to inlet RadiologyContext.RadiologistProductivityProjector.RadiologistProductivityProjectorFromImagingExam with {
     briefly "ImagingExam events feeding the RadiologistProductivityProjector projection"
   }
-  connector 'TurnaroundTimeProjector Storage' is from outlet RadiologyContext.TurnaroundTimeProjector.TurnaroundTimeProjectorOut to inlet RadiologyContext.ExamRepository.ExamRepositoryFromTurnaroundTimeProjector with {
-    briefly "The TurnaroundTimeProjector projection on its way to storage"
-  }
-  connector 'ModalityUtilizationProjector Storage' is from outlet RadiologyContext.ModalityUtilizationProjector.ModalityUtilizationProjectorOut to inlet RadiologyContext.ExamRepository.ExamRepositoryFromModalityUtilizationProjector with {
-    briefly "The ModalityUtilizationProjector projection on its way to storage"
-  }
-  connector 'CriticalFindingProjector Storage' is from outlet RadiologyContext.CriticalFindingProjector.CriticalFindingProjectorOut to inlet RadiologyContext.ExamRepository.ExamRepositoryFromCriticalFindingProjector with {
-    briefly "The CriticalFindingProjector projection on its way to storage"
-  }
-  connector 'RadiologistProductivityProjector Storage' is from outlet RadiologyContext.RadiologistProductivityProjector.RadiologistProductivityProjectorOut to inlet RadiologyContext.ExamRepository.ExamRepositoryFromRadiologistProductivityProjector with {
-    briefly "The RadiologistProductivityProjector projection on its way to storage"
+  connector 'TurnaroundTimeProjector Storage' is from outlet RadiologyContext.TurnaroundTimeProjector.TurnaroundTimeProjectorToRepository to inlet RadiologyContext.ExamRepository.ExamRepositoryFromTurnaroundTimeProjector with {
+    briefly "TurnaroundTimeProjector updates on their way to storage"
   }
 } with {
   briefly "Primary bounded context for radiology workflow"

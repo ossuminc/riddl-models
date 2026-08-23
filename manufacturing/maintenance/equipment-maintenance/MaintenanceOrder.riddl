@@ -2,7 +2,7 @@
 // The primary aggregate for maintenance order lifecycle management
 entity MaintenanceOrder as flow is {
   type MaintenanceOrderCommand is one of {
-    MaintenanceOrder.CreateMaintenanceOrder or MaintenanceOrder.AssignTechnician or MaintenanceOrder.StartMaintenance or MaintenanceOrder.RecordSpareUsage or MaintenanceOrder.CompleteMaintenance or MaintenanceOrder.CancelOrder or MaintenanceOrder.InitializeMaintenanceOrder
+    MaintenanceOrder.CreateMaintenanceOrder or MaintenanceOrder.AssignTechnician or MaintenanceOrder.StartMaintenance or MaintenanceOrder.RecordSpareUsage or MaintenanceOrder.CompleteMaintenance or MaintenanceOrder.CancelOrder
   } with {
     briefly "MaintenanceOrder command alternation"
     described as {
@@ -11,7 +11,7 @@ entity MaintenanceOrder as flow is {
   }
   inlet MaintenanceOrderCommands is type MaintenanceOrderCommand  outlet MaintenanceOrderEvents2 is type MaintenanceOrderEvent
   // Commands
-  command CreateMaintenanceOrder is  {
+  command CreateMaintenanceOrder yields event MaintenanceOrderCreated is  {
     orderId: MaintenanceOrderId with {
       briefly "Order identifier"
       described as {
@@ -73,7 +73,7 @@ entity MaintenanceOrder as flow is {
       | starts in Pending state awaiting technician assignment.
     }
   }
-  command AssignTechnician is  {
+  command AssignTechnician yields event TechnicianAssigned is  {
     orderId: MaintenanceOrderId with {
       briefly "Order identifier"
       described as {
@@ -104,7 +104,7 @@ entity MaintenanceOrder as flow is {
       |Assigns a qualified technician to perform the maintenance work.
     }
   }
-  command StartMaintenance is  {
+  command StartMaintenance yields event MaintenanceStarted is  {
     orderId: MaintenanceOrderId with {
       briefly "Order identifier"
       described as {
@@ -129,7 +129,7 @@ entity MaintenanceOrder as flow is {
       |Records the start of maintenance work and begins tracking labor time.
     }
   }
-  command RecordSpareUsage is  {
+  command RecordSpareUsage yields event SpareUsageRecorded is  {
     orderId: MaintenanceOrderId with {
       briefly "Order identifier"
       described as {
@@ -172,7 +172,7 @@ entity MaintenanceOrder as flow is {
       |Records spare parts consumed for cost tracking and inventory updates.
     }
   }
-  command CompleteMaintenance is  {
+  command CompleteMaintenance yields event MaintenanceCompleted is  {
     orderId: MaintenanceOrderId with {
       briefly "Order identifier"
       described as {
@@ -209,7 +209,7 @@ entity MaintenanceOrder as flow is {
       |Marks maintenance as complete and records final status and notes.
     }
   }
-  command CancelOrder is  {
+  command CancelOrder yields event OrderCancelled is  {
     orderId: MaintenanceOrderId with {
       briefly "Order identifier"
       described as {
@@ -953,12 +953,6 @@ entity MaintenanceOrder as flow is {
       |The entity in Cancelled state.
     }
   }
-  command InitializeMaintenanceOrder is  { ??? } with {
-    briefly "Initialize maintenance order"
-    described as {
-      |Initialize maintenance order on source startup.
-    }
-  }
   query GetMaintenanceOrder replies result MaintenanceOrderResult is {
     maintenanceOrderId: MaintenanceOrderId with {
       briefly "ID"
@@ -987,31 +981,49 @@ entity MaintenanceOrder as flow is {
   }
   // Handler
   handler MaintenanceOrderHandler is {
+    on maintenanceCompleted: event MaintenanceCompleted is {
+      do "apply MaintenanceCompleted to the maintenanceorder so it can be persisted and replayed"
+    }
+    on maintenanceOrderCreated: event MaintenanceOrderCreated is {
+      do "apply MaintenanceOrderCreated to the maintenanceorder so it can be persisted and replayed"
+    }
+    on maintenanceStarted: event MaintenanceStarted is {
+      do "apply MaintenanceStarted to the maintenanceorder so it can be persisted and replayed"
+    }
+    on orderCancelled: event OrderCancelled is {
+      do "apply OrderCancelled to the maintenanceorder so it can be persisted and replayed"
+    }
+    on spareUsageRecorded: event SpareUsageRecorded is {
+      do "apply SpareUsageRecorded to the maintenanceorder so it can be persisted and replayed"
+    }
+    on technicianAssigned: event TechnicianAssigned is {
+      do "apply TechnicianAssigned to the maintenanceorder so it can be persisted and replayed"
+    }
     on getMaintenanceOrder: query GetMaintenanceOrder is {
       reply result MaintenanceOrderResult(maintenanceOrderId = getMaintenanceOrder.maintenanceOrderId)
     }
     on createMaintenanceOrder: command CreateMaintenanceOrder is {
       morph entity MaintenanceOrder to state MaintenanceOrder.PendingState with record MaintenanceOrder.PendingStateData(orderId = createMaintenanceOrder.orderId, equipmentId = createMaintenanceOrder.equipmentId, equipmentName = createMaintenanceOrder.equipmentName, maintenanceType = createMaintenanceOrder.maintenanceType, priority = createMaintenanceOrder.priority, description = createMaintenanceOrder.description, scheduledDate = createMaintenanceOrder.scheduledDate, estimatedDuration = createMaintenanceOrder.estimatedDuration, tasks = createMaintenanceOrder.tasks)
-      tell event MaintenanceOrderCreated(orderId = createMaintenanceOrder.orderId, equipmentId = createMaintenanceOrder.equipmentId, equipmentName = createMaintenanceOrder.equipmentName, maintenanceType = createMaintenanceOrder.maintenanceType, priority = createMaintenanceOrder.priority, scheduledDate = createMaintenanceOrder.scheduledDate) to entity MaintenanceOrder
+      yield event MaintenanceOrderCreated(orderId = createMaintenanceOrder.orderId, equipmentId = createMaintenanceOrder.equipmentId, equipmentName = createMaintenanceOrder.equipmentName, maintenanceType = createMaintenanceOrder.maintenanceType, priority = createMaintenanceOrder.priority, scheduledDate = createMaintenanceOrder.scheduledDate)
     }
     on assignTechnician: command AssignTechnician is {
       morph entity MaintenanceOrder to state MaintenanceOrder.AssignedState with record MaintenanceOrder.AssignedStateData(orderId = assignTechnician.orderId, technicianId = assignTechnician.technicianId, technicianName = assignTechnician.technicianName, hourlyRate = assignTechnician.hourlyRate)
-      tell event TechnicianAssigned(orderId = assignTechnician.orderId, technicianId = assignTechnician.technicianId, technicianName = assignTechnician.technicianName) to entity MaintenanceOrder
+      yield event TechnicianAssigned(orderId = assignTechnician.orderId, technicianId = assignTechnician.technicianId, technicianName = assignTechnician.technicianName)
     }
     on startMaintenance: command StartMaintenance is {
       morph entity MaintenanceOrder to state MaintenanceOrder.InProgressState with record MaintenanceOrder.InProgressStateData(orderId = startMaintenance.orderId, startedAt = startMaintenance.startedAt, downtimeStart = startMaintenance.downtimeStart)
-      tell event MaintenanceStarted(orderId = startMaintenance.orderId, startedAt = startMaintenance.startedAt, downtimeStart = startMaintenance.downtimeStart) to entity MaintenanceOrder
+      yield event MaintenanceStarted(orderId = startMaintenance.orderId, startedAt = startMaintenance.startedAt, downtimeStart = startMaintenance.downtimeStart)
     }
     on recordSpareUsage: command RecordSpareUsage is {
-      tell event SpareUsageRecorded(orderId = recordSpareUsage.orderId, sparePartId = recordSpareUsage.sparePartId, partNumber = recordSpareUsage.partNumber, quantity = recordSpareUsage.quantity) to entity MaintenanceOrder
+      yield event SpareUsageRecorded(orderId = recordSpareUsage.orderId, sparePartId = recordSpareUsage.sparePartId, partNumber = recordSpareUsage.partNumber, quantity = recordSpareUsage.quantity)
     }
     on completeMaintenance: command CompleteMaintenance is {
       morph entity MaintenanceOrder to state MaintenanceOrder.CompletedState with record MaintenanceOrder.CompletedStateData(orderId = completeMaintenance.orderId, completedAt = completeMaintenance.completedAt, completionNotes = completeMaintenance.completionNotes, equipmentStatus = completeMaintenance.equipmentStatus)
-      tell event MaintenanceCompleted(orderId = completeMaintenance.orderId, completedAt = completeMaintenance.completedAt, equipmentStatus = completeMaintenance.equipmentStatus) to entity MaintenanceOrder
+      yield event MaintenanceCompleted(orderId = completeMaintenance.orderId, completedAt = completeMaintenance.completedAt, equipmentStatus = completeMaintenance.equipmentStatus)
     }
     on cancelOrder: command CancelOrder is {
       morph entity MaintenanceOrder to state MaintenanceOrder.CancelledState with record MaintenanceOrder.CancelledStateData(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledBy = cancelOrder.cancelledBy)
-      tell event OrderCancelled(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledBy = cancelOrder.cancelledBy) to entity MaintenanceOrder
+      yield event OrderCancelled(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledBy = cancelOrder.cancelledBy)
     }
   } with {
     briefly "Processes maintenance order commands"

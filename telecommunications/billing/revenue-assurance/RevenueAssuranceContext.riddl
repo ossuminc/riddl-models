@@ -132,7 +132,62 @@ context RevenueAssuranceContext as router is {
   }
   include "types.riddl"
   include "AuditCase.riddl"
-  repository AuditCaseRepository as merge is {
+  type AuditCaseRepositoryCommand is one of {
+    RevenueAssuranceContext.AuditCaseRepository.PersistAuditCaseOpened or RevenueAssuranceContext.AuditCaseRepository.PersistCaseCancelled or RevenueAssuranceContext.AuditCaseRepository.PersistCaseClosed or RevenueAssuranceContext.AuditCaseRepository.PersistCaseEscalated or RevenueAssuranceContext.AuditCaseRepository.PersistCaseResolved or RevenueAssuranceContext.AuditCaseRepository.PersistDiscrepancyRecorded or RevenueAssuranceContext.AuditCaseRepository.PersistRecordsReconciled
+  } with {
+    briefly "Anything that writes AuditCaseRepository"
+    described as {
+      |The persistence commands AuditCaseRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository AuditCaseRepository as flow is {
+    inlet AuditCaseRepositoryFromRevenueAssuranceMetrics is type AuditCaseRepositoryCommand
+    command PersistCaseCancelled is  {
+      caseId: AuditCaseId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row CaseCancelled applies to.
+        }
+      }
+    } with {
+      briefly "Persist CaseCancelled"
+      described as {
+        |Instructs this repository to apply CaseCancelled to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistCaseClosed is  {
+      caseId: AuditCaseId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row CaseClosed applies to.
+        }
+      }
+    } with {
+      briefly "Persist CaseClosed"
+      described as {
+        |Instructs this repository to apply CaseClosed to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistRecordsReconciled is  {
+      caseId: AuditCaseId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row RecordsReconciled applies to.
+        }
+      }
+    } with {
+      briefly "Persist RecordsReconciled"
+      described as {
+        |Instructs this repository to apply RecordsReconciled to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistAuditCaseOpened is  {
       caseId: AuditCaseId with {
         briefly "Row addressed"
@@ -193,7 +248,7 @@ context RevenueAssuranceContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet AuditCaseRepositoryFromAuditCase is type AuditCaseEvent    inlet AuditCaseRepositoryFromRevenueAssuranceMetrics is type AuditCaseEvent    outlet AuditCaseRepositoryResponses is type AuditCase.AuditCaseResult
+    outlet AuditCaseRepositoryResponses is type AuditCase.AuditCaseResult
     record StoredAuditCase is  {
       auditCaseId: AuditCaseId with {
         briefly "auditCaseId"
@@ -237,6 +292,15 @@ context RevenueAssuranceContext as router is {
       }
     }
     handler AuditCasePersistence is {
+      on persistCaseCancelled: command PersistCaseCancelled is {
+        do "apply CaseCancelled to the stored row"
+      }
+      on persistCaseClosed: command PersistCaseClosed is {
+        do "apply CaseClosed to the stored row"
+      }
+      on persistRecordsReconciled: command PersistRecordsReconciled is {
+        do "apply RecordsReconciled to the stored row"
+      }
       on persistAuditCaseOpened: command PersistAuditCaseOpened is {
         do "apply AuditCaseOpened to the stored row"
       }
@@ -252,27 +316,6 @@ context RevenueAssuranceContext as router is {
       on query GetLeakageMetrics is {
         let leakageMetricsView: type LeakageMetricsView = prompt("read the leakage metrics projection")
         reply leakageMetricsView
-      }
-      on openAuditCase: command AuditCase.OpenAuditCase is {
-        tell event AuditCase.AuditCaseOpened(caseId = openAuditCase.caseId, caseInfo = openAuditCase.caseInfo) to entity RevenueAssuranceContext.AuditCase
-        do "Store new audit case"
-      }
-      on command AuditCase.ReconcileRecords is {
-        do "Update case with reconciliation results"
-      }
-      on recordDiscrepancy: command AuditCase.RecordDiscrepancy is {
-        tell event AuditCase.DiscrepancyRecorded(caseId = recordDiscrepancy.caseId, totalVariance = recordDiscrepancy.totalVariance) to entity RevenueAssuranceContext.AuditCase
-        do "Store discrepancy details"
-      }
-      on command AuditCase.EscalateCase is {
-        do "Update case escalation status"
-      }
-      on command AuditCase.ResolveCase is {
-        do "Update case with resolution"
-      }
-      on closeCase: command AuditCase.CloseCase is {
-        tell event AuditCase.CaseClosed(caseId = closeCase.caseId, closedBy = closeCase.closedBy) to entity RevenueAssuranceContext.AuditCase
-        do "Update case to closed"
       }
     } with {
       briefly "Persists audit case events"
@@ -313,8 +356,9 @@ context RevenueAssuranceContext as router is {
     }
   }
   projector RevenueAssuranceMetrics as flow is {
+    outlet RevenueAssuranceMetricsToRepository is type AuditCaseRepositoryCommand
     updates repository RevenueAssuranceContext.AuditCaseRepository
-    inlet RevenueAssuranceMetricsFromAuditCase is type AuditCaseEvent    outlet RevenueAssuranceMetricsOut is type AuditCaseEvent
+    inlet RevenueAssuranceMetricsFromAuditCase is type AuditCaseEvent
     record LeakageMetrics is  {
       casesOpened: Natural with {
         briefly "Opened"
@@ -353,6 +397,18 @@ context RevenueAssuranceContext as router is {
       }
     }
     handler MetricsHandler is {
+      on caseCancelled: event AuditCase.CaseCancelled is {
+        tell command RevenueAssuranceContext.AuditCaseRepository.PersistCaseCancelled(caseId = caseCancelled.caseId) to repository RevenueAssuranceContext.AuditCaseRepository
+        do "apply CaseCancelled to the RevenueAssuranceMetrics projection"
+      }
+      on caseClosed: event AuditCase.CaseClosed is {
+        tell command RevenueAssuranceContext.AuditCaseRepository.PersistCaseClosed(caseId = caseClosed.caseId) to repository RevenueAssuranceContext.AuditCaseRepository
+        do "apply CaseClosed to the RevenueAssuranceMetrics projection"
+      }
+      on recordsReconciled: event AuditCase.RecordsReconciled is {
+        tell command RevenueAssuranceContext.AuditCaseRepository.PersistRecordsReconciled(caseId = recordsReconciled.caseId) to repository RevenueAssuranceContext.AuditCaseRepository
+        do "apply RecordsReconciled to the RevenueAssuranceMetrics projection"
+      }
       on auditCaseOpened: event AuditCase.AuditCaseOpened is {
         tell command RevenueAssuranceContext.AuditCaseRepository.PersistAuditCaseOpened(caseId = auditCaseOpened.caseId) to repository RevenueAssuranceContext.AuditCaseRepository
         do "Increment cases opened"
@@ -391,125 +447,35 @@ context RevenueAssuranceContext as router is {
       |persistence.
     }
   }
-  processor AuditCaseEventSource as source is {
-    outlet AuditCaseEvents is type AuditCaseEvent
-    handler AuditCaseSourceHandler is {
-      on auditCaseOpened: event AuditCase.AuditCaseOpened is {
-        send auditCaseOpened to outlet AuditCaseEvents
-      }
-      on recordsReconciled: event AuditCase.RecordsReconciled is {
-        send recordsReconciled to outlet AuditCaseEvents
-      }
-      on discrepancyRecorded: event AuditCase.DiscrepancyRecorded is {
-        send discrepancyRecorded to outlet AuditCaseEvents
-      }
-      on caseEscalated: event AuditCase.CaseEscalated is {
-        send caseEscalated to outlet AuditCaseEvents
-      }
-      on caseResolved: event AuditCase.CaseResolved is {
-        send caseResolved to outlet AuditCaseEvents
-      }
-      on caseClosed: event AuditCase.CaseClosed is {
-        send caseClosed to outlet AuditCaseEvents
-      }
-      on caseCancelled: event AuditCase.CaseCancelled is {
-        send caseCancelled to outlet AuditCaseEvents
-      }
-      on other is {
-        error "Unexpected message for source AuditCaseEventSource"
-      }
-    } with {
-      briefly "AuditCase source handler"
-      described as {
-        |Publishes AuditCase events onto the outlet.
-      }
-    }
-  } with {
-    briefly "AuditCase event source"
-    described as {
-      |Publishes AuditCase entity events into the streaming topology.
-    }
-  }
-  processor AuditCaseEventSink as sink is {
-    inlet AuditCaseInlet is type AuditCaseEvent    handler AuditCaseSinkHandler is {
-      on auditCaseOpened: event AuditCase.AuditCaseOpened is {
-        tell auditCaseOpened to repository RevenueAssuranceContext.AuditCaseRepository
-      }
-      on recordsReconciled: event AuditCase.RecordsReconciled is {
-        tell recordsReconciled to repository RevenueAssuranceContext.AuditCaseRepository
-      }
-      on discrepancyRecorded: event AuditCase.DiscrepancyRecorded is {
-        tell discrepancyRecorded to repository RevenueAssuranceContext.AuditCaseRepository
-      }
-      on caseEscalated: event AuditCase.CaseEscalated is {
-        tell caseEscalated to repository RevenueAssuranceContext.AuditCaseRepository
-      }
-      on caseResolved: event AuditCase.CaseResolved is {
-        tell caseResolved to repository RevenueAssuranceContext.AuditCaseRepository
-      }
-      on caseClosed: event AuditCase.CaseClosed is {
-        tell caseClosed to repository RevenueAssuranceContext.AuditCaseRepository
-      }
-      on caseCancelled: event AuditCase.CaseCancelled is {
-        tell caseCancelled to repository RevenueAssuranceContext.AuditCaseRepository
-      }
-      on other is {
-        error "Unexpected message for sink AuditCaseEventSink"
-      }
-    } with {
-      briefly "AuditCase sink handler"
-      described as {
-        |Persists AuditCase events via the repository.
-      }
-    }
-  } with {
-    briefly "AuditCase event sink"
-    described as {
-      |Receives AuditCase events for persistence.
-    }
-  }
-  connector AuditCaseEventFlow is from outlet RevenueAssuranceContext.AuditCaseEventSource.AuditCaseEvents to inlet RevenueAssuranceContext.AuditCaseEventSink.AuditCaseInlet with {
-    briefly "AuditCase event flow"
-    described as {
-      |Connects the AuditCase source to its sink.
-    }
-  }
-  processor AuditCaseEventSplit as split is {
-    inlet AuditCaseEventSplitIn is type AuditCaseEvent    outlet AuditCaseEventSplitToAuditCaseRepository is type AuditCaseEvent
+  processor AuditCaseEventSplit as flow is {
+    inlet AuditCaseEventSplitIn is type AuditCaseEvent
     outlet AuditCaseEventSplitToRevenueAssuranceMetrics is type AuditCaseEvent
     handler AuditCaseEventSplitHandler is {
       on auditCaseOpened: event AuditCase.AuditCaseOpened is {
-        send auditCaseOpened to outlet AuditCaseEventSplitToAuditCaseRepository
         send auditCaseOpened to outlet AuditCaseEventSplitToRevenueAssuranceMetrics
         tell auditCaseOpened to entity RevenueAssuranceContext.AuditCase
       }
       on recordsReconciled: event AuditCase.RecordsReconciled is {
-        send recordsReconciled to outlet AuditCaseEventSplitToAuditCaseRepository
         send recordsReconciled to outlet AuditCaseEventSplitToRevenueAssuranceMetrics
         tell recordsReconciled to entity RevenueAssuranceContext.AuditCase
       }
       on discrepancyRecorded: event AuditCase.DiscrepancyRecorded is {
-        send discrepancyRecorded to outlet AuditCaseEventSplitToAuditCaseRepository
         send discrepancyRecorded to outlet AuditCaseEventSplitToRevenueAssuranceMetrics
         tell discrepancyRecorded to entity RevenueAssuranceContext.AuditCase
       }
       on caseEscalated: event AuditCase.CaseEscalated is {
-        send caseEscalated to outlet AuditCaseEventSplitToAuditCaseRepository
         send caseEscalated to outlet AuditCaseEventSplitToRevenueAssuranceMetrics
         tell caseEscalated to entity RevenueAssuranceContext.AuditCase
       }
       on caseResolved: event AuditCase.CaseResolved is {
-        send caseResolved to outlet AuditCaseEventSplitToAuditCaseRepository
         send caseResolved to outlet AuditCaseEventSplitToRevenueAssuranceMetrics
         tell caseResolved to entity RevenueAssuranceContext.AuditCase
       }
       on caseClosed: event AuditCase.CaseClosed is {
-        send caseClosed to outlet AuditCaseEventSplitToAuditCaseRepository
         send caseClosed to outlet AuditCaseEventSplitToRevenueAssuranceMetrics
         tell caseClosed to entity RevenueAssuranceContext.AuditCase
       }
       on caseCancelled: event AuditCase.CaseCancelled is {
-        send caseCancelled to outlet AuditCaseEventSplitToAuditCaseRepository
         send caseCancelled to outlet AuditCaseEventSplitToRevenueAssuranceMetrics
         tell caseCancelled to entity RevenueAssuranceContext.AuditCase
       }
@@ -531,14 +497,11 @@ context RevenueAssuranceContext as router is {
   connector 'AuditCaseEvent Stream' is from outlet RevenueAssuranceContext.AuditCase.AuditCaseEvents2 to inlet RevenueAssuranceContext.AuditCaseEventSplit.AuditCaseEventSplitIn with {
     briefly "AuditCase events, fanned out to storage and read models"
   }
-  connector 'AuditCaseEvent Storage' is from outlet RevenueAssuranceContext.AuditCaseEventSplit.AuditCaseEventSplitToAuditCaseRepository to inlet RevenueAssuranceContext.AuditCaseRepository.AuditCaseRepositoryFromAuditCase with {
-    briefly "AuditCase events on their way to storage"
-  }
   connector 'RevenueAssuranceMetrics Feed' is from outlet RevenueAssuranceContext.AuditCaseEventSplit.AuditCaseEventSplitToRevenueAssuranceMetrics to inlet RevenueAssuranceContext.RevenueAssuranceMetrics.RevenueAssuranceMetricsFromAuditCase with {
     briefly "AuditCase events feeding the RevenueAssuranceMetrics projection"
   }
-  connector 'RevenueAssuranceMetrics Storage' is from outlet RevenueAssuranceContext.RevenueAssuranceMetrics.RevenueAssuranceMetricsOut to inlet RevenueAssuranceContext.AuditCaseRepository.AuditCaseRepositoryFromRevenueAssuranceMetrics with {
-    briefly "The RevenueAssuranceMetrics projection on its way to storage"
+  connector 'RevenueAssuranceMetrics Storage' is from outlet RevenueAssuranceContext.RevenueAssuranceMetrics.RevenueAssuranceMetricsToRepository to inlet RevenueAssuranceContext.AuditCaseRepository.AuditCaseRepositoryFromRevenueAssuranceMetrics with {
+    briefly "RevenueAssuranceMetrics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for revenue assurance"

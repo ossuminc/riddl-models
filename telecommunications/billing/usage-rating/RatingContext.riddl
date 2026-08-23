@@ -132,7 +132,77 @@ context RatingContext as router is {
   }
   include "types.riddl"
   include "UsageRecord.riddl"
-  repository RatingRepository as merge is {
+  type RatingRepositoryCommand is one of {
+    RatingContext.RatingRepository.PersistChargesCalculated or RatingContext.RatingRepository.PersistRatePlanApplied or RatingContext.RatingRepository.PersistUsageRecordBilled or RatingContext.RatingRepository.PersistUsageRecordDisputed or RatingContext.RatingRepository.PersistUsageRecordRejected or RatingContext.RatingRepository.PersistUsageRecordSubmitted or RatingContext.RatingRepository.PersistUsageRecordValidated
+  } with {
+    briefly "Anything that writes RatingRepository"
+    described as {
+      |The persistence commands RatingRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository RatingRepository as flow is {
+    inlet RatingRepositoryFromRatingMetrics is type RatingRepositoryCommand
+    command PersistRatePlanApplied is  {
+      usageRecordId: UsageRecordId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row RatePlanApplied applies to.
+        }
+      }
+    } with {
+      briefly "Persist RatePlanApplied"
+      described as {
+        |Instructs this repository to apply RatePlanApplied to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistUsageRecordBilled is  {
+      usageRecordId: UsageRecordId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row UsageRecordBilled applies to.
+        }
+      }
+    } with {
+      briefly "Persist UsageRecordBilled"
+      described as {
+        |Instructs this repository to apply UsageRecordBilled to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistUsageRecordDisputed is  {
+      usageRecordId: UsageRecordId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row UsageRecordDisputed applies to.
+        }
+      }
+    } with {
+      briefly "Persist UsageRecordDisputed"
+      described as {
+        |Instructs this repository to apply UsageRecordDisputed to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistUsageRecordValidated is  {
+      usageRecordId: UsageRecordId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row UsageRecordValidated applies to.
+        }
+      }
+    } with {
+      briefly "Persist UsageRecordValidated"
+      described as {
+        |Instructs this repository to apply UsageRecordValidated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistChargesCalculated is  {
       usageRecordId: UsageRecordId with {
         briefly "Row addressed"
@@ -178,7 +248,7 @@ context RatingContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet RatingRepositoryFromUsageRecord is type UsageRecordEvent    inlet RatingRepositoryFromRatingMetrics is type UsageRecordEvent    outlet RatingRepositoryResponses is type UsageRecord.UsageRecordResult
+    outlet RatingRepositoryResponses is type UsageRecord.UsageRecordResult
     record StoredUsageRecord is  {
       usageRecordId: UsageRecordId with {
         briefly "usageRecordId"
@@ -216,6 +286,18 @@ context RatingContext as router is {
       }
     }
     handler RatingPersistence is {
+      on persistRatePlanApplied: command PersistRatePlanApplied is {
+        do "apply RatePlanApplied to the stored row"
+      }
+      on persistUsageRecordBilled: command PersistUsageRecordBilled is {
+        do "apply UsageRecordBilled to the stored row"
+      }
+      on persistUsageRecordDisputed: command PersistUsageRecordDisputed is {
+        do "apply UsageRecordDisputed to the stored row"
+      }
+      on persistUsageRecordValidated: command PersistUsageRecordValidated is {
+        do "apply UsageRecordValidated to the stored row"
+      }
       on persistChargesCalculated: command PersistChargesCalculated is {
         do "apply ChargesCalculated to the stored row"
       }
@@ -228,22 +310,6 @@ context RatingContext as router is {
       on query GetUsageMetrics is {
         let usageMetricsView: type UsageMetricsView = prompt("read the usage metrics projection")
         reply usageMetricsView
-      }
-      on submitUsageRecord: command UsageRecord.SubmitUsageRecord is {
-        tell event UsageRecord.UsageRecordSubmitted(usageRecordId = submitUsageRecord.usageRecordId, accountId = submitUsageRecord.accountId) to entity RatingContext.UsageRecord
-        do "Store new usage record"
-      }
-      on command UsageRecord.ValidateUsageRecord is {
-        do "Update record to validated"
-      }
-      on command UsageRecord.ApplyRatePlan is {
-        do "Store applied rate plan"
-      }
-      on command UsageRecord.CalculateCharges is {
-        do "Store calculated charges"
-      }
-      on command UsageRecord.SubmitToBilling is {
-        do "Update record to billed"
       }
     } with {
       briefly "Persists rating commands"
@@ -284,8 +350,9 @@ context RatingContext as router is {
     }
   }
   projector RatingMetrics as flow is {
+    outlet RatingMetricsToRepository is type RatingRepositoryCommand
     updates repository RatingContext.RatingRepository
-    inlet RatingMetricsFromUsageRecord is type UsageRecordEvent    outlet RatingMetricsOut is type UsageRecordEvent
+    inlet RatingMetricsFromUsageRecord is type UsageRecordEvent
     record UsageMetrics is  {
       recordsReceived: Natural with {
         briefly "Received"
@@ -324,6 +391,22 @@ context RatingContext as router is {
       }
     }
     handler MetricsHandler is {
+      on ratePlanApplied: event UsageRecord.RatePlanApplied is {
+        tell command RatingContext.RatingRepository.PersistRatePlanApplied(usageRecordId = ratePlanApplied.usageRecordId) to repository RatingContext.RatingRepository
+        do "apply RatePlanApplied to the RatingMetrics projection"
+      }
+      on usageRecordBilled: event UsageRecord.UsageRecordBilled is {
+        tell command RatingContext.RatingRepository.PersistUsageRecordBilled(usageRecordId = usageRecordBilled.usageRecordId) to repository RatingContext.RatingRepository
+        do "apply UsageRecordBilled to the RatingMetrics projection"
+      }
+      on usageRecordDisputed: event UsageRecord.UsageRecordDisputed is {
+        tell command RatingContext.RatingRepository.PersistUsageRecordDisputed(usageRecordId = usageRecordDisputed.usageRecordId) to repository RatingContext.RatingRepository
+        do "apply UsageRecordDisputed to the RatingMetrics projection"
+      }
+      on usageRecordValidated: event UsageRecord.UsageRecordValidated is {
+        tell command RatingContext.RatingRepository.PersistUsageRecordValidated(usageRecordId = usageRecordValidated.usageRecordId) to repository RatingContext.RatingRepository
+        do "apply UsageRecordValidated to the RatingMetrics projection"
+      }
       on usageRecordSubmitted: event UsageRecord.UsageRecordSubmitted is {
         tell command RatingContext.RatingRepository.PersistUsageRecordSubmitted(usageRecordId = usageRecordSubmitted.usageRecordId) to repository RatingContext.RatingRepository
         do "Increment records received"
@@ -358,125 +441,35 @@ context RatingContext as router is {
       |persistence.
     }
   }
-  processor UsageRecordEventSource as source is {
-    outlet UsageRecordEvents is type UsageRecordEvent
-    handler UsageRecordSourceHandler is {
-      on usageRecordSubmitted: event UsageRecord.UsageRecordSubmitted is {
-        send usageRecordSubmitted to outlet UsageRecordEvents
-      }
-      on usageRecordValidated: event UsageRecord.UsageRecordValidated is {
-        send usageRecordValidated to outlet UsageRecordEvents
-      }
-      on ratePlanApplied: event UsageRecord.RatePlanApplied is {
-        send ratePlanApplied to outlet UsageRecordEvents
-      }
-      on chargesCalculated: event UsageRecord.ChargesCalculated is {
-        send chargesCalculated to outlet UsageRecordEvents
-      }
-      on usageRecordBilled: event UsageRecord.UsageRecordBilled is {
-        send usageRecordBilled to outlet UsageRecordEvents
-      }
-      on usageRecordDisputed: event UsageRecord.UsageRecordDisputed is {
-        send usageRecordDisputed to outlet UsageRecordEvents
-      }
-      on usageRecordRejected: event UsageRecord.UsageRecordRejected is {
-        send usageRecordRejected to outlet UsageRecordEvents
-      }
-      on other is {
-        error "Unexpected message for source UsageRecordEventSource"
-      }
-    } with {
-      briefly "UsageRecord source handler"
-      described as {
-        |Publishes UsageRecord events onto the outlet.
-      }
-    }
-  } with {
-    briefly "UsageRecord event source"
-    described as {
-      |Publishes UsageRecord entity events into the streaming topology.
-    }
-  }
-  processor UsageRecordEventSink as sink is {
-    inlet UsageRecordInlet is type UsageRecordEvent    handler UsageRecordSinkHandler is {
-      on usageRecordSubmitted: event UsageRecord.UsageRecordSubmitted is {
-        tell usageRecordSubmitted to repository RatingContext.RatingRepository
-      }
-      on usageRecordValidated: event UsageRecord.UsageRecordValidated is {
-        tell usageRecordValidated to repository RatingContext.RatingRepository
-      }
-      on ratePlanApplied: event UsageRecord.RatePlanApplied is {
-        tell ratePlanApplied to repository RatingContext.RatingRepository
-      }
-      on chargesCalculated: event UsageRecord.ChargesCalculated is {
-        tell chargesCalculated to repository RatingContext.RatingRepository
-      }
-      on usageRecordBilled: event UsageRecord.UsageRecordBilled is {
-        tell usageRecordBilled to repository RatingContext.RatingRepository
-      }
-      on usageRecordDisputed: event UsageRecord.UsageRecordDisputed is {
-        tell usageRecordDisputed to repository RatingContext.RatingRepository
-      }
-      on usageRecordRejected: event UsageRecord.UsageRecordRejected is {
-        tell usageRecordRejected to repository RatingContext.RatingRepository
-      }
-      on other is {
-        error "Unexpected message for sink UsageRecordEventSink"
-      }
-    } with {
-      briefly "UsageRecord sink handler"
-      described as {
-        |Persists UsageRecord events via the repository.
-      }
-    }
-  } with {
-    briefly "UsageRecord event sink"
-    described as {
-      |Receives UsageRecord events for persistence.
-    }
-  }
-  connector UsageRecordEventFlow is from outlet RatingContext.UsageRecordEventSource.UsageRecordEvents to inlet RatingContext.UsageRecordEventSink.UsageRecordInlet with {
-    briefly "UsageRecord event flow"
-    described as {
-      |Connects the UsageRecord source to its sink.
-    }
-  }
-  processor UsageRecordEventSplit as split is {
-    inlet UsageRecordEventSplitIn is type UsageRecordEvent    outlet UsageRecordEventSplitToRatingRepository is type UsageRecordEvent
+  processor UsageRecordEventSplit as flow is {
+    inlet UsageRecordEventSplitIn is type UsageRecordEvent
     outlet UsageRecordEventSplitToRatingMetrics is type UsageRecordEvent
     handler UsageRecordEventSplitHandler is {
       on usageRecordSubmitted: event UsageRecord.UsageRecordSubmitted is {
-        send usageRecordSubmitted to outlet UsageRecordEventSplitToRatingRepository
         send usageRecordSubmitted to outlet UsageRecordEventSplitToRatingMetrics
         tell usageRecordSubmitted to entity RatingContext.UsageRecord
       }
       on usageRecordValidated: event UsageRecord.UsageRecordValidated is {
-        send usageRecordValidated to outlet UsageRecordEventSplitToRatingRepository
         send usageRecordValidated to outlet UsageRecordEventSplitToRatingMetrics
         tell usageRecordValidated to entity RatingContext.UsageRecord
       }
       on ratePlanApplied: event UsageRecord.RatePlanApplied is {
-        send ratePlanApplied to outlet UsageRecordEventSplitToRatingRepository
         send ratePlanApplied to outlet UsageRecordEventSplitToRatingMetrics
         tell ratePlanApplied to entity RatingContext.UsageRecord
       }
       on chargesCalculated: event UsageRecord.ChargesCalculated is {
-        send chargesCalculated to outlet UsageRecordEventSplitToRatingRepository
         send chargesCalculated to outlet UsageRecordEventSplitToRatingMetrics
         tell chargesCalculated to entity RatingContext.UsageRecord
       }
       on usageRecordBilled: event UsageRecord.UsageRecordBilled is {
-        send usageRecordBilled to outlet UsageRecordEventSplitToRatingRepository
         send usageRecordBilled to outlet UsageRecordEventSplitToRatingMetrics
         tell usageRecordBilled to entity RatingContext.UsageRecord
       }
       on usageRecordDisputed: event UsageRecord.UsageRecordDisputed is {
-        send usageRecordDisputed to outlet UsageRecordEventSplitToRatingRepository
         send usageRecordDisputed to outlet UsageRecordEventSplitToRatingMetrics
         tell usageRecordDisputed to entity RatingContext.UsageRecord
       }
       on usageRecordRejected: event UsageRecord.UsageRecordRejected is {
-        send usageRecordRejected to outlet UsageRecordEventSplitToRatingRepository
         send usageRecordRejected to outlet UsageRecordEventSplitToRatingMetrics
         tell usageRecordRejected to entity RatingContext.UsageRecord
       }
@@ -498,14 +491,11 @@ context RatingContext as router is {
   connector 'UsageRecordEvent Stream' is from outlet RatingContext.UsageRecord.UsageRecordEvents2 to inlet RatingContext.UsageRecordEventSplit.UsageRecordEventSplitIn with {
     briefly "UsageRecord events, fanned out to storage and read models"
   }
-  connector 'UsageRecordEvent Storage' is from outlet RatingContext.UsageRecordEventSplit.UsageRecordEventSplitToRatingRepository to inlet RatingContext.RatingRepository.RatingRepositoryFromUsageRecord with {
-    briefly "UsageRecord events on their way to storage"
-  }
   connector 'RatingMetrics Feed' is from outlet RatingContext.UsageRecordEventSplit.UsageRecordEventSplitToRatingMetrics to inlet RatingContext.RatingMetrics.RatingMetricsFromUsageRecord with {
     briefly "UsageRecord events feeding the RatingMetrics projection"
   }
-  connector 'RatingMetrics Storage' is from outlet RatingContext.RatingMetrics.RatingMetricsOut to inlet RatingContext.RatingRepository.RatingRepositoryFromRatingMetrics with {
-    briefly "The RatingMetrics projection on its way to storage"
+  connector 'RatingMetrics Storage' is from outlet RatingContext.RatingMetrics.RatingMetricsToRepository to inlet RatingContext.RatingRepository.RatingRepositoryFromRatingMetrics with {
+    briefly "RatingMetrics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for usage rating"

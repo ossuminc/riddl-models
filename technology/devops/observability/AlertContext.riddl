@@ -271,7 +271,77 @@ context AlertContext as router is {
   include "types.riddl"
   include "Alert.riddl"
   // Repository for alert persistence
-  repository AlertRepository as merge is {
+  type AlertRepositoryCommand is one of {
+    AlertContext.AlertRepository.PersistAlertAcknowledged or AlertContext.AlertRepository.PersistAlertCreated or AlertContext.AlertRepository.PersistAlertEscalated or AlertContext.AlertRepository.PersistAlertExpired or AlertContext.AlertRepository.PersistAlertResolved or AlertContext.AlertRepository.PersistAlertSilenced or AlertContext.AlertRepository.PersistCommentAdded
+  } with {
+    briefly "Anything that writes AlertRepository"
+    described as {
+      |The persistence commands AlertRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository AlertRepository as flow is {
+    inlet AlertRepositoryFromObservabilityAnalytics is type AlertRepositoryCommand
+    command PersistAlertEscalated is  {
+      alertId: AlertId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row AlertEscalated applies to.
+        }
+      }
+    } with {
+      briefly "Persist AlertEscalated"
+      described as {
+        |Instructs this repository to apply AlertEscalated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistAlertExpired is  {
+      alertId: AlertId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row AlertExpired applies to.
+        }
+      }
+    } with {
+      briefly "Persist AlertExpired"
+      described as {
+        |Instructs this repository to apply AlertExpired to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistAlertSilenced is  {
+      alertId: AlertId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row AlertSilenced applies to.
+        }
+      }
+    } with {
+      briefly "Persist AlertSilenced"
+      described as {
+        |Instructs this repository to apply AlertSilenced to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistCommentAdded is  {
+      alertId: AlertId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row CommentAdded applies to.
+        }
+      }
+    } with {
+      briefly "Persist CommentAdded"
+      described as {
+        |Instructs this repository to apply CommentAdded to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistAlertAcknowledged is  {
       alertId: AlertId with {
         briefly "Row addressed"
@@ -317,7 +387,7 @@ context AlertContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet AlertRepositoryFromAlert is type AlertEvent    inlet AlertRepositoryFromObservabilityAnalytics is type AlertEvent    outlet AlertRepositoryResponses is type Alert.AlertResult
+    outlet AlertRepositoryResponses is type Alert.AlertResult
     record StoredAlert is  {
       alertId: AlertId with {
         briefly "alertId"
@@ -348,6 +418,18 @@ context AlertContext as router is {
       }
     }
     handler AlertPersistence is {
+      on persistAlertEscalated: command PersistAlertEscalated is {
+        do "apply AlertEscalated to the stored row"
+      }
+      on persistAlertExpired: command PersistAlertExpired is {
+        do "apply AlertExpired to the stored row"
+      }
+      on persistAlertSilenced: command PersistAlertSilenced is {
+        do "apply AlertSilenced to the stored row"
+      }
+      on persistCommentAdded: command PersistCommentAdded is {
+        do "apply CommentAdded to the stored row"
+      }
       on persistAlertAcknowledged: command PersistAlertAcknowledged is {
         do "apply AlertAcknowledged to the stored row"
       }
@@ -360,30 +442,6 @@ context AlertContext as router is {
       on query GetObservabilityStats is {
         let observabilityStatsView: type ObservabilityStatsView = prompt("read the observability stats projection")
         reply observabilityStatsView
-      }
-      on createAlert: command Alert.CreateAlert is {
-        tell event Alert.AlertCreated(alertId = createAlert.alertId, rule = createAlert.rule, value = createAlert.value) to entity AlertContext.Alert
-        do "Store new alert"
-      }
-      on acknowledgeAlert: command Alert.AcknowledgeAlert is {
-        tell event Alert.AlertAcknowledged(alertId = acknowledgeAlert.alertId, acknowledgedBy = acknowledgeAlert.acknowledgedBy, updatedComment = acknowledgeAlert.updatedComment) to entity AlertContext.Alert
-        do "Update acknowledgment status"
-      }
-      on command Alert.ResolveAlert is {
-        do "Update to resolved"
-      }
-      on command Alert.SilenceAlert is {
-        do "Update silence status"
-      }
-      on command Alert.EscalateAlert is {
-        do "Update escalation level"
-      }
-      on addComment: command Alert.AddComment is {
-        tell event Alert.CommentAdded(alertId = addComment.alertId, author = addComment.author, comment = addComment.comment) to entity AlertContext.Alert
-        do "Store alert comment"
-      }
-      on command Alert.ExpireAlert is {
-        do "Update to expired"
       }
     } with {
       briefly "Persists alert commands"
@@ -426,8 +484,9 @@ context AlertContext as router is {
     }
   }
   projector ObservabilityAnalytics as flow is {
+    outlet ObservabilityAnalyticsToRepository is type AlertRepositoryCommand
     updates repository AlertContext.AlertRepository
-    inlet ObservabilityAnalyticsFromAlert is type AlertEvent    outlet ObservabilityAnalyticsOut is type AlertEvent
+    inlet ObservabilityAnalyticsFromAlert is type AlertEvent
     record ObservabilityStats is  {
       activeAlerts: Natural with {
         briefly "Active"
@@ -466,6 +525,22 @@ context AlertContext as router is {
       }
     }
     handler AnalyticsHandler is {
+      on alertEscalated: event Alert.AlertEscalated is {
+        tell command AlertContext.AlertRepository.PersistAlertEscalated(alertId = alertEscalated.alertId) to repository AlertContext.AlertRepository
+        do "apply AlertEscalated to the ObservabilityAnalytics projection"
+      }
+      on alertExpired: event Alert.AlertExpired is {
+        tell command AlertContext.AlertRepository.PersistAlertExpired(alertId = alertExpired.alertId) to repository AlertContext.AlertRepository
+        do "apply AlertExpired to the ObservabilityAnalytics projection"
+      }
+      on alertSilenced: event Alert.AlertSilenced is {
+        tell command AlertContext.AlertRepository.PersistAlertSilenced(alertId = alertSilenced.alertId) to repository AlertContext.AlertRepository
+        do "apply AlertSilenced to the ObservabilityAnalytics projection"
+      }
+      on commentAdded: event Alert.CommentAdded is {
+        tell command AlertContext.AlertRepository.PersistCommentAdded(alertId = commentAdded.alertId) to repository AlertContext.AlertRepository
+        do "apply CommentAdded to the ObservabilityAnalytics projection"
+      }
       on alertCreated: event Alert.AlertCreated is {
         tell command AlertContext.AlertRepository.PersistAlertCreated(alertId = alertCreated.alertId) to repository AlertContext.AlertRepository
         do "Update alert counts"
@@ -500,125 +575,35 @@ context AlertContext as router is {
       |persistence.
     }
   }
-  processor AlertEventSource as source is {
-    outlet AlertEvents is type AlertEvent
-    handler AlertSourceHandler is {
-      on alertCreated: event Alert.AlertCreated is {
-        send alertCreated to outlet AlertEvents
-      }
-      on alertAcknowledged: event Alert.AlertAcknowledged is {
-        send alertAcknowledged to outlet AlertEvents
-      }
-      on alertResolved: event Alert.AlertResolved is {
-        send alertResolved to outlet AlertEvents
-      }
-      on alertSilenced: event Alert.AlertSilenced is {
-        send alertSilenced to outlet AlertEvents
-      }
-      on alertEscalated: event Alert.AlertEscalated is {
-        send alertEscalated to outlet AlertEvents
-      }
-      on commentAdded: event Alert.CommentAdded is {
-        send commentAdded to outlet AlertEvents
-      }
-      on alertExpired: event Alert.AlertExpired is {
-        send alertExpired to outlet AlertEvents
-      }
-      on other is {
-        error "Unexpected message for source AlertEventSource"
-      }
-    } with {
-      briefly "Alert source handler"
-      described as {
-        |Publishes Alert events onto the outlet.
-      }
-    }
-  } with {
-    briefly "Alert event source"
-    described as {
-      |Publishes Alert entity events into the streaming topology.
-    }
-  }
-  processor AlertEventSink as sink is {
-    inlet AlertInlet is type AlertEvent    handler AlertSinkHandler is {
-      on alertCreated: event Alert.AlertCreated is {
-        tell alertCreated to repository AlertContext.AlertRepository
-      }
-      on alertAcknowledged: event Alert.AlertAcknowledged is {
-        tell alertAcknowledged to repository AlertContext.AlertRepository
-      }
-      on alertResolved: event Alert.AlertResolved is {
-        tell alertResolved to repository AlertContext.AlertRepository
-      }
-      on alertSilenced: event Alert.AlertSilenced is {
-        tell alertSilenced to repository AlertContext.AlertRepository
-      }
-      on alertEscalated: event Alert.AlertEscalated is {
-        tell alertEscalated to repository AlertContext.AlertRepository
-      }
-      on commentAdded: event Alert.CommentAdded is {
-        tell commentAdded to repository AlertContext.AlertRepository
-      }
-      on alertExpired: event Alert.AlertExpired is {
-        tell alertExpired to repository AlertContext.AlertRepository
-      }
-      on other is {
-        error "Unexpected message for sink AlertEventSink"
-      }
-    } with {
-      briefly "Alert sink handler"
-      described as {
-        |Persists Alert events via the repository.
-      }
-    }
-  } with {
-    briefly "Alert event sink"
-    described as {
-      |Receives Alert events for persistence.
-    }
-  }
-  connector AlertEventFlow is from outlet AlertContext.AlertEventSource.AlertEvents to inlet AlertContext.AlertEventSink.AlertInlet with {
-    briefly "Alert event flow"
-    described as {
-      |Connects the Alert source to its sink.
-    }
-  }
-  processor AlertEventSplit as split is {
-    inlet AlertEventSplitIn is type AlertEvent    outlet AlertEventSplitToAlertRepository is type AlertEvent
+  processor AlertEventSplit as flow is {
+    inlet AlertEventSplitIn is type AlertEvent
     outlet AlertEventSplitToObservabilityAnalytics is type AlertEvent
     handler AlertEventSplitHandler is {
       on alertCreated: event Alert.AlertCreated is {
-        send alertCreated to outlet AlertEventSplitToAlertRepository
         send alertCreated to outlet AlertEventSplitToObservabilityAnalytics
         tell alertCreated to entity AlertContext.Alert
       }
       on alertAcknowledged: event Alert.AlertAcknowledged is {
-        send alertAcknowledged to outlet AlertEventSplitToAlertRepository
         send alertAcknowledged to outlet AlertEventSplitToObservabilityAnalytics
         tell alertAcknowledged to entity AlertContext.Alert
       }
       on alertResolved: event Alert.AlertResolved is {
-        send alertResolved to outlet AlertEventSplitToAlertRepository
         send alertResolved to outlet AlertEventSplitToObservabilityAnalytics
         tell alertResolved to entity AlertContext.Alert
       }
       on alertSilenced: event Alert.AlertSilenced is {
-        send alertSilenced to outlet AlertEventSplitToAlertRepository
         send alertSilenced to outlet AlertEventSplitToObservabilityAnalytics
         tell alertSilenced to entity AlertContext.Alert
       }
       on alertEscalated: event Alert.AlertEscalated is {
-        send alertEscalated to outlet AlertEventSplitToAlertRepository
         send alertEscalated to outlet AlertEventSplitToObservabilityAnalytics
         tell alertEscalated to entity AlertContext.Alert
       }
       on commentAdded: event Alert.CommentAdded is {
-        send commentAdded to outlet AlertEventSplitToAlertRepository
         send commentAdded to outlet AlertEventSplitToObservabilityAnalytics
         tell commentAdded to entity AlertContext.Alert
       }
       on alertExpired: event Alert.AlertExpired is {
-        send alertExpired to outlet AlertEventSplitToAlertRepository
         send alertExpired to outlet AlertEventSplitToObservabilityAnalytics
         tell alertExpired to entity AlertContext.Alert
       }
@@ -640,14 +625,11 @@ context AlertContext as router is {
   connector 'AlertEvent Stream' is from outlet AlertContext.Alert.AlertEvents2 to inlet AlertContext.AlertEventSplit.AlertEventSplitIn with {
     briefly "Alert events, fanned out to storage and read models"
   }
-  connector 'AlertEvent Storage' is from outlet AlertContext.AlertEventSplit.AlertEventSplitToAlertRepository to inlet AlertContext.AlertRepository.AlertRepositoryFromAlert with {
-    briefly "Alert events on their way to storage"
-  }
   connector 'ObservabilityAnalytics Feed' is from outlet AlertContext.AlertEventSplit.AlertEventSplitToObservabilityAnalytics to inlet AlertContext.ObservabilityAnalytics.ObservabilityAnalyticsFromAlert with {
     briefly "Alert events feeding the ObservabilityAnalytics projection"
   }
-  connector 'ObservabilityAnalytics Storage' is from outlet AlertContext.ObservabilityAnalytics.ObservabilityAnalyticsOut to inlet AlertContext.AlertRepository.AlertRepositoryFromObservabilityAnalytics with {
-    briefly "The ObservabilityAnalytics projection on its way to storage"
+  connector 'ObservabilityAnalytics Storage' is from outlet AlertContext.ObservabilityAnalytics.ObservabilityAnalyticsToRepository to inlet AlertContext.AlertRepository.AlertRepositoryFromObservabilityAnalytics with {
+    briefly "ObservabilityAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for alerting"

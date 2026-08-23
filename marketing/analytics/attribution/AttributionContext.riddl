@@ -129,7 +129,62 @@ context AttributionContext as router is {
   }
   include "types.riddl"
   include "ConversionPath.riddl"
-  repository AttributionRepository as merge is {
+  type AttributionRepositoryCommand is one of {
+    AttributionContext.AttributionRepository.PersistAttributionModelApplied or AttributionContext.AttributionRepository.PersistConversionPathCreated or AttributionContext.AttributionRepository.PersistConversionRecorded or AttributionContext.AttributionRepository.PersistPathCancelled or AttributionContext.AttributionRepository.PersistPathExpired or AttributionContext.AttributionRepository.PersistTouchpointRecorded
+  } with {
+    briefly "Anything that writes AttributionRepository"
+    described as {
+      |The persistence commands AttributionRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository AttributionRepository as flow is {
+    inlet AttributionRepositoryFromAttributionMetrics is type AttributionRepositoryCommand
+    command PersistConversionRecorded is  {
+      conversionPathId: ConversionPathId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ConversionRecorded applies to.
+        }
+      }
+    } with {
+      briefly "Persist ConversionRecorded"
+      described as {
+        |Instructs this repository to apply ConversionRecorded to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistPathCancelled is  {
+      conversionPathId: ConversionPathId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row PathCancelled applies to.
+        }
+      }
+    } with {
+      briefly "Persist PathCancelled"
+      described as {
+        |Instructs this repository to apply PathCancelled to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistPathExpired is  {
+      conversionPathId: ConversionPathId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row PathExpired applies to.
+        }
+      }
+    } with {
+      briefly "Persist PathExpired"
+      described as {
+        |Instructs this repository to apply PathExpired to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistAttributionModelApplied is  {
       conversionPathId: ConversionPathId with {
         briefly "Row addressed"
@@ -175,7 +230,7 @@ context AttributionContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet AttributionRepositoryFromConversionPath is type ConversionPathEvent    inlet AttributionRepositoryFromAttributionMetrics is type ConversionPathEvent    outlet AttributionRepositoryResponses is type ConversionPath.ConversionPathResult
+    outlet AttributionRepositoryResponses is type ConversionPath.ConversionPathResult
     record StoredConversionPath is  {
       conversionPathId: ConversionPathId with {
         briefly "conversionPathId"
@@ -213,6 +268,15 @@ context AttributionContext as router is {
       }
     }
     handler AttributionPersistence is {
+      on persistConversionRecorded: command PersistConversionRecorded is {
+        do "apply ConversionRecorded to the stored row"
+      }
+      on persistPathCancelled: command PersistPathCancelled is {
+        do "apply PathCancelled to the stored row"
+      }
+      on persistPathExpired: command PersistPathExpired is {
+        do "apply PathExpired to the stored row"
+      }
       on persistAttributionModelApplied: command PersistAttributionModelApplied is {
         do "apply AttributionModelApplied to the stored row"
       }
@@ -225,24 +289,6 @@ context AttributionContext as router is {
       on query GetChannelMetrics is {
         let channelMetricsView: type ChannelMetricsView = prompt("read the channel metrics projection")
         reply channelMetricsView
-      }
-      on createConversionPath: command ConversionPath.CreateConversionPath is {
-        tell event ConversionPath.ConversionPathCreated(conversionPathId = createConversionPath.conversionPathId, conversionInfo = createConversionPath.conversionInfo) to entity AttributionContext.ConversionPath
-        do "Store new conversion path"
-      }
-      on recordTouchpoint: command ConversionPath.RecordTouchpoint is {
-        tell event ConversionPath.TouchpointRecorded(conversionPathId = recordTouchpoint.conversionPathId, touchpoint = recordTouchpoint.touchpoint) to entity AttributionContext.ConversionPath
-        do "Store touchpoint on conversion path"
-      }
-      on recordConversion: command ConversionPath.RecordConversion is {
-        tell event ConversionPath.ConversionRecorded(conversionPathId = recordConversion.conversionPathId, actualValue = recordConversion.actualValue, convertedAt = recordConversion.convertedAt) to entity AttributionContext.ConversionPath
-        do "Update path to converted"
-      }
-      on command ConversionPath.ApplyAttributionModel is {
-        do "Store attribution results"
-      }
-      on command ConversionPath.ExpirePath is {
-        do "Update path to expired"
       }
     } with {
       briefly "Persists attribution commands"
@@ -283,8 +329,9 @@ context AttributionContext as router is {
     }
   }
   projector AttributionMetrics as flow is {
+    outlet AttributionMetricsToRepository is type AttributionRepositoryCommand
     updates repository AttributionContext.AttributionRepository
-    inlet AttributionMetricsFromConversionPath is type ConversionPathEvent    outlet AttributionMetricsOut is type ConversionPathEvent
+    inlet AttributionMetricsFromConversionPath is type ConversionPathEvent
     record ChannelMetrics is  {
       totalConversions: Natural with {
         briefly "Conversions"
@@ -317,6 +364,18 @@ context AttributionContext as router is {
       }
     }
     handler MetricsHandler is {
+      on conversionRecorded: event ConversionPath.ConversionRecorded is {
+        tell command AttributionContext.AttributionRepository.PersistConversionRecorded(conversionPathId = conversionRecorded.conversionPathId) to repository AttributionContext.AttributionRepository
+        do "apply ConversionRecorded to the AttributionMetrics projection"
+      }
+      on pathCancelled: event ConversionPath.PathCancelled is {
+        tell command AttributionContext.AttributionRepository.PersistPathCancelled(conversionPathId = pathCancelled.conversionPathId) to repository AttributionContext.AttributionRepository
+        do "apply PathCancelled to the AttributionMetrics projection"
+      }
+      on pathExpired: event ConversionPath.PathExpired is {
+        tell command AttributionContext.AttributionRepository.PersistPathExpired(conversionPathId = pathExpired.conversionPathId) to repository AttributionContext.AttributionRepository
+        do "apply PathExpired to the AttributionMetrics projection"
+      }
       on conversionPathCreated: event ConversionPath.ConversionPathCreated is {
         tell command AttributionContext.AttributionRepository.PersistConversionPathCreated(conversionPathId = conversionPathCreated.conversionPathId) to repository AttributionContext.AttributionRepository
         do "Track new conversion path"
@@ -351,114 +410,31 @@ context AttributionContext as router is {
       |persistence.
     }
   }
-  processor ConversionPathEventSource as source is {
-    outlet ConversionPathEvents is type ConversionPathEvent
-    handler ConversionPathSourceHandler is {
-      on conversionPathCreated: event ConversionPath.ConversionPathCreated is {
-        send conversionPathCreated to outlet ConversionPathEvents
-      }
-      on touchpointRecorded: event ConversionPath.TouchpointRecorded is {
-        send touchpointRecorded to outlet ConversionPathEvents
-      }
-      on conversionRecorded: event ConversionPath.ConversionRecorded is {
-        send conversionRecorded to outlet ConversionPathEvents
-      }
-      on attributionModelApplied: event ConversionPath.AttributionModelApplied is {
-        send attributionModelApplied to outlet ConversionPathEvents
-      }
-      on pathExpired: event ConversionPath.PathExpired is {
-        send pathExpired to outlet ConversionPathEvents
-      }
-      on pathCancelled: event ConversionPath.PathCancelled is {
-        send pathCancelled to outlet ConversionPathEvents
-      }
-      on other is {
-        error "Unexpected message for source ConversionPathEventSource"
-      }
-    } with {
-      briefly "ConversionPath source handler"
-      described as {
-        |Publishes ConversionPath events onto the outlet.
-      }
-    }
-  } with {
-    briefly "ConversionPath event source"
-    described as {
-      |Publishes ConversionPath entity events into the streaming topology.
-    }
-  }
-  processor ConversionPathEventSink as sink is {
-    inlet ConversionPathInlet is type ConversionPathEvent    handler ConversionPathSinkHandler is {
-      on conversionPathCreated: event ConversionPath.ConversionPathCreated is {
-        tell conversionPathCreated to repository AttributionContext.AttributionRepository
-      }
-      on touchpointRecorded: event ConversionPath.TouchpointRecorded is {
-        tell touchpointRecorded to repository AttributionContext.AttributionRepository
-      }
-      on conversionRecorded: event ConversionPath.ConversionRecorded is {
-        tell conversionRecorded to repository AttributionContext.AttributionRepository
-      }
-      on attributionModelApplied: event ConversionPath.AttributionModelApplied is {
-        tell attributionModelApplied to repository AttributionContext.AttributionRepository
-      }
-      on pathExpired: event ConversionPath.PathExpired is {
-        tell pathExpired to repository AttributionContext.AttributionRepository
-      }
-      on pathCancelled: event ConversionPath.PathCancelled is {
-        tell pathCancelled to repository AttributionContext.AttributionRepository
-      }
-      on other is {
-        error "Unexpected message for sink ConversionPathEventSink"
-      }
-    } with {
-      briefly "ConversionPath sink handler"
-      described as {
-        |Persists ConversionPath events via the repository.
-      }
-    }
-  } with {
-    briefly "ConversionPath event sink"
-    described as {
-      |Receives ConversionPath events for persistence.
-    }
-  }
-  connector ConversionPathEventFlow is from outlet AttributionContext.ConversionPathEventSource.ConversionPathEvents to inlet AttributionContext.ConversionPathEventSink.ConversionPathInlet with {
-    briefly "ConversionPath event flow"
-    described as {
-      |Connects the ConversionPath source to its sink.
-    }
-  }
-  processor ConversionPathEventSplit as split is {
-    inlet ConversionPathEventSplitIn is type ConversionPathEvent    outlet ConversionPathEventSplitToAttributionRepository is type ConversionPathEvent
+  processor ConversionPathEventSplit as flow is {
+    inlet ConversionPathEventSplitIn is type ConversionPathEvent
     outlet ConversionPathEventSplitToAttributionMetrics is type ConversionPathEvent
     handler ConversionPathEventSplitHandler is {
       on conversionPathCreated: event ConversionPath.ConversionPathCreated is {
-        send conversionPathCreated to outlet ConversionPathEventSplitToAttributionRepository
         send conversionPathCreated to outlet ConversionPathEventSplitToAttributionMetrics
         tell conversionPathCreated to entity AttributionContext.ConversionPath
       }
       on touchpointRecorded: event ConversionPath.TouchpointRecorded is {
-        send touchpointRecorded to outlet ConversionPathEventSplitToAttributionRepository
         send touchpointRecorded to outlet ConversionPathEventSplitToAttributionMetrics
         tell touchpointRecorded to entity AttributionContext.ConversionPath
       }
       on conversionRecorded: event ConversionPath.ConversionRecorded is {
-        send conversionRecorded to outlet ConversionPathEventSplitToAttributionRepository
         send conversionRecorded to outlet ConversionPathEventSplitToAttributionMetrics
         tell conversionRecorded to entity AttributionContext.ConversionPath
       }
       on attributionModelApplied: event ConversionPath.AttributionModelApplied is {
-        send attributionModelApplied to outlet ConversionPathEventSplitToAttributionRepository
         send attributionModelApplied to outlet ConversionPathEventSplitToAttributionMetrics
         tell attributionModelApplied to entity AttributionContext.ConversionPath
       }
       on pathExpired: event ConversionPath.PathExpired is {
-        send pathExpired to outlet ConversionPathEventSplitToAttributionRepository
         send pathExpired to outlet ConversionPathEventSplitToAttributionMetrics
         tell pathExpired to entity AttributionContext.ConversionPath
       }
       on pathCancelled: event ConversionPath.PathCancelled is {
-        send pathCancelled to outlet ConversionPathEventSplitToAttributionRepository
         send pathCancelled to outlet ConversionPathEventSplitToAttributionMetrics
         tell pathCancelled to entity AttributionContext.ConversionPath
       }
@@ -480,14 +456,11 @@ context AttributionContext as router is {
   connector 'ConversionPathEvent Stream' is from outlet AttributionContext.ConversionPath.ConversionPathEvents2 to inlet AttributionContext.ConversionPathEventSplit.ConversionPathEventSplitIn with {
     briefly "ConversionPath events, fanned out to storage and read models"
   }
-  connector 'ConversionPathEvent Storage' is from outlet AttributionContext.ConversionPathEventSplit.ConversionPathEventSplitToAttributionRepository to inlet AttributionContext.AttributionRepository.AttributionRepositoryFromConversionPath with {
-    briefly "ConversionPath events on their way to storage"
-  }
   connector 'AttributionMetrics Feed' is from outlet AttributionContext.ConversionPathEventSplit.ConversionPathEventSplitToAttributionMetrics to inlet AttributionContext.AttributionMetrics.AttributionMetricsFromConversionPath with {
     briefly "ConversionPath events feeding the AttributionMetrics projection"
   }
-  connector 'AttributionMetrics Storage' is from outlet AttributionContext.AttributionMetrics.AttributionMetricsOut to inlet AttributionContext.AttributionRepository.AttributionRepositoryFromAttributionMetrics with {
-    briefly "The AttributionMetrics projection on its way to storage"
+  connector 'AttributionMetrics Storage' is from outlet AttributionContext.AttributionMetrics.AttributionMetricsToRepository to inlet AttributionContext.AttributionRepository.AttributionRepositoryFromAttributionMetrics with {
+    briefly "AttributionMetrics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for marketing attribution"

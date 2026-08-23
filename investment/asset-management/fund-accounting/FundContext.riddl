@@ -5,31 +5,28 @@ context FundContext as router is {
   inlet FundInfoResultStreamIn is type Fund.FundInfoResult  outlet FundInfoResultStreamOut is type Fund.FundInfoResult
   handler FundContextBoundary is {
     on createFund: command Fund.CreateFund is {
-      send createFund to outlet FundContext.FundCommandStreamOut
+      forward createFund to outlet FundContext.FundCommandStreamOut
     }
     on calculateNAV: command Fund.CalculateNAV is {
-      send calculateNAV to outlet FundContext.FundCommandStreamOut
+      forward calculateNAV to outlet FundContext.FundCommandStreamOut
     }
     on recordTransaction: command Fund.RecordTransaction is {
-      send recordTransaction to outlet FundContext.FundCommandStreamOut
+      forward recordTransaction to outlet FundContext.FundCommandStreamOut
     }
     on updateHolding: command Fund.UpdateHolding is {
-      send updateHolding to outlet FundContext.FundCommandStreamOut
+      forward updateHolding to outlet FundContext.FundCommandStreamOut
     }
     on processSubscription: command Fund.ProcessSubscription is {
-      send processSubscription to outlet FundContext.FundCommandStreamOut
+      forward processSubscription to outlet FundContext.FundCommandStreamOut
     }
     on processRedemption: command Fund.ProcessRedemption is {
-      send processRedemption to outlet FundContext.FundCommandStreamOut
+      forward processRedemption to outlet FundContext.FundCommandStreamOut
     }
     on suspendFund: command Fund.SuspendFund is {
-      send suspendFund to outlet FundContext.FundCommandStreamOut
+      forward suspendFund to outlet FundContext.FundCommandStreamOut
     }
     on resumeFund: command Fund.ResumeFund is {
-      send resumeFund to outlet FundContext.FundCommandStreamOut
-    }
-    on initializeFund: command Fund.InitializeFund is {
-      send initializeFund to outlet FundContext.FundCommandStreamOut
+      forward resumeFund to outlet FundContext.FundCommandStreamOut
     }
     on fundInfoResult: result Fund.FundInfoResult is {
       send fundInfoResult to outlet FundContext.FundInfoResultStreamOut
@@ -140,7 +137,32 @@ context FundContext as router is {
   include "types.riddl"
   include "Fund.riddl"
   // === Repository ===
-  repository FundRepository as merge is {
+  type FundRepositoryCommand is one of {
+    FundContext.FundRepository.PersistFundCreated or FundContext.FundRepository.PersistFundResumed or FundContext.FundRepository.PersistFundSuspended or FundContext.FundRepository.PersistHoldingUpdated or FundContext.FundRepository.PersistNAVCalculated or FundContext.FundRepository.PersistRedemptionProcessed or FundContext.FundRepository.PersistSubscriptionProcessed or FundContext.FundRepository.PersistTransactionRecorded
+  } with {
+    briefly "Anything that writes FundRepository"
+    described as {
+      |The persistence commands FundRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository FundRepository as flow is {
+    inlet FundRepositoryFromFundDashboardProjector is type FundRepositoryCommand
+    command PersistHoldingUpdated is  {
+      holdingId: HoldingId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row HoldingUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist HoldingUpdated"
+      described as {
+        |Instructs this repository to apply HoldingUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistFundCreated is  {
       fundId: FundId with {
         briefly "Row addressed"
@@ -246,7 +268,7 @@ context FundContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet FundRepositoryFromFund is type FundEvent    inlet FundRepositoryFromFundDashboardProjector is type FundEvent    inlet FundRepositoryFromRegulatoryReportingProjector is type FundEvent    outlet FundRepositoryResponses is type Fund.FundInfoResult
+    outlet FundRepositoryResponses is type Fund.FundInfoResult
     schema FundData is relational
       of fund as type FundInfo
       of holding as type HoldingRecord
@@ -270,6 +292,9 @@ context FundContext as router is {
       }
     }
     handler FundRepositoryHandler is {
+      on persistHoldingUpdated: command PersistHoldingUpdated is {
+        do "apply HoldingUpdated to the stored row"
+      }
       on persistFundCreated: command PersistFundCreated is {
         do "apply FundCreated to the stored row"
       }
@@ -409,8 +434,9 @@ context FundContext as router is {
     }
   }
   projector FundDashboardProjector as flow is {
+    outlet FundDashboardProjectorToRepository is type FundRepositoryCommand
     updates repository FundContext.FundRepository
-    inlet FundDashboardProjectorFromFund is type FundEvent    outlet FundDashboardProjectorOut is type FundEvent
+    inlet FundDashboardProjectorFromFund is type FundEvent
     record DashboardRecord is  {
       fundId: FundId with {
         briefly "Fund identifier"
@@ -473,6 +499,14 @@ context FundContext as router is {
       }
     }
     handler DashboardEventHandler is {
+      on holdingUpdated: event Fund.HoldingUpdated is {
+        tell command FundContext.FundRepository.PersistHoldingUpdated(holdingId = holdingUpdated.holdingId) to repository FundContext.FundRepository
+        do "apply HoldingUpdated to the FundDashboardProjector projection"
+      }
+      on transactionRecorded: event Fund.TransactionRecorded is {
+        tell command FundContext.FundRepository.PersistTransactionRecorded(transactionId = transactionRecorded.transactionId) to repository FundContext.FundRepository
+        do "apply TransactionRecorded to the FundDashboardProjector projection"
+      }
       on nAVCalculated: event NAVCalculated is {
         tell command FundContext.FundRepository.PersistNAVCalculated(navId = nAVCalculated.navId) to repository FundContext.FundRepository
       } with {
@@ -566,9 +600,9 @@ context FundContext as router is {
       |Read model view carrying the reporting record projection.
     }
   }
-  projector RegulatoryReportingProjector as flow is {
+  projector RegulatoryReportingProjector as sink is {
     updates repository FundContext.FundRepository
-    inlet RegulatoryReportingProjectorFromFund is type FundEvent    outlet RegulatoryReportingProjectorOut is type FundEvent
+    inlet RegulatoryReportingProjectorFromFund is type FundEvent
     record ReportingRecord is  {
       fundId: FundId with {
         briefly "Fund identifier"
@@ -619,6 +653,22 @@ context FundContext as router is {
       }
     }
     handler ReportingEventHandler is {
+      on fundCreated: event Fund.FundCreated is {
+        tell command FundContext.FundRepository.PersistFundCreated(fundId = fundCreated.fundId) to repository FundContext.FundRepository
+        do "apply FundCreated to the RegulatoryReportingProjector projection"
+      }
+      on fundResumed: event Fund.FundResumed is {
+        tell command FundContext.FundRepository.PersistFundResumed(fundId = fundResumed.fundId) to repository FundContext.FundRepository
+        do "apply FundResumed to the RegulatoryReportingProjector projection"
+      }
+      on fundSuspended: event Fund.FundSuspended is {
+        tell command FundContext.FundRepository.PersistFundSuspended(fundId = fundSuspended.fundId) to repository FundContext.FundRepository
+        do "apply FundSuspended to the RegulatoryReportingProjector projection"
+      }
+      on holdingUpdated: event Fund.HoldingUpdated is {
+        tell command FundContext.FundRepository.PersistHoldingUpdated(holdingId = holdingUpdated.holdingId) to repository FundContext.FundRepository
+        do "apply HoldingUpdated to the RegulatoryReportingProjector projection"
+      }
       on nAVCalculated: event NAVCalculated is {
         tell command FundContext.FundRepository.PersistNAVCalculated(navId = nAVCalculated.navId) to repository FundContext.FundRepository
       } with {
@@ -738,54 +788,46 @@ context FundContext as router is {
     }
   }
   processor FundEventSplit as split is {
-    inlet FundEventSplitIn is type FundEvent    outlet FundEventSplitToFundRepository is type FundEvent
+    inlet FundEventSplitIn is type FundEvent
     outlet FundEventSplitToFundDashboardProjector is type FundEvent
     outlet FundEventSplitToRegulatoryReportingProjector is type FundEvent
     handler FundEventSplitHandler is {
       on fundCreated: event Fund.FundCreated is {
-        send fundCreated to outlet FundEventSplitToFundRepository
         send fundCreated to outlet FundEventSplitToFundDashboardProjector
         send fundCreated to outlet FundEventSplitToRegulatoryReportingProjector
         tell fundCreated to entity FundContext.Fund
       }
       on nAVCalculated: event Fund.NAVCalculated is {
-        send nAVCalculated to outlet FundEventSplitToFundRepository
         send nAVCalculated to outlet FundEventSplitToFundDashboardProjector
         send nAVCalculated to outlet FundEventSplitToRegulatoryReportingProjector
         tell nAVCalculated to entity FundContext.Fund
       }
       on transactionRecorded: event Fund.TransactionRecorded is {
-        send transactionRecorded to outlet FundEventSplitToFundRepository
         send transactionRecorded to outlet FundEventSplitToFundDashboardProjector
         send transactionRecorded to outlet FundEventSplitToRegulatoryReportingProjector
         tell transactionRecorded to entity FundContext.Fund
       }
       on holdingUpdated: event Fund.HoldingUpdated is {
-        send holdingUpdated to outlet FundEventSplitToFundRepository
         send holdingUpdated to outlet FundEventSplitToFundDashboardProjector
         send holdingUpdated to outlet FundEventSplitToRegulatoryReportingProjector
         tell holdingUpdated to entity FundContext.Fund
       }
       on subscriptionProcessed: event Fund.SubscriptionProcessed is {
-        send subscriptionProcessed to outlet FundEventSplitToFundRepository
         send subscriptionProcessed to outlet FundEventSplitToFundDashboardProjector
         send subscriptionProcessed to outlet FundEventSplitToRegulatoryReportingProjector
         tell subscriptionProcessed to entity FundContext.Fund
       }
       on redemptionProcessed: event Fund.RedemptionProcessed is {
-        send redemptionProcessed to outlet FundEventSplitToFundRepository
         send redemptionProcessed to outlet FundEventSplitToFundDashboardProjector
         send redemptionProcessed to outlet FundEventSplitToRegulatoryReportingProjector
         tell redemptionProcessed to entity FundContext.Fund
       }
       on fundSuspended: event Fund.FundSuspended is {
-        send fundSuspended to outlet FundEventSplitToFundRepository
         send fundSuspended to outlet FundEventSplitToFundDashboardProjector
         send fundSuspended to outlet FundEventSplitToRegulatoryReportingProjector
         tell fundSuspended to entity FundContext.Fund
       }
       on fundResumed: event Fund.FundResumed is {
-        send fundResumed to outlet FundEventSplitToFundRepository
         send fundResumed to outlet FundEventSplitToFundDashboardProjector
         send fundResumed to outlet FundEventSplitToRegulatoryReportingProjector
         tell fundResumed to entity FundContext.Fund
@@ -808,20 +850,14 @@ context FundContext as router is {
   connector 'FundEvent Stream' is from outlet FundContext.Fund.FundEvents2 to inlet FundContext.FundEventSplit.FundEventSplitIn with {
     briefly "Fund events, fanned out to storage and read models"
   }
-  connector 'FundEvent Storage' is from outlet FundContext.FundEventSplit.FundEventSplitToFundRepository to inlet FundContext.FundRepository.FundRepositoryFromFund with {
-    briefly "Fund events on their way to storage"
-  }
   connector 'FundDashboardProjector Feed' is from outlet FundContext.FundEventSplit.FundEventSplitToFundDashboardProjector to inlet FundContext.FundDashboardProjector.FundDashboardProjectorFromFund with {
     briefly "Fund events feeding the FundDashboardProjector projection"
   }
   connector 'RegulatoryReportingProjector Feed' is from outlet FundContext.FundEventSplit.FundEventSplitToRegulatoryReportingProjector to inlet FundContext.RegulatoryReportingProjector.RegulatoryReportingProjectorFromFund with {
     briefly "Fund events feeding the RegulatoryReportingProjector projection"
   }
-  connector 'FundDashboardProjector Storage' is from outlet FundContext.FundDashboardProjector.FundDashboardProjectorOut to inlet FundContext.FundRepository.FundRepositoryFromFundDashboardProjector with {
-    briefly "The FundDashboardProjector projection on its way to storage"
-  }
-  connector 'RegulatoryReportingProjector Storage' is from outlet FundContext.RegulatoryReportingProjector.RegulatoryReportingProjectorOut to inlet FundContext.FundRepository.FundRepositoryFromRegulatoryReportingProjector with {
-    briefly "The RegulatoryReportingProjector projection on its way to storage"
+  connector 'FundDashboardProjector Storage' is from outlet FundContext.FundDashboardProjector.FundDashboardProjectorToRepository to inlet FundContext.FundRepository.FundRepositoryFromFundDashboardProjector with {
+    briefly "FundDashboardProjector updates on their way to storage"
   }
 } with {
   briefly "Bounded context for fund accounting"

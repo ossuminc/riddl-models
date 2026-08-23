@@ -181,7 +181,77 @@ context LogTrackingContext as router is {
   }
   include "types.riddl"
   include "TimberLog.riddl"
-  repository LogTrackingRepository as merge is {
+  type LogTrackingRepositoryCommand is one of {
+    LogTrackingContext.LogTrackingRepository.PersistComplianceDocumentAttached or LogTrackingContext.LogTrackingRepository.PersistLogDelivered or LogTrackingContext.LogTrackingRepository.PersistLogInTransit or LogTrackingContext.LogTrackingRepository.PersistLogLoaded or LogTrackingContext.LogTrackingRepository.PersistLogQuarantined or LogTrackingContext.LogTrackingRepository.PersistLogRegistered or LogTrackingContext.LogTrackingRepository.PersistLogRejected or LogTrackingContext.LogTrackingRepository.PersistLogScaled
+  } with {
+    briefly "Anything that writes LogTrackingRepository"
+    described as {
+      |The persistence commands LogTrackingRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository LogTrackingRepository as flow is {
+    inlet LogTrackingRepositoryFromLogTrackingMetrics is type LogTrackingRepositoryCommand
+    command PersistComplianceDocumentAttached is  {
+      logId: TimberLogId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ComplianceDocumentAttached applies to.
+        }
+      }
+    } with {
+      briefly "Persist ComplianceDocumentAttached"
+      described as {
+        |Instructs this repository to apply ComplianceDocumentAttached to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistLogInTransit is  {
+      logId: TimberLogId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row LogInTransit applies to.
+        }
+      }
+    } with {
+      briefly "Persist LogInTransit"
+      described as {
+        |Instructs this repository to apply LogInTransit to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistLogLoaded is  {
+      logId: TimberLogId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row LogLoaded applies to.
+        }
+      }
+    } with {
+      briefly "Persist LogLoaded"
+      described as {
+        |Instructs this repository to apply LogLoaded to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistLogQuarantined is  {
+      logId: TimberLogId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row LogQuarantined applies to.
+        }
+      }
+    } with {
+      briefly "Persist LogQuarantined"
+      described as {
+        |Instructs this repository to apply LogQuarantined to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistLogDelivered is  {
       logId: TimberLogId with {
         briefly "Row addressed"
@@ -242,7 +312,7 @@ context LogTrackingContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet LogTrackingRepositoryFromTimberLog is type TimberLogEvent    inlet LogTrackingRepositoryFromLogTrackingMetrics is type TimberLogEvent    outlet LogTrackingRepositoryResponses is type TimberLog.TimberLogResult
+    outlet LogTrackingRepositoryResponses is type TimberLog.TimberLogResult
     record StoredTimberLog is  {
       timberLogId: TimberLogId with {
         briefly "timberLogId"
@@ -286,6 +356,18 @@ context LogTrackingContext as router is {
       }
     }
     handler LogTrackingPersistence is {
+      on persistComplianceDocumentAttached: command PersistComplianceDocumentAttached is {
+        do "apply ComplianceDocumentAttached to the stored row"
+      }
+      on persistLogInTransit: command PersistLogInTransit is {
+        do "apply LogInTransit to the stored row"
+      }
+      on persistLogLoaded: command PersistLogLoaded is {
+        do "apply LogLoaded to the stored row"
+      }
+      on persistLogQuarantined: command PersistLogQuarantined is {
+        do "apply LogQuarantined to the stored row"
+      }
       on persistLogDelivered: command PersistLogDelivered is {
         do "apply LogDelivered to the stored row"
       }
@@ -301,25 +383,6 @@ context LogTrackingContext as router is {
       on query GetVolumeMetrics is {
         let volumeMetricsView: type VolumeMetricsView = prompt("read the volume metrics projection")
         reply volumeMetricsView
-      }
-      on command TimberLog.RegisterLog is {
-        do "Store new timber log"
-      }
-      on command TimberLog.ScaleLog is {
-        do "Update log with scaling measurement"
-      }
-      on command TimberLog.LoadForTransport is {
-        do "Update log with transport info"
-      }
-      on command TimberLog.RecordDelivery is {
-        do "Update log to delivered status"
-      }
-      on rejectLog: command TimberLog.RejectLog is {
-        tell event TimberLog.LogRejected(logId = rejectLog.logId, reason = rejectLog.reason) to entity LogTrackingContext.TimberLog
-        do "Update log to rejected status"
-      }
-      on command TimberLog.AttachComplianceDocument is {
-        do "Store compliance document for log"
       }
     } with {
       briefly "Persists log tracking events"
@@ -360,8 +423,9 @@ context LogTrackingContext as router is {
     }
   }
   projector LogTrackingMetrics as flow is {
+    outlet LogTrackingMetricsToRepository is type LogTrackingRepositoryCommand
     updates repository LogTrackingContext.LogTrackingRepository
-    inlet LogTrackingMetricsFromTimberLog is type TimberLogEvent    outlet LogTrackingMetricsOut is type TimberLogEvent
+    inlet LogTrackingMetricsFromTimberLog is type TimberLogEvent
     record VolumeMetrics is  {
       logsRegistered: Natural with {
         briefly "Registered"
@@ -400,6 +464,22 @@ context LogTrackingContext as router is {
       }
     }
     handler MetricsHandler is {
+      on complianceDocumentAttached: event TimberLog.ComplianceDocumentAttached is {
+        tell command LogTrackingContext.LogTrackingRepository.PersistComplianceDocumentAttached(logId = complianceDocumentAttached.logId) to repository LogTrackingContext.LogTrackingRepository
+        do "apply ComplianceDocumentAttached to the LogTrackingMetrics projection"
+      }
+      on logInTransit: event TimberLog.LogInTransit is {
+        tell command LogTrackingContext.LogTrackingRepository.PersistLogInTransit(logId = logInTransit.logId) to repository LogTrackingContext.LogTrackingRepository
+        do "apply LogInTransit to the LogTrackingMetrics projection"
+      }
+      on logLoaded: event TimberLog.LogLoaded is {
+        tell command LogTrackingContext.LogTrackingRepository.PersistLogLoaded(logId = logLoaded.logId) to repository LogTrackingContext.LogTrackingRepository
+        do "apply LogLoaded to the LogTrackingMetrics projection"
+      }
+      on logQuarantined: event TimberLog.LogQuarantined is {
+        tell command LogTrackingContext.LogTrackingRepository.PersistLogQuarantined(logId = logQuarantined.logId) to repository LogTrackingContext.LogTrackingRepository
+        do "apply LogQuarantined to the LogTrackingMetrics projection"
+      }
       on logRegistered: event TimberLog.LogRegistered is {
         tell command LogTrackingContext.LogTrackingRepository.PersistLogRegistered(logId = logRegistered.logId) to repository LogTrackingContext.LogTrackingRepository
         do "Increment logs registered"
@@ -438,136 +518,39 @@ context LogTrackingContext as router is {
       |persistence.
     }
   }
-  processor TimberLogEventSource as source is {
-    outlet TimberLogEvents is type TimberLogEvent
-    handler TimberLogSourceHandler is {
-      on logRegistered: event TimberLog.LogRegistered is {
-        send logRegistered to outlet TimberLogEvents
-      }
-      on logScaled: event TimberLog.LogScaled is {
-        send logScaled to outlet TimberLogEvents
-      }
-      on logLoaded: event TimberLog.LogLoaded is {
-        send logLoaded to outlet TimberLogEvents
-      }
-      on logInTransit: event TimberLog.LogInTransit is {
-        send logInTransit to outlet TimberLogEvents
-      }
-      on logDelivered: event TimberLog.LogDelivered is {
-        send logDelivered to outlet TimberLogEvents
-      }
-      on logRejected: event TimberLog.LogRejected is {
-        send logRejected to outlet TimberLogEvents
-      }
-      on logQuarantined: event TimberLog.LogQuarantined is {
-        send logQuarantined to outlet TimberLogEvents
-      }
-      on complianceDocumentAttached: event TimberLog.ComplianceDocumentAttached is {
-        send complianceDocumentAttached to outlet TimberLogEvents
-      }
-      on other is {
-        error "Unexpected message for source TimberLogEventSource"
-      }
-    } with {
-      briefly "TimberLog source handler"
-      described as {
-        |Publishes TimberLog events onto the outlet.
-      }
-    }
-  } with {
-    briefly "TimberLog event source"
-    described as {
-      |Publishes TimberLog entity events into the streaming topology.
-    }
-  }
-  processor TimberLogEventSink as sink is {
-    inlet TimberLogInlet is type TimberLogEvent    handler TimberLogSinkHandler is {
-      on logRegistered: event TimberLog.LogRegistered is {
-        tell logRegistered to repository LogTrackingContext.LogTrackingRepository
-      }
-      on logScaled: event TimberLog.LogScaled is {
-        tell logScaled to repository LogTrackingContext.LogTrackingRepository
-      }
-      on logLoaded: event TimberLog.LogLoaded is {
-        tell logLoaded to repository LogTrackingContext.LogTrackingRepository
-      }
-      on logInTransit: event TimberLog.LogInTransit is {
-        tell logInTransit to repository LogTrackingContext.LogTrackingRepository
-      }
-      on logDelivered: event TimberLog.LogDelivered is {
-        tell logDelivered to repository LogTrackingContext.LogTrackingRepository
-      }
-      on logRejected: event TimberLog.LogRejected is {
-        tell logRejected to repository LogTrackingContext.LogTrackingRepository
-      }
-      on logQuarantined: event TimberLog.LogQuarantined is {
-        tell logQuarantined to repository LogTrackingContext.LogTrackingRepository
-      }
-      on complianceDocumentAttached: event TimberLog.ComplianceDocumentAttached is {
-        tell complianceDocumentAttached to repository LogTrackingContext.LogTrackingRepository
-      }
-      on other is {
-        error "Unexpected message for sink TimberLogEventSink"
-      }
-    } with {
-      briefly "TimberLog sink handler"
-      described as {
-        |Persists TimberLog events via the repository.
-      }
-    }
-  } with {
-    briefly "TimberLog event sink"
-    described as {
-      |Receives TimberLog events for persistence.
-    }
-  }
-  connector TimberLogEventFlow is from outlet LogTrackingContext.TimberLogEventSource.TimberLogEvents to inlet LogTrackingContext.TimberLogEventSink.TimberLogInlet with {
-    briefly "TimberLog event flow"
-    described as {
-      |Connects the TimberLog source to its sink.
-    }
-  }
-  processor TimberLogEventSplit as split is {
-    inlet TimberLogEventSplitIn is type TimberLogEvent    outlet TimberLogEventSplitToLogTrackingRepository is type TimberLogEvent
+  processor TimberLogEventSplit as flow is {
+    inlet TimberLogEventSplitIn is type TimberLogEvent
     outlet TimberLogEventSplitToLogTrackingMetrics is type TimberLogEvent
     handler TimberLogEventSplitHandler is {
       on logRegistered: event TimberLog.LogRegistered is {
-        send logRegistered to outlet TimberLogEventSplitToLogTrackingRepository
         send logRegistered to outlet TimberLogEventSplitToLogTrackingMetrics
         tell logRegistered to entity LogTrackingContext.TimberLog
       }
       on logScaled: event TimberLog.LogScaled is {
-        send logScaled to outlet TimberLogEventSplitToLogTrackingRepository
         send logScaled to outlet TimberLogEventSplitToLogTrackingMetrics
         tell logScaled to entity LogTrackingContext.TimberLog
       }
       on logLoaded: event TimberLog.LogLoaded is {
-        send logLoaded to outlet TimberLogEventSplitToLogTrackingRepository
         send logLoaded to outlet TimberLogEventSplitToLogTrackingMetrics
         tell logLoaded to entity LogTrackingContext.TimberLog
       }
       on logInTransit: event TimberLog.LogInTransit is {
-        send logInTransit to outlet TimberLogEventSplitToLogTrackingRepository
         send logInTransit to outlet TimberLogEventSplitToLogTrackingMetrics
         tell logInTransit to entity LogTrackingContext.TimberLog
       }
       on logDelivered: event TimberLog.LogDelivered is {
-        send logDelivered to outlet TimberLogEventSplitToLogTrackingRepository
         send logDelivered to outlet TimberLogEventSplitToLogTrackingMetrics
         tell logDelivered to entity LogTrackingContext.TimberLog
       }
       on logRejected: event TimberLog.LogRejected is {
-        send logRejected to outlet TimberLogEventSplitToLogTrackingRepository
         send logRejected to outlet TimberLogEventSplitToLogTrackingMetrics
         tell logRejected to entity LogTrackingContext.TimberLog
       }
       on logQuarantined: event TimberLog.LogQuarantined is {
-        send logQuarantined to outlet TimberLogEventSplitToLogTrackingRepository
         send logQuarantined to outlet TimberLogEventSplitToLogTrackingMetrics
         tell logQuarantined to entity LogTrackingContext.TimberLog
       }
       on complianceDocumentAttached: event TimberLog.ComplianceDocumentAttached is {
-        send complianceDocumentAttached to outlet TimberLogEventSplitToLogTrackingRepository
         send complianceDocumentAttached to outlet TimberLogEventSplitToLogTrackingMetrics
         tell complianceDocumentAttached to entity LogTrackingContext.TimberLog
       }
@@ -589,14 +572,11 @@ context LogTrackingContext as router is {
   connector 'TimberLogEvent Stream' is from outlet LogTrackingContext.TimberLog.TimberLogEvents2 to inlet LogTrackingContext.TimberLogEventSplit.TimberLogEventSplitIn with {
     briefly "TimberLog events, fanned out to storage and read models"
   }
-  connector 'TimberLogEvent Storage' is from outlet LogTrackingContext.TimberLogEventSplit.TimberLogEventSplitToLogTrackingRepository to inlet LogTrackingContext.LogTrackingRepository.LogTrackingRepositoryFromTimberLog with {
-    briefly "TimberLog events on their way to storage"
-  }
   connector 'LogTrackingMetrics Feed' is from outlet LogTrackingContext.TimberLogEventSplit.TimberLogEventSplitToLogTrackingMetrics to inlet LogTrackingContext.LogTrackingMetrics.LogTrackingMetricsFromTimberLog with {
     briefly "TimberLog events feeding the LogTrackingMetrics projection"
   }
-  connector 'LogTrackingMetrics Storage' is from outlet LogTrackingContext.LogTrackingMetrics.LogTrackingMetricsOut to inlet LogTrackingContext.LogTrackingRepository.LogTrackingRepositoryFromLogTrackingMetrics with {
-    briefly "The LogTrackingMetrics projection on its way to storage"
+  connector 'LogTrackingMetrics Storage' is from outlet LogTrackingContext.LogTrackingMetrics.LogTrackingMetricsToRepository to inlet LogTrackingContext.LogTrackingRepository.LogTrackingRepositoryFromLogTrackingMetrics with {
+    briefly "LogTrackingMetrics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for log tracking"

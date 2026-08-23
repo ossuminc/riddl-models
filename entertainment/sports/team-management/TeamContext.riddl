@@ -5,31 +5,25 @@ context TeamContext as router is {
   inlet PlayerResultStreamIn is type Player.PlayerResult  outlet PlayerResultStreamOut is type Player.PlayerResult
   handler TeamContextBoundary is {
     on signPlayer: command Player.SignPlayer is {
-      send signPlayer to outlet TeamContext.PlayerCommandStreamOut
+      forward signPlayer to outlet TeamContext.PlayerCommandStreamOut
     }
     on assignToRoster: command Player.AssignToRoster is {
-      send assignToRoster to outlet TeamContext.PlayerCommandStreamOut
+      forward assignToRoster to outlet TeamContext.PlayerCommandStreamOut
     }
     on extendContract: command Player.ExtendContract is {
-      send extendContract to outlet TeamContext.PlayerCommandStreamOut
+      forward extendContract to outlet TeamContext.PlayerCommandStreamOut
     }
     on tradePlayer: command Player.TradePlayer is {
-      send tradePlayer to outlet TeamContext.PlayerCommandStreamOut
+      forward tradePlayer to outlet TeamContext.PlayerCommandStreamOut
     }
     on releasePlayer: command Player.ReleasePlayer is {
-      send releasePlayer to outlet TeamContext.PlayerCommandStreamOut
+      forward releasePlayer to outlet TeamContext.PlayerCommandStreamOut
     }
     on placeOnInjuredReserve: command Player.PlaceOnInjuredReserve is {
-      send placeOnInjuredReserve to outlet TeamContext.PlayerCommandStreamOut
-    }
-    on initializePlayer: command Player.InitializePlayer is {
-      send initializePlayer to outlet TeamContext.PlayerCommandStreamOut
+      forward placeOnInjuredReserve to outlet TeamContext.PlayerCommandStreamOut
     }
     on createTeam: command Team.CreateTeam is {
       send createTeam to outlet TeamContext.TeamCommandStreamOut
-    }
-    on initializeTeam: command Team.InitializeTeam is {
-      send initializeTeam to outlet TeamContext.TeamCommandStreamOut
     }
     on playerResult: result Player.PlayerResult is {
       send playerResult to outlet TeamContext.PlayerResultStreamOut
@@ -76,7 +70,7 @@ context TeamContext as router is {
   // Team entity for managing team-level operations
   aggregate entity Team as flow is {
     type TeamCommand is one of {
-      Team.CreateTeam or Team.InitializeTeam
+      Team.CreateTeam
     } with {
       briefly "Team command alternation"
       described as {
@@ -260,12 +254,6 @@ context TeamContext as router is {
         |Data for an active team in the league.
       }
     }
-    command InitializeTeam is  { ??? } with {
-      briefly "Initialize team"
-      described as {
-        |Initialize the Team entity on source startup.
-      }
-    }
     initial state ActiveTeam of record Team.ActiveTeamData is {
       initial handler ActiveTeamInitHandler is {
         on query GetRosterMetrics is {
@@ -292,8 +280,11 @@ context TeamContext as router is {
       }
     }
     initial handler TeamHandler is {
+    on teamCreated: event TeamCreated is {
+      do "apply TeamCreated to the team so it can be persisted and replayed"
+    }
       on createTeam: command CreateTeam is {
-        tell event TeamCreated(teamId = createTeam.teamId, name = createTeam.name, city = createTeam.city, conference = createTeam.conference, division = createTeam.division) to entity Team
+        yield event TeamCreated(teamId = createTeam.teamId, name = createTeam.name, city = createTeam.city, conference = createTeam.conference, division = createTeam.division)
       }
     } with {
       briefly "Handles team management commands"
@@ -309,7 +300,37 @@ context TeamContext as router is {
     }
   }
   // Repository for player data persistence
-  repository PlayerRepository as merge is {
+  repository PlayerRepository as flow is {
+    command PersistContractExtended is  {
+      playerId: PlayerId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ContractExtended applies to.
+        }
+      }
+    } with {
+      briefly "Persist ContractExtended"
+      described as {
+        |Instructs this repository to apply ContractExtended to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistTeamCreated is  {
+      teamId: TeamId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TeamCreated applies to.
+        }
+      }
+    } with {
+      briefly "Persist TeamCreated"
+      described as {
+        |Instructs this repository to apply TeamCreated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistPlayerAssignedToRoster is  {
       playerId: PlayerId with {
         briefly "Row addressed"
@@ -407,7 +428,7 @@ context TeamContext as router is {
         |The relational schema persisting player records for this repository.
       }
     }
-    inlet PlayerRepositoryFromPlayer is type PlayerEvent    inlet PlayerRepositoryFromTeam is type TeamEvent    inlet PlayerRepositoryFromRosterMetrics is type PlayerEvent    outlet PlayerRepositoryResponses is type Player.PlayerResult
+    inlet PlayerRepositoryFromTeam is type TeamEvent    outlet PlayerRepositoryResponses is type Player.PlayerResult
     query GetPlayerById replies result PlayerRecord is  {
       playerId: PlayerId with {
         briefly "Player to retrieve"
@@ -528,6 +549,12 @@ context TeamContext as router is {
       }
     }
     handler PlayerPersistence is {
+      on persistContractExtended: command PersistContractExtended is {
+        do "apply ContractExtended to the stored row"
+      }
+      on persistTeamCreated: command PersistTeamCreated is {
+        do "apply TeamCreated to the stored row"
+      }
       on persistPlayerAssignedToRoster: command PersistPlayerAssignedToRoster is {
         do "apply PlayerAssignedToRoster to the stored row"
       }
@@ -574,9 +601,9 @@ context TeamContext as router is {
     }
   }
   // Projector for roster analytics
-  projector RosterMetrics as merge is {
+  projector RosterMetrics as sink is {
     updates repository TeamContext.PlayerRepository
-    inlet RosterMetricsFromPlayer is type PlayerEvent    inlet RosterMetricsFromTeam is type TeamEvent    outlet RosterMetricsOut is type PlayerEvent
+    inlet RosterMetricsFromPlayer is type PlayerEvent    inlet RosterMetricsFromTeam is type TeamEvent
     record RosterMetricsRecord is  {
       teamId: TeamId with {
         briefly "Team identifier"
@@ -652,6 +679,14 @@ context TeamContext as router is {
       }
     }
     handler RosterMetricsHandler is {
+      on contractExtended: event Player.ContractExtended is {
+        tell command TeamContext.PlayerRepository.PersistContractExtended(playerId = contractExtended.playerId) to repository TeamContext.PlayerRepository
+        do "apply ContractExtended to the RosterMetrics projection"
+      }
+      on teamCreated: event Team.TeamCreated is {
+        tell command TeamContext.PlayerRepository.PersistTeamCreated(teamId = teamCreated.teamId) to repository TeamContext.PlayerRepository
+        do "apply TeamCreated to the RosterMetrics projection"
+      }
       on playerSigned: event Player.PlayerSigned is {
         tell command TeamContext.PlayerRepository.PersistPlayerSigned(playerId = playerSigned.playerId) to repository TeamContext.PlayerRepository
         set field RosterMetricsRecord.totalPlayers to "RosterMetricsRecord.totalPlayers + 1"
@@ -687,99 +722,31 @@ context TeamContext as router is {
       | front office decision support and league compliance reporting.
     }
   }
-  processor PlayerEventSource as source is {
-    outlet PlayerEvents is type PlayerEvent
-    handler PlayerEventEmitter is {
-      on init is {
-        let initializePlayer: type InitializePlayer = prompt("the initialize player that brings this team into existence")
-        tell initializePlayer to entity TeamContext.Player
-      }
-      on other is {
-        error "Unexpected message for source PlayerEventSource"
-      }
-      on playerSigned: event Player.PlayerSigned is {
-        send playerSigned to outlet PlayerEvents
-      }
-      on playerTraded: event Player.PlayerTraded is {
-        send playerTraded to outlet PlayerEvents
-      }
-      on playerReleased: event Player.PlayerReleased is {
-        send playerReleased to outlet PlayerEvents
-      }
-    } with {
-      briefly "Player event emitter"
-      described as {
-        |Emits player lifecycle events into the streaming
-        |topology.
-      }
-    }
-  } with {
-    briefly "Player event source"
-    described as {
-      |Publishes player entity events for streaming.
-    }
-  }
-  processor PlayerEventSink as sink is {
-    inlet IncomingPlayerEvents is type PlayerEvent    handler PlayerEventReceiver is {
-      on init is { ??? }
-      on other is {
-        error "Unexpected message for sink PlayerEventSink"
-      }
-      on playerSigned: event Player.PlayerSigned is {
-        tell playerSigned to repository TeamContext.PlayerRepository
-      }
-      on playerReleased: event Player.PlayerReleased is {
-        tell playerReleased to repository TeamContext.PlayerRepository
-      }
-    } with {
-      briefly "Player event receiver"
-      described as {
-        |Receives player events and persists them.
-      }
-    }
-  } with {
-    briefly "Player event sink"
-    described as {
-      |Receives player events from the streaming topology.
-    }
-  }
-  connector PlayerEventPipeline is from outlet TeamContext.PlayerEventSource.PlayerEvents to inlet TeamContext.PlayerEventSink.IncomingPlayerEvents with {
-    briefly "Player event pipeline"
-    described as {
-      |Wires player events from source to sink.
-    }
-  }
-  processor PlayerEventSplit as split is {
-    inlet PlayerEventSplitIn is type PlayerEvent    outlet PlayerEventSplitToPlayerRepository is type PlayerEvent
+  processor PlayerEventSplit as flow is {
+    inlet PlayerEventSplitIn is type PlayerEvent
     outlet PlayerEventSplitToRosterMetrics is type PlayerEvent
     handler PlayerEventSplitHandler is {
       on playerSigned: event Player.PlayerSigned is {
-        send playerSigned to outlet PlayerEventSplitToPlayerRepository
         send playerSigned to outlet PlayerEventSplitToRosterMetrics
         tell playerSigned to entity TeamContext.Player
       }
       on playerAssignedToRoster: event Player.PlayerAssignedToRoster is {
-        send playerAssignedToRoster to outlet PlayerEventSplitToPlayerRepository
         send playerAssignedToRoster to outlet PlayerEventSplitToRosterMetrics
         tell playerAssignedToRoster to entity TeamContext.Player
       }
       on contractExtended: event Player.ContractExtended is {
-        send contractExtended to outlet PlayerEventSplitToPlayerRepository
         send contractExtended to outlet PlayerEventSplitToRosterMetrics
         tell contractExtended to entity TeamContext.Player
       }
       on playerTraded: event Player.PlayerTraded is {
-        send playerTraded to outlet PlayerEventSplitToPlayerRepository
         send playerTraded to outlet PlayerEventSplitToRosterMetrics
         tell playerTraded to entity TeamContext.Player
       }
       on playerReleased: event Player.PlayerReleased is {
-        send playerReleased to outlet PlayerEventSplitToPlayerRepository
         send playerReleased to outlet PlayerEventSplitToRosterMetrics
         tell playerReleased to entity TeamContext.Player
       }
       on playerPlacedOnInjuredReserve: event Player.PlayerPlacedOnInjuredReserve is {
-        send playerPlacedOnInjuredReserve to outlet PlayerEventSplitToPlayerRepository
         send playerPlacedOnInjuredReserve to outlet PlayerEventSplitToRosterMetrics
         tell playerPlacedOnInjuredReserve to entity TeamContext.Player
       }
@@ -825,9 +792,6 @@ context TeamContext as router is {
   connector 'PlayerEvent Stream' is from outlet TeamContext.Player.PlayerEvents2 to inlet TeamContext.PlayerEventSplit.PlayerEventSplitIn with {
     briefly "Player events, fanned out to storage and read models"
   }
-  connector 'PlayerEvent Storage' is from outlet TeamContext.PlayerEventSplit.PlayerEventSplitToPlayerRepository to inlet TeamContext.PlayerRepository.PlayerRepositoryFromPlayer with {
-    briefly "Player events on their way to storage"
-  }
   connector 'PlayerEvent Feed' is from outlet TeamContext.PlayerEventSplit.PlayerEventSplitToRosterMetrics to inlet TeamContext.RosterMetrics.RosterMetricsFromPlayer with {
     briefly "PlayerEvent feeding the RosterMetrics projection"
   }
@@ -839,9 +803,6 @@ context TeamContext as router is {
   }
   connector 'TeamEvent Feed' is from outlet TeamContext.TeamEventSplit.TeamEventSplitToRosterMetrics to inlet TeamContext.RosterMetrics.RosterMetricsFromTeam with {
     briefly "TeamEvent feeding the RosterMetrics projection"
-  }
-  connector 'RosterMetrics Storage' is from outlet TeamContext.RosterMetrics.RosterMetricsOut to inlet TeamContext.PlayerRepository.PlayerRepositoryFromRosterMetrics with {
-    briefly "The RosterMetrics projection on its way to storage"
   }
 } with {
   briefly "Bounded context for team roster management"

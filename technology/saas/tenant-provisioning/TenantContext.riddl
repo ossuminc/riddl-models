@@ -27,9 +27,6 @@ context TenantContext as router is {
     on decommissionTenant: command Tenant.DecommissionTenant is {
       send decommissionTenant to outlet TenantContext.TenantCommandStreamOut
     }
-    on initializeTenant: command Tenant.InitializeTenant is {
-      send initializeTenant to outlet TenantContext.TenantCommandStreamOut
-    }
     on tenantResult: result Tenant.TenantResult is {
       send tenantResult to outlet TenantContext.TenantResultStreamOut
     }
@@ -271,7 +268,77 @@ context TenantContext as router is {
   include "types.riddl"
   include "Tenant.riddl"
   // Repository for tenant persistence
-  repository TenantRepository as merge is {
+  type TenantRepositoryCommand is one of {
+    TenantContext.TenantRepository.PersistResourceProvisioned or TenantContext.TenantRepository.PersistResourceScaled or TenantContext.TenantRepository.PersistTenantConfigured or TenantContext.TenantRepository.PersistTenantCreated or TenantContext.TenantRepository.PersistTenantDecommissioned or TenantContext.TenantRepository.PersistTenantReactivated or TenantContext.TenantRepository.PersistTenantSuspended or TenantContext.TenantRepository.PersistTierUpgraded
+  } with {
+    briefly "Anything that writes TenantRepository"
+    described as {
+      |The persistence commands TenantRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository TenantRepository as flow is {
+    inlet TenantRepositoryFromTenantAnalytics is type TenantRepositoryCommand
+    command PersistResourceScaled is  {
+      tenantId: TenantId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ResourceScaled applies to.
+        }
+      }
+    } with {
+      briefly "Persist ResourceScaled"
+      described as {
+        |Instructs this repository to apply ResourceScaled to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistTenantConfigured is  {
+      tenantId: TenantId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TenantConfigured applies to.
+        }
+      }
+    } with {
+      briefly "Persist TenantConfigured"
+      described as {
+        |Instructs this repository to apply TenantConfigured to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistTenantReactivated is  {
+      tenantId: TenantId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TenantReactivated applies to.
+        }
+      }
+    } with {
+      briefly "Persist TenantReactivated"
+      described as {
+        |Instructs this repository to apply TenantReactivated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistTenantSuspended is  {
+      tenantId: TenantId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TenantSuspended applies to.
+        }
+      }
+    } with {
+      briefly "Persist TenantSuspended"
+      described as {
+        |Instructs this repository to apply TenantSuspended to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistResourceProvisioned is  {
       tenantId: TenantId with {
         briefly "Row addressed"
@@ -332,7 +399,7 @@ context TenantContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet TenantRepositoryFromTenant is type TenantEvent    inlet TenantRepositoryFromTenantAnalytics is type TenantEvent    outlet TenantRepositoryResponses is type Tenant.TenantResult
+    outlet TenantRepositoryResponses is type Tenant.TenantResult
     record StoredTenant is  {
       tenantId: TenantId with {
         briefly "tenantId"
@@ -363,6 +430,18 @@ context TenantContext as router is {
       }
     }
     handler TenantPersistence is {
+      on persistResourceScaled: command PersistResourceScaled is {
+        do "apply ResourceScaled to the stored row"
+      }
+      on persistTenantConfigured: command PersistTenantConfigured is {
+        do "apply TenantConfigured to the stored row"
+      }
+      on persistTenantReactivated: command PersistTenantReactivated is {
+        do "apply TenantReactivated to the stored row"
+      }
+      on persistTenantSuspended: command PersistTenantSuspended is {
+        do "apply TenantSuspended to the stored row"
+      }
       on persistResourceProvisioned: command PersistResourceProvisioned is {
         do "apply ResourceProvisioned to the stored row"
       }
@@ -378,30 +457,6 @@ context TenantContext as router is {
       on query GetTenantStats is {
         let tenantStatsView: type TenantStatsView = prompt("read the tenant stats projection")
         reply tenantStatsView
-      }
-      on createTenant: command Tenant.CreateTenant is {
-        tell event Tenant.TenantCreated(tenantId = createTenant.tenantId, organization = createTenant.organization, admin = createTenant.admin, configuration = createTenant.configuration) to entity TenantContext.Tenant
-      }
-      on configureTenant: command Tenant.ConfigureTenant is {
-        tell event Tenant.TenantConfigured(tenantId = configureTenant.tenantId, configuration = configureTenant.configuration) to entity TenantContext.Tenant
-      }
-      on provisionResource: command Tenant.ProvisionResource is {
-        tell event Tenant.ResourceProvisioned(tenantId = provisionResource.tenantId) to entity TenantContext.Tenant
-      }
-      on scaleResource: command Tenant.ScaleResource is {
-        tell event Tenant.ResourceScaled(tenantId = scaleResource.tenantId, resourceId = scaleResource.resourceId, scalingPolicy = scaleResource.scalingPolicy) to entity TenantContext.Tenant
-      }
-      on upgradeTier: command Tenant.UpgradeTier is {
-        tell event Tenant.TierUpgraded(tenantId = upgradeTier.tenantId, newTier = upgradeTier.newTier, effectiveDate = upgradeTier.effectiveDate) to entity TenantContext.Tenant
-      }
-      on suspendTenant: command Tenant.SuspendTenant is {
-        tell event Tenant.TenantSuspended(tenantId = suspendTenant.tenantId, reason = suspendTenant.reason) to entity TenantContext.Tenant
-      }
-      on reactivateTenant: command Tenant.ReactivateTenant is {
-        tell event Tenant.TenantReactivated(tenantId = reactivateTenant.tenantId) to entity TenantContext.Tenant
-      }
-      on decommissionTenant: command Tenant.DecommissionTenant is {
-        tell event Tenant.TenantDecommissioned(tenantId = decommissionTenant.tenantId, decommission = decommissionTenant.decommission) to entity TenantContext.Tenant
       }
     } with {
       briefly "Persists tenant commands"
@@ -444,8 +499,9 @@ context TenantContext as router is {
     }
   }
   projector TenantAnalytics as flow is {
+    outlet TenantAnalyticsToRepository is type TenantRepositoryCommand
     updates repository TenantContext.TenantRepository
-    inlet TenantAnalyticsFromTenant is type TenantEvent    outlet TenantAnalyticsOut is type TenantEvent
+    inlet TenantAnalyticsFromTenant is type TenantEvent
     record TenantStats is  {
       totalTenants: Natural with {
         briefly "Total"
@@ -484,6 +540,22 @@ context TenantContext as router is {
       }
     }
     handler AnalyticsHandler is {
+      on resourceScaled: event Tenant.ResourceScaled is {
+        tell command TenantContext.TenantRepository.PersistResourceScaled(tenantId = resourceScaled.tenantId) to repository TenantContext.TenantRepository
+        do "apply ResourceScaled to the TenantAnalytics projection"
+      }
+      on tenantConfigured: event Tenant.TenantConfigured is {
+        tell command TenantContext.TenantRepository.PersistTenantConfigured(tenantId = tenantConfigured.tenantId) to repository TenantContext.TenantRepository
+        do "apply TenantConfigured to the TenantAnalytics projection"
+      }
+      on tenantReactivated: event Tenant.TenantReactivated is {
+        tell command TenantContext.TenantRepository.PersistTenantReactivated(tenantId = tenantReactivated.tenantId) to repository TenantContext.TenantRepository
+        do "apply TenantReactivated to the TenantAnalytics projection"
+      }
+      on tenantSuspended: event Tenant.TenantSuspended is {
+        tell command TenantContext.TenantRepository.PersistTenantSuspended(tenantId = tenantSuspended.tenantId) to repository TenantContext.TenantRepository
+        do "apply TenantSuspended to the TenantAnalytics projection"
+      }
       on tenantCreated: event Tenant.TenantCreated is {
         tell command TenantContext.TenantRepository.PersistTenantCreated(tenantId = tenantCreated.tenantId) to repository TenantContext.TenantRepository
       }
@@ -605,47 +677,39 @@ context TenantContext as router is {
       |Wires Tenant source to sink for event flow.
     }
   }
-  processor TenantEventSplit as split is {
-    inlet TenantEventSplitIn is type TenantEvent    outlet TenantEventSplitToTenantRepository is type TenantEvent
+  processor TenantEventSplit as flow is {
+    inlet TenantEventSplitIn is type TenantEvent
     outlet TenantEventSplitToTenantAnalytics is type TenantEvent
     handler TenantEventSplitHandler is {
       on tenantCreated: event Tenant.TenantCreated is {
-        send tenantCreated to outlet TenantEventSplitToTenantRepository
         send tenantCreated to outlet TenantEventSplitToTenantAnalytics
         tell tenantCreated to entity TenantContext.Tenant
       }
       on tenantConfigured: event Tenant.TenantConfigured is {
-        send tenantConfigured to outlet TenantEventSplitToTenantRepository
         send tenantConfigured to outlet TenantEventSplitToTenantAnalytics
         tell tenantConfigured to entity TenantContext.Tenant
       }
       on resourceProvisioned: event Tenant.ResourceProvisioned is {
-        send resourceProvisioned to outlet TenantEventSplitToTenantRepository
         send resourceProvisioned to outlet TenantEventSplitToTenantAnalytics
         tell resourceProvisioned to entity TenantContext.Tenant
       }
       on resourceScaled: event Tenant.ResourceScaled is {
-        send resourceScaled to outlet TenantEventSplitToTenantRepository
         send resourceScaled to outlet TenantEventSplitToTenantAnalytics
         tell resourceScaled to entity TenantContext.Tenant
       }
       on tierUpgraded: event Tenant.TierUpgraded is {
-        send tierUpgraded to outlet TenantEventSplitToTenantRepository
         send tierUpgraded to outlet TenantEventSplitToTenantAnalytics
         tell tierUpgraded to entity TenantContext.Tenant
       }
       on tenantSuspended: event Tenant.TenantSuspended is {
-        send tenantSuspended to outlet TenantEventSplitToTenantRepository
         send tenantSuspended to outlet TenantEventSplitToTenantAnalytics
         tell tenantSuspended to entity TenantContext.Tenant
       }
       on tenantReactivated: event Tenant.TenantReactivated is {
-        send tenantReactivated to outlet TenantEventSplitToTenantRepository
         send tenantReactivated to outlet TenantEventSplitToTenantAnalytics
         tell tenantReactivated to entity TenantContext.Tenant
       }
       on tenantDecommissioned: event Tenant.TenantDecommissioned is {
-        send tenantDecommissioned to outlet TenantEventSplitToTenantRepository
         send tenantDecommissioned to outlet TenantEventSplitToTenantAnalytics
         tell tenantDecommissioned to entity TenantContext.Tenant
       }
@@ -667,14 +731,11 @@ context TenantContext as router is {
   connector 'TenantEvent Stream' is from outlet TenantContext.Tenant.TenantEvents to inlet TenantContext.TenantEventSplit.TenantEventSplitIn with {
     briefly "Tenant events, fanned out to storage and read models"
   }
-  connector 'TenantEvent Storage' is from outlet TenantContext.TenantEventSplit.TenantEventSplitToTenantRepository to inlet TenantContext.TenantRepository.TenantRepositoryFromTenant with {
-    briefly "Tenant events on their way to storage"
-  }
   connector 'TenantAnalytics Feed' is from outlet TenantContext.TenantEventSplit.TenantEventSplitToTenantAnalytics to inlet TenantContext.TenantAnalytics.TenantAnalyticsFromTenant with {
     briefly "Tenant events feeding the TenantAnalytics projection"
   }
-  connector 'TenantAnalytics Storage' is from outlet TenantContext.TenantAnalytics.TenantAnalyticsOut to inlet TenantContext.TenantRepository.TenantRepositoryFromTenantAnalytics with {
-    briefly "The TenantAnalytics projection on its way to storage"
+  connector 'TenantAnalytics Storage' is from outlet TenantContext.TenantAnalytics.TenantAnalyticsToRepository to inlet TenantContext.TenantRepository.TenantRepositoryFromTenantAnalytics with {
+    briefly "TenantAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for tenant provisioning"

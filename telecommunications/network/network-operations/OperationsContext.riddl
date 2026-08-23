@@ -175,7 +175,62 @@ context OperationsContext as router is {
   }
   include "types.riddl"
   include "NetworkIncident.riddl"
-  repository OperationsRepository as merge is {
+  type OperationsRepositoryCommand is one of {
+    OperationsContext.OperationsRepository.PersistIncidentAcknowledged or OperationsContext.OperationsRepository.PersistIncidentClosed or OperationsContext.OperationsRepository.PersistIncidentCreated or OperationsContext.OperationsRepository.PersistIncidentEscalated or OperationsContext.OperationsRepository.PersistIncidentResolved or OperationsContext.OperationsRepository.PersistInvestigationStarted or OperationsContext.OperationsRepository.PersistMitigationStarted or OperationsContext.OperationsRepository.PersistTimelineEntryAdded
+  } with {
+    briefly "Anything that writes OperationsRepository"
+    described as {
+      |The persistence commands OperationsRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository OperationsRepository as flow is {
+    inlet OperationsRepositoryFromOperationsMetrics is type OperationsRepositoryCommand
+    command PersistInvestigationStarted is  {
+      incidentId: IncidentId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row InvestigationStarted applies to.
+        }
+      }
+    } with {
+      briefly "Persist InvestigationStarted"
+      described as {
+        |Instructs this repository to apply InvestigationStarted to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistMitigationStarted is  {
+      incidentId: IncidentId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row MitigationStarted applies to.
+        }
+      }
+    } with {
+      briefly "Persist MitigationStarted"
+      described as {
+        |Instructs this repository to apply MitigationStarted to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistTimelineEntryAdded is  {
+      incidentId: IncidentId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TimelineEntryAdded applies to.
+        }
+      }
+    } with {
+      briefly "Persist TimelineEntryAdded"
+      described as {
+        |Instructs this repository to apply TimelineEntryAdded to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistIncidentAcknowledged is  {
       incidentId: IncidentId with {
         briefly "Row addressed"
@@ -251,7 +306,7 @@ context OperationsContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet OperationsRepositoryFromNetworkIncident is type NetworkIncidentEvent    inlet OperationsRepositoryFromOperationsMetrics is type NetworkIncidentEvent    outlet OperationsRepositoryResponses is type NetworkIncident.NetworkIncidentResult
+    outlet OperationsRepositoryResponses is type NetworkIncident.NetworkIncidentResult
     record StoredNetworkIncident is  {
       networkIncidentId: UUID with {
         briefly "networkIncidentId"
@@ -295,6 +350,15 @@ context OperationsContext as router is {
       }
     }
     handler OperationsPersistence is {
+      on persistInvestigationStarted: command PersistInvestigationStarted is {
+        do "apply InvestigationStarted to the stored row"
+      }
+      on persistMitigationStarted: command PersistMitigationStarted is {
+        do "apply MitigationStarted to the stored row"
+      }
+      on persistTimelineEntryAdded: command PersistTimelineEntryAdded is {
+        do "apply TimelineEntryAdded to the stored row"
+      }
       on persistIncidentAcknowledged: command PersistIncidentAcknowledged is {
         do "apply IncidentAcknowledged to the stored row"
       }
@@ -313,28 +377,6 @@ context OperationsContext as router is {
       on query GetIncidentMetrics is {
         let incidentMetricsView: type IncidentMetricsView = prompt("read the incident metrics projection")
         reply incidentMetricsView
-      }
-      on createIncident: command NetworkIncident.CreateIncident is {
-        tell event NetworkIncident.IncidentCreated(incidentId = createIncident.incidentId, incidentInfo = createIncident.incidentInfo) to entity OperationsContext.NetworkIncident
-        do "Store new network incident"
-      }
-      on acknowledgeIncident: command NetworkIncident.AcknowledgeIncident is {
-        tell event NetworkIncident.IncidentAcknowledged(incidentId = acknowledgeIncident.incidentId, acknowledgedBy = acknowledgeIncident.acknowledgedBy) to entity OperationsContext.NetworkIncident
-        do "Update incident to acknowledged"
-      }
-      on startInvestigation: command NetworkIncident.StartInvestigation is {
-        tell event NetworkIncident.InvestigationStarted(incidentId = startInvestigation.incidentId, assignedTo = startInvestigation.assignedTo) to entity OperationsContext.NetworkIncident
-        do "Update incident with investigator"
-      }
-      on command NetworkIncident.EscalateIncident is {
-        do "Record escalation details"
-      }
-      on command NetworkIncident.ResolveIncident is {
-        do "Update incident with resolution"
-      }
-      on closeIncident: command NetworkIncident.CloseIncident is {
-        tell event NetworkIncident.IncidentClosed(incidentId = closeIncident.incidentId, closedBy = closeIncident.closedBy) to entity OperationsContext.NetworkIncident
-        do "Update incident to closed"
       }
     } with {
       briefly "Persists operations commands"
@@ -375,8 +417,9 @@ context OperationsContext as router is {
     }
   }
   projector OperationsMetrics as flow is {
+    outlet OperationsMetricsToRepository is type OperationsRepositoryCommand
     updates repository OperationsContext.OperationsRepository
-    inlet OperationsMetricsFromNetworkIncident is type NetworkIncidentEvent    outlet OperationsMetricsOut is type NetworkIncidentEvent
+    inlet OperationsMetricsFromNetworkIncident is type NetworkIncidentEvent
     record IncidentMetrics is  {
       totalIncidents: Natural with {
         briefly "Total"
@@ -421,6 +464,18 @@ context OperationsContext as router is {
       }
     }
     handler MetricsHandler is {
+      on investigationStarted: event NetworkIncident.InvestigationStarted is {
+        tell command OperationsContext.OperationsRepository.PersistInvestigationStarted(incidentId = investigationStarted.incidentId) to repository OperationsContext.OperationsRepository
+        do "apply InvestigationStarted to the OperationsMetrics projection"
+      }
+      on mitigationStarted: event NetworkIncident.MitigationStarted is {
+        tell command OperationsContext.OperationsRepository.PersistMitigationStarted(incidentId = mitigationStarted.incidentId) to repository OperationsContext.OperationsRepository
+        do "apply MitigationStarted to the OperationsMetrics projection"
+      }
+      on timelineEntryAdded: event NetworkIncident.TimelineEntryAdded is {
+        tell command OperationsContext.OperationsRepository.PersistTimelineEntryAdded(incidentId = timelineEntryAdded.incidentId) to repository OperationsContext.OperationsRepository
+        do "apply TimelineEntryAdded to the OperationsMetrics projection"
+      }
       on incidentCreated: event NetworkIncident.IncidentCreated is {
         tell command OperationsContext.OperationsRepository.PersistIncidentCreated(incidentId = incidentCreated.incidentId) to repository OperationsContext.OperationsRepository
         do "Increment total and active incidents"
@@ -463,136 +518,39 @@ context OperationsContext as router is {
       |persistence.
     }
   }
-  processor NetworkIncidentEventSource as source is {
-    outlet NetworkIncidentEvents is type NetworkIncidentEvent
-    handler NetworkIncidentSourceHandler is {
-      on incidentCreated: event NetworkIncident.IncidentCreated is {
-        send incidentCreated to outlet NetworkIncidentEvents
-      }
-      on incidentAcknowledged: event NetworkIncident.IncidentAcknowledged is {
-        send incidentAcknowledged to outlet NetworkIncidentEvents
-      }
-      on investigationStarted: event NetworkIncident.InvestigationStarted is {
-        send investigationStarted to outlet NetworkIncidentEvents
-      }
-      on incidentEscalated: event NetworkIncident.IncidentEscalated is {
-        send incidentEscalated to outlet NetworkIncidentEvents
-      }
-      on mitigationStarted: event NetworkIncident.MitigationStarted is {
-        send mitigationStarted to outlet NetworkIncidentEvents
-      }
-      on incidentResolved: event NetworkIncident.IncidentResolved is {
-        send incidentResolved to outlet NetworkIncidentEvents
-      }
-      on incidentClosed: event NetworkIncident.IncidentClosed is {
-        send incidentClosed to outlet NetworkIncidentEvents
-      }
-      on timelineEntryAdded: event NetworkIncident.TimelineEntryAdded is {
-        send timelineEntryAdded to outlet NetworkIncidentEvents
-      }
-      on other is {
-        error "Unexpected message for source NetworkIncidentEventSource"
-      }
-    } with {
-      briefly "NetworkIncident source handler"
-      described as {
-        |Publishes NetworkIncident events onto the outlet.
-      }
-    }
-  } with {
-    briefly "NetworkIncident event source"
-    described as {
-      |Publishes NetworkIncident entity events into the streaming topology.
-    }
-  }
-  processor NetworkIncidentEventSink as sink is {
-    inlet NetworkIncidentInlet is type NetworkIncidentEvent    handler NetworkIncidentSinkHandler is {
-      on incidentCreated: event NetworkIncident.IncidentCreated is {
-        tell incidentCreated to repository OperationsContext.OperationsRepository
-      }
-      on incidentAcknowledged: event NetworkIncident.IncidentAcknowledged is {
-        tell incidentAcknowledged to repository OperationsContext.OperationsRepository
-      }
-      on investigationStarted: event NetworkIncident.InvestigationStarted is {
-        tell investigationStarted to repository OperationsContext.OperationsRepository
-      }
-      on incidentEscalated: event NetworkIncident.IncidentEscalated is {
-        tell incidentEscalated to repository OperationsContext.OperationsRepository
-      }
-      on mitigationStarted: event NetworkIncident.MitigationStarted is {
-        tell mitigationStarted to repository OperationsContext.OperationsRepository
-      }
-      on incidentResolved: event NetworkIncident.IncidentResolved is {
-        tell incidentResolved to repository OperationsContext.OperationsRepository
-      }
-      on incidentClosed: event NetworkIncident.IncidentClosed is {
-        tell incidentClosed to repository OperationsContext.OperationsRepository
-      }
-      on timelineEntryAdded: event NetworkIncident.TimelineEntryAdded is {
-        tell timelineEntryAdded to repository OperationsContext.OperationsRepository
-      }
-      on other is {
-        error "Unexpected message for sink NetworkIncidentEventSink"
-      }
-    } with {
-      briefly "NetworkIncident sink handler"
-      described as {
-        |Persists NetworkIncident events via the repository.
-      }
-    }
-  } with {
-    briefly "NetworkIncident event sink"
-    described as {
-      |Receives NetworkIncident events for persistence.
-    }
-  }
-  connector NetworkIncidentEventFlow is from outlet OperationsContext.NetworkIncidentEventSource.NetworkIncidentEvents to inlet OperationsContext.NetworkIncidentEventSink.NetworkIncidentInlet with {
-    briefly "NetworkIncident event flow"
-    described as {
-      |Connects the NetworkIncident source to its sink.
-    }
-  }
-  processor NetworkIncidentEventSplit as split is {
-    inlet NetworkIncidentEventSplitIn is type NetworkIncidentEvent    outlet NetworkIncidentEventSplitToOperationsRepository is type NetworkIncidentEvent
+  processor NetworkIncidentEventSplit as flow is {
+    inlet NetworkIncidentEventSplitIn is type NetworkIncidentEvent
     outlet NetworkIncidentEventSplitToOperationsMetrics is type NetworkIncidentEvent
     handler NetworkIncidentEventSplitHandler is {
       on incidentCreated: event NetworkIncident.IncidentCreated is {
-        send incidentCreated to outlet NetworkIncidentEventSplitToOperationsRepository
         send incidentCreated to outlet NetworkIncidentEventSplitToOperationsMetrics
         tell incidentCreated to entity OperationsContext.NetworkIncident
       }
       on incidentAcknowledged: event NetworkIncident.IncidentAcknowledged is {
-        send incidentAcknowledged to outlet NetworkIncidentEventSplitToOperationsRepository
         send incidentAcknowledged to outlet NetworkIncidentEventSplitToOperationsMetrics
         tell incidentAcknowledged to entity OperationsContext.NetworkIncident
       }
       on investigationStarted: event NetworkIncident.InvestigationStarted is {
-        send investigationStarted to outlet NetworkIncidentEventSplitToOperationsRepository
         send investigationStarted to outlet NetworkIncidentEventSplitToOperationsMetrics
         tell investigationStarted to entity OperationsContext.NetworkIncident
       }
       on incidentEscalated: event NetworkIncident.IncidentEscalated is {
-        send incidentEscalated to outlet NetworkIncidentEventSplitToOperationsRepository
         send incidentEscalated to outlet NetworkIncidentEventSplitToOperationsMetrics
         tell incidentEscalated to entity OperationsContext.NetworkIncident
       }
       on mitigationStarted: event NetworkIncident.MitigationStarted is {
-        send mitigationStarted to outlet NetworkIncidentEventSplitToOperationsRepository
         send mitigationStarted to outlet NetworkIncidentEventSplitToOperationsMetrics
         tell mitigationStarted to entity OperationsContext.NetworkIncident
       }
       on incidentResolved: event NetworkIncident.IncidentResolved is {
-        send incidentResolved to outlet NetworkIncidentEventSplitToOperationsRepository
         send incidentResolved to outlet NetworkIncidentEventSplitToOperationsMetrics
         tell incidentResolved to entity OperationsContext.NetworkIncident
       }
       on incidentClosed: event NetworkIncident.IncidentClosed is {
-        send incidentClosed to outlet NetworkIncidentEventSplitToOperationsRepository
         send incidentClosed to outlet NetworkIncidentEventSplitToOperationsMetrics
         tell incidentClosed to entity OperationsContext.NetworkIncident
       }
       on timelineEntryAdded: event NetworkIncident.TimelineEntryAdded is {
-        send timelineEntryAdded to outlet NetworkIncidentEventSplitToOperationsRepository
         send timelineEntryAdded to outlet NetworkIncidentEventSplitToOperationsMetrics
         tell timelineEntryAdded to entity OperationsContext.NetworkIncident
       }
@@ -614,14 +572,11 @@ context OperationsContext as router is {
   connector 'NetworkIncidentEvent Stream' is from outlet OperationsContext.NetworkIncident.NetworkIncidentEvents2 to inlet OperationsContext.NetworkIncidentEventSplit.NetworkIncidentEventSplitIn with {
     briefly "NetworkIncident events, fanned out to storage and read models"
   }
-  connector 'NetworkIncidentEvent Storage' is from outlet OperationsContext.NetworkIncidentEventSplit.NetworkIncidentEventSplitToOperationsRepository to inlet OperationsContext.OperationsRepository.OperationsRepositoryFromNetworkIncident with {
-    briefly "NetworkIncident events on their way to storage"
-  }
   connector 'OperationsMetrics Feed' is from outlet OperationsContext.NetworkIncidentEventSplit.NetworkIncidentEventSplitToOperationsMetrics to inlet OperationsContext.OperationsMetrics.OperationsMetricsFromNetworkIncident with {
     briefly "NetworkIncident events feeding the OperationsMetrics projection"
   }
-  connector 'OperationsMetrics Storage' is from outlet OperationsContext.OperationsMetrics.OperationsMetricsOut to inlet OperationsContext.OperationsRepository.OperationsRepositoryFromOperationsMetrics with {
-    briefly "The OperationsMetrics projection on its way to storage"
+  connector 'OperationsMetrics Storage' is from outlet OperationsContext.OperationsMetrics.OperationsMetricsToRepository to inlet OperationsContext.OperationsRepository.OperationsRepositoryFromOperationsMetrics with {
+    briefly "OperationsMetrics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for network operations"

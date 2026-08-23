@@ -5,25 +5,22 @@ context DeploymentContext as router is {
   inlet DeploymentQueryResultStreamIn is type Deployment.DeploymentQueryResult  outlet DeploymentQueryResultStreamOut is type Deployment.DeploymentQueryResult
   handler DeploymentContextBoundary is {
     on initiateDeployment: command Deployment.InitiateDeployment is {
-      send initiateDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
+      forward initiateDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
     }
     on approveDeployment: command Deployment.ApproveDeployment is {
-      send approveDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
+      forward approveDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
     }
     on executeDeployment: command Deployment.ExecuteDeployment is {
-      send executeDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
+      forward executeDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
     }
     on verifyDeployment: command Deployment.VerifyDeployment is {
-      send verifyDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
+      forward verifyDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
     }
     on completeDeployment: command Deployment.CompleteDeployment is {
-      send completeDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
+      forward completeDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
     }
     on rollbackDeployment: command Deployment.RollbackDeployment is {
-      send rollbackDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
-    }
-    on initializeDeployment: command Deployment.InitializeDeployment is {
-      send initializeDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
+      forward rollbackDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
     }
     on registerEnvironment: command Environment.RegisterEnvironment is {
       send registerEnvironment to outlet DeploymentContext.EnvironmentCommandStreamOut
@@ -422,12 +419,18 @@ context DeploymentContext as router is {
       }
     }
     initial handler EnvironmentHandler is {
+    on environmentArtifactUpdated: event EnvironmentArtifactUpdated is {
+      do "apply EnvironmentArtifactUpdated to the environment so it can be persisted and replayed"
+    }
+    on environmentRegistered: event EnvironmentRegistered is {
+      do "apply EnvironmentRegistered to the environment so it can be persisted and replayed"
+    }
       on registerEnvironment: command RegisterEnvironment is {
         morph entity Environment to state Environment.Active with record Environment.ActiveEnvironmentData(environmentId = registerEnvironment.environmentId, name = registerEnvironment.name, environmentType = registerEnvironment.environmentType, clusterEndpoint = registerEnvironment.clusterEndpoint)
-        tell event EnvironmentRegistered(environmentId = registerEnvironment.environmentId, name = registerEnvironment.name, environmentType = registerEnvironment.environmentType) to entity Environment
+        yield event EnvironmentRegistered(environmentId = registerEnvironment.environmentId, name = registerEnvironment.name, environmentType = registerEnvironment.environmentType)
       }
       on updateEnvironmentArtifact: command UpdateEnvironmentArtifact is {
-        tell event EnvironmentArtifactUpdated(environmentId = updateEnvironmentArtifact.environmentId, artifactId = updateEnvironmentArtifact.artifactId, deployedAt = updateEnvironmentArtifact.deployedAt) to entity Environment
+        yield event EnvironmentArtifactUpdated(environmentId = updateEnvironmentArtifact.environmentId, artifactId = updateEnvironmentArtifact.artifactId, deployedAt = updateEnvironmentArtifact.deployedAt)
       }
       on getEnvironment: query GetEnvironment is {
         reply result EnvironmentResult(environmentId = getEnvironment.environmentId)
@@ -446,7 +449,122 @@ context DeploymentContext as router is {
       | deployed artifact and environment configuration.
     }
   }
-  repository DeploymentRepository as merge is {
+  type DeploymentRepositoryCommand is one of {
+    DeploymentContext.DeploymentRepository.PersistDeploymentApproved or DeploymentContext.DeploymentRepository.PersistDeploymentAwaitingApproval or DeploymentContext.DeploymentRepository.PersistDeploymentCompleted or DeploymentContext.DeploymentRepository.PersistDeploymentFailed or DeploymentContext.DeploymentRepository.PersistDeploymentInitiated or DeploymentContext.DeploymentRepository.PersistDeploymentRolledBack or DeploymentContext.DeploymentRepository.PersistDeploymentStarted or DeploymentContext.DeploymentRepository.PersistDeploymentVerified or DeploymentContext.DeploymentRepository.PersistEnvironmentArtifactUpdated or DeploymentContext.DeploymentRepository.PersistEnvironmentRegistered
+  } with {
+    briefly "Anything that writes DeploymentRepository"
+    described as {
+      |The persistence commands DeploymentRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository DeploymentRepository as flow is {
+    inlet DeploymentRepositoryFromDeploymentMetricsProjector is type DeploymentRepositoryCommand
+    command PersistDeploymentApproved is  {
+      deploymentId: DeploymentId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row DeploymentApproved applies to.
+        }
+      }
+    } with {
+      briefly "Persist DeploymentApproved"
+      described as {
+        |Instructs this repository to apply DeploymentApproved to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistDeploymentAwaitingApproval is  {
+      deploymentId: DeploymentId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row DeploymentAwaitingApproval applies to.
+        }
+      }
+    } with {
+      briefly "Persist DeploymentAwaitingApproval"
+      described as {
+        |Instructs this repository to apply DeploymentAwaitingApproval to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistDeploymentInitiated is  {
+      deploymentId: DeploymentId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row DeploymentInitiated applies to.
+        }
+      }
+    } with {
+      briefly "Persist DeploymentInitiated"
+      described as {
+        |Instructs this repository to apply DeploymentInitiated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistDeploymentStarted is  {
+      deploymentId: DeploymentId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row DeploymentStarted applies to.
+        }
+      }
+    } with {
+      briefly "Persist DeploymentStarted"
+      described as {
+        |Instructs this repository to apply DeploymentStarted to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistDeploymentVerified is  {
+      deploymentId: DeploymentId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row DeploymentVerified applies to.
+        }
+      }
+    } with {
+      briefly "Persist DeploymentVerified"
+      described as {
+        |Instructs this repository to apply DeploymentVerified to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistEnvironmentArtifactUpdated is  {
+      environmentId: EnvironmentId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row EnvironmentArtifactUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist EnvironmentArtifactUpdated"
+      described as {
+        |Instructs this repository to apply EnvironmentArtifactUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistEnvironmentRegistered is  {
+      environmentId: EnvironmentId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row EnvironmentRegistered applies to.
+        }
+      }
+    } with {
+      briefly "Persist EnvironmentRegistered"
+      described as {
+        |Instructs this repository to apply EnvironmentRegistered to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistDeploymentCompleted is  {
       deploymentId: DeploymentId with {
         briefly "Row addressed"
@@ -514,7 +632,7 @@ context DeploymentContext as router is {
         |The relational schema persisting deployment records for this repository.
       }
     }
-    inlet DeploymentRepositoryFromDeployment is type DeploymentEvent    inlet DeploymentRepositoryFromEnvironment is type EnvironmentEvent    inlet DeploymentRepositoryFromDeploymentMetricsProjector is type DeploymentEvent    outlet DeploymentRepositoryResponses is type Deployment.DeploymentQueryResult
+    outlet DeploymentRepositoryResponses is type Deployment.DeploymentQueryResult
     query FindDeploymentById replies result DeploymentResult is {
       deploymentId: DeploymentId with {
         briefly "Deployment identifier"
@@ -662,6 +780,27 @@ context DeploymentContext as router is {
       }
     }
     handler DeploymentRepositoryHandler is {
+      on persistDeploymentApproved: command PersistDeploymentApproved is {
+        do "apply DeploymentApproved to the stored row"
+      }
+      on persistDeploymentAwaitingApproval: command PersistDeploymentAwaitingApproval is {
+        do "apply DeploymentAwaitingApproval to the stored row"
+      }
+      on persistDeploymentInitiated: command PersistDeploymentInitiated is {
+        do "apply DeploymentInitiated to the stored row"
+      }
+      on persistDeploymentStarted: command PersistDeploymentStarted is {
+        do "apply DeploymentStarted to the stored row"
+      }
+      on persistDeploymentVerified: command PersistDeploymentVerified is {
+        do "apply DeploymentVerified to the stored row"
+      }
+      on persistEnvironmentArtifactUpdated: command PersistEnvironmentArtifactUpdated is {
+        do "apply EnvironmentArtifactUpdated to the stored row"
+      }
+      on persistEnvironmentRegistered: command PersistEnvironmentRegistered is {
+        do "apply EnvironmentRegistered to the stored row"
+      }
       on persistDeploymentCompleted: command PersistDeploymentCompleted is {
         do "apply DeploymentCompleted to the stored row"
       }
@@ -731,8 +870,9 @@ context DeploymentContext as router is {
     }
   }
   projector DeploymentMetricsProjector as merge is {
+    outlet DeploymentMetricsProjectorToRepository is type DeploymentRepositoryCommand
     updates repository DeploymentContext.DeploymentRepository
-    inlet DeploymentMetricsProjectorFromDeployment is type DeploymentEvent    inlet DeploymentMetricsProjectorFromEnvironment is type EnvironmentEvent    outlet DeploymentMetricsProjectorOut is type DeploymentEvent
+    inlet DeploymentMetricsProjectorFromDeployment is type DeploymentEvent    inlet DeploymentMetricsProjectorFromEnvironment is type EnvironmentEvent
     record DeploymentMetricsSummary is  {
       environmentId: EnvironmentId with {
         briefly "Environment"
@@ -783,6 +923,34 @@ context DeploymentContext as router is {
       }
     }
     handler DeploymentMetricsHandler is {
+      on deploymentApproved: event Deployment.DeploymentApproved is {
+        tell command DeploymentContext.DeploymentRepository.PersistDeploymentApproved(deploymentId = deploymentApproved.deploymentId) to repository DeploymentContext.DeploymentRepository
+        do "apply DeploymentApproved to the DeploymentMetricsProjector projection"
+      }
+      on deploymentAwaitingApproval: event Deployment.DeploymentAwaitingApproval is {
+        tell command DeploymentContext.DeploymentRepository.PersistDeploymentAwaitingApproval(deploymentId = deploymentAwaitingApproval.deploymentId) to repository DeploymentContext.DeploymentRepository
+        do "apply DeploymentAwaitingApproval to the DeploymentMetricsProjector projection"
+      }
+      on deploymentInitiated: event Deployment.DeploymentInitiated is {
+        tell command DeploymentContext.DeploymentRepository.PersistDeploymentInitiated(deploymentId = deploymentInitiated.deploymentId) to repository DeploymentContext.DeploymentRepository
+        do "apply DeploymentInitiated to the DeploymentMetricsProjector projection"
+      }
+      on deploymentStarted: event Deployment.DeploymentStarted is {
+        tell command DeploymentContext.DeploymentRepository.PersistDeploymentStarted(deploymentId = deploymentStarted.deploymentId) to repository DeploymentContext.DeploymentRepository
+        do "apply DeploymentStarted to the DeploymentMetricsProjector projection"
+      }
+      on deploymentVerified: event Deployment.DeploymentVerified is {
+        tell command DeploymentContext.DeploymentRepository.PersistDeploymentVerified(deploymentId = deploymentVerified.deploymentId) to repository DeploymentContext.DeploymentRepository
+        do "apply DeploymentVerified to the DeploymentMetricsProjector projection"
+      }
+      on environmentArtifactUpdated: event Environment.EnvironmentArtifactUpdated is {
+        tell command DeploymentContext.DeploymentRepository.PersistEnvironmentArtifactUpdated(environmentId = environmentArtifactUpdated.environmentId) to repository DeploymentContext.DeploymentRepository
+        do "apply EnvironmentArtifactUpdated to the DeploymentMetricsProjector projection"
+      }
+      on environmentRegistered: event Environment.EnvironmentRegistered is {
+        tell command DeploymentContext.DeploymentRepository.PersistEnvironmentRegistered(environmentId = environmentRegistered.environmentId) to repository DeploymentContext.DeploymentRepository
+        do "apply EnvironmentRegistered to the DeploymentMetricsProjector projection"
+      }
       on deploymentCompleted: event Deployment.DeploymentCompleted is {
         tell command DeploymentContext.DeploymentRepository.PersistDeploymentCompleted(deploymentId = deploymentCompleted.deploymentId) to repository DeploymentContext.DeploymentRepository
       }
@@ -904,47 +1072,39 @@ context DeploymentContext as router is {
       |Wires Deployment source to sink for event flow.
     }
   }
-  processor DeploymentEventSplit as split is {
-    inlet DeploymentEventSplitIn is type DeploymentEvent    outlet DeploymentEventSplitToDeploymentRepository is type DeploymentEvent
+  processor DeploymentEventSplit as flow is {
+    inlet DeploymentEventSplitIn is type DeploymentEvent
     outlet DeploymentEventSplitToDeploymentMetricsProjector is type DeploymentEvent
     handler DeploymentEventSplitHandler is {
       on deploymentInitiated: event Deployment.DeploymentInitiated is {
-        send deploymentInitiated to outlet DeploymentEventSplitToDeploymentRepository
         send deploymentInitiated to outlet DeploymentEventSplitToDeploymentMetricsProjector
         tell deploymentInitiated to entity DeploymentContext.Deployment
       }
       on deploymentAwaitingApproval: event Deployment.DeploymentAwaitingApproval is {
-        send deploymentAwaitingApproval to outlet DeploymentEventSplitToDeploymentRepository
         send deploymentAwaitingApproval to outlet DeploymentEventSplitToDeploymentMetricsProjector
         tell deploymentAwaitingApproval to entity DeploymentContext.Deployment
       }
       on deploymentApproved: event Deployment.DeploymentApproved is {
-        send deploymentApproved to outlet DeploymentEventSplitToDeploymentRepository
         send deploymentApproved to outlet DeploymentEventSplitToDeploymentMetricsProjector
         tell deploymentApproved to entity DeploymentContext.Deployment
       }
       on deploymentStarted: event Deployment.DeploymentStarted is {
-        send deploymentStarted to outlet DeploymentEventSplitToDeploymentRepository
         send deploymentStarted to outlet DeploymentEventSplitToDeploymentMetricsProjector
         tell deploymentStarted to entity DeploymentContext.Deployment
       }
       on deploymentVerified: event Deployment.DeploymentVerified is {
-        send deploymentVerified to outlet DeploymentEventSplitToDeploymentRepository
         send deploymentVerified to outlet DeploymentEventSplitToDeploymentMetricsProjector
         tell deploymentVerified to entity DeploymentContext.Deployment
       }
       on deploymentCompleted: event Deployment.DeploymentCompleted is {
-        send deploymentCompleted to outlet DeploymentEventSplitToDeploymentRepository
         send deploymentCompleted to outlet DeploymentEventSplitToDeploymentMetricsProjector
         tell deploymentCompleted to entity DeploymentContext.Deployment
       }
       on deploymentFailed: event Deployment.DeploymentFailed is {
-        send deploymentFailed to outlet DeploymentEventSplitToDeploymentRepository
         send deploymentFailed to outlet DeploymentEventSplitToDeploymentMetricsProjector
         tell deploymentFailed to entity DeploymentContext.Deployment
       }
       on deploymentRolledBack: event Deployment.DeploymentRolledBack is {
-        send deploymentRolledBack to outlet DeploymentEventSplitToDeploymentRepository
         send deploymentRolledBack to outlet DeploymentEventSplitToDeploymentMetricsProjector
         tell deploymentRolledBack to entity DeploymentContext.Deployment
       }
@@ -963,17 +1123,15 @@ context DeploymentContext as router is {
       |Fans Deployment events out to the repository and projectors.
     }
   }
-  processor EnvironmentEventSplit as split is {
-    inlet EnvironmentEventSplitIn is type EnvironmentEvent    outlet EnvironmentEventSplitToDeploymentRepository is type EnvironmentEvent
+  processor EnvironmentEventSplit as flow is {
+    inlet EnvironmentEventSplitIn is type EnvironmentEvent
     outlet EnvironmentEventSplitToDeploymentMetricsProjector is type EnvironmentEvent
     handler EnvironmentEventSplitHandler is {
       on environmentRegistered: event Environment.EnvironmentRegistered is {
-        send environmentRegistered to outlet EnvironmentEventSplitToDeploymentRepository
         send environmentRegistered to outlet EnvironmentEventSplitToDeploymentMetricsProjector
         tell environmentRegistered to entity DeploymentContext.Environment
       }
       on environmentArtifactUpdated: event Environment.EnvironmentArtifactUpdated is {
-        send environmentArtifactUpdated to outlet EnvironmentEventSplitToDeploymentRepository
         send environmentArtifactUpdated to outlet EnvironmentEventSplitToDeploymentMetricsProjector
         tell environmentArtifactUpdated to entity DeploymentContext.Environment
       }
@@ -995,23 +1153,17 @@ context DeploymentContext as router is {
   connector 'DeploymentEvent Stream' is from outlet DeploymentContext.Deployment.DeploymentEvents to inlet DeploymentContext.DeploymentEventSplit.DeploymentEventSplitIn with {
     briefly "Deployment events, fanned out to storage and read models"
   }
-  connector 'DeploymentEvent Storage' is from outlet DeploymentContext.DeploymentEventSplit.DeploymentEventSplitToDeploymentRepository to inlet DeploymentContext.DeploymentRepository.DeploymentRepositoryFromDeployment with {
-    briefly "Deployment events on their way to storage"
-  }
   connector 'DeploymentEvent Feed' is from outlet DeploymentContext.DeploymentEventSplit.DeploymentEventSplitToDeploymentMetricsProjector to inlet DeploymentContext.DeploymentMetricsProjector.DeploymentMetricsProjectorFromDeployment with {
     briefly "DeploymentEvent feeding the DeploymentMetricsProjector projection"
   }
   connector 'EnvironmentEvent Stream' is from outlet DeploymentContext.Environment.EnvironmentEvents to inlet DeploymentContext.EnvironmentEventSplit.EnvironmentEventSplitIn with {
     briefly "Environment events, fanned out to storage and read models"
   }
-  connector 'EnvironmentEvent Storage' is from outlet DeploymentContext.EnvironmentEventSplit.EnvironmentEventSplitToDeploymentRepository to inlet DeploymentContext.DeploymentRepository.DeploymentRepositoryFromEnvironment with {
-    briefly "Environment events on their way to storage"
-  }
   connector 'EnvironmentEvent Feed' is from outlet DeploymentContext.EnvironmentEventSplit.EnvironmentEventSplitToDeploymentMetricsProjector to inlet DeploymentContext.DeploymentMetricsProjector.DeploymentMetricsProjectorFromEnvironment with {
     briefly "EnvironmentEvent feeding the DeploymentMetricsProjector projection"
   }
-  connector 'DeploymentMetricsProjector Storage' is from outlet DeploymentContext.DeploymentMetricsProjector.DeploymentMetricsProjectorOut to inlet DeploymentContext.DeploymentRepository.DeploymentRepositoryFromDeploymentMetricsProjector with {
-    briefly "The DeploymentMetricsProjector projection on its way to storage"
+  connector 'DeploymentMetricsProjector Storage' is from outlet DeploymentContext.DeploymentMetricsProjector.DeploymentMetricsProjectorToRepository to inlet DeploymentContext.DeploymentRepository.DeploymentRepositoryFromDeploymentMetricsProjector with {
+    briefly "DeploymentMetricsProjector updates on their way to storage"
   }
 } with {
   briefly "Bounded context for deployment pipeline management"

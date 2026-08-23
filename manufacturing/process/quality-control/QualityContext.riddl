@@ -24,9 +24,6 @@ context QualityContext as router is {
     on initiateNCR: command Inspection.InitiateNCR is {
       send initiateNCR to outlet QualityContext.InspectionCommandStreamOut
     }
-    on initializeInspection: command Inspection.InitializeInspection is {
-      send initializeInspection to outlet QualityContext.InspectionCommandStreamOut
-    }
     on inspectionQueryResult: result Inspection.InspectionQueryResult is {
       send inspectionQueryResult to outlet QualityContext.InspectionQueryResultStreamOut
     }
@@ -215,7 +212,47 @@ context QualityContext as router is {
   include "types.riddl"
   include "Inspection.riddl"
   // Repository for inspection data persistence
-  repository InspectionRepository as merge is {
+  type InspectionRepositoryCommand is one of {
+    QualityContext.InspectionRepository.PersistInspectionApproved or QualityContext.InspectionRepository.PersistInspectionCreated or QualityContext.InspectionRepository.PersistInspectionRejected or QualityContext.InspectionRepository.PersistNCRInitiated or QualityContext.InspectionRepository.PersistResultsEvaluated or QualityContext.InspectionRepository.PersistSampleCollected or QualityContext.InspectionRepository.PersistTestResultRecorded
+  } with {
+    briefly "Anything that writes InspectionRepository"
+    described as {
+      |The persistence commands InspectionRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository InspectionRepository as flow is {
+    inlet InspectionRepositoryFromDefectParetoAnalytics is type InspectionRepositoryCommand
+    command PersistInspectionCreated is  {
+      inspectionId: InspectionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row InspectionCreated applies to.
+        }
+      }
+    } with {
+      briefly "Persist InspectionCreated"
+      described as {
+        |Instructs this repository to apply InspectionCreated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistSampleCollected is  {
+      inspectionId: InspectionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row SampleCollected applies to.
+        }
+      }
+    } with {
+      briefly "Persist SampleCollected"
+      described as {
+        |Instructs this repository to apply SampleCollected to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistInspectionApproved is  {
       inspectionId: InspectionId with {
         briefly "Row addressed"
@@ -291,7 +328,7 @@ context QualityContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet InspectionRepositoryFromInspection is type InspectionEvent    inlet InspectionRepositoryFromDefectParetoAnalytics is type InspectionEvent    inlet InspectionRepositoryFromSPCChartAnalytics is type InspectionEvent    inlet InspectionRepositoryFromYieldTrendingAnalytics is type InspectionEvent    outlet InspectionRepositoryResponses is type Inspection.InspectionQueryResult
+    outlet InspectionRepositoryResponses is type Inspection.InspectionQueryResult
     record StoredInspection is  {
       inspectionId: InspectionId with {
         briefly "inspectionId"
@@ -329,6 +366,12 @@ context QualityContext as router is {
       }
     }
     handler InspectionPersistence is {
+      on persistInspectionCreated: command PersistInspectionCreated is {
+        do "apply InspectionCreated to the stored row"
+      }
+      on persistSampleCollected: command PersistSampleCollected is {
+        do "apply SampleCollected to the stored row"
+      }
       on persistInspectionApproved: command PersistInspectionApproved is {
         do "apply InspectionApproved to the stored row"
       }
@@ -363,32 +406,6 @@ context QualityContext as router is {
       on query GetYieldSummary is {
         let yieldSummaryView: type YieldSummaryView = prompt("read the yield summary projection")
         reply yieldSummaryView
-      }
-      on createInspection: command Inspection.CreateInspection is {
-        tell event Inspection.InspectionCreated(inspectionId = createInspection.inspectionId, lot = createInspection.lot, plan = createInspection.plan, requestedBy = createInspection.requestedBy) to entity QualityContext.Inspection
-        do "Store new inspection record"
-      }
-      on command Inspection.CollectSample is {
-        do "Store sample collection"
-      }
-      on recordTestResult: command Inspection.RecordTestResult is {
-        tell event Inspection.TestResultRecorded(inspectionId = recordTestResult.inspectionId, result = recordTestResult.result) to entity QualityContext.Inspection
-        do "Store test result"
-      }
-      on command Inspection.EvaluateResults is {
-        do "Update evaluation summary"
-      }
-      on approveInspection: command Inspection.ApproveInspection is {
-        tell event Inspection.InspectionApproved(inspectionId = approveInspection.inspectionId, releaseQuantity = approveInspection.releaseQuantity, approvedBy = approveInspection.approvedBy) to entity QualityContext.Inspection
-        do "Update to approved status"
-      }
-      on rejectInspection: command Inspection.RejectInspection is {
-        tell event Inspection.InspectionRejected(inspectionId = rejectInspection.inspectionId, reason = rejectInspection.reason, rejectedBy = rejectInspection.rejectedBy) to entity QualityContext.Inspection
-        do "Update to rejected status"
-      }
-      on initiateNCR: command Inspection.InitiateNCR is {
-        tell event Inspection.NCRInitiated(inspectionId = initiateNCR.inspectionId, nonConformance = initiateNCR.nonConformance, initiatedBy = initiateNCR.initiatedBy) to entity QualityContext.Inspection
-        do "Store non-conformance record"
       }
     } with {
       briefly "Persists inspection commands"
@@ -431,8 +448,9 @@ context QualityContext as router is {
     }
   }
   projector DefectParetoAnalytics as flow is {
+    outlet DefectParetoAnalyticsToRepository is type InspectionRepositoryCommand
     updates repository QualityContext.InspectionRepository
-    inlet DefectParetoAnalyticsFromInspection is type InspectionEvent    outlet DefectParetoAnalyticsOut is type InspectionEvent
+    inlet DefectParetoAnalyticsFromInspection is type InspectionEvent
     record DefectParetoData is  {
       defectCategory: String(1,100) with {
         briefly "Category"
@@ -483,6 +501,22 @@ context QualityContext as router is {
       }
     }
     handler DefectParetoHandler is {
+      on inspectionApproved: event Inspection.InspectionApproved is {
+        tell command QualityContext.InspectionRepository.PersistInspectionApproved(inspectionId = inspectionApproved.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply InspectionApproved to the DefectParetoAnalytics projection"
+      }
+      on inspectionCreated: event Inspection.InspectionCreated is {
+        tell command QualityContext.InspectionRepository.PersistInspectionCreated(inspectionId = inspectionCreated.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply InspectionCreated to the DefectParetoAnalytics projection"
+      }
+      on resultsEvaluated: event Inspection.ResultsEvaluated is {
+        tell command QualityContext.InspectionRepository.PersistResultsEvaluated(inspectionId = resultsEvaluated.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply ResultsEvaluated to the DefectParetoAnalytics projection"
+      }
+      on sampleCollected: event Inspection.SampleCollected is {
+        tell command QualityContext.InspectionRepository.PersistSampleCollected(inspectionId = sampleCollected.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply SampleCollected to the DefectParetoAnalytics projection"
+      }
       on inspectionRejected: event Inspection.InspectionRejected is {
         tell command QualityContext.InspectionRepository.PersistInspectionRejected(inspectionId = inspectionRejected.inspectionId) to repository QualityContext.InspectionRepository
         do "Update defect category counts"
@@ -560,9 +594,9 @@ context QualityContext as router is {
       |Read model view carrying the control chart summary projection.
     }
   }
-  projector SPCChartAnalytics as flow is {
+  projector SPCChartAnalytics as sink is {
     updates repository QualityContext.InspectionRepository
-    inlet SPCChartAnalyticsFromInspection is type InspectionEvent    outlet SPCChartAnalyticsOut is type InspectionEvent
+    inlet SPCChartAnalyticsFromInspection is type InspectionEvent
     record SPCDataPoint is  {
       parameter: String(1,100) with {
         briefly "Parameter"
@@ -674,6 +708,30 @@ context QualityContext as router is {
       }
     }
     handler SPCHandler is {
+      on inspectionApproved: event Inspection.InspectionApproved is {
+        tell command QualityContext.InspectionRepository.PersistInspectionApproved(inspectionId = inspectionApproved.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply InspectionApproved to the SPCChartAnalytics projection"
+      }
+      on inspectionCreated: event Inspection.InspectionCreated is {
+        tell command QualityContext.InspectionRepository.PersistInspectionCreated(inspectionId = inspectionCreated.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply InspectionCreated to the SPCChartAnalytics projection"
+      }
+      on inspectionRejected: event Inspection.InspectionRejected is {
+        tell command QualityContext.InspectionRepository.PersistInspectionRejected(inspectionId = inspectionRejected.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply InspectionRejected to the SPCChartAnalytics projection"
+      }
+      on nCRInitiated: event Inspection.NCRInitiated is {
+        tell command QualityContext.InspectionRepository.PersistNCRInitiated(inspectionId = nCRInitiated.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply NCRInitiated to the SPCChartAnalytics projection"
+      }
+      on resultsEvaluated: event Inspection.ResultsEvaluated is {
+        tell command QualityContext.InspectionRepository.PersistResultsEvaluated(inspectionId = resultsEvaluated.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply ResultsEvaluated to the SPCChartAnalytics projection"
+      }
+      on sampleCollected: event Inspection.SampleCollected is {
+        tell command QualityContext.InspectionRepository.PersistSampleCollected(inspectionId = sampleCollected.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply SampleCollected to the SPCChartAnalytics projection"
+      }
       on testResultRecorded: event Inspection.TestResultRecorded is {
         tell command QualityContext.InspectionRepository.PersistTestResultRecorded(inspectionId = testResultRecorded.inspectionId) to repository QualityContext.InspectionRepository
         do "Add data point and recalculate control limits"
@@ -743,9 +801,9 @@ context QualityContext as router is {
       |Read model view carrying the yield summary projection.
     }
   }
-  projector YieldTrendingAnalytics as flow is {
+  projector YieldTrendingAnalytics as sink is {
     updates repository QualityContext.InspectionRepository
-    inlet YieldTrendingAnalyticsFromInspection is type InspectionEvent    outlet YieldTrendingAnalyticsOut is type InspectionEvent
+    inlet YieldTrendingAnalyticsFromInspection is type InspectionEvent
     record YieldTrendData is  {
       periodDate: Date with {
         briefly "Date"
@@ -863,6 +921,22 @@ context QualityContext as router is {
       }
     }
     handler YieldHandler is {
+      on inspectionCreated: event Inspection.InspectionCreated is {
+        tell command QualityContext.InspectionRepository.PersistInspectionCreated(inspectionId = inspectionCreated.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply InspectionCreated to the YieldTrendingAnalytics projection"
+      }
+      on nCRInitiated: event Inspection.NCRInitiated is {
+        tell command QualityContext.InspectionRepository.PersistNCRInitiated(inspectionId = nCRInitiated.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply NCRInitiated to the YieldTrendingAnalytics projection"
+      }
+      on sampleCollected: event Inspection.SampleCollected is {
+        tell command QualityContext.InspectionRepository.PersistSampleCollected(inspectionId = sampleCollected.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply SampleCollected to the YieldTrendingAnalytics projection"
+      }
+      on testResultRecorded: event Inspection.TestResultRecorded is {
+        tell command QualityContext.InspectionRepository.PersistTestResultRecorded(inspectionId = testResultRecorded.inspectionId) to repository QualityContext.InspectionRepository
+        do "apply TestResultRecorded to the YieldTrendingAnalytics projection"
+      }
       on inspectionApproved: event Inspection.InspectionApproved is {
         tell command QualityContext.InspectionRepository.PersistInspectionApproved(inspectionId = inspectionApproved.inspectionId) to repository QualityContext.InspectionRepository
         do "Increment pass counts and update yield"
@@ -897,139 +971,49 @@ context QualityContext as router is {
       |persistence.
     }
   }
-  processor InspectionEventSource as source is {
-    outlet InspectionEvents is type InspectionEvent
-    handler InspectionSourceHandler is {
-      on inspectionCreated: event Inspection.InspectionCreated is {
-        send inspectionCreated to outlet InspectionEvents
-      }
-      on sampleCollected: event Inspection.SampleCollected is {
-        send sampleCollected to outlet InspectionEvents
-      }
-      on testResultRecorded: event Inspection.TestResultRecorded is {
-        send testResultRecorded to outlet InspectionEvents
-      }
-      on resultsEvaluated: event Inspection.ResultsEvaluated is {
-        send resultsEvaluated to outlet InspectionEvents
-      }
-      on inspectionApproved: event Inspection.InspectionApproved is {
-        send inspectionApproved to outlet InspectionEvents
-      }
-      on inspectionRejected: event Inspection.InspectionRejected is {
-        send inspectionRejected to outlet InspectionEvents
-      }
-      on nCRInitiated: event Inspection.NCRInitiated is {
-        send nCRInitiated to outlet InspectionEvents
-      }
-      on other is {
-        error "Unexpected message for source InspectionEventSource"
-      }
-    } with {
-      briefly "Inspection source handler"
-      described as {
-        |Publishes Inspection events onto the outlet.
-      }
-    }
-  } with {
-    briefly "Inspection event source"
-    described as {
-      |Publishes Inspection entity events into the streaming topology.
-    }
-  }
-  processor InspectionEventSink as sink is {
-    inlet InspectionInlet is type InspectionEvent    handler InspectionSinkHandler is {
-      on inspectionCreated: event Inspection.InspectionCreated is {
-        tell inspectionCreated to repository QualityContext.InspectionRepository
-      }
-      on sampleCollected: event Inspection.SampleCollected is {
-        tell sampleCollected to repository QualityContext.InspectionRepository
-      }
-      on testResultRecorded: event Inspection.TestResultRecorded is {
-        tell testResultRecorded to repository QualityContext.InspectionRepository
-      }
-      on resultsEvaluated: event Inspection.ResultsEvaluated is {
-        tell resultsEvaluated to repository QualityContext.InspectionRepository
-      }
-      on inspectionApproved: event Inspection.InspectionApproved is {
-        tell inspectionApproved to repository QualityContext.InspectionRepository
-      }
-      on inspectionRejected: event Inspection.InspectionRejected is {
-        tell inspectionRejected to repository QualityContext.InspectionRepository
-      }
-      on nCRInitiated: event Inspection.NCRInitiated is {
-        tell nCRInitiated to repository QualityContext.InspectionRepository
-      }
-      on other is {
-        error "Unexpected message for sink InspectionEventSink"
-      }
-    } with {
-      briefly "Inspection sink handler"
-      described as {
-        |Persists Inspection events via the repository.
-      }
-    }
-  } with {
-    briefly "Inspection event sink"
-    described as {
-      |Receives Inspection events for persistence.
-    }
-  }
-  connector InspectionEventFlow is from outlet QualityContext.InspectionEventSource.InspectionEvents to inlet QualityContext.InspectionEventSink.InspectionInlet with {
-    briefly "Inspection event flow"
-    described as {
-      |Connects the Inspection source to its sink.
-    }
-  }
   processor InspectionEventSplit as split is {
-    inlet InspectionEventSplitIn is type InspectionEvent    outlet InspectionEventSplitToInspectionRepository is type InspectionEvent
+    inlet InspectionEventSplitIn is type InspectionEvent
     outlet InspectionEventSplitToDefectParetoAnalytics is type InspectionEvent
     outlet InspectionEventSplitToSPCChartAnalytics is type InspectionEvent
     outlet InspectionEventSplitToYieldTrendingAnalytics is type InspectionEvent
     handler InspectionEventSplitHandler is {
       on inspectionCreated: event Inspection.InspectionCreated is {
-        send inspectionCreated to outlet InspectionEventSplitToInspectionRepository
         send inspectionCreated to outlet InspectionEventSplitToDefectParetoAnalytics
         send inspectionCreated to outlet InspectionEventSplitToSPCChartAnalytics
         send inspectionCreated to outlet InspectionEventSplitToYieldTrendingAnalytics
         tell inspectionCreated to entity QualityContext.Inspection
       }
       on sampleCollected: event Inspection.SampleCollected is {
-        send sampleCollected to outlet InspectionEventSplitToInspectionRepository
         send sampleCollected to outlet InspectionEventSplitToDefectParetoAnalytics
         send sampleCollected to outlet InspectionEventSplitToSPCChartAnalytics
         send sampleCollected to outlet InspectionEventSplitToYieldTrendingAnalytics
         tell sampleCollected to entity QualityContext.Inspection
       }
       on testResultRecorded: event Inspection.TestResultRecorded is {
-        send testResultRecorded to outlet InspectionEventSplitToInspectionRepository
         send testResultRecorded to outlet InspectionEventSplitToDefectParetoAnalytics
         send testResultRecorded to outlet InspectionEventSplitToSPCChartAnalytics
         send testResultRecorded to outlet InspectionEventSplitToYieldTrendingAnalytics
         tell testResultRecorded to entity QualityContext.Inspection
       }
       on resultsEvaluated: event Inspection.ResultsEvaluated is {
-        send resultsEvaluated to outlet InspectionEventSplitToInspectionRepository
         send resultsEvaluated to outlet InspectionEventSplitToDefectParetoAnalytics
         send resultsEvaluated to outlet InspectionEventSplitToSPCChartAnalytics
         send resultsEvaluated to outlet InspectionEventSplitToYieldTrendingAnalytics
         tell resultsEvaluated to entity QualityContext.Inspection
       }
       on inspectionApproved: event Inspection.InspectionApproved is {
-        send inspectionApproved to outlet InspectionEventSplitToInspectionRepository
         send inspectionApproved to outlet InspectionEventSplitToDefectParetoAnalytics
         send inspectionApproved to outlet InspectionEventSplitToSPCChartAnalytics
         send inspectionApproved to outlet InspectionEventSplitToYieldTrendingAnalytics
         tell inspectionApproved to entity QualityContext.Inspection
       }
       on inspectionRejected: event Inspection.InspectionRejected is {
-        send inspectionRejected to outlet InspectionEventSplitToInspectionRepository
         send inspectionRejected to outlet InspectionEventSplitToDefectParetoAnalytics
         send inspectionRejected to outlet InspectionEventSplitToSPCChartAnalytics
         send inspectionRejected to outlet InspectionEventSplitToYieldTrendingAnalytics
         tell inspectionRejected to entity QualityContext.Inspection
       }
       on nCRInitiated: event Inspection.NCRInitiated is {
-        send nCRInitiated to outlet InspectionEventSplitToInspectionRepository
         send nCRInitiated to outlet InspectionEventSplitToDefectParetoAnalytics
         send nCRInitiated to outlet InspectionEventSplitToSPCChartAnalytics
         send nCRInitiated to outlet InspectionEventSplitToYieldTrendingAnalytics
@@ -1053,9 +1037,6 @@ context QualityContext as router is {
   connector 'InspectionEvent Stream' is from outlet QualityContext.Inspection.InspectionEvents2 to inlet QualityContext.InspectionEventSplit.InspectionEventSplitIn with {
     briefly "Inspection events, fanned out to storage and read models"
   }
-  connector 'InspectionEvent Storage' is from outlet QualityContext.InspectionEventSplit.InspectionEventSplitToInspectionRepository to inlet QualityContext.InspectionRepository.InspectionRepositoryFromInspection with {
-    briefly "Inspection events on their way to storage"
-  }
   connector 'DefectParetoAnalytics Feed' is from outlet QualityContext.InspectionEventSplit.InspectionEventSplitToDefectParetoAnalytics to inlet QualityContext.DefectParetoAnalytics.DefectParetoAnalyticsFromInspection with {
     briefly "Inspection events feeding the DefectParetoAnalytics projection"
   }
@@ -1065,14 +1046,8 @@ context QualityContext as router is {
   connector 'YieldTrendingAnalytics Feed' is from outlet QualityContext.InspectionEventSplit.InspectionEventSplitToYieldTrendingAnalytics to inlet QualityContext.YieldTrendingAnalytics.YieldTrendingAnalyticsFromInspection with {
     briefly "Inspection events feeding the YieldTrendingAnalytics projection"
   }
-  connector 'DefectParetoAnalytics Storage' is from outlet QualityContext.DefectParetoAnalytics.DefectParetoAnalyticsOut to inlet QualityContext.InspectionRepository.InspectionRepositoryFromDefectParetoAnalytics with {
-    briefly "The DefectParetoAnalytics projection on its way to storage"
-  }
-  connector 'SPCChartAnalytics Storage' is from outlet QualityContext.SPCChartAnalytics.SPCChartAnalyticsOut to inlet QualityContext.InspectionRepository.InspectionRepositoryFromSPCChartAnalytics with {
-    briefly "The SPCChartAnalytics projection on its way to storage"
-  }
-  connector 'YieldTrendingAnalytics Storage' is from outlet QualityContext.YieldTrendingAnalytics.YieldTrendingAnalyticsOut to inlet QualityContext.InspectionRepository.InspectionRepositoryFromYieldTrendingAnalytics with {
-    briefly "The YieldTrendingAnalytics projection on its way to storage"
+  connector 'DefectParetoAnalytics Storage' is from outlet QualityContext.DefectParetoAnalytics.DefectParetoAnalyticsToRepository to inlet QualityContext.InspectionRepository.InspectionRepositoryFromDefectParetoAnalytics with {
+    briefly "DefectParetoAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for quality control"

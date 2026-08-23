@@ -24,9 +24,6 @@ context AdContext as router is {
     on recordError: command AdImpression.RecordError is {
       send recordError to outlet AdContext.AdImpressionCommandStreamOut
     }
-    on initializeAdImpression: command AdImpression.InitializeAdImpression is {
-      send initializeAdImpression to outlet AdContext.AdImpressionCommandStreamOut
-    }
     on adImpressionResult: result AdImpression.AdImpressionResult is {
       send adImpressionResult to outlet AdContext.AdImpressionResultStreamOut
     }
@@ -287,7 +284,62 @@ context AdContext as router is {
   include "types.riddl"
   include "AdImpression.riddl"
   // Repository for ad persistence
-  repository AdRepository as merge is {
+  type AdRepositoryCommand is one of {
+    AdContext.AdRepository.PersistAdClicked or AdContext.AdRepository.PersistAdCompleted or AdContext.AdRepository.PersistAdErrorOccurred or AdContext.AdRepository.PersistAdSkipped or AdContext.AdRepository.PersistAdStarted or AdContext.AdRepository.PersistImpressionRecorded or AdContext.AdRepository.PersistQuartileReached
+  } with {
+    briefly "Anything that writes AdRepository"
+    described as {
+      |The persistence commands AdRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository AdRepository as flow is {
+    inlet AdRepositoryFromAdAnalytics is type AdRepositoryCommand
+    command PersistAdErrorOccurred is  {
+      impressionId: ImpressionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row AdErrorOccurred applies to.
+        }
+      }
+    } with {
+      briefly "Persist AdErrorOccurred"
+      described as {
+        |Instructs this repository to apply AdErrorOccurred to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistAdSkipped is  {
+      impressionId: ImpressionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row AdSkipped applies to.
+        }
+      }
+    } with {
+      briefly "Persist AdSkipped"
+      described as {
+        |Instructs this repository to apply AdSkipped to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistQuartileReached is  {
+      impressionId: ImpressionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row QuartileReached applies to.
+        }
+      }
+    } with {
+      briefly "Persist QuartileReached"
+      described as {
+        |Instructs this repository to apply QuartileReached to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistAdClicked is  {
       impressionId: ImpressionId with {
         briefly "Row addressed"
@@ -348,7 +400,7 @@ context AdContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet AdRepositoryFromAdImpression is type AdImpressionEvent    inlet AdRepositoryFromAdAnalytics is type AdImpressionEvent    outlet AdRepositoryResponses is type AdImpression.AdImpressionResult
+    outlet AdRepositoryResponses is type AdImpression.AdImpressionResult
     record StoredAdImpression is  {
       adImpressionId: UUID with {
         briefly "adImpressionId"
@@ -385,6 +437,15 @@ context AdContext as router is {
       }
     }
     handler AdPersistence is {
+      on persistAdErrorOccurred: command PersistAdErrorOccurred is {
+        do "apply AdErrorOccurred to the stored row"
+      }
+      on persistAdSkipped: command PersistAdSkipped is {
+        do "apply AdSkipped to the stored row"
+      }
+      on persistQuartileReached: command PersistQuartileReached is {
+        do "apply QuartileReached to the stored row"
+      }
       on persistAdClicked: command PersistAdClicked is {
         do "apply AdClicked to the stored row"
       }
@@ -400,27 +461,6 @@ context AdContext as router is {
       on query GetCampaignStats is {
         let campaignStatsView: type CampaignStatsView = prompt("read the campaign stats projection")
         reply campaignStatsView
-      }
-      on recordImpression: command AdImpression.RecordImpression is {
-        tell event AdImpression.ImpressionRecorded(impressionId = recordImpression.impressionId, adUnit = recordImpression.adUnit, placement = recordImpression.placement, viewer = recordImpression.viewer) to entity AdContext.AdImpression
-      }
-      on recordStart: command AdImpression.RecordStart is {
-        tell event AdImpression.AdStarted(impressionId = recordStart.impressionId) to entity AdContext.AdImpression
-      }
-      on recordQuartile: command AdImpression.RecordQuartile is {
-        tell event AdImpression.QuartileReached(impressionId = recordQuartile.impressionId, quartile = recordQuartile.quartile) to entity AdContext.AdImpression
-      }
-      on recordComplete: command AdImpression.RecordComplete is {
-        tell event AdImpression.AdCompleted(impressionId = recordComplete.impressionId, metrics = recordComplete.metrics) to entity AdContext.AdImpression
-      }
-      on recordSkip: command AdImpression.RecordSkip is {
-        tell event AdImpression.AdSkipped(impressionId = recordSkip.impressionId, skipTime = recordSkip.skipTime) to entity AdContext.AdImpression
-      }
-      on recordClick: command AdImpression.RecordClick is {
-        tell event AdImpression.AdClicked(impressionId = recordClick.impressionId, clickTime = recordClick.clickTime) to entity AdContext.AdImpression
-      }
-      on recordError: command AdImpression.RecordError is {
-        tell event AdImpression.AdErrorOccurred(impressionId = recordError.impressionId, errorCode = recordError.errorCode, errorMessage = recordError.errorMessage) to entity AdContext.AdImpression
       }
     } with {
       briefly "Persists ad commands"
@@ -463,8 +503,9 @@ context AdContext as router is {
     }
   }
   projector AdAnalytics as flow is {
+    outlet AdAnalyticsToRepository is type AdRepositoryCommand
     updates repository AdContext.AdRepository
-    inlet AdAnalyticsFromAdImpression is type AdImpressionEvent    outlet AdAnalyticsOut is type AdImpressionEvent
+    inlet AdAnalyticsFromAdImpression is type AdImpressionEvent
     record CampaignStats is  {
       campaignId: CampaignId with {
         briefly "Campaign"
@@ -515,6 +556,18 @@ context AdContext as router is {
       }
     }
     handler AnalyticsHandler is {
+      on adErrorOccurred: event AdImpression.AdErrorOccurred is {
+        tell command AdContext.AdRepository.PersistAdErrorOccurred(impressionId = adErrorOccurred.impressionId) to repository AdContext.AdRepository
+        do "apply AdErrorOccurred to the AdAnalytics projection"
+      }
+      on adSkipped: event AdImpression.AdSkipped is {
+        tell command AdContext.AdRepository.PersistAdSkipped(impressionId = adSkipped.impressionId) to repository AdContext.AdRepository
+        do "apply AdSkipped to the AdAnalytics projection"
+      }
+      on quartileReached: event AdImpression.QuartileReached is {
+        tell command AdContext.AdRepository.PersistQuartileReached(impressionId = quartileReached.impressionId) to repository AdContext.AdRepository
+        do "apply QuartileReached to the AdAnalytics projection"
+      }
       on impressionRecorded: event AdImpression.ImpressionRecorded is {
         tell command AdContext.AdRepository.PersistImpressionRecorded(impressionId = impressionRecorded.impressionId) to repository AdContext.AdRepository
       }
@@ -539,103 +592,35 @@ context AdContext as router is {
       |Maintains advertising analytics data.
     }
   }
-  processor AdImpressionEventSource as source is {
-    outlet AdImpressionEvents is type AdImpressionEvent
-    handler AdImpressionEventEmitter is {
-      on init is {
-        let initializeAdImpression: type InitializeAdImpression = prompt("the initialize ad impression that brings this this into existence")
-        tell initializeAdImpression to entity AdContext.AdImpression
-      }
-      on other is {
-        error "Unexpected message for source AdImpressionEventSource"
-      }
-      on impressionRecorded: event AdImpression.ImpressionRecorded is {
-        send impressionRecorded to outlet AdImpressionEvents
-      }
-      on adCompleted: event AdImpression.AdCompleted is {
-        send adCompleted to outlet AdImpressionEvents
-      }
-      on adClicked: event AdImpression.AdClicked is {
-        send adClicked to outlet AdImpressionEvents
-      }
-    } with {
-      briefly "Ad impression event emitter"
-      described as {
-        |Emits ad impression events into streaming topology.
-      }
-    }
-  } with {
-    briefly "Ad impression event source"
-    described as {
-      |Publishes ad impression events for streaming.
-    }
-  }
-  processor AdImpressionEventSink as sink is {
-    inlet IncomingAdImpressionEvents is type AdImpressionEvent    handler AdImpressionEventReceiver is {
-      on init is { ??? }
-      on other is {
-        error "Unexpected message for sink AdImpressionEventSink"
-      }
-      on impressionRecorded: event AdImpression.ImpressionRecorded is {
-        tell impressionRecorded to repository AdContext.AdRepository
-      }
-      on adClicked: event AdImpression.AdClicked is {
-        tell adClicked to repository AdContext.AdRepository
-      }
-    } with {
-      briefly "Ad impression event receiver"
-      described as {
-        |Receives ad impression events and persists them.
-      }
-    }
-  } with {
-    briefly "Ad impression event sink"
-    described as {
-      |Receives ad impression events from streaming topology.
-    }
-  }
-  connector AdImpressionEventPipeline is from outlet AdContext.AdImpressionEventSource.AdImpressionEvents to inlet AdContext.AdImpressionEventSink.IncomingAdImpressionEvents with {
-    briefly "Ad impression event pipeline"
-    described as {
-      |Wires ad impression events from source to sink.
-    }
-  }
-  processor AdImpressionEventSplit as split is {
-    inlet AdImpressionEventSplitIn is type AdImpressionEvent    outlet AdImpressionEventSplitToAdRepository is type AdImpressionEvent
+  processor AdImpressionEventSplit as flow is {
+    inlet AdImpressionEventSplitIn is type AdImpressionEvent
     outlet AdImpressionEventSplitToAdAnalytics is type AdImpressionEvent
     handler AdImpressionEventSplitHandler is {
       on impressionRecorded: event AdImpression.ImpressionRecorded is {
-        send impressionRecorded to outlet AdImpressionEventSplitToAdRepository
         send impressionRecorded to outlet AdImpressionEventSplitToAdAnalytics
         tell impressionRecorded to entity AdContext.AdImpression
       }
       on adStarted: event AdImpression.AdStarted is {
-        send adStarted to outlet AdImpressionEventSplitToAdRepository
         send adStarted to outlet AdImpressionEventSplitToAdAnalytics
         tell adStarted to entity AdContext.AdImpression
       }
       on quartileReached: event AdImpression.QuartileReached is {
-        send quartileReached to outlet AdImpressionEventSplitToAdRepository
         send quartileReached to outlet AdImpressionEventSplitToAdAnalytics
         tell quartileReached to entity AdContext.AdImpression
       }
       on adCompleted: event AdImpression.AdCompleted is {
-        send adCompleted to outlet AdImpressionEventSplitToAdRepository
         send adCompleted to outlet AdImpressionEventSplitToAdAnalytics
         tell adCompleted to entity AdContext.AdImpression
       }
       on adSkipped: event AdImpression.AdSkipped is {
-        send adSkipped to outlet AdImpressionEventSplitToAdRepository
         send adSkipped to outlet AdImpressionEventSplitToAdAnalytics
         tell adSkipped to entity AdContext.AdImpression
       }
       on adClicked: event AdImpression.AdClicked is {
-        send adClicked to outlet AdImpressionEventSplitToAdRepository
         send adClicked to outlet AdImpressionEventSplitToAdAnalytics
         tell adClicked to entity AdContext.AdImpression
       }
       on adErrorOccurred: event AdImpression.AdErrorOccurred is {
-        send adErrorOccurred to outlet AdImpressionEventSplitToAdRepository
         send adErrorOccurred to outlet AdImpressionEventSplitToAdAnalytics
         tell adErrorOccurred to entity AdContext.AdImpression
       }
@@ -657,14 +642,11 @@ context AdContext as router is {
   connector 'AdImpressionEvent Stream' is from outlet AdContext.AdImpression.AdImpressionEvents2 to inlet AdContext.AdImpressionEventSplit.AdImpressionEventSplitIn with {
     briefly "AdImpression events, fanned out to storage and read models"
   }
-  connector 'AdImpressionEvent Storage' is from outlet AdContext.AdImpressionEventSplit.AdImpressionEventSplitToAdRepository to inlet AdContext.AdRepository.AdRepositoryFromAdImpression with {
-    briefly "AdImpression events on their way to storage"
-  }
   connector 'AdAnalytics Feed' is from outlet AdContext.AdImpressionEventSplit.AdImpressionEventSplitToAdAnalytics to inlet AdContext.AdAnalytics.AdAnalyticsFromAdImpression with {
     briefly "AdImpression events feeding the AdAnalytics projection"
   }
-  connector 'AdAnalytics Storage' is from outlet AdContext.AdAnalytics.AdAnalyticsOut to inlet AdContext.AdRepository.AdRepositoryFromAdAnalytics with {
-    briefly "The AdAnalytics projection on its way to storage"
+  connector 'AdAnalytics Storage' is from outlet AdContext.AdAnalytics.AdAnalyticsToRepository to inlet AdContext.AdRepository.AdRepositoryFromAdAnalytics with {
+    briefly "AdAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for advertising"

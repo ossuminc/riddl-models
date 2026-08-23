@@ -117,8 +117,18 @@ context DrugSupplyContext as router is {
   include "types.riddl"
   include "DrugBatch.riddl"
   // Repository for batch persistence
-  repository BatchRepository as merge is {
-    inlet BatchRepositoryFromDrugBatch is type DrugBatchEvent    inlet BatchRepositoryFromTraceabilityDashboardProjector is type DrugBatchEvent    outlet BatchRepositoryResponses is type DrugBatch.DrugBatchResult
+  type BatchRepositoryCommand is one of {
+    DrugSupplyContext.BatchRepository.PersistAuthenticityVerified or DrugSupplyContext.BatchRepository.PersistBatchManufactured or DrugSupplyContext.BatchRepository.PersistBatchPlacedOnHold or DrugSupplyContext.BatchRepository.PersistBatchReleased or DrugSupplyContext.BatchRepository.PersistProductShipped or DrugSupplyContext.BatchRepository.PersistRecallInitiated or DrugSupplyContext.BatchRepository.PersistShipmentReceived or DrugSupplyContext.BatchRepository.PersistUnitsSerialized
+  } with {
+    briefly "Anything that writes BatchRepository"
+    described as {
+      |The persistence commands BatchRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository BatchRepository as flow is {
+    inlet BatchRepositoryFromSerializationMetricsProjector is type BatchRepositoryCommand
+    outlet BatchRepositoryResponses is type DrugBatch.DrugBatchResult
     record StoredDrugBatch is  {
       drugBatchId: UUID with {
         briefly "drugBatchId"
@@ -315,7 +325,7 @@ context DrugSupplyContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet SerializationRepositoryFromSerializationMetricsProjector is type DrugBatchEvent    schema SerializationSchema is relational
+    schema SerializationSchema is relational
       of serializations as type SerializationInfo
         index on field SerializationInfo.serialNumber
         index on field SerializationInfo.gtinCode
@@ -428,8 +438,9 @@ context DrugSupplyContext as router is {
     }
   }
   projector SerializationMetricsProjector as flow is {
+    outlet SerializationMetricsProjectorToRepository is type BatchRepositoryCommand
     updates repository DrugSupplyContext.SerializationRepository
-    inlet SerializationMetricsProjectorFromDrugBatch is type DrugBatchEvent    outlet SerializationMetricsProjectorOut is type DrugBatchEvent
+    inlet SerializationMetricsProjectorFromDrugBatch is type DrugBatchEvent
     record SerializationMetrics is  {
       productGtin: GTINCode with {
         briefly "Product GTIN"
@@ -480,6 +491,22 @@ context DrugSupplyContext as router is {
       }
     }
     handler MetricsHandler is {
+      on batchManufactured: event DrugBatch.BatchManufactured is {
+        tell command DrugSupplyContext.BatchRepository.PersistBatchManufactured(batchId = batchManufactured.batchId) to repository DrugSupplyContext.BatchRepository
+        do "apply BatchManufactured to the SerializationMetricsProjector projection"
+      }
+      on batchPlacedOnHold: event DrugBatch.BatchPlacedOnHold is {
+        tell command DrugSupplyContext.BatchRepository.PersistBatchPlacedOnHold(batchId = batchPlacedOnHold.batchId) to repository DrugSupplyContext.BatchRepository
+        do "apply BatchPlacedOnHold to the SerializationMetricsProjector projection"
+      }
+      on batchReleased: event DrugBatch.BatchReleased is {
+        tell command DrugSupplyContext.BatchRepository.PersistBatchReleased(batchId = batchReleased.batchId) to repository DrugSupplyContext.BatchRepository
+        do "apply BatchReleased to the SerializationMetricsProjector projection"
+      }
+      on recallInitiated: event DrugBatch.RecallInitiated is {
+        tell command DrugSupplyContext.BatchRepository.PersistRecallInitiated(batchId = recallInitiated.batchId) to repository DrugSupplyContext.BatchRepository
+        do "apply RecallInitiated to the SerializationMetricsProjector projection"
+      }
       on unitsSerialized: event DrugBatch.UnitsSerialized is {
         tell command DrugSupplyContext.SerializationRepository.PersistUnitsSerialized(serializationId = prompt("the serialization row this UnitsSerialized applies to")) to repository DrugSupplyContext.SerializationRepository
         do "Update serialization count"
@@ -537,9 +564,9 @@ context DrugSupplyContext as router is {
       |Read model view carrying the traceability dashboard projection.
     }
   }
-  projector TraceabilityDashboardProjector as flow is {
+  projector TraceabilityDashboardProjector as sink is {
     updates repository DrugSupplyContext.BatchRepository
-    inlet TraceabilityDashboardProjectorFromDrugBatch is type DrugBatchEvent    outlet TraceabilityDashboardProjectorOut is type DrugBatchEvent
+    inlet TraceabilityDashboardProjectorFromDrugBatch is type DrugBatchEvent
     record TraceabilityDashboard is  {
       batchId: BatchId with {
         briefly "Batch identifier"
@@ -615,6 +642,22 @@ context DrugSupplyContext as router is {
       }
     }
     handler DashboardHandler is {
+      on authenticityVerified: event DrugBatch.AuthenticityVerified is {
+        tell command DrugSupplyContext.BatchRepository.PersistAuthenticityVerified(batchId = authenticityVerified.batchId) to repository DrugSupplyContext.BatchRepository
+        do "apply AuthenticityVerified to the TraceabilityDashboardProjector projection"
+      }
+      on batchPlacedOnHold: event DrugBatch.BatchPlacedOnHold is {
+        tell command DrugSupplyContext.BatchRepository.PersistBatchPlacedOnHold(batchId = batchPlacedOnHold.batchId) to repository DrugSupplyContext.BatchRepository
+        do "apply BatchPlacedOnHold to the TraceabilityDashboardProjector projection"
+      }
+      on batchReleased: event DrugBatch.BatchReleased is {
+        tell command DrugSupplyContext.BatchRepository.PersistBatchReleased(batchId = batchReleased.batchId) to repository DrugSupplyContext.BatchRepository
+        do "apply BatchReleased to the TraceabilityDashboardProjector projection"
+      }
+      on unitsSerialized: event DrugBatch.UnitsSerialized is {
+        tell command DrugSupplyContext.BatchRepository.PersistUnitsSerialized(batchId = unitsSerialized.batchId) to repository DrugSupplyContext.BatchRepository
+        do "apply UnitsSerialized to the TraceabilityDashboardProjector projection"
+      }
       on batchManufactured: event DrugBatch.BatchManufactured is {
         tell command DrugSupplyContext.BatchRepository.PersistBatchManufactured(drugBatchId = batchManufactured.batch) to repository DrugSupplyContext.BatchRepository
         do "Initialize dashboard on manufacture"
@@ -654,144 +697,47 @@ context DrugSupplyContext as router is {
       |persistence.
     }
   }
-  processor DrugBatchEventSource as source is {
-    outlet DrugBatchEvents is type DrugBatchEvent
-    handler DrugBatchSourceHandler is {
-      on batchManufactured: event DrugBatch.BatchManufactured is {
-        send batchManufactured to outlet DrugBatchEvents
-      }
-      on unitsSerialized: event DrugBatch.UnitsSerialized is {
-        send unitsSerialized to outlet DrugBatchEvents
-      }
-      on productShipped: event DrugBatch.ProductShipped is {
-        send productShipped to outlet DrugBatchEvents
-      }
-      on shipmentReceived: event DrugBatch.ShipmentReceived is {
-        send shipmentReceived to outlet DrugBatchEvents
-      }
-      on authenticityVerified: event DrugBatch.AuthenticityVerified is {
-        send authenticityVerified to outlet DrugBatchEvents
-      }
-      on recallInitiated: event DrugBatch.RecallInitiated is {
-        send recallInitiated to outlet DrugBatchEvents
-      }
-      on batchPlacedOnHold: event DrugBatch.BatchPlacedOnHold is {
-        send batchPlacedOnHold to outlet DrugBatchEvents
-      }
-      on batchReleased: event DrugBatch.BatchReleased is {
-        send batchReleased to outlet DrugBatchEvents
-      }
-      on other is {
-        error "Unexpected message for source DrugBatchEventSource"
-      }
-    } with {
-      briefly "DrugBatch source handler"
-      described as {
-        |Publishes DrugBatch events onto the outlet.
-      }
-    }
-  } with {
-    briefly "DrugBatch event source"
-    described as {
-      |Publishes DrugBatch entity events into the streaming topology.
-    }
-  }
-  processor DrugBatchEventSink as sink is {
-    inlet DrugBatchInlet is type DrugBatchEvent    handler DrugBatchSinkHandler is {
-      on batchManufactured: event DrugBatch.BatchManufactured is {
-        tell batchManufactured to repository DrugSupplyContext.BatchRepository
-      }
-      on unitsSerialized: event DrugBatch.UnitsSerialized is {
-        tell unitsSerialized to repository DrugSupplyContext.BatchRepository
-      }
-      on productShipped: event DrugBatch.ProductShipped is {
-        tell productShipped to repository DrugSupplyContext.BatchRepository
-      }
-      on shipmentReceived: event DrugBatch.ShipmentReceived is {
-        tell shipmentReceived to repository DrugSupplyContext.BatchRepository
-      }
-      on authenticityVerified: event DrugBatch.AuthenticityVerified is {
-        tell authenticityVerified to repository DrugSupplyContext.BatchRepository
-      }
-      on recallInitiated: event DrugBatch.RecallInitiated is {
-        tell recallInitiated to repository DrugSupplyContext.BatchRepository
-      }
-      on batchPlacedOnHold: event DrugBatch.BatchPlacedOnHold is {
-        tell batchPlacedOnHold to repository DrugSupplyContext.BatchRepository
-      }
-      on batchReleased: event DrugBatch.BatchReleased is {
-        tell batchReleased to repository DrugSupplyContext.BatchRepository
-      }
-      on other is {
-        error "Unexpected message for sink DrugBatchEventSink"
-      }
-    } with {
-      briefly "DrugBatch sink handler"
-      described as {
-        |Persists DrugBatch events via the repository.
-      }
-    }
-  } with {
-    briefly "DrugBatch event sink"
-    described as {
-      |Receives DrugBatch events for persistence.
-    }
-  }
-  connector DrugBatchEventFlow is from outlet DrugSupplyContext.DrugBatchEventSource.DrugBatchEvents to inlet DrugSupplyContext.DrugBatchEventSink.DrugBatchInlet with {
-    briefly "DrugBatch event flow"
-    described as {
-      |Connects the DrugBatch source to its sink.
-    }
-  }
   processor DrugBatchEventSplit as split is {
-    inlet DrugBatchEventSplitIn is type DrugBatchEvent    outlet DrugBatchEventSplitToBatchRepository is type DrugBatchEvent
+    inlet DrugBatchEventSplitIn is type DrugBatchEvent
     outlet DrugBatchEventSplitToSerializationMetricsProjector is type DrugBatchEvent
     outlet DrugBatchEventSplitToTraceabilityDashboardProjector is type DrugBatchEvent
     handler DrugBatchEventSplitHandler is {
       on batchManufactured: event DrugBatch.BatchManufactured is {
-        send batchManufactured to outlet DrugBatchEventSplitToBatchRepository
         send batchManufactured to outlet DrugBatchEventSplitToSerializationMetricsProjector
         send batchManufactured to outlet DrugBatchEventSplitToTraceabilityDashboardProjector
         tell batchManufactured to entity DrugSupplyContext.DrugBatch
       }
       on unitsSerialized: event DrugBatch.UnitsSerialized is {
-        send unitsSerialized to outlet DrugBatchEventSplitToBatchRepository
         send unitsSerialized to outlet DrugBatchEventSplitToSerializationMetricsProjector
         send unitsSerialized to outlet DrugBatchEventSplitToTraceabilityDashboardProjector
         tell unitsSerialized to entity DrugSupplyContext.DrugBatch
       }
       on productShipped: event DrugBatch.ProductShipped is {
-        send productShipped to outlet DrugBatchEventSplitToBatchRepository
         send productShipped to outlet DrugBatchEventSplitToSerializationMetricsProjector
         send productShipped to outlet DrugBatchEventSplitToTraceabilityDashboardProjector
         tell productShipped to entity DrugSupplyContext.DrugBatch
       }
       on shipmentReceived: event DrugBatch.ShipmentReceived is {
-        send shipmentReceived to outlet DrugBatchEventSplitToBatchRepository
         send shipmentReceived to outlet DrugBatchEventSplitToSerializationMetricsProjector
         send shipmentReceived to outlet DrugBatchEventSplitToTraceabilityDashboardProjector
         tell shipmentReceived to entity DrugSupplyContext.DrugBatch
       }
       on authenticityVerified: event DrugBatch.AuthenticityVerified is {
-        send authenticityVerified to outlet DrugBatchEventSplitToBatchRepository
         send authenticityVerified to outlet DrugBatchEventSplitToSerializationMetricsProjector
         send authenticityVerified to outlet DrugBatchEventSplitToTraceabilityDashboardProjector
         tell authenticityVerified to entity DrugSupplyContext.DrugBatch
       }
       on recallInitiated: event DrugBatch.RecallInitiated is {
-        send recallInitiated to outlet DrugBatchEventSplitToBatchRepository
         send recallInitiated to outlet DrugBatchEventSplitToSerializationMetricsProjector
         send recallInitiated to outlet DrugBatchEventSplitToTraceabilityDashboardProjector
         tell recallInitiated to entity DrugSupplyContext.DrugBatch
       }
       on batchPlacedOnHold: event DrugBatch.BatchPlacedOnHold is {
-        send batchPlacedOnHold to outlet DrugBatchEventSplitToBatchRepository
         send batchPlacedOnHold to outlet DrugBatchEventSplitToSerializationMetricsProjector
         send batchPlacedOnHold to outlet DrugBatchEventSplitToTraceabilityDashboardProjector
         tell batchPlacedOnHold to entity DrugSupplyContext.DrugBatch
       }
       on batchReleased: event DrugBatch.BatchReleased is {
-        send batchReleased to outlet DrugBatchEventSplitToBatchRepository
         send batchReleased to outlet DrugBatchEventSplitToSerializationMetricsProjector
         send batchReleased to outlet DrugBatchEventSplitToTraceabilityDashboardProjector
         tell batchReleased to entity DrugSupplyContext.DrugBatch
@@ -814,20 +760,14 @@ context DrugSupplyContext as router is {
   connector 'DrugBatchEvent Stream' is from outlet DrugSupplyContext.DrugBatch.DrugBatchEvents2 to inlet DrugSupplyContext.DrugBatchEventSplit.DrugBatchEventSplitIn with {
     briefly "DrugBatch events, fanned out to storage and read models"
   }
-  connector 'DrugBatchEvent Storage' is from outlet DrugSupplyContext.DrugBatchEventSplit.DrugBatchEventSplitToBatchRepository to inlet DrugSupplyContext.BatchRepository.BatchRepositoryFromDrugBatch with {
-    briefly "DrugBatch events on their way to storage"
-  }
   connector 'SerializationMetricsProjector Feed' is from outlet DrugSupplyContext.DrugBatchEventSplit.DrugBatchEventSplitToSerializationMetricsProjector to inlet DrugSupplyContext.SerializationMetricsProjector.SerializationMetricsProjectorFromDrugBatch with {
     briefly "DrugBatch events feeding the SerializationMetricsProjector projection"
   }
   connector 'TraceabilityDashboardProjector Feed' is from outlet DrugSupplyContext.DrugBatchEventSplit.DrugBatchEventSplitToTraceabilityDashboardProjector to inlet DrugSupplyContext.TraceabilityDashboardProjector.TraceabilityDashboardProjectorFromDrugBatch with {
     briefly "DrugBatch events feeding the TraceabilityDashboardProjector projection"
   }
-  connector 'SerializationMetricsProjector Storage' is from outlet DrugSupplyContext.SerializationMetricsProjector.SerializationMetricsProjectorOut to inlet DrugSupplyContext.SerializationRepository.SerializationRepositoryFromSerializationMetricsProjector with {
-    briefly "The SerializationMetricsProjector projection on its way to storage"
-  }
-  connector 'TraceabilityDashboardProjector Storage' is from outlet DrugSupplyContext.TraceabilityDashboardProjector.TraceabilityDashboardProjectorOut to inlet DrugSupplyContext.BatchRepository.BatchRepositoryFromTraceabilityDashboardProjector with {
-    briefly "The TraceabilityDashboardProjector projection on its way to storage"
+  connector 'SerializationMetricsProjector Storage' is from outlet DrugSupplyContext.SerializationMetricsProjector.SerializationMetricsProjectorToRepository to inlet DrugSupplyContext.BatchRepository.BatchRepositoryFromSerializationMetricsProjector with {
+    briefly "SerializationMetricsProjector updates on their way to storage"
   }
 } with {
   briefly "Drug supply chain bounded context"

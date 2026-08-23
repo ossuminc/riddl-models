@@ -126,7 +126,77 @@ context APIContext as router is {
   include "types.riddl"
   include "APIProduct.riddl"
   // Repository for API Products
-  repository APIProductRepository as merge is {
+  type APIProductRepositoryCommand is one of {
+    APIContext.APIProductRepository.PersistAPICreated or APIContext.APIProductRepository.PersistRateLimitUpdated or APIContext.APIProductRepository.PersistSubscriptionCreated or APIContext.APIProductRepository.PersistSubscriptionRevoked or APIContext.APIProductRepository.PersistVersionDeprecated or APIContext.APIProductRepository.PersistVersionPublished
+  } with {
+    briefly "Anything that writes APIProductRepository"
+    described as {
+      |The persistence commands APIProductRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository APIProductRepository as flow is {
+    inlet APIProductRepositoryFromAPIUsageMetricsProjector is type APIProductRepositoryCommand
+    command PersistAPICreated is  {
+      apiId: APIId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row APICreated applies to.
+        }
+      }
+    } with {
+      briefly "Persist APICreated"
+      described as {
+        |Instructs this repository to apply APICreated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistRateLimitUpdated is  {
+      apiId: APIId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row RateLimitUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist RateLimitUpdated"
+      described as {
+        |Instructs this repository to apply RateLimitUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistSubscriptionRevoked is  {
+      apiId: APIId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row SubscriptionRevoked applies to.
+        }
+      }
+    } with {
+      briefly "Persist SubscriptionRevoked"
+      described as {
+        |Instructs this repository to apply SubscriptionRevoked to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistVersionDeprecated is  {
+      apiId: APIId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row VersionDeprecated applies to.
+        }
+      }
+    } with {
+      briefly "Persist VersionDeprecated"
+      described as {
+        |Instructs this repository to apply VersionDeprecated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistSubscriptionCreated is  {
       apiId: APIId with {
         briefly "Row addressed"
@@ -179,7 +249,7 @@ context APIContext as router is {
         |The relational schema persisting api product records for this repository.
       }
     }
-    inlet FromEntity is type APIProductEvent    inlet FromProjector is type APIProductEvent    outlet APIProductResponses is type APIProduct.APIProductQueryResult
+    outlet APIProductResponses is type APIProduct.APIProductQueryResult
     type APIProductRecord is {
       apiId: APIId
       name: String
@@ -276,6 +346,18 @@ context APIContext as router is {
       }
     }
     handler APIProductRepositoryHandler is {
+      on persistAPICreated: command PersistAPICreated is {
+        do "apply APICreated to the stored row"
+      }
+      on persistRateLimitUpdated: command PersistRateLimitUpdated is {
+        do "apply RateLimitUpdated to the stored row"
+      }
+      on persistSubscriptionRevoked: command PersistSubscriptionRevoked is {
+        do "apply SubscriptionRevoked to the stored row"
+      }
+      on persistVersionDeprecated: command PersistVersionDeprecated is {
+        do "apply VersionDeprecated to the stored row"
+      }
       on persistSubscriptionCreated: command PersistSubscriptionCreated is {
         do "apply SubscriptionCreated to the stored row"
       }
@@ -357,8 +439,9 @@ context APIContext as router is {
     }
   }
   projector APIUsageMetricsProjector as flow is {
+    outlet APIUsageMetricsProjectorToRepository is type APIProductRepositoryCommand
     updates repository APIContext.APIProductRepository
-    inlet IncomingEvents is type APIProductEvent    outlet ToRepository is type APIProductEvent
+    inlet IncomingEvents is type APIProductEvent
     record ProjectorState is  { lastUpdated: DateTime } with {
       briefly "Projector internal state"
       described as {
@@ -366,13 +449,27 @@ context APIContext as router is {
       }
     }
     handler MetricsProjectionHandler is {
+      on aPICreated: event APIProduct.APICreated is {
+        tell command APIContext.APIProductRepository.PersistAPICreated(apiId = aPICreated.apiId) to repository APIContext.APIProductRepository
+        do "apply APICreated to the APIUsageMetricsProjector projection"
+      }
+      on rateLimitUpdated: event APIProduct.RateLimitUpdated is {
+        tell command APIContext.APIProductRepository.PersistRateLimitUpdated(apiId = rateLimitUpdated.apiId) to repository APIContext.APIProductRepository
+        do "apply RateLimitUpdated to the APIUsageMetricsProjector projection"
+      }
+      on subscriptionRevoked: event APIProduct.SubscriptionRevoked is {
+        tell command APIContext.APIProductRepository.PersistSubscriptionRevoked(apiId = subscriptionRevoked.apiId) to repository APIContext.APIProductRepository
+        do "apply SubscriptionRevoked to the APIUsageMetricsProjector projection"
+      }
+      on versionDeprecated: event APIProduct.VersionDeprecated is {
+        tell command APIContext.APIProductRepository.PersistVersionDeprecated(apiId = versionDeprecated.apiId) to repository APIContext.APIProductRepository
+        do "apply VersionDeprecated to the APIUsageMetricsProjector projection"
+      }
       on versionPublished: event APIProduct.VersionPublished is {
         tell command APIContext.APIProductRepository.PersistVersionPublished(apiId = versionPublished.apiId) to repository APIContext.APIProductRepository
-        send versionPublished to outlet ToRepository
       }
       on subscriptionCreated: event APIProduct.SubscriptionCreated is {
         tell command APIContext.APIProductRepository.PersistSubscriptionCreated(apiId = subscriptionCreated.apiId) to repository APIContext.APIProductRepository
-        send subscriptionCreated to outlet ToRepository
       }
     } with {
       briefly "Metrics projection handler"
@@ -406,32 +503,26 @@ context APIContext as router is {
       |persistence.
     }
   }
-  processor APIProductEventSplit as split is {
-    inlet FromEntity is type APIProductEvent    outlet SplitToRepository is type APIProductEvent
+  processor APIProductEventSplit as flow is {
+    inlet FromEntity is type APIProductEvent
     outlet SplitToProjector is type APIProductEvent
     handler APIProductEventSplitHandler is {
       on aPICreated: event APIProduct.APICreated is {
-        send aPICreated to outlet SplitToRepository
         send aPICreated to outlet SplitToProjector
       }
       on versionPublished: event APIProduct.VersionPublished is {
-        send versionPublished to outlet SplitToRepository
         send versionPublished to outlet SplitToProjector
       }
       on versionDeprecated: event APIProduct.VersionDeprecated is {
-        send versionDeprecated to outlet SplitToRepository
         send versionDeprecated to outlet SplitToProjector
       }
       on subscriptionCreated: event APIProduct.SubscriptionCreated is {
-        send subscriptionCreated to outlet SplitToRepository
         send subscriptionCreated to outlet SplitToProjector
       }
       on subscriptionRevoked: event APIProduct.SubscriptionRevoked is {
-        send subscriptionRevoked to outlet SplitToRepository
         send subscriptionRevoked to outlet SplitToProjector
       }
       on rateLimitUpdated: event APIProduct.RateLimitUpdated is {
-        send rateLimitUpdated to outlet SplitToRepository
         send rateLimitUpdated to outlet SplitToProjector
       }
       on other is {
@@ -450,17 +541,11 @@ context APIContext as router is {
       |Fans API product events out to their consumers.
     }
   }
-  connector APIProductEventsToSplit is from outlet APIContext.APIProduct.Events to inlet APIContext.APIProductEventSplit.FromEntity with {
-    briefly "Entity events to fan-out"
-  }
-  connector APIProductSplitToRepository is from outlet APIContext.APIProductEventSplit.SplitToRepository to inlet APIContext.APIProductRepository.FromEntity with {
-    briefly "Fan-out to repository"
-  }
   connector APIProductSplitToProjector is from outlet APIContext.APIProductEventSplit.SplitToProjector to inlet APIContext.APIUsageMetricsProjector.IncomingEvents with {
     briefly "Fan-out to projector"
   }
-  connector APIProductProjectorToRepository is from outlet APIContext.APIUsageMetricsProjector.ToRepository to inlet APIContext.APIProductRepository.FromProjector with {
-    briefly "Projector to repository"
+  connector 'APIUsageMetricsProjector Storage' is from outlet APIContext.APIUsageMetricsProjector.APIUsageMetricsProjectorToRepository to inlet APIContext.APIProductRepository.APIProductRepositoryFromAPIUsageMetricsProjector with {
+    briefly "APIUsageMetricsProjector updates on their way to storage"
   }
 } with {
   briefly "API Management bounded context"

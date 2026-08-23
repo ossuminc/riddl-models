@@ -30,9 +30,6 @@ context BOMContext as router is {
     on calculateCost: command BillOfMaterials.CalculateCost is {
       send calculateCost to outlet BOMContext.BillOfMaterialsCommandStreamOut
     }
-    on initializeBillOfMaterials: command BillOfMaterials.InitializeBillOfMaterials is {
-      send initializeBillOfMaterials to outlet BOMContext.BillOfMaterialsCommandStreamOut
-    }
     on billOfMaterialsResult: result BillOfMaterials.BillOfMaterialsResult is {
       send billOfMaterialsResult to outlet BOMContext.BillOfMaterialsResultStreamOut
     }
@@ -239,7 +236,62 @@ context BOMContext as router is {
   }
   include "types.riddl"
   include "BillOfMaterials.riddl"
-  repository BOMRepository as merge is {
+  type BOMRepositoryCommand is one of {
+    BOMContext.BOMRepository.PersistBOMCreated or BOMContext.BOMRepository.PersistBOMObsoleted or BOMContext.BOMRepository.PersistBOMReleased or BOMContext.BOMRepository.PersistBOMRevised or BOMContext.BOMRepository.PersistCostCalculated or BOMContext.BOMRepository.PersistItemAdded or BOMContext.BOMRepository.PersistItemRemoved or BOMContext.BOMRepository.PersistItemUpdated or BOMContext.BOMRepository.PersistQuantityUpdated
+  } with {
+    briefly "Anything that writes BOMRepository"
+    described as {
+      |The persistence commands BOMRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository BOMRepository as flow is {
+    inlet BOMRepositoryFromBOMAnalytics is type BOMRepositoryCommand
+    command PersistBOMReleased is  {
+      bomId: BOMId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row BOMReleased applies to.
+        }
+      }
+    } with {
+      briefly "Persist BOMReleased"
+      described as {
+        |Instructs this repository to apply BOMReleased to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistItemUpdated is  {
+      bomId: BOMId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ItemUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist ItemUpdated"
+      described as {
+        |Instructs this repository to apply ItemUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistQuantityUpdated is  {
+      bomId: BOMId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row QuantityUpdated applies to.
+        }
+      }
+    } with {
+      briefly "Persist QuantityUpdated"
+      described as {
+        |Instructs this repository to apply QuantityUpdated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistBOMCreated is  {
       bomId: BOMId with {
         briefly "Row addressed"
@@ -330,7 +382,7 @@ context BOMContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet BOMRepositoryFromBillOfMaterials is type BillOfMaterialsEvent    inlet BOMRepositoryFromBOMAnalytics is type BillOfMaterialsEvent    inlet BOMRepositoryFromWhereUsedProjector is type BillOfMaterialsEvent    outlet BOMRepositoryResponses is type BillOfMaterials.BillOfMaterialsResult
+    outlet BOMRepositoryResponses is type BillOfMaterials.BillOfMaterialsResult
     record StoredBillOfMaterials is  {
       billOfMaterialsId: UUID with {
         briefly "billOfMaterialsId"
@@ -369,6 +421,15 @@ context BOMContext as router is {
       }
     }
     handler BOMPersistence is {
+      on persistBOMReleased: command PersistBOMReleased is {
+        do "apply BOMReleased to the stored row"
+      }
+      on persistItemUpdated: command PersistItemUpdated is {
+        do "apply ItemUpdated to the stored row"
+      }
+      on persistQuantityUpdated: command PersistQuantityUpdated is {
+        do "apply QuantityUpdated to the stored row"
+      }
       on persistBOMCreated: command PersistBOMCreated is {
         do "apply BOMCreated to the stored row"
       }
@@ -402,33 +463,6 @@ context BOMContext as router is {
       on query GetWhereUsedIndex is {
         let whereUsedIndexView: type WhereUsedIndexView = prompt("read the where used index projection")
         reply whereUsedIndexView
-      }
-      on createBOM: command BillOfMaterials.CreateBOM is {
-        tell event BillOfMaterials.BOMCreated(bomId = createBOM.bomId, productId = createBOM.productId, partNumber = createBOM.partNumber, description = createBOM.description, revision = createBOM.revision, bomType = createBOM.bomType, createdBy = createBOM.createdBy) to entity BOMContext.BillOfMaterials
-      }
-      on addItem: command BillOfMaterials.AddItem is {
-        tell event BillOfMaterials.ItemAdded(bomId = addItem.bomId, item = addItem.item) to entity BOMContext.BillOfMaterials
-      }
-      on removeItem: command BillOfMaterials.RemoveItem is {
-        tell event BillOfMaterials.ItemRemoved(bomId = removeItem.bomId, itemId = removeItem.itemId, reason = removeItem.reason) to entity BOMContext.BillOfMaterials
-      }
-      on updateQuantity: command BillOfMaterials.UpdateQuantity is {
-        tell event BillOfMaterials.QuantityUpdated(bomId = updateQuantity.bomId, itemId = updateQuantity.itemId, newQuantity = updateQuantity.newQuantity, reason = updateQuantity.reason) to entity BOMContext.BillOfMaterials
-      }
-      on updateItem: command BillOfMaterials.UpdateItem is {
-        tell event BillOfMaterials.ItemUpdated(bomId = updateItem.bomId, itemId = updateItem.itemId, updatedItem = updateItem.updatedItem) to entity BOMContext.BillOfMaterials
-      }
-      on releaseBOM: command BillOfMaterials.ReleaseBOM is {
-        tell event BillOfMaterials.BOMReleased(bomId = releaseBOM.bomId, effectiveDate = releaseBOM.effectiveDate, approvedBy = releaseBOM.approvedBy) to entity BOMContext.BillOfMaterials
-      }
-      on reviseBOM: command BillOfMaterials.ReviseBOM is {
-        tell event BillOfMaterials.BOMRevised(bomId = reviseBOM.bomId, newRevision = reviseBOM.newRevision, changeNumber = reviseBOM.changeNumber, changeDescription = reviseBOM.changeDescription, revisedBy = reviseBOM.revisedBy) to entity BOMContext.BillOfMaterials
-      }
-      on obsoleteBOM: command BillOfMaterials.ObsoleteBOM is {
-        tell event BillOfMaterials.BOMObsoleted(bomId = obsoleteBOM.bomId, reason = obsoleteBOM.reason, obsoletedBy = obsoleteBOM.obsoletedBy, replacementBOMId = obsoleteBOM.replacementBOMId) to entity BOMContext.BillOfMaterials
-      }
-      on calculateCost: command BillOfMaterials.CalculateCost is {
-        tell event BillOfMaterials.CostCalculated(bomId = calculateCost.bomId) to entity BOMContext.BillOfMaterials
       }
     } with {
       briefly "Persists BOM commands"
@@ -522,8 +556,9 @@ context BOMContext as router is {
     }
   }
   projector BOMAnalytics as flow is {
+    outlet BOMAnalyticsToRepository is type BOMRepositoryCommand
     updates repository BOMContext.BOMRepository
-    inlet BOMAnalyticsFromBillOfMaterials is type BillOfMaterialsEvent    outlet BOMAnalyticsOut is type BillOfMaterialsEvent
+    inlet BOMAnalyticsFromBillOfMaterials is type BillOfMaterialsEvent
     record ComponentUsageStats is  {
       totalComponents: Natural with {
         briefly "Total components"
@@ -612,6 +647,18 @@ context BOMContext as router is {
       }
     }
     handler AnalyticsHandler is {
+      on bOMReleased: event BillOfMaterials.BOMReleased is {
+        tell command BOMContext.BOMRepository.PersistBOMReleased(bomId = bOMReleased.bomId) to repository BOMContext.BOMRepository
+        do "apply BOMReleased to the BOMAnalytics projection"
+      }
+      on itemUpdated: event BillOfMaterials.ItemUpdated is {
+        tell command BOMContext.BOMRepository.PersistItemUpdated(bomId = itemUpdated.bomId) to repository BOMContext.BOMRepository
+        do "apply ItemUpdated to the BOMAnalytics projection"
+      }
+      on quantityUpdated: event BillOfMaterials.QuantityUpdated is {
+        tell command BOMContext.BOMRepository.PersistQuantityUpdated(bomId = quantityUpdated.bomId) to repository BOMContext.BOMRepository
+        do "apply QuantityUpdated to the BOMAnalytics projection"
+      }
       on bOMCreated: event BillOfMaterials.BOMCreated is {
         tell command BOMContext.BOMRepository.PersistBOMCreated(bomId = bOMCreated.bomId) to repository BOMContext.BOMRepository
       }
@@ -668,9 +715,9 @@ context BOMContext as router is {
       |Read model view carrying the where used index projection.
     }
   }
-  projector WhereUsedProjector as flow is {
+  projector WhereUsedProjector as sink is {
     updates repository BOMContext.BOMRepository
-    inlet WhereUsedProjectorFromBillOfMaterials is type BillOfMaterialsEvent    outlet WhereUsedProjectorOut is type BillOfMaterialsEvent
+    inlet WhereUsedProjectorFromBillOfMaterials is type BillOfMaterialsEvent
     record WhereUsedIndex is  {
       componentId: ComponentId with {
         briefly "Component"
@@ -703,6 +750,30 @@ context BOMContext as router is {
       }
     }
     handler WhereUsedHandler is {
+      on bOMCreated: event BillOfMaterials.BOMCreated is {
+        tell command BOMContext.BOMRepository.PersistBOMCreated(bomId = bOMCreated.bomId) to repository BOMContext.BOMRepository
+        do "apply BOMCreated to the WhereUsedProjector projection"
+      }
+      on bOMReleased: event BillOfMaterials.BOMReleased is {
+        tell command BOMContext.BOMRepository.PersistBOMReleased(bomId = bOMReleased.bomId) to repository BOMContext.BOMRepository
+        do "apply BOMReleased to the WhereUsedProjector projection"
+      }
+      on bOMRevised: event BillOfMaterials.BOMRevised is {
+        tell command BOMContext.BOMRepository.PersistBOMRevised(bomId = bOMRevised.bomId) to repository BOMContext.BOMRepository
+        do "apply BOMRevised to the WhereUsedProjector projection"
+      }
+      on costCalculated: event BillOfMaterials.CostCalculated is {
+        tell command BOMContext.BOMRepository.PersistCostCalculated(bomId = costCalculated.bomId) to repository BOMContext.BOMRepository
+        do "apply CostCalculated to the WhereUsedProjector projection"
+      }
+      on itemUpdated: event BillOfMaterials.ItemUpdated is {
+        tell command BOMContext.BOMRepository.PersistItemUpdated(bomId = itemUpdated.bomId) to repository BOMContext.BOMRepository
+        do "apply ItemUpdated to the WhereUsedProjector projection"
+      }
+      on quantityUpdated: event BillOfMaterials.QuantityUpdated is {
+        tell command BOMContext.BOMRepository.PersistQuantityUpdated(bomId = quantityUpdated.bomId) to repository BOMContext.BOMRepository
+        do "apply QuantityUpdated to the WhereUsedProjector projection"
+      }
       on itemAdded: event BillOfMaterials.ItemAdded is {
         tell command BOMContext.BOMRepository.PersistItemAdded(bomId = itemAdded.bomId) to repository BOMContext.BOMRepository
       }
@@ -732,125 +803,52 @@ context BOMContext as router is {
       |Union of BillOfMaterials events for streaming.
     }
   }
-  processor BillOfMaterialsEventSource as source is {
-    outlet BillOfMaterialsEvents is type BillOfMaterialsEvent
-    handler BillOfMaterialsEventEmitter is {
-      on init is {
-        let initializeBillOfMaterials: type BillOfMaterials.InitializeBillOfMaterials = prompt("the initialize bill of materials that brings this this into existence")
-        tell initializeBillOfMaterials to entity BOMContext.BillOfMaterials
-      }
-      on other is {
-        error "Unexpected message for source BillOfMaterialsEventSource"
-      }
-      on bOMCreated: event BillOfMaterials.BOMCreated is {
-        send bOMCreated to outlet BillOfMaterialsEvents
-      }
-      on bOMReleased: event BillOfMaterials.BOMReleased is {
-        send bOMReleased to outlet BillOfMaterialsEvents
-      }
-      on bOMObsoleted: event BillOfMaterials.BOMObsoleted is {
-        send bOMObsoleted to outlet BillOfMaterialsEvents
-      }
-    } with {
-      briefly "Event emitter"
-      described as {
-        |Emits BillOfMaterials events to the stream.
-      }
-    }
-  } with {
-    briefly "BillOfMaterials event source"
-    described as {
-      |Publishes BillOfMaterials events to the event stream.
-    }
-  }
-  processor BillOfMaterialsEventSink as sink is {
-    inlet IncomingBillOfMaterialsEvents is type BillOfMaterialsEvent    handler BillOfMaterialsEventReceiver is {
-      on init is { ??? }
-      on other is {
-        error "Unexpected message for sink BillOfMaterialsEventSink"
-      }
-      on bOMCreated: event BillOfMaterials.BOMCreated is {
-        tell bOMCreated to repository BOMContext.BOMRepository
-      }
-      on bOMReleased: event BillOfMaterials.BOMReleased is {
-        tell bOMReleased to repository BOMContext.BOMRepository
-      }
-      on bOMObsoleted: event BillOfMaterials.BOMObsoleted is {
-        tell bOMObsoleted to repository BOMContext.BOMRepository
-      }
-    } with {
-      briefly "Event receiver"
-      described as {
-        |Receives BillOfMaterials events for persistence.
-      }
-    }
-  } with {
-    briefly "BillOfMaterials event sink"
-    described as {
-      |Receives BillOfMaterials events from streaming.
-    }
-  }
-  connector BillOfMaterialsEventPipeline is from outlet BOMContext.BillOfMaterialsEventSource.BillOfMaterialsEvents to inlet BOMContext.BillOfMaterialsEventSink.IncomingBillOfMaterialsEvents with {
-    briefly "BillOfMaterials event pipeline"
-    described as {
-      |Wires BillOfMaterials event source to sink.
-    }
-  }
   processor BillOfMaterialsEventSplit as split is {
-    inlet BillOfMaterialsEventSplitIn is type BillOfMaterialsEvent    outlet BillOfMaterialsEventSplitToBOMRepository is type BillOfMaterialsEvent
+    inlet BillOfMaterialsEventSplitIn is type BillOfMaterialsEvent
     outlet BillOfMaterialsEventSplitToBOMAnalytics is type BillOfMaterialsEvent
     outlet BillOfMaterialsEventSplitToWhereUsedProjector is type BillOfMaterialsEvent
     handler BillOfMaterialsEventSplitHandler is {
       on bOMCreated: event BillOfMaterials.BOMCreated is {
-        send bOMCreated to outlet BillOfMaterialsEventSplitToBOMRepository
         send bOMCreated to outlet BillOfMaterialsEventSplitToBOMAnalytics
         send bOMCreated to outlet BillOfMaterialsEventSplitToWhereUsedProjector
         tell bOMCreated to entity BOMContext.BillOfMaterials
       }
       on itemAdded: event BillOfMaterials.ItemAdded is {
-        send itemAdded to outlet BillOfMaterialsEventSplitToBOMRepository
         send itemAdded to outlet BillOfMaterialsEventSplitToBOMAnalytics
         send itemAdded to outlet BillOfMaterialsEventSplitToWhereUsedProjector
         tell itemAdded to entity BOMContext.BillOfMaterials
       }
       on itemRemoved: event BillOfMaterials.ItemRemoved is {
-        send itemRemoved to outlet BillOfMaterialsEventSplitToBOMRepository
         send itemRemoved to outlet BillOfMaterialsEventSplitToBOMAnalytics
         send itemRemoved to outlet BillOfMaterialsEventSplitToWhereUsedProjector
         tell itemRemoved to entity BOMContext.BillOfMaterials
       }
       on quantityUpdated: event BillOfMaterials.QuantityUpdated is {
-        send quantityUpdated to outlet BillOfMaterialsEventSplitToBOMRepository
         send quantityUpdated to outlet BillOfMaterialsEventSplitToBOMAnalytics
         send quantityUpdated to outlet BillOfMaterialsEventSplitToWhereUsedProjector
         tell quantityUpdated to entity BOMContext.BillOfMaterials
       }
       on itemUpdated: event BillOfMaterials.ItemUpdated is {
-        send itemUpdated to outlet BillOfMaterialsEventSplitToBOMRepository
         send itemUpdated to outlet BillOfMaterialsEventSplitToBOMAnalytics
         send itemUpdated to outlet BillOfMaterialsEventSplitToWhereUsedProjector
         tell itemUpdated to entity BOMContext.BillOfMaterials
       }
       on bOMReleased: event BillOfMaterials.BOMReleased is {
-        send bOMReleased to outlet BillOfMaterialsEventSplitToBOMRepository
         send bOMReleased to outlet BillOfMaterialsEventSplitToBOMAnalytics
         send bOMReleased to outlet BillOfMaterialsEventSplitToWhereUsedProjector
         tell bOMReleased to entity BOMContext.BillOfMaterials
       }
       on bOMRevised: event BillOfMaterials.BOMRevised is {
-        send bOMRevised to outlet BillOfMaterialsEventSplitToBOMRepository
         send bOMRevised to outlet BillOfMaterialsEventSplitToBOMAnalytics
         send bOMRevised to outlet BillOfMaterialsEventSplitToWhereUsedProjector
         tell bOMRevised to entity BOMContext.BillOfMaterials
       }
       on bOMObsoleted: event BillOfMaterials.BOMObsoleted is {
-        send bOMObsoleted to outlet BillOfMaterialsEventSplitToBOMRepository
         send bOMObsoleted to outlet BillOfMaterialsEventSplitToBOMAnalytics
         send bOMObsoleted to outlet BillOfMaterialsEventSplitToWhereUsedProjector
         tell bOMObsoleted to entity BOMContext.BillOfMaterials
       }
       on costCalculated: event BillOfMaterials.CostCalculated is {
-        send costCalculated to outlet BillOfMaterialsEventSplitToBOMRepository
         send costCalculated to outlet BillOfMaterialsEventSplitToBOMAnalytics
         send costCalculated to outlet BillOfMaterialsEventSplitToWhereUsedProjector
         tell costCalculated to entity BOMContext.BillOfMaterials
@@ -873,20 +871,14 @@ context BOMContext as router is {
   connector 'BillOfMaterialsEvent Stream' is from outlet BOMContext.BillOfMaterials.BillOfMaterialsEvents2 to inlet BOMContext.BillOfMaterialsEventSplit.BillOfMaterialsEventSplitIn with {
     briefly "BillOfMaterials events, fanned out to storage and read models"
   }
-  connector 'BillOfMaterialsEvent Storage' is from outlet BOMContext.BillOfMaterialsEventSplit.BillOfMaterialsEventSplitToBOMRepository to inlet BOMContext.BOMRepository.BOMRepositoryFromBillOfMaterials with {
-    briefly "BillOfMaterials events on their way to storage"
-  }
   connector 'BOMAnalytics Feed' is from outlet BOMContext.BillOfMaterialsEventSplit.BillOfMaterialsEventSplitToBOMAnalytics to inlet BOMContext.BOMAnalytics.BOMAnalyticsFromBillOfMaterials with {
     briefly "BillOfMaterials events feeding the BOMAnalytics projection"
   }
   connector 'WhereUsedProjector Feed' is from outlet BOMContext.BillOfMaterialsEventSplit.BillOfMaterialsEventSplitToWhereUsedProjector to inlet BOMContext.WhereUsedProjector.WhereUsedProjectorFromBillOfMaterials with {
     briefly "BillOfMaterials events feeding the WhereUsedProjector projection"
   }
-  connector 'BOMAnalytics Storage' is from outlet BOMContext.BOMAnalytics.BOMAnalyticsOut to inlet BOMContext.BOMRepository.BOMRepositoryFromBOMAnalytics with {
-    briefly "The BOMAnalytics projection on its way to storage"
-  }
-  connector 'WhereUsedProjector Storage' is from outlet BOMContext.WhereUsedProjector.WhereUsedProjectorOut to inlet BOMContext.BOMRepository.BOMRepositoryFromWhereUsedProjector with {
-    briefly "The WhereUsedProjector projection on its way to storage"
+  connector 'BOMAnalytics Storage' is from outlet BOMContext.BOMAnalytics.BOMAnalyticsToRepository to inlet BOMContext.BOMRepository.BOMRepositoryFromBOMAnalytics with {
+    briefly "BOMAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for bill of materials management"

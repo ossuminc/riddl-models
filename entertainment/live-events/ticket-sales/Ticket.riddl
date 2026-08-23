@@ -2,7 +2,7 @@
 // The primary aggregate for ticket lifecycle management
 entity Ticket as flow is {
   type TicketCommand is one of {
-    Ticket.CreateEvent or Ticket.ReleaseTickets or Ticket.PurchaseTicket or Ticket.ReserveTicket or Ticket.TransferTicket or Ticket.RefundTicket or Ticket.CancelReservation or Ticket.ScanTicket or Ticket.InitializeTicket
+    Ticket.CreateEvent or Ticket.ReleaseTickets or Ticket.PurchaseTicket or Ticket.ReserveTicket or Ticket.TransferTicket or Ticket.RefundTicket or Ticket.CancelReservation or Ticket.ScanTicket
   } with {
     briefly "Ticket command alternation"
     described as {
@@ -124,7 +124,7 @@ entity Ticket as flow is {
       |Makes specified tickets available for purchase in the given tier.
     }
   }
-  command PurchaseTicket is  {
+  command PurchaseTicket yields event TicketPurchased is  {
     ticketId: TicketId with {
       briefly "Ticket identifier"
       described as {
@@ -155,7 +155,7 @@ entity Ticket as flow is {
       |Finalizes ticket purchase and assigns ownership to buyer.
     }
   }
-  command ReserveTicket is  {
+  command ReserveTicket yields event TicketReserved is  {
     ticketId: TicketId with {
       briefly "Ticket identifier"
       described as {
@@ -180,7 +180,7 @@ entity Ticket as flow is {
       |Reserves a ticket for a buyer while they complete checkout.
     }
   }
-  command TransferTicket is  {
+  command TransferTicket yields event TicketTransferred is  {
     ticketId: TicketId with {
       briefly "Ticket identifier"
       described as {
@@ -211,7 +211,7 @@ entity Ticket as flow is {
       |Changes ticket ownership from current holder to a new buyer.
     }
   }
-  command RefundTicket is  {
+  command RefundTicket yields event TicketRefunded is  {
     ticketId: TicketId with {
       briefly "Ticket identifier"
       described as {
@@ -236,7 +236,7 @@ entity Ticket as flow is {
       |Refunds the ticket and returns it to available inventory.
     }
   }
-  command CancelReservation is  {
+  command CancelReservation yields event ReservationCancelled is  {
     ticketId: TicketId with {
       briefly "Ticket identifier"
       described as {
@@ -249,7 +249,7 @@ entity Ticket as flow is {
       |Returns a reserved ticket to available inventory.
     }
   }
-  command ScanTicket is  {
+  command ScanTicket yields event TicketScanned is  {
     ticketId: TicketId with {
       briefly "Ticket identifier"
       described as {
@@ -975,12 +975,6 @@ entity Ticket as flow is {
       |Ticket data result.
     }
   }
-  command InitializeTicket is  { ??? } with {
-    briefly "Initialize ticket"
-    described as {
-      |Initialize the Ticket entity on source startup.
-    }
-  }
   // States
   initial state AvailableState of record Ticket.AvailableTicketData is {
     initial handler AvailableStateInitHandler is {
@@ -1069,28 +1063,52 @@ entity Ticket as flow is {
   }
   // Handler
   handler TicketHandler is {
+    on createEvent: command CreateEvent is {
+      do "apply CreateEvent to the ticket"
+    }
+    on releaseTickets: command ReleaseTickets is {
+      do "apply ReleaseTickets to the ticket"
+    }
+    on reservationCancelled: event ReservationCancelled is {
+      do "apply ReservationCancelled to the ticket so it can be persisted and replayed"
+    }
+    on ticketPurchased: event TicketPurchased is {
+      do "apply TicketPurchased to the ticket so it can be persisted and replayed"
+    }
+    on ticketRefunded: event TicketRefunded is {
+      do "apply TicketRefunded to the ticket so it can be persisted and replayed"
+    }
+    on ticketReserved: event TicketReserved is {
+      do "apply TicketReserved to the ticket so it can be persisted and replayed"
+    }
+    on ticketScanned: event TicketScanned is {
+      do "apply TicketScanned to the ticket so it can be persisted and replayed"
+    }
+    on ticketTransferred: event TicketTransferred is {
+      do "apply TicketTransferred to the ticket so it can be persisted and replayed"
+    }
     on reserveTicket: command ReserveTicket is {
       morph entity Ticket to state Ticket.ReservedState with record Ticket.ReservedTicketData(ticketId = reserveTicket.ticketId, buyerId = reserveTicket.buyerId, expiresAt = reserveTicket.expiresAt)
-      tell event TicketReserved(ticketId = reserveTicket.ticketId, buyerId = reserveTicket.buyerId, expiresAt = reserveTicket.expiresAt) to entity Ticket
+      yield event TicketReserved(ticketId = reserveTicket.ticketId, buyerId = reserveTicket.buyerId, expiresAt = reserveTicket.expiresAt)
     }
     on purchaseTicket: command PurchaseTicket is {
       morph entity Ticket to state Ticket.SoldState with record Ticket.SoldTicketData(ticketId = purchaseTicket.ticketId, buyerId = purchaseTicket.buyerId, amountPaid = purchaseTicket.amountPaid, paymentTransactionId = purchaseTicket.paymentTransactionId)
-      tell event TicketPurchased(ticketId = purchaseTicket.ticketId, buyerId = purchaseTicket.buyerId, amountPaid = purchaseTicket.amountPaid) to entity Ticket
+      yield event TicketPurchased(ticketId = purchaseTicket.ticketId, buyerId = purchaseTicket.buyerId, amountPaid = purchaseTicket.amountPaid)
     }
     on transferTicket: command TransferTicket is {
-      tell event TicketTransferred(ticketId = transferTicket.ticketId, fromBuyerId = transferTicket.fromBuyerId, toBuyerId = transferTicket.toBuyerId) to entity Ticket
+      yield event TicketTransferred(ticketId = transferTicket.ticketId, fromBuyerId = transferTicket.fromBuyerId, toBuyerId = transferTicket.toBuyerId)
     }
     on refundTicket: command RefundTicket is {
       morph entity Ticket to state Ticket.RefundedState with record Ticket.RefundedTicketData(ticketId = refundTicket.ticketId)
-      tell event TicketRefunded(ticketId = refundTicket.ticketId, buyerId = refundTicket.buyerId, reason = refundTicket.reason) to entity Ticket
+      yield event TicketRefunded(ticketId = refundTicket.ticketId, buyerId = refundTicket.buyerId, reason = refundTicket.reason)
     }
     on cancelReservation: command CancelReservation is {
       morph entity Ticket to state Ticket.AvailableState with record Ticket.AvailableTicketData(ticketId = cancelReservation.ticketId)
-      tell event ReservationCancelled(ticketId = cancelReservation.ticketId) to entity Ticket
+      yield event ReservationCancelled(ticketId = cancelReservation.ticketId)
     }
     on scanTicket: command ScanTicket is {
       morph entity Ticket to state Ticket.UsedState with record Ticket.UsedTicketData(ticketId = scanTicket.ticketId, gateId = scanTicket.gateId, scannedAt = scanTicket.scannedAt)
-      tell event TicketScanned(ticketId = scanTicket.ticketId, gateId = scanTicket.gateId, scannedAt = scanTicket.scannedAt) to entity Ticket
+      yield event TicketScanned(ticketId = scanTicket.ticketId, gateId = scanTicket.gateId, scannedAt = scanTicket.scannedAt)
     }
     on getTicket: query GetTicket is {
       reply result TicketResult(eventId = getTicket.eventId)

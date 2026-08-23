@@ -28,9 +28,6 @@ context NursingContext as router is {
     on completeHandoff: command NurseShift.CompleteHandoff is {
       send completeHandoff to outlet NursingContext.NurseShiftCommandStreamOut
     }
-    on initializeNurseShift: command NurseShift.InitializeNurseShift is {
-      send initializeNurseShift to outlet NursingContext.NurseShiftCommandStreamOut
-    }
     on nurseShiftResult: result NurseShift.NurseShiftResult is {
       send nurseShiftResult to outlet NursingContext.NurseShiftResultStreamOut
     }
@@ -221,7 +218,47 @@ context NursingContext as router is {
   // ==========================================================================
   // Repository
   // ==========================================================================
-  repository NursingRepository as merge is {
+  type NursingRepositoryCommand is one of {
+    NursingContext.NursingRepository.PersistAssessmentDocumented or NursingContext.NursingRepository.PersistHandoffCompleted or NursingContext.NursingRepository.PersistHandoffInitiated or NursingContext.NursingRepository.PersistPatientsAssigned or NursingContext.NursingRepository.PersistShiftStarted or NursingContext.NursingRepository.PersistTaskCompleted or NursingContext.NursingRepository.PersistTaskCreated or NursingContext.NursingRepository.PersistVitalsRecorded
+  } with {
+    briefly "Anything that writes NursingRepository"
+    described as {
+      |The persistence commands NursingRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository NursingRepository as flow is {
+    inlet NursingRepositoryFromNursePatientRatioProjector is type NursingRepositoryCommand
+    command PersistAssessmentDocumented is  {
+      shiftId: ShiftId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row AssessmentDocumented applies to.
+        }
+      }
+    } with {
+      briefly "Persist AssessmentDocumented"
+      described as {
+        |Instructs this repository to apply AssessmentDocumented to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistVitalsRecorded is  {
+      shiftId: ShiftId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row VitalsRecorded applies to.
+        }
+      }
+    } with {
+      briefly "Persist VitalsRecorded"
+      described as {
+        |Instructs this repository to apply VitalsRecorded to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistHandoffCompleted is  {
       shiftId: ShiftId with {
         briefly "Row addressed"
@@ -334,9 +371,15 @@ context NursingContext as router is {
         |The relational schema persisting nurse shift records for this repository.
       }
     }
-    inlet NursingRepositoryFromNurseShift is type NurseShiftEvent    inlet NursingRepositoryFromNursePatientRatioProjector is type NurseShiftEvent    inlet NursingRepositoryFromTaskCompletionProjector is type NurseShiftEvent    inlet NursingRepositoryFromHandoffMetricsProjector is type NurseShiftEvent    outlet NursingRepositoryResponses is type NurseShift.NurseShiftResult
+    outlet NursingRepositoryResponses is type NurseShift.NurseShiftResult
     // Assignment queries
     handler AssignmentQueries is {
+      on persistAssessmentDocumented: command PersistAssessmentDocumented is {
+        do "apply AssessmentDocumented to the stored row"
+      }
+      on persistVitalsRecorded: command PersistVitalsRecorded is {
+        do "apply VitalsRecorded to the stored row"
+      }
       on persistHandoffCompleted: command PersistHandoffCompleted is {
         do "apply HandoffCompleted to the stored row"
       }
@@ -647,8 +690,9 @@ context NursingContext as router is {
     }
   }
   projector NursePatientRatioProjector as flow is {
+    outlet NursePatientRatioProjectorToRepository is type NursingRepositoryCommand
     updates repository NursingContext.NursingRepository
-    inlet NursePatientRatioProjectorFromNurseShift is type NurseShiftEvent    outlet NursePatientRatioProjectorOut is type NurseShiftEvent
+    inlet NursePatientRatioProjectorFromNurseShift is type NurseShiftEvent
     record NursePatientRatio is  {
       unitId: UnitId with {
         briefly "Unit"
@@ -711,6 +755,26 @@ context NursingContext as router is {
       }
     }
     handler RatioProjectionHandler is {
+      on assessmentDocumented: event NurseShift.AssessmentDocumented is {
+        tell command NursingContext.NursingRepository.PersistAssessmentDocumented(shiftId = assessmentDocumented.shiftId) to repository NursingContext.NursingRepository
+        do "apply AssessmentDocumented to the NursePatientRatioProjector projection"
+      }
+      on handoffInitiated: event NurseShift.HandoffInitiated is {
+        tell command NursingContext.NursingRepository.PersistHandoffInitiated(shiftId = handoffInitiated.shiftId) to repository NursingContext.NursingRepository
+        do "apply HandoffInitiated to the NursePatientRatioProjector projection"
+      }
+      on taskCompleted: event NurseShift.TaskCompleted is {
+        tell command NursingContext.NursingRepository.PersistTaskCompleted(shiftId = taskCompleted.shiftId) to repository NursingContext.NursingRepository
+        do "apply TaskCompleted to the NursePatientRatioProjector projection"
+      }
+      on taskCreated: event NurseShift.TaskCreated is {
+        tell command NursingContext.NursingRepository.PersistTaskCreated(shiftId = taskCreated.shiftId) to repository NursingContext.NursingRepository
+        do "apply TaskCreated to the NursePatientRatioProjector projection"
+      }
+      on vitalsRecorded: event NurseShift.VitalsRecorded is {
+        tell command NursingContext.NursingRepository.PersistVitalsRecorded(shiftId = vitalsRecorded.shiftId) to repository NursingContext.NursingRepository
+        do "apply VitalsRecorded to the NursePatientRatioProjector projection"
+      }
       on patientsAssigned: event PatientsAssigned is {
         tell command NursingContext.NursingRepository.PersistPatientsAssigned(shiftId = patientsAssigned.shiftId) to repository NursingContext.NursingRepository
       }
@@ -760,9 +824,9 @@ context NursingContext as router is {
       |Read model view carrying the task completion metrics projection.
     }
   }
-  projector TaskCompletionProjector as flow is {
+  projector TaskCompletionProjector as sink is {
     updates repository NursingContext.NursingRepository
-    inlet TaskCompletionProjectorFromNurseShift is type NurseShiftEvent    outlet TaskCompletionProjectorOut is type NurseShiftEvent
+    inlet TaskCompletionProjectorFromNurseShift is type NurseShiftEvent
     record TaskCompletionMetrics is  {
       unitId: UnitId with {
         briefly "Unit"
@@ -837,6 +901,30 @@ context NursingContext as router is {
       }
     }
     handler TaskMetricsHandler is {
+      on assessmentDocumented: event NurseShift.AssessmentDocumented is {
+        tell command NursingContext.NursingRepository.PersistAssessmentDocumented(shiftId = assessmentDocumented.shiftId) to repository NursingContext.NursingRepository
+        do "apply AssessmentDocumented to the TaskCompletionProjector projection"
+      }
+      on handoffCompleted: event NurseShift.HandoffCompleted is {
+        tell command NursingContext.NursingRepository.PersistHandoffCompleted(shiftId = handoffCompleted.shiftId) to repository NursingContext.NursingRepository
+        do "apply HandoffCompleted to the TaskCompletionProjector projection"
+      }
+      on handoffInitiated: event NurseShift.HandoffInitiated is {
+        tell command NursingContext.NursingRepository.PersistHandoffInitiated(shiftId = handoffInitiated.shiftId) to repository NursingContext.NursingRepository
+        do "apply HandoffInitiated to the TaskCompletionProjector projection"
+      }
+      on patientsAssigned: event NurseShift.PatientsAssigned is {
+        tell command NursingContext.NursingRepository.PersistPatientsAssigned(shiftId = patientsAssigned.shiftId) to repository NursingContext.NursingRepository
+        do "apply PatientsAssigned to the TaskCompletionProjector projection"
+      }
+      on shiftStarted: event NurseShift.ShiftStarted is {
+        tell command NursingContext.NursingRepository.PersistShiftStarted(shiftId = shiftStarted.shiftId) to repository NursingContext.NursingRepository
+        do "apply ShiftStarted to the TaskCompletionProjector projection"
+      }
+      on vitalsRecorded: event NurseShift.VitalsRecorded is {
+        tell command NursingContext.NursingRepository.PersistVitalsRecorded(shiftId = vitalsRecorded.shiftId) to repository NursingContext.NursingRepository
+        do "apply VitalsRecorded to the TaskCompletionProjector projection"
+      }
       on taskCreated: event TaskCreated is {
         tell command NursingContext.NursingRepository.PersistTaskCreated(shiftId = taskCreated.shiftId) to repository NursingContext.NursingRepository
       }
@@ -883,9 +971,9 @@ context NursingContext as router is {
       |Read model view carrying the handoff metrics projection.
     }
   }
-  projector HandoffMetricsProjector as flow is {
+  projector HandoffMetricsProjector as sink is {
     updates repository NursingContext.NursingRepository
-    inlet HandoffMetricsProjectorFromNurseShift is type NurseShiftEvent    outlet HandoffMetricsProjectorOut is type NurseShiftEvent
+    inlet HandoffMetricsProjectorFromNurseShift is type NurseShiftEvent
     record HandoffMetrics is  {
       unitId: UnitId with {
         briefly "Unit"
@@ -936,6 +1024,30 @@ context NursingContext as router is {
       }
     }
     handler HandoffMetricsHandler is {
+      on assessmentDocumented: event NurseShift.AssessmentDocumented is {
+        tell command NursingContext.NursingRepository.PersistAssessmentDocumented(shiftId = assessmentDocumented.shiftId) to repository NursingContext.NursingRepository
+        do "apply AssessmentDocumented to the HandoffMetricsProjector projection"
+      }
+      on patientsAssigned: event NurseShift.PatientsAssigned is {
+        tell command NursingContext.NursingRepository.PersistPatientsAssigned(shiftId = patientsAssigned.shiftId) to repository NursingContext.NursingRepository
+        do "apply PatientsAssigned to the HandoffMetricsProjector projection"
+      }
+      on shiftStarted: event NurseShift.ShiftStarted is {
+        tell command NursingContext.NursingRepository.PersistShiftStarted(shiftId = shiftStarted.shiftId) to repository NursingContext.NursingRepository
+        do "apply ShiftStarted to the HandoffMetricsProjector projection"
+      }
+      on taskCompleted: event NurseShift.TaskCompleted is {
+        tell command NursingContext.NursingRepository.PersistTaskCompleted(shiftId = taskCompleted.shiftId) to repository NursingContext.NursingRepository
+        do "apply TaskCompleted to the HandoffMetricsProjector projection"
+      }
+      on taskCreated: event NurseShift.TaskCreated is {
+        tell command NursingContext.NursingRepository.PersistTaskCreated(shiftId = taskCreated.shiftId) to repository NursingContext.NursingRepository
+        do "apply TaskCreated to the HandoffMetricsProjector projection"
+      }
+      on vitalsRecorded: event NurseShift.VitalsRecorded is {
+        tell command NursingContext.NursingRepository.PersistVitalsRecorded(shiftId = vitalsRecorded.shiftId) to repository NursingContext.NursingRepository
+        do "apply VitalsRecorded to the HandoffMetricsProjector projection"
+      }
       on handoffInitiated: event HandoffInitiated is {
         tell command NursingContext.NursingRepository.PersistHandoffInitiated(shiftId = handoffInitiated.shiftId) to repository NursingContext.NursingRepository
       }
@@ -1035,62 +1147,54 @@ context NursingContext as router is {
     }
   }
   processor NurseShiftEventSplit as split is {
-    inlet NurseShiftEventSplitIn is type NurseShiftEvent    outlet NurseShiftEventSplitToNursingRepository is type NurseShiftEvent
+    inlet NurseShiftEventSplitIn is type NurseShiftEvent
     outlet NurseShiftEventSplitToNursePatientRatioProjector is type NurseShiftEvent
     outlet NurseShiftEventSplitToTaskCompletionProjector is type NurseShiftEvent
     outlet NurseShiftEventSplitToHandoffMetricsProjector is type NurseShiftEvent
     handler NurseShiftEventSplitHandler is {
       on shiftStarted: event NurseShift.ShiftStarted is {
-        send shiftStarted to outlet NurseShiftEventSplitToNursingRepository
         send shiftStarted to outlet NurseShiftEventSplitToNursePatientRatioProjector
         send shiftStarted to outlet NurseShiftEventSplitToTaskCompletionProjector
         send shiftStarted to outlet NurseShiftEventSplitToHandoffMetricsProjector
         tell shiftStarted to entity NursingContext.NurseShift
       }
       on patientsAssigned: event NurseShift.PatientsAssigned is {
-        send patientsAssigned to outlet NurseShiftEventSplitToNursingRepository
         send patientsAssigned to outlet NurseShiftEventSplitToNursePatientRatioProjector
         send patientsAssigned to outlet NurseShiftEventSplitToTaskCompletionProjector
         send patientsAssigned to outlet NurseShiftEventSplitToHandoffMetricsProjector
         tell patientsAssigned to entity NursingContext.NurseShift
       }
       on taskCreated: event NurseShift.TaskCreated is {
-        send taskCreated to outlet NurseShiftEventSplitToNursingRepository
         send taskCreated to outlet NurseShiftEventSplitToNursePatientRatioProjector
         send taskCreated to outlet NurseShiftEventSplitToTaskCompletionProjector
         send taskCreated to outlet NurseShiftEventSplitToHandoffMetricsProjector
         tell taskCreated to entity NursingContext.NurseShift
       }
       on taskCompleted: event NurseShift.TaskCompleted is {
-        send taskCompleted to outlet NurseShiftEventSplitToNursingRepository
         send taskCompleted to outlet NurseShiftEventSplitToNursePatientRatioProjector
         send taskCompleted to outlet NurseShiftEventSplitToTaskCompletionProjector
         send taskCompleted to outlet NurseShiftEventSplitToHandoffMetricsProjector
         tell taskCompleted to entity NursingContext.NurseShift
       }
       on assessmentDocumented: event NurseShift.AssessmentDocumented is {
-        send assessmentDocumented to outlet NurseShiftEventSplitToNursingRepository
         send assessmentDocumented to outlet NurseShiftEventSplitToNursePatientRatioProjector
         send assessmentDocumented to outlet NurseShiftEventSplitToTaskCompletionProjector
         send assessmentDocumented to outlet NurseShiftEventSplitToHandoffMetricsProjector
         tell assessmentDocumented to entity NursingContext.NurseShift
       }
       on vitalsRecorded: event NurseShift.VitalsRecorded is {
-        send vitalsRecorded to outlet NurseShiftEventSplitToNursingRepository
         send vitalsRecorded to outlet NurseShiftEventSplitToNursePatientRatioProjector
         send vitalsRecorded to outlet NurseShiftEventSplitToTaskCompletionProjector
         send vitalsRecorded to outlet NurseShiftEventSplitToHandoffMetricsProjector
         tell vitalsRecorded to entity NursingContext.NurseShift
       }
       on handoffInitiated: event NurseShift.HandoffInitiated is {
-        send handoffInitiated to outlet NurseShiftEventSplitToNursingRepository
         send handoffInitiated to outlet NurseShiftEventSplitToNursePatientRatioProjector
         send handoffInitiated to outlet NurseShiftEventSplitToTaskCompletionProjector
         send handoffInitiated to outlet NurseShiftEventSplitToHandoffMetricsProjector
         tell handoffInitiated to entity NursingContext.NurseShift
       }
       on handoffCompleted: event NurseShift.HandoffCompleted is {
-        send handoffCompleted to outlet NurseShiftEventSplitToNursingRepository
         send handoffCompleted to outlet NurseShiftEventSplitToNursePatientRatioProjector
         send handoffCompleted to outlet NurseShiftEventSplitToTaskCompletionProjector
         send handoffCompleted to outlet NurseShiftEventSplitToHandoffMetricsProjector
@@ -1114,9 +1218,6 @@ context NursingContext as router is {
   connector 'NurseShiftEvent Stream' is from outlet NursingContext.NurseShift.NurseShiftEvents2 to inlet NursingContext.NurseShiftEventSplit.NurseShiftEventSplitIn with {
     briefly "NurseShift events, fanned out to storage and read models"
   }
-  connector 'NurseShiftEvent Storage' is from outlet NursingContext.NurseShiftEventSplit.NurseShiftEventSplitToNursingRepository to inlet NursingContext.NursingRepository.NursingRepositoryFromNurseShift with {
-    briefly "NurseShift events on their way to storage"
-  }
   connector 'NursePatientRatioProjector Feed' is from outlet NursingContext.NurseShiftEventSplit.NurseShiftEventSplitToNursePatientRatioProjector to inlet NursingContext.NursePatientRatioProjector.NursePatientRatioProjectorFromNurseShift with {
     briefly "NurseShift events feeding the NursePatientRatioProjector projection"
   }
@@ -1126,14 +1227,8 @@ context NursingContext as router is {
   connector 'HandoffMetricsProjector Feed' is from outlet NursingContext.NurseShiftEventSplit.NurseShiftEventSplitToHandoffMetricsProjector to inlet NursingContext.HandoffMetricsProjector.HandoffMetricsProjectorFromNurseShift with {
     briefly "NurseShift events feeding the HandoffMetricsProjector projection"
   }
-  connector 'NursePatientRatioProjector Storage' is from outlet NursingContext.NursePatientRatioProjector.NursePatientRatioProjectorOut to inlet NursingContext.NursingRepository.NursingRepositoryFromNursePatientRatioProjector with {
-    briefly "The NursePatientRatioProjector projection on its way to storage"
-  }
-  connector 'TaskCompletionProjector Storage' is from outlet NursingContext.TaskCompletionProjector.TaskCompletionProjectorOut to inlet NursingContext.NursingRepository.NursingRepositoryFromTaskCompletionProjector with {
-    briefly "The TaskCompletionProjector projection on its way to storage"
-  }
-  connector 'HandoffMetricsProjector Storage' is from outlet NursingContext.HandoffMetricsProjector.HandoffMetricsProjectorOut to inlet NursingContext.NursingRepository.NursingRepositoryFromHandoffMetricsProjector with {
-    briefly "The HandoffMetricsProjector projection on its way to storage"
+  connector 'NursePatientRatioProjector Storage' is from outlet NursingContext.NursePatientRatioProjector.NursePatientRatioProjectorToRepository to inlet NursingContext.NursingRepository.NursingRepositoryFromNursePatientRatioProjector with {
+    briefly "NursePatientRatioProjector updates on their way to storage"
   }
 } with {
   briefly "Bounded context for nursing workflow operations"

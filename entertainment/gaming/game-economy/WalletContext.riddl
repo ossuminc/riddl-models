@@ -30,9 +30,6 @@ context WalletContext as router is {
     on completeTrade: command Wallet.CompleteTrade is {
       send completeTrade to outlet WalletContext.WalletCommandStreamOut
     }
-    on initializeWallet: command Wallet.InitializeWallet is {
-      send initializeWallet to outlet WalletContext.WalletCommandStreamOut
-    }
     on walletResult: result Wallet.WalletResult is {
       send walletResult to outlet WalletContext.WalletResultStreamOut
     }
@@ -253,7 +250,92 @@ context WalletContext as router is {
   include "types.riddl"
   include "Wallet.riddl"
   // Repository for wallet persistence
-  repository WalletRepository as merge is {
+  type WalletRepositoryCommand is one of {
+    WalletContext.WalletRepository.PersistCurrencyAdded or WalletContext.WalletRepository.PersistCurrencySpent or WalletContext.WalletRepository.PersistCurrencyTransferred or WalletContext.WalletRepository.PersistItemAdded or WalletContext.WalletRepository.PersistItemPurchased or WalletContext.WalletRepository.PersistItemRemoved or WalletContext.WalletRepository.PersistTradeCompleted or WalletContext.WalletRepository.PersistTradeInitiated or WalletContext.WalletRepository.PersistWalletCreated
+  } with {
+    briefly "Anything that writes WalletRepository"
+    described as {
+      |The persistence commands WalletRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository WalletRepository as flow is {
+    inlet WalletRepositoryFromEconomyAnalytics is type WalletRepositoryCommand
+    command PersistCurrencyTransferred is  {
+      walletId: WalletId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row CurrencyTransferred applies to.
+        }
+      }
+    } with {
+      briefly "Persist CurrencyTransferred"
+      described as {
+        |Instructs this repository to apply CurrencyTransferred to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistItemAdded is  {
+      walletId: WalletId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ItemAdded applies to.
+        }
+      }
+    } with {
+      briefly "Persist ItemAdded"
+      described as {
+        |Instructs this repository to apply ItemAdded to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistItemRemoved is  {
+      walletId: WalletId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ItemRemoved applies to.
+        }
+      }
+    } with {
+      briefly "Persist ItemRemoved"
+      described as {
+        |Instructs this repository to apply ItemRemoved to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistTradeInitiated is  {
+      walletId: WalletId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TradeInitiated applies to.
+        }
+      }
+    } with {
+      briefly "Persist TradeInitiated"
+      described as {
+        |Instructs this repository to apply TradeInitiated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistWalletCreated is  {
+      walletId: WalletId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row WalletCreated applies to.
+        }
+      }
+    } with {
+      briefly "Persist WalletCreated"
+      described as {
+        |Instructs this repository to apply WalletCreated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistCurrencyAdded is  {
       walletId: WalletId with {
         briefly "Row addressed"
@@ -314,7 +396,7 @@ context WalletContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet WalletRepositoryFromWallet is type WalletEvent    inlet WalletRepositoryFromEconomyAnalytics is type WalletEvent    outlet WalletRepositoryResponses is type Wallet.WalletResult
+    outlet WalletRepositoryResponses is type Wallet.WalletResult
     record StoredWallet is  {
       walletId: WalletId with {
         briefly "walletId"
@@ -345,6 +427,21 @@ context WalletContext as router is {
       }
     }
     handler WalletPersistence is {
+      on persistCurrencyTransferred: command PersistCurrencyTransferred is {
+        do "apply CurrencyTransferred to the stored row"
+      }
+      on persistItemAdded: command PersistItemAdded is {
+        do "apply ItemAdded to the stored row"
+      }
+      on persistItemRemoved: command PersistItemRemoved is {
+        do "apply ItemRemoved to the stored row"
+      }
+      on persistTradeInitiated: command PersistTradeInitiated is {
+        do "apply TradeInitiated to the stored row"
+      }
+      on persistWalletCreated: command PersistWalletCreated is {
+        do "apply WalletCreated to the stored row"
+      }
       on persistCurrencyAdded: command PersistCurrencyAdded is {
         do "apply CurrencyAdded to the stored row"
       }
@@ -360,33 +457,6 @@ context WalletContext as router is {
       on query GetEconomyStats is {
         let economyStatsView: type EconomyStatsView = prompt("read the economy stats projection")
         reply economyStatsView
-      }
-      on createWallet: command Wallet.CreateWallet is {
-        tell event Wallet.WalletCreated(walletId = createWallet.walletId, playerId = createWallet.playerId) to entity WalletContext.Wallet
-      }
-      on addCurrency: command Wallet.AddCurrency is {
-        tell event Wallet.CurrencyAdded(walletId = addCurrency.walletId, currencyType = addCurrency.currencyType, amount = addCurrency.amount, reason = addCurrency.reason) to entity WalletContext.Wallet
-      }
-      on spendCurrency: command Wallet.SpendCurrency is {
-        tell event Wallet.CurrencySpent(walletId = spendCurrency.walletId, currencyType = spendCurrency.currencyType, amount = spendCurrency.amount, reason = spendCurrency.reason) to entity WalletContext.Wallet
-      }
-      on transferCurrency: command Wallet.TransferCurrency is {
-        tell event Wallet.CurrencyTransferred(walletId = transferCurrency.walletId, targetWalletId = transferCurrency.targetWalletId, currencyType = transferCurrency.currencyType, amount = transferCurrency.amount) to entity WalletContext.Wallet by walletId
-      }
-      on addItem: command Wallet.AddItem is {
-        tell event Wallet.ItemAdded(walletId = addItem.walletId, item = addItem.item) to entity WalletContext.Wallet
-      }
-      on removeItem: command Wallet.RemoveItem is {
-        tell event Wallet.ItemRemoved(walletId = removeItem.walletId, itemId = removeItem.itemId, quantity = removeItem.quantity) to entity WalletContext.Wallet
-      }
-      on purchaseItem: command Wallet.PurchaseItem is {
-        tell event Wallet.ItemPurchased(walletId = purchaseItem.walletId, price = purchaseItem.price) to entity WalletContext.Wallet
-      }
-      on initiateTrade: command Wallet.InitiateTrade is {
-        tell event Wallet.TradeInitiated(walletId = initiateTrade.walletId, offer = initiateTrade.offer) to entity WalletContext.Wallet
-      }
-      on completeTrade: command Wallet.CompleteTrade is {
-        tell event Wallet.TradeCompleted(walletId = completeTrade.walletId, tradeId = completeTrade.tradeId) to entity WalletContext.Wallet
       }
     } with {
       briefly "Persists wallet commands"
@@ -429,8 +499,9 @@ context WalletContext as router is {
     }
   }
   projector EconomyAnalytics as flow is {
+    outlet EconomyAnalyticsToRepository is type WalletRepositoryCommand
     updates repository WalletContext.WalletRepository
-    inlet EconomyAnalyticsFromWallet is type WalletEvent    outlet EconomyAnalyticsOut is type WalletEvent
+    inlet EconomyAnalyticsFromWallet is type WalletEvent
     record EconomyStats is  {
       currencyType: CurrencyType with {
         briefly "Currency"
@@ -475,6 +546,26 @@ context WalletContext as router is {
       }
     }
     handler AnalyticsHandler is {
+      on currencyTransferred: event Wallet.CurrencyTransferred is {
+        tell command WalletContext.WalletRepository.PersistCurrencyTransferred(walletId = currencyTransferred.walletId) to repository WalletContext.WalletRepository
+        do "apply CurrencyTransferred to the EconomyAnalytics projection"
+      }
+      on itemAdded: event Wallet.ItemAdded is {
+        tell command WalletContext.WalletRepository.PersistItemAdded(walletId = itemAdded.walletId) to repository WalletContext.WalletRepository
+        do "apply ItemAdded to the EconomyAnalytics projection"
+      }
+      on itemRemoved: event Wallet.ItemRemoved is {
+        tell command WalletContext.WalletRepository.PersistItemRemoved(walletId = itemRemoved.walletId) to repository WalletContext.WalletRepository
+        do "apply ItemRemoved to the EconomyAnalytics projection"
+      }
+      on tradeInitiated: event Wallet.TradeInitiated is {
+        tell command WalletContext.WalletRepository.PersistTradeInitiated(walletId = tradeInitiated.walletId) to repository WalletContext.WalletRepository
+        do "apply TradeInitiated to the EconomyAnalytics projection"
+      }
+      on walletCreated: event Wallet.WalletCreated is {
+        tell command WalletContext.WalletRepository.PersistWalletCreated(walletId = walletCreated.walletId) to repository WalletContext.WalletRepository
+        do "apply WalletCreated to the EconomyAnalytics projection"
+      }
       on currencyAdded: event Wallet.CurrencyAdded is {
         tell command WalletContext.WalletRepository.PersistCurrencyAdded(walletId = currencyAdded.walletId) to repository WalletContext.WalletRepository
       }
@@ -499,120 +590,43 @@ context WalletContext as router is {
       |Maintains game economy analytics data.
     }
   }
-  processor WalletEventSource as source is {
-    outlet WalletEvents is type WalletEvent
-    handler WalletEventEmitter is {
-      on init is {
-        let initializeWallet: type InitializeWallet = prompt("the initialize wallet that brings this this into existence")
-        tell initializeWallet to entity WalletContext.Wallet
-      }
-      on other is {
-        error "Unexpected message for source WalletEventSource"
-      }
-      on walletCreated: event Wallet.WalletCreated is {
-        send walletCreated to outlet WalletEvents
-      }
-      on currencyAdded: event Wallet.CurrencyAdded is {
-        send currencyAdded to outlet WalletEvents
-      }
-      on currencySpent: event Wallet.CurrencySpent is {
-        send currencySpent to outlet WalletEvents
-      }
-      on itemPurchased: event Wallet.ItemPurchased is {
-        send itemPurchased to outlet WalletEvents
-      }
-      on tradeCompleted: event Wallet.TradeCompleted is {
-        send tradeCompleted to outlet WalletEvents
-      }
-    } with {
-      briefly "Wallet event emitter"
-      described as {
-        |Emits wallet lifecycle events into the streaming
-        |topology.
-      }
-    }
-  } with {
-    briefly "Wallet event source"
-    described as {
-      |Publishes wallet entity events for streaming.
-    }
-  }
-  processor WalletEventSink as sink is {
-    inlet IncomingWalletEvents is type WalletEvent    handler WalletEventReceiver is {
-      on init is { ??? }
-      on other is {
-        error "Unexpected message for sink WalletEventSink"
-      }
-      on walletCreated: event Wallet.WalletCreated is {
-        tell walletCreated to repository WalletContext.WalletRepository
-      }
-      on tradeCompleted: event Wallet.TradeCompleted is {
-        tell tradeCompleted to repository WalletContext.WalletRepository
-      }
-    } with {
-      briefly "Wallet event receiver"
-      described as {
-        |Receives wallet events and persists them.
-      }
-    }
-  } with {
-    briefly "Wallet event sink"
-    described as {
-      |Receives wallet events from the streaming topology.
-    }
-  }
-  connector WalletEventPipeline is from outlet WalletContext.WalletEventSource.WalletEvents to inlet WalletContext.WalletEventSink.IncomingWalletEvents with {
-    briefly "Wallet event pipeline"
-    described as {
-      |Wires wallet events from source to sink.
-    }
-  }
-  processor WalletEventSplit as split is {
-    inlet WalletEventSplitIn is type WalletEvent    outlet WalletEventSplitToWalletRepository is type WalletEvent
+  processor WalletEventSplit as flow is {
+    inlet WalletEventSplitIn is type WalletEvent
     outlet WalletEventSplitToEconomyAnalytics is type WalletEvent
     handler WalletEventSplitHandler is {
       on walletCreated: event Wallet.WalletCreated is {
-        send walletCreated to outlet WalletEventSplitToWalletRepository
         send walletCreated to outlet WalletEventSplitToEconomyAnalytics
         tell walletCreated to entity WalletContext.Wallet
       }
       on currencyAdded: event Wallet.CurrencyAdded is {
-        send currencyAdded to outlet WalletEventSplitToWalletRepository
         send currencyAdded to outlet WalletEventSplitToEconomyAnalytics
         tell currencyAdded to entity WalletContext.Wallet
       }
       on currencySpent: event Wallet.CurrencySpent is {
-        send currencySpent to outlet WalletEventSplitToWalletRepository
         send currencySpent to outlet WalletEventSplitToEconomyAnalytics
         tell currencySpent to entity WalletContext.Wallet
       }
       on currencyTransferred: event Wallet.CurrencyTransferred is {
-        send currencyTransferred to outlet WalletEventSplitToWalletRepository
         send currencyTransferred to outlet WalletEventSplitToEconomyAnalytics
         tell currencyTransferred to entity WalletContext.Wallet by walletId
       }
       on itemAdded: event Wallet.ItemAdded is {
-        send itemAdded to outlet WalletEventSplitToWalletRepository
         send itemAdded to outlet WalletEventSplitToEconomyAnalytics
         tell itemAdded to entity WalletContext.Wallet
       }
       on itemRemoved: event Wallet.ItemRemoved is {
-        send itemRemoved to outlet WalletEventSplitToWalletRepository
         send itemRemoved to outlet WalletEventSplitToEconomyAnalytics
         tell itemRemoved to entity WalletContext.Wallet
       }
       on itemPurchased: event Wallet.ItemPurchased is {
-        send itemPurchased to outlet WalletEventSplitToWalletRepository
         send itemPurchased to outlet WalletEventSplitToEconomyAnalytics
         tell itemPurchased to entity WalletContext.Wallet
       }
       on tradeInitiated: event Wallet.TradeInitiated is {
-        send tradeInitiated to outlet WalletEventSplitToWalletRepository
         send tradeInitiated to outlet WalletEventSplitToEconomyAnalytics
         tell tradeInitiated to entity WalletContext.Wallet
       }
       on tradeCompleted: event Wallet.TradeCompleted is {
-        send tradeCompleted to outlet WalletEventSplitToWalletRepository
         send tradeCompleted to outlet WalletEventSplitToEconomyAnalytics
         tell tradeCompleted to entity WalletContext.Wallet
       }
@@ -634,14 +648,11 @@ context WalletContext as router is {
   connector 'WalletEvent Stream' is from outlet WalletContext.Wallet.WalletEvents2 to inlet WalletContext.WalletEventSplit.WalletEventSplitIn with {
     briefly "Wallet events, fanned out to storage and read models"
   }
-  connector 'WalletEvent Storage' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToWalletRepository to inlet WalletContext.WalletRepository.WalletRepositoryFromWallet with {
-    briefly "Wallet events on their way to storage"
-  }
   connector 'EconomyAnalytics Feed' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToEconomyAnalytics to inlet WalletContext.EconomyAnalytics.EconomyAnalyticsFromWallet with {
     briefly "Wallet events feeding the EconomyAnalytics projection"
   }
-  connector 'EconomyAnalytics Storage' is from outlet WalletContext.EconomyAnalytics.EconomyAnalyticsOut to inlet WalletContext.WalletRepository.WalletRepositoryFromEconomyAnalytics with {
-    briefly "The EconomyAnalytics projection on its way to storage"
+  connector 'EconomyAnalytics Storage' is from outlet WalletContext.EconomyAnalytics.EconomyAnalyticsToRepository to inlet WalletContext.WalletRepository.WalletRepositoryFromEconomyAnalytics with {
+    briefly "EconomyAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for game economy"

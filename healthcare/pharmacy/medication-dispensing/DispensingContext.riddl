@@ -165,7 +165,17 @@ context DispensingContext as router is {
   include "types.riddl"
   include "Fill.riddl"
   // === Repository ===
-  repository FillRepository as merge is {
+  type FillRepositoryCommand is one of {
+    DispensingContext.FillRepository.PersistDrugSelected or DispensingContext.FillRepository.PersistFillInitiated or DispensingContext.FillRepository.PersistFillVerified or DispensingContext.FillRepository.PersistLabelPrinted or DispensingContext.FillRepository.PersistPatientCounseled or DispensingContext.FillRepository.PersistPickupCompleted or DispensingContext.FillRepository.PersistPrescriptionFilled or DispensingContext.FillRepository.PersistReturnedToStock
+  } with {
+    briefly "Anything that writes FillRepository"
+    described as {
+      |The persistence commands FillRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository FillRepository as flow is {
+    inlet FillRepositoryFromDispensingMetrics is type FillRepositoryCommand
     command PersistDrugSelected is  {
       fillId: FillId with {
         briefly "Row addressed"
@@ -308,7 +318,7 @@ context DispensingContext as router is {
         |The relational schema persisting fill records for this repository.
       }
     }
-    inlet FillRepositoryFromFill is type FillEvent    inlet FillRepositoryFromDispensingMetrics is type FillEvent    outlet FillRepositoryResponses is type Fill.FillResult
+    outlet FillRepositoryResponses is type Fill.FillResult
     handler FillQueries is {
       on persistDrugSelected: command PersistDrugSelected is {
         do "apply DrugSelected to the stored row"
@@ -544,8 +554,9 @@ context DispensingContext as router is {
     }
   }
   projector DispensingMetrics as flow is {
+    outlet DispensingMetricsToRepository is type FillRepositoryCommand
     updates repository DispensingContext.FillRepository
-    inlet DispensingMetricsFromFill is type FillEvent    outlet DispensingMetricsOut is type FillEvent
+    inlet DispensingMetricsFromFill is type FillEvent
     record FillTimeData is  {
       fillId: FillId with {
         briefly "Fill"
@@ -713,136 +724,39 @@ context DispensingContext as router is {
       |persistence.
     }
   }
-  processor FillEventSource as source is {
-    outlet FillEvents is type FillEvent
-    handler FillSourceHandler is {
-      on fillInitiated: event Fill.FillInitiated is {
-        send fillInitiated to outlet FillEvents
-      }
-      on drugSelected: event Fill.DrugSelected is {
-        send drugSelected to outlet FillEvents
-      }
-      on prescriptionFilled: event Fill.PrescriptionFilled is {
-        send prescriptionFilled to outlet FillEvents
-      }
-      on fillVerified: event Fill.FillVerified is {
-        send fillVerified to outlet FillEvents
-      }
-      on labelPrinted: event Fill.LabelPrinted is {
-        send labelPrinted to outlet FillEvents
-      }
-      on patientCounseled: event Fill.PatientCounseled is {
-        send patientCounseled to outlet FillEvents
-      }
-      on pickupCompleted: event Fill.PickupCompleted is {
-        send pickupCompleted to outlet FillEvents
-      }
-      on returnedToStockEvent: event Fill.ReturnedToStock is {
-        send returnedToStockEvent to outlet FillEvents
-      }
-      on other is {
-        error "Unexpected message for source FillEventSource"
-      }
-    } with {
-      briefly "Fill source handler"
-      described as {
-        |Publishes Fill events onto the outlet.
-      }
-    }
-  } with {
-    briefly "Fill event source"
-    described as {
-      |Publishes Fill entity events into the streaming topology.
-    }
-  }
-  processor FillEventSink as sink is {
-    inlet FillInlet is type FillEvent    handler FillSinkHandler is {
-      on fillInitiated: event Fill.FillInitiated is {
-        tell fillInitiated to repository DispensingContext.FillRepository
-      }
-      on drugSelected: event Fill.DrugSelected is {
-        tell drugSelected to repository DispensingContext.FillRepository
-      }
-      on prescriptionFilled: event Fill.PrescriptionFilled is {
-        tell prescriptionFilled to repository DispensingContext.FillRepository
-      }
-      on fillVerified: event Fill.FillVerified is {
-        tell fillVerified to repository DispensingContext.FillRepository
-      }
-      on labelPrinted: event Fill.LabelPrinted is {
-        tell labelPrinted to repository DispensingContext.FillRepository
-      }
-      on patientCounseled: event Fill.PatientCounseled is {
-        tell patientCounseled to repository DispensingContext.FillRepository
-      }
-      on pickupCompleted: event Fill.PickupCompleted is {
-        tell pickupCompleted to repository DispensingContext.FillRepository
-      }
-      on returnedToStockEvent: event Fill.ReturnedToStock is {
-        tell returnedToStockEvent to repository DispensingContext.FillRepository
-      }
-      on other is {
-        error "Unexpected message for sink FillEventSink"
-      }
-    } with {
-      briefly "Fill sink handler"
-      described as {
-        |Persists Fill events via the repository.
-      }
-    }
-  } with {
-    briefly "Fill event sink"
-    described as {
-      |Receives Fill events for persistence.
-    }
-  }
-  connector FillEventFlow is from outlet DispensingContext.FillEventSource.FillEvents to inlet DispensingContext.FillEventSink.FillInlet with {
-    briefly "Fill event flow"
-    described as {
-      |Connects the Fill source to its sink.
-    }
-  }
-  processor FillEventSplit as split is {
-    inlet FillEventSplitIn is type FillEvent    outlet FillEventSplitToFillRepository is type FillEvent
+  processor FillEventSplit as flow is {
+    inlet FillEventSplitIn is type FillEvent
     outlet FillEventSplitToDispensingMetrics is type FillEvent
     handler FillEventSplitHandler is {
       on fillInitiated: event Fill.FillInitiated is {
-        send fillInitiated to outlet FillEventSplitToFillRepository
         send fillInitiated to outlet FillEventSplitToDispensingMetrics
         tell fillInitiated to entity DispensingContext.Fill
       }
       on drugSelected: event Fill.DrugSelected is {
-        send drugSelected to outlet FillEventSplitToFillRepository
         send drugSelected to outlet FillEventSplitToDispensingMetrics
         tell drugSelected to entity DispensingContext.Fill
       }
       on prescriptionFilled: event Fill.PrescriptionFilled is {
-        send prescriptionFilled to outlet FillEventSplitToFillRepository
         send prescriptionFilled to outlet FillEventSplitToDispensingMetrics
         tell prescriptionFilled to entity DispensingContext.Fill
       }
       on fillVerified: event Fill.FillVerified is {
-        send fillVerified to outlet FillEventSplitToFillRepository
         send fillVerified to outlet FillEventSplitToDispensingMetrics
         tell fillVerified to entity DispensingContext.Fill
       }
       on labelPrinted: event Fill.LabelPrinted is {
-        send labelPrinted to outlet FillEventSplitToFillRepository
         send labelPrinted to outlet FillEventSplitToDispensingMetrics
         tell labelPrinted to entity DispensingContext.Fill
       }
       on patientCounseled: event Fill.PatientCounseled is {
-        send patientCounseled to outlet FillEventSplitToFillRepository
         send patientCounseled to outlet FillEventSplitToDispensingMetrics
         tell patientCounseled to entity DispensingContext.Fill
       }
       on pickupCompleted: event Fill.PickupCompleted is {
-        send pickupCompleted to outlet FillEventSplitToFillRepository
         send pickupCompleted to outlet FillEventSplitToDispensingMetrics
         tell pickupCompleted to entity DispensingContext.Fill
       }
       on returnedToStockEvent: event Fill.ReturnedToStock is {
-        send returnedToStockEvent to outlet FillEventSplitToFillRepository
         send returnedToStockEvent to outlet FillEventSplitToDispensingMetrics
         tell returnedToStockEvent to entity DispensingContext.Fill
       }
@@ -864,14 +778,11 @@ context DispensingContext as router is {
   connector 'FillEvent Stream' is from outlet DispensingContext.Fill.FillEvents2 to inlet DispensingContext.FillEventSplit.FillEventSplitIn with {
     briefly "Fill events, fanned out to storage and read models"
   }
-  connector 'FillEvent Storage' is from outlet DispensingContext.FillEventSplit.FillEventSplitToFillRepository to inlet DispensingContext.FillRepository.FillRepositoryFromFill with {
-    briefly "Fill events on their way to storage"
-  }
   connector 'DispensingMetrics Feed' is from outlet DispensingContext.FillEventSplit.FillEventSplitToDispensingMetrics to inlet DispensingContext.DispensingMetrics.DispensingMetricsFromFill with {
     briefly "Fill events feeding the DispensingMetrics projection"
   }
-  connector 'DispensingMetrics Storage' is from outlet DispensingContext.DispensingMetrics.DispensingMetricsOut to inlet DispensingContext.FillRepository.FillRepositoryFromDispensingMetrics with {
-    briefly "The DispensingMetrics projection on its way to storage"
+  connector 'DispensingMetrics Storage' is from outlet DispensingContext.DispensingMetrics.DispensingMetricsToRepository to inlet DispensingContext.FillRepository.FillRepositoryFromDispensingMetrics with {
+    briefly "DispensingMetrics updates on their way to storage"
   }
 } with {
   briefly "Dispensing context"

@@ -29,9 +29,6 @@ context AssemblyContext as router is {
     on failAssembly: command AssemblyOrder.FailAssembly is {
       send failAssembly to outlet AssemblyContext.AssemblyOrderCommandStreamOut
     }
-    on initializeAssemblyOrder: command AssemblyOrder.InitializeAssemblyOrder is {
-      send initializeAssemblyOrder to outlet AssemblyContext.AssemblyOrderCommandStreamOut
-    }
     on reportAssemblyComplete: command WorkOrderService.ReportAssemblyComplete is {
       send reportAssemblyComplete to outlet AssemblyContext.TranslationToContextWorkOrdeOut
     }
@@ -216,7 +213,62 @@ context AssemblyContext as router is {
   include "types.riddl"
   include "AssemblyOrder.riddl"
   // Repository for assembly order persistence
-  repository AssemblyOrderRepository as merge is {
+  type AssemblyOrderRepositoryCommand is one of {
+    AssemblyContext.AssemblyOrderRepository.PersistAssemblyCompleted or AssemblyContext.AssemblyOrderRepository.PersistAssemblyFailed or AssemblyContext.AssemblyOrderRepository.PersistAssemblyHeld or AssemblyContext.AssemblyOrderRepository.PersistAssemblyOrderCreated or AssemblyContext.AssemblyOrderRepository.PersistAssemblyStarted or AssemblyContext.AssemblyOrderRepository.PersistDefectRecorded or AssemblyContext.AssemblyOrderRepository.PersistHoldReleased or AssemblyContext.AssemblyOrderRepository.PersistStepCompleted
+  } with {
+    briefly "Anything that writes AssemblyOrderRepository"
+    described as {
+      |The persistence commands AssemblyOrderRepository accepts. Entity events never
+      |reach it directly; a projector turns each into one of these.
+    }
+  }
+  repository AssemblyOrderRepository as flow is {
+    inlet AssemblyOrderRepositoryFromAssemblyLineAnalytics is type AssemblyOrderRepositoryCommand
+    command PersistAssemblyHeld is  {
+      assemblyOrderId: AssemblyOrderId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row AssemblyHeld applies to.
+        }
+      }
+    } with {
+      briefly "Persist AssemblyHeld"
+      described as {
+        |Instructs this repository to apply AssemblyHeld to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistAssemblyOrderCreated is  {
+      assemblyOrderId: AssemblyOrderId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row AssemblyOrderCreated applies to.
+        }
+      }
+    } with {
+      briefly "Persist AssemblyOrderCreated"
+      described as {
+        |Instructs this repository to apply AssemblyOrderCreated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistHoldReleased is  {
+      assemblyOrderId: AssemblyOrderId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row HoldReleased applies to.
+        }
+      }
+    } with {
+      briefly "Persist HoldReleased"
+      described as {
+        |Instructs this repository to apply HoldReleased to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistAssemblyCompleted is  {
       assemblyOrderId: AssemblyOrderId with {
         briefly "Row addressed"
@@ -292,7 +344,7 @@ context AssemblyContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    inlet AssemblyOrderRepositoryFromAssemblyOrder is type AssemblyOrderEvent    inlet AssemblyOrderRepositoryFromAssemblyLineAnalytics is type AssemblyOrderEvent    outlet AssemblyOrderRepositoryResponses is type AssemblyOrder.AssemblyOrderResult
+    outlet AssemblyOrderRepositoryResponses is type AssemblyOrder.AssemblyOrderResult
     record StoredAssemblyOrder is  {
       assemblyOrderId: AssemblyOrderId with {
         briefly "assemblyOrderId"
@@ -331,6 +383,15 @@ context AssemblyContext as router is {
       }
     }
     handler AssemblyPersistence is {
+      on persistAssemblyHeld: command PersistAssemblyHeld is {
+        do "apply AssemblyHeld to the stored row"
+      }
+      on persistAssemblyOrderCreated: command PersistAssemblyOrderCreated is {
+        do "apply AssemblyOrderCreated to the stored row"
+      }
+      on persistHoldReleased: command PersistHoldReleased is {
+        do "apply HoldReleased to the stored row"
+      }
       on persistAssemblyCompleted: command PersistAssemblyCompleted is {
         do "apply AssemblyCompleted to the stored row"
       }
@@ -361,30 +422,6 @@ context AssemblyContext as router is {
       on query GetDefectTrend is {
         let defectTrendView: type DefectTrendView = prompt("read the defect trend projection")
         reply defectTrendView
-      }
-      on createAssemblyOrder: command AssemblyOrder.CreateAssemblyOrder is {
-        tell event AssemblyOrder.AssemblyOrderCreated(assemblyOrderId = createAssemblyOrder.assemblyOrderId, workOrderId = createAssemblyOrder.workOrderId, product = createAssemblyOrder.product, workStation = createAssemblyOrder.workStation, dueDate = createAssemblyOrder.dueDate) to entity AssemblyContext.AssemblyOrder
-      }
-      on startAssembly: command AssemblyOrder.StartAssembly is {
-        tell event AssemblyOrder.AssemblyStarted(assemblyOrderId = startAssembly.assemblyOrderId, operatorId = startAssembly.operatorId, operatorName = startAssembly.operatorName) to entity AssemblyContext.AssemblyOrder
-      }
-      on completeStep: command AssemblyOrder.CompleteStep is {
-        tell event AssemblyOrder.StepCompleted(assemblyOrderId = completeStep.assemblyOrderId, stepNumber = completeStep.stepNumber, completedBy = completeStep.completedBy, notes = completeStep.notes) to entity AssemblyContext.AssemblyOrder
-      }
-      on recordDefect: command AssemblyOrder.RecordDefect is {
-        tell event AssemblyOrder.DefectRecorded(assemblyOrderId = recordDefect.assemblyOrderId, defect = recordDefect.defect) to entity AssemblyContext.AssemblyOrder
-      }
-      on completeAssembly: command AssemblyOrder.CompleteAssembly is {
-        tell event AssemblyOrder.AssemblyCompleted(assemblyOrderId = completeAssembly.assemblyOrderId, completion = completeAssembly.completion) to entity AssemblyContext.AssemblyOrder
-      }
-      on holdAssembly: command AssemblyOrder.HoldAssembly is {
-        tell event AssemblyOrder.AssemblyHeld(assemblyOrderId = holdAssembly.assemblyOrderId, hold = holdAssembly.hold) to entity AssemblyContext.AssemblyOrder
-      }
-      on releaseHold: command AssemblyOrder.ReleaseHold is {
-        tell event AssemblyOrder.HoldReleased(assemblyOrderId = releaseHold.assemblyOrderId, releasedBy = releaseHold.releasedBy) to entity AssemblyContext.AssemblyOrder
-      }
-      on failAssembly: command AssemblyOrder.FailAssembly is {
-        tell event AssemblyOrder.AssemblyFailed(assemblyOrderId = failAssembly.assemblyOrderId, reason = failAssembly.reason, failedBy = failAssembly.failedBy) to entity AssemblyContext.AssemblyOrder
       }
     } with {
       briefly "Persists assembly order events"
@@ -505,8 +542,9 @@ context AssemblyContext as router is {
     }
   }
   projector AssemblyLineAnalytics as flow is {
+    outlet AssemblyLineAnalyticsToRepository is type AssemblyOrderRepositoryCommand
     updates repository AssemblyContext.AssemblyOrderRepository
-    inlet AssemblyLineAnalyticsFromAssemblyOrder is type AssemblyOrderEvent    outlet AssemblyLineAnalyticsOut is type AssemblyOrderEvent
+    inlet AssemblyLineAnalyticsFromAssemblyOrder is type AssemblyOrderEvent
     record ThroughputMetrics is  {
       date: Date with {
         briefly "Date"
@@ -674,6 +712,18 @@ context AssemblyContext as router is {
       }
     }
     handler AnalyticsHandler is {
+      on assemblyHeld: event AssemblyOrder.AssemblyHeld is {
+        tell command AssemblyContext.AssemblyOrderRepository.PersistAssemblyHeld(assemblyOrderId = assemblyHeld.assemblyOrderId) to repository AssemblyContext.AssemblyOrderRepository
+        do "apply AssemblyHeld to the AssemblyLineAnalytics projection"
+      }
+      on assemblyOrderCreated: event AssemblyOrder.AssemblyOrderCreated is {
+        tell command AssemblyContext.AssemblyOrderRepository.PersistAssemblyOrderCreated(assemblyOrderId = assemblyOrderCreated.assemblyOrderId) to repository AssemblyContext.AssemblyOrderRepository
+        do "apply AssemblyOrderCreated to the AssemblyLineAnalytics projection"
+      }
+      on holdReleased: event AssemblyOrder.HoldReleased is {
+        tell command AssemblyContext.AssemblyOrderRepository.PersistHoldReleased(assemblyOrderId = holdReleased.assemblyOrderId) to repository AssemblyContext.AssemblyOrderRepository
+        do "apply HoldReleased to the AssemblyLineAnalytics projection"
+      }
       on assemblyStarted: event AssemblyOrder.AssemblyStarted is {
         tell command AssemblyContext.AssemblyOrderRepository.PersistAssemblyStarted(assemblyOrderId = assemblyStarted.assemblyOrderId) to repository AssemblyContext.AssemblyOrderRepository
       }
@@ -710,111 +760,39 @@ context AssemblyContext as router is {
       |Union of AssemblyOrder events for streaming.
     }
   }
-  processor AssemblyOrderEventSource as source is {
-    outlet AssemblyOrderEvents is type AssemblyOrderEvent
-    handler AssemblyOrderEventEmitter is {
-      on init is {
-        let initializeAssemblyOrder: type AssemblyOrder.InitializeAssemblyOrder = prompt("the initialize assembly order that brings this this into existence")
-        tell initializeAssemblyOrder to entity AssemblyContext.AssemblyOrder
-      }
-      on other is {
-        error "Unexpected message for source AssemblyOrderEventSource"
-      }
-      on assemblyOrderCreated: event AssemblyOrder.AssemblyOrderCreated is {
-        send assemblyOrderCreated to outlet AssemblyOrderEvents
-      }
-      on assemblyCompleted: event AssemblyOrder.AssemblyCompleted is {
-        send assemblyCompleted to outlet AssemblyOrderEvents
-      }
-      on assemblyFailed: event AssemblyOrder.AssemblyFailed is {
-        send assemblyFailed to outlet AssemblyOrderEvents
-      }
-    } with {
-      briefly "Event emitter"
-      described as {
-        |Emits AssemblyOrder events to the stream.
-      }
-    }
-  } with {
-    briefly "AssemblyOrder event source"
-    described as {
-      |Publishes AssemblyOrder events to the event stream.
-    }
-  }
-  processor AssemblyOrderEventSink as sink is {
-    inlet IncomingAssemblyOrderEvents is type AssemblyOrderEvent    handler AssemblyOrderEventReceiver is {
-      on init is { ??? }
-      on other is {
-        error "Unexpected message for sink AssemblyOrderEventSink"
-      }
-      on assemblyOrderCreated: event AssemblyOrder.AssemblyOrderCreated is {
-        tell assemblyOrderCreated to repository AssemblyContext.AssemblyOrderRepository
-      }
-      on assemblyCompleted: event AssemblyOrder.AssemblyCompleted is {
-        tell assemblyCompleted to repository AssemblyContext.AssemblyOrderRepository
-      }
-      on assemblyFailed: event AssemblyOrder.AssemblyFailed is {
-        tell assemblyFailed to repository AssemblyContext.AssemblyOrderRepository
-      }
-    } with {
-      briefly "Event receiver"
-      described as {
-        |Receives AssemblyOrder events for persistence.
-      }
-    }
-  } with {
-    briefly "AssemblyOrder event sink"
-    described as {
-      |Receives AssemblyOrder events from streaming.
-    }
-  }
-  connector AssemblyOrderEventPipeline is from outlet AssemblyContext.AssemblyOrderEventSource.AssemblyOrderEvents to inlet AssemblyContext.AssemblyOrderEventSink.IncomingAssemblyOrderEvents with {
-    briefly "AssemblyOrder event pipeline"
-    described as {
-      |Wires AssemblyOrder event source to sink.
-    }
-  }
-  processor AssemblyOrderEventSplit as split is {
-    inlet AssemblyOrderEventSplitIn is type AssemblyOrderEvent    outlet AssemblyOrderEventSplitToAssemblyOrderRepository is type AssemblyOrderEvent
+  processor AssemblyOrderEventSplit as flow is {
+    inlet AssemblyOrderEventSplitIn is type AssemblyOrderEvent
     outlet AssemblyOrderEventSplitToAssemblyLineAnalytics is type AssemblyOrderEvent
     handler AssemblyOrderEventSplitHandler is {
       on assemblyOrderCreated: event AssemblyOrder.AssemblyOrderCreated is {
-        send assemblyOrderCreated to outlet AssemblyOrderEventSplitToAssemblyOrderRepository
         send assemblyOrderCreated to outlet AssemblyOrderEventSplitToAssemblyLineAnalytics
         tell assemblyOrderCreated to entity AssemblyContext.AssemblyOrder
       }
       on assemblyStarted: event AssemblyOrder.AssemblyStarted is {
-        send assemblyStarted to outlet AssemblyOrderEventSplitToAssemblyOrderRepository
         send assemblyStarted to outlet AssemblyOrderEventSplitToAssemblyLineAnalytics
         tell assemblyStarted to entity AssemblyContext.AssemblyOrder
       }
       on stepCompleted: event AssemblyOrder.StepCompleted is {
-        send stepCompleted to outlet AssemblyOrderEventSplitToAssemblyOrderRepository
         send stepCompleted to outlet AssemblyOrderEventSplitToAssemblyLineAnalytics
         tell stepCompleted to entity AssemblyContext.AssemblyOrder
       }
       on defectRecorded: event AssemblyOrder.DefectRecorded is {
-        send defectRecorded to outlet AssemblyOrderEventSplitToAssemblyOrderRepository
         send defectRecorded to outlet AssemblyOrderEventSplitToAssemblyLineAnalytics
         tell defectRecorded to entity AssemblyContext.AssemblyOrder
       }
       on assemblyCompleted: event AssemblyOrder.AssemblyCompleted is {
-        send assemblyCompleted to outlet AssemblyOrderEventSplitToAssemblyOrderRepository
         send assemblyCompleted to outlet AssemblyOrderEventSplitToAssemblyLineAnalytics
         tell assemblyCompleted to entity AssemblyContext.AssemblyOrder
       }
       on assemblyHeld: event AssemblyOrder.AssemblyHeld is {
-        send assemblyHeld to outlet AssemblyOrderEventSplitToAssemblyOrderRepository
         send assemblyHeld to outlet AssemblyOrderEventSplitToAssemblyLineAnalytics
         tell assemblyHeld to entity AssemblyContext.AssemblyOrder
       }
       on holdReleased: event AssemblyOrder.HoldReleased is {
-        send holdReleased to outlet AssemblyOrderEventSplitToAssemblyOrderRepository
         send holdReleased to outlet AssemblyOrderEventSplitToAssemblyLineAnalytics
         tell holdReleased to entity AssemblyContext.AssemblyOrder
       }
       on assemblyFailed: event AssemblyOrder.AssemblyFailed is {
-        send assemblyFailed to outlet AssemblyOrderEventSplitToAssemblyOrderRepository
         send assemblyFailed to outlet AssemblyOrderEventSplitToAssemblyLineAnalytics
         tell assemblyFailed to entity AssemblyContext.AssemblyOrder
       }
@@ -836,20 +814,17 @@ context AssemblyContext as router is {
   connector 'AssemblyOrderEvent Stream' is from outlet AssemblyContext.AssemblyOrder.AssemblyOrderEvents2 to inlet AssemblyContext.AssemblyOrderEventSplit.AssemblyOrderEventSplitIn with {
     briefly "AssemblyOrder events, fanned out to storage and read models"
   }
-  connector 'AssemblyOrderEvent Storage' is from outlet AssemblyContext.AssemblyOrderEventSplit.AssemblyOrderEventSplitToAssemblyOrderRepository to inlet AssemblyContext.AssemblyOrderRepository.AssemblyOrderRepositoryFromAssemblyOrder with {
-    briefly "AssemblyOrder events on their way to storage"
-  }
   connector 'AssemblyLineAnalytics Feed' is from outlet AssemblyContext.AssemblyOrderEventSplit.AssemblyOrderEventSplitToAssemblyLineAnalytics to inlet AssemblyContext.AssemblyLineAnalytics.AssemblyLineAnalyticsFromAssemblyOrder with {
     briefly "AssemblyOrder events feeding the AssemblyLineAnalytics projection"
-  }
-  connector 'AssemblyLineAnalytics Storage' is from outlet AssemblyContext.AssemblyLineAnalytics.AssemblyLineAnalyticsOut to inlet AssemblyContext.AssemblyOrderRepository.AssemblyOrderRepositoryFromAssemblyLineAnalytics with {
-    briefly "The AssemblyLineAnalytics projection on its way to storage"
   }
   connector 'QualityCommand Stream' is from outlet AssemblyContext.AssemblyOrder.AssemblyOrderToQuality to inlet AssemblyContext.ToQualityService.OutgoingQualityCommands with {
     briefly "Quality commands from the assembly order to its adaptor"
   }
   connector 'ReportAssemblyComplete Stream' is from outlet AssemblyContext.AssemblyOrder.AssemblyOrderToWorkOrder to inlet AssemblyContext.ToWorkOrderService.OutgoingWorkOrderCommands with {
     briefly "Assembly completion reports from the assembly order to its adaptor"
+  }
+  connector 'AssemblyLineAnalytics Storage' is from outlet AssemblyContext.AssemblyLineAnalytics.AssemblyLineAnalyticsToRepository to inlet AssemblyContext.AssemblyOrderRepository.AssemblyOrderRepositoryFromAssemblyLineAnalytics with {
+    briefly "AssemblyLineAnalytics updates on their way to storage"
   }
 } with {
   briefly "Bounded context for assembly operations"
