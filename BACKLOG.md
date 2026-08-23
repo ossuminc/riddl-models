@@ -888,22 +888,53 @@ two mechanical defects documented in its docstring (stale match offsets; a
 EventSource). Fix those, verify with `--only commerce/e-commerce/order-management`
 requiring errors=0 / total=26, then run the corpus.
 
-### Census at rc.22 (was 7,071 at rc.21, plus a class never counted)
+### WHERE IT STOPPED — checkpoint `edb06564`, corpus does NOT validate clean
+
+**92 errors where the corpus had 0.** This is a mid-campaign checkpoint on a
+campaign branch. **Do not merge until errors are 0.** Verified 2026-08-23 by
+`./scripts/collect-warnings.py`:
 
 ```
-6,107  Event told to a target with no clause receiving it
-   64  Command, same
-  765  inlet admits a type its owner handles nowhere   (was 900; rc.22 fixed
-       alternation members not counting toward an inlet's type)
-   82  Command declared in an Entity that no on-clause handles  <- NOT in the
-       original task file or the rc.21 handoff; found 2026-08-23
+3,720 findings total   (was 7,018 before this campaign)
+   92 error
+3,598 completeness
+   30 style / missing / usage / warning / deprecated
+  178 of 188 models still have findings -> 10 are at zero
 ```
 
-Filling every inlet clause individually would be **6,091 clauses**; the ruling
-above replaces most of that with structural change. By owner:
-Repository 442 findings / 4,438 clauses (all handling *none* of their members —
-one convention, not 442 bugs), Projector 234 / 1,509 (228 partial), Entity
-77 / 82, Sink 6 / 46, Flow 1 / 11, Context 5 / 5.
+`commerce/e-commerce/order-management` and `commerce/e-commerce/product-catalog`
+were taken to zero **by hand** and are the reference implementations. Read the
+diff of `da44ab12` before doing another model.
+
+**The two drivers** — run in this order, per model, then finish by hand:
+
+```bash
+./scripts/repo-commands.py       <model-dir>   # identical-everywhere half
+./scripts/repo-commands-build.py <model-dir>   # riddlc-driven half
+cd <model-dir> && riddlc validate <entry>.riddl   # then work what it names
+```
+
+**What remains, by cause — every one is named precisely by `riddlc validate`:**
+
+| count | what | why the driver did not fix it |
+|------:|------|-------------------------------|
+| 3,454 | entity told an event, no receiving clause | `phase_yields` only fires on a self-tell **inside the entity's own file**. Most models tell from the **split** — the other ruled shape, needing an `on event` clause on the entity |
+| 77 | repository told an event | residual senders `repo-commands.py` did not reach |
+| 23 | `send` names a binder that is no longer a message value | fallout of deleting a degenerate command |
+| 23 | unresolved path in an entity | a type or command removed that something still names |
+| 20 | command declares `yields`, another handler does not yield it | `phase_forward` converts relays that `send` to an outlet; other handler shapes need the same treatment |
+| 10 | field in a generated `Persist` constructor the command lacks | the id-field guess (an event's FIRST field) is wrong for those events |
+
+**Two mistakes already made here — do not repeat:**
+
+1. **Persistence belongs to the PROJECTOR, not a sink.** An earlier pass put
+   `Persist` emission on `EventSink` and left projector clauses as prose-only
+   `do`. A projector owns no rows, so a `do` emits nothing and models nothing.
+   Reid rejected it; the corrected shape is above.
+2. **A relay sends the BINDER, not the command name.** Grepping a command's
+   name is NOT evidence of use — only a construction `Cmd(...)` is. Deleting
+   `Initialize<X>` on a name-grep left dangling relay clauses and turned 3
+   findings into 6 errors.
 
 ### RULED, NOT STARTED — the 6,171 Event/Command tells
 
