@@ -1030,16 +1030,41 @@ gaps and was quoted back as current fact; check before repeating it.
   `../riddl/task/2026-08-23-no-value-denotes-absent-or-empty.md` with the
   grammar citation (`ebnf-grammar.ebnf:344`) and the reasoning.
 
-### What that leaves of the 22 surviving prose strings
+### What that leaves — 15 prose strings, was 22. CLOSED 2026-08-23
+
+The 7 actionable ones are done and the task is in `task/done`. The 15 that
+remain are each remaining for a stated reason, so this item needs no further
+work unless the upstream gap closes.
 
 - **10** display-status sites (`reservationDisplayStatus`, `ticketDisplayStatus`)
   are `String(1,30)`, so a string literal genuinely IS the value — not defects.
   The enumerator fix does not apply unless those fields should have been enums.
-- **6** `cancellationReason` sites in `restaurant/OnlineOrder.riddl` are **not
-  blocked on anything** — each is immediately followed by a `set state ... to
-  record OnlineOrderData(... cancellationReason = onlineOrderCancelled.cancellationReason)`
-  that already sets the field correctly. They are redundant lines to delete.
+- ~~**6** `cancellationReason` sites~~ — **DELETED 2026-08-23.**
+  **The justification given here was WRONG and was quoted forward, so read this
+  correction:** it claimed each was "immediately followed by a `set state ... to
+  record OnlineOrderData(...)`". That is true of exactly **one** of the six.
+  The other five are followed by `}` or a `when`. The redundancy is with the
+  **`morph` on the line ABOVE**, which already carries
+  `cancellationReason = onlineOrderCancelled.cancellationReason`. Deleting was
+  still correct; the reason was not. reactive-bbq held at 63 completeness /
+  0 errors across the deletion.
 - **5** `set state TableOrder.*` sites carry `orderItems = empty` /
   `presentedBillTotal = none` and are blocked on the filed gap above.
-- **1** `Reservation.Requested.base` site is a record-update ("copy base with
-  reservationTime = ...") — not yet classified.
+- ~~**1** `Reservation.Requested.base` record-update site~~ — **FIXED
+  2026-08-23**, `restaurant/Reservation.riddl:850`. The prose string, the
+  `let ... = prompt(...)` above it and the contentless `morph ... with
+  requestedData` all collapsed into one morph constructing the record outright.
+
+**Two constructs proved to work that had NO precedent anywhere in the corpus**
+(grep before writing returned zero of each) — worth knowing before anyone
+assumes they are unsupported:
+
+- **nested record construction** in an argument list:
+  `base = record ReservationBase(...)`
+- **depth-3 field paths** through a non-optional field:
+  `ConfirmedData.base.reservationId`
+
+Both validate at rc.22, and a **negative control confirmed it is real checking**
+— substituting `ConfirmedData.base.bogusField` produced a precise unresolved-value
+error at exactly that span. Do not take the green run alone as evidence; that is
+what the control was for.
