@@ -35,9 +35,21 @@ context EnrollmentContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'EnrollmentMetrics Storage' is from outlet EnrollmentContext.EnrollmentMetrics.EnrollmentMetricsToRepository to inlet EnrollmentContext.EnrollmentRepository.EnrollmentRepositoryFromEnrollmentMetrics with {
+    briefly "EnrollmentMetrics projections on their way to storage"
+  }
   connector 'EnrollmentCommand Stream Intake' is from outlet EnrollmentContext.EnrollmentCommandStreamOut to inlet EnrollmentContext.Enrollment.EnrollmentCommands  connector 'EnrollmentQueryResult Stream Egress' is from outlet EnrollmentContext.EnrollmentRepository.EnrollmentRepositoryResponses to inlet EnrollmentContext.EnrollmentQueryResultStreamIn  include "types.riddl"
   include "Enrollment.riddl"
-  repository EnrollmentRepository as merge is {
+  type EnrollmentRepositoryCommand is one of {
+    EnrollmentContext.EnrollmentRepository.PersistCoverageTerminated or EnrollmentContext.EnrollmentRepository.PersistEligibilityVerified or EnrollmentContext.EnrollmentRepository.PersistEnrollmentConfirmed or EnrollmentContext.EnrollmentRepository.PersistEnrollmentInitiated or EnrollmentContext.EnrollmentRepository.PersistEnrollmentTransferred or EnrollmentContext.EnrollmentRepository.PersistPlanSelected
+  } with {
+    briefly "Anything that writes the EnrollmentRepository"
+    described as {
+      |The persistence commands EnrollmentRepository accepts. Entity events never
+      |reach it directly; the projector turns each event into one of these.
+    }
+  }
+  repository EnrollmentRepository as flow is {
     command PersistEligibilityVerified is  {
       enrollmentId: EnrollmentId with {
         briefly "Row addressed"
@@ -150,6 +162,7 @@ context EnrollmentContext as router is {
         |The relational schema persisting enrollment records for this repository.
       }
     }
+    inlet EnrollmentRepositoryFromEnrollmentMetrics is type EnrollmentRepositoryCommand
     outlet EnrollmentRepositoryResponses is type Enrollment.EnrollmentQueryResult
     record EnrollmentRecord is  {
       enrollmentId: EnrollmentId with {
@@ -491,6 +504,7 @@ context EnrollmentContext as router is {
   projector EnrollmentMetrics as flow is {
     updates repository EnrollmentContext.EnrollmentRepository
     inlet EnrollmentMetricsFromEnrollment is type EnrollmentEvent
+    outlet EnrollmentMetricsToRepository is type EnrollmentRepositoryCommand
     record PlanEnrollmentCount is  {
       planId: PlanId with {
         briefly "Plan ID"
@@ -655,7 +669,7 @@ context EnrollmentContext as router is {
       |persistence.
     }
   }
-  processor EnrollmentEventSplit as split is {
+  processor EnrollmentEventSplit as flow is {
     inlet EnrollmentEventSplitIn is type EnrollmentEvent
     outlet EnrollmentEventSplitToEnrollmentMetrics is type EnrollmentEvent
     handler EnrollmentEventSplitHandler is {

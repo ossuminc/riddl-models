@@ -186,7 +186,16 @@ context CartContext as router is {
     }
   }
   // Repository for cart persistence
-  repository CartRepository as merge is {
+  type CartRepositoryCommand is one of {
+    CartContext.CartRepository.PersistCartAbandoned or CartContext.CartRepository.PersistCartCheckedOut or CartContext.CartRepository.PersistCartCreated or CartContext.CartRepository.PersistCartsMerged or CartContext.CartRepository.PersistItemAdded or CartContext.CartRepository.PersistItemQuantityUpdated or CartContext.CartRepository.PersistItemRemoved or CartContext.CartRepository.PersistPromoCodeApplied or CartContext.CartRepository.PersistPromoCodeRemoved or CartContext.CartRepository.PersistShippingAddressSet
+  } with {
+    briefly "Anything that writes the CartRepository"
+    described as {
+      |The persistence commands CartRepository accepts. Entity events never
+      |reach it directly; the projector turns each event into one of these.
+    }
+  }
+  repository CartRepository as flow is {
     command PersistCartCreated is  {
       cartId: CartId with {
         briefly "Row addressed"
@@ -337,6 +346,7 @@ context CartContext as router is {
         |because storing a row records no new entity state.
       }
     }
+    inlet CartRepositoryFromCartAnalytics is type CartRepositoryCommand
     outlet CartRepositoryResponses is type Cart.CartResult
     record StoredCart is  {
       cartId: CartId with {
@@ -451,6 +461,7 @@ context CartContext as router is {
   projector CartAnalytics as flow is {
     updates repository CartContext.CartRepository
     inlet CartAnalyticsFromCart is type CartEvent
+    outlet CartAnalyticsToRepository is type CartRepositoryCommand
     record AbandonedCartMetrics is  {
       period: Date with {
         briefly "Period"
@@ -533,7 +544,7 @@ context CartContext as router is {
       |Maintains analytics views for cart behavior.
     }
   }
-  processor CartEventSplit as split is {
+  processor CartEventSplit as flow is {
     inlet CartEventSplitIn is type CartEvent
     outlet CartEventSplitToCartAnalytics is type CartEvent
     handler CartEventSplitHandler is {
@@ -594,6 +605,9 @@ context CartContext as router is {
   }
   connector 'CartEvent Stream' is from outlet CartContext.Cart.CartEvents2 to inlet CartContext.CartEventSplit.CartEventSplitIn with {
     briefly "Cart events, fanned out to storage and read models"
+  }
+  connector 'CartAnalytics Storage' is from outlet CartContext.CartAnalytics.CartAnalyticsToRepository to inlet CartContext.CartRepository.CartRepositoryFromCartAnalytics with {
+    briefly "CartAnalytics projections on their way to storage"
   }
   connector 'CartAnalytics Feed' is from outlet CartContext.CartEventSplit.CartEventSplitToCartAnalytics to inlet CartContext.CartAnalytics.CartAnalyticsFromCart with {
     briefly "Cart events feeding the CartAnalytics projection"
