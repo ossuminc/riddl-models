@@ -4,71 +4,75 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`, 6 commits ahead of `origin/release/2`. `main` stays 1.x
-until riddl 2.0 ships (BACKLOG #4).
+**Branch** `release/2`. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
 **Build state, verified this session:** `riddlVersion = "2.0.0-rc.22"`,
-**published**, so `riddlcPath := None` and the plugin downloads it.
-`../bin/riddlc` reports rc.22 but is built from `c9e58031`, a **later**
-release/2 commit than the rc.22 tag (`3fb1cf37`) — the same drift rc.21 had.
-They agreed on every check run here. Verify with `../bin/riddlc info`.
+**published**, so `riddlcPath := None`. `../bin/riddlc` reports rc.22 built from
+`c9e58031`, a later release/2 commit than the rc.22 tag — the same drift rc.21
+had. They agreed on every check run here. Verify with `../bin/riddlc info`.
 
-### In flight — the corpus does NOT validate clean. 92 errors.
+### The 92-error regression is CLOSED. `sbt v` is still RED.
 
-The "repositories take COMMANDS" campaign is **mid-flight at `edb06564`**.
-Verified by `./scripts/collect-warnings.py`: **3,720 findings, 92 errors**,
-178 of 188 models still reporting. It was 7,018 findings / **0 errors** before.
+Both halves matter. `./scripts/collect-warnings.py` over all 188 entry points:
 
-**Do not merge to `main` and do not tag until errors are back to 0.** The
-error regression is deliberate and recorded, not an accident to discover.
+```
+3,521 findings   0 errors    (was 3,720 / 92 at the checkpoint)
+3,503 completeness, 18 across missing/usage/warning/style/deprecated
+17 of 188 models at zero
+```
 
-**BACKLOG #20 is the working document** — it carries the ruling, the proven
-shape, the two drivers, a table of the six remaining causes with counts, and
-the two mistakes already made. Read it before touching a model.
-`commerce/e-commerce/order-management` and `.../product-catalog` are at zero
-by hand and are the reference; read `da44ab12`.
+**But `sbt v` fails before it reaches a single model**, in `verifyTemplates`, on
+3 completeness findings in the two `patterns/` examples — **BACKLOG #22**, and it
+needs a design decision from Reid, not a mechanical fix. `collect-warnings.py`
+excludes `patterns/` unless given `--include-patterns`; that is precisely the
+blind spot that let "0 errors" and "red gate" both be true.
 
-### Traps
+**BACKLOG #20 is still the working document** and now carries verified state, the
+six-driver run order, and the traps below. **BACKLOG #22 is the gate blocker.**
 
-- **`collect-warnings.py` under-reported by 6x until `7e92bd30`.** rc.21+ emits
-  findings across line boundaries (`822:7->823:5`); the old regex matched only
-  same-line spans and dropped every `tell` finding **silently**. A sweep
-  reporting ~982 is the bug, not good news.
-- **A relay sends the BINDER, not the command name.** A name grep is not
-  evidence a command is used; only a construction `Cmd(...)` is.
-- **A projector owns no rows.** A prose-only `do` clause in one emits nothing.
-  It silences the warning and models nothing — riddlc says so directly:
-  *"projector handlers should tell messages to a repository"*. `send` to an
-  outlet does NOT satisfy it; `tell` does.
-- **`yields` obliges EVERY handler of that command.** Declaring it on an
-  entity command breaks the context relay until the relay uses `forward`,
-  which discharges the obligation. Commands with no `yields` must stay `send`.
-- **prettify jams declarations onto one line**; a port removal must handle both
-  placements.
-- **A DOTALL regex with an optional `with {...}` over-consumes** — the lazy
-  `.*?` still crosses lines and swallows whole definitions. Use brace-balanced
-  line-by-line removal.
-- **Never hand-derive an ascription.** riddlc names the correct shape in its
-  own error text.
-- **Zero means zero of EVERY severity**, style included.
+### In flight
+
+Nothing half-applied; the tree is committed at each step. The remaining work is
+the campaign's ruled main body — 3,503 completeness findings, dominated by "an
+entity is told an event and declares no clause receiving it". Reference models at
+zero: `commerce/e-commerce/order-management`, `.../product-catalog`, plus 15 more
+now.
+
+### Traps banked this session — all cost real time
+
+- **A parse error ABORTS the file.** Fixing 3 syntax errors RAISED the count
+  92 -> 101, exposing 9 errors and 43 warnings hidden behind the abort. A model
+  with a parse error is UNMEASURED, not clean.
+- **Verify the riddlc PATH, not just its output.** `../../../bin/riddlc` from a
+  3-deep model dir resolves inside the repo where nothing exists; the command
+  fails and `grep -c` on empty input prints `0`. Three models were called clean
+  that way and were not. Prefer the scripts, which resolve from ROOT.
+- **`Suggestion:` appears ONLY under `--provide-tips`**, and the echoed source
+  line sits BETWEEN the message and the tip.
+- **An on-clause can carry its own `with { }`** — removing only the balanced body
+  orphans it and breaks the parse.
+- **A clause head may carry ANY number of qualifier segments.**
+- **`reascribe.py` runs LAST.** Before wiring it writes `as source` onto a
+  repository with no inlets — certifying that nothing can write to it.
+- **Zero means zero of EVERY severity**, and `verifyTemplates` enforces that on
+  `patterns/` while the model gate only fails on errors.
 
 ### Certainty
 
-**Verified by command this session:** pin and binary both rc.22; tree clean;
-6 unpushed; the 3,720/92 split; the enumerator, arithmetic and `none`/`empty`
-probes; 190 `.bast` at revision 19 rejected by a reader wanting 20.
+**Verified by command:** pin and binary both rc.22; the 3,521/0 split; `sbt v`
+red and exactly why; `patterns/` untouched since `8611b06e`, so its 3 findings
+predate this session; order-management at zero of every severity.
 
-**Assumed, not verified:** that the six remaining causes in BACKLOG #20 are the
-*only* ones — they are the top of a frequency count, not an exhaustive audit.
+**Assumed, not verified:** that the 3,503 completeness findings are only the two
+ruled tell-shapes. They are the top of a frequency count, not an exhaustive audit.
 
-### `task/` — three files, all awaiting triage
+### `task/` — two files
 
 - `2026-08-22-handle-the-messages-you-are-told.md` — **in progress**, the above
-- `2026-08-20-set-state-values-are-prose-strings.md` — **work done**, Results
-  not appended; its counts are wrong and BACKLOG #21 records what remains
-- `2026-08-20-regenerate-checked-in-bast-after-2.0.0.md` — **blocked**; 2.0.0
-  has not shipped (newest is rc.22, a prerelease). Its premise is TRUE: all 190
-  tracked `.bast` are revision 19 and rc.22's reader rejects them
+- `2026-08-20-regenerate-checked-in-bast-after-2.0.0.md` — **blocked**; 2.0.0 has
+  not shipped (newest is rc.22, a prerelease). Premise confirmed TRUE by running
+  the reader: all 190 tracked `.bast` are revision 19 and rc.22 wants 20
+- `2026-08-20-set-state-values-are-prose-strings.md` — **CLOSED**, in `task/done`
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 

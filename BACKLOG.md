@@ -847,8 +847,8 @@ projector OrderAnalytics as flow is {
   outlet OrderAnalyticsToRepository is type OrderRepositoryCommand
   handler AnalyticsHandler is {
     on paymentConfirmed: event Order.PaymentConfirmed is {
-      send command OrderContext.OrderRepository.PersistPaymentConfirmed(
-          orderId = paymentConfirmed.orderId) to outlet OrderAnalyticsToRepository
+      tell command OrderContext.OrderRepository.PersistPaymentConfirmed(
+          orderId = paymentConfirmed.orderId) to repository OrderContext.OrderRepository
       do "Count the order as paid in the day's confirmed revenue"
     }
   }
@@ -888,53 +888,92 @@ two mechanical defects documented in its docstring (stale match offsets; a
 EventSource). Fix those, verify with `--only commerce/e-commerce/order-management`
 requiring errors=0 / total=26, then run the corpus.
 
-### WHERE IT STOPPED — checkpoint `edb06564`, corpus does NOT validate clean
+### WHERE IT STANDS — ZERO ERRORS, but `sbt v` is still RED on `patterns/`
 
-**92 errors where the corpus had 0.** This is a mid-campaign checkpoint on a
-campaign branch. **Do not merge until errors are 0.** Verified 2026-08-23 by
-`./scripts/collect-warnings.py`:
+**Errors are back to 0** (2026-08-23). The 92-error regression is closed; the
+branch is no longer blocked by it. Verified by `./scripts/collect-warnings.py`
+over all 188 entry points:
 
 ```
-3,720 findings total   (was 7,018 before this campaign)
-   92 error
-3,598 completeness
-   30 style / missing / usage / warning / deprecated
-  178 of 188 models still have findings -> 10 are at zero
+3,521 findings total   (was 3,720 at the checkpoint, 7,018 before the campaign)
+    0 error            <- was 92
+3,503 completeness
+   18 missing / usage / warning / style / deprecated
+ 17 of 188 models at zero
 ```
 
-`commerce/e-commerce/order-management` and `commerce/e-commerce/product-catalog`
-were taken to zero **by hand** and are the reference implementations. Read the
-diff of `da44ab12` before doing another model.
+**`sbt v` NEVER REACHES the models.** It fails first in `verifyTemplates`, on
+the two `patterns/` examples — see the item below. Do not read "0 errors" as
+"the gate is green"; `collect-warnings.py` EXCLUDES `patterns/` unless given
+`--include-patterns`, and that is exactly the blind spot.
 
-**The two drivers** — run in this order, per model, then finish by hand:
+**The corpus standard is zero of EVERY severity**, so this is a milestone, not
+the finish. The 3,503 completeness findings are the ruled main body below.
+
+**The five drivers**, in the order they must run — the order is not cosmetic:
 
 ```bash
-./scripts/repo-commands.py       <model-dir>   # identical-everywhere half
-./scripts/repo-commands-build.py <model-dir>   # riddlc-driven half
-cd <model-dir> && riddlc validate <entry>.riddl   # then work what it names
+./scripts/repo-commands.py            <model>   # identical-everywhere half
+./scripts/repo-commands-build.py      <model>   # riddlc-driven half
+./scripts/drop-dead-scaffolding.py    <model>   # <X>Source / <X>Sink removal
+./scripts/drop-repo-domain-clauses.py <model>   # domain commands out of repos
+./scripts/wire-repo-commands.py       <model>   # alternation + ports + connector
+./scripts/reascribe.py                <model>   # LAST — riddlc names each shape
 ```
 
-**What remains, by cause — every one is named precisely by `riddlc validate`:**
+**`reascribe.py` must run LAST.** Re-ascribing before wiring writes `as source`
+onto a repository with no inlets — silencing the error by certifying a
+repository nothing can write to.
 
-| count | what | why the driver did not fix it |
-|------:|------|-------------------------------|
-| 3,454 | entity told an event, no receiving clause | `phase_yields` only fires on a self-tell **inside the entity's own file**. Most models tell from the **split** — the other ruled shape, needing an `on event` clause on the entity |
-| 77 | repository told an event | residual senders `repo-commands.py` did not reach |
-| 23 | `send` names a binder that is no longer a message value | fallout of deleting a degenerate command |
-| 23 | unresolved path in an entity | a type or command removed that something still names |
-| 20 | command declares `yields`, another handler does not yield it | `phase_forward` converts relays that `send` to an outlet; other handler shapes need the same treatment |
-| 10 | field in a generated `Persist` constructor the command lacks | the id-field guess (an event's FIRST field) is wrong for those events |
+**Two scripts exist because the old tooling could not reach these cases:**
+`apply-ascriptions.py` only INSERTS a missing ascription and skips any site not
+reading `<identifier> is`, so a WRONG ascription is invisible to it;
+`repo-commands.py` matches only the literal `\w+EventSource`/`\w+EventSink` and
+silently left 48 `<X>Source`/`<X>Sink` behind.
 
-**Two mistakes already made here — do not repeat:**
+**What the errors actually were**, now that they are all closed — the original
+table's guesses are superseded by what riddlc named:
 
-1. **Persistence belongs to the PROJECTOR, not a sink.** An earlier pass put
-   `Persist` emission on `EventSink` and left projector clauses as prose-only
-   `do`. A projector owns no rows, so a `do` emits nothing and models nothing.
-   Reid rejected it; the corrected shape is above.
-2. **A relay sends the BINDER, not the command name.** Grepping a command's
-   name is NOT evidence of use — only a construction `Cmd(...)` is. Deleting
-   `Initialize<X>` on a name-grep left dangling relay clauses and turned 3
-   findings into 6 errors.
+| was | cause | closed by |
+|----:|-------|-----------|
+| 46 | `<X>Source`/`<X>Sink` the driver's regex missed, holding `on init` clauses naming deleted `Initialize<X>` commands | `drop-dead-scaffolding.py` |
+| 20 | domain command clauses inside a repository handler, which `yields` then obliges to yield | `drop-repo-domain-clauses.py` |
+| 10 | `Persist<E>(...)` constructors naming the event's FIRST field instead of its id | `fix-persist-fields.py` |
+| 12 | repositories stripped of event inlets and never given command inlets | `wire-repo-commands.py` |
+| 3 | `yield event X(...) by <field>` — `yield` takes no `by` | hand, 3 sites |
+| 1 | connector reading a deleted `StationEventSource` outlet | hand |
+
+**Traps banked doing it — each cost real time:**
+
+- **A parse error ABORTS the file**, so riddlc never checks the rest of that
+  model. Fixing 3 syntax errors RAISED the count 92 -> 101 by exposing 9 real
+  errors and 43 warnings that had been hidden the whole time. A model with a
+  parse error is unmeasured, not clean.
+- **`riddlc` prints `Suggestion:` ONLY under `--provide-tips`.** Without it the
+  remediation text is absent and a suggestion-driven script finds nothing while
+  reporting "0 skipped" — a clean-looking no-op.
+- **The echoed source line sits BETWEEN a message and its `Suggestion:`.** A
+  parser that resets on the first non-matching line never sees the tip.
+- **An on-clause can carry its own `with { }`.** Removing only the
+  brace-balanced body orphans it and breaks the parse. One model's clauses had
+  no metadata and the next model's did, so the first pass looked correct.
+- **A clause head may carry ANY number of qualifier segments**
+  (`command LabContext.LabOrder.CollectSpecimen`). A regex allowing one
+  qualifier made a handled command look unhandled.
+- **`<P>ToRepository` collides when ONE projector feeds TWO repositories.**
+  Only the second leg is qualified `<P>To<R>`, so single-repository models keep
+  the reference model's spelling.
+- **Verify the riddlc PATH, not just the output.** `../../../bin/riddlc` from a
+  3-deep model directory resolves inside the repo, where nothing exists; the
+  command fails and `grep -c` on empty input prints `0`. Three models were
+  reported clean that way and were not.
+
+**BACKLOG #20's old target-shape block was WRONG and is corrected below.** It
+showed the projector emitting with `send command ... to outlet`. The reference
+model `commerce/e-commerce/order-management`, at zero findings of every
+severity, uses `tell command R.Persist<E>(..) to repository R` **and** carries
+the outlet/inlet/connector — which exist to make the `tell` DELIVERABLE, not to
+carry a `send`. `repo-commands.py`'s docstring had it right all along.
 
 ### RULED, NOT STARTED — the 6,171 Event/Command tells
 
@@ -1008,6 +1047,54 @@ The two rulings converge on the same end state — **every entity carries an
 `on event` clause for each of its own events** — which is also what the 900
 inlets need. Do the inlets and shape 2 together where they touch the same
 handler.
+
+## 22. `patterns/` was never migrated, and it is what makes `sbt v` RED
+
+Found 2026-08-23 running the real gate after taking the corpus to zero errors.
+
+**`sbt v` fails in `verifyTemplates` and never reaches the 188 models.** The 7
+templates parse; both **examples** fail, on 3 completeness findings:
+
+```
+patterns/entity/event-sourced/example.riddl:438
+  Inlet 'AccountRepositoryFromAccount' admits Type 'AccountEvent' but Repository
+  'AccountRepository' declares no handler clause for 4 of its 4 members
+
+patterns/entity/aggregate-root/example.riddl:396   (same shape, CartRepository)
+patterns/entity/aggregate-root/example.riddl:476
+  Entity 'Cart' is told Event 'LineItemAdded' but declares no handler clause
+```
+
+These are **#20's own classes**: a repository holding an EVENT inlet, which the
+ruling forbids, and the split-tells-entity-back shape. `patterns/` is excluded
+from `riddlcValidate` via `riddlcConfExclusions`, so no campaign driver ever ran
+on it — the same hand-migration gap CLAUDE.md already warns about for prettify.
+
+`verifyTemplates` is STRICTER than the model gate: it fails on a finding of ANY
+severity, not just errors. That is consistent with the corpus zero standard, and
+it is why 3 completeness findings turn the whole build red.
+
+**This needs a DESIGN decision from Reid, not a mechanical fix.** The ruling
+makes turning an entity event into a repository command the PROJECTOR's job, and
+**`patterns/entity/event-sourced/example.riddl` has no projector**. So the fix is
+one of:
+
+1. **Add a projector to the example** — applies the ruling faithfully, but
+   changes what the event-sourced pattern teaches, and arguably conflates two
+   patterns in one example.
+2. **Let the entity tell its own `Persist` commands** — keeps the example small,
+   but contradicts "turning an entity event into a repository command is the
+   projector's job".
+3. **Drop the repository from the example entirely** — the pattern is about
+   event-sourced entities; persistence is `entity/repository`'s example.
+
+Option 3 looks cleanest to me and option 1 is the most faithful, but this is a
+published teaching artifact, so it is Reid's call. Both examples also still carry
+`<X>EventSource`/`<X>EventSink` scaffolding that is dead everywhere else.
+
+**Do not run `drop-dead-scaffolding.py` at `patterns/` to make this go away**
+without settling the above — the examples are documentation, and deleting half a
+diagram leaves it teaching nothing.
 
 ## 21. Only `none`/`empty` is a real gap — arithmetic is by design, enumerator is FIXED
 
