@@ -7,7 +7,7 @@ class of warning can be surveyed before deciding what to do about it.
 
 Each record:
 
-    {"model": ..., "file": ..., "line": N, "col": N, "endcol": N,
+    {"model": ..., "file": ..., "line": N, "col": N, "endline": N, "endcol": N,
      "level": "style", "message": "...", "suggestion": "..."}
 
 Usage:
@@ -28,9 +28,13 @@ ROOT = Path(__file__).resolve().parent.parent
 _riddlc = os.environ.get("RIDDLC", str(ROOT.parent / "bin" / "riddlc"))
 RIDDLC = Path(_riddlc) if os.path.isabs(_riddlc) else (ROOT / _riddlc).resolve()
 
+# A span is `line:col`, optionally `->col` (same line) or `->line:col` (across
+# lines). rc.21 emits the multi-line form for statement-level findings; a regex
+# that only knows the same-line form drops every one of them SILENTLY.
 LOC = re.compile(
     r"^\[(?P<level>\w+)\]\s*(?P<file>[^\s(]+\.riddl)"
-    r"\((?P<line>\d+):(?P<c1>\d+)(?:->(?P<c2>\d+))?\):$"
+    r"\((?P<line>\d+):(?P<c1>\d+)"
+    r"(?:->(?:(?P<endline>\d+):)?(?P<c2>\d+))?\):$"
 )
 SUGG = re.compile(r"^Suggestion:\s*(?P<tip>.+)$")
 INPUT_FILE = re.compile(r'^\s*input-file\s*=\s*"?([^"\s]+)"?', re.MULTILINE)
@@ -66,6 +70,7 @@ def collect(model_dir, entry):
                 "file": m.group("file"),
                 "line": int(m.group("line")),
                 "col": int(m.group("c1")),
+                "endline": int(m.group("endline") or m.group("line")),
                 "endcol": int(m.group("c2") or m.group("c1")),
                 "level": m.group("level"),
                 "message": "",
