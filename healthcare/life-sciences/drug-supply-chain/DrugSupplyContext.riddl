@@ -42,6 +42,9 @@ context DrugSupplyContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'SerializationMetricsProjector To SerializationRepository Storage' is from outlet DrugSupplyContext.SerializationMetricsProjector.SerializationMetricsProjectorToSerializationRepository to inlet DrugSupplyContext.SerializationRepository.SerializationRepositoryFromSerializationMetricsProjector with {
+    briefly "SerializationMetricsProjector projections on their way to storage"
+  }
   connector 'DrugBatchCommand Stream Intake' is from outlet DrugSupplyContext.DrugBatchCommandStreamOut to inlet DrugSupplyContext.DrugBatch.DrugBatchCommands  connector 'DrugBatchResult Stream Egress' is from outlet DrugSupplyContext.BatchRepository.BatchRepositoryResponses to inlet DrugSupplyContext.DrugBatchResultStreamIn  adaptor FromManufacturingSystem from context ManufacturingSystem is { 
     handler FromManufacturingSystemHandler is {
       on event ManufacturingSystem.ProductionCompleteNotification is {
@@ -254,6 +257,21 @@ context DrugSupplyContext as router is {
         |because storing a row records no new entity state.
       }
     }
+    command PersistAuthenticityVerified is  {
+      drugBatchId: UUID with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+    } with {
+      briefly "Persist AuthenticityVerified"
+      described as {
+        |Instructs this repository to apply AuthenticityVerified to the stored
+        |row. A persistence command, not a domain command: it declares no
+        |`yields` because storing a row records no new entity state.
+      }
+    }
     command PersistBatchPlacedOnHold is  {
       drugBatchId: UUID with {
         briefly "ID"
@@ -276,6 +294,9 @@ context DrugSupplyContext as router is {
       }
       on command BatchRepository.PersistBatchManufactured is {
         do "Persist new batch to database"
+      }
+      on command BatchRepository.PersistAuthenticityVerified is {
+        do "Record the authenticity verification against the stored batch row"
       }
       on command BatchRepository.PersistUnitsSerialized is {
         do "Update batch with serialization data"
@@ -309,7 +330,17 @@ context DrugSupplyContext as router is {
     }
   }
   // Repository for serialization data
+  type SerializationRepositoryCommand is one of {
+    DrugSupplyContext.SerializationRepository.PersistAuthenticityVerified or DrugSupplyContext.SerializationRepository.PersistProductShipped or DrugSupplyContext.SerializationRepository.PersistShipmentReceived or DrugSupplyContext.SerializationRepository.PersistUnitsSerialized
+  } with {
+    briefly "Anything that writes the SerializationRepository"
+    described as {
+      |The persistence commands SerializationRepository accepts. Entity events never
+      |reach it directly; the projector turns each event into one of these.
+    }
+  }
   repository SerializationRepository as sink is {
+    inlet SerializationRepositoryFromSerializationMetricsProjector is type SerializationRepositoryCommand
     command PersistAuthenticityVerified is  {
       batchId: BatchId with {
         briefly "Row addressed"
@@ -381,7 +412,7 @@ context DrugSupplyContext as router is {
       }
     }
     handler SerializationPersistence is {
-      on persistAuthenticityVerified: command PersistAuthenticityVerified is {
+      on persistAuthenticityVerified: command SerializationRepository.PersistAuthenticityVerified is {
         do "apply AuthenticityVerified to the stored row"
       }
       on query GetSerializationMetrics is {
@@ -437,10 +468,11 @@ context DrugSupplyContext as router is {
       |Read model view carrying the serialization metrics projection.
     }
   }
-  projector SerializationMetricsProjector as flow is {
+  projector SerializationMetricsProjector as split is {
     outlet SerializationMetricsProjectorToRepository is type BatchRepositoryCommand
     updates repository DrugSupplyContext.SerializationRepository
     inlet SerializationMetricsProjectorFromDrugBatch is type DrugBatchEvent
+    outlet SerializationMetricsProjectorToSerializationRepository is type SerializationRepositoryCommand
     record SerializationMetrics is  {
       productGtin: GTINCode with {
         briefly "Product GTIN"
@@ -492,19 +524,19 @@ context DrugSupplyContext as router is {
     }
     handler MetricsHandler is {
       on batchManufactured: event DrugBatch.BatchManufactured is {
-        tell command DrugSupplyContext.BatchRepository.PersistBatchManufactured(batchId = batchManufactured.batchId) to repository DrugSupplyContext.BatchRepository
+        tell command DrugSupplyContext.BatchRepository.PersistBatchManufactured(drugBatchId = batchManufactured.drugBatchId) to repository DrugSupplyContext.BatchRepository
         do "apply BatchManufactured to the SerializationMetricsProjector projection"
       }
       on batchPlacedOnHold: event DrugBatch.BatchPlacedOnHold is {
-        tell command DrugSupplyContext.BatchRepository.PersistBatchPlacedOnHold(batchId = batchPlacedOnHold.batchId) to repository DrugSupplyContext.BatchRepository
+        tell command DrugSupplyContext.BatchRepository.PersistBatchPlacedOnHold(drugBatchId = batchPlacedOnHold.batchId) to repository DrugSupplyContext.BatchRepository
         do "apply BatchPlacedOnHold to the SerializationMetricsProjector projection"
       }
       on batchReleased: event DrugBatch.BatchReleased is {
-        tell command DrugSupplyContext.BatchRepository.PersistBatchReleased(batchId = batchReleased.batchId) to repository DrugSupplyContext.BatchRepository
+        tell command DrugSupplyContext.BatchRepository.PersistBatchReleased(drugBatchId = batchReleased.batchId) to repository DrugSupplyContext.BatchRepository
         do "apply BatchReleased to the SerializationMetricsProjector projection"
       }
       on recallInitiated: event DrugBatch.RecallInitiated is {
-        tell command DrugSupplyContext.BatchRepository.PersistRecallInitiated(batchId = recallInitiated.batchId) to repository DrugSupplyContext.BatchRepository
+        tell command DrugSupplyContext.BatchRepository.PersistRecallInitiated(drugBatchId = recallInitiated.batchId) to repository DrugSupplyContext.BatchRepository
         do "apply RecallInitiated to the SerializationMetricsProjector projection"
       }
       on unitsSerialized: event DrugBatch.UnitsSerialized is {
@@ -643,19 +675,19 @@ context DrugSupplyContext as router is {
     }
     handler DashboardHandler is {
       on authenticityVerified: event DrugBatch.AuthenticityVerified is {
-        tell command DrugSupplyContext.BatchRepository.PersistAuthenticityVerified(batchId = authenticityVerified.batchId) to repository DrugSupplyContext.BatchRepository
+        tell command DrugSupplyContext.BatchRepository.PersistAuthenticityVerified(drugBatchId = authenticityVerified.batchId) to repository DrugSupplyContext.BatchRepository
         do "apply AuthenticityVerified to the TraceabilityDashboardProjector projection"
       }
       on batchPlacedOnHold: event DrugBatch.BatchPlacedOnHold is {
-        tell command DrugSupplyContext.BatchRepository.PersistBatchPlacedOnHold(batchId = batchPlacedOnHold.batchId) to repository DrugSupplyContext.BatchRepository
+        tell command DrugSupplyContext.BatchRepository.PersistBatchPlacedOnHold(drugBatchId = batchPlacedOnHold.batchId) to repository DrugSupplyContext.BatchRepository
         do "apply BatchPlacedOnHold to the TraceabilityDashboardProjector projection"
       }
       on batchReleased: event DrugBatch.BatchReleased is {
-        tell command DrugSupplyContext.BatchRepository.PersistBatchReleased(batchId = batchReleased.batchId) to repository DrugSupplyContext.BatchRepository
+        tell command DrugSupplyContext.BatchRepository.PersistBatchReleased(drugBatchId = batchReleased.batchId) to repository DrugSupplyContext.BatchRepository
         do "apply BatchReleased to the TraceabilityDashboardProjector projection"
       }
       on unitsSerialized: event DrugBatch.UnitsSerialized is {
-        tell command DrugSupplyContext.BatchRepository.PersistUnitsSerialized(batchId = unitsSerialized.batchId) to repository DrugSupplyContext.BatchRepository
+        tell command DrugSupplyContext.BatchRepository.PersistUnitsSerialized(drugBatchId = unitsSerialized.batchId) to repository DrugSupplyContext.BatchRepository
         do "apply UnitsSerialized to the TraceabilityDashboardProjector projection"
       }
       on batchManufactured: event DrugBatch.BatchManufactured is {

@@ -115,13 +115,23 @@ def wire_file(path, dry):
                 notes.append(f"{R}: projector {P} has no inlet to anchor on, model left alone")
                 failed = True
                 break
+            # One projector may feed SEVERAL repositories, and then `<P>ToRepository`
+            # collides with the leg already wired for the first one -- duplicate
+            # content names plus "connected by 2 connectors". Only the colliding
+            # leg is qualified, so single-repository models keep the reference
+            # model's spelling (`OrderAnalyticsToRepository`).
+            outlet = f"{P}ToRepository"
+            leg = f"{P} Storage"
+            if re.search(rf"^\s*outlet\s+{outlet}\s+is\s+type\b", s, re.M):
+                outlet = f"{P}To{R}"
+                leg = f"{P} To {R} Storage"
             at = pm2.start() + im.end()
-            s = s[:at] + f"\n{im.group(1)}outlet {P}ToRepository is type {R}Command" + s[at:]
+            s = s[:at] + f"\n{im.group(1)}outlet {outlet} is type {R}Command" + s[at:]
 
             # 4. the connector, beside the existing ones
-            conn = (f"{ind}connector '{P} Storage' is from outlet {C}.{P}.{P}ToRepository "
+            conn = (f"{ind}connector '{leg}' is from outlet {C}.{P}.{outlet} "
                     f"to inlet {C}.{R}.{R}From{P} with {{\n"
-                    f'{ind}  briefly "{P} projections on their way to storage"\n'
+                    f'{ind}  briefly "{P} projections on their way to {R}"\n'
                     f"{ind}}}\n")
             cm = re.search(rf"^{ind}connector\s+", s, re.M)
             if not cm:
