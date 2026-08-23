@@ -888,21 +888,37 @@ The two rulings converge on the same end state — **every entity carries an
 inlets need. Do the inlets and shape 2 together where they touch the same
 handler.
 
-## 21. RIDDL has no value expression for absent, arithmetic, or enumerator
+## 21. Only `none`/`empty` is a real gap — arithmetic is by design, enumerator is FIXED
 
-Found 2026-08-22 finishing the `set`-value work (#16 in `task/done`), and the
-reason 22 prose strings survive in reactive-bbq:
+Found 2026-08-22 finishing the `set`-value work (#16 in `task/done`).
+**Re-measured against `2.0.0-rc.22` on 2026-08-23, and two of the three original
+claims did not survive.** The first version of this item asserted all three were
+gaps and was quoted back as current fact; check before repeating it.
 
-- **absent** — `presentedBillTotal = none`, `orderItems = empty`. No literal
-  exists, so the field is simply omitted from the constructor.
-- **arithmetic** — `pointBalance + accrualPoints`. `value` has no arithmetic, so
-  these stay `prompt(...)` holes.
-- **enumerator** — `shiftStatus = Open` does not resolve, **bare or qualified**
-  (`ShiftStatus.Open` was tried and also fails), even though the field's type is
-  that enum. Also `prompt(...)` for now.
+- **enumerator — FIXED, not a gap.** `set field ShiftData.shiftStatus to Open`
+  and the qualified `... to ShiftStatus.Open` both validate at **0 errors** on
+  rc.22. The original claim that neither resolves is stale; it was true at the
+  rc.19/rc.20 era and was never re-checked.
+- **arithmetic — WILL NEVER EXIST.** Reid ruled 2026-08-23: RIDDL does not do
+  arithmetic, and `pointBalance + accrualPoints` is what the AI prompt is for.
+  A `prompt(...)` hole is the intended form, not a defect. **Do not file this
+  upstream again.**
+- **absent — a genuine gap, filed.** `none` and `empty` fall through to
+  `value_ref` and fail to resolve, so an optional field cannot be returned to
+  absent nor a `many` field to empty. Filed as
+  `../riddl/task/2026-08-23-no-value-denotes-absent-or-empty.md` with the
+  grammar citation (`ebnf-grammar.ebnf:344`) and the reasoning.
 
-The remaining 10 are `String(1,30)` display-status fields where a string literal
-genuinely IS the value — not defects.
+### What that leaves of the 22 surviving prose strings
 
-**Worth asking riddl** whether an enumerator should be nameable in a value
-position; the other two are honest gaps.
+- **10** display-status sites (`reservationDisplayStatus`, `ticketDisplayStatus`)
+  are `String(1,30)`, so a string literal genuinely IS the value — not defects.
+  The enumerator fix does not apply unless those fields should have been enums.
+- **6** `cancellationReason` sites in `restaurant/OnlineOrder.riddl` are **not
+  blocked on anything** — each is immediately followed by a `set state ... to
+  record OnlineOrderData(... cancellationReason = onlineOrderCancelled.cancellationReason)`
+  that already sets the field correctly. They are redundant lines to delete.
+- **5** `set state TableOrder.*` sites carry `orderItems = empty` /
+  `presentedBillTotal = none` and are blocked on the filed gap above.
+- **1** `Reservation.Requested.base` site is a record-update ("copy base with
+  reservationTime = ...") — not yet classified.
