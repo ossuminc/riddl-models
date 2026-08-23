@@ -823,7 +823,97 @@ staged binary and a published library set are now routinely different things, an
 the pin cannot name both.
 
 
-## 20. The rc.21 delivery campaign — 7,071 warnings, 2 shapes need a ruling
+## 20. The delivery campaign — rc.22, and repositories take COMMANDS
+
+### RULED and PROVEN — repositories take commands, not events (Reid, 2026-08-23)
+
+**A repository is not event-sourced.** The effect of its commands is a change to
+the database, and that is sufficient. So a repository must not declare an inlet
+for events, and nothing may send or tell it one. **Turning an entity event into
+a repository command is the PROJECTOR's job.**
+
+Removing the inlets is *necessary but insufficient* — you must back-track
+through the channel and fix whatever was sending events, because those sends
+are themselves the defect.
+
+**The target shape, validated end to end** on
+`commerce/e-commerce/order-management`: **48 findings -> 26, zero errors**, the
+26 remainder being only the entity-tell shape below.
+
+```riddl
+projector OrderAnalytics as flow is {
+  updates repository OrderContext.OrderRepository
+  inlet  OrderAnalyticsFromOrder    is type OrderEvent
+  outlet OrderAnalyticsToRepository is type OrderRepositoryCommand
+  handler AnalyticsHandler is {
+    on paymentConfirmed: event Order.PaymentConfirmed is {
+      send command OrderContext.OrderRepository.PersistPaymentConfirmed(
+          orderId = paymentConfirmed.orderId) to outlet OrderAnalyticsToRepository
+      do "Count the order as paid in the day's confirmed revenue"
+    }
+  }
+}
+connector 'OrderAnalytics Storage' is
+  from outlet OrderContext.OrderAnalytics.OrderAnalyticsToRepository
+  to   inlet  OrderContext.OrderRepository.OrderRepositoryFromOrderAnalytics
+```
+
+The repository declares `Persist<Event>` for each event, an `on command` clause
+for each, a `type <Repo>Command is one of { ... }` alternation of them, and
+command inlets typed by it.
+
+**Five things learned doing it, each the hard way:**
+
+1. **A prose-only projector clause models nothing.** `on paymentConfirmed { do
+   "count it" }` emits nothing — a projector owns no rows. It silences the
+   warning and says nothing. Every projector clause must SEND a command.
+2. **Removing the repository's inlets makes it unreachable** — 18 warnings in
+   the pilot. The command inlets are what fix that, which is the "insufficient"
+   half of the ruling.
+3. **`send` cannot address a repository.** Grammar: `send ... to (outlet_ref |
+   inlet_ref)`, while `tell` takes a `processor_ref`. Reaching a repository
+   through the stream therefore needs outlet + connector; `tell` is the direct
+   form. Both validate.
+4. **`<X>EventSource` / `<X>EventSink` / `<X>EventFlow` are dead scaffolding**
+   and are to be deleted — 188 / 171 / 134 of them. **No EventSource has an
+   inlet**, so its handler can never fire; the sinks existed only to tell events
+   at a repository. Reid: "a wasteful lot of extra duplicate processing".
+5. **Do not hand-derive the new ascriptions.** Arity changes everywhere
+   (split->flow, sink->flow, merge->flow). Run `collect-ascriptions.py` then
+   `apply-ascriptions.py` after the structural edit.
+
+**`scripts/repositories-take-commands.py` implements this and is NOT READY** —
+two mechanical defects documented in its docstring (stale match offsets; a
+`drop_block` that swallows the `type <X>Event` declaration after an
+EventSource). Fix those, verify with `--only commerce/e-commerce/order-management`
+requiring errors=0 / total=26, then run the corpus.
+
+### Census at rc.22 (was 7,071 at rc.21, plus a class never counted)
+
+```
+6,107  Event told to a target with no clause receiving it
+   64  Command, same
+  765  inlet admits a type its owner handles nowhere   (was 900; rc.22 fixed
+       alternation members not counting toward an inlet's type)
+   82  Command declared in an Entity that no on-clause handles  <- NOT in the
+       original task file or the rc.21 handoff; found 2026-08-23
+```
+
+Filling every inlet clause individually would be **6,091 clauses**; the ruling
+above replaces most of that with structural change. By owner:
+Repository 442 findings / 4,438 clauses (all handling *none* of their members —
+one convention, not 442 bugs), Projector 234 / 1,509 (228 partial), Entity
+77 / 82, Sink 6 / 46, Flow 1 / 11, Context 5 / 5.
+
+### RULED, NOT STARTED — the 6,171 Event/Command tells
+
+Unchanged from the rc.21 ruling: a self-tell becomes a `yield` (with the
+`yields` declaration, an `on event` clause, and the `morph` moved into it); a
+split's tell-back stays and the entity gains the `on event` clause. Rationale:
+*handling the event is important to be able to persist it*. This is the entire
+26-finding remainder of the pilot.
+
+## 20a. Original rc.21 framing, superseded
 
 Measured 2026-08-22 against `2.0.0-rc.21`, sweeping all 188 entry points:
 

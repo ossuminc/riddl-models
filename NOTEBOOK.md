@@ -6,77 +6,73 @@ Development journal for active work on the riddl-models repository.
 
 **Branch** `release/2`. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Build state, verified this session:** `riddlVersion = "2.0.0-rc.21"`, which is
-**published**, so `riddlcPath := None` and the plugin downloads it — this keeps
-the test half of `checkAll` alive. `../bin/riddlc info` also reads `2.0.0-rc.21`
-(`ad5ac1d4`), so pin and staged binary agree. Restore the staged override only
-for an unpublished RC; it **wins over the pin**, and a `git checkout -- .`
-reverts the pin **silently** (that happened on 2026-08-19).
+**Build state, verified this session:** `riddlVersion = "2.0.0-rc.22"`,
+**published**, so `riddlcPath := None` and the plugin downloads it. But
+`../bin/riddlc` is built from `c9e58031`, a LATER release/2 commit than the
+rc.22 tag (`3fb1cf37`) — same pattern as rc.21. The two agreed on every check
+run here; verify with `../bin/riddlc info` before trusting either.
 
-### In flight: the rc.21 delivery campaign, 2 of 4 parts done
+### In flight: repositories take COMMANDS — shape proven, script not ready
 
-rc.21 added two checks and they report **7,071 completeness warnings, 0 errors**.
-Reid's ruling: *correct is correct* — the corpus changes, because riddlg cannot
-generate code for a message sent to something that does not handle it.
+Reid ruled 2026-08-23: **a repository is not event-sourced**, so it declares no
+event inlets and nothing may send it an event; **projectors** turn entity events
+into repository commands. Removing inlets is *necessary but insufficient* — the
+sends feeding them are themselves the defect and must be back-tracked.
 
-Verified by sweeping all 188 entry points just now:
+**Proven by hand on `commerce/e-commerce/order-management`: 48 findings -> 26,
+zero errors.** Full target shape, the five traps met doing it, and the census
+are in **BACKLOG #20** — read that before writing any code.
 
-```
-6,107  Event told to a target with no clause receiving it
-   64  Command, same
-  900  inlet admits a type its owner handles nowhere
-```
+`scripts/repositories-take-commands.py` implements it and is **NOT READY**: two
+mechanical defects (stale match offsets after edits; `drop_block` swallowing the
+`type <X>Event` declaration following an EventSource), both documented in its
+docstring with the symptom each produces. Fix, then verify with
+`--only commerce/e-commerce/order-management` requiring **errors=0, total=26**,
+then run the corpus. `git checkout -- commerce/` restores between attempts.
 
-- **DONE — 207 Result tells** (`7073726b`). All one shape: an entity telling
-  itself the answer inside `on query`. Became `reply` + the `replies` declaration.
-- **DONE — 128 prose-string `set` values** (`150f3c6f`), a separate riddlg task.
-- **RULED, NOT STARTED — the 900 inlets.** Implement `on` clauses for **every
-  member** of each inlet's type, which is often an alternation. Delete an inlet
-  only on proof nothing feeding it — *including through a merge* — ever sends
-  that type. See BACKLOG #20.
-- **RULED, NOT STARTED — the 6,171 Event/Command tells.** Reid ruled both shapes
-  on 2026-08-22: a self-tell becomes a `yield` (with the `yields` declaration,
-  an `on event` clause, and the `morph` moved into it); a split's tell-back
-  stays and the entity gains the `on event` clause. Rationale: *handling the
-  event is important to be able to persist it*. Both land in the same place as
-  the inlets — every entity carries an `on event` clause for each of its own
-  events. Full detail with line numbers in BACKLOG #20.
+The corpus is **untouched** — the pilot lives only in the scratch dir and the
+one script run was reverted.
+
+### Corrections made this session — do not re-derive the old versions
+
+- **`collect-warnings.py` under-reported by 6x.** Its location regex matched
+  only same-line spans; rc.21+ emits `822:7->823:5` across lines, so every
+  `tell` finding was dropped silently. Fixed in `7e92bd30`. A sweep that
+  reports ~982 findings is the bug, not good news.
+- **BACKLOG #21 was one-third stale.** The enumerator gap is **FIXED**
+  (`to Open` and `to ShiftStatus.Open` both validate); arithmetic **will never
+  exist** (Reid: that is what AI prompts are for — do not file it again); only
+  `none`/`empty` is real, filed as
+  `../riddl/task/2026-08-23-no-value-denotes-absent-or-empty.md`.
+- **The `.bast` task premise is TRUE, not false** as the last handoff claimed.
+  All 190 tracked `.bast` are revision 19; rc.22's reader wants 20 and rejects
+  them. Still correctly deferred until 2.0.0 ships.
+- **An 82-finding class exists that no task file counts**: `Command 'X' in
+  Entity 'Y' is not handled by any on-clause`, mostly `Initialize<X>`.
 
 ### Traps
 
-- **Zero means zero of EVERY severity**, style included. Clearing one class
-  raises another: the 207 `reply` conversions immediately produced 207 style
-  warnings about undeclared `replies`.
-- **`.conf` sets `show-style-warnings = false`** — validate the `.riddl` directly
-  or style warnings are invisible and a sweep reports a false zero.
-- **prettify jams several declarations onto one line.** A regex using `[^\n]*`
-  or `^`-anchoring will delete or miss neighbours. Split a line into declarations.
-- **State names collide across entities** (`InPreparation` is on two), so a
-  bare-name index resolves to the wrong record. Key by `Entity.State`.
-- **A "dead" source may still have senders** — count `send` statements, not just
-  connectors.
-- **`riddlc validate <file>` differs from `from <conf> validate`** — the latter
-  suppresses style.
+- **Zero means zero of EVERY severity**, style included.
+- **`.conf` sets `show-style-warnings = false`** — validate the `.riddl`
+  directly or style warnings are invisible and a sweep reports a false zero.
+- **prettify jams several declarations onto one line.** A port removal must
+  handle both placements; `^`-anchored or `\n`-anchored regexes miss or delete
+  neighbours.
+- **A regex with an optional `with {...}` group under DOTALL over-consumes** —
+  the lazy `.*?` still crosses lines and swallows whole definitions. Do
+  brace-balanced removal line-by-line instead.
+- **Do not hand-derive ascriptions** after changing arity; use
+  `collect-ascriptions.py` + `apply-ascriptions.py`.
 
-### Certainty
+### `task/` — three files
 
-**Verified by command this session:** the pin and staged binary both rc.21; tree
-clean; the 7,071 split above; 0 errors after every pass; the two code examples in
-BACKLOG #20 read from source with line numbers.
-
-**Assumed, not verified:** the shape proportions in BACKLOG #20 come from a
-**25-model sample**, not the full corpus. Re-measure before relying on them to
-size the work.
-
-### `task/` — three files, all awaiting triage
-
-- `2026-08-22-handle-the-messages-you-are-told.md` — **in progress**, the campaign
-  above; Results not yet appended
-- `2026-08-20-set-state-values-are-prose-strings.md` — **work done**, Results not
-  yet appended, and its counts are wrong (128 sites not 91; 6 blocked not 18)
-- `2026-08-20-regenerate-checked-in-bast-after-2.0.0.md` — **blocked** on 2.0.0
-  actually shipping; newest release is rc.21, a prerelease. Its premise is also
-  already false here: the `.bast` are at revision 19 and round-trip green.
+- `2026-08-22-handle-the-messages-you-are-told.md` — **in progress**, the above
+- `2026-08-20-set-state-values-are-prose-strings.md` — **work done**, Results
+  not yet appended; its counts are wrong and BACKLOG #21 now records what
+  actually remains (22 sites: 10 genuine strings, 6 redundant lines to delete,
+  5 blocked on `none`/`empty`, 1 unclassified)
+- `2026-08-20-regenerate-checked-in-bast-after-2.0.0.md` — **blocked**, 2.0.0
+  has not shipped
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
