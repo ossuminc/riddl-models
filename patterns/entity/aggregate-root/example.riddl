@@ -392,8 +392,22 @@ domain Commerce is {
         |outside world addresses.
       }
     }
+    type CartRepositoryCommand is one of {
+      Shopping.CartRepository.PersistLineItemAdded or
+      Shopping.CartRepository.PersistQuantityUpdated or
+      Shopping.CartRepository.PersistLineItemRemoved or
+      Shopping.CartRepository.PersistCartCleared
+    } with {
+      briefly "Anything that writes the CartRepository"
+      described as {
+        |The persistence commands CartRepository accepts. Cart events never
+        |reach it directly; the projector turns each one into one of these.
+        |A repository processes commands and queries, never events: the effect
+        |of a command is a database update, the effect of a query is a result.
+      }
+    }
     repository CartRepository as sink is {
-      inlet CartRepositoryFromCart is type Cart.CartEvent
+      inlet CartRepositoryFromProjection is type CartRepositoryCommand
       record StoredCart is {
         cartId: Shopping.CartId with {
           briefly "cartId"
@@ -422,15 +436,78 @@ domain Commerce is {
           |The relational schema holding cart rows.
         }
       }
+      command PersistLineItemAdded is {
+        cartId: Shopping.CartId with {
+          briefly "Row addressed"
+          described as {
+            |Which stored cart row LineItemAdded applies to.
+          }
+        }
+      } with {
+        briefly "Persist LineItemAdded"
+        described as {
+          |Instructs this repository to apply LineItemAdded to the stored row. A
+          |persistence command, not a domain command: it declares no `yields`
+          |because storing a row records no new aggregate state.
+        }
+      }
+      command PersistQuantityUpdated is {
+        cartId: Shopping.CartId with {
+          briefly "Row addressed"
+          described as {
+            |Which stored cart row QuantityUpdated applies to.
+          }
+        }
+      } with {
+        briefly "Persist QuantityUpdated"
+        described as {
+          |Instructs this repository to apply QuantityUpdated to the stored row. A
+          |persistence command, not a domain command: it declares no `yields`
+          |because storing a row records no new aggregate state.
+        }
+      }
+      command PersistLineItemRemoved is {
+        cartId: Shopping.CartId with {
+          briefly "Row addressed"
+          described as {
+            |Which stored cart row LineItemRemoved applies to.
+          }
+        }
+      } with {
+        briefly "Persist LineItemRemoved"
+        described as {
+          |Instructs this repository to apply LineItemRemoved to the stored row. A
+          |persistence command, not a domain command: it declares no `yields`
+          |because storing a row records no new aggregate state.
+        }
+      }
+      command PersistCartCleared is {
+        cartId: Shopping.CartId with {
+          briefly "Row addressed"
+          described as {
+            |Which stored cart row CartCleared applies to.
+          }
+        }
+      } with {
+        briefly "Persist CartCleared"
+        described as {
+          |Instructs this repository to apply CartCleared to the stored row. A
+          |persistence command, not a domain command: it declares no `yields`
+          |because storing a row records no new aggregate state.
+        }
+      }
       handler CartPersistence is {
-        on command Cart.AddLineItem is {
-          do "persist the added line"
+        on command CartRepository.PersistLineItemAdded is {
+          do "apply LineItemAdded to the stored cart row"
         }
-        on command Cart.RemoveLineItem is {
-          do "persist the removed line"
+        on command CartRepository.PersistQuantityUpdated is {
+          do "apply QuantityUpdated to the stored cart row"
         }
-        on command Cart.ClearCart is {
-          do "persist the emptied cart"
+        on command CartRepository.PersistLineItemRemoved is {
+          do "apply LineItemRemoved to the stored cart row"
+        }
+        on command CartRepository.PersistCartCleared is {
+          do "apply CartCleared to the stored cart row"
         }
         on query Cart.GetCart is {
           let cartResult: Shopping.Cart.CartResult = prompt("read the cart from the store")
@@ -448,65 +525,53 @@ domain Commerce is {
         |Persists carts and answers cart queries.
       }
     }
-    processor CartEventSource as source is {
-      outlet PublishedCartEvents is type Cart.CartEvent
-      handler CartEventEmitter is {
+    projector CartProjection as flow is {
+      updates repository Shopping.CartRepository
+      inlet CartProjectionFromCart is type Cart.CartEvent
+      outlet CartProjectionToRepository is type CartRepositoryCommand
+      handler CartProjectionHandler is {
         on lineItemAdded: event Cart.LineItemAdded is {
-          send lineItemAdded to outlet PublishedCartEvents
+          tell command Shopping.CartRepository.PersistLineItemAdded(cartId = lineItemAdded.cartId) to repository Shopping.CartRepository
         }
-        on other is {
-          error "Unexpected message for source CartEventSource"
+        on quantityUpdated: event Cart.QuantityUpdated is {
+          tell command Shopping.CartRepository.PersistQuantityUpdated(cartId = quantityUpdated.cartId) to repository Shopping.CartRepository
+        }
+        on lineItemRemoved: event Cart.LineItemRemoved is {
+          tell command Shopping.CartRepository.PersistLineItemRemoved(cartId = lineItemRemoved.cartId) to repository Shopping.CartRepository
+        }
+        on cartCleared: event Cart.CartCleared is {
+          tell command Shopping.CartRepository.PersistCartCleared(cartId = cartCleared.cartId) to repository Shopping.CartRepository
         }
       } with {
-        briefly "Cart event emitter"
+        briefly "Cart projection handler"
         described as {
-          |Publishes cart events beyond this context.
+          |Turns each cart event into the repository command that writes it.
+          |The aggregate never writes the store itself, so there is exactly
+          |one write path rather than two.
         }
       }
     } with {
-      briefly "Cart event source"
+      briefly "Cart projection"
       described as {
-        |Publishes the cart event stream.
+        |Builds the stored cart view from the aggregate's events.
       }
     }
-    processor CartEventSink as sink is {
-      inlet IncomingCartEvents is type Cart.CartEvent
-      handler CartEventReceiver is {
-        on lineItemAdded: event Cart.LineItemAdded is {
-          tell lineItemAdded to entity Shopping.Cart
-          do "record that a line was added"
-        }
-        on other is {
-          error "Unexpected message for sink CartEventSink"
-        }
-      } with {
-        briefly "Cart event receiver"
-        described as {
-          |Terminates the cart event stream.
-        }
-      }
+    connector CartProjectionToStorage is {
+      from outlet Shopping.CartProjection.CartProjectionToRepository to
+        inlet Shopping.CartRepository.CartRepositoryFromProjection
     } with {
-      briefly "Cart event sink"
+      briefly "Cart projection to storage"
       described as {
-        |Receives published cart events.
+        |Carries the persistence commands the projector produces.
       }
     }
-    connector CartEventsToRepository is {
+    connector CartEventsToProjection is {
       from outlet Shopping.Cart.CartEvents to
-        inlet Shopping.CartRepository.CartRepositoryFromCart
+        inlet Shopping.CartProjection.CartProjectionFromCart
     } with {
       briefly "Cart events to repository"
       described as {
         |Carries cart events to the repository that persists them.
-      }
-    }
-    connector PublishedEventsToSink is {
-      from outlet Shopping.CartEventSource.PublishedCartEvents to
-        inlet Shopping.CartEventSink.IncomingCartEvents
-    } with {
-      briefly "Published events to sink"
-      described as {
-        |Carries published cart events to the sink that terminates them.
       }
     }
   } with {

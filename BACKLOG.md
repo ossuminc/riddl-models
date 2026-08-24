@@ -1048,53 +1048,46 @@ The two rulings converge on the same end state — **every entity carries an
 inlets need. Do the inlets and shape 2 together where they touch the same
 handler.
 
-## 22. `patterns/` was never migrated, and it is what makes `sbt v` RED
+## ~~22. `patterns/` was never migrated~~ — RESOLVED 2026-08-24, `sbt v` GREEN
 
-Found 2026-08-23 running the real gate after taking the corpus to zero errors.
+Reid ruled: **a repository processes commands and queries, never events.** The
+effect of a command is a database update; the effect of a query is a result
+response. So projectors send commands to repositories — **add the projector.**
 
-**`sbt v` fails in `verifyTemplates` and never reaches the 188 models.** The 7
-templates parse; both **examples** fail, on 3 completeness findings:
+Both examples now carry one, and `sbt v` reports **All 188 models passed** with
+`patterns/` green.
 
-```
-patterns/entity/event-sourced/example.riddl:438
-  Inlet 'AccountRepositoryFromAccount' admits Type 'AccountEvent' but Repository
-  'AccountRepository' declares no handler clause for 4 of its 4 members
+- `entity/event-sourced`: added `type AccountRepositoryCommand`, retyped the
+  repository's inlet from `Account.AccountEvent` to it, added
+  `projector AccountProjection as flow` whose four clauses each
+  `tell command AccountRepository.Persist<E>(..) to repository`, and rewired
+  entity → projector → repository.
+- `entity/aggregate-root`: the same, plus the repository was handling the
+  aggregate's **domain** commands (`on command Cart.AddLineItem`) — replaced
+  with `Persist<E>` commands it declares itself. Its `GetCart` query stays;
+  queries are exactly what a repository should answer.
 
-patterns/entity/aggregate-root/example.riddl:396   (same shape, CartRepository)
-patterns/entity/aggregate-root/example.riddl:476
-  Entity 'Cart' is told Event 'LineItemAdded' but declares no handler clause
-```
+**Reid's framing of the real risk, which is sharper than the one first filed
+here:** an entity MAY send a persist command to a repository directly, but with
+a projector also in between there are two write paths and the model is
+misconstrued. **One or the other.** Both examples now have exactly one: the
+entity emits events and never writes the store.
 
-These are **#20's own classes**: a repository holding an EVENT inlet, which the
-ruling forbids, and the split-tells-entity-back shape. `patterns/` is excluded
-from `riddlcValidate` via `riddlcConfExclusions`, so no campaign driver ever ran
-on it — the same hand-migration gap CLAUDE.md already warns about for prettify.
+(The concern originally written here — that a projector makes the example teach
+two catalogue patterns at once, `entity/event-sourced` and
+`projection/read-model` — is real but minor, and is the price of showing a
+correct write path. It is not what mattered.)
 
-`verifyTemplates` is STRICTER than the model gate: it fails on a finding of ANY
-severity, not just errors. That is consistent with the corpus zero standard, and
-it is why 3 completeness findings turn the whole build red.
-
-**This needs a DESIGN decision from Reid, not a mechanical fix.** The ruling
-makes turning an entity event into a repository command the PROJECTOR's job, and
-**`patterns/entity/event-sourced/example.riddl` has no projector**. So the fix is
-one of:
-
-1. **Add a projector to the example** — applies the ruling faithfully, but
-   changes what the event-sourced pattern teaches, and arguably conflates two
-   patterns in one example.
-2. **Let the entity tell its own `Persist` commands** — keeps the example small,
-   but contradicts "turning an entity event into a repository command is the
-   projector's job".
-3. **Drop the repository from the example entirely** — the pattern is about
-   event-sourced entities; persistence is `entity/repository`'s example.
-
-Option 3 looks cleanest to me and option 1 is the most faithful, but this is a
-published teaching artifact, so it is Reid's call. Both examples also still carry
-`<X>EventSource`/`<X>EventSink` scaffolding that is dead everywhere else.
-
-**Do not run `drop-dead-scaffolding.py` at `patterns/` to make this go away**
-without settling the above — the examples are documentation, and deleting half a
-diagram leaves it teaching nothing.
+**`aggregate-root` lost its `CartEventSource`/`CartEventSink` pair.** Cart is an
+`aggregate entity`, not event-sourced, so it has no `on event` clauses and the
+sink's `tell lineItemAdded to entity Cart` modelled a replay it never performs.
+Removing just the tell trips a different check — *"Handler in Sink handles
+messages but does not dispatch to any entity via 'tell'"* — so the pair cannot be
+made honest here at all, and a source that re-emits an event into a sink that
+hands it straight back is the duplicate processing the campaign removed
+corpus-wide. `event-sourced` KEEPS its pair: there the entity really is
+event-sourced, the tell lands on a genuine `on event` clause, and it demonstrates
+replay.
 
 ## 21. Only `none`/`empty` is a real gap — arithmetic is by design, enumerator is FIXED
 
@@ -1111,11 +1104,14 @@ gaps and was quoted back as current fact; check before repeating it.
   arithmetic, and `pointBalance + accrualPoints` is what the AI prompt is for.
   A `prompt(...)` hole is the intended form, not a defect. **Do not file this
   upstream again.**
-- **absent — a genuine gap, filed.** `none` and `empty` fall through to
-  `value_ref` and fail to resolve, so an optional field cannot be returned to
-  absent nor a `many` field to empty. Filed as
-  `../riddl/task/2026-08-23-no-value-denotes-absent-or-empty.md` with the
-  grammar citation (`ebnf-grammar.ebnf:344`) and the reasoning.
+- ~~**absent — a genuine gap, filed.**~~ **FIXED in rc.23.** `empty_value =
+  ( "empty" | "none" ) [ !statement_start type_expression ]` — both spellings
+  parse to the identical AST and prettify converges them to `empty`.
+  **But the cardinality precondition is NOT enforced**: `empty` is accepted on a
+  required `TimeStamp` and on a `OrderLine+` just as readily as on a `?` field,
+  with no diagnostic at any severity. Filed as
+  `../riddl/task/2026-08-24-empty-is-not-checked-against-cardinality.md`.
+  Use it only where the field is genuinely optional — riddlc will not stop you.
 
 ### What that leaves — 15 prose strings, was 22. CLOSED 2026-08-23
 
@@ -1135,8 +1131,17 @@ work unless the upstream gap closes.
   `cancellationReason = onlineOrderCancelled.cancellationReason`. Deleting was
   still correct; the reason was not. reactive-bbq held at 63 completeness /
   0 errors across the deletion.
-- **5** `set state TableOrder.*` sites carry `orderItems = empty` /
-  `presentedBillTotal = none` and are blocked on the filed gap above.
+- ~~**5** `set state TableOrder.*` sites~~ — **DONE 2026-08-24, rc.23 shipped
+  `empty`.** Each prose string was a STATE INVARIANT ("in this state
+  presentedBillTotal is none") sitting under a `morph` that carried every field
+  forward. The invariant is now folded INTO the morph as `presentedBillTotal =
+  empty` etc., and the prose deleted — one assignment, not an assignment plus a
+  contradicting comment. 10 `empty` uses, all on `?` fields. reactive-bbq held
+  at 63 completeness / 0 errors.
+  **`orderItems` was NOT emptied**: it is `OrderLine+`, minimum cardinality 1.
+  None of the 5 sites actually asked for that — the `orderItems = empty` in the
+  original task text came from the *Draft* site, which had already been
+  converted to a record constructor.
 - ~~**1** `Reservation.Requested.base` record-update site~~ — **FIXED
   2026-08-23**, `restaurant/Reservation.riddl:850`. The prose string, the
   `let ... = prompt(...)` above it and the contentless `morph ... with

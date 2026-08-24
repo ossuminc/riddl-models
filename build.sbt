@@ -18,7 +18,7 @@ enablePlugins(RiddlSbtPlugin)
 // perfected the binary is staged at ../bin/riddlc and the libraries arrive by
 // `sbt publishLocal` from that checkout, so this moves in step with riddl
 // rather than tracking published releases.
-lazy val riddlVersion = "2.0.0-rc.22"
+lazy val riddlVersion = "2.0.0-rc.23"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -61,7 +61,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
     ),
 
-    // riddlVersion is a PUBLISHED release again (2.0.0-rc.22), so the plugin
+    // riddlVersion is a PUBLISHED release again (2.0.0-rc.23), so the plugin
     // downloads it and the test-suite libraries resolve too -- a staged RC is a
     // BINARY only, which is why checkTests goes dark whenever the pin names one
     // (BACKLOG #19).

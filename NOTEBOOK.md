@@ -6,73 +6,83 @@ Development journal for active work on the riddl-models repository.
 
 **Branch** `release/2`. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Build state, verified this session:** `riddlVersion = "2.0.0-rc.22"`,
-**published**, so `riddlcPath := None`. `../bin/riddlc` reports rc.22 built from
-`c9e58031`, a later release/2 commit than the rc.22 tag — the same drift rc.21
-had. They agreed on every check run here. Verify with `../bin/riddlc info`.
+**Build state, verified this session:** `riddlVersion = "2.0.0-rc.23"`,
+**published**, `riddlcPath := None`.
 
-### The 92-error regression is CLOSED. `sbt v` is still RED.
+**There is NO staged/published binary drift, and there never was.** The staged
+`../bin/riddlc` and the artifact the plugin downloads are the SAME build,
+commit `10788a0a`. Previous handoffs claimed rc.22 and rc.21 drifted from their
+tags; that was an artifact of reading `.object.sha` on an **annotated tag**,
+which returns the TAG OBJECT, not the commit. Dereference it:
 
-Both halves matter. `./scripts/collect-warnings.py` over all 188 entry points:
+```bash
+o=$(gh api repos/ossuminc/riddl/git/ref/tags/2.0.0-rc.23 --jq '.object.sha')
+gh api repos/ossuminc/riddl/git/tags/$o --jq '.object.sha'   # -> the commit
+```
+
+Checked for rc.22 as well: `3fb1cf37` -> `c9e58031`, exactly what that binary
+reported. **Do not re-file this as drift.**
+
+### `sbt v` is GREEN. `checkAll` is RED, and that is the remaining campaign.
 
 ```
-3,521 findings   0 errors    (was 3,720 / 92 at the checkpoint)
-3,503 completeness, 18 across missing/usage/warning/style/deprecated
-17 of 188 models at zero
+sbt v        All 188 models passed  +  patterns/ green
+collect-warnings.py   3,521 findings   0 errors   17 of 188 models at zero
+checkAll     RED - its test half asserts R10: zero errors AND zero warnings
 ```
 
-**But `sbt v` fails before it reaches a single model**, in `verifyTemplates`, on
-3 completeness findings in the two `patterns/` examples — **BACKLOG #22**, and it
-needs a design decision from Reid, not a mechanical fix. `collect-warnings.py`
-excludes `patterns/` unless given `--include-patterns`; that is precisely the
-blind spot that let "0 errors" and "red gate" both be true.
+The two gates use **different thresholds**, which is not a disagreement:
+`riddlcValidate` fails only on errors; the test suite asserts zero findings of
+any kind. So `checkAll` is red on the 3,503 completeness findings — the
+campaign's ruled main body, "an entity is told an event and declares no clause
+receiving it". Unfinished, not regressed.
 
-**BACKLOG #20 is still the working document** and now carries verified state, the
-six-driver run order, and the traps below. **BACKLOG #22 is the gate blocker.**
+### Landed this session
 
-### In flight
+- **rc.23 upgrade.** Identical results to rc.22 (3,521 / 0), no regression.
+- **`empty` shipped in rc.23** and closed the last blocked item of BACKLOG #21.
+  Grammar: `empty_value = ( "empty" | "none" ) [ type_expression ]`; both
+  spellings give the same AST and prettify converges them to `empty`.
+- **BACKLOG #22 resolved** on Reid's ruling — repositories process commands and
+  queries, never events; projectors send the commands. Both pattern examples now
+  carry a projector. `sbt v` went green as a result.
 
-Nothing half-applied; the tree is committed at each step. The remaining work is
-the campaign's ruled main body — 3,503 completeness findings, dominated by "an
-entity is told an event and declares no clause receiving it". Reference models at
-zero: `commerce/e-commerce/order-management`, `.../product-catalog`, plus 15 more
-now.
+### Traps banked — all cost real time
 
-### Traps banked this session — all cost real time
-
-- **A parse error ABORTS the file.** Fixing 3 syntax errors RAISED the count
-  92 -> 101, exposing 9 errors and 43 warnings hidden behind the abort. A model
-  with a parse error is UNMEASURED, not clean.
-- **Verify the riddlc PATH, not just its output.** `../../../bin/riddlc` from a
-  3-deep model dir resolves inside the repo where nothing exists; the command
-  fails and `grep -c` on empty input prints `0`. Three models were called clean
-  that way and were not. Prefer the scripts, which resolve from ROOT.
-- **`Suggestion:` appears ONLY under `--provide-tips`**, and the echoed source
-  line sits BETWEEN the message and the tip.
-- **An on-clause can carry its own `with { }`** — removing only the balanced body
-  orphans it and breaks the parse.
-- **A clause head may carry ANY number of qualifier segments.**
-- **`reascribe.py` runs LAST.** Before wiring it writes `as source` onto a
-  repository with no inlets — certifying that nothing can write to it.
-- **Zero means zero of EVERY severity**, and `verifyTemplates` enforces that on
-  `patterns/` while the model gate only fails on errors.
+- **`empty` is NOT checked against cardinality.** It is accepted on a required
+  `TimeStamp` and on `OrderLine+` with no diagnostic at any severity. Filed as
+  `../riddl/task/2026-08-24-empty-is-not-checked-against-cardinality.md`. Use it
+  only where the field is genuinely `?`.
+- **A `str.replace` whose anchor does not match silently changes nothing**, and
+  the validation that follows is of an UNMODIFIED file. This produced a false
+  "rc.23 accepts empty on a required field" reading before it was caught. Always
+  `grep -c` the substituted text before trusting the run that follows.
+- **Multi-line quoted strings need a RUNNING quote total**, not a per-line
+  parity test — the first attempt dropped 2 lines of each 5-line prose string
+  and orphaned the rest.
+- **Verify the riddlc PATH.** `../../../bin/riddlc` from a 3-deep model dir
+  resolves inside the repo where nothing exists; the command fails and a
+  counting pipeline prints `0`. Hit again this session.
+- **A parse error ABORTS the file**, so the rest of that model is unmeasured.
+- **`reascribe.py` runs LAST**, after wiring.
+- **Zero means zero of EVERY severity** — that is what `checkAll` asserts.
 
 ### Certainty
 
-**Verified by command:** pin and binary both rc.22; the 3,521/0 split; `sbt v`
-red and exactly why; `patterns/` untouched since `8611b06e`, so its 3 findings
-predate this session; order-management at zero of every severity.
+**Verified by command:** pin, staged binary and downloaded artifact all rc.23 at
+`10788a0a`; tag-object dereference for rc.23 and rc.22; `sbt v` green over 188
+models plus patterns; 3,521/0; both pattern examples clean; reactive-bbq at 63
+completeness / 0 errors before and after the `empty` conversion.
 
 **Assumed, not verified:** that the 3,503 completeness findings are only the two
-ruled tell-shapes. They are the top of a frequency count, not an exhaustive audit.
+ruled tell-shapes — top of a frequency count, not an exhaustive audit.
 
 ### `task/` — two files
 
 - `2026-08-22-handle-the-messages-you-are-told.md` — **in progress**, the above
 - `2026-08-20-regenerate-checked-in-bast-after-2.0.0.md` — **blocked**; 2.0.0 has
-  not shipped (newest is rc.22, a prerelease). Premise confirmed TRUE by running
-  the reader: all 190 tracked `.bast` are revision 19 and rc.22 wants 20
-- `2026-08-20-set-state-values-are-prose-strings.md` — **CLOSED**, in `task/done`
+  not shipped (newest is rc.23, a prerelease). All 190 tracked `.bast` are
+  revision 19 and the reader wants 20
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 

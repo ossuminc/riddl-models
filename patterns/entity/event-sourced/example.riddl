@@ -434,8 +434,23 @@ domain Banking is {
         |event, and the states are projections of those events.
       }
     }
+    type AccountRepositoryCommand is one of {
+      Accounts.AccountRepository.PersistAccountOpened or
+      Accounts.AccountRepository.PersistMoneyDeposited or
+      Accounts.AccountRepository.PersistMoneyWithdrawn or
+      Accounts.AccountRepository.PersistAccountClosed
+    } with {
+      briefly "Anything that writes the AccountRepository"
+      described as {
+        |The persistence commands AccountRepository accepts. Account events
+        |never reach it directly; the projector turns each one into one of
+        |these. A repository processes commands and queries, never events:
+        |the effect of a command is a database update, the effect of a query
+        |is a result.
+      }
+    }
     repository AccountRepository as sink is {
-      inlet AccountRepositoryFromAccount is type Account.AccountEvent
+      inlet AccountRepositoryFromProjection is type AccountRepositoryCommand
       record StoredAccount is {
         accountId: Accounts.AccountId with {
           briefly "accountId"
@@ -553,6 +568,37 @@ domain Banking is {
         |Persists the account projection built from account events.
       }
     }
+    projector AccountProjection as flow is {
+      updates repository Accounts.AccountRepository
+      inlet AccountProjectionFromAccount is type Account.AccountEvent
+      outlet AccountProjectionToRepository is type AccountRepositoryCommand
+      handler AccountProjectionHandler is {
+        on accountOpened: event Account.AccountOpened is {
+          tell command Accounts.AccountRepository.PersistAccountOpened(accountId = accountOpened.accountId) to repository Accounts.AccountRepository
+        }
+        on moneyDeposited: event Account.MoneyDeposited is {
+          tell command Accounts.AccountRepository.PersistMoneyDeposited(accountId = moneyDeposited.accountId) to repository Accounts.AccountRepository
+        }
+        on moneyWithdrawn: event Account.MoneyWithdrawn is {
+          tell command Accounts.AccountRepository.PersistMoneyWithdrawn(accountId = moneyWithdrawn.accountId) to repository Accounts.AccountRepository
+        }
+        on accountClosed: event Account.AccountClosed is {
+          tell command Accounts.AccountRepository.PersistAccountClosed(accountId = accountClosed.accountId) to repository Accounts.AccountRepository
+        }
+      } with {
+        briefly "Account projection handler"
+        described as {
+          |Turns each account event into the repository command that writes it.
+          |This translation is the projector's job precisely so the entity does
+          |not write the store itself -- one write path, not two.
+        }
+      }
+    } with {
+      briefly "Account projection"
+      described as {
+        |Builds the stored account view from the entity's events.
+      }
+    }
     processor AccountEventSource as source is {
       outlet PublishedAccountEvents is type Account.AccountEvent
       handler AccountEventEmitter is {
@@ -605,13 +651,22 @@ domain Banking is {
         |Carries published account events to the sink that terminates them.
       }
     }
-    connector AccountEventsToRepository is {
+    connector AccountEventsToProjection is {
       from outlet Accounts.Account.AccountEvents to
-        inlet Accounts.AccountRepository.AccountRepositoryFromAccount
+        inlet Accounts.AccountProjection.AccountProjectionFromAccount
     } with {
-      briefly "Account events to repository"
+      briefly "Account events to the projection"
       described as {
-        |Carries account events to the repository that persists them.
+        |Carries account events to the projector that builds the stored view.
+      }
+    }
+    connector AccountProjectionToStorage is {
+      from outlet Accounts.AccountProjection.AccountProjectionToRepository to
+        inlet Accounts.AccountRepository.AccountRepositoryFromProjection
+    } with {
+      briefly "Account projection to storage"
+      described as {
+        |Carries the persistence commands the projector produces.
       }
     }
   } with {
