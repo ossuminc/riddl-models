@@ -6,83 +6,90 @@ Development journal for active work on the riddl-models repository.
 
 **Branch** `release/2`. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
 
-**Build state, verified this session:** `riddlVersion = "2.0.0-rc.23"`,
-**published**, `riddlcPath := None`.
+### USE THE PINNED COMPILER, NOT `../bin/riddlc`
 
-**There is NO staged/published binary drift, and there never was.** The staged
-`../bin/riddlc` and the artifact the plugin downloads are the SAME build,
-commit `10788a0a`. Previous handoffs claimed rc.22 and rc.21 drifted from their
-tags; that was an artifact of reading `.object.sha` on an **annotated tag**,
-which returns the TAG OBJECT, not the commit. Dereference it:
+`../bin/riddlc` was rebuilt 2026-08-24 11:05 to **`2.0.0-rc.23-4-10262003`**,
+four commits past the rc.23 tag. It requires **full constructors** and reports
+**2,411 errors** corpus-wide (2,298 constructor, 113 `set`-after-`morph`). The
+build downloads the pin, `2.0.0-rc.23` (`10788a0a`), which reports **0**.
+
+**Reid's call: hold at rc.23 until rc.24**, which will carry a `find` command.
+So take every measurement with the pinned binary:
 
 ```bash
-o=$(gh api repos/ossuminc/riddl/git/ref/tags/2.0.0-rc.23 --jq '.object.sha')
-gh api repos/ossuminc/riddl/git/tags/$o --jq '.object.sha'   # -> the commit
+export RIDDLC=$HOME/.cache/riddlc/2.0.0-rc.23/bin/riddlc
+$RIDDLC info | grep 'git commit'      # expect 10788a0a
+RIDDLC=$RIDDLC ./scripts/collect-warnings.py
 ```
 
-Checked for rc.22 as well: `3fb1cf37` -> `c9e58031`, exactly what that binary
-reported. **Do not re-file this as drift.**
+This IS real drift, unlike the annotated-tag artifact corrected earlier the same
+day (see `[[no-riddlc-tag-drift]]` — `.object.sha` on an annotated tag returns
+the tag object; dereference it). Do not confuse the two.
 
-### `sbt v` is GREEN. `checkAll` is RED, and that is the remaining campaign.
+### State, verified
 
 ```
-sbt v        All 188 models passed  +  patterns/ green
-collect-warnings.py   3,521 findings   0 errors   17 of 188 models at zero
-checkAll     RED - its test half asserts R10: zero errors AND zero warnings
+sbt v                 GREEN - all 188 models + patterns/
+collect-warnings.py   64 findings, 0 errors, 170 of 188 models at zero
+check-repository-ports.py   15 violations, all in reactive-bbq
 ```
 
-The two gates use **different thresholds**, which is not a disagreement:
-`riddlcValidate` fails only on errors; the test suite asserts zero findings of
-any kind. So `checkAll` is red on the 3,503 completeness findings — the
-campaign's ruled main body, "an entity is told an event and declares no clause
-receiving it". Unfinished, not regressed.
+The campaign's main body is DONE: 3,521 -> 64 findings. Phase A added 1,744
+`on <e>: event E` clauses and cleared 3,445 of them in one pass.
 
-### Landed this session
+### What is left — 64 findings
 
-- **rc.23 upgrade.** Identical results to rc.22 (3,521 / 0), no regression.
-- **`empty` shipped in rc.23** and closed the last blocked item of BACKLOG #21.
-  Grammar: `empty_value = ( "empty" | "none" ) [ type_expression ]`; both
-  spellings give the same AST and prettify converges them to `empty`.
-- **BACKLOG #22 resolved** on Reid's ruling — repositories process commands and
-  queries, never events; projectors send the commands. Both pattern examples now
-  carry a projector. `sbt v` went green as a result.
+- **reactive-bbq, 29** — 14 repositories still hold event inlets, plus sinks,
+  external contexts and projectors needing clauses for every union member.
+- **35 across 17 models** — same union-inlet class, a few binding-shadow
+  warnings, 3 orphan repositories (BedCensus, ORSchedule, Genealogy) awaiting
+  the **"move the events, don't duplicate"** treatment Reid chose; lab-orders is
+  the worked example of it.
 
-### Traps banked — all cost real time
+### The reactive-bbq recipe — PROVEN on ShiftRepository, 14 to go
 
-- **`empty` is NOT checked against cardinality.** It is accepted on a required
-  `TimeStamp` and on `OrderLine+` with no diagnostic at any severity. Filed as
-  `../riddl/task/2026-08-24-empty-is-not-checked-against-cardinality.md`. Use it
-  only where the field is genuinely `?`.
-- **A `str.replace` whose anchor does not match silently changes nothing**, and
-  the validation that follows is of an UNMODIFIED file. This produced a false
-  "rc.23 accepts empty on a required field" reading before it was caught. Always
-  `grep -c` the substituted text before trusting the run that follows.
-- **Multi-line quoted strings need a RUNNING quote total**, not a per-line
-  parity test — the first attempt dropped 2 lines of each 5-line prose string
-  and orphaned the rest.
-- **Verify the riddlc PATH.** `../../../bin/riddlc` from a 3-deep model dir
-  resolves inside the repo where nothing exists; the command fails and a
-  counting pipeline prints `0`. Hit again this session.
-- **A parse error ABORTS the file**, so the rest of that model is unmeasured.
-- **`reascribe.py` runs LAST**, after wiring.
-- **Zero means zero of EVERY severity** — that is what `checkAll` asserts.
+Its repositories **already declare their Persist commands and already handle
+them**. Do not re-add either. Each needs only:
+
+1. `type <R>Command is one of { <its Persist commands> }`
+2. the event inlet replaced by `inlet <R>From<Projector> is type <R>Command`
+3. a projector, **if the context has none** — Scheduling ran the entity's event
+   outlet straight into the repository
+4. the connector rewired: entity -> projector -> repository
+
+### Traps banked — every one cost real time
+
+- **`on command PersistX is {` and `on persistX: command PersistX is {` are BOTH
+  legal.** Searching for one and concluding the handler is empty is how six
+  duplicate clauses got added.
+- **Nine grep-shaped defects this session.** They are enumerated in
+  `../riddl/task/2026-08-24-riddlc-needs-a-scriptable-ast-projection.md`, which
+  is the input to rc.24's `find`. Read it before writing another regex script.
+- **`morph entity X.Y to state ...` matches a naive definition-header regex** and
+  yields the CONTEXT name — it misclassified 3,433 sites.
+- **`initial handler X is {`** — the keyword is optional and easy to miss.
+- **An alternation's separator `or` is not a member** — counting it poisoned 191
+  results.
+- **Always recurse.** reactive-bbq keeps sources in `restaurant/`, `corporate/`,
+  `backoffice/`; a non-recursive glob skips the largest model and reports clean.
+- **A `str.replace` whose anchor does not match changes nothing silently**, and
+  the validation after it is of an unmodified file.
+- **Verify the riddlc PATH** — a wrong relative path fails and `grep -c` prints 0.
 
 ### Certainty
 
-**Verified by command:** pin, staged binary and downloaded artifact all rc.23 at
-`10788a0a`; tag-object dereference for rc.23 and rc.22; `sbt v` green over 188
-models plus patterns; 3,521/0; both pattern examples clean; reactive-bbq at 63
-completeness / 0 errors before and after the `empty` conversion.
+**Verified by command:** the rc.23/rc.23-4 split and both binaries' commits; 64
+findings / 0 errors on the pin; `sbt v` green; 15 port violations; reactive-bbq
+at 29 findings / 0 errors after the ShiftRepository conversion.
 
-**Assumed, not verified:** that the 3,503 completeness findings are only the two
-ruled tell-shapes — top of a frequency count, not an exhaustive audit.
+**Assumed, not verified:** that the other 14 reactive-bbq repositories match
+ShiftRepository's shape. ShiftRepository is one data point.
 
-### `task/` — two files
+### `task/` — two files here, two filed upstream in `../riddl/task/`
 
-- `2026-08-22-handle-the-messages-you-are-told.md` — **in progress**, the above
-- `2026-08-20-regenerate-checked-in-bast-after-2.0.0.md` — **blocked**; 2.0.0 has
-  not shipped (newest is rc.23, a prerelease). All 190 tracked `.bast` are
-  revision 19 and the reader wants 20
+- `2026-08-22-handle-the-messages-you-are-told.md` — the campaign, near done
+- `2026-08-20-regenerate-checked-in-bast-after-2.0.0.md` — blocked on 2.0.0
+- filed upstream: the scriptable-AST request, and `morph`-after-`morph`
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
