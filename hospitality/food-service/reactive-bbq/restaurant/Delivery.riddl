@@ -871,15 +871,13 @@ event-sourced entity DeliveryOrder as flow is {
         morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.DriverAssignedState with record DeliveryOrder.DriverAssignedData(assignedAt = driverAssigned.assignedAt, base = PendingData.base, assignedDriverId = prompt("the assigned driver id of this driver assigned data"), assignedDriverName = prompt("the assigned driver name of this driver assigned data"))
         do "DriverAssigned event triggers push notification to
           driver via NotificationService streaming topology"
-        set state DriverAssignedState to record DriverAssignedData(base = DriverAssignedData.base, assignedDriverId = DriverAssignedData.assignedDriverId, assignedDriverName = DriverAssignedData.assignedDriverName, assignedAt = driverAssigned.assignedAt)
       }
       on failDelivery: command FailDelivery is {
         yield event DeliveryMarkedFailed(deliveryId = failDelivery.deliveryId, failureReason = failDelivery.failureReason, failedAt = failDelivery.failedAt)
         send event DeliveryMarkedFailed(deliveryId = failDelivery.deliveryId, failureReason = failDelivery.failureReason, failedAt = failDelivery.failedAt) to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on deliveryMarkedFailed: event DeliveryMarkedFailed is {
-        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData(failureReason = deliveryMarkedFailed.failureReason, failedAt = deliveryMarkedFailed.failedAt, base = PendingData.base, lastDriverId = prompt("the last driver id of this failed data"))
-        set state Failed to record FailedData(base = FailedData.base, failureReason = deliveryMarkedFailed.failureReason, failedAt = deliveryMarkedFailed.failedAt, lastDriverId = empty)
+        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData(failureReason = deliveryMarkedFailed.failureReason, failedAt = deliveryMarkedFailed.failedAt, base = PendingData.base, lastDriverId = empty)
       }
       on createDelivery: command CreateDelivery is {
         send event CreateDeliveryRejected(deliveryId = createDelivery.deliveryId, rejectionReason = "DeliveryOrder does not accept CreateDelivery in this state") to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
@@ -939,10 +937,9 @@ event-sourced entity DeliveryOrder as flow is {
         send event DriverDispatched(deliveryId = dispatchDriver.deliveryId, dispatchedAt = dispatchDriver.dispatchedAt) to outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents
       }
       on driverDispatched: event DriverDispatched is {
-        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.InTransit with record DeliveryOrder.InTransitData(dispatchedAt = driverDispatched.dispatchedAt, base = DriverAssignedData.base, assignedDriverId = DriverAssignedData.assignedDriverId, assignedDriverName = DriverAssignedData.assignedDriverName, lastKnownLocation = prompt("the last known location of this in transit data"))
+        morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.InTransit with record DeliveryOrder.InTransitData(dispatchedAt = driverDispatched.dispatchedAt, base = DriverAssignedData.base, assignedDriverId = DriverAssignedData.assignedDriverId, assignedDriverName = DriverAssignedData.assignedDriverName, lastKnownLocation = empty)
         do "DriverDispatched event triggers push notification to
           customer via NotificationService streaming topology"
-        set state InTransit to record InTransitData(base = InTransitData.base, assignedDriverId = InTransitData.assignedDriverId, assignedDriverName = InTransitData.assignedDriverName, dispatchedAt = driverDispatched.dispatchedAt, lastKnownLocation = empty)
       }
       on failDelivery: command FailDelivery is {
         yield event DeliveryMarkedFailed(deliveryId = failDelivery.deliveryId, failureReason = failDelivery.failureReason, failedAt = failDelivery.failedAt)
@@ -1018,7 +1015,6 @@ event-sourced entity DeliveryOrder as flow is {
         morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Delivered with record DeliveryOrder.DeliveredData(confirmedAt = deliveryConfirmed.confirmedAt, base = InTransitData.base, assignedDriverId = InTransitData.assignedDriverId, assignedDriverName = InTransitData.assignedDriverName)
         do "DeliveryConfirmed event triggers push notification
           to customer via NotificationService streaming topology"
-        set state DeliveryOrder.Delivered to record DeliveredData(base = InTransitData.base, assignedDriverId = InTransitData.assignedDriverId, assignedDriverName = InTransitData.assignedDriverName, confirmedAt = prompt("the confirmed at of this delivered data"))
         terminate self.id with (deliveryClosureReason = "delivered and confirmed by the customer", deliveryClosedAt = deliveryConfirmed.confirmedAt)
       }
       on term(deliveryClosureReason: String(1,500), deliveryClosedAt: TimeStamp) is {
@@ -1266,10 +1262,8 @@ event-sourced entity DeliveryOrder as flow is {
       do "query available drivers by GeoLocation proximity to
         restaurant and select nearest with status = available"
     }
-    on event DeliveryCreated is {
-      let pendingData: type DeliveryOrder.PendingData = prompt("the pending data that results from delivery created")
-      morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Pending with pendingData
-      set state Pending to record PendingData(base = PendingData.base)
+    on deliveryCreated: event DeliveryCreated is {
+      morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Pending with record DeliveryOrder.PendingData(base = record DeliveryBase(deliveryId = deliveryCreated.deliveryId, sourceOnlineOrderId = deliveryCreated.sourceOnlineOrderId, deliveryCustomerName = prompt("the delivery customer name of this delivery created"), deliveryCustomerPhone = prompt("the delivery customer phone of this delivery created"), deliveryDestination = deliveryCreated.deliveryDestination, createdAt = deliveryCreated.createdAt))
     }
     on query GetDeliveryOrder is {
       do "look up DeliveryOrder by GetDeliveryOrder.deliveryId"
