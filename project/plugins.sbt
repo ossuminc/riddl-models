@@ -16,4 +16,4 @@ credentials += Credentials(
 )
 
 addSbtPlugin("com.ossuminc" % "sbt-ossuminc" % "3.1.0")
-addSbtPlugin("com.ossuminc" % "sbt-riddl" % "2.0.0-rc.9-48-fdc5c171")
+addSbtPlugin("com.ossuminc" % "sbt-riddl" % "2.0.0-rc.24")
