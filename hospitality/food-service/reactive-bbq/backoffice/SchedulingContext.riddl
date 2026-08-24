@@ -57,8 +57,19 @@ context Scheduling as router is {
   }
   connector 'ShiftCommand Stream Intake' is from outlet Scheduling.ShiftCommandStreamOut to inlet Scheduling.Shift.ShiftCommands  connector 'ShiftToReporting Egress' is from outlet Scheduling.ShiftEventSource.ShiftEvents to inlet Scheduling.ShiftToReportingIn  connector 'ShiftResult Stream Egress' is from outlet Scheduling.ShiftRepository.ShiftRepositoryResponses to inlet Scheduling.ShiftResultStreamIn  include "scheduling-types.riddl"
   include "Shift.riddl"
+  type ShiftRepositoryCommand is one of {
+    Scheduling.ShiftRepository.PersistShiftCreated or Scheduling.ShiftRepository.PersistEmployeeAssigned or Scheduling.ShiftRepository.PersistShiftSwapped or Scheduling.ShiftRepository.PersistClockedIn or Scheduling.ShiftRepository.PersistClockedOut or Scheduling.ShiftRepository.PersistShiftCancelled
+  } with {
+    briefly "Anything that writes the ShiftRepository"
+    described as {
+      |The persistence commands ShiftRepository accepts. Shift events never
+      |reach it directly; the projector turns each into one of these. A
+      |repository takes commands and queries only.
+    }
+  }
   repository ShiftRepository as flow is {
-    inlet ShiftRepositoryFromShift is type ShiftEvent    outlet ShiftRepositoryResponses is type Shift.ShiftResult
+    inlet ShiftRepositoryFromShiftProjection is type ShiftRepositoryCommand
+    outlet ShiftRepositoryResponses is type Shift.ShiftResult
     record StoredShift is  {
       shiftId: ShiftId with {
         briefly "shiftId"
@@ -226,6 +237,41 @@ context Scheduling as router is {
       |Stores and retrieves shift data.
     }
   }
+  projector ShiftProjection as flow is {
+    updates repository Scheduling.ShiftRepository
+    inlet ShiftProjectionFromShift is type ShiftEvent
+    outlet ShiftProjectionToRepository is type ShiftRepositoryCommand
+    handler ShiftProjectionHandler is {
+      on shiftCreated: event Shift.ShiftCreated is {
+        tell command Scheduling.ShiftRepository.PersistShiftCreated(shiftId = shiftCreated.shiftId) to repository Scheduling.ShiftRepository
+      }
+      on employeeAssigned: event Shift.EmployeeAssigned is {
+        tell command Scheduling.ShiftRepository.PersistEmployeeAssigned(shiftId = employeeAssigned.shiftId) to repository Scheduling.ShiftRepository
+      }
+      on shiftSwapped: event Shift.ShiftSwapped is {
+        tell command Scheduling.ShiftRepository.PersistShiftSwapped(shiftId = shiftSwapped.shiftId) to repository Scheduling.ShiftRepository
+      }
+      on clockedIn: event Shift.ClockedIn is {
+        tell command Scheduling.ShiftRepository.PersistClockedIn(shiftId = clockedIn.shiftId) to repository Scheduling.ShiftRepository
+      }
+      on clockedOut: event Shift.ClockedOut is {
+        tell command Scheduling.ShiftRepository.PersistClockedOut(shiftId = clockedOut.shiftId) to repository Scheduling.ShiftRepository
+      }
+      on shiftCancelled: event Shift.ShiftCancelled is {
+        tell command Scheduling.ShiftRepository.PersistShiftCancelled(shiftId = shiftCancelled.shiftId) to repository Scheduling.ShiftRepository
+      }
+    } with {
+      briefly "Shift projection handler"
+      described as {
+        |Turns each shift event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "Shift projection"
+    described as {
+      |Builds the stored shift view from the entity's events.
+    }
+  }
   processor ShiftEventSource as source is {
     outlet ShiftEvents is type ShiftEvent
     handler ShiftEventEmitter is {
@@ -316,7 +362,7 @@ context Scheduling as router is {
       |system for shift assignment validation.
     }
   }
-  connector 'ShiftEvent Storage' is from outlet Scheduling.Shift.ShiftEvents2 to inlet Scheduling.ShiftRepository.ShiftRepositoryFromShift with {
+  connector 'ShiftEvent Feed' is from outlet Scheduling.Shift.ShiftEvents2 to inlet Scheduling.ShiftProjection.ShiftProjectionFromShift  connector 'ShiftProjection Storage' is from outlet Scheduling.ShiftProjection.ShiftProjectionToRepository to inlet Scheduling.ShiftRepository.ShiftRepositoryFromShiftProjection with {
     briefly "Shift events on their way to storage"
     described as {
       |Carries what leaves ShiftEvents2 to ShiftRepositoryFromShift, which is where it is acted on.
