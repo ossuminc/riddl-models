@@ -71,7 +71,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // against the pin; and a `git checkout -- .` reverts the pin silently, which
     // happened on 2026-08-19 and left the pin naming rc.19-3 while rc.19-5 was
     // doing the validating.
-    riddlcPath := None,
+    riddlcPath := Some(file("/Users/reid/Code/ossuminc/bin/riddlc")),
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),
