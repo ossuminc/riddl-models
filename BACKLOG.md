@@ -823,165 +823,82 @@ staged binary and a published library set are now routinely different things, an
 the pin cannot name both.
 
 
-## 20. The delivery campaign — rc.22, and repositories take COMMANDS
+## ~~20. The delivery campaign~~ — DONE 2026-08-24, corpus at ZERO
 
-### RULED and PROVEN — repositories take commands, not events (Reid, 2026-08-23)
+Closed. The corpus reports **0 findings at every severity across all 188 models**,
+`sbt v` passes models and `patterns/`, and `check-repository-ports.py` reports 0
+violations. Verified 2026-08-24 against riddlc `2.0.0-rc.24-3-40c0574f`.
 
-**A repository is not event-sourced.** The effect of its commands is a change to
-the database, and that is sufficient. So a repository must not declare an inlet
-for events, and nothing may send or tell it one. **Turning an entity event into
-a repository command is the PROJECTOR's job.**
+Route taken: 3,521 -> 0. The single largest move was 1,744 `on <e>: event E`
+clauses, which cleared 3,445 findings at once because both ruled tell-shapes
+converge on the entity owning the clause. Repositories now take commands and
+queries only, via a projector.
 
-Removing the inlets is *necessary but insufficient* — you must back-track
-through the channel and fix whatever was sending events, because those sends
-are themselves the defect.
+What it taught is in NOTEBOOK; the durable rules are in CLAUDE.md. **Two rulings
+came out of it that are accepted and NOT implemented — items 23 and 24 below.**
 
-**The target shape, validated end to end** on
-`commerce/e-commerce/order-management`: **48 findings -> 26, zero errors**, the
-26 remainder being only the entity-tell shape below.
+## 23. Repository command naming — Reid picked option A, NOT STARTED
 
-```riddl
-projector OrderAnalytics as flow is {
-  updates repository OrderContext.OrderRepository
-  inlet  OrderAnalyticsFromOrder    is type OrderEvent
-  outlet OrderAnalyticsToRepository is type OrderRepositoryCommand
-  handler AnalyticsHandler is {
-    on paymentConfirmed: event Order.PaymentConfirmed is {
-      tell command OrderContext.OrderRepository.PersistPaymentConfirmed(
-          orderId = paymentConfirmed.orderId) to repository OrderContext.OrderRepository
-      do "Count the order as paid in the day's confirmed revenue"
-    }
-  }
-}
-connector 'OrderAnalytics Storage' is
-  from outlet OrderContext.OrderAnalytics.OrderAnalyticsToRepository
-  to   inlet  OrderContext.OrderRepository.OrderRepositoryFromOrderAnalytics
-```
+**Ruling (Reid, 2026-08-24).** `Persist<Event>` is wrong three ways:
 
-The repository declares `Persist<Event>` for each event, an `on command` clause
-for each, a `type <Repo>Command is one of { ... }` alternation of them, and
-command inlets typed by it.
+1. **past tense dominates** — `PersistTeamCreated` reads as an event, because the
+   event name is longer and ends the phrase
+2. **`Persist` is a lazy verb** — Reid: *"the equivalent of saying Do to a
+   repository, because the only thing it CAN do is persist data. Aren't things
+   ever created, deleted, changed, saved?"*
+3. **they carry only an id** — `PersistTeamCreated(teamId)`, one field, so the
+   command does not say WHAT to write, only WHICH row. Found while sizing the
+   rename; not part of Reid's original objection but the same defect.
 
-**Five things learned doing it, each the hard way:**
+**Option A, chosen:** verbs by effect, few per repository —
+`CreateLoyaltyAccount` / `UpdateLoyaltyAccount` / `DeleteLoyaltyAccount` — with
+the projector mapping many events onto them, and **the command carrying the row
+data** rather than just an id. Fixes all three.
 
-1. **A prose-only projector clause models nothing.** `on paymentConfirmed { do
-   "count it" }` emits nothing — a projector owns no rows. It silences the
-   warning and says nothing. Every projector clause must SEND a command.
-2. **Removing the repository's inlets makes it unreachable** — 18 warnings in
-   the pilot. The command inlets are what fix that, which is the "insufficient"
-   half of the ruling.
-3. **`send` cannot address a repository.** Grammar: `send ... to (outlet_ref |
-   inlet_ref)`, while `tell` takes a `processor_ref`. Reaching a repository
-   through the stream therefore needs outlet + connector; `tell` is the direct
-   form. Both validate.
-4. **`<X>EventSource` / `<X>EventSink` / `<X>EventFlow` are dead scaffolding**
-   and are to be deleted — 188 / 171 / 134 of them. **No EventSource has an
-   inlet**, so its handler can never fire; the sinks existed only to tell events
-   at a repository. Reid: "a wasteful lot of extra duplicate processing".
-5. **Do not hand-derive the new ascriptions.** Arity changes everywhere
-   (split->flow, sink->flow, merge->flow). Run `collect-ascriptions.py` then
-   `apply-ascriptions.py` after the structural edit.
+Scale, measured: **4,030 uses, 1,669 distinct names.** Rejected alternatives were
+B (imperative per event, keeps 1:1, but 1,669 noun-phrase renames is judgement
+not mechanism, and leaves (3)) and C (mechanical 1:1, leaves (2) and (3)).
 
-**`scripts/repositories-take-commands.py` implements this and is NOT READY** —
-two mechanical defects documented in its docstring (stale match offsets; a
-`drop_block` that swallows the `type <X>Event` declaration after an
-EventSource). Fix those, verify with `--only commerce/e-commerce/order-management`
-requiring errors=0 / total=26, then run the corpus.
+Do it with `riddlc find ... -replace`, not regex — see CLAUDE.md.
 
-### WHERE IT STANDS — ZERO ERRORS, but `sbt v` is still RED on `patterns/`
+## 24. Rejections do not go to a database — HALF DONE, and the rest is ORDERED
 
-**Errors are back to 0** (2026-08-23). The 92-error regression is closed; the
-branch is no longer blocked by it. Verified by `./scripts/collect-warnings.py`
-over all 188 entry points:
+**Ruling (Reid, 2026-08-24).** *"Nobody ever sends a message to a database
+telling it to reject something... Whoever SENT those messages should not be
+sending them and should be dealing with the rejection at THEIR level, not punting
+to the database."* A genuine business rejection — a declined card — is different:
+it is a real event, stored by its own specific command.
+
+**Done:** 268 state-guard sends removed, the refusal preserved as `error`. The
+distinction was measured, not assumed: 268 of 269 carried
+`rejectionReason = "<X> does not accept <Y> in this state"`. The one that did not
+— `"Point balance is less than the points requested for redemption"`, at
+`hospitality/food-service/reactive-bbq/restaurant/LoyaltyAccount.riddl:635` — is
+the carve-out and was deliberately left alone.
+
+**Left — and the order is not a preference, riddlc enforces it:**
+
+1. remove the split clauses that still `send`/`tell` rejection events
+2. **then** trim the rejection members out of the `<X>Event` alternations
+3. **then** replace the persistence projectors' `on other` with an explicit
+   clause per member that can actually arrive
+
+Attempting (2) first is refused by riddlc's `-replace` write gate, which restores
+every file:
 
 ```
-3,521 findings total   (was 3,720 at the checkpoint, 7,018 before the campaign)
-    0 error            <- was 92
-3,503 completeness
-   18 missing / usage / warning / style / deprecated
- 17 of 188 models at zero
+outlet ReservationEventSplitToReservationBoard is declared as Type
+'ReservationEvent', which does not admit Event 'CompleteVisitRejected'
 ```
 
-**`sbt v` NEVER REACHES the models.** It fails first in `verifyTemplates`, on
-the two `patterns/` examples — see the item below. Do not read "0 errors" as
-"the gate is green"; `collect-warnings.py` EXCLUDES `patterns/` unless given
-`--include-patterns`, and that is exactly the blind spot.
+That is how the ordering was found — by the gate, not by reasoning. Remaining
+population: 52 `<Command>Rejected` declarations, 97 alternation members, 1 send.
 
-**The corpus standard is zero of EVERY severity**, so this is a milestone, not
-the finish. The 3,503 completeness findings are the ruled main body below.
-
-**The five drivers**, in the order they must run — the order is not cosmetic:
-
-```bash
-./scripts/repo-commands.py            <model>   # identical-everywhere half
-./scripts/repo-commands-build.py      <model>   # riddlc-driven half
-./scripts/drop-dead-scaffolding.py    <model>   # <X>Source / <X>Sink removal
-./scripts/drop-repo-domain-clauses.py <model>   # domain commands out of repos
-./scripts/wire-repo-commands.py       <model>   # alternation + ports + connector
-./scripts/reascribe.py                <model>   # LAST — riddlc names each shape
-```
-
-**`reascribe.py` must run LAST.** Re-ascribing before wiring writes `as source`
-onto a repository with no inlets — silencing the error by certifying a
-repository nothing can write to.
-
-**Two scripts exist because the old tooling could not reach these cases:**
-`apply-ascriptions.py` only INSERTS a missing ascription and skips any site not
-reading `<identifier> is`, so a WRONG ascription is invisible to it;
-`repo-commands.py` matches only the literal `\w+EventSource`/`\w+EventSink` and
-silently left 48 `<X>Source`/`<X>Sink` behind.
-
-**What the errors actually were**, now that they are all closed — the original
-table's guesses are superseded by what riddlc named:
-
-| was | cause | closed by |
-|----:|-------|-----------|
-| 46 | `<X>Source`/`<X>Sink` the driver's regex missed, holding `on init` clauses naming deleted `Initialize<X>` commands | `drop-dead-scaffolding.py` |
-| 20 | domain command clauses inside a repository handler, which `yields` then obliges to yield | `drop-repo-domain-clauses.py` |
-| 10 | `Persist<E>(...)` constructors naming the event's FIRST field instead of its id | `fix-persist-fields.py` |
-| 12 | repositories stripped of event inlets and never given command inlets | `wire-repo-commands.py` |
-| 3 | `yield event X(...) by <field>` — `yield` takes no `by` | hand, 3 sites |
-| 1 | connector reading a deleted `StationEventSource` outlet | hand |
-
-**Traps banked doing it — each cost real time:**
-
-- **A parse error ABORTS the file**, so riddlc never checks the rest of that
-  model. Fixing 3 syntax errors RAISED the count 92 -> 101 by exposing 9 real
-  errors and 43 warnings that had been hidden the whole time. A model with a
-  parse error is unmeasured, not clean.
-- **`riddlc` prints `Suggestion:` ONLY under `--provide-tips`.** Without it the
-  remediation text is absent and a suggestion-driven script finds nothing while
-  reporting "0 skipped" — a clean-looking no-op.
-- **The echoed source line sits BETWEEN a message and its `Suggestion:`.** A
-  parser that resets on the first non-matching line never sees the tip.
-- **An on-clause can carry its own `with { }`.** Removing only the
-  brace-balanced body orphans it and breaks the parse. One model's clauses had
-  no metadata and the next model's did, so the first pass looked correct.
-- **A clause head may carry ANY number of qualifier segments**
-  (`command LabContext.LabOrder.CollectSpecimen`). A regex allowing one
-  qualifier made a handled command look unhandled.
-- **`<P>ToRepository` collides when ONE projector feeds TWO repositories.**
-  Only the second leg is qualified `<P>To<R>`, so single-repository models keep
-  the reference model's spelling.
-- **Verify the riddlc PATH, not just the output.** `../../../bin/riddlc` from a
-  3-deep model directory resolves inside the repo, where nothing exists; the
-  command fails and `grep -c` on empty input prints `0`. Three models were
-  reported clean that way and were not.
-
-**BACKLOG #20's old target-shape block was WRONG and is corrected below.** It
-showed the projector emitting with `send command ... to outlet`. The reference
-model `commerce/e-commerce/order-management`, at zero findings of every
-severity, uses `tell command R.Persist<E>(..) to repository R` **and** carries
-the outlet/inlet/connector — which exist to make the `tell` DELIVERABLE, not to
-carry a `send`. `repo-commands.py`'s docstring had it right all along.
-
-### RULED, NOT STARTED — the 6,171 Event/Command tells
-
-Unchanged from the rc.21 ruling: a self-tell becomes a `yield` (with the
-`yields` declaration, an `on event` clause, and the `morph` moved into it); a
-split's tell-back stays and the entity gains the `on event` clause. Rationale:
-*handling the event is important to be able to persist it*. This is the entire
-26-finding remainder of the pilot.
+For step (3), `scripts/expand-on-other.py` writes 102 clauses: it derives each
+processor's policy from that processor's OWN existing clauses and holds back any
+whose clauses disagree. **`on other` was the weak answer** and was hiding real
+lifecycle events — `VisitCompleted`, `TicketRouted`, `StationAssigned` — not just
+rejections.
 
 ## 20a. Original rc.21 framing, superseded
 

@@ -4,87 +4,75 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`, riddlc **2.0.0-rc.24**, sbt-riddl **2.0.0-rc.24**.
-`riddlcPath` names the staged `../bin/riddlc` because the version-probe fix is in
-`rc.24-3`; the published rc.24 writes nothing to stdout for `version`.
+**Branch** `release/2`. **riddlc `2.0.0-rc.24-3-40c0574f`** (staged) —
+`riddlcPath` names `../bin/riddlc` deliberately, because the `version`-on-stdout
+fix is only in `rc.24-3`; the **published** rc.24 writes 0 bytes there and
+sbt-riddl then dies with `riddlc version () has insufficient semantic versioning
+parts`. Pin and plugin are both `2.0.0-rc.24`. Verify with `../bin/riddlc version`.
 
-### State: ZERO findings, all 188 models
+### The corpus is at ZERO — verified this session, not recalled
 
 ```
-collect-warnings.py         0 findings, 188/188 at zero
+collect-warnings.py         0 findings, 188/188 models at zero
 sbt v                       All 188 passed + patterns/ green
 check-repository-ports.py   0 violations
 ```
 
-Do not read that as "done" — two of Reid's rulings are accepted and NOT yet
-implemented. See below.
+**Do not read that as finished.** Two of Reid's rulings are accepted and NOT
+implemented — **BACKLOG #23 and #24**. Nothing is half-applied in the tree; both
+are unstarted or cleanly stopped.
 
-### RULED, NOT STARTED — repository command naming (Reid's option A)
+### In flight
 
-`Persist<Event>` is wrong three ways, and Reid picked the fix:
+Nothing is mid-edit. #24 is half done at a committed, validating state: the 268
+state-guard rejection sends are gone, the remaining chain is three ORDERED steps
+in BACKLOG #24, and **riddlc enforces that order** — doing step 2 before step 1
+is refused by the `-replace` write gate and every file restored.
 
-1. past tense dominates (`PersistTeamCreated` reads as an event)
-2. `Persist` is a lazy verb — "the equivalent of saying Do to a repository"
-3. **they carry only an id**, so they do not say what to write
+### Traps — each of these already bit someone
 
-**Option A, chosen:** verbs by effect, few per repository —
-`CreateLoyaltyAccount` / `UpdateLoyaltyAccount` / `DeleteLoyaltyAccount` — with
-the projector mapping many events onto them and **the command carrying the row
-data**. Scale: 4,030 uses, 1,669 distinct names.
-
-### RULED, PART DONE — rejections do not go to a database
-
-Reid: *"nobody ever sends a message to a database telling it to reject
-something."* The refusal belongs at the sender's level.
-
-**Done:** 268 state-guard sends removed, the refusal kept as `error`. The single
-genuine business rejection (`"Point balance is less than the points requested for
-redemption"`) is deliberately untouched — that is the credit-card-declined case
-Reid carved out, and it should be stored via its own specific command.
-
-**Left:** 52 `<Command>Rejected` declarations remain, named 97 times in the
-`<X>Event` alternations, with one send between them. The chain, in this order:
-
-1. remove the split clauses that still `send`/`tell` rejection events
-2. THEN trim the rejection members out of the alternations
-3. THEN replace the persistence projectors' `on other` with an explicit clause
-   per member that can actually arrive (`scripts/expand-on-other.py` writes 102
-   of them; it derives each processor's policy from its own existing clauses and
-   holds back any processor whose clauses disagree)
-
-Attempting (2) before (1) is REFUSED by riddlc and everything restored — that is
-how the ordering was discovered, not by reasoning.
-
-### Use riddlc, not regex — now written up in CLAUDE.md
-
-`dump --json` for facts, `find` for locating, **`find ... -replace` for editing**:
-the script gets the node's JSON on stdin including `source`, its stdout becomes
-the new text, and riddlc re-parses, re-validates and restores if the model got
-worse. Identity transform is `jq -r .source`. Always pass `-expect-min N`.
-
-Nine regex defects in one session are listed there as the evidence. Do not write
-another regex script for this corpus.
-
-### `task/` — upstream tasks filed for riddl
-
-- `2026-08-24-reference-prefix-must-match-declared-kind.md` — Reid wants a
-  validation error when a reference prefixes with `type` something declared as a
-  command/event/query/result. Note the refinement that makes it tractable: the
-  prefix must match the DECLARED kind, so `is type OrderEvent` stays correct for
-  an alternation declared `type`. Measured in reactive-bbq: 230 of 283 portlet
-  refs are legitimately `type`, 52 are `result` and wrong.
-- earlier ones (scriptable AST, morph-after-morph, empty cardinality, sbt-riddl
-  version) are all implemented and closed.
-
-### Traps
-
+- **Use riddlc, not regex.** Nine distinct defects came from regex scripts in one
+  session; they are enumerated in CLAUDE.md § "Editing models". `dump --json` for
+  facts, `find` for locating, **`find ... -replace` for editing** (the script gets
+  the node's `source`, riddlc re-validates and restores if the model got worse).
+  Always pass `-expect-min N`: a selector matching nothing prints `0 matched` and
+  exits 0, indistinguishable from a clean corpus.
 - **An event inlet on a repository is NOT an error to riddlc.** It reports the
   consequences — clause coverage, arity, connectivity — so an `on other` silences
-  it. That is how `PlayerRepository` kept an event inlet while validating clean;
-  `check-repository-ports.py` was the only thing that caught it. Keep that check.
-- **`on other` is the weak answer.** Mine were hiding real lifecycle events
-  (`VisitCompleted`, `TicketRouted`, `StationAssigned`), not just rejections.
-- **Verify the riddlc PATH**; a wrong relative path fails and `grep -c` prints 0.
+  it. That is exactly how `PlayerRepository` kept an event inlet while validating
+  clean, and `check-repository-ports.py` was the only thing that caught it. Keep
+  that checker until riddlc enforces the rule.
+- **`on other` is the weak answer**, and mine were hiding real lifecycle events
+  (`VisitCompleted`, `TicketRouted`, `StationAssigned`), not only rejections.
+- **Verify the riddlc PATH.** A wrong relative path fails silently and a counting
+  pipeline prints `0`. Prefer the absolute `/Users/reid/Code/ossuminc/bin/riddlc`.
+
+### Certainty
+
+**Verified by command this session:** the 0/188 sweep; `sbt v`; 0 port
+violations; the staged binary's version; that `patterns/` passes. The 268/1
+rejection split was measured from the `rejectionReason` text, not assumed.
+
+**Assumed, not verified:** that BACKLOG #24's three steps are sufficient — step 1
+has not been attempted, so only the step-2-before-step-1 failure is proven.
+
+### Pointers
+
+- **BACKLOG.md** — all open work. #23 (command naming, option A, 4,030 uses) and
+  #24 (rejections, ordered) are the live ones.
+- **CLAUDE.md** — durable rules, including the riddlc-over-regex guidance.
+- **`../riddl/task/2026-08-24-reference-prefix-must-match-declared-kind.md`** —
+  filed, awaiting riddl. Reid wants an Error when a reference prefixes with
+  `type` something declared a command/event/query/result.
+
+### `task/` — SIX files, all awaiting triage
+
+Four are new this session and have not been read at all:
+`2026-08-24-collapse-morph-plus-set-state-pairs`, `-double-morph-and-stdout-fix`,
+`-rc24-available`, `-regenerate-bast-corpus-for-rc23`. The two older ones are
+`2026-08-22-handle-the-messages-you-are-told` (its subject is now at zero — likely
+closable) and `2026-08-20-regenerate-checked-in-bast-after-2.0.0` (blocked; 2.0.0
+still has not shipped).
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
