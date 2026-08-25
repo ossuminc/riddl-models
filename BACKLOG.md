@@ -1006,6 +1006,46 @@ corpus-wide. `event-sourced` KEEPS its pair: there the entity really is
 event-sourced, the tell lands on a genuine `on event` clause, and it demonstrates
 replay.
 
+## 26. The corpus has drifted from prettify canonical form — 396 files
+
+**Found 2026-08-25** while regenerating `.bast`. Not caused by that work.
+
+`scripts/verify-bast-roundtrip.sh` fails on **every** model. The `.bast` files
+are fine — all 190 are at revision 21, contain no baked-in path, and
+deserialize individually. The failure is step 3, which diffs the unbastified
+tree against the source **byte for byte**. That is only meaningful while the
+corpus is exactly what `riddlc prettify` emits, as the script's own header
+says, along with an instruction not to fix a failure by relaxing the diff.
+
+**Measured** by prettifying every model to a temp dir and comparing:
+
+```
+188 of 188 models drifted;  396 .riddl files differ from canonical
+```
+
+Mostly one shape: `is {` in the corpus where prettify emits `is  {`. Also
+declaration jamming — prettify puts `inlet X is type T` and the next
+declaration on ONE line; the corpus has them on two.
+
+**Pre-existing, and attributable.** The line the diff first trips on is byte
+identical at `68f11397`, before this session. It arrived in `7073726b`, the
+`reply` migration. Every hand edit and script edit since has added to it,
+because nothing re-prettifies and no gate notices — `sbt v` and the
+collect-warnings sweep are both blind to formatting.
+
+**The fix is `sbt r` (`riddlcPrettify`) across the corpus, then regenerate
+`.bast`, then the round trip passes.** Not done: it rewrites 396 files, which
+is a larger and separate change than the `.bast` regeneration it was found
+under. `patterns/` is excluded from `riddlcPrettify`, so its files need doing
+by hand.
+
+**Worth deciding at the same time:** whether anything should GATE this, since a
+drift that nothing reports will simply recur. Candidates are a `scalafmtCheck`
+-style `prettifyCheck` in the build, or running `sbt r` as a step in the model
+-edit workflow the way `sbt reformat` already is for `/ship`.
+
+---
+
 ## ~~25. Self-referential carry-forwards~~ — RESOLVED 2026-08-24, and the
 ## framing was wrong
 
