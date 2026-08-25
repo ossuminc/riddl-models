@@ -48,10 +48,23 @@ context Bar as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'DrinkOrderProjection Storage' is from outlet Bar.DrinkOrderProjection.DrinkOrderProjectionToRepository to inlet Bar.DrinkOrderRepository.DrinkOrderRepositoryFromDrinkOrderProjection with {
+    briefly "DrinkOrderProjection commands on their way to DrinkOrderRepository"
+  }
   connector 'DrinkOrderCommand Stream Intake' is from outlet Bar.DrinkOrderCommandStreamOut to inlet Bar.DrinkOrder.DrinkOrderCommands  connector 'BarToFOH Egress' is from outlet Bar.DrinkOrderEventSource.DrinkOrderEvents to inlet Bar.BarToFOHIn  connector 'DrinkOrderResult Stream Egress' is from outlet Bar.DrinkOrderRepository.DrinkOrderRepositoryResponses to inlet Bar.DrinkOrderResultStreamIn  include "bar-types.riddl"
   include "DrinkOrder.riddl"
+  type DrinkOrderRepositoryCommand is one of {
+    Bar.DrinkOrderRepository.PersistDrinkOrderReceived or Bar.DrinkOrderRepository.PersistDrinkPrepared or Bar.DrinkOrderRepository.PersistDrinkMarkedReady or Bar.DrinkOrderRepository.PersistServerNotifiedDrinksReady or Bar.DrinkOrderRepository.PersistDrinkOrderCompleted
+  } with {
+    briefly "Anything that writes the DrinkOrderRepository"
+    described as {
+      |The persistence commands DrinkOrderRepository accepts. Entity events never reach
+      |it directly; DrinkOrderProjection turns each into one of these. A repository
+      |takes commands and queries only.
+    }
+  }
   repository DrinkOrderRepository as flow is {
-    inlet DrinkOrderRepositoryFromDrinkOrder is type DrinkOrderEvent    outlet DrinkOrderRepositoryResponses is type DrinkOrder.DrinkOrderResult
+    inlet DrinkOrderRepositoryFromDrinkOrderProjection is type DrinkOrderRepositoryCommand    outlet DrinkOrderRepositoryResponses is type DrinkOrder.DrinkOrderResult
     record StoredDrinkOrder is  {
       drinkOrderId: DrinkOrderId with {
         briefly "drinkOrderId"
@@ -187,6 +200,41 @@ context Bar as router is {
       |Stores and retrieves drink order data.
     }
   }
+  projector DrinkOrderProjection as flow is {
+    updates repository Bar.DrinkOrderRepository
+    inlet DrinkOrderProjectionFromDrinkOrder is type DrinkOrderEvent
+    outlet DrinkOrderProjectionToRepository is type DrinkOrderRepositoryCommand
+    handler DrinkOrderProjectionHandler is {
+      on drinkOrderReceived: event Bar.DrinkOrder.DrinkOrderReceived is {
+        tell command Bar.DrinkOrderRepository.PersistDrinkOrderReceived(drinkOrderId = drinkOrderReceived.drinkOrderId) to repository Bar.DrinkOrderRepository
+      }
+      on drinkPrepared: event Bar.DrinkOrder.DrinkPrepared is {
+        tell command Bar.DrinkOrderRepository.PersistDrinkPrepared(drinkOrderId = drinkPrepared.drinkOrderId) to repository Bar.DrinkOrderRepository
+      }
+      on drinkMarkedReady: event Bar.DrinkOrder.DrinkMarkedReady is {
+        tell command Bar.DrinkOrderRepository.PersistDrinkMarkedReady(drinkOrderId = drinkMarkedReady.drinkOrderId) to repository Bar.DrinkOrderRepository
+      }
+      on serverNotifiedDrinksReady: event Bar.DrinkOrder.ServerNotifiedDrinksReady is {
+        tell command Bar.DrinkOrderRepository.PersistServerNotifiedDrinksReady(drinkOrderId = serverNotifiedDrinksReady.drinkOrderId) to repository Bar.DrinkOrderRepository
+      }
+      on drinkOrderCompleted: event Bar.DrinkOrder.DrinkOrderCompleted is {
+        tell command Bar.DrinkOrderRepository.PersistDrinkOrderCompleted(drinkOrderId = drinkOrderCompleted.drinkOrderId) to repository Bar.DrinkOrderRepository
+      }
+      on other is {
+        do "not persisted: CompleteDrinkOrderRejected, MarkDrinkReadyRejected, NotifyServerDrinksReadyRejected, PrepareDrinkRejected and 1 more record no stored state"
+      }
+    } with {
+      briefly "DrinkOrderProjection handler"
+      described as {
+        |Turns each DrinkOrder event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "DrinkOrder persistence projection"
+    described as {
+      |Builds the stored DrinkOrder view from the entity's events.
+    }
+  }
   processor DrinkOrderEventSource as source is {
     outlet DrinkOrderEventsToQueue is type DrinkOrderEvent
     outlet DrinkOrderEvents is type DrinkOrderEvent
@@ -283,7 +331,7 @@ context Bar as router is {
       |Receives drink portions of submitted table orders.
     }
   }
-  connector 'DrinkOrderEvent Storage' is from outlet Bar.DrinkOrder.DrinkOrderEvents2 to inlet Bar.DrinkOrderRepository.DrinkOrderRepositoryFromDrinkOrder with {
+  connector 'DrinkOrderEvent Storage' is from outlet Bar.DrinkOrder.DrinkOrderEvents2 to inlet Bar.DrinkOrderProjection.DrinkOrderProjectionFromDrinkOrder with {
     briefly "DrinkOrder events on their way to storage"
     described as {
       |Carries what leaves DrinkOrderEvents2 to DrinkOrderRepositoryFromDrinkOrder, which is where it is acted on.

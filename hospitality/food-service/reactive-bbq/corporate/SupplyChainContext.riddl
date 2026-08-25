@@ -32,10 +32,23 @@ context SupplyChain as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'PurchaseOrderProjection Storage' is from outlet SupplyChain.PurchaseOrderProjection.PurchaseOrderProjectionToRepository to inlet SupplyChain.PurchaseOrderRepository.PurchaseOrderRepositoryFromPurchaseOrderProjection with {
+    briefly "PurchaseOrderProjection commands on their way to PurchaseOrderRepository"
+  }
   connector 'PurchaseOrderCommand Stream Intake' is from outlet SupplyChain.PurchaseOrderCommandStreamOut to inlet SupplyChain.PurchaseOrder.PurchaseOrderCommands  connector 'PurchaseOrderResult Stream Egress' is from outlet SupplyChain.PurchaseOrderRepository.PurchaseOrderRepositoryResponses to inlet SupplyChain.PurchaseOrderResultStreamIn  include "supply-chain-types.riddl"
   include "PurchaseOrder.riddl"
+  type PurchaseOrderRepositoryCommand is one of {
+    SupplyChain.PurchaseOrderRepository.PersistBulkOrderCreated or SupplyChain.PurchaseOrderRepository.PersistOrderApproved or SupplyChain.PurchaseOrderRepository.PersistOrderShipped or SupplyChain.PurchaseOrderRepository.PersistShipmentReceived or SupplyChain.PurchaseOrderRepository.PersistIssueReported
+  } with {
+    briefly "Anything that writes the PurchaseOrderRepository"
+    described as {
+      |The persistence commands PurchaseOrderRepository accepts. Entity events never reach
+      |it directly; PurchaseOrderProjection turns each into one of these. A repository
+      |takes commands and queries only.
+    }
+  }
   repository PurchaseOrderRepository as flow is {
-    inlet PurchaseOrderRepositoryFromPurchaseOrder is type PurchaseOrderEvent    outlet PurchaseOrderRepositoryResponses is type PurchaseOrder.PurchaseOrderResult
+    inlet PurchaseOrderRepositoryFromPurchaseOrderProjection is type PurchaseOrderRepositoryCommand    outlet PurchaseOrderRepositoryResponses is type PurchaseOrder.PurchaseOrderResult
     record StoredPurchaseOrder is  {
       purchaseOrderId: PurchaseOrderId with {
         briefly "purchaseOrderId"
@@ -190,6 +203,38 @@ context SupplyChain as router is {
       |Stores and retrieves purchase order data.
     }
   }
+  projector PurchaseOrderProjection as flow is {
+    updates repository SupplyChain.PurchaseOrderRepository
+    inlet PurchaseOrderProjectionFromPurchaseOrder is type PurchaseOrderEvent
+    outlet PurchaseOrderProjectionToRepository is type PurchaseOrderRepositoryCommand
+    handler PurchaseOrderProjectionHandler is {
+      on bulkOrderCreated: event PurchaseOrder.BulkOrderCreated is {
+        tell command SupplyChain.PurchaseOrderRepository.PersistBulkOrderCreated(purchaseOrderId = bulkOrderCreated.purchaseOrderId) to repository SupplyChain.PurchaseOrderRepository
+      }
+      on orderApproved: event PurchaseOrder.OrderApproved is {
+        tell command SupplyChain.PurchaseOrderRepository.PersistOrderApproved(purchaseOrderId = orderApproved.purchaseOrderId) to repository SupplyChain.PurchaseOrderRepository
+      }
+      on orderShipped: event PurchaseOrder.OrderShipped is {
+        tell command SupplyChain.PurchaseOrderRepository.PersistOrderShipped(purchaseOrderId = orderShipped.purchaseOrderId) to repository SupplyChain.PurchaseOrderRepository
+      }
+      on shipmentReceived: event PurchaseOrder.ShipmentReceived is {
+        tell command SupplyChain.PurchaseOrderRepository.PersistShipmentReceived(purchaseOrderId = shipmentReceived.purchaseOrderId) to repository SupplyChain.PurchaseOrderRepository
+      }
+      on issueReported: event PurchaseOrder.IssueReported is {
+        tell command SupplyChain.PurchaseOrderRepository.PersistIssueReported(purchaseOrderId = issueReported.purchaseOrderId) to repository SupplyChain.PurchaseOrderRepository
+      }
+    } with {
+      briefly "PurchaseOrderProjection handler"
+      described as {
+        |Turns each PurchaseOrder event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "PurchaseOrder persistence projection"
+    described as {
+      |Builds the stored PurchaseOrder view from the entity's events.
+    }
+  }
   processor PurchaseOrderEventSource as source is {
     outlet PurchaseOrderEvents is type PurchaseOrderEvent
     handler PurchaseOrderEventEmitter is {
@@ -268,7 +313,7 @@ context SupplyChain as router is {
       |Wires published purchase order events to the context's event log.
     }
   }
-  connector 'PurchaseOrderEvent Storage' is from outlet SupplyChain.PurchaseOrder.PurchaseOrderEvents2 to inlet SupplyChain.PurchaseOrderRepository.PurchaseOrderRepositoryFromPurchaseOrder with {
+  connector 'PurchaseOrderEvent Storage' is from outlet SupplyChain.PurchaseOrder.PurchaseOrderEvents2 to inlet SupplyChain.PurchaseOrderProjection.PurchaseOrderProjectionFromPurchaseOrder with {
     briefly "PurchaseOrder events on their way to storage"
     described as {
       |Carries what leaves PurchaseOrderEvents2 to PurchaseOrderRepositoryFromPurchaseOrder, which is where it is acted on.

@@ -2,6 +2,12 @@
 context MenuManagement as router is {
   inlet PrintingToMenuIn is type PrintingEvent  outlet PrintingToMenuFwd is type PrintingEvent
   inlet PhotographyToMenuIn is type PhotographyEvent  outlet PhotographyToMenuFwd is type PhotographyEvent
+  connector 'MenuReleaseProjection Storage' is from outlet MenuManagement.MenuReleaseProjection.MenuReleaseProjectionToRepository to inlet MenuManagement.MenuReleaseRepository.MenuReleaseRepositoryFromMenuReleaseProjection with {
+    briefly "MenuReleaseProjection commands on their way to MenuReleaseRepository"
+  }
+  connector 'MenuItemProjection Storage' is from outlet MenuManagement.MenuItemProjection.MenuItemProjectionToRepository to inlet MenuManagement.MenuItemRepository.MenuItemRepositoryFromMenuItemProjection with {
+    briefly "MenuItemProjection commands on their way to MenuItemRepository"
+  }
   connector 'PrintingToMenu Intake' is from outlet MenuManagement.PrintingToMenuFwd to inlet MenuManagement.PrintingServiceAdapter.IncomingPrintingServiceEvents  connector 'PhotographyToMenu Intake' is from outlet MenuManagement.PhotographyToMenuFwd to inlet MenuManagement.PhotographyServiceAdapter.IncomingPhotographyServiceEvents  inlet MenuItemCommandStreamIn is type MenuItemCommand  outlet MenuItemCommandStreamOut is type MenuItemCommand
   inlet MenuReleaseCommandStreamIn is type MenuReleaseCommand  outlet MenuReleaseCommandStreamOut is type MenuReleaseCommand
   inlet MenuItemResultStreamIn is type MenuItem.MenuItemResult  outlet MenuItemResultStreamOut is type MenuItem.MenuItemResult
@@ -81,8 +87,18 @@ context MenuManagement as router is {
       |Record menu photo shoot completion.
     }
   }
+  type MenuItemRepositoryCommand is one of {
+    MenuManagement.MenuItemRepository.PersistMenuItemCreated or MenuManagement.MenuItemRepository.PersistMenuItemUpdated or MenuManagement.MenuItemRepository.PersistPriceSet or MenuManagement.MenuItemRepository.PersistMenuItemRetired
+  } with {
+    briefly "Anything that writes the MenuItemRepository"
+    described as {
+      |The persistence commands MenuItemRepository accepts. Entity events never reach
+      |it directly; MenuItemProjection turns each into one of these. A repository
+      |takes commands and queries only.
+    }
+  }
   repository MenuItemRepository as flow is {
-    inlet MenuItemRepositoryFromMenuItem is type MenuItemEvent    outlet MenuItemRepositoryResponses is type MenuItem.MenuItemResult
+    inlet MenuItemRepositoryFromMenuItemProjection is type MenuItemRepositoryCommand    outlet MenuItemRepositoryResponses is type MenuItem.MenuItemResult
     record StoredMenuItem is  {
       menuItemId: MenuItemId with {
         briefly "menuItemId"
@@ -238,8 +254,47 @@ context MenuManagement as router is {
       |Stores and retrieves menu item data.
     }
   }
+  projector MenuItemProjection as flow is {
+    updates repository MenuManagement.MenuItemRepository
+    inlet MenuItemProjectionFromMenuItem is type MenuItemEvent
+    outlet MenuItemProjectionToRepository is type MenuItemRepositoryCommand
+    handler MenuItemProjectionHandler is {
+      on menuItemCreated: event MenuItem.MenuItemCreated is {
+        tell command MenuManagement.MenuItemRepository.PersistMenuItemCreated(menuItemId = menuItemCreated.menuItemId) to repository MenuManagement.MenuItemRepository
+      }
+      on menuItemUpdated: event MenuItem.MenuItemUpdated is {
+        tell command MenuManagement.MenuItemRepository.PersistMenuItemUpdated(menuItemId = menuItemUpdated.menuItemId) to repository MenuManagement.MenuItemRepository
+      }
+      on priceSet: event MenuItem.PriceSet is {
+        tell command MenuManagement.MenuItemRepository.PersistPriceSet(menuItemId = priceSet.menuItemId) to repository MenuManagement.MenuItemRepository
+      }
+      on menuItemRetired: event MenuItem.MenuItemRetired is {
+        tell command MenuManagement.MenuItemRepository.PersistMenuItemRetired(menuItemId = menuItemRetired.menuItemId) to repository MenuManagement.MenuItemRepository
+      }
+    } with {
+      briefly "MenuItemProjection handler"
+      described as {
+        |Turns each MenuItem event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "MenuItem persistence projection"
+    described as {
+      |Builds the stored MenuItem view from the entity's events.
+    }
+  }
+  type MenuReleaseRepositoryCommand is one of {
+    MenuManagement.MenuReleaseRepository.PersistMenuReleaseCreated or MenuManagement.MenuReleaseRepository.PersistItemAddedToRelease or MenuManagement.MenuReleaseRepository.PersistReleaseFinalized or MenuManagement.MenuReleaseRepository.PersistReleasePublished or MenuManagement.MenuReleaseRepository.PersistReleaseRolledBack
+  } with {
+    briefly "Anything that writes the MenuReleaseRepository"
+    described as {
+      |The persistence commands MenuReleaseRepository accepts. Entity events never reach
+      |it directly; MenuReleaseProjection turns each into one of these. A repository
+      |takes commands and queries only.
+    }
+  }
   repository MenuReleaseRepository as flow is {
-    inlet MenuReleaseRepositoryFromMenuRelease is type MenuReleaseEvent    outlet MenuReleaseRepositoryResponses is type MenuRelease.MenuReleaseResult
+    inlet MenuReleaseRepositoryFromMenuReleaseProjection is type MenuReleaseRepositoryCommand    outlet MenuReleaseRepositoryResponses is type MenuRelease.MenuReleaseResult
     schema MenuReleaseData is relational
       of releases as type StoredMenuRelease
         index on field StoredMenuRelease.menuReleaseId
@@ -368,6 +423,38 @@ context MenuManagement as router is {
     briefly "Menu release repository"
     described as {
       |Stores and retrieves menu release data.
+    }
+  }
+  projector MenuReleaseProjection as flow is {
+    updates repository MenuManagement.MenuReleaseRepository
+    inlet MenuReleaseProjectionFromMenuRelease is type MenuReleaseEvent
+    outlet MenuReleaseProjectionToRepository is type MenuReleaseRepositoryCommand
+    handler MenuReleaseProjectionHandler is {
+      on menuReleaseCreated: event MenuRelease.MenuReleaseCreated is {
+        tell command MenuManagement.MenuReleaseRepository.PersistMenuReleaseCreated(menuReleaseId = menuReleaseCreated.menuReleaseId) to repository MenuManagement.MenuReleaseRepository
+      }
+      on itemAddedToRelease: event MenuRelease.ItemAddedToRelease is {
+        tell command MenuManagement.MenuReleaseRepository.PersistItemAddedToRelease(menuReleaseId = itemAddedToRelease.menuReleaseId) to repository MenuManagement.MenuReleaseRepository
+      }
+      on releaseFinalized: event MenuRelease.ReleaseFinalized is {
+        tell command MenuManagement.MenuReleaseRepository.PersistReleaseFinalized(menuReleaseId = releaseFinalized.menuReleaseId) to repository MenuManagement.MenuReleaseRepository
+      }
+      on releasePublished: event MenuRelease.ReleasePublished is {
+        tell command MenuManagement.MenuReleaseRepository.PersistReleasePublished(menuReleaseId = releasePublished.menuReleaseId) to repository MenuManagement.MenuReleaseRepository
+      }
+      on releaseRolledBack: event MenuRelease.ReleaseRolledBack is {
+        tell command MenuManagement.MenuReleaseRepository.PersistReleaseRolledBack(menuReleaseId = releaseRolledBack.menuReleaseId) to repository MenuManagement.MenuReleaseRepository
+      }
+    } with {
+      briefly "MenuReleaseProjection handler"
+      described as {
+        |Turns each MenuRelease event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "MenuRelease persistence projection"
+    described as {
+      |Builds the stored MenuRelease view from the entity's events.
     }
   }
   processor MenuItemEventSource as source is {
@@ -653,14 +740,14 @@ context MenuManagement as router is {
       |Wires published menu release events to the context's event log.
     }
   }
-  connector 'MenuItemEvent Storage' is from outlet MenuManagement.MenuItem.MenuItemEvents2 to inlet MenuManagement.MenuItemRepository.MenuItemRepositoryFromMenuItem with {
+  connector 'MenuItemEvent Storage' is from outlet MenuManagement.MenuItem.MenuItemEvents2 to inlet MenuManagement.MenuItemProjection.MenuItemProjectionFromMenuItem with {
     briefly "MenuItem events on their way to storage"
     described as {
       |Carries what leaves MenuItemEvents2 to MenuItemRepositoryFromMenuItem, which is where it is acted on.
       |The pipe states the route; the endpoints state who owns each end.
     }
   }
-  connector 'MenuReleaseEvent Storage' is from outlet MenuManagement.MenuRelease.MenuReleaseEvents2 to inlet MenuManagement.MenuReleaseRepository.MenuReleaseRepositoryFromMenuRelease with {
+  connector 'MenuReleaseEvent Storage' is from outlet MenuManagement.MenuRelease.MenuReleaseEvents2 to inlet MenuManagement.MenuReleaseProjection.MenuReleaseProjectionFromMenuRelease with {
     briefly "MenuRelease events on their way to storage"
     described as {
       |Carries what leaves MenuReleaseEvents2 to MenuReleaseRepositoryFromMenuRelease, which is where it is acted on.

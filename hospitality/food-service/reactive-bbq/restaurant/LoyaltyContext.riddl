@@ -35,6 +35,9 @@ context Loyalty as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'LoyaltyAccountProjection Storage' is from outlet Loyalty.LoyaltyAccountProjection.LoyaltyAccountProjectionToRepository to inlet Loyalty.LoyaltyAccountRepository.LoyaltyAccountRepositoryFromLoyaltyAccountProjection with {
+    briefly "LoyaltyAccountProjection commands on their way to LoyaltyAccountRepository"
+  }
   connector 'LoyaltyAccountCommand Stream Intake' is from outlet Loyalty.LoyaltyAccountCommandStreamOut to inlet Loyalty.LoyaltyAccount.LoyaltyAccountCommands  connector 'LoyaltyAccountResult Stream Egress' is from outlet Loyalty.LoyaltyAccountRepository.LoyaltyAccountRepositoryResponses to inlet Loyalty.LoyaltyAccountResultStreamIn  include "loyalty-types.riddl"
   include "LoyaltyAccount.riddl"
   constant PointsPerDollar: Natural = 10 with {
@@ -62,8 +65,18 @@ context Loyalty as router is {
       |online and delivery cannot drift apart.
     }
   }
+  type LoyaltyAccountRepositoryCommand is one of {
+    Loyalty.LoyaltyAccountRepository.PersistCustomerEnrolled or Loyalty.LoyaltyAccountRepository.PersistPointsAccrued or Loyalty.LoyaltyAccountRepository.PersistPointsRedeemed or Loyalty.LoyaltyAccountRepository.PersistAccountSuspended or Loyalty.LoyaltyAccountRepository.PersistAccountReactivated or Loyalty.LoyaltyAccountRepository.PersistAccountClosed
+  } with {
+    briefly "Anything that writes the LoyaltyAccountRepository"
+    described as {
+      |The persistence commands LoyaltyAccountRepository accepts. Entity events never reach
+      |it directly; LoyaltyAccountProjection turns each into one of these. A repository
+      |takes commands and queries only.
+    }
+  }
   repository LoyaltyAccountRepository as flow is {
-    inlet LoyaltyAccountRepositoryFromLoyaltyAccount is type LoyaltyAccountEvent    outlet LoyaltyAccountRepositoryResponses is type LoyaltyAccount.LoyaltyAccountResult
+    inlet LoyaltyAccountRepositoryFromLoyaltyAccountProjection is type LoyaltyAccountRepositoryCommand    outlet LoyaltyAccountRepositoryResponses is type LoyaltyAccount.LoyaltyAccountResult
     record StoredLoyaltyAccount is  {
       loyaltyAccountId: LoyaltyAccountId with {
         briefly "loyaltyAccountId"
@@ -239,6 +252,44 @@ context Loyalty as router is {
       |Stores and retrieves loyalty account data.
     }
   }
+  projector LoyaltyAccountProjection as flow is {
+    updates repository Loyalty.LoyaltyAccountRepository
+    inlet LoyaltyAccountProjectionFromLoyaltyAccount is type LoyaltyAccountEvent
+    outlet LoyaltyAccountProjectionToRepository is type LoyaltyAccountRepositoryCommand
+    handler LoyaltyAccountProjectionHandler is {
+      on customerEnrolled: event LoyaltyAccount.CustomerEnrolled is {
+        tell command Loyalty.LoyaltyAccountRepository.PersistCustomerEnrolled(loyaltyAccountId = customerEnrolled.loyaltyAccountId) to repository Loyalty.LoyaltyAccountRepository
+      }
+      on pointsAccrued: event LoyaltyAccount.PointsAccrued is {
+        tell command Loyalty.LoyaltyAccountRepository.PersistPointsAccrued(loyaltyAccountId = pointsAccrued.loyaltyAccountId) to repository Loyalty.LoyaltyAccountRepository
+      }
+      on pointsRedeemed: event LoyaltyAccount.PointsRedeemed is {
+        tell command Loyalty.LoyaltyAccountRepository.PersistPointsRedeemed(loyaltyAccountId = pointsRedeemed.loyaltyAccountId) to repository Loyalty.LoyaltyAccountRepository
+      }
+      on accountSuspended: event LoyaltyAccount.AccountSuspended is {
+        tell command Loyalty.LoyaltyAccountRepository.PersistAccountSuspended(loyaltyAccountId = accountSuspended.loyaltyAccountId) to repository Loyalty.LoyaltyAccountRepository
+      }
+      on accountReactivated: event LoyaltyAccount.AccountReactivated is {
+        tell command Loyalty.LoyaltyAccountRepository.PersistAccountReactivated(loyaltyAccountId = accountReactivated.loyaltyAccountId) to repository Loyalty.LoyaltyAccountRepository
+      }
+      on accountClosed: event LoyaltyAccount.AccountClosed is {
+        tell command Loyalty.LoyaltyAccountRepository.PersistAccountClosed(loyaltyAccountId = accountClosed.loyaltyAccountId) to repository Loyalty.LoyaltyAccountRepository
+      }
+      on other is {
+        do "not persisted: EnrollCustomerRejected, AccruePointsRejected, RedeemPointsRejected, SuspendAccountRejected and 2 more record no stored state"
+      }
+    } with {
+      briefly "LoyaltyAccountProjection handler"
+      described as {
+        |Turns each LoyaltyAccount event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "LoyaltyAccount persistence projection"
+    described as {
+      |Builds the stored LoyaltyAccount view from the entity's events.
+    }
+  }
   processor LoyaltyAccountEventSource as source is {
     outlet LoyaltyAccountEvents is type LoyaltyEvent
     handler LoyaltyAccountEventEmitter is {
@@ -412,7 +463,7 @@ context Loyalty as router is {
       |Wires published loyalty account events to the context's event log.
     }
   }
-  connector 'LoyaltyAccountEvent Storage' is from outlet Loyalty.LoyaltyAccount.LoyaltyAccountEvents2 to inlet Loyalty.LoyaltyAccountRepository.LoyaltyAccountRepositoryFromLoyaltyAccount with {
+  connector 'LoyaltyAccountEvent Storage' is from outlet Loyalty.LoyaltyAccount.LoyaltyAccountEvents2 to inlet Loyalty.LoyaltyAccountProjection.LoyaltyAccountProjectionFromLoyaltyAccount with {
     briefly "LoyaltyAccount events on their way to storage"
     described as {
       |Carries what leaves LoyaltyAccountEvents2 to LoyaltyAccountRepositoryFromLoyaltyAccount, which is where it is acted on.

@@ -1,6 +1,12 @@
 // Front of House bounded context
 context FrontOfHouse as router is {
   inlet NotificationToFOHIn is type NotificationEvent  outlet NotificationToFOHFwd is type NotificationEvent
+  connector 'TableOrderProjection Storage' is from outlet FrontOfHouse.TableOrderProjection.TableOrderProjectionToRepository to inlet FrontOfHouse.TableOrderRepository.TableOrderRepositoryFromTableOrderProjection with {
+    briefly "TableOrderProjection commands on their way to TableOrderRepository"
+  }
+  connector 'ReservationProjection Storage' is from outlet FrontOfHouse.ReservationProjection.ReservationProjectionToRepository to inlet FrontOfHouse.ReservationRepository.ReservationRepositoryFromReservationProjection with {
+    briefly "ReservationProjection commands on their way to ReservationRepository"
+  }
   connector 'NotificationToFOH Intake' is from outlet FrontOfHouse.NotificationToFOHFwd to inlet FrontOfHouse.NotificationServiceAdapter.IncomingNotificationServiceEvents  inlet PaymentGatewayToFOHIn is type PaymentGatewayEvent  outlet PaymentGatewayToFOHOut is type PaymentGatewayEvent
   inlet BarToFOHIn is type DrinkOrderEvent  outlet BarToFOHOut is type DrinkOrderEvent
   inlet ReservationCommandStreamIn is type ReservationCommand  outlet ReservationCommandStreamOut is type ReservationCommand
@@ -214,8 +220,18 @@ context FrontOfHouse as router is {
       |Record a push notification delivery confirmation.
     }
   }
+  type ReservationRepositoryCommand is one of {
+    FrontOfHouse.ReservationRepository.PersistReservationMade or FrontOfHouse.ReservationRepository.PersistReservationConfirmed or FrontOfHouse.ReservationRepository.PersistReservationCancelled or FrontOfHouse.ReservationRepository.PersistPartySeated or FrontOfHouse.ReservationRepository.PersistNoShowMarked or FrontOfHouse.ReservationRepository.PersistReservationRescheduled
+  } with {
+    briefly "Anything that writes the ReservationRepository"
+    described as {
+      |The persistence commands ReservationRepository accepts. Entity events never reach
+      |it directly; ReservationProjection turns each into one of these. A repository
+      |takes commands and queries only.
+    }
+  }
   repository ReservationRepository as merge is {
-    inlet ReservationRepositoryFromReservation is type ReservationEvent    inlet ReservationRepositoryFromReservationBoard is type ReservationEvent    outlet ReservationRepositoryResponses is type ReservationBoardView
+    inlet ReservationRepositoryFromReservationProjection is type ReservationRepositoryCommand    inlet ReservationRepositoryFromReservationBoard is type ReservationEvent    outlet ReservationRepositoryResponses is type ReservationBoardView
     record StoredReservation is  {
       reservationId: ReservationId with {
         briefly "reservationId"
@@ -456,8 +472,56 @@ context FrontOfHouse as router is {
       |Stores and retrieves reservation data.
     }
   }
+  projector ReservationProjection as flow is {
+    updates repository FrontOfHouse.ReservationRepository
+    inlet ReservationProjectionFromReservation is type ReservationEvent
+    outlet ReservationProjectionToRepository is type ReservationRepositoryCommand
+    handler ReservationProjectionHandler is {
+      on reservationMade: event FrontOfHouse.Reservation.ReservationMade is {
+        tell command FrontOfHouse.ReservationRepository.PersistReservationMade(reservationId = reservationMade.reservationId) to repository FrontOfHouse.ReservationRepository
+      }
+      on reservationConfirmed: event FrontOfHouse.Reservation.ReservationConfirmed is {
+        tell command FrontOfHouse.ReservationRepository.PersistReservationConfirmed(reservationId = reservationConfirmed.reservationId) to repository FrontOfHouse.ReservationRepository
+      }
+      on reservationCancelled: event FrontOfHouse.Reservation.ReservationCancelled is {
+        tell command FrontOfHouse.ReservationRepository.PersistReservationCancelled(reservationId = reservationCancelled.reservationId) to repository FrontOfHouse.ReservationRepository
+      }
+      on partySeated: event FrontOfHouse.Reservation.PartySeated is {
+        tell command FrontOfHouse.ReservationRepository.PersistPartySeated(reservationId = partySeated.reservationId) to repository FrontOfHouse.ReservationRepository
+      }
+      on noShowMarked: event FrontOfHouse.Reservation.NoShowMarked is {
+        tell command FrontOfHouse.ReservationRepository.PersistNoShowMarked(reservationId = noShowMarked.reservationId) to repository FrontOfHouse.ReservationRepository
+      }
+      on reservationRescheduled: event FrontOfHouse.Reservation.ReservationRescheduled is {
+        tell command FrontOfHouse.ReservationRepository.PersistReservationRescheduled(reservationId = reservationRescheduled.reservationId) to repository FrontOfHouse.ReservationRepository
+      }
+      on other is {
+        do "not persisted: VisitCompleted, CancelReservationRejected, CompleteVisitRejected, ConfirmReservationRejected and 4 more record no stored state"
+      }
+    } with {
+      briefly "ReservationProjection handler"
+      described as {
+        |Turns each Reservation event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "Reservation persistence projection"
+    described as {
+      |Builds the stored Reservation view from the entity's events.
+    }
+  }
+  type TableOrderRepositoryCommand is one of {
+    FrontOfHouse.TableOrderRepository.PersistOrderCreated or FrontOfHouse.TableOrderRepository.PersistItemAdded or FrontOfHouse.TableOrderRepository.PersistItemRemoved or FrontOfHouse.TableOrderRepository.PersistOrderSubmitted or FrontOfHouse.TableOrderRepository.PersistBillPresented or FrontOfHouse.TableOrderRepository.PersistPaymentProcessed or FrontOfHouse.TableOrderRepository.PersistOrderClosed or FrontOfHouse.TableOrderRepository.PersistOrderMarkedInPreparation or FrontOfHouse.TableOrderRepository.PersistOrderMarkedReadyToServe
+  } with {
+    briefly "Anything that writes the TableOrderRepository"
+    described as {
+      |The persistence commands TableOrderRepository accepts. Entity events never reach
+      |it directly; TableOrderProjection turns each into one of these. A repository
+      |takes commands and queries only.
+    }
+  }
   repository TableOrderRepository as flow is {
-    inlet TableOrderRepositoryFromTableOrder is type TableOrderEvent    outlet TableOrderRepositoryResponses is type TableOrder.TableOrderResult
+    inlet TableOrderRepositoryFromTableOrderProjection is type TableOrderRepositoryCommand    outlet TableOrderRepositoryResponses is type TableOrder.TableOrderResult
     schema TableOrderSchema is relational
       of orders as type StoredTableOrder
         index on field StoredTableOrder.tableOrderId
@@ -672,6 +736,53 @@ context FrontOfHouse as router is {
     briefly "Table order repository"
     described as {
       |Stores and retrieves table order data.
+    }
+  }
+  projector TableOrderProjection as flow is {
+    updates repository FrontOfHouse.TableOrderRepository
+    inlet TableOrderProjectionFromTableOrder is type TableOrderEvent
+    outlet TableOrderProjectionToRepository is type TableOrderRepositoryCommand
+    handler TableOrderProjectionHandler is {
+      on orderCreated: event TableOrder.OrderCreated is {
+        tell command FrontOfHouse.TableOrderRepository.PersistOrderCreated(tableOrderId = orderCreated.tableOrderId) to repository FrontOfHouse.TableOrderRepository
+      }
+      on itemAdded: event TableOrder.ItemAdded is {
+        tell command FrontOfHouse.TableOrderRepository.PersistItemAdded(tableOrderId = itemAdded.tableOrderId) to repository FrontOfHouse.TableOrderRepository
+      }
+      on itemRemoved: event TableOrder.ItemRemoved is {
+        tell command FrontOfHouse.TableOrderRepository.PersistItemRemoved(tableOrderId = itemRemoved.tableOrderId) to repository FrontOfHouse.TableOrderRepository
+      }
+      on orderSubmitted: event TableOrder.OrderSubmitted is {
+        tell command FrontOfHouse.TableOrderRepository.PersistOrderSubmitted(tableOrderId = orderSubmitted.tableOrderId) to repository FrontOfHouse.TableOrderRepository
+      }
+      on billPresented: event TableOrder.BillPresented is {
+        tell command FrontOfHouse.TableOrderRepository.PersistBillPresented(tableOrderId = billPresented.tableOrderId) to repository FrontOfHouse.TableOrderRepository
+      }
+      on paymentProcessed: event TableOrder.PaymentProcessed is {
+        tell command FrontOfHouse.TableOrderRepository.PersistPaymentProcessed(tableOrderId = paymentProcessed.tableOrderId) to repository FrontOfHouse.TableOrderRepository
+      }
+      on orderClosed: event TableOrder.OrderClosed is {
+        tell command FrontOfHouse.TableOrderRepository.PersistOrderClosed(tableOrderId = orderClosed.tableOrderId) to repository FrontOfHouse.TableOrderRepository
+      }
+      on orderMarkedInPreparation: event TableOrder.OrderMarkedInPreparation is {
+        tell command FrontOfHouse.TableOrderRepository.PersistOrderMarkedInPreparation(tableOrderId = orderMarkedInPreparation.tableOrderId) to repository FrontOfHouse.TableOrderRepository
+      }
+      on orderMarkedReadyToServe: event TableOrder.OrderMarkedReadyToServe is {
+        tell command FrontOfHouse.TableOrderRepository.PersistOrderMarkedReadyToServe(tableOrderId = orderMarkedReadyToServe.tableOrderId) to repository FrontOfHouse.TableOrderRepository
+      }
+      on other is {
+        do "not persisted: TicketRouted, DrinkOrderRouted, PointsAccrualRouted, CreateOrderRejected and 8 more record no stored state"
+      }
+    } with {
+      briefly "TableOrderProjection handler"
+      described as {
+        |Turns each TableOrder event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "TableOrder persistence projection"
+    described as {
+      |Builds the stored TableOrder view from the entity's events.
     }
   }
   projector ReservationBoard as merge is {
@@ -1501,7 +1612,7 @@ context FrontOfHouse as router is {
       |The pipe states the route; the endpoints state who owns each end.
     }
   }
-  connector 'ReservationEvent Storage' is from outlet FrontOfHouse.ReservationEventSplit.ReservationEventSplitToReservationRepository to inlet FrontOfHouse.ReservationRepository.ReservationRepositoryFromReservation with {
+  connector 'ReservationEvent Storage' is from outlet FrontOfHouse.ReservationEventSplit.ReservationEventSplitToReservationRepository to inlet FrontOfHouse.ReservationProjection.ReservationProjectionFromReservation with {
     briefly "Reservation events on their way to storage"
     described as {
       |Carries what leaves ReservationEventSplitToReservationRepository to ReservationRepositoryFromReservation, which is where it is acted on.
@@ -1522,7 +1633,7 @@ context FrontOfHouse as router is {
       |The pipe states the route; the endpoints state who owns each end.
     }
   }
-  connector 'TableOrderEvent Storage' is from outlet FrontOfHouse.TableOrderEventSplit.TableOrderEventSplitToTableOrderRepository to inlet FrontOfHouse.TableOrderRepository.TableOrderRepositoryFromTableOrder with {
+  connector 'TableOrderEvent Storage' is from outlet FrontOfHouse.TableOrderEventSplit.TableOrderEventSplitToTableOrderRepository to inlet FrontOfHouse.TableOrderProjection.TableOrderProjectionFromTableOrder with {
     briefly "TableOrder events on their way to storage"
     described as {
       |Carries what leaves TableOrderEventSplitToTableOrderRepository to TableOrderRepositoryFromTableOrder, which is where it is acted on.

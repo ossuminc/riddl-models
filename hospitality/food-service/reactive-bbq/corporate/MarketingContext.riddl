@@ -32,6 +32,9 @@ context Marketing as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'CampaignProjection Storage' is from outlet Marketing.CampaignProjection.CampaignProjectionToRepository to inlet Marketing.CampaignRepository.CampaignRepositoryFromCampaignProjection with {
+    briefly "CampaignProjection commands on their way to CampaignRepository"
+  }
   connector 'CampaignCommand Stream Intake' is from outlet Marketing.CampaignCommandStreamOut to inlet Marketing.Campaign.CampaignCommands  connector 'CampaignResult Stream Egress' is from outlet Marketing.CampaignRepository.CampaignRepositoryResponses to inlet Marketing.CampaignResultStreamIn  include "marketing-types.riddl"
   include "Campaign.riddl"
   command RecordLoyaltyActivity yields event Campaign.LoyaltyActivityRecorded is  {
@@ -63,8 +66,18 @@ context Marketing as router is {
       |Record loyalty activity for campaign targeting.
     }
   }
+  type CampaignRepositoryCommand is one of {
+    Marketing.CampaignRepository.PersistCampaignCreated or Marketing.CampaignRepository.PersistCampaignScheduled or Marketing.CampaignRepository.PersistCampaignLaunched or Marketing.CampaignRepository.PersistCampaignPaused or Marketing.CampaignRepository.PersistCampaignEnded
+  } with {
+    briefly "Anything that writes the CampaignRepository"
+    described as {
+      |The persistence commands CampaignRepository accepts. Entity events never reach
+      |it directly; CampaignProjection turns each into one of these. A repository
+      |takes commands and queries only.
+    }
+  }
   repository CampaignRepository as flow is {
-    inlet CampaignRepositoryFromCampaign is type CampaignEvent    outlet CampaignRepositoryResponses is type Campaign.CampaignResult
+    inlet CampaignRepositoryFromCampaignProjection is type CampaignRepositoryCommand    outlet CampaignRepositoryResponses is type Campaign.CampaignResult
     record StoredCampaign is  {
       campaignId: CampaignId with {
         briefly "campaignId"
@@ -211,6 +224,38 @@ context Marketing as router is {
       |Stores and retrieves campaign data.
     }
   }
+  projector CampaignProjection as flow is {
+    updates repository Marketing.CampaignRepository
+    inlet CampaignProjectionFromCampaign is type CampaignEvent
+    outlet CampaignProjectionToRepository is type CampaignRepositoryCommand
+    handler CampaignProjectionHandler is {
+      on campaignCreated: event Campaign.CampaignCreated is {
+        tell command Marketing.CampaignRepository.PersistCampaignCreated(campaignId = campaignCreated.campaignId) to repository Marketing.CampaignRepository
+      }
+      on campaignScheduled: event Campaign.CampaignScheduled is {
+        tell command Marketing.CampaignRepository.PersistCampaignScheduled(campaignId = campaignScheduled.campaignId) to repository Marketing.CampaignRepository
+      }
+      on campaignLaunched: event Campaign.CampaignLaunched is {
+        tell command Marketing.CampaignRepository.PersistCampaignLaunched(campaignId = campaignLaunched.campaignId) to repository Marketing.CampaignRepository
+      }
+      on campaignPaused: event Campaign.CampaignPaused is {
+        tell command Marketing.CampaignRepository.PersistCampaignPaused(campaignId = campaignPaused.campaignId) to repository Marketing.CampaignRepository
+      }
+      on campaignEnded: event Campaign.CampaignEnded is {
+        tell command Marketing.CampaignRepository.PersistCampaignEnded(campaignId = campaignEnded.campaignId) to repository Marketing.CampaignRepository
+      }
+    } with {
+      briefly "CampaignProjection handler"
+      described as {
+        |Turns each Campaign event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "Campaign persistence projection"
+    described as {
+      |Builds the stored Campaign view from the entity's events.
+    }
+  }
   processor CampaignEventSource as source is {
     outlet CampaignEvents is type CampaignEvent
     handler CampaignEventEmitter is {
@@ -321,7 +366,7 @@ context Marketing as router is {
       |Wires published campaign events to the context's event log.
     }
   }
-  connector 'CampaignEvent Storage' is from outlet Marketing.Campaign.CampaignEvents2 to inlet Marketing.CampaignRepository.CampaignRepositoryFromCampaign with {
+  connector 'CampaignEvent Storage' is from outlet Marketing.Campaign.CampaignEvents2 to inlet Marketing.CampaignProjection.CampaignProjectionFromCampaign with {
     briefly "Campaign events on their way to storage"
     described as {
       |Carries what leaves CampaignEvents2 to CampaignRepositoryFromCampaign, which is where it is acted on.

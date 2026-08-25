@@ -75,10 +75,23 @@ context OnlineOrdering as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'OnlineOrderProjection Storage' is from outlet OnlineOrdering.OnlineOrderProjection.OnlineOrderProjectionToRepository to inlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryFromOnlineOrderProjection with {
+    briefly "OnlineOrderProjection commands on their way to OnlineOrderRepository"
+  }
   connector 'DeliveryToOnline Intake' is from outlet OnlineOrdering.DeliveryToOnlineOut to inlet OnlineOrdering.DeliveryEventSink.IncomingDeliveryEvents  connector 'OnlineOrderCommand Stream Intake' is from outlet OnlineOrdering.OnlineOrderCommandStreamOut to inlet OnlineOrdering.OnlineOrder.OnlineOrderCommands  connector 'OnlineOrderResult Stream Egress' is from outlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryResponses to inlet OnlineOrdering.OnlineOrderResultStreamIn  include "online-types.riddl"
   include "OnlineOrder.riddl"
+  type OnlineOrderRepositoryCommand is one of {
+    OnlineOrdering.OnlineOrderRepository.PersistMenuBrowsed or OnlineOrdering.OnlineOrderRepository.PersistItemAddedToCart or OnlineOrdering.OnlineOrderRepository.PersistItemRemovedFromCart or OnlineOrdering.OnlineOrderRepository.PersistFulfillmentSelected or OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderSubmitted or OnlineOrdering.OnlineOrderRepository.PersistOnlinePaymentProcessed or OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderInPreparation or OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderReadyForPickup or OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderOutForDelivery or OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderCompleted or OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderCancelled
+  } with {
+    briefly "Anything that writes the OnlineOrderRepository"
+    described as {
+      |The persistence commands OnlineOrderRepository accepts. Entity events never reach
+      |it directly; OnlineOrderProjection turns each into one of these. A repository
+      |takes commands and queries only.
+    }
+  }
   repository OnlineOrderRepository as flow is {
-    inlet OnlineOrderRepositoryFromOnlineOrder is type OnlineOrderEvent    outlet OnlineOrderRepositoryResponses is type OnlineOrder.OnlineOrderResult
+    inlet OnlineOrderRepositoryFromOnlineOrderProjection is type OnlineOrderRepositoryCommand    outlet OnlineOrderRepositoryResponses is type OnlineOrder.OnlineOrderResult
     record StoredOnlineOrder is  {
       onlineOrderId: OnlineOrderId with {
         briefly "onlineOrderId"
@@ -341,6 +354,59 @@ context OnlineOrdering as router is {
       |Stores and retrieves online order data.
     }
   }
+  projector OnlineOrderProjection as flow is {
+    updates repository OnlineOrdering.OnlineOrderRepository
+    inlet OnlineOrderProjectionFromOnlineOrder is type OnlineOrderEvent
+    outlet OnlineOrderProjectionToRepository is type OnlineOrderRepositoryCommand
+    handler OnlineOrderProjectionHandler is {
+      on menuBrowsed: event OnlineOrdering.OnlineOrder.MenuBrowsed is {
+        tell command OnlineOrdering.OnlineOrderRepository.PersistMenuBrowsed(onlineOrderId = menuBrowsed.onlineOrderId) to repository OnlineOrdering.OnlineOrderRepository
+      }
+      on itemAddedToCart: event OnlineOrdering.OnlineOrder.ItemAddedToCart is {
+        tell command OnlineOrdering.OnlineOrderRepository.PersistItemAddedToCart(onlineOrderId = itemAddedToCart.onlineOrderId) to repository OnlineOrdering.OnlineOrderRepository
+      }
+      on itemRemovedFromCart: event OnlineOrdering.OnlineOrder.ItemRemovedFromCart is {
+        tell command OnlineOrdering.OnlineOrderRepository.PersistItemRemovedFromCart(onlineOrderId = itemRemovedFromCart.onlineOrderId) to repository OnlineOrdering.OnlineOrderRepository
+      }
+      on fulfillmentSelected: event OnlineOrdering.OnlineOrder.FulfillmentSelected is {
+        tell command OnlineOrdering.OnlineOrderRepository.PersistFulfillmentSelected(onlineOrderId = fulfillmentSelected.onlineOrderId) to repository OnlineOrdering.OnlineOrderRepository
+      }
+      on onlineOrderSubmitted: event OnlineOrdering.OnlineOrder.OnlineOrderSubmitted is {
+        tell command OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderSubmitted(onlineOrderId = onlineOrderSubmitted.onlineOrderId) to repository OnlineOrdering.OnlineOrderRepository
+      }
+      on onlinePaymentProcessed: event OnlineOrdering.OnlineOrder.OnlinePaymentProcessed is {
+        tell command OnlineOrdering.OnlineOrderRepository.PersistOnlinePaymentProcessed(onlineOrderId = onlinePaymentProcessed.onlineOrderId) to repository OnlineOrdering.OnlineOrderRepository
+      }
+      on onlineOrderInPreparation: event OnlineOrdering.OnlineOrder.OnlineOrderInPreparation is {
+        tell command OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderInPreparation(onlineOrderId = onlineOrderInPreparation.onlineOrderId) to repository OnlineOrdering.OnlineOrderRepository
+      }
+      on onlineOrderReadyForPickup: event OnlineOrdering.OnlineOrder.OnlineOrderReadyForPickup is {
+        tell command OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderReadyForPickup(onlineOrderId = onlineOrderReadyForPickup.onlineOrderId) to repository OnlineOrdering.OnlineOrderRepository
+      }
+      on onlineOrderOutForDelivery: event OnlineOrdering.OnlineOrder.OnlineOrderOutForDelivery is {
+        tell command OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderOutForDelivery(onlineOrderId = onlineOrderOutForDelivery.onlineOrderId) to repository OnlineOrdering.OnlineOrderRepository
+      }
+      on onlineOrderCompleted: event OnlineOrdering.OnlineOrder.OnlineOrderCompleted is {
+        tell command OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderCompleted(onlineOrderId = onlineOrderCompleted.onlineOrderId) to repository OnlineOrdering.OnlineOrderRepository
+      }
+      on onlineOrderCancelled: event OnlineOrdering.OnlineOrder.OnlineOrderCancelled is {
+        tell command OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderCancelled(onlineOrderId = onlineOrderCancelled.onlineOrderId) to repository OnlineOrdering.OnlineOrderRepository
+      }
+      on other is {
+        do "not persisted: AddToCartRejected, BrowseMenuRejected, CancelOnlineOrderRejected, CompleteOnlineOrderRejected and 7 more record no stored state"
+      }
+    } with {
+      briefly "OnlineOrderProjection handler"
+      described as {
+        |Turns each OnlineOrder event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "OnlineOrder persistence projection"
+    described as {
+      |Builds the stored OnlineOrder view from the entity's events.
+    }
+  }
   saga OnlineOrderCheckout is {
     step StepSubmitOrder is  {
       do "Close the cart and commit the order the guest assembled"
@@ -564,7 +630,7 @@ context OnlineOrdering as router is {
       |for delivery status updates to online orders.
     }
   }
-  connector 'OnlineOrderEvent Storage' is from outlet OnlineOrdering.OnlineOrder.OnlineOrderEvents to inlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryFromOnlineOrder with {
+  connector 'OnlineOrderEvent Storage' is from outlet OnlineOrdering.OnlineOrder.OnlineOrderEvents to inlet OnlineOrdering.OnlineOrderProjection.OnlineOrderProjectionFromOnlineOrder with {
     briefly "OnlineOrder events on their way to storage"
     described as {
       |Carries what leaves OnlineOrderEvents to OnlineOrderRepositoryFromOnlineOrder, which is where it is acted on.

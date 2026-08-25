@@ -35,10 +35,23 @@ context Kitchen as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'KitchenTicketProjection Storage' is from outlet Kitchen.KitchenTicketProjection.KitchenTicketProjectionToRepository to inlet Kitchen.KitchenTicketRepository.KitchenTicketRepositoryFromKitchenTicketProjection with {
+    briefly "KitchenTicketProjection commands on their way to KitchenTicketRepository"
+  }
   connector 'KitchenTicketCommand Stream Intake' is from outlet Kitchen.KitchenTicketCommandStreamOut to inlet Kitchen.KitchenTicket.KitchenTicketCommands  connector 'KitchenTicketResult Stream Egress' is from outlet Kitchen.KitchenTicketRepository.KitchenTicketRepositoryResponses to inlet Kitchen.KitchenTicketResultStreamIn  include "kitchen-types.riddl"
   include "KitchenTicket.riddl"
+  type KitchenTicketRepositoryCommand is one of {
+    Kitchen.KitchenTicketRepository.PersistTicketReceived or Kitchen.KitchenTicketRepository.PersistStationAssigned or Kitchen.KitchenTicketRepository.PersistPreparationStarted or Kitchen.KitchenTicketRepository.PersistItemMarkedReady or Kitchen.KitchenTicketRepository.PersistTicketApproved or Kitchen.KitchenTicketRepository.PersistServerNotified
+  } with {
+    briefly "Anything that writes the KitchenTicketRepository"
+    described as {
+      |The persistence commands KitchenTicketRepository accepts. Entity events never reach
+      |it directly; KitchenTicketProjection turns each into one of these. A repository
+      |takes commands and queries only.
+    }
+  }
   repository KitchenTicketRepository as merge is {
-    inlet KitchenTicketRepositoryFromKitchenTicket is type KitchenTicketEvent    inlet KitchenTicketRepositoryFromKitchenDisplay is type KitchenTicketEvent    outlet KitchenTicketRepositoryResponses is type KitchenTicket.KitchenTicketResult
+    inlet KitchenTicketRepositoryFromKitchenTicketProjection is type KitchenTicketRepositoryCommand    inlet KitchenTicketRepositoryFromKitchenDisplay is type KitchenTicketEvent    outlet KitchenTicketRepositoryResponses is type KitchenTicket.KitchenTicketResult
     record StoredKitchenTicket is  {
       kitchenTicketId: KitchenTicketId with {
         briefly "kitchenTicketId"
@@ -209,6 +222,44 @@ context Kitchen as router is {
     briefly "Kitchen ticket repository"
     described as {
       |Stores and retrieves kitchen ticket data.
+    }
+  }
+  projector KitchenTicketProjection as flow is {
+    updates repository Kitchen.KitchenTicketRepository
+    inlet KitchenTicketProjectionFromKitchenTicket is type KitchenTicketEvent
+    outlet KitchenTicketProjectionToRepository is type KitchenTicketRepositoryCommand
+    handler KitchenTicketProjectionHandler is {
+      on ticketReceived: event Kitchen.KitchenTicket.TicketReceived is {
+        tell command Kitchen.KitchenTicketRepository.PersistTicketReceived(kitchenTicketId = ticketReceived.kitchenTicketId) to repository Kitchen.KitchenTicketRepository
+      }
+      on stationAssigned: event Kitchen.KitchenTicket.StationAssigned is {
+        tell command Kitchen.KitchenTicketRepository.PersistStationAssigned(kitchenTicketId = stationAssigned.kitchenTicketId) to repository Kitchen.KitchenTicketRepository
+      }
+      on preparationStarted: event Kitchen.KitchenTicket.PreparationStarted is {
+        tell command Kitchen.KitchenTicketRepository.PersistPreparationStarted(kitchenTicketId = preparationStarted.kitchenTicketId) to repository Kitchen.KitchenTicketRepository
+      }
+      on itemMarkedReady: event Kitchen.KitchenTicket.ItemMarkedReady is {
+        tell command Kitchen.KitchenTicketRepository.PersistItemMarkedReady(kitchenTicketId = itemMarkedReady.kitchenTicketId) to repository Kitchen.KitchenTicketRepository
+      }
+      on ticketApproved: event Kitchen.KitchenTicket.TicketApproved is {
+        tell command Kitchen.KitchenTicketRepository.PersistTicketApproved(kitchenTicketId = ticketApproved.kitchenTicketId) to repository Kitchen.KitchenTicketRepository
+      }
+      on serverNotified: event Kitchen.KitchenTicket.ServerNotified is {
+        tell command Kitchen.KitchenTicketRepository.PersistServerNotified(kitchenTicketId = serverNotified.kitchenTicketId) to repository Kitchen.KitchenTicketRepository
+      }
+      on other is {
+        do "not persisted: ApproveTicketRejected, AssignStationRejected, MarkItemReadyRejected, NotifyServerRejected and 2 more record no stored state"
+      }
+    } with {
+      briefly "KitchenTicketProjection handler"
+      described as {
+        |Turns each KitchenTicket event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "KitchenTicket persistence projection"
+    described as {
+      |Builds the stored KitchenTicket view from the entity's events.
     }
   }
   projector KitchenDisplay as flow is {
@@ -635,7 +686,7 @@ context Kitchen as router is {
       |The pipe states the route; the endpoints state who owns each end.
     }
   }
-  connector 'KitchenTicketEvent Storage' is from outlet Kitchen.KitchenTicketEventSplit.KitchenTicketEventSplitToKitchenTicketRepository to inlet Kitchen.KitchenTicketRepository.KitchenTicketRepositoryFromKitchenTicket with {
+  connector 'KitchenTicketEvent Storage' is from outlet Kitchen.KitchenTicketEventSplit.KitchenTicketEventSplitToKitchenTicketRepository to inlet Kitchen.KitchenTicketProjection.KitchenTicketProjectionFromKitchenTicket with {
     briefly "KitchenTicket events on their way to storage"
     described as {
       |Carries what leaves KitchenTicketEventSplitToKitchenTicketRepository to KitchenTicketRepositoryFromKitchenTicket, which is where it is acted on.

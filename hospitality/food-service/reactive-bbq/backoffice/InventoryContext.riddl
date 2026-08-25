@@ -1,6 +1,9 @@
 // Inventory bounded context
 context Inventory as router is {
   inlet SupplierToInventoryIn is type SupplierEvent  outlet SupplierToInventoryFwd is type SupplierEvent
+  connector 'InventoryItemProjection Storage' is from outlet Inventory.InventoryItemProjection.InventoryItemProjectionToRepository to inlet Inventory.InventoryItemRepository.InventoryItemRepositoryFromInventoryItemProjection with {
+    briefly "InventoryItemProjection commands on their way to InventoryItemRepository"
+  }
   connector 'SupplierToInventory Intake' is from outlet Inventory.SupplierToInventoryFwd to inlet Inventory.SupplierSystemAdapter.IncomingSupplierSystemEvents  inlet InventoryItemCommandStreamIn is type InventoryItemCommand  outlet InventoryItemCommandStreamOut is type InventoryItemCommand
   inlet InventoryToReportingIn is type InventoryEvent  outlet InventoryToReportingOut is type InventoryEvent
   inlet InventoryItemResultStreamIn is type InventoryItem.InventoryItemResult  outlet InventoryItemResultStreamOut is type InventoryItem.InventoryItemResult
@@ -108,8 +111,18 @@ context Inventory as router is {
       |stream that had not been modelled.
     }
   }
+  type InventoryItemRepositoryCommand is one of {
+    Inventory.InventoryItemRepository.PersistStockReceived or Inventory.InventoryItemRepository.PersistStockConsumed or Inventory.InventoryItemRepository.PersistStockAdjusted or Inventory.InventoryItemRepository.PersistReorderThresholdSet or Inventory.InventoryItemRepository.PersistPurchaseOrderCreated
+  } with {
+    briefly "Anything that writes the InventoryItemRepository"
+    described as {
+      |The persistence commands InventoryItemRepository accepts. Entity events never reach
+      |it directly; InventoryItemProjection turns each into one of these. A repository
+      |takes commands and queries only.
+    }
+  }
   repository InventoryItemRepository as flow is {
-    inlet InventoryItemRepositoryFromInventoryItem is type InventoryItemEvent    outlet InventoryItemRepositoryResponses is type InventoryItem.InventoryItemResult
+    inlet InventoryItemRepositoryFromInventoryItemProjection is type InventoryItemRepositoryCommand    outlet InventoryItemRepositoryResponses is type InventoryItem.InventoryItemResult
     record StoredInventoryItem is  {
       inventoryItemId: InventoryItemId with {
         briefly "inventoryItemId"
@@ -252,6 +265,38 @@ context Inventory as router is {
       |Stores and retrieves inventory item data.
     }
   }
+  projector InventoryItemProjection as flow is {
+    updates repository Inventory.InventoryItemRepository
+    inlet InventoryItemProjectionFromInventoryItem is type InventoryItemEvent
+    outlet InventoryItemProjectionToRepository is type InventoryItemRepositoryCommand
+    handler InventoryItemProjectionHandler is {
+      on stockReceived: event InventoryItem.StockReceived is {
+        tell command Inventory.InventoryItemRepository.PersistStockReceived(inventoryItemId = stockReceived.inventoryItemId) to repository Inventory.InventoryItemRepository
+      }
+      on stockConsumed: event InventoryItem.StockConsumed is {
+        tell command Inventory.InventoryItemRepository.PersistStockConsumed(inventoryItemId = stockConsumed.inventoryItemId) to repository Inventory.InventoryItemRepository
+      }
+      on stockAdjusted: event InventoryItem.StockAdjusted is {
+        tell command Inventory.InventoryItemRepository.PersistStockAdjusted(inventoryItemId = stockAdjusted.inventoryItemId) to repository Inventory.InventoryItemRepository
+      }
+      on reorderThresholdSet: event InventoryItem.ReorderThresholdSet is {
+        tell command Inventory.InventoryItemRepository.PersistReorderThresholdSet(inventoryItemId = reorderThresholdSet.inventoryItemId) to repository Inventory.InventoryItemRepository
+      }
+      on purchaseOrderCreated: event InventoryItem.PurchaseOrderCreated is {
+        tell command Inventory.InventoryItemRepository.PersistPurchaseOrderCreated(inventoryItemId = purchaseOrderCreated.inventoryItemId) to repository Inventory.InventoryItemRepository
+      }
+    } with {
+      briefly "InventoryItemProjection handler"
+      described as {
+        |Turns each InventoryItem event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "InventoryItem persistence projection"
+    described as {
+      |Builds the stored InventoryItem view from the entity's events.
+    }
+  }
   processor InventoryItemEventSource as source is {
     outlet InventoryItemEvents is type InventoryEvent
     handler InventoryItemEventEmitter is {
@@ -342,7 +387,7 @@ context Inventory as router is {
       | automatically track stock consumption.
     }
   }
-  connector 'InventoryItemEvent Storage' is from outlet Inventory.InventoryItem.InventoryItemEvents2 to inlet Inventory.InventoryItemRepository.InventoryItemRepositoryFromInventoryItem with {
+  connector 'InventoryItemEvent Storage' is from outlet Inventory.InventoryItem.InventoryItemEvents2 to inlet Inventory.InventoryItemProjection.InventoryItemProjectionFromInventoryItem with {
     briefly "InventoryItem events on their way to storage"
     described as {
       |Carries what leaves InventoryItemEvents2 to InventoryItemRepositoryFromInventoryItem, which is where it is acted on.

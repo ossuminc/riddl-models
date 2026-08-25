@@ -66,10 +66,23 @@ context Delivery as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'DeliveryProjection Storage' is from outlet Delivery.DeliveryProjection.DeliveryProjectionToRepository to inlet Delivery.DeliveryRepository.DeliveryRepositoryFromDeliveryProjection with {
+    briefly "DeliveryProjection commands on their way to DeliveryRepository"
+  }
   connector 'DeliveryOrderCommand Stream Intake' is from outlet Delivery.DeliveryOrderCommandStreamOut to inlet Delivery.DeliveryOrder.DeliveryOrderCommands  connector 'DeliveryToOnline Egress' is from outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents to inlet Delivery.DeliveryToOnlineIn  connector 'DeliveryOrderResult Stream Egress' is from outlet Delivery.DeliveryRepository.DeliveryRepositoryResponses to inlet Delivery.DeliveryOrderResultStreamIn  include "delivery-types.riddl"
   include "Delivery.riddl"
+  type DeliveryRepositoryCommand is one of {
+    Delivery.DeliveryRepository.PersistDeliveryCreated or Delivery.DeliveryRepository.PersistDriverAssigned or Delivery.DeliveryRepository.PersistDriverDispatched or Delivery.DeliveryRepository.PersistDeliveryLocationRecorded or Delivery.DeliveryRepository.PersistDeliveryConfirmed or Delivery.DeliveryRepository.PersistDeliveryPaymentRecorded or Delivery.DeliveryRepository.PersistDeliveryIssueReported or Delivery.DeliveryRepository.PersistDeliveryMarkedFailed
+  } with {
+    briefly "Anything that writes the DeliveryRepository"
+    described as {
+      |The persistence commands DeliveryRepository accepts. Entity events never reach
+      |it directly; DeliveryProjection turns each into one of these. A repository
+      |takes commands and queries only.
+    }
+  }
   repository DeliveryRepository as flow is {
-    inlet DeliveryRepositoryFromDeliveryOrder is type DeliveryOrderEvent    outlet DeliveryRepositoryResponses is type DeliveryOrder.DeliveryOrderResult
+    inlet DeliveryRepositoryFromDeliveryProjection is type DeliveryRepositoryCommand    outlet DeliveryRepositoryResponses is type DeliveryOrder.DeliveryOrderResult
     record StoredDeliveryOrder is  {
       deliveryOrderId: UUID with {
         briefly "deliveryOrderId"
@@ -271,6 +284,50 @@ context Delivery as router is {
       |Stores and retrieves delivery data.
     }
   }
+  projector DeliveryProjection as flow is {
+    updates repository Delivery.DeliveryRepository
+    inlet DeliveryProjectionFromDelivery is type DeliveryOrderEvent
+    outlet DeliveryProjectionToRepository is type DeliveryRepositoryCommand
+    handler DeliveryProjectionHandler is {
+      on deliveryCreated: event DeliveryOrder.DeliveryCreated is {
+        tell command Delivery.DeliveryRepository.PersistDeliveryCreated(deliveryOrderId = deliveryCreated.deliveryId) to repository Delivery.DeliveryRepository
+      }
+      on driverAssigned: event DeliveryOrder.DriverAssigned is {
+        tell command Delivery.DeliveryRepository.PersistDriverAssigned(deliveryOrderId = driverAssigned.deliveryId) to repository Delivery.DeliveryRepository
+      }
+      on driverDispatched: event DeliveryOrder.DriverDispatched is {
+        tell command Delivery.DeliveryRepository.PersistDriverDispatched(deliveryOrderId = driverDispatched.deliveryId) to repository Delivery.DeliveryRepository
+      }
+      on deliveryLocationRecorded: event DeliveryOrder.DeliveryLocationRecorded is {
+        tell command Delivery.DeliveryRepository.PersistDeliveryLocationRecorded(deliveryOrderId = deliveryLocationRecorded.deliveryId) to repository Delivery.DeliveryRepository
+      }
+      on deliveryConfirmed: event DeliveryOrder.DeliveryConfirmed is {
+        tell command Delivery.DeliveryRepository.PersistDeliveryConfirmed(deliveryOrderId = deliveryConfirmed.deliveryId) to repository Delivery.DeliveryRepository
+      }
+      on deliveryPaymentRecorded: event DeliveryOrder.DeliveryPaymentRecorded is {
+        tell command Delivery.DeliveryRepository.PersistDeliveryPaymentRecorded(deliveryOrderId = deliveryPaymentRecorded.deliveryId) to repository Delivery.DeliveryRepository
+      }
+      on deliveryIssueReported: event DeliveryOrder.DeliveryIssueReported is {
+        tell command Delivery.DeliveryRepository.PersistDeliveryIssueReported(deliveryOrderId = deliveryIssueReported.deliveryId) to repository Delivery.DeliveryRepository
+      }
+      on deliveryMarkedFailed: event DeliveryOrder.DeliveryMarkedFailed is {
+        tell command Delivery.DeliveryRepository.PersistDeliveryMarkedFailed(deliveryOrderId = deliveryMarkedFailed.deliveryId) to repository Delivery.DeliveryRepository
+      }
+      on other is {
+        do "not persisted: CreateDeliveryRejected, AssignDriverRejected, DispatchDriverRejected, RecordDeliveryLocationRejected and 4 more record no stored state"
+      }
+    } with {
+      briefly "DeliveryProjection handler"
+      described as {
+        |Turns each Delivery event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "Delivery persistence projection"
+    described as {
+      |Builds the stored Delivery view from the entity's events.
+    }
+  }
   processor DeliveryOrderEventSource as source is {
     outlet DeliveryOrderEvents is type DeliveryEvent
     handler DeliveryOrderEventEmitter is {
@@ -369,7 +426,7 @@ context Delivery as router is {
       |Receives delivery-fulfillment orders from online ordering.
     }
   }
-  connector 'DeliveryOrder Storage' is from outlet Delivery.DeliveryOrder.DeliveryOrderEvents2 to inlet Delivery.DeliveryRepository.DeliveryRepositoryFromDeliveryOrder with {
+  connector 'DeliveryOrder Storage' is from outlet Delivery.DeliveryOrder.DeliveryOrderEvents2 to inlet Delivery.DeliveryProjection.DeliveryProjectionFromDelivery with {
     briefly "The DeliveryOrder projection on its way to storage"
     described as {
       |Carries what leaves DeliveryOrderEvents2 to DeliveryRepositoryFromDeliveryOrder, which is where it is acted on.
