@@ -694,6 +694,87 @@ anything it cannot name unambiguously rather than guessing.
 
 ---
 
+## Editing models: use riddlc, do not parse RIDDL with regex
+
+**`grep` is not a substitute parser for RIDDL** (Reid, 2026-08-24). A single
+session's regex-driven scripts produced nine distinct defects, every one a badly
+re-implemented fragment of the grammar, and the dangerous ones reported a
+confident number computed over nothing:
+
+- `morph entity Ctx.Ent to state ...` matches a naive "definition header" regex
+  and yields the CONTEXT name — it misclassified 3,433 sites
+- a handler may be `initial handler X is {`; missing the keyword reported 438
+  entities as having none
+- a clause head may be `on b: command X is` **or** `on command X is`, and may
+  carry any number of qualifier segments (`command Ctx.Ent.DoThing`)
+- prettify jams declarations onto one line: `inlet X is type T    handler H is {`
+- a definition may be followed by `with { }`; removing only the braced body
+  orphans it and breaks the parse
+- an alternation's separator `or` is not a member
+- reactive-bbq keeps its sources in subdirectories, so a non-recursive glob
+  skips the largest model and reports clean
+
+Since **rc.24** none of this is necessary.
+
+### `riddlc dump --json` — facts
+
+Emits the validated model as JSON: every node with its `span`, `parent` and
+`ancestors`; every reference **resolved**, with the declared kind (`carries`);
+every field's `cardinality` and `acceptsEmpty`; every alternation's members
+already expanded; every on-clause's `binding` and the message it handles.
+
+```bash
+riddlc dump <model>.riddl --json | python3 -c '...'
+```
+
+**It writes the projection to stdout and its diagnostics to stderr.** Reading
+`stdout + stderr` gives `JSONDecodeError: Extra data`. Read stdout alone.
+
+### `riddlc find` — locating, in the manner of Unix find
+
+```bash
+riddlc find <model>.riddl -- -type repository
+riddlc find <model>.riddl -- -type entity -name 'Order*' -expect-min 1
+```
+
+Tests include `-type`, `-name/-iname`, `-path`, `-regex`, `-in/-under-name`,
+`-empty`, `-stub`, `-unresolved`, `-option`, `-shape`, `-arity`, `-carries`,
+`-cardinality`; actions include `-print`, `-location`, `-printf`, `-list`.
+
+**Always pass `-expect-min N` in a script.** A selector that matches nothing
+prints `0 matched` and exits 0, which is indistinguishable from a clean corpus —
+the exact failure this repository keeps being bitten by. `-expect-min` turns a
+short run into exit 7.
+
+### `riddlc find ... -replace` — editing
+
+**Prefer this to computing offsets yourself.** The script receives the matched
+node's JSON on stdin — including a `source` key with the exact span text — and
+whatever it writes to stdout becomes that node's new text. riddlc then re-parses
+and re-validates, and **restores every file if the model got worse**.
+
+```bash
+riddlc find <model>.riddl -- -type type -name 'ShiftEvent' \
+  -replace python3 -c 'import sys,json;d=json.load(sys.stdin);sys.stdout.write(transform(d["source"]))' \;
+```
+
+The identity transform is `jq -r .source`, and it is worth running first on any
+new selector to confirm the match set before transforming anything.
+
+Because the script is handed the node's own text, an edit never needs to know
+where the node begins or how deeply it nests. Overlapping edits are refused
+rather than ordered, so a nested pair is an error, not a race.
+
+### Two node-kind gotchas the projection exposes
+
+- **`on-event` and `onmessageclause` are different kinds.** Event clauses are
+  `on-event`; commands and queries are `onmessageclause`. Looking at one reports
+  every handler as having no clauses.
+- **An event name appears as a SUFFIX** in generated command names
+  (`PersistCustomerEnrolled`), so a lookbehind-anchored substitution misses it.
+
+---
+
 ## Validation with riddlc
 
 **Validation is run explicitly** via `sbt riddlcValidate` (alias
