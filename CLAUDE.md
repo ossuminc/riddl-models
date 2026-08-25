@@ -1054,6 +1054,31 @@ the same riddlc the rest of the build uses. Both `riddlcValidate` and
 | `sbt test` | patterns, then the models via the **library API** |
 | `sbt checkAll` | both, with the full test suite forced |
 | `collect-warnings.py` | the models at **every severity** — see below |
+| `sbt pc` | every model is in **prettify canonical form** |
+
+#### Always commit prettified code
+
+**Run `sbt r` before committing model edits** (Reid, 2026-08-25).
+`prettifyCheck` (`sbt pc`) gates it and `riddlcValidate` depends on it, so
+`sbt v` and
+`sbt checkAll` fail on drift — but the point is to run prettify as part of
+editing, not to learn about it from a red gate.
+
+It exists because **nothing else in the build sees formatting**. During the
+drift that produced 396 non-canonical files across 188 of 188 models, `sbt v`,
+the completeness sweep and `checkAll` were green throughout. The damage lands
+on `verify-bast-roundtrip.sh`, whose byte-for-byte compare only holds while
+the source IS canonical — so drift makes it fail naming the `.bast` while the
+cause is the source text.
+
+`patterns/` is excluded from all three, and its examples diverge from canonical
+**deliberately** (BACKLOG #3) — do not canonicalise them.
+
+**When judging whether a reformat changed anything, compare the TOKEN
+MULTISET.** Stripping whitespace is not enough: prettify reorders declarations
+(it moves `updates repository X` above a projector's outlet), so 181 files
+looked like content changes when nothing had changed. Order- and
+whitespace-independent comparison gave 0 of 396.
 
 #### `sbt v` is the LENIENT gate, and this inverts the obvious assumption
 
