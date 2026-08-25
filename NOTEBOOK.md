@@ -4,92 +4,87 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`. `main` stays 1.x until riddl 2.0 ships (BACKLOG #4).
+**Branch** `release/2`, riddlc **2.0.0-rc.24**, sbt-riddl **2.0.0-rc.24**.
+`riddlcPath` names the staged `../bin/riddlc` because the version-probe fix is in
+`rc.24-3`; the published rc.24 writes nothing to stdout for `version`.
 
-### USE THE PINNED COMPILER, NOT `../bin/riddlc`
-
-`../bin/riddlc` was rebuilt 2026-08-24 11:05 to **`2.0.0-rc.23-4-10262003`**,
-four commits past the rc.23 tag. It requires **full constructors** and reports
-**2,411 errors** corpus-wide (2,298 constructor, 113 `set`-after-`morph`). The
-build downloads the pin, `2.0.0-rc.23` (`10788a0a`), which reports **0**.
-
-**Reid's call: hold at rc.23 until rc.24**, which will carry a `find` command.
-So take every measurement with the pinned binary:
-
-```bash
-export RIDDLC=$HOME/.cache/riddlc/2.0.0-rc.23/bin/riddlc
-$RIDDLC info | grep 'git commit'      # expect 10788a0a
-RIDDLC=$RIDDLC ./scripts/collect-warnings.py
-```
-
-This IS real drift, unlike the annotated-tag artifact corrected earlier the same
-day (see `[[no-riddlc-tag-drift]]` — `.object.sha` on an annotated tag returns
-the tag object; dereference it). Do not confuse the two.
-
-### State, verified
+### State: ZERO findings, all 188 models
 
 ```
-sbt v                 GREEN - all 188 models + patterns/
-collect-warnings.py   64 findings, 0 errors, 170 of 188 models at zero
-check-repository-ports.py   15 violations, all in reactive-bbq
+collect-warnings.py         0 findings, 188/188 at zero
+sbt v                       All 188 passed + patterns/ green
+check-repository-ports.py   0 violations
 ```
 
-The campaign's main body is DONE: 3,521 -> 64 findings. Phase A added 1,744
-`on <e>: event E` clauses and cleared 3,445 of them in one pass.
+Do not read that as "done" — two of Reid's rulings are accepted and NOT yet
+implemented. See below.
 
-### What is left — 64 findings
+### RULED, NOT STARTED — repository command naming (Reid's option A)
 
-- **reactive-bbq, 29** — 14 repositories still hold event inlets, plus sinks,
-  external contexts and projectors needing clauses for every union member.
-- **35 across 17 models** — same union-inlet class, a few binding-shadow
-  warnings, 3 orphan repositories (BedCensus, ORSchedule, Genealogy) awaiting
-  the **"move the events, don't duplicate"** treatment Reid chose; lab-orders is
-  the worked example of it.
+`Persist<Event>` is wrong three ways, and Reid picked the fix:
 
-### The reactive-bbq recipe — PROVEN on ShiftRepository, 14 to go
+1. past tense dominates (`PersistTeamCreated` reads as an event)
+2. `Persist` is a lazy verb — "the equivalent of saying Do to a repository"
+3. **they carry only an id**, so they do not say what to write
 
-Its repositories **already declare their Persist commands and already handle
-them**. Do not re-add either. Each needs only:
+**Option A, chosen:** verbs by effect, few per repository —
+`CreateLoyaltyAccount` / `UpdateLoyaltyAccount` / `DeleteLoyaltyAccount` — with
+the projector mapping many events onto them and **the command carrying the row
+data**. Scale: 4,030 uses, 1,669 distinct names.
 
-1. `type <R>Command is one of { <its Persist commands> }`
-2. the event inlet replaced by `inlet <R>From<Projector> is type <R>Command`
-3. a projector, **if the context has none** — Scheduling ran the entity's event
-   outlet straight into the repository
-4. the connector rewired: entity -> projector -> repository
+### RULED, PART DONE — rejections do not go to a database
 
-### Traps banked — every one cost real time
+Reid: *"nobody ever sends a message to a database telling it to reject
+something."* The refusal belongs at the sender's level.
 
-- **`on command PersistX is {` and `on persistX: command PersistX is {` are BOTH
-  legal.** Searching for one and concluding the handler is empty is how six
-  duplicate clauses got added.
-- **Nine grep-shaped defects this session.** They are enumerated in
-  `../riddl/task/2026-08-24-riddlc-needs-a-scriptable-ast-projection.md`, which
-  is the input to rc.24's `find`. Read it before writing another regex script.
-- **`morph entity X.Y to state ...` matches a naive definition-header regex** and
-  yields the CONTEXT name — it misclassified 3,433 sites.
-- **`initial handler X is {`** — the keyword is optional and easy to miss.
-- **An alternation's separator `or` is not a member** — counting it poisoned 191
-  results.
-- **Always recurse.** reactive-bbq keeps sources in `restaurant/`, `corporate/`,
-  `backoffice/`; a non-recursive glob skips the largest model and reports clean.
-- **A `str.replace` whose anchor does not match changes nothing silently**, and
-  the validation after it is of an unmodified file.
-- **Verify the riddlc PATH** — a wrong relative path fails and `grep -c` prints 0.
+**Done:** 268 state-guard sends removed, the refusal kept as `error`. The single
+genuine business rejection (`"Point balance is less than the points requested for
+redemption"`) is deliberately untouched — that is the credit-card-declined case
+Reid carved out, and it should be stored via its own specific command.
 
-### Certainty
+**Left:** 52 `<Command>Rejected` declarations remain, named 97 times in the
+`<X>Event` alternations, with one send between them. The chain, in this order:
 
-**Verified by command:** the rc.23/rc.23-4 split and both binaries' commits; 64
-findings / 0 errors on the pin; `sbt v` green; 15 port violations; reactive-bbq
-at 29 findings / 0 errors after the ShiftRepository conversion.
+1. remove the split clauses that still `send`/`tell` rejection events
+2. THEN trim the rejection members out of the alternations
+3. THEN replace the persistence projectors' `on other` with an explicit clause
+   per member that can actually arrive (`scripts/expand-on-other.py` writes 102
+   of them; it derives each processor's policy from its own existing clauses and
+   holds back any processor whose clauses disagree)
 
-**Assumed, not verified:** that the other 14 reactive-bbq repositories match
-ShiftRepository's shape. ShiftRepository is one data point.
+Attempting (2) before (1) is REFUSED by riddlc and everything restored — that is
+how the ordering was discovered, not by reasoning.
 
-### `task/` — two files here, two filed upstream in `../riddl/task/`
+### Use riddlc, not regex — now written up in CLAUDE.md
 
-- `2026-08-22-handle-the-messages-you-are-told.md` — the campaign, near done
-- `2026-08-20-regenerate-checked-in-bast-after-2.0.0.md` — blocked on 2.0.0
-- filed upstream: the scriptable-AST request, and `morph`-after-`morph`
+`dump --json` for facts, `find` for locating, **`find ... -replace` for editing**:
+the script gets the node's JSON on stdin including `source`, its stdout becomes
+the new text, and riddlc re-parses, re-validates and restores if the model got
+worse. Identity transform is `jq -r .source`. Always pass `-expect-min N`.
+
+Nine regex defects in one session are listed there as the evidence. Do not write
+another regex script for this corpus.
+
+### `task/` — upstream tasks filed for riddl
+
+- `2026-08-24-reference-prefix-must-match-declared-kind.md` — Reid wants a
+  validation error when a reference prefixes with `type` something declared as a
+  command/event/query/result. Note the refinement that makes it tractable: the
+  prefix must match the DECLARED kind, so `is type OrderEvent` stays correct for
+  an alternation declared `type`. Measured in reactive-bbq: 230 of 283 portlet
+  refs are legitimately `type`, 52 are `result` and wrong.
+- earlier ones (scriptable AST, morph-after-morph, empty cardinality, sbt-riddl
+  version) are all implemented and closed.
+
+### Traps
+
+- **An event inlet on a repository is NOT an error to riddlc.** It reports the
+  consequences — clause coverage, arity, connectivity — so an `on other` silences
+  it. That is how `PlayerRepository` kept an event inlet while validating clean;
+  `check-repository-ports.py` was the only thing that caught it. Keep that check.
+- **`on other` is the weak answer.** Mine were hiding real lifecycle events
+  (`VisitCompleted`, `TicketRouted`, `StationAssigned`), not just rejections.
+- **Verify the riddlc PATH**; a wrong relative path fails and `grep -c` prints 0.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
