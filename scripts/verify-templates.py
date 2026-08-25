@@ -195,7 +195,7 @@ ORDER_EVENTS = """    type {EntityName}Event is one of {
         }
       }
       schema {ViewName}Data is relational
-        of rows as type Stored{ViewName}
+        of rows as record Stored{ViewName}
           index on field Stored{ViewName}.orderId
         with {
         briefly "View data schema"
