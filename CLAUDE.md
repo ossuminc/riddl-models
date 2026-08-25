@@ -730,6 +730,31 @@ riddlc dump <model>.riddl --json | python3 -c '...'
 **It writes the projection to stdout and its diagnostics to stderr.** Reading
 `stdout + stderr` gives `JSONDecodeError: Extra data`. Read stdout alone.
 
+#### Which stream — and the two commands need OPPOSITE handling
+
+Since rc.24-3 the rule is **a command's product goes to stdout; diagnostics
+stay on stderr**. `validate` has no product, so it is stderr-ONLY:
+
+| command | product | diagnostics | read |
+|---------|---------|-------------|------|
+| `validate` | *(none)* | stderr | **both streams** |
+| `dump --json` | stdout | stderr | **stdout alone** |
+| `version` / `info` / `about` / `help` / `stats` | stdout | — | stdout |
+
+Measured on a model with one injected unused type: `2>/dev/null` reports **0**
+messages, `2>&1 1>/dev/null` reports **1**. So a validate harness that reads
+stdout alone reports a clean corpus **always**, whatever is wrong.
+
+Getting either backwards produces a confident wrong answer, not an error, and
+they fail in opposite directions — stdout-only hides every diagnostic, while
+both-streams corrupts the JSON. `scripts/collect-warnings.py:64` concatenates
+both and is the reference for the validate side.
+
+**The proof that a validate harness is live is that it has FOUND something.**
+The 2026-08-24 sweep that reported 1,032 findings used this code path; a
+stdout-only reader would have reported 0 on the same corpus, minutes after a
+staged riddlc reddened all 188 models.
+
 ### `riddlc find` — locating, in the manner of Unix find
 
 ```bash
@@ -995,9 +1020,47 @@ the same riddlc the rest of the build uses. Both `riddlcValidate` and
 
 | Command | What it checks |
 |---------|----------------|
-| `sbt v` | patterns, then all 187 models via the riddlc **CLI** |
+| `sbt v` | patterns, then all 188 models via the riddlc **CLI** |
 | `sbt test` | patterns, then the models via the **library API** |
 | `sbt checkAll` | both, with the full test suite forced |
+| `collect-warnings.py` | the models at **every severity** — see below |
+
+#### `sbt v` is the LENIENT gate, and this inverts the obvious assumption
+
+**A green `sbt v` does NOT mean the corpus is style- and usage-clean.** It
+validates through the `.conf` files, and **187 of the 188** set
+
+```hocon
+show-style-warnings   = false
+show-usage-warnings   = false
+```
+
+so those two classes are suppressed before the build ever sees them. (The
+exception is `language-coverage.conf`, which carries only `input-file` — so
+that one model, alone, is style- and usage-checked by `sbt v`. Counted
+2026-08-24; do not assume uniformity here without recounting.)
+`collect-warnings.py` invokes `riddlc validate <entry>.riddl` **directly**,
+never `from <conf>`, so it takes riddlc's defaults — which have every class
+ON. It is therefore the STRONGER check, and the one the zero standard means.
+
+Measured on one model with an injected unused type:
+
+```
+riddlc --provide-tips validate shopping-cart.riddl   -> [usage] ... is unused
+riddlc from shopping-cart.conf validate              -> silent
+```
+
+Same binary, same model, same defect; the `.conf` is the whole difference.
+
+Same family as the `sbt test` trap below, but a level further out and more
+surprising: here it is the **build command** that is lenient, so "the gate is
+green" and "the corpus is at zero" are different claims. Run both.
+
+**Canary the harness before believing its zero.** Inject one unused type into
+a real model, confirm the sweep reports it, revert. A zero from a harness that
+cannot see is the failure this repository keeps re-learning — and a zero is
+worth nothing until its DENOMINATOR is checked too, since
+`collect-warnings.py` prints nothing at all on an empty run.
 
 `sbt test` is a **weak gate for model edits**: sbt 2 routes `test` to
 `testQuick`, which skips tests it believes unchanged, and the suite reads
