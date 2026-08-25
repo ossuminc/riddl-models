@@ -66,6 +66,9 @@ context VesselContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'VoyageEvent Feed' is from outlet VesselContext.Voyage.VoyageEvents to inlet VesselContext.FleetAnalytics.FleetAnalyticsFromVoyage with {
+    briefly "Voyage events feeding the FleetAnalytics projection"
+  }
   connector 'VoyageCommand Stream Intake' is from outlet VesselContext.VoyageCommandStreamOut to inlet VesselContext.Voyage.VoyageCommands  connector 'VesselCommand Stream Intake' is from outlet VesselContext.VesselCommandStreamOut to inlet VesselContext.Vessel.VesselCommands  connector 'VesselResult Stream Egress' is from outlet VesselContext.VesselRepository.VesselRepositoryResponses to inlet VesselContext.VesselResultStreamIn  adaptor FromAISService from context AISService is { 
     handler FromAISServiceHandler is {
       on event AISService.GeofenceAlert is {
@@ -356,7 +359,7 @@ context VesselContext as router is {
   include "Voyage.riddl"
   // Repository for vessel persistence
   type VesselRepositoryCommand is one of {
-    VesselContext.VesselRepository.PersistBunkerReportSubmitted or VesselContext.VesselRepository.PersistCertificateAdded or VesselContext.VesselRepository.PersistCertificateRenewed or VesselContext.VesselRepository.PersistCrewMemberAdded or VesselContext.VesselRepository.PersistCrewMemberRemoved or VesselContext.VesselRepository.PersistMaintenanceRecorded or VesselContext.VesselRepository.PersistPortArrivalRecorded or VesselContext.VesselRepository.PersistPortDepartureRecorded or VesselContext.VesselRepository.PersistPositionUpdated or VesselContext.VesselRepository.PersistSpecificationsUpdated or VesselContext.VesselRepository.PersistVesselRegistered or VesselContext.VesselRepository.PersistVesselStatusChanged or VesselContext.VesselRepository.PersistVoyageCompleted or VesselContext.VesselRepository.PersistVoyageCreated or VesselContext.VesselRepository.PersistVoyageUpdated
+    VesselContext.VesselRepository.PersistBunkerReportSubmitted or VesselContext.VesselRepository.PersistCertificateAdded or VesselContext.VesselRepository.PersistCertificateRenewed or VesselContext.VesselRepository.PersistCrewMemberAdded or VesselContext.VesselRepository.PersistCrewMemberRemoved or VesselContext.VesselRepository.PersistMaintenanceRecorded or VesselContext.VesselRepository.PersistPortArrivalRecorded or VesselContext.VesselRepository.PersistPortDepartureRecorded or VesselContext.VesselRepository.PersistPositionUpdated or VesselContext.VesselRepository.PersistSpecificationsUpdated or VesselContext.VesselRepository.PersistVesselRegistered or VesselContext.VesselRepository.PersistVesselStatusChanged or VesselContext.VesselRepository.PersistVoyageCompleted or VesselContext.VesselRepository.PersistVoyageCreated or VesselContext.VesselRepository.PersistVoyageUpdated or VesselContext.VesselRepository.PersistVoyageCancelled
   } with {
     briefly "Anything that writes VesselRepository"
     described as {
@@ -365,6 +368,19 @@ context VesselContext as router is {
     }
   }
   repository VesselRepository as flow is {
+    command PersistVoyageCancelled is  {
+      voyageId: VoyageId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row VoyageCancelled applies to.
+        }
+      }
+    } with {
+      briefly "Persist VoyageCancelled"
+      described as {
+        |Instructs this repository to apply VoyageCancelled to the stored row.
+      }
+    }
     inlet VesselRepositoryFromFleetAnalytics is type VesselRepositoryCommand
     command PersistBunkerReportSubmitted is  {
       vesselId: VesselId with {
@@ -630,6 +646,9 @@ context VesselContext as router is {
       }
     }
     handler VesselPersistence is {
+      on command VesselRepository.PersistVoyageCancelled is {
+        do "apply VoyageCancelled to the stored row"
+      }
       on persistBunkerReportSubmitted: command PersistBunkerReportSubmitted is {
         do "apply BunkerReportSubmitted to the stored row"
       }
@@ -719,7 +738,8 @@ context VesselContext as router is {
       |Read model view carrying the fleet stats projection.
     }
   }
-  projector FleetAnalytics as flow is {
+  projector FleetAnalytics as merge is {
+    inlet FleetAnalyticsFromVoyage is type VoyageEvent
     outlet FleetAnalyticsToRepository is type VesselRepositoryCommand
     updates repository VesselContext.VesselRepository
     inlet FleetAnalyticsFromVessel is type VesselEvent
@@ -779,6 +799,9 @@ context VesselContext as router is {
       }
     }
     handler AnalyticsHandler is {
+      on voyageCancelled: event Voyage.VoyageCancelled is {
+        tell command VesselContext.VesselRepository.PersistVoyageCancelled(voyageId = voyageCancelled.voyageId) to repository VesselContext.VesselRepository
+      }
       on bunkerReportSubmitted: event Vessel.BunkerReportSubmitted is {
         tell command VesselContext.VesselRepository.PersistBunkerReportSubmitted(vesselId = bunkerReportSubmitted.vesselId) to repository VesselContext.VesselRepository
         do "apply BunkerReportSubmitted to the FleetAnalytics projection"

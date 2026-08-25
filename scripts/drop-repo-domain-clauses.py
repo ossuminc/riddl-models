@@ -48,7 +48,8 @@ def drop_clause(s, binder, cmd):
     fails to parse at the stray `with {` -- which is how this first ran: the
     clauses in one model had no metadata and the ones in the next did.
     """
-    m = re.search(rf"^[ \t]*on {re.escape(binder)}: command {re.escape(cmd)} is\s*\{{", s, re.M)
+    head = f"{re.escape(binder)}: " if binder else ""
+    m = re.search(rf"^[ \t]*on {head}command {re.escape(cmd)} is\s*\{{", s, re.M)
     if not m:
         return s, False
     _, end = body_of(s, m.start())
@@ -77,13 +78,13 @@ def main():
                 # (`command LabContext.LabOrder.CollectSpecimen`); compare on the
                 # last one, which is what the entity declares.
                 handled |= {c.split(".")[-1]
-                            for c in re.findall(r"on \w+: command ([\w.]+) is", eb)}
+                            for c in re.findall(r"on (?:\w+: )?command ([\w.]+) is", eb)}
         for p, s in list(files.items()):
             changed = False
             for rm in list(re.finditer(r"\brepository\s+(\w+)\s+(?:as\s+\w+\s+)?is\s*\{", s)):
                 rbody, _ = body_of(s, rm.start())
                 own = set(re.findall(r"^\s*command\s+(\w+)\s", rbody, re.M))
-                for binder, cmd in re.findall(r"on (\w+): command ([\w.]+) is", rbody):
+                for binder, cmd in re.findall(r"on (?:(\w+): )?command ([\w.]+) is", rbody):
                     short = cmd.split(".")[-1]
                     if short in own or short.startswith("Persist"):
                         continue
