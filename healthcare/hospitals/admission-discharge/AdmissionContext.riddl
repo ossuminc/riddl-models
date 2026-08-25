@@ -38,6 +38,9 @@ context AdmissionContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'BedOccupancyProjector To BedCensusRepository Storage' is from outlet AdmissionContext.BedOccupancyProjector.BedOccupancyProjectorToBedCensusRepository to inlet AdmissionContext.BedCensusRepository.BedCensusRepositoryFromBedOccupancyProjector with {
+    briefly "BedOccupancyProjector commands on their way to BedCensusRepository"
+  }
   connector 'AdmissionCommand Stream Intake' is from outlet AdmissionContext.AdmissionCommandStreamOut to inlet AdmissionContext.Admission.AdmissionCommands  connector 'AdmissionResult Stream Egress' is from outlet AdmissionContext.AdmissionRepository.AdmissionRepositoryResponses to inlet AdmissionContext.AdmissionResultStreamIn  adaptor FromBedManagementService from context BedManagementService is { 
     handler FromBedManagementServiceHandler is {
       on result BedManagementService.AvailableBedList is {
@@ -284,7 +287,7 @@ context AdmissionContext as router is {
   include "Admission.riddl"
   // Repository for admission persistence
   type AdmissionRepositoryCommand is one of {
-    AdmissionContext.AdmissionRepository.PersistAdmissionCreated or AdmissionContext.AdmissionRepository.PersistBedAssigned or AdmissionContext.AdmissionRepository.PersistConditionUpdated or AdmissionContext.AdmissionRepository.PersistDischargeCompleted or AdmissionContext.AdmissionRepository.PersistDischargeInitiated or AdmissionContext.AdmissionRepository.PersistPatientTransferred or AdmissionContext.AdmissionRepository.PersistTransferRequested
+    AdmissionContext.AdmissionRepository.PersistAdmissionCreated or AdmissionContext.AdmissionRepository.PersistConditionUpdated or AdmissionContext.AdmissionRepository.PersistDischargeCompleted or AdmissionContext.AdmissionRepository.PersistDischargeInitiated or AdmissionContext.AdmissionRepository.PersistTransferRequested
   } with {
     briefly "Anything that writes AdmissionRepository"
     described as {
@@ -354,21 +357,6 @@ context AdmissionContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    command PersistBedAssigned is  {
-      admissionId: AdmissionId with {
-        briefly "Row addressed"
-        described as {
-          |Which stored row BedAssigned applies to.
-        }
-      }
-    } with {
-      briefly "Persist BedAssigned"
-      described as {
-        |Instructs this repository to apply BedAssigned to the stored row. A
-        |persistence command, not a domain command: it declares no `yields`
-        |because storing a row records no new entity state.
-      }
-    }
     command PersistDischargeCompleted is  {
       admissionId: AdmissionId with {
         briefly "Row addressed"
@@ -380,21 +368,6 @@ context AdmissionContext as router is {
       briefly "Persist DischargeCompleted"
       described as {
         |Instructs this repository to apply DischargeCompleted to the stored row. A
-        |persistence command, not a domain command: it declares no `yields`
-        |because storing a row records no new entity state.
-      }
-    }
-    command PersistPatientTransferred is  {
-      admissionId: AdmissionId with {
-        briefly "Row addressed"
-        described as {
-          |Which stored row PatientTransferred applies to.
-        }
-      }
-    } with {
-      briefly "Persist PatientTransferred"
-      described as {
-        |Instructs this repository to apply PatientTransferred to the stored row. A
         |persistence command, not a domain command: it declares no `yields`
         |because storing a row records no new entity state.
       }
@@ -442,14 +415,8 @@ context AdmissionContext as router is {
       on persistAdmissionCreated: command PersistAdmissionCreated is {
         do "apply AdmissionCreated to the stored row"
       }
-      on persistBedAssigned: command PersistBedAssigned is {
-        do "apply BedAssigned to the stored row"
-      }
       on persistDischargeCompleted: command PersistDischargeCompleted is {
         do "apply DischargeCompleted to the stored row"
-      }
-      on persistPatientTransferred: command PersistPatientTransferred is {
-        do "apply PatientTransferred to the stored row"
       }
       on query GetOccupancyStats is {
         let occupancyStatsView: type OccupancyStatsView = prompt("read the occupancy stats projection")
@@ -477,7 +444,47 @@ context AdmissionContext as router is {
     }
   }
   // Repository for bed census
+  type BedCensusRepositoryCommand is one of {
+    AdmissionContext.BedCensusRepository.PersistBedAssigned or AdmissionContext.BedCensusRepository.PersistPatientTransferred
+  } with {
+    briefly "Anything that writes the BedCensusRepository"
+    described as {
+      |The persistence commands BedCensusRepository accepts. These events are
+      |written HERE and not to AdmissionRepository: one write path per event.
+    }
+  }
   repository BedCensusRepository as sink is {
+    inlet BedCensusRepositoryFromBedOccupancyProjector is type BedCensusRepositoryCommand
+    command PersistBedAssigned is  {
+      admissionId: AdmissionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row BedAssigned applies to.
+        }
+      }
+    } with {
+      briefly "Persist BedAssigned"
+      described as {
+        |Instructs this repository to apply BedAssigned to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistPatientTransferred is  {
+      admissionId: AdmissionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row PatientTransferred applies to.
+        }
+      }
+    } with {
+      briefly "Persist PatientTransferred"
+      described as {
+        |Instructs this repository to apply PatientTransferred to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     schema BedCensusData is relational
       of beds as type BedAssignment
         index on field BedAssignment.bedId
@@ -489,6 +496,12 @@ context AdmissionContext as router is {
       }
     }
     handler BedCensusPersistence is {
+      on persistBedAssigned: command PersistBedAssigned is {
+        do "apply BedAssigned to the stored row"
+      }
+      on persistPatientTransferred: command PersistPatientTransferred is {
+        do "apply PatientTransferred to the stored row"
+      }
     } with {
       briefly "Maintains bed census"
       described as {
@@ -529,8 +542,9 @@ context AdmissionContext as router is {
       |Read model view carrying the occupancy stats projection.
     }
   }
-  projector BedOccupancyProjector as flow is {
+  projector BedOccupancyProjector as split is {
     outlet BedOccupancyProjectorToRepository is type AdmissionRepositoryCommand
+    outlet BedOccupancyProjectorToBedCensusRepository is type BedCensusRepositoryCommand
     updates repository AdmissionContext.AdmissionRepository
     inlet BedOccupancyProjectorFromAdmission is type AdmissionEvent
     record OccupancyStats is  {
@@ -606,10 +620,10 @@ context AdmissionContext as router is {
         do "apply TransferRequested to the BedOccupancyProjector projection"
       }
       on bedAssigned: event Admission.BedAssigned is {
-        tell command AdmissionContext.AdmissionRepository.PersistBedAssigned(admissionId = bedAssigned.admissionId) to repository AdmissionContext.AdmissionRepository
+        tell command AdmissionContext.BedCensusRepository.PersistBedAssigned(admissionId = bedAssigned.admissionId) to repository AdmissionContext.BedCensusRepository
       }
       on patientTransferred: event Admission.PatientTransferred is {
-        tell command AdmissionContext.AdmissionRepository.PersistPatientTransferred(admissionId = patientTransferred.admissionId) to repository AdmissionContext.AdmissionRepository
+        tell command AdmissionContext.BedCensusRepository.PersistPatientTransferred(admissionId = patientTransferred.admissionId) to repository AdmissionContext.BedCensusRepository
       }
       on dischargeCompleted: event Admission.DischargeCompleted is {
         tell command AdmissionContext.AdmissionRepository.PersistDischargeCompleted(admissionId = dischargeCompleted.admissionId) to repository AdmissionContext.AdmissionRepository
@@ -723,7 +737,7 @@ context AdmissionContext as router is {
         do "apply AdmissionCreated to the LengthOfStayProjector projection"
       }
       on bedAssigned: event Admission.BedAssigned is {
-        tell command AdmissionContext.AdmissionRepository.PersistBedAssigned(admissionId = bedAssigned.admissionId) to repository AdmissionContext.AdmissionRepository
+        tell command AdmissionContext.BedCensusRepository.PersistBedAssigned(admissionId = bedAssigned.admissionId) to repository AdmissionContext.BedCensusRepository
         do "apply BedAssigned to the LengthOfStayProjector projection"
       }
       on conditionUpdated: event Admission.ConditionUpdated is {
@@ -735,7 +749,7 @@ context AdmissionContext as router is {
         do "apply DischargeInitiated to the LengthOfStayProjector projection"
       }
       on patientTransferred: event Admission.PatientTransferred is {
-        tell command AdmissionContext.AdmissionRepository.PersistPatientTransferred(admissionId = patientTransferred.admissionId) to repository AdmissionContext.AdmissionRepository
+        tell command AdmissionContext.BedCensusRepository.PersistPatientTransferred(admissionId = patientTransferred.admissionId) to repository AdmissionContext.BedCensusRepository
         do "apply PatientTransferred to the LengthOfStayProjector projection"
       }
       on transferRequested: event Admission.TransferRequested is {
@@ -859,10 +873,10 @@ context AdmissionContext as router is {
         tell command AdmissionContext.AdmissionRepository.PersistAdmissionCreated(admissionId = admissionCreated.admissionId) to repository AdmissionContext.AdmissionRepository
       }
       on bedAssigned: event Admission.BedAssigned is {
-        tell command AdmissionContext.AdmissionRepository.PersistBedAssigned(admissionId = bedAssigned.admissionId) to repository AdmissionContext.AdmissionRepository
+        tell command AdmissionContext.BedCensusRepository.PersistBedAssigned(admissionId = bedAssigned.admissionId) to repository AdmissionContext.BedCensusRepository
       }
       on patientTransferred: event Admission.PatientTransferred is {
-        tell command AdmissionContext.AdmissionRepository.PersistPatientTransferred(admissionId = patientTransferred.admissionId) to repository AdmissionContext.AdmissionRepository
+        tell command AdmissionContext.BedCensusRepository.PersistPatientTransferred(admissionId = patientTransferred.admissionId) to repository AdmissionContext.BedCensusRepository
       }
       on dischargeCompleted: event Admission.DischargeCompleted is {
         tell command AdmissionContext.AdmissionRepository.PersistDischargeCompleted(admissionId = dischargeCompleted.admissionId) to repository AdmissionContext.AdmissionRepository

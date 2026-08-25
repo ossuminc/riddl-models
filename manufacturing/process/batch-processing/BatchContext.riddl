@@ -47,6 +47,9 @@ context BatchContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'BatchYieldAnalytics To GenealogyRepository Storage' is from outlet BatchContext.BatchYieldAnalytics.BatchYieldAnalyticsToGenealogyRepository to inlet BatchContext.GenealogyRepository.GenealogyRepositoryFromBatchYieldAnalytics with {
+    briefly "BatchYieldAnalytics commands on their way to GenealogyRepository"
+  }
   connector 'BatchCommand Stream Intake' is from outlet BatchContext.BatchCommandStreamOut to inlet BatchContext.Batch.BatchCommands  connector 'DrugBatchResult Stream Egress' is from outlet BatchContext.BatchRepository.BatchRepositoryResponses to inlet BatchContext.DrugBatchResultStreamIn  adaptor FromInventoryService from context InventoryService is { 
     handler FromInventoryServiceHandler is {
       on event InventoryService.BatchReceived is {
@@ -222,7 +225,7 @@ context BatchContext as router is {
   include "Batch.riddl"
   // Repository for batch persistence
   type BatchRepositoryCommand is one of {
-    BatchContext.BatchRepository.PersistBatchCompleted or BatchContext.BatchRepository.PersistBatchCreated or BatchContext.BatchRepository.PersistBatchDischarged or BatchContext.BatchRepository.PersistBatchHeld or BatchContext.BatchRepository.PersistBatchHoldReleased or BatchContext.BatchRepository.PersistBatchRejected or BatchContext.BatchRepository.PersistIngredientCharged or BatchContext.BatchRepository.PersistParameterRecorded or BatchContext.BatchRepository.PersistPhaseAdvanced or BatchContext.BatchRepository.PersistProcessingStarted
+    BatchContext.BatchRepository.PersistBatchCompleted or BatchContext.BatchRepository.PersistBatchCreated or BatchContext.BatchRepository.PersistBatchDischarged or BatchContext.BatchRepository.PersistBatchHeld or BatchContext.BatchRepository.PersistBatchHoldReleased or BatchContext.BatchRepository.PersistBatchRejected or BatchContext.BatchRepository.PersistParameterRecorded or BatchContext.BatchRepository.PersistPhaseAdvanced or BatchContext.BatchRepository.PersistProcessingStarted
   } with {
     briefly "Anything that writes BatchRepository"
     described as {
@@ -232,21 +235,6 @@ context BatchContext as router is {
   }
   repository BatchRepository as flow is {
     inlet BatchRepositoryFromBatchYieldAnalytics is type BatchRepositoryCommand
-    command PersistIngredientCharged is  {
-      batchId: BatchId with {
-        briefly "Row addressed"
-        described as {
-          |Which stored row IngredientCharged applies to.
-        }
-      }
-    } with {
-      briefly "Persist IngredientCharged"
-      described as {
-        |Instructs this repository to apply IngredientCharged to the stored row. A
-        |persistence command, not a domain command: it declares no `yields`
-        |because storing a row records no new entity state.
-      }
-    }
     command PersistParameterRecorded is  {
       batchId: BatchId with {
         briefly "Row addressed"
@@ -421,9 +409,6 @@ context BatchContext as router is {
       }
     }
     handler BatchPersistence is {
-      on persistIngredientCharged: command PersistIngredientCharged is {
-        do "apply IngredientCharged to the stored row"
-      }
       on persistParameterRecorded: command PersistParameterRecorded is {
         do "apply ParameterRecorded to the stored row"
       }
@@ -478,6 +463,22 @@ context BatchContext as router is {
   }
   // Repository for batch genealogy and traceability
   repository GenealogyRepository as sink is {
+    inlet GenealogyRepositoryFromBatchYieldAnalytics is type BatchContext.GenealogyRepository.PersistIngredientCharged
+    command PersistIngredientCharged is  {
+      batchId: BatchId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row IngredientCharged applies to.
+        }
+      }
+    } with {
+      briefly "Persist IngredientCharged"
+      described as {
+        |Instructs this repository to apply IngredientCharged to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     schema GenealogyData is relational
       of genealogy as type BatchGenealogy
         index on field BatchGenealogy.batchId
@@ -489,6 +490,9 @@ context BatchContext as router is {
       }
     }
     handler GenealogyPersistence is {
+      on persistIngredientCharged: command PersistIngredientCharged is {
+        do "apply IngredientCharged to the stored row"
+      }
     } with {
       briefly "Persists genealogy data"
       described as {
@@ -529,8 +533,9 @@ context BatchContext as router is {
       |Read model view carrying the yield metrics projection.
     }
   }
-  projector BatchYieldAnalytics as flow is {
+  projector BatchYieldAnalytics as split is {
     outlet BatchYieldAnalyticsToRepository is type BatchRepositoryCommand
+    outlet BatchYieldAnalyticsToGenealogyRepository is type BatchContext.GenealogyRepository.PersistIngredientCharged
     updates repository BatchContext.BatchRepository
     inlet BatchYieldAnalyticsFromBatch is type BatchEvent
     record YieldMetrics is  {
@@ -606,7 +611,7 @@ context BatchContext as router is {
         do "apply BatchHoldReleased to the BatchYieldAnalytics projection"
       }
       on ingredientCharged: event Batch.IngredientCharged is {
-        tell command BatchContext.BatchRepository.PersistIngredientCharged(batchId = ingredientCharged.batchId) to repository BatchContext.BatchRepository
+        tell command BatchContext.GenealogyRepository.PersistIngredientCharged(batchId = ingredientCharged.batchId) to repository BatchContext.GenealogyRepository
         do "apply IngredientCharged to the BatchYieldAnalytics projection"
       }
       on parameterRecorded: event Batch.ParameterRecorded is {
@@ -732,7 +737,7 @@ context BatchContext as router is {
         do "apply BatchRejected to the CycleTimeAnalytics projection"
       }
       on ingredientCharged: event Batch.IngredientCharged is {
-        tell command BatchContext.BatchRepository.PersistIngredientCharged(batchId = ingredientCharged.batchId) to repository BatchContext.BatchRepository
+        tell command BatchContext.GenealogyRepository.PersistIngredientCharged(batchId = ingredientCharged.batchId) to repository BatchContext.GenealogyRepository
         do "apply IngredientCharged to the CycleTimeAnalytics projection"
       }
       on parameterRecorded: event Batch.ParameterRecorded is {
@@ -888,7 +893,7 @@ context BatchContext as router is {
         do "apply BatchHoldReleased to the EquipmentUtilization projection"
       }
       on ingredientCharged: event Batch.IngredientCharged is {
-        tell command BatchContext.BatchRepository.PersistIngredientCharged(batchId = ingredientCharged.batchId) to repository BatchContext.BatchRepository
+        tell command BatchContext.GenealogyRepository.PersistIngredientCharged(batchId = ingredientCharged.batchId) to repository BatchContext.GenealogyRepository
         do "apply IngredientCharged to the EquipmentUtilization projection"
       }
       on parameterRecorded: event Batch.ParameterRecorded is {

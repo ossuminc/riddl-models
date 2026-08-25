@@ -44,6 +44,9 @@ context ORContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'ORUtilizationProjector To ORScheduleRepository Storage' is from outlet ORContext.ORUtilizationProjector.ORUtilizationProjectorToORScheduleRepository to inlet ORContext.ORScheduleRepository.ORScheduleRepositoryFromORUtilizationProjector with {
+    briefly "ORUtilizationProjector commands on their way to ORScheduleRepository"
+  }
   connector 'SurgicalCaseCommand Stream Intake' is from outlet ORContext.SurgicalCaseCommandStreamOut to inlet ORContext.SurgicalCase.SurgicalCaseCommands  connector 'SurgicalCaseResult Stream Egress' is from outlet ORContext.SurgicalCaseRepository.SurgicalCaseRepositoryResponses to inlet ORContext.SurgicalCaseResultStreamIn  adaptor FromAnesthesiaService from context AnesthesiaService is { 
     handler FromAnesthesiaServiceHandler is {
       on event AnesthesiaService.AnesthesiaCoverageAssigned is {
@@ -213,7 +216,7 @@ context ORContext as router is {
   include "SurgicalCase.riddl"
   // Repository for surgical case persistence
   type SurgicalCaseRepositoryCommand is one of {
-    ORContext.SurgicalCaseRepository.PersistCaseCancelled or ORContext.SurgicalCaseRepository.PersistCaseConfirmed or ORContext.SurgicalCaseRepository.PersistCaseScheduled or ORContext.SurgicalCaseRepository.PersistDischargedFromPACU or ORContext.SurgicalCaseRepository.PersistInRecovery or ORContext.SurgicalCaseRepository.PersistPatientInOR or ORContext.SurgicalCaseRepository.PersistPreOpStarted or ORContext.SurgicalCaseRepository.PersistSurgeryCompleted or ORContext.SurgicalCaseRepository.PersistSurgeryStarted
+    ORContext.SurgicalCaseRepository.PersistCaseCancelled or ORContext.SurgicalCaseRepository.PersistCaseConfirmed or ORContext.SurgicalCaseRepository.PersistDischargedFromPACU or ORContext.SurgicalCaseRepository.PersistInRecovery or ORContext.SurgicalCaseRepository.PersistPatientInOR or ORContext.SurgicalCaseRepository.PersistPreOpStarted or ORContext.SurgicalCaseRepository.PersistSurgeryCompleted or ORContext.SurgicalCaseRepository.PersistSurgeryStarted
   } with {
     briefly "Anything that writes SurgicalCaseRepository"
     described as {
@@ -294,21 +297,6 @@ context ORContext as router is {
       briefly "Persist CaseCancelled"
       described as {
         |Instructs this repository to apply CaseCancelled to the stored row. A
-        |persistence command, not a domain command: it declares no `yields`
-        |because storing a row records no new entity state.
-      }
-    }
-    command PersistCaseScheduled is  {
-      caseId: CaseId with {
-        briefly "Row addressed"
-        described as {
-          |Which stored row CaseScheduled applies to.
-        }
-      }
-    } with {
-      briefly "Persist CaseScheduled"
-      described as {
-        |Instructs this repository to apply CaseScheduled to the stored row. A
         |persistence command, not a domain command: it declares no `yields`
         |because storing a row records no new entity state.
       }
@@ -417,9 +405,6 @@ context ORContext as router is {
       on persistCaseCancelled: command PersistCaseCancelled is {
         do "apply CaseCancelled to the stored row"
       }
-      on persistCaseScheduled: command PersistCaseScheduled is {
-        do "apply CaseScheduled to the stored row"
-      }
       on persistPatientInOR: command PersistPatientInOR is {
         do "apply PatientInOR to the stored row"
       }
@@ -464,6 +449,22 @@ context ORContext as router is {
   }
   // Repository for OR schedule
   repository ORScheduleRepository as sink is {
+    inlet ORScheduleRepositoryFromORUtilizationProjector is type ORContext.ORScheduleRepository.PersistCaseScheduled
+    command PersistCaseScheduled is  {
+      caseId: CaseId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row CaseScheduled applies to.
+        }
+      }
+    } with {
+      briefly "Persist CaseScheduled"
+      described as {
+        |Instructs this repository to apply CaseScheduled to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     schema ORScheduleData is relational
       of schedules as type RoomAssignment
         index on field RoomAssignment.roomId
@@ -476,6 +477,9 @@ context ORContext as router is {
       }
     }
     handler SchedulePersistence is {
+      on persistCaseScheduled: command PersistCaseScheduled is {
+        do "apply CaseScheduled to the stored row"
+      }
     } with {
       briefly "Persists OR schedule"
       described as {
@@ -516,8 +520,9 @@ context ORContext as router is {
       |Read model view carrying the utilization stats projection.
     }
   }
-  projector ORUtilizationProjector as flow is {
+  projector ORUtilizationProjector as split is {
     outlet ORUtilizationProjectorToRepository is type SurgicalCaseRepositoryCommand
+    outlet ORUtilizationProjectorToORScheduleRepository is type ORContext.ORScheduleRepository.PersistCaseScheduled
     updates repository ORContext.SurgicalCaseRepository
     inlet ORUtilizationProjectorFromSurgicalCase is type SurgicalCaseEvent
     record UtilizationStats is  {
@@ -613,7 +618,7 @@ context ORContext as router is {
         do "apply SurgeryStarted to the ORUtilizationProjector projection"
       }
       on caseScheduled: event SurgicalCase.CaseScheduled is {
-        tell command ORContext.SurgicalCaseRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.SurgicalCaseRepository
+        tell command ORContext.ORScheduleRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.ORScheduleRepository
       }
       on surgeryCompleted: event SurgicalCase.SurgeryCompleted is {
         tell command ORContext.SurgicalCaseRepository.PersistSurgeryCompleted(caseId = surgeryCompleted.caseId) to repository ORContext.SurgicalCaseRepository
@@ -746,7 +751,7 @@ context ORContext as router is {
         do "apply CaseConfirmed to the CaseDurationProjector projection"
       }
       on caseScheduled: event SurgicalCase.CaseScheduled is {
-        tell command ORContext.SurgicalCaseRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.SurgicalCaseRepository
+        tell command ORContext.ORScheduleRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.ORScheduleRepository
         do "apply CaseScheduled to the CaseDurationProjector projection"
       }
       on dischargedFromPACU: event SurgicalCase.DischargedFromPACU is {
@@ -891,7 +896,7 @@ context ORContext as router is {
         do "apply CaseConfirmed to the TurnoverTimeProjector projection"
       }
       on caseScheduled: event SurgicalCase.CaseScheduled is {
-        tell command ORContext.SurgicalCaseRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.SurgicalCaseRepository
+        tell command ORContext.ORScheduleRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.ORScheduleRepository
         do "apply CaseScheduled to the TurnoverTimeProjector projection"
       }
       on dischargedFromPACU: event SurgicalCase.DischargedFromPACU is {
@@ -1055,7 +1060,7 @@ context ORContext as router is {
         do "apply SurgeryStarted to the CancellationRateProjector projection"
       }
       on caseScheduled: event SurgicalCase.CaseScheduled is {
-        tell command ORContext.SurgicalCaseRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.SurgicalCaseRepository
+        tell command ORContext.ORScheduleRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.ORScheduleRepository
       }
       on caseCancelled: event SurgicalCase.CaseCancelled is {
         tell command ORContext.SurgicalCaseRepository.PersistCaseCancelled(caseId = caseCancelled.caseId) to repository ORContext.SurgicalCaseRepository
@@ -1161,7 +1166,7 @@ context ORContext as router is {
         do "apply CaseConfirmed to the FirstCaseStartProjector projection"
       }
       on caseScheduled: event SurgicalCase.CaseScheduled is {
-        tell command ORContext.SurgicalCaseRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.SurgicalCaseRepository
+        tell command ORContext.ORScheduleRepository.PersistCaseScheduled(caseId = caseScheduled.caseId) to repository ORContext.ORScheduleRepository
         do "apply CaseScheduled to the FirstCaseStartProjector projection"
       }
       on dischargedFromPACU: event SurgicalCase.DischargedFromPACU is {
