@@ -8,73 +8,96 @@ Development journal for active work on the riddl-models repository.
 `riddlcPath` names `../bin/riddlc` deliberately, because the `version`-on-stdout
 fix is only in `rc.24-3`; the **published** rc.24 writes 0 bytes there and
 sbt-riddl then dies with `riddlc version () has insufficient semantic versioning
-parts`. Pin and plugin are both `2.0.0-rc.24`. Verify with `../bin/riddlc version`.
+parts`. Pin and plugin are both `2.0.0-rc.24`. Verify with `../bin/riddlc version`,
+never by reading the pin.
 
-### The corpus is at ZERO — verified this session, not recalled
+### HELD, awaiting a new riddlc — Reid, 2026-08-24
+
+> *"Let's wait for a new riddlc, implementing your requirements."*
+
+**Do not start BACKLOG #23, #24 or #25 in this state.** The corpus is parked at
+zero on purpose. What we are waiting for is one filed requirement:
+
+- **`../riddl/task/2026-08-24-reference-prefix-must-match-declared-kind.md`** —
+  an **Error** when a reference prefixes with `type` something declared a
+  command / query / event / result. Reid: *"I required that kind-of-thing prefix
+  SPECIFICALLY to avoid ambiguity... Using `type` undoes that requirement."*
+  Migration cost measured at **52 portlet references in reactive-bbq alone**
+  (`is type` -> `is result`); corpus-wide not yet measured. It is the only riddl
+  task file still open from us.
+
+**When a new riddlc lands:** restage `../bin/riddlc`, re-verify with
+`../bin/riddlc version`, then re-sweep before assuming anything below still holds.
+
+### The corpus is at ZERO — verified by command this session
 
 ```
-collect-warnings.py         0 findings, 188/188 models at zero
-sbt v                       All 188 passed + patterns/ green
-check-repository-ports.py   0 violations
+collect-warnings.py     0 findings, 188/188 models   (model count checked separately)
+sbt -batch v            All 188 models passed, 10s, exit 0
 ```
 
-**Do not read that as finished.** Two of Reid's rulings are accepted and NOT
-implemented — **BACKLOG #23 and #24**. Nothing is half-applied in the tree; both
-are unstarted or cleanly stopped.
+`sbt v` is **green again** — the rc.24-3 stdout fix cleared the sbt-riddl blocker
+recorded in `4a566707`. That commit's "KNOWN BLOCKER" note is now stale.
 
-### In flight
+### `.bast` is knowingly stale — POSTURE (2), recorded and answered
 
-Nothing is mid-edit. #24 is half done at a committed, validating state: the 268
-state-guard rejection sends are gone, the remaining chain is three ORDERED steps
-in BACKLOG #24, and **riddlc enforces that order** — doing step 2 before step 1
-is refused by the `-replace` write gate and every file restored.
+All 190 files are at **revision 19** (two at 16); rc.24 expects **21**, and
+`unbastify` refuses them outright. We are **not** regenerating during the rc
+cycle. riddl-generator asked which world they are in so their
+`CorpusBastReadableSpec` can state the hold rather than sit red for weeks; the
+answer is written into their task file, now in `task/done/`. The standing
+`2026-08-20-regenerate-checked-in-bast-after-2.0.0.md` stays open and is the one
+that eventually does it.
+
+### `task/` — TWO open, four closed this session
+
+Open: `2026-08-20-regenerate-checked-in-bast-after-2.0.0` (blocked on 2.0.0) and
+`2026-08-24-collapse-morph-plus-set-state-pairs` (criteria 1 and 3 met, 2 partial
+— its residue is BACKLOG #25). Moved to `done/` with verified Results:
+`rc24-available`, `double-morph-and-stdout-fix`, `handle-the-messages-you-are-told`,
+`regenerate-bast-corpus-for-rc23`.
 
 ### Traps — each of these already bit someone
 
 - **Use riddlc, not regex.** Nine distinct defects came from regex scripts in one
-  session; they are enumerated in CLAUDE.md § "Editing models". `dump --json` for
-  facts, `find` for locating, **`find ... -replace` for editing** (the script gets
-  the node's `source`, riddlc re-validates and restores if the model got worse).
-  Always pass `-expect-min N`: a selector matching nothing prints `0 matched` and
-  exits 0, indistinguishable from a clean corpus.
-- **An event inlet on a repository is NOT an error to riddlc.** It reports the
-  consequences — clause coverage, arity, connectivity — so an `on other` silences
-  it. That is exactly how `PlayerRepository` kept an event inlet while validating
-  clean, and `check-repository-ports.py` was the only thing that caught it. Keep
-  that checker until riddlc enforces the rule.
-- **`on other` is the weak answer**, and mine were hiding real lifecycle events
-  (`VisitCompleted`, `TicketRouted`, `StationAssigned`), not only rejections.
-- **Verify the riddlc PATH.** A wrong relative path fails silently and a counting
-  pipeline prints `0`. Prefer the absolute `/Users/reid/Code/ossuminc/bin/riddlc`.
+  session; enumerated in CLAUDE.md § "Editing models".
+- **`riddlc dump --json` records carry NO `source` key** — only `kind`, `parent`,
+  `ancestors`, `file`, `span`. Only `find ... -replace` hands a script `source`.
+  A dump-driven script reading `d["source"]` computes over empty strings and
+  reports a confident zero. It did exactly that this session. Use span offsets.
+- **`timeout` does not exist on macOS.** `timeout 300 riddlc ...` exits **127**
+  and writes a 0-byte output file — which reads as "clean" unless the exit code
+  is checked. Same family: echo `$?` on anything whose emptiness you will believe.
+- **A zero from a counting script is not evidence until the denominator is.**
+  `collect-warnings.py` prints nothing either way; its model list was counted
+  independently (188) before its zero was believed.
+- **An event inlet on a repository is NOT an error to riddlc.** It reports only
+  the consequences, so an `on other` silences them all. `check-repository-ports.py`
+  is the only thing that catches it; keep it.
+- **Verify the riddlc PATH.** Prefer the absolute
+  `/Users/reid/Code/ossuminc/bin/riddlc`.
 
 ### Certainty
 
-**Verified by command this session:** the 0/188 sweep; `sbt v`; 0 port
-violations; the staged binary's version; that `patterns/` passes. The 268/1
-rejection split was measured from the `rejectionReason` text, not assumed.
+**Verified by command this session:** the 0/188 sweep and its denominator;
+`sbt v` green; the staged binary's version; all 190 `.bast` revision shorts;
+`admission-discharge` validating clean; the `Campaign:445` merge; the 217
+self-referential args (via `dump --json` spans).
 
 **Assumed, not verified:** that BACKLOG #24's three steps are sufficient — step 1
-has not been attempted, so only the step-2-before-step-1 failure is proven.
+has never been attempted, so only the step-2-before-step-1 failure is proven.
+The 217 args' creation-vs-transition split is **not** measured; a heuristic pass
+suggested most are ordinary transitions, but it is a heuristic and is not
+recorded as a number.
 
 ### Pointers
 
-- **BACKLOG.md** — all open work. #23 (command naming, option A, 4,030 uses) and
-  #24 (rejections, ordered) are the live ones.
-- **CLAUDE.md** — durable rules, including the riddlc-over-regex guidance.
-- **`../riddl/task/2026-08-24-reference-prefix-must-match-declared-kind.md`** —
-  filed, awaiting riddl. Reid wants an Error when a reference prefixes with
-  `type` something declared a command/event/query/result.
+- **BACKLOG.md** — #23 (command naming, option A, 4,030 uses), #24 (rejections,
+  ordered), #25 (the 217 carry-forwards). All three held.
+- **CLAUDE.md** — durable rules, including riddlc-over-regex.
 
-### `task/` — SIX files, all awaiting triage
-
-Four are new this session and have not been read at all:
-`2026-08-24-collapse-morph-plus-set-state-pairs`, `-double-morph-and-stdout-fix`,
-`-rc24-available`, `-regenerate-bast-corpus-for-rc23`. The two older ones are
-`2026-08-22-handle-the-messages-you-are-told` (its subject is now at zero — likely
-closable) and `2026-08-20-regenerate-checked-in-bast-after-2.0.0` (blocked; 2.0.0
-still has not shipped).
-
-**Run `/ossuminc-skills:check-tasks` in the new session.**
+**Run `/ossuminc-skills:check-tasks` in the new session** — triage is the
+driver's call, and this handoff never runs it.
 
 ---
 

@@ -1006,6 +1006,51 @@ corpus-wide. `event-sourced` KEEPS its pair: there the entity really is
 event-sourced, the tell lands on a genuine `on event` clause, and it demonstrates
 replay.
 
+## 25. 217 self-referential carry-forwards in reactive-bbq morph constructors
+
+**Found 2026-08-24** while verifying riddl-generator's morph/`set state` task, and
+it is a *consequence* of the fix for it, not a pre-existing defect that was missed.
+
+`scripts/fold-set-into-morph.py` merged each disagreeing pair on the precedence
+**message field > literal > prompt > carry-forward**. That correctly demoted
+self-referential values wherever the `set state` named the field. But where the
+`set state` **omitted** a field — riddl-generator's own table flags three such in
+`Campaign` alone — there was nothing to outrank the morph, so the carry-forward
+survived.
+
+**Measured** with `riddlc dump --json` plus span extraction, over reactive-bbq's
+57 `with record` morph constructors (NOT regex over sources):
+
+```
+37 of 57 sites carry >= 1 self-referential arg;  217 args total
+
+  96  restaurant/OnlineOrder.riddl      28  restaurant/LoyaltyAccount.riddl
+  36  restaurant/TableOrder.riddl       19  restaurant/DrinkOrder.riddl
+  31  restaurant/KitchenTicket.riddl     8  corporate/* (MenuItem 3, Campaign 2, ...)
+```
+
+Example, `corporate/Campaign.riddl:445`:
+`campaignDescription = CampaignStateData.campaignDescription`.
+
+**These are not uniformly wrong, and that is the whole difficulty.** On a
+state-to-state transition, reading the current record forward is ordinary
+carry-forward semantics and is what the model means. On a **creation** transition
+it names a record that does not exist yet — which is exactly why the precedence
+ranked it last. Splitting them is per-site judgement; riddl-generator declined to
+script the equivalent call and so do we.
+
+**Not a validation failure.** The corpus is at 0 findings of every severity, so
+nothing here is failing today. The cost lands on riddlg, whose faithful lowering
+of a creation-clause self-reference has no defined source to read.
+
+**DEFERRED, deliberately (Reid, 2026-08-24):** *"Let's wait for a new riddlc,
+implementing your requirements."* These clauses are likely to be touched by the
+`reference-prefix-must-match-declared-kind` migration anyway, so doing them first
+would be doing them twice. See `task/2026-08-24-collapse-morph-plus-set-state-pairs.md`,
+which stays open for this reason.
+
+---
+
 ## 21. Only `none`/`empty` is a real gap — arithmetic is by design, enumerator is FIXED
 
 Found 2026-08-22 finishing the `set`-value work (#16 in `task/done`).
