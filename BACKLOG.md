@@ -1006,48 +1006,62 @@ corpus-wide. `event-sourced` KEEPS its pair: there the entity really is
 event-sourced, the tell lands on a genuine `on event` clause, and it demonstrates
 replay.
 
-## 25. 217 self-referential carry-forwards in reactive-bbq morph constructors
+## ~~25. Self-referential carry-forwards~~ — RESOLVED 2026-08-24, and the
+## framing was wrong
 
-**Found 2026-08-24** while verifying riddl-generator's morph/`set state` task, and
-it is a *consequence* of the fix for it, not a pre-existing defect that was missed.
+**Closed by the commit that added the creation data to creation events.** Kept
+here because the original framing was wrong in a way worth not repeating.
 
-`scripts/fold-set-into-morph.py` merged each disagreeing pair on the precedence
-**message field > literal > prompt > carry-forward**. That correctly demoted
-self-referential values wherever the `set state` named the field. But where the
-`set state` **omitted** a field — riddl-generator's own table flags three such in
-`Campaign` alone — there was nothing to outrank the morph, so the carry-forward
-survived.
+**What this item claimed:** 217 self-referential args across 37 of 57 morph
+constructors, "not uniformly wrong", needing per-site judgement.
 
-**Measured** with `riddlc dump --json` plus span extraction, over reactive-bbq's
-57 `with record` morph constructors (NOT regex over sources):
+**What was actually true, measured with `dump --json` across ALL statement
+kinds rather than morphs alone:**
 
 ```
-37 of 57 sites carry >= 1 self-referential arg;  217 args total
-
-  96  restaurant/OnlineOrder.riddl      28  restaurant/LoyaltyAccount.riddl
-  36  restaurant/TableOrder.riddl       19  restaurant/DrinkOrder.riddl
-  31  restaurant/KitchenTicket.riddl     8  corporate/* (MenuItem 3, Campaign 2, ...)
+277 args across 77 statements read a *StateData record
+     19 across 16  are in a CREATION clause  <- the defect
+    258 across 61  are state-to-state        <- correct, untouched
 ```
 
-Example, `corporate/Campaign.riddl:445`:
-`campaignDescription = CampaignStateData.campaignDescription`.
+Two corrections to the old entry. The population was **277, not 217** — the
+earlier count looked only at `morph-statement` nodes and missed the identical
+defect in `yield`, `send` and `set` statements. And the defect subset is **19
+args, not 217**: on a state-to-state transition, reading the current record
+forward is exactly what the model means, and 258 of these are that.
 
-**These are not uniformly wrong, and that is the whole difficulty.** On a
-state-to-state transition, reading the current record forward is ordinary
-carry-forward semantics and is what the model means. On a **creation** transition
-it names a record that does not exist yet — which is exactly why the precedence
-ranked it last. Splitting them is per-site judgement; riddl-generator declined to
-script the equivalent call and so do we.
+**The 19 needed no judgement at all, contrary to what this item said.** Two
+shapes, both mechanical once the evidence was in hand:
 
-**Not a validation failure.** The corpus is at 0 findings of every severity, so
-nothing here is failing today. The cost lands on riddlg, whose faithful lowering
-of a creation-clause self-reference has no defined source to read.
+1. **10 `*CreatedAt` args** read a creation timestamp off the record being
+   created. A creation event's timestamp is *now*; it became
+   `prompt("current timestamp")`.
+2. **6 args in 4 corporate entities** — and this is the finding.
+   **The creating COMMAND already carried every one of them and the EVENT
+   dropped them:**
 
-**DEFERRED, deliberately (Reid, 2026-08-24):** *"Let's wait for a new riddlc,
-implementing your requirements."* These clauses are likely to be touched by the
-`reference-prefix-must-match-declared-kind` migration anyway, so doing them first
-would be doing them twice. See `task/2026-08-24-collapse-morph-plus-set-state-pairs.md`,
-which stays open for this reason.
+   | command carries | event dropped |
+   |---|---|
+   | `CreateMenuItem(menuItemDescription, recipe, pricing)` | all three |
+   | `CreateCampaign(campaignDescription, campaignPromotion)` | both |
+   | `CreateMenuRelease(releaseDescription)` | one |
+   | `CreateBulkOrder(requestedDeliveryDate)` | one |
+
+   So replay genuinely could not recover them and the `on event` clause reached
+   for the only thing in scope — a record that did not exist yet. The fix is the
+   event-sourcing rule already in CLAUDE.md: the event carries what replay needs.
+   The fields were added to the four events, passed through from the command at
+   the `yield`/`send`, and read from the event binding in the `morph`.
+
+**The lesson, which is the reusable part:** the "per-site domain judgement"
+this item predicted dissolved once the commands were read. A field that looks
+like it needs a human decision may just be information the model already has
+one hop away. **Check what the neighbouring definition carries before
+concluding a value must be invented.**
+
+Verified: 0 creation-context self-references remain; the 258 legitimate ones
+are byte-for-byte untouched; corpus at 0 findings across 188/188; `checkAll`
+green.
 
 ---
 
