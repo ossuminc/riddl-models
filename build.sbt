@@ -25,6 +25,10 @@ lazy val verifyTemplates = taskKey[Unit](
     "substituting their {Placeholder} names"
 )
 
+lazy val prettifyCheck = taskKey[Unit](
+  "FAIL if any model is not in `riddlc prettify` canonical form"
+)
+
 lazy val checkTests = taskKey[Unit](
   "Run every test and FAIL the build if any of them failed"
 )
@@ -105,9 +109,41 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       }
     },
 
+    // Nothing else in this build sees FORMATTING. riddlcValidate, the sweep and
+    // the test suite all pass on a corpus whose text has drifted arbitrarily far
+    // from prettify's output -- which is how 188 of 188 models came to differ in
+    // 396 files with no gate noticing (BACKLOG #26). That drift is what breaks
+    // verify-bast-roundtrip.sh, whose byte-for-byte compare is only meaningful
+    // while the source IS canonical, so it fails naming the .bast while the
+    // cause is the source text.
+    //
+    // Def.uncached for the same reason verifyTemplates needs it.
+    prettifyCheck := Def.uncached {
+      val log = streams.value.log
+      val base = baseDirectory.value
+      val riddlc = riddlcBinary.value
+      val script = base / "scripts" / "check-prettified.py"
+      if (!script.exists()) {
+        sys.error(s"check-prettified.py not found at $script")
+      }
+      log.info("Checking every model is in prettify canonical form")
+      val forward = ProcessLogger(l => log.info(l), l => log.error(l))
+      val code = Process(
+        Seq("python3", script.getAbsolutePath),
+        base,
+        "RIDDLC" -> riddlc.getAbsolutePath
+      ) ! forward
+      if (code != 0) {
+        sys.error(
+          "Corpus is not in canonical form. Run `sbt r` and commit the result -- " +
+            "committing prettified code is what keeps the .bast round trip exact."
+        )
+      }
+    },
+
     // patterns/ is excluded from riddlcValidate, so bolt the check onto it:
     // `sbt v` now means the whole repository, not just the 187 gated models.
-    riddlcValidate := riddlcValidate.dependsOn(verifyTemplates).value,
+    riddlcValidate := riddlcValidate.dependsOn(verifyTemplates, prettifyCheck).value,
     // `test` is an InputTask in sbt 2, so this is `.evaluated` rather than
     // `.value`. Note sbt 2 routes `test` to testQuick, which skips unchanged
     // tests -- and this suite reads .riddl files at RUN time, so sbt cannot see
@@ -142,6 +178,7 @@ addCommandAlias("v", "riddlcValidate")
 addCommandAlias("b", "riddlcBastify")
 addCommandAlias("r", "riddlcPrettify")
 addCommandAlias("vt", "verifyTemplates")
+addCommandAlias("pc", "prettifyCheck")
 
 // The whole-repository gate: patterns, the corpus through the CLI, and the
 // corpus again through the library API. `checkTests` rather than `Test/test`

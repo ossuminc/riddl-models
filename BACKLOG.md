@@ -1006,43 +1006,47 @@ corpus-wide. `event-sourced` KEEPS its pair: there the entity really is
 event-sourced, the tell lands on a genuine `on event` clause, and it demonstrates
 replay.
 
-## 26. The corpus has drifted from prettify canonical form — 396 files
+## ~~26. Corpus drifted from prettify canonical form~~ — FIXED and GATED
+## 2026-08-25
 
-**Found 2026-08-25** while regenerating `.bast`. Not caused by that work.
+396 files across 188 of 188 models were not what `riddlc prettify` emits.
+`sbt r` fixed them; `prettifyCheck` stops it recurring.
 
-`scripts/verify-bast-roundtrip.sh` fails on **every** model. The `.bast` files
-are fine — all 190 are at revision 21, contain no baked-in path, and
-deserialize individually. The failure is step 3, which diffs the unbastified
-tree against the source **byte for byte**. That is only meaningful while the
-corpus is exactly what `riddlc prettify` emits, as the script's own header
-says, along with an instruction not to fix a failure by relaxing the diff.
+**The change was proved content-neutral before being trusted.** A naive
+whitespace-stripped compare flagged 181 files as differing beyond whitespace —
+prettify moves `updates repository X` above the projector's outlet, so text
+shifts position. Comparing the **token multiset** instead, which is order- and
+whitespace-independent, gives **0 of 396 files changed**. Nothing was added or
+removed; the diff is spacing and declaration order.
 
-**Measured** by prettifying every model to a temp dir and comparing:
+**`verify-bast-roundtrip.sh` now passes 188/188** — the first time this session,
+and the point of the exercise. Its byte-for-byte compare is only meaningful
+while the source IS canonical.
 
-```
-188 of 188 models drifted;  396 .riddl files differ from canonical
-```
+### The gate
 
-Mostly one shape: `is {` in the corpus where prettify emits `is  {`. Also
-declaration jamming — prettify puts `inlet X is type T` and the next
-declaration on ONE line; the corpus has them on two.
+`scripts/check-prettified.py`, wired as `prettifyCheck` (alias `sbt pc`) and
+depended on by `riddlcValidate`, so `sbt v` and `sbt checkAll` both enforce it.
+Canary-tested: injecting a single one-space drift makes it exit 1 and name the
+file, the line and the wanted text. It then caught a real regression
+immediately — a `git checkout` of one file during testing silently reverted it
+to its pre-prettify state, and the gate found it.
 
-**Pre-existing, and attributable.** The line the diff first trips on is byte
-identical at `68f11397`, before this session. It arrived in `7073726b`, the
-`reply` migration. Every hand edit and script edit since has added to it,
-because nothing re-prettifies and no gate notices — `sbt v` and the
-collect-warnings sweep are both blind to formatting.
+**Reid's rule, 2026-08-25: always commit prettified code.** Run `sbt r` before
+committing model edits rather than discovering it at the gate.
 
-**The fix is `sbt r` (`riddlcPrettify`) across the corpus, then regenerate
-`.bast`, then the round trip passes.** Not done: it rewrites 396 files, which
-is a larger and separate change than the `.bast` regeneration it was found
-under. `patterns/` is excluded from `riddlcPrettify`, so its files need doing
-by hand.
+`patterns/` is excluded, matching `riddlcConfExclusions` and the round-trip
+script. Its examples diverge from canonical DELIBERATELY — see BACKLOG #3, and
+do not "fix" them.
 
-**Worth deciding at the same time:** whether anything should GATE this, since a
-drift that nothing reports will simply recur. Candidates are a `scalafmtCheck`
--style `prettifyCheck` in the build, or running `sbt r` as a step in the model
--edit workflow the way `sbt reformat` already is for `/ship`.
+### Filed upstream
+
+`riddl/task/2026-08-25-prettify-should-emit-one-space-before-brace.md` — Reid:
+*"Byte non-identical, especially with mere white space changes, is a source of
+frustration at best and a source of errors at worst."* prettify emits `is  {`
+with two spaces on message and query declarations, one everywhere else, and
+`term Name is  "text"` with a trailing space. When it lands: re-run `sbt r`,
+regenerate `.bast`. Nothing is blocked meanwhile.
 
 ---
 
