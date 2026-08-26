@@ -4,100 +4,88 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`. **riddlc `2.0.0-rc.24-3-40c0574f`** (staged) —
-`riddlcPath` names `../bin/riddlc` deliberately, because the `version`-on-stdout
-fix is only in `rc.24-3`; the **published** rc.24 writes 0 bytes there and
-sbt-riddl then dies with `riddlc version () has insufficient semantic versioning
-parts`. Pin and plugin are both `2.0.0-rc.24`. Verify with `../bin/riddlc version`,
-never by reading the pin.
+**Branch** `release/2`. **riddlc `2.0.0-rc.25-11-5e09d98c`**, an UNPUBLISHED
+staged RC: `riddlVersion` and `riddlcPath` both name it, and the libraries are
+`publishLocal`ed at the same version so `checkTests` stays live. Verified this
+session with `riddlc info`, not from the pin.
 
-### HELD, awaiting a new riddlc — Reid, 2026-08-24
-
-> *"Let's wait for a new riddlc, implementing your requirements."*
-
-**Do not start BACKLOG #23, #24 or #25 in this state.** The corpus is parked at
-zero on purpose. What we are waiting for is one filed requirement:
-
-- **`../riddl/task/2026-08-24-reference-prefix-must-match-declared-kind.md`** —
-  an **Error** when a reference prefixes with `type` something declared a
-  command / query / event / result. Reid: *"I required that kind-of-thing prefix
-  SPECIFICALLY to avoid ambiguity... Using `type` undoes that requirement."*
-  Migration cost measured at **52 portlet references in reactive-bbq alone**
-  (`is type` -> `is result`); corpus-wide not yet measured. It is the only riddl
-  task file still open from us.
-
-**When a new riddlc lands:** restage `../bin/riddlc`, re-verify with
-`../bin/riddlc version`, then re-sweep before assuming anything below still holds.
-
-### The corpus is at ZERO — verified by command this session
+### The corpus is at ZERO — verified, not recalled
 
 ```
-collect-warnings.py     0 findings, 188/188 models   (model count checked separately)
-sbt -batch v            All 188 models passed, 10s, exit 0
+riddlc validate --corpus .    190 models, 0 failed, 190 ok
+per-model validate --json     0 findings of EVERY severity, 0 nonzero exits
+sbt checkAll                  989 files canonical, 2 suites, overall Passed
 ```
 
-`sbt v` is **green again** — the rc.24-3 stdout fix cleared the sbt-riddl blocker
-recorded in `4a566707`. That commit's "KNOWN BLOCKER" note is now stale.
+**riddl is waiting on this to cut rc.26.** The corpus was migrated ahead of the
+release deliberately, so the RC can go out green rather than red.
 
-### `.bast` is knowingly stale — POSTURE (2), recorded and answered
+### In flight
 
-All 190 files are at **revision 19** (two at 16); rc.24 expects **21**, and
-`unbastify` refuses them outright. We are **not** regenerating during the rc
-cycle. riddl-generator asked which world they are in so their
-`CorpusBastReadableSpec` can state the hold rather than sit red for weeks; the
-answer is written into their task file, now in `task/done/`. The standing
-`2026-08-20-regenerate-checked-in-bast-after-2.0.0.md` stays open and is the one
-that eventually does it.
+**Nothing is mid-edit.** The next session starts a NEW project, not a
+continuation: **BACKLOG #0 — model a generic RIDDL code generator.** Reid's
+brief is recorded there VERBATIM; read it before anything else.
 
-### `task/` — TWO open, four closed this session
+He asked for **plan mode**, invited questions, alternatives with consequences,
+and possibly brainstorming, and said **do not treat the CM document as
+complete**. So: do not start building, and do not paraphrase his brief back at
+him — five open design questions are already drafted under #0.
 
-Open: `2026-08-20-regenerate-checked-in-bast-after-2.0.0` (blocked on 2.0.0) and
-`2026-08-24-collapse-morph-plus-set-state-pairs` (criteria 1 and 3 met, 2 partial
-— its residue is BACKLOG #25). Moved to `done/` with verified Results:
-`rc24-available`, `double-morph-and-stdout-fix`, `handle-the-messages-you-are-told`,
-`regenerate-bast-corpus-for-rc23`.
+Inputs verified to exist this session: `../RIDDL-Computational-Model.md`
+(324,559 bytes, mtime 2026-08-26 14:26, mid-update), and riddl-generator on
+branch `release/1` at `68130dd`, which also carries a `ts-effect-gen` branch.
 
-### Traps — each of these already bit someone
+### Traps — each of these bit someone THIS session
 
-- **Use riddlc, not regex.** Nine distinct defects came from regex scripts in one
-  session; enumerated in CLAUDE.md § "Editing models".
-- **`riddlc dump --json` records carry NO `source` key** — only `kind`, `parent`,
-  `ancestors`, `file`, `span`. Only `find ... -replace` hands a script `source`.
-  A dump-driven script reading `d["source"]` computes over empty strings and
-  reports a confident zero. It did exactly that this session. Use span offsets.
-- **`timeout` does not exist on macOS.** `timeout 300 riddlc ...` exits **127**
-  and writes a 0-byte output file — which reads as "clean" unless the exit code
-  is checked. Same family: echo `$?` on anything whose emptiness you will believe.
-- **A zero from a counting script is not evidence until the denominator is.**
-  `collect-warnings.py` prints nothing either way; its model list was counted
-  independently (188) before its zero was believed.
-- **An event inlet on a repository is NOT an error to riddlc.** It reports only
-  the consequences, so an `on other` silences them all. `check-repository-ports.py`
-  is the only thing that catches it; keep it.
-- **Verify the riddlc PATH.** Prefer the absolute
-  `/Users/reid/Code/ossuminc/bin/riddlc`.
+- **`riddlc info`, never the pin.** A binary cut this morning was cut from the
+  WRONG COMMIT (`76cb9eab`, 3 before the rule being migrated to), so the corpus
+  read `190 models, 0 failed` — which is also the post-fix acceptance number. A
+  binary missing a rule is indistinguishable from a corpus that satisfies it.
+  What caught it was the task file predicting `1 failed`.
+- **A recursive grep from the repo root SKIPS `task/`**, which is gitignored and
+  the grep honours that. It reported 0 hits for a string a file contains 3
+  times. Same family as the `ossuminc/` trap in ../CLAUDE.md, different cause.
+- **Never regex `field = value` over LINES.** A `prompt(...)` string spanning
+  lines leaves a line scanner unaware it is inside a string; that produced 19
+  fragments of prose read as assignments. Parse from a STATEMENT SPAN, which
+  starts outside any string.
+- **`dump --json` gives operands as flat strings**, so constructor arguments are
+  not structured data. `value-reference` nodes ARE structured (resolved, with
+  `resolvedKind`) but they are reads, not the holes.
+- **A `type`-declared aggregate cannot be constructed.** `constructor` needs a
+  `message_ref` or `record_ref`, and `record_ref = "record" path_identifier`, so
+  a `type X is {...}` has no constructor form — a typed hole is the only option,
+  not the lazy one.
 
 ### Certainty
 
-**Verified by command this session:** the 0/188 sweep and its denominator;
-`sbt v` green; the staged binary's version; all 190 `.bast` revision shorts;
-`admission-discharge` validating clean; the `Campaign:445` merge; the 217
-self-referential args (via `dump --json` spans).
+**Verified by command:** the 190/0 census and its denominator; `checkAll`;
+`riddlc info` on the staged binary; the library versions resolved from ivy
+local; that `task/` is empty; that both project inputs exist with the sizes and
+commits quoted in BACKLOG #0.
 
-**Assumed, not verified:** that BACKLOG #24's three steps are sufficient — step 1
-has never been attempted, so only the step-2-before-step-1 failure is proven.
-The 217 args' creation-vs-transition split is **not** measured; a heuristic pass
-suggested most are ordinary transitions, but it is a heuristic and is not
-recorded as a number.
+**Assumed:** that BACKLOG #24's three steps are sufficient — step 1 has never
+been attempted. That riddlg's fill-burden re-measure will drop by roughly the 68
+adopted sites; only they can confirm, and it is criterion 4 of a task now in
+`task/done/`.
 
 ### Pointers
 
-- **BACKLOG.md** — #23 (command naming, option A, 4,030 uses), #24 (rejections,
-  ordered), #25 (the 217 carry-forwards). All three held.
-- **CLAUDE.md** — durable rules, including riddlc-over-regex.
+- **BACKLOG.md #0** — the next project, with Reid's verbatim brief.
+- **BACKLOG #23** (repository command naming, 4,030 uses) and **#24**
+  (rejections, ordered) remain open and unstarted from earlier campaigns.
+- **CLAUDE.md** — durable rules: riddlc-over-regex, which stream to read, why
+  `sbt v` is the LENIENT gate, always commit prettified code.
 
-**Run `/ossuminc-skills:check-tasks` in the new session** — triage is the
-driver's call, and this handoff never runs it.
+### `task/` — EMPTY
+
+Both of today's arrivals were closed with verified Results and moved to
+`task/done/`. Two things are outstanding but are NOT ours: riddlg re-measuring
+the fill burden, and a modelling question we flagged at
+`corporate/external-contexts.riddl:152`, where `PhotoShootCompleted` is yielded
+by a `SchedulePhotoShoot` clause.
+
+**Run `/ossuminc-skills:check-tasks` in the new session.**
 
 ---
 
