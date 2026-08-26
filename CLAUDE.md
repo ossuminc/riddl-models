@@ -451,8 +451,26 @@ answer:
 1. **Every step must contain a `tell command`** — otherwise
    "SagaStep 'X' do-statements contain no 'tell command' to effect state
    changes". Prose in `do` does not satisfy it.
-2. **The tell may not cross a context boundary** — naming another
-   context's command trips the 'bounded' aspect warning.
+2. **A CONTEXT-level saga's tell may not cross a context boundary** —
+   naming another context's command trips the 'bounded' aspect warning.
+   **This is narrower than it used to read here, and the correction matters**
+   (verified 2026-08-26 at rc.26). A **DOMAIN-level** saga reaching *down*
+   into a context it encloses draws no boundary complaint at all: a two-step
+   domain saga telling `to entity Running.Runner` validated at **0 errors**,
+   as did the same saga telling `to context Running` — identical counts and
+   rule ids. The sideways case, a saga inside context A telling into context
+   B, remains **untested**; do not generalise from the domain-level result.
+
+   **But the permissive result is a riddlc GAP, not a licence.** Reid ruled
+   2026-08-26 that reaching past a context into its entity, streamlet or
+   repository is an encapsulation violation — the sender binds itself to the
+   context's internal design, which is what the context exists to prevent.
+   A domain-level saga must address the **context**
+   (`tell advance to context Running`) and let it route. Filed upstream as
+   `../riddl/task/2026-08-26-saga-tell-must-not-reach-into-a-context.md`,
+   asking that the connector rule under "The context IS the port at its own
+   boundary" be extended to `tell`/`send`. **Write the context form now** —
+   it validates today and will survive the rule landing.
 3. **The target must be reachable via a connector.** A local entity is;
    `tell ... to adaptor X` is **not** — that was tried and made things
    worse, because the adaptor itself then needs an inbound connector.
