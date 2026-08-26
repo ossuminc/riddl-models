@@ -925,8 +925,11 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.0.0-rc.16-18-3005b2ef** (set by `riddlVersion` in
-`build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
+Current version: **2.0.0-rc.25**, a PUBLISHED release (set by `riddlVersion`
+in `build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
+There is no `riddlcPath` override: the plugin downloads the binary to
+`~/.cache/riddlc/2.0.0-rc.25/bin/riddlc` and the libraries resolve from GitHub
+Packages.
 
 **`riddlcPath` WINS over the pin, so verify the binary, never the pin.** When
 `riddlVersion` names an unpublished staged RC the override points at
@@ -934,7 +937,24 @@ Current version: **2.0.0-rc.16-18-3005b2ef** (set by `riddlVersion` in
 `None` so the plugin downloads it. On 2026-08-17 the staged binary was
 `rc.14-164`, older than the pinned `rc.15`, and had the override still been in
 place the corpus would have been validated against the wrong compiler and
-reported success. Always run `../bin/riddlc info` and compare.
+reported success. Always run `riddlc info` on the binary in use and compare.
+
+#### On a published pin, `../bin/riddlc` is NOT the binary the build uses
+
+The two diverge the moment the override comes off, and nothing announces it.
+On 2026-08-26 the build ran `2.0.0-rc.25` from the cache while `../bin/riddlc`
+was `2.0.0-rc.25-1-76cb9eab` — a staged build one commit past the tag.
+
+This matters for `scripts/`, which default to `RIDDLC=../bin/riddlc`. **Run
+through the build and they are safe** — `prettifyCheck` and `verifyTemplates`
+pass `riddlcBinary.value` explicitly — but a script run BY HAND takes the
+staged binary, which may be any vintage. When a manual run is the evidence for
+a claim, pass it the pinned binary:
+
+```bash
+V=$(sed -n 's/.*riddlVersion = "\(.*\)"/\1/p' build.sbt)
+RIDDLC=~/.cache/riddlc/$V/bin/riddlc ./scripts/collect-warnings.py
+```
 
 ### Model Include Structure
 
@@ -1011,8 +1031,8 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.0.0-rc.14 | `riddlVersion` in `build.sbt` |
-| sbt-riddl | 2.0.0-rc.9-48-fdc5c171 | Plugin in `project/plugins.sbt` |
+| riddlc | 2.0.0-rc.25 | `riddlVersion` in `build.sbt` (published) |
+| sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
 riddlc and sbt-riddl are **deliberately allowed to differ**: the plugin only
