@@ -4,148 +4,101 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
+### FIRST: Reid owes a review, and was asked for it just before rebooting
+
+**Ask him again.** The session ended mid-question for a security reboot, so
+the request never got an answer — it is not that he declined.
+
+> The design spec is
+> `docs/superpowers/specs/2026-08-26-code-generator-model-design.md`
+> (commit `680cf5cf`). Sections worth your eye: **§2** the four decisions with
+> reasoning, including your two corrections quoted verbatim; **§4.7–4.8**
+> `HoleFilling` as its own context and the retry cycle as an event cycle with
+> an attempt cap rather than a loop construct; **§6** six measured language
+> facts, three contradicting prior belief; **§8** the nine acceptance criteria.
+>
+> Two weak points, flagged rather than buried: **§7.1** it is a large model
+> (reactive-bbq territory) and will not reach zero findings in one pass;
+> **§7.2** the lowering catalogue can still drift — consulting makes an
+> *unused* rule visible, nothing makes a *missing* one visible.
+>
+> One open decision: the model needs a **NAICS code** and `tooling/` has no
+> obvious industry. 541511 is a guess.
+
+**Write NO RIDDL and NO implementation plan until he answers.** After approval
+the next step is `superpowers:writing-plans` — the brainstorming skill's only
+terminal state.
+
+### Build state
+
 **Branch** `release/2`. **riddlc `2.0.0-rc.26`**, a PUBLISHED release:
-`riddlVersion` names it and `riddlcPath` is `None`, so the plugin downloads to
-`~/.cache/riddlc/2.0.0-rc.26/bin/riddlc` and the libraries resolve from GitHub
-Packages. Verified with `riddlc info` on the downloaded binary (commit
-`c64f3388f`, matching the tag), not from the pin.
+`riddlVersion` names it, `riddlcPath := None` (`build.sbt:80`), so the plugin
+downloads to `~/.cache/riddlc/2.0.0-rc.26/bin/riddlc`. Verified this session
+with `riddlc info` — commit `c64f3388f`, matching the tag. Not from the pin.
 
-**`../bin/riddlc` is NOT what the build uses** — it is still the rc.25-11
-staged binary, a tag behind. `scripts/` default to it, so pass
-`RIDDLC=~/.cache/riddlc/2.0.0-rc.26/bin/riddlc` for any manual run.
+**`../bin/riddlc` is NOT what the build uses** — still the rc.25-11 staged
+binary, a whole tag behind. `scripts/` default to it, so any manual run that is
+evidence for a claim needs
+`RIDDLC=~/.cache/riddlc/2.0.0-rc.26/bin/riddlc`.
 
-### The corpus is at ZERO — verified, not recalled
+### Corpus at ZERO, re-measured under rc.26
 
 ```
 riddlc validate --corpus .    190 models, 0 failed, 190 ok
-collect-warnings.py           188 models swept, 0 findings, harness canaried
+collect-warnings.py           188 swept, 0 findings, harness canaried
 sbt v / pc / checkAll         188 ok, 989 canonical, 2 suites, Passed
 ```
 
-**All re-run under rc.26.** The sweep's zero is trustworthy only because the
-harness was canaried after the bump — rc.26 changed the message format and
-blinded seven scripts, which is written up in the session entry below and as
-a trap in CLAUDE.md. **Canary after every riddlc bump.**
+### Traps — the first one cost this session an hour and nearly a false claim
 
-**rc.26 is cut and published.** The corpus was migrated ahead of it
-deliberately, and the RC went out green.
-
-### In flight
-
-**Nothing is mid-edit.** The next session starts a NEW project, not a
-continuation: **BACKLOG #0 — model a generic RIDDL code generator.** Reid's
-brief is recorded there VERBATIM; read it before anything else.
-
-He asked for **plan mode**, invited questions, alternatives with consequences,
-and possibly brainstorming, and said **do not treat the CM document as
-complete**. So: do not start building, and do not paraphrase his brief back at
-him — five open design questions are already drafted under #0.
-
-Inputs verified: `../RIDDL-Computational-Model.md` (324,559 bytes, mtime
-2026-08-26 14:26) — Reid confirmed the edits are **complete**, so it is no
-longer mid-update. riddl-generator on branch `release/1` at `68130dd`, which
-also carries a `ts-effect-gen` branch.
-
-### Traps — each of these bit someone THIS session
-
-- **`riddlc info`, never the pin.** A binary cut this morning was cut from the
-  WRONG COMMIT (`76cb9eab`, 3 before the rule being migrated to), so the corpus
-  read `190 models, 0 failed` — which is also the post-fix acceptance number. A
-  binary missing a rule is indistinguishable from a corpus that satisfies it.
-  What caught it was the task file predicting `1 failed`.
-- **A recursive grep from the repo root SKIPS `task/`**, which is gitignored and
-  the grep honours that. It reported 0 hits for a string a file contains 3
-  times. Same family as the `ossuminc/` trap in ../CLAUDE.md, different cause.
-- **Never regex `field = value` over LINES.** A `prompt(...)` string spanning
-  lines leaves a line scanner unaware it is inside a string; that produced 19
-  fragments of prose read as assignments. Parse from a STATEMENT SPAN, which
-  starts outside any string.
-- **`dump --json` gives operands as flat strings**, so constructor arguments are
-  not structured data. `value-reference` nodes ARE structured (resolved, with
-  `resolvedKind`) but they are reads, not the holes.
-- **A `type`-declared aggregate cannot be constructed.** `constructor` needs a
-  `message_ref` or `record_ref`, and `record_ref = "record" path_identifier`, so
-  a `type X is {...}` has no constructor form — a typed hole is the only option,
-  not the lazy one.
+- **rc.26 put a RULE ID in every diagnostic** — `[usage]
+  [use-unused-definition] file.riddl(...)` — and it blinded **seven** parsers
+  in `scripts/` at once. Every one failed by reporting **nothing**:
+  `collect-warnings.py` swept all 188 models and printed zero while an
+  injected unused type sat in shopping-cart. All four build gates were green
+  throughout and *could not* have caught it — they read exit codes and never
+  parse messages. Fixed, and written up in CLAUDE.md. **Canary after every
+  riddlc bump**; the canary is a habit, not a gate.
+- **CLAUDE.md's saga rule was WRONG and is now narrowed.** A domain-level saga
+  telling `to entity Ctx.Ent` validates at 0 errors, identically to telling
+  `to context Ctx`. The old flat "may not cross a context boundary" came from
+  the context-level case. **The sideways case — a saga in context A telling
+  into context B — is UNTESTED.** Do not generalise in either direction.
+- **`call` is a VALUE, not a statement**: `let x = call function F(args)`. A
+  bare `call function F(args)` is a parse error listing every statement
+  keyword, which reads as though the function is wrong.
+- **A domain cannot hold functions** (`vital_definition_contents = type_def |
+  comment`). A context with only functions IS valid and callable
+  cross-context — measured, 0 errors, no finding against it.
 
 ### Certainty
 
-**Verified by command:** the 190/0 census and its denominator; `checkAll`;
-`riddlc info` on the staged binary; the library versions resolved from ivy
-local; that `task/` is empty; that both project inputs exist with the sizes and
-commits quoted in BACKLOG #0.
+**Verified by command this session:** the rc.26 binary identity and that
+`riddlcPath` is `None`; all five gate results above; that the warning harness
+is live (canary reported the injected type); that `.bast` is unchanged by
+rc.26 (`shopping-cart.bast` byte-identical, FORMAT_REVISION 23); every
+language fact in spec §6; that all three corpus sagas are intra-context.
 
-**Assumed:** that BACKLOG #24's three steps are sufficient — step 1 has never
-been attempted. That riddlg's fill-burden re-measure will drop by roughly the 68
-adopted sites; only they can confirm, and it is criterion 4 of a task now in
-`task/done/`.
+**Assumed, not verified:** that the design in the spec is buildable at all —
+no RIDDL has been written against it. That 541511 is the right NAICS code.
+That the sideways saga case behaves like the domain-level one.
 
 ### Pointers
 
-- **BACKLOG.md #0** — the next project, with Reid's verbatim brief.
-- **BACKLOG #23** (repository command naming, 4,030 uses) and **#24**
-  (rejections, ordered) remain open and unstarted from earlier campaigns.
-- **CLAUDE.md** — durable rules: riddlc-over-regex, which stream to read, why
-  `sbt v` is the LENIENT gate, always commit prettified code.
+- **BACKLOG #0** — the in-flight project, where it stopped, and what to put
+  back to Reid.
+- **The spec** — `docs/superpowers/specs/2026-08-26-code-generator-model-design.md`.
+- **CLAUDE.md** — the rule-id trap, the corrected saga rule, why `sbt v` is the
+  LENIENT gate.
+- **BACKLOG #23 and #24** remain open and unstarted from earlier campaigns.
 
 ### `task/` — EMPTY
 
-Both of today's arrivals were closed with verified Results and moved to
-`task/done/`. Two things are outstanding but are NOT ours: riddlg re-measuring
-the fill burden, and a modelling question we flagged at
-`corporate/external-contexts.riddl:152`, where `PhotoShootCompleted` is yielded
-by a `SchedulePhotoShoot` clause.
+No `.md` files; only `wire-a6-reachability.py` and `done/`. Nothing awaits
+triage here. One task was filed OUTWARD this session and is **unacknowledged**:
+`../riddl/task/2026-08-26-saga-tell-must-not-reach-into-a-context.md`.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
-
----
-
-## 2026-08-26 — rc.26, and seven harnesses that went dark without saying so
-
-The corpus moved from the staged `2.0.0-rc.25-11-5e09d98c` to the **published
-`2.0.0-rc.26`** (tag commit `c64f3388f`): `riddlVersion` bumped and
-`riddlcPath` set back to `None`, so the plugin downloads the binary and the
-libraries resolve from GitHub Packages instead of ivy local. `V.scala` at the
-tag is `3.9.0-RC4`, matching our `scalaVersion` — no TASTy drift.
-
-**Everything green, and one of the greens was a lie.**
-
-| gate | result |
-|---|---|
-| `sbt v` | 188 models, all passed |
-| `riddlc validate --corpus .` | 190 models, 0 failed, 190 ok |
-| `sbt pc` | 989 `.riddl` files canonical — prettify output unchanged by rc.26 |
-| `sbt checkAll` | 2 suites, overall Passed |
-| `collect-warnings.py` | **0 findings — and the harness could not see** |
-
-### What the canary caught
-
-rc.26 adds a **rule id** to every diagnostic:
-`[usage] [use-unused-definition] types.riddl(249:1->22):`. Errors carry one
-too (`[error] [ref-path-unresolved]`). Seven scripts matched
-`^\[level\]\s*file.riddl\(` and now match nothing, so they report an empty
-sweep over a corpus that has defects in it.
-
-An injected unused type proved it: `riddlc` reported it, the sweep did not.
-Making the bracket optional fixed all seven; `collect-warnings.py` now also
-records the id as a `rule` field, which is worth having — it is the stable
-name of a check, where the prose is not. Re-canaried, then re-swept: 188
-models, 0 findings, harness demonstrably live.
-
-**The lesson is not "rc.26 broke a regex".** It is that the four build gates
-were green the whole time and *could not* have caught this, because they read
-riddlc's exit code and never parse its messages. The only thing standing
-between us and a confidently-reported clean corpus was the canary — and the
-canary is a habit, not a gate. Consider wiring one in.
-
-### Also
-
-- `.bast` is untouched: rc.26 writes `shopping-cart.bast` byte-identical to
-  the committed one, FORMAT_REVISION still 23. No regeneration.
-- `../bin/riddlc` is still the rc.25-11 staged binary and is now a tag behind.
-  With the override off it is no longer what the build uses, but it IS what
-  `scripts/` default to — pass `RIDDLC=~/.cache/riddlc/$V/bin/riddlc` for any
-  manual run that is evidence for a claim.
 
 ---
 

@@ -5,86 +5,65 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
-## 0. NEXT PROJECT — model a generic RIDDL code generator ("dogfooding")
+## 0. IN FLIGHT — model a generic RIDDL code generator ("dogfooding")
 
-**Not started. This is the next session's work**, and it is a different KIND of
-task from everything else in this file: authoring a new model from a textual
-specification, rather than migrating the corpus to a compiler rule.
+**Design is DONE and approved. No RIDDL written yet.** The spec is
+`docs/superpowers/specs/2026-08-26-code-generator-model-design.md` (commit
+`680cf5cf`), 450 lines, self-reviewed.
 
-Reid asked for plan mode and explicitly invited questions, alternatives with
-consequences, and possibly a brainstorming session. **Do not start building.**
+### Where it stopped, exactly
 
-### Reid's brief, verbatim (2026-08-26)
+**Awaiting Reid's review of the spec.** He was asked to read it and had not
+answered when the session ended for a reboot. **Do not start writing RIDDL or
+an implementation plan until he has.** After his approval the next step is the
+`superpowers:writing-plans` skill — the brainstorming skill's terminal state is
+writing-plans and no other.
 
-> I have a different kind of task for you: creating a new model from an existing
-> textual specification. This could be a LOT of work, but it will be very
-> helpful for code generators implemented in riddlg. The document
-> ../RIDDL-Computational-Model.md is being updated to be current right now. When
-> that is done, we want to create a model that is the generic design for any
-> code generator, sort of like a template for code generation from RIDDL models.
-> So, it must map, each RIDDL definition to some generic construct in a
-> programming language and platform (operating system). For example, contexts
-> might map to the platform's notion of a process, entities to actors, objects
-> or beans or some other construct that represents the combination of state and
-> behavior that both change over time. Repositories, projectors and sagas should
-> be relatively straight forward. What is important is that all the nuances and
-> requirements of each definition type must be obeyed and visible in the model.
-> This whole effort is "dog fooding" (as in we need to eat our own dogfood) for
-> RIDDL. Can we define what a riddl code generator's design is? You should use
-> plan mode for this, don't take the CM document as complete at the moment, but
-> feel free to read it. THere are likely dozens of questions about this so feel
-> free to ask me, provide alternatives and their consequences, and allow me to
-> participate in the design. This might need a brain-storming session too - your
-> choice. I have only specified the basic intent here, and I don't have a model
-> design in mind except to note that there is the domain/context of the
-> generator, and another of the generated source code. That separation needs to
-> be strong, unless you disagree (state why). You can use riddlg's release/1
-> branch as background information since it now fairly complete on how the
-> Quarkus/Java generator should work. I want this model to be used instructively
-> in future AI sessions for building things like the Typescript/Effect generator
-> or the Pekko/Scala generator, or any other generator a client needs.
+### What to put back in front of him, verbatim
 
-### What is verified about the inputs, as of the handoff
+Sections most worth his eye: **§2** the four decisions with reasoning and his
+two corrections quoted; **§4.7–4.8** `HoleFilling` as its own context and the
+retry cycle as an event cycle rather than a loop; **§6** six measured language
+facts, three of which contradict prior belief; **§8** the nine acceptance
+criteria.
 
-- **`../RIDDL-Computational-Model.md` exists**, 324,559 bytes, mtime
-  2026-08-26 14:26. Reid says it is **mid-update — do NOT treat it as
-  complete.** `../CLAUDE.md` already names it the authority for any lowering
-  decision: *"the language reference says what parses, this says what it
-  MEANS."* It documents, per definition, what a conforming generator MUST
-  preserve vs may freely choose, along 8 aspects.
-- **`../RIDDL-Tools-To-Do-List.md`** is referenced by the CM doc; Part B is
-  **riddlg**.
-- **riddl-generator is on branch `release/1`**, HEAD `68130dd` *"Close the
-  system.now corpus adoption, and file what it taught"*. A **`ts-effect-gen`**
-  branch also exists, which is presumably a start on the TypeScript/Effect
-  target Reid names as a consumer of this model.
+Two weak points that were flagged rather than buried:
 
-### Open design questions to put to Reid (his invitation, not padding)
+- **§7.1 — it is a large model.** Seven contexts with declared APIs, three
+  aggregates, a repository and ~40 lowering functions, i.e. reactive-bbq
+  territory. It will not reach zero findings in one pass.
+- **§7.2 — the catalogue can still drift.** Each lowering *consults* the
+  `LoweringRule` repository, so an *unused* rule surfaces as a `usage`
+  finding. Nothing makes a *missing* rule surface. That half could not be
+  closed.
 
-1. **Where does the model live?** A new sector under riddl-models, or its own
-   repo? It is not an industry domain, so `technology/` is a poor fit and the
-   18-sector ontology has no home for "our own tooling". This decides whether
-   the corpus gates (`sbt v`, prettifyCheck, 190-model count, `.bast`) apply to
-   it — and if it lives here, they do, which is probably desirable dogfooding.
-2. **The two-domain split Reid proposes** — generator vs generated source. He
-   asked to be told if we disagree. Worth stating a position with reasons
-   rather than just accepting it.
-3. **How is "platform-generic" expressed?** RIDDL has no generics or type
-   parameters. Options: one abstract model plus per-target models that mirror
-   it; a single model whose types are deliberately abstract; or `term`s carrying
-   the per-platform mapping as documentation.
-4. **What plays the part of a target language?** Mapping "entity -> actor |
-   object | bean" is a *choice per target*, so the model must represent the
-   choice itself, not one answer.
-5. **How do the 8 CM aspects appear?** They are the actual specification. If
-   they are not visible per definition, the model does not meet the brief.
+One decision still open: the model needs a **NAICS code** per corpus
+convention and `tooling/` has no obvious industry. **541511** (Custom Computer
+Programming Services) is a guess, not a finding.
 
-### Why this is worth doing carefully
+### The design, in one paragraph
 
-It is dogfooding in the sharpest sense: if RIDDL cannot express the design of a
-RIDDL code generator, that is a finding about RIDDL. Expect this project to
-produce upstream riddl task files as a by-product, as every other campaign here
-has.
+One domain, seven contexts (`Intake`, `Naming`, `Planning`, `SpecEmission`,
+`CodeEmission`, `HoleFilling`, `Proving`), one **domain-level** saga that
+addresses contexts and never their internals. Genericity comes from required
+**capabilities** plus a target profile, not from naming a target construct — so
+a new target is a new profile, not a new model. A lowering is behaviour, not an
+entity; only `GenerationRun`, `Artifact` and `Hole` have identity and a
+lifecycle. Lives at `tooling/code-generation/code-generator/`, a new 19th
+sector, which moves the census 190 → 191 and drags in every corpus gate.
+
+**Two of Reid's own proposals were retired during design, by him:** the
+generator/generated-source two-domain split, and (implicitly) any role for the
+CM document's eight aspects as model data. §2.1 and §2.2 record why, so neither
+gets reinvented.
+
+### Upstream task filed as a by-product
+
+`../riddl/task/2026-08-26-saga-tell-must-not-reach-into-a-context.md` — make it
+an Error for a `tell`/`send` from outside a context to name a definition inside
+it. Reid's ruling: reaching past a context into its entity is an encapsulation
+violation, and riddlc currently accepts it and the correct form with equal
+silence. Not yet acknowledged by riddl.
 
 ---
 
