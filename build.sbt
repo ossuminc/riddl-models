@@ -14,10 +14,10 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. This is an UNPUBLISHED staged RC, so
-// riddlcPath below points at ../bin/riddlc; the libraries arrive by
-// `sbt publishLocal` from the riddl checkout. Both are 5e09d98c.
-lazy val riddlVersion = "2.0.0-rc.25-11-5e09d98c"
+// same build, so one value pins both. This is a PUBLISHED release (tag
+// 2.0.0-rc.26, commit c64f3388f), so `riddlcPath` below is None: the plugin
+// downloads the binary and the libraries resolve from GitHub Packages.
+lazy val riddlVersion = "2.0.0-rc.26"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -57,25 +57,27 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
 
     // The test suite validates the corpus through the library API, which is a
     // different path from the CLI that riddlcValidate drives. These resolve
-    // from the local ivy repository while release/2 is in flight.
+    // from GitHub Packages now that riddlVersion names a published release;
+    // a staged RC would need `sbt publishLocal` from the riddl checkout.
     libraryDependencies ++= Seq(
       "com.ossuminc" %% "riddl-language" % riddlVersion % Test,
       "com.ossuminc" %% "riddl-passes" % riddlVersion % Test,
       "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
     ),
 
-    // riddlVersion names an UNPUBLISHED staged RC, so this override is required
-    // -- the plugin cannot download 2.0.0-rc.25-11-5e09d98c. The test-suite
-    // libraries are `publishLocal`ed at the SAME version, so checkTests stays
-    // live rather than going dark (BACKLOG #19).
+    // None because riddlVersion names a PUBLISHED release: the plugin downloads
+    // it to ~/.cache/riddlc/<version>/bin/riddlc. Set this to Some(staged path)
+    // ONLY while tracking an unpublished RC that the plugin cannot download --
+    // and take it off again the moment that RC is published.
     //
-    // Two traps. This path WINS over riddlVersion, so verify `../bin/riddlc
-    // info` against the pin rather than trusting the pin -- on 2026-08-26 the
-    // staged binary was 11 commits behind what a task file assumed, and the
-    // corpus read clean because the rule being migrated to was not in it. And a
-    // `git checkout -- .` reverts the pin silently, which happened on
-    // 2026-08-19 and left the pin naming rc.19-3 while rc.19-5 validated.
-    riddlcPath := Some(file("/Users/reid/Code/ossuminc/bin/riddlc")),
+    // Two traps, both paid for. This path WINS over riddlVersion, so while an
+    // override is in place verify `riddlc info` against the pin rather than
+    // trusting the pin -- on 2026-08-26 ../bin/riddlc was cut from the wrong
+    // commit and the corpus read clean because the rule being migrated to was
+    // not in the binary. And a `git checkout -- .` reverts the pin silently,
+    // which happened on 2026-08-19 and left the pin naming rc.19-3 while
+    // rc.19-5 validated.
+    riddlcPath := None,
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),

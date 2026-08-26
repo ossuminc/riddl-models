@@ -31,7 +31,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RIDDLC = ROOT.parent / "bin" / "riddlc"
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
-LOC = re.compile(r"^\[\w+\]\s*(?P<file>[^\s(]+\.riddl)\((?P<line>\d+):")
+LOC = re.compile(r"^\[\w+\]\s*(?:\[[\w-]+\]\s*)?(?P<file>[^\s(]+\.riddl)\((?P<line>\d+):")
 ADMITS = re.compile(r"^Inlet '(?P<inlet>\w+)' admits Type '(?P<type>\w+)' but "
                     r"(?P<kind>\w+) '(?P<owner>\w+)' declares no handler clause for "
                     r"(?P<n>\d+) of its (?P<k>\d+) members")

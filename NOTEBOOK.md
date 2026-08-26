@@ -4,21 +4,31 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch** `release/2`. **riddlc `2.0.0-rc.25-11-5e09d98c`**, an UNPUBLISHED
-staged RC: `riddlVersion` and `riddlcPath` both name it, and the libraries are
-`publishLocal`ed at the same version so `checkTests` stays live. Verified this
-session with `riddlc info`, not from the pin.
+**Branch** `release/2`. **riddlc `2.0.0-rc.26`**, a PUBLISHED release:
+`riddlVersion` names it and `riddlcPath` is `None`, so the plugin downloads to
+`~/.cache/riddlc/2.0.0-rc.26/bin/riddlc` and the libraries resolve from GitHub
+Packages. Verified with `riddlc info` on the downloaded binary (commit
+`c64f3388f`, matching the tag), not from the pin.
+
+**`../bin/riddlc` is NOT what the build uses** — it is still the rc.25-11
+staged binary, a tag behind. `scripts/` default to it, so pass
+`RIDDLC=~/.cache/riddlc/2.0.0-rc.26/bin/riddlc` for any manual run.
 
 ### The corpus is at ZERO — verified, not recalled
 
 ```
 riddlc validate --corpus .    190 models, 0 failed, 190 ok
-per-model validate --json     0 findings of EVERY severity, 0 nonzero exits
-sbt checkAll                  989 files canonical, 2 suites, overall Passed
+collect-warnings.py           188 models swept, 0 findings, harness canaried
+sbt v / pc / checkAll         188 ok, 989 canonical, 2 suites, Passed
 ```
 
-**riddl is waiting on this to cut rc.26.** The corpus was migrated ahead of the
-release deliberately, so the RC can go out green rather than red.
+**All re-run under rc.26.** The sweep's zero is trustworthy only because the
+harness was canaried after the bump — rc.26 changed the message format and
+blinded seven scripts, which is written up in the session entry below and as
+a trap in CLAUDE.md. **Canary after every riddlc bump.**
+
+**rc.26 is cut and published.** The corpus was migrated ahead of it
+deliberately, and the RC went out green.
 
 ### In flight
 
@@ -31,9 +41,10 @@ and possibly brainstorming, and said **do not treat the CM document as
 complete**. So: do not start building, and do not paraphrase his brief back at
 him — five open design questions are already drafted under #0.
 
-Inputs verified to exist this session: `../RIDDL-Computational-Model.md`
-(324,559 bytes, mtime 2026-08-26 14:26, mid-update), and riddl-generator on
-branch `release/1` at `68130dd`, which also carries a `ts-effect-gen` branch.
+Inputs verified: `../RIDDL-Computational-Model.md` (324,559 bytes, mtime
+2026-08-26 14:26) — Reid confirmed the edits are **complete**, so it is no
+longer mid-update. riddl-generator on branch `release/1` at `68130dd`, which
+also carries a `ts-effect-gen` branch.
 
 ### Traps — each of these bit someone THIS session
 
@@ -86,6 +97,55 @@ the fill burden, and a modelling question we flagged at
 by a `SchedulePhotoShoot` clause.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
+
+---
+
+## 2026-08-26 — rc.26, and seven harnesses that went dark without saying so
+
+The corpus moved from the staged `2.0.0-rc.25-11-5e09d98c` to the **published
+`2.0.0-rc.26`** (tag commit `c64f3388f`): `riddlVersion` bumped and
+`riddlcPath` set back to `None`, so the plugin downloads the binary and the
+libraries resolve from GitHub Packages instead of ivy local. `V.scala` at the
+tag is `3.9.0-RC4`, matching our `scalaVersion` — no TASTy drift.
+
+**Everything green, and one of the greens was a lie.**
+
+| gate | result |
+|---|---|
+| `sbt v` | 188 models, all passed |
+| `riddlc validate --corpus .` | 190 models, 0 failed, 190 ok |
+| `sbt pc` | 989 `.riddl` files canonical — prettify output unchanged by rc.26 |
+| `sbt checkAll` | 2 suites, overall Passed |
+| `collect-warnings.py` | **0 findings — and the harness could not see** |
+
+### What the canary caught
+
+rc.26 adds a **rule id** to every diagnostic:
+`[usage] [use-unused-definition] types.riddl(249:1->22):`. Errors carry one
+too (`[error] [ref-path-unresolved]`). Seven scripts matched
+`^\[level\]\s*file.riddl\(` and now match nothing, so they report an empty
+sweep over a corpus that has defects in it.
+
+An injected unused type proved it: `riddlc` reported it, the sweep did not.
+Making the bracket optional fixed all seven; `collect-warnings.py` now also
+records the id as a `rule` field, which is worth having — it is the stable
+name of a check, where the prose is not. Re-canaried, then re-swept: 188
+models, 0 findings, harness demonstrably live.
+
+**The lesson is not "rc.26 broke a regex".** It is that the four build gates
+were green the whole time and *could not* have caught this, because they read
+riddlc's exit code and never parse its messages. The only thing standing
+between us and a confidently-reported clean corpus was the canary — and the
+canary is a habit, not a gate. Consider wiring one in.
+
+### Also
+
+- `.bast` is untouched: rc.26 writes `shopping-cart.bast` byte-identical to
+  the committed one, FORMAT_REVISION still 23. No regeneration.
+- `../bin/riddlc` is still the rc.25-11 staged binary and is now a tag behind.
+  With the override off it is no longer what the build uses, but it IS what
+  `scripts/` default to — pass `RIDDLC=~/.cache/riddlc/$V/bin/riddlc` for any
+  manual run that is evidence for a claim.
 
 ---
 

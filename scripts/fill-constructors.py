@@ -42,7 +42,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RIDDLC = Path(__file__).resolve().parent.parent.parent / "bin" / "riddlc"
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
-LOC = re.compile(r"^\[error\]\s*(?P<file>[^\s(]+\.riddl)\((?P<line>\d+):(?P<col>\d+)")
+LOC = re.compile(r"^\[error\]\s*(?:\[[\w-]+\]\s*)?(?P<file>[^\s(]+\.riddl)\((?P<line>\d+):(?P<col>\d+)")
 MISS = re.compile(r"^Constructor of (?P<kind>\w+) '(?P<name>\w+)' does not supply \d+ fields?: (?P<fields>.+?):?$")
 
 

@@ -40,7 +40,7 @@ ASCRIBED = re.compile(
     r"^\w+ '(?P<name>[\w.]+)' is ascribed 'as (?P<old>\w+)' but its DATAFLOW arity "
     r"\([^)]*\) is (?P<new>\w+):"
 )
-LOC = re.compile(r"^\[error\]\s*(?P<file>[^\s(]+\.riddl)\((?P<line>\d+):")
+LOC = re.compile(r"^\[error\]\s*(?:\[[\w-]+\]\s*)?(?P<file>[^\s(]+\.riddl)\((?P<line>\d+):")
 
 
 def entry_of(d):

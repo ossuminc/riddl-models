@@ -48,7 +48,7 @@ class M:
     def findings(self):
         out, cur = [], None
         for ln in self.validate().split("\n"):
-            m = re.match(r"^\[(\w+)\]\s*([\w.]+\.riddl)\((\d+):", ln)
+            m = re.match(r"^\[(\w+)\]\s*(?:\[[\w-]+\]\s*)?([\w.]+\.riddl)\((\d+):", ln)
             if m:
                 cur = {"sev": m.group(1), "file": m.group(2), "line": int(m.group(3)), "msg": ""}
                 out.append(cur)

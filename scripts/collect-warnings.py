@@ -8,7 +8,8 @@ class of warning can be surveyed before deciding what to do about it.
 Each record:
 
     {"model": ..., "file": ..., "line": N, "col": N, "endline": N, "endcol": N,
-     "level": "style", "message": "...", "suggestion": "..."}
+     "level": "style", "rule": "use-unused-definition",
+     "message": "...", "suggestion": "..."}
 
 Usage:
     ./scripts/collect-warnings.py [limit] [--include-patterns] [--grep TEXT]
@@ -32,7 +33,7 @@ RIDDLC = Path(_riddlc) if os.path.isabs(_riddlc) else (ROOT / _riddlc).resolve()
 # lines). rc.21 emits the multi-line form for statement-level findings; a regex
 # that only knows the same-line form drops every one of them SILENTLY.
 LOC = re.compile(
-    r"^\[(?P<level>\w+)\]\s*(?P<file>[^\s(]+\.riddl)"
+    r"^\[(?P<level>\w+)\]\s*(?:\[(?P<rule>[\w-]+)\]\s*)?(?P<file>[^\s(]+\.riddl)"
     r"\((?P<line>\d+):(?P<c1>\d+)"
     r"(?:->(?:(?P<endline>\d+):)?(?P<c2>\d+))?\):$"
 )
@@ -73,6 +74,7 @@ def collect(model_dir, entry):
                 "endline": int(m.group("endline") or m.group("line")),
                 "endcol": int(m.group("c2") or m.group("c1")),
                 "level": m.group("level"),
+                "rule": m.group("rule") or "",
                 "message": "",
                 "suggestion": "",
             }

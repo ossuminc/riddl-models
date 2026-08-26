@@ -755,6 +755,30 @@ The 2026-08-24 sweep that reported 1,032 findings used this code path; a
 stdout-only reader would have reported 0 on the same corpus, minutes after a
 staged riddlc reddened all 188 models.
 
+#### rc.26 puts a RULE ID between the level and the file
+
+A diagnostic line is now `[level] [rule-id] file.riddl(line:col->col):`, where
+it used to be `[level] file.riddl(...)`:
+
+```
+[usage] [use-unused-definition] types.riddl(249:1->22):
+[error] [ref-path-unresolved]   types.riddl(249:19->250:1):
+```
+
+Both advisories and **errors** carry one. This is a good change — the rule id
+is the stable name of a check, far better than matching prose — but it broke
+**seven** message parsers in `scripts/` at once, and every one of them broke
+by reporting **nothing**. `collect-warnings.py` swept all 188 models and
+printed zero on a corpus with an injected unused type in it.
+
+The fix is `(?:\[[\w-]+\]\s*)?` between the level and the file, so both
+formats parse; `collect-warnings.py` also captures it as a `rule` field.
+
+**This is why the canary is mandatory after ANY riddlc bump.** The zero these
+scripts printed is exactly the zero a clean corpus prints. Nothing in the
+build catches it — `sbt v`, `pc` and `checkAll` were all green throughout,
+because they read riddlc's exit code rather than parsing its messages.
+
 ### `riddlc find` — locating, in the manner of Unix find
 
 ```bash
@@ -925,10 +949,10 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.0.0-rc.25**, a PUBLISHED release (set by `riddlVersion`
+Current version: **2.0.0-rc.26**, a PUBLISHED release (set by `riddlVersion`
 in `build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
 There is no `riddlcPath` override: the plugin downloads the binary to
-`~/.cache/riddlc/2.0.0-rc.25/bin/riddlc` and the libraries resolve from GitHub
+`~/.cache/riddlc/2.0.0-rc.26/bin/riddlc` and the libraries resolve from GitHub
 Packages.
 
 **`riddlcPath` WINS over the pin, so verify the binary, never the pin.** When
@@ -942,8 +966,9 @@ reported success. Always run `riddlc info` on the binary in use and compare.
 #### On a published pin, `../bin/riddlc` is NOT the binary the build uses
 
 The two diverge the moment the override comes off, and nothing announces it.
-On 2026-08-26 the build ran `2.0.0-rc.25` from the cache while `../bin/riddlc`
-was `2.0.0-rc.25-1-76cb9eab` — a staged build one commit past the tag.
+On 2026-08-26 the build ran `2.0.0-rc.26` from the cache while `../bin/riddlc`
+was `2.0.0-rc.25-11-5e09d98c` — a staged build a whole tag behind, left over
+from the RC it was cut for.
 
 This matters for `scripts/`, which default to `RIDDLC=../bin/riddlc`. **Run
 through the build and they are safe** — `prettifyCheck` and `verifyTemplates`
@@ -1031,7 +1056,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.0.0-rc.25 | `riddlVersion` in `build.sbt` (published) |
+| riddlc | 2.0.0-rc.26 | `riddlVersion` in `build.sbt` (published) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
@@ -1156,18 +1181,21 @@ exactly once otherwise, while `Tests.Output` has no `JsonFormat` at all.
 
 ### Tracking riddl's `release/2`
 
-Until riddl's `release/2` is perfected the corpus tracks it directly
-rather than published releases, and riddl, riddl-generator and this
-repository move together — code generation needs drive language changes,
-which land here as model changes.
+riddl, riddl-generator and this repository move together — code generation
+needs drive language changes, which land here as model changes. The corpus
+tracks riddl's `release/2` line, but **on its published RC tags wherever
+possible**: it is on `2.0.0-rc.26` with no override. Point `riddlcPath` at a
+staged `../bin/riddlc` only to track an RC that has not been published yet,
+and **take the override off the moment it is** — a stale override is
+indistinguishable from a clean corpus.
 
 - **`riddlVersion` in `build.sbt` pins both** the riddlc binary and the
   riddl libraries the test suite links. They come from the same build.
-- **`riddlcPath` prefers a staged `../bin/riddlc`**, falling back to
-  downloading `riddlcVersion`. A staged RC is not published, so without
-  the fallback every riddlc task fails with a bare
-  `Nonzero exit value: 56`.
-- **The libraries arrive by `sbt publishLocal`** from the riddl checkout.
+- **`riddlcPath := None` on a published pin.** An unpublished RC needs
+  `Some(file(...))`, because the plugin cannot download it and every riddlc
+  task fails with a bare `Nonzero exit value: 56`.
+- **The libraries resolve from GitHub Packages** on a published pin; only a
+  staged RC needs `sbt publishLocal` from the riddl checkout.
 - **`scalaVersion` must match riddl's** (`V.scala` in
   `riddl/project/`). Its TASTy is not readable by an older compiler. A
   `Test/compile` failure reading `.tasty` means this drifted.
