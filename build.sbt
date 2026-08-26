@@ -14,10 +14,10 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. This is a PUBLISHED release, so the
-// plugin downloads the binary and the libraries resolve from GitHub Packages;
-// no staged override is needed and none should be added (see riddlcPath).
-lazy val riddlVersion = "2.0.0-rc.25"
+// same build, so one value pins both. This is an UNPUBLISHED staged RC, so
+// riddlcPath below points at ../bin/riddlc; the libraries arrive by
+// `sbt publishLocal` from the riddl checkout. Both are 5e09d98c.
+lazy val riddlVersion = "2.0.0-rc.25-11-5e09d98c"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -64,16 +64,18 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
     ),
 
-    // riddlVersion is a PUBLISHED release (2.0.0-rc.25), so NO riddlcPath
-    // override: the plugin downloads the binary and the test-suite libraries
-    // resolve too. A staged RC is a BINARY only, which is why checkTests goes
-    // dark whenever the pin names one (BACKLOG #19).
+    // riddlVersion names an UNPUBLISHED staged RC, so this override is required
+    // -- the plugin cannot download 2.0.0-rc.25-11-5e09d98c. The test-suite
+    // libraries are `publishLocal`ed at the SAME version, so checkTests stays
+    // live rather than going dark (BACKLOG #19).
     //
-    // Restore the staged override only for an unpublished RC. Two traps if you
-    // do: this path WINS over riddlVersion, so verify `../bin/riddlc info`
-    // against the pin; and a `git checkout -- .` reverts the pin silently, which
-    // happened on 2026-08-19 and left the pin naming rc.19-3 while rc.19-5 was
-    // doing the validating.
+    // Two traps. This path WINS over riddlVersion, so verify `../bin/riddlc
+    // info` against the pin rather than trusting the pin -- on 2026-08-26 the
+    // staged binary was 11 commits behind what a task file assumed, and the
+    // corpus read clean because the rule being migrated to was not in it. And a
+    // `git checkout -- .` reverts the pin silently, which happened on
+    // 2026-08-19 and left the pin naming rc.19-3 while rc.19-5 validated.
+    riddlcPath := Some(file("/Users/reid/Code/ossuminc/bin/riddlc")),
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),
