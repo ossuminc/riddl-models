@@ -104,8 +104,20 @@ Every task's requirements implicitly include this section.
   have previously written live credentials into a commit. Read the message
   back with `git log -1 --format=%B`.
 - **Commits are single-purpose.** One task, one commit.
+- **An `Id(X)` type is declared at CONTEXT scope, never inside the entity.**
+  riddlc reports `entity-id-defined-inside` — "move it to the containing
+  context so other entities can reference it" — as a completeness finding,
+  which fails the gate. So the path is `Intake.GenerationRunId`, NOT
+  `Intake.GenerationRun.GenerationRunId`. Verified by measurement 2026-08-27;
+  the reference skeleton declares `WidgetId` at context scope for this reason.
+- **`any of { }` separates its enumerators with COMMAS; `one of { }`
+  separates its alternates with `or`.** Writing `any of { A or B }` PARSES —
+  and silently creates a third enumerator named `or`. Measured: the `or` form
+  reported 5 definitions where the comma form reported 4, with extra
+  `name-too-short` style findings against the invented `or`. A wrong
+  separator here is not a syntax error, it is a wrong model.
 - **Cross-context type references must be fully qualified** —
-  `CodeEmission.Artifact.ArtifactId`, not `Artifact.ArtifactId`. A
+  `CodeEmission.ArtifactId`, not `ArtifactId`. A
   reference that does not resolve from where it is written is an error,
   and the path must carry every enclosing scope. Within one context the
   short form is correct.
@@ -361,9 +373,11 @@ hard stops, because code cannot be generated from unstated intent.
     IntakeCommandsFwd`, and `type IntakeCommand is one of {
     GenerationRun.StartRun or GenerationRun.AdmitModel or
     GenerationRun.RefuseModel }`.
-  - `entity Intake.GenerationRun` with `type GenerationRunId is
-    Id(GenerationRun)` and `event ModelAdmitted`, which Task 9's saga
-    depends on.
+  - `entity Intake.GenerationRun` with `event ModelAdmitted`, which Task 8's
+    saga depends on.
+  - `type Intake.GenerationRunId is Id(GenerationRun)`, declared at
+    **context** scope beside the entity, not inside it — see Global
+    Constraints. Tasks 4 and 7 consume it as `Intake.GenerationRunId`.
 
 - [ ] **Step 1: Write `types.riddl` — domain-level shared types**
 
@@ -379,7 +393,7 @@ type ModelRef is String(1,1024) with {
   }
 }
 type Severity is any of {
-  Error or Warning or Style or Usage or Missing or Completeness
+  Error, Warning, Style, Usage, Missing, Completeness
 } with {
   briefly "Severity of a riddlc diagnostic"
   described as {
@@ -423,14 +437,24 @@ Three lifecycle states. `Loading` is initial; a run either reaches
 `Admitted` or `Refused`, and both are terminal. Note the binding names
 (`startedEvent`, `admittedEvent`) — they must not match any field.
 
+The id type is declared at **context** scope, so it goes in
+`IntakeContext.riddl` (Step 4) rather than in this file:
+
 ```riddl
-event-sourced entity GenerationRun as flow is {
   type GenerationRunId is Id(GenerationRun) with {
     briefly "Generation run identifier"
     described as {
-      |Identifies one invocation of the generator.
+      |Identifies one invocation of the generator. Declared at context scope
+      |so other definitions in Intake can reference it; riddlc rejects an
+      |Id type declared inside the entity it identifies.
     }
   }
+```
+
+And the entity itself:
+
+```riddl
+event-sourced entity GenerationRun as flow is {
   type GenerationRunEvent is one of {
     GenerationRun.RunStarted or GenerationRun.ModelAdmitted or GenerationRun.ModelRefused
   } with {
@@ -832,7 +856,7 @@ model's central claim, so it is stated once, here.
 
 ```riddl
 type Paradigm is any of {
-  Actor or ActiveObject or CspProcess or Service or DddAggregate or ReactiveStream or Component or MonadicStateMachine or PlainObject or Dci
+  Actor, ActiveObject, CspProcess, Service, DddAggregate, ReactiveStream, Component, MonadicStateMachine, PlainObject, Dci
 } with {
   briefly "A target's representation for a RIDDL processor"
   described as {
@@ -849,7 +873,7 @@ type Paradigm is any of {
   }
 }
 type Capability is any of {
-  SerialExecution or AddressableIdentity or ChannelInteraction or DurableJournal
+  SerialExecution, AddressableIdentity, ChannelInteraction, DurableJournal
 } with {
   briefly "A guarantee a lowering requires of its target"
   described as {
@@ -860,7 +884,7 @@ type Capability is any of {
   }
 }
 type DefinitionKind is any of {
-  DomainKind or ContextKind or EntityKind or RepositoryKind or ProjectorKind or ProcessorKind or AdaptorKind or SagaKind or FunctionKind or TypeKind or HandlerKind or ConnectorKind or EpicKind
+  DomainKind, ContextKind, EntityKind, RepositoryKind, ProjectorKind, ProcessorKind, AdaptorKind, SagaKind, FunctionKind, TypeKind, HandlerKind, ConnectorKind, EpicKind
 } with {
   briefly "The RIDDL definition kinds a generator must lower"
   described as {
@@ -1145,7 +1169,7 @@ Distinctive content:
 
 - `type SpecEmissionCommand is one of { SpecEmission.EmitSpecs or
   SpecEmission.DiscardSpecs }`
-- `command EmitSpecs` — fields `specRunId: Intake.GenerationRun.GenerationRunId`,
+- `command EmitSpecs` — fields `specRunId: Intake.GenerationRunId`,
   `specSubject: ModelRef`. No `yields`: this context has no aggregate, so
   nothing records new entity state.
 - `command DiscardSpecs` — field `specRunId`, for the saga's compensation.
@@ -1192,8 +1216,8 @@ a file identified by path, moving **Planned → Emitted → Filled → Verified*
 
 **Interfaces:**
 - Consumes: `type DefinitionKind`, `type Paradigm` (Task 3).
-- Produces: `entity CodeEmission.Artifact` with `type ArtifactId is
-  Id(Artifact)` and events `ArtifactPlanned`, `ArtifactEmitted`,
+- Produces: `entity CodeEmission.Artifact`; `type CodeEmission.ArtifactId is
+  Id(Artifact)` at **context** scope beside the entity; and events `ArtifactPlanned`, `ArtifactEmitted`,
   `ArtifactFilled`, `ArtifactVerified`; `repository
   CodeEmission.DecisionLog`. Task 6 consumes `ArtifactId`; Task 7 consumes
   `event ArtifactFilled`.
@@ -1220,7 +1244,7 @@ fields.
 Task 2's context shape, plus:
 
 - `repository DecisionLog as sink` — `record StoredDecision` with fields
-  `decisionArtifactId: Artifact.ArtifactId`, `decisionSubject:
+  `decisionArtifactId: CodeEmission.ArtifactId`, `decisionSubject:
   String(1,256)`, `decisionRationale: String(1,2048)`; a schema indexed on
   `decisionArtifactId`; `command PersistDecision` (no `yields`) and its
   handler clause.
@@ -1272,8 +1296,9 @@ that hallucinates is what got sent.
 - Modify: `GeneratorDriver.riddl`, `code-generator.riddl`
 
 **Interfaces:**
-- Consumes: `CodeEmission.Artifact.ArtifactId`, `event CodeEmission.Artifact.ArtifactFilled` (Task 5).
-- Produces: `entity HoleFilling.Hole` with `type HoleId is Id(Hole)`;
+- Consumes: `CodeEmission.ArtifactId`, `event CodeEmission.Artifact.ArtifactFilled` (Task 5).
+- Produces: `entity HoleFilling.Hole`; `type HoleFilling.HoleId is Id(Hole)`
+  at **context** scope beside the entity;
   `command HoleFilling.ReopenHoles`, which **Task 7's `Proving` context
   tells** to close the retry cycle.
 
@@ -1284,7 +1309,7 @@ Three states: **Open → Filled → Proven**. Commands `OpenHole`, `FillHole`,
 
 State record `HoleData`:
 - `holeId: HoleId`
-- `holeArtifactId: CodeEmission.Artifact.ArtifactId`
+- `holeArtifactId: CodeEmission.ArtifactId`
 - `holePrompt: String(1,4096)` — the `do`/`prompt` text the hole came from
 - `enclosingProcessor: String(1,256)` — the fill context's first component
 - `codeSoFar: String(1,65535)` — the artifact's code at the point of the
@@ -1340,8 +1365,8 @@ the fill-context assembly function:
   }
 ```
 
-Declare `record FillContextRequest` (fields `requestHoleId: Hole.HoleId`,
-`requestArtifactId: CodeEmission.Artifact.ArtifactId`) and `record FillContext` (fields
+Declare `record FillContextRequest` (fields `requestHoleId: HoleFilling.HoleId`,
+`requestArtifactId: CodeEmission.ArtifactId`) and `record FillContext` (fields
 `contextProcessor`, `contextCodeSoFar`, `contextDeclarations`).
 
 - [ ] **Step 3: Driver outlet, connector, validate, prettify, commit**
@@ -1370,7 +1395,7 @@ reaching zero, or `Hole`'s attempt cap (Task 6).
 - Modify: `GeneratorDriver.riddl`, `code-generator.riddl`
 
 **Interfaces:**
-- Consumes: `CodeEmission.Artifact.ArtifactId` (Task 5); `command
+- Consumes: `CodeEmission.ArtifactId` (Task 5); `command
   HoleFilling.ReopenHoles` (Task 6).
 - Produces: `context Proving` with `type ProvingCommand is one of {
   Proving.RunBootGate or Proving.RunGreenGate }`; `event Proving.ProofFailed`
@@ -1389,10 +1414,10 @@ Distinctive content:
 - `command RunBootGate` — pass-1. Its `do` prose must say that it runs with
   tests skipped precisely because behaviour is not yet assertable.
 - `command RunGreenGate` — pass-2. Fields `gateArtifactId:
-  CodeEmission.Artifact.ArtifactId` and `gateRunId:
-  Intake.GenerationRun.GenerationRunId`. `RunBootGate` carries the same
+  CodeEmission.ArtifactId` and `gateRunId:
+  Intake.GenerationRunId`. `RunBootGate` carries the same
   two.
-- `event ProofFailed` — fields `failedArtifactId: CodeEmission.Artifact.ArtifactId`,
+- `event ProofFailed` — fields `failedArtifactId: CodeEmission.ArtifactId`,
   `failureDetail: String(1,4096)`.
 - `outlet ProofFailures is type ProofFailed`.
 - The handler clause that publishes it:
