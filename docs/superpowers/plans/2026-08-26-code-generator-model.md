@@ -80,6 +80,15 @@ Every task's requirements implicitly include this section.
   settled** — see the skeleton.
 - **Sagas need at least 2 steps** (`saga-too-few-steps`) and a timeout
   (`option timeout("PT10M")`).
+- **A stateless context declares an INLET ONLY and its boundary handler does
+  the work directly.** The relay pattern forwards inbound commands to a
+  contained entity's inlet; a context with no aggregate has no such consumer,
+  so a relay outlet would dangle and draw `stream-portlet-unconnected`.
+  Ascription follows arity as always: `(0 out, 1 in)` = `sink`. A verified
+  instance is `docs/superpowers/reference/verified-stateless-context.riddl`
+  (80 definitions, 0 errors, 0 warnings, all four classes on). Applies to
+  `SpecEmission` (Task 4) and shapes `Proving` (Task 7), which is `flow`
+  because it still declares its `ProofFailures` outlet.
 - **A context with entities needs a repository** — otherwise
   `context-entities-without-repository`. An entity that sends must declare
   an outlet — otherwise `entity-no-outlet`.
@@ -1126,7 +1135,13 @@ aggregate, no repository, so no `context-entities-without-repository`.
 
 - [ ] **Step 1: Write the context**
 
-Follow Task 2's context shape. Distinctive content:
+**`SpecEmission` is stateless, so it takes the inlet-only shape** — `context
+SpecEmission as sink`, an inlet, no relay outlet, and a boundary handler that
+does the work directly. Copy the verified instance in
+`docs/superpowers/reference/verified-stateless-context.riddl`. Following
+Task 2's relay shape here would leave the relay outlet unconnected.
+
+Distinctive content:
 
 - `type SpecEmissionCommand is one of { SpecEmission.EmitSpecs or
   SpecEmission.DiscardSpecs }`
@@ -1134,10 +1149,10 @@ Follow Task 2's context shape. Distinctive content:
   `specSubject: ModelRef`. No `yields`: this context has no aggregate, so
   nothing records new entity state.
 - `command DiscardSpecs` — field `specRunId`, for the saga's compensation.
-- `handler SpecEmissionBoundary` with a `forward` clause per command and
-  `on other is { error "Unexpected message at the SpecEmission boundary" }`
-- `handler SpecDerivation` — the work, in `do` prose, one clause per
-  command. The `described as` on this handler is where the CM aspects this
+- `handler SpecEmissionBoundary` — **one `on command <Cmd> is { do "…" }`
+  clause per command, doing the work directly rather than forwarding**, plus
+  `on other is { error "Unexpected message at the SpecEmission boundary" }`.
+  A stateless context has nothing to forward to. The `described as` on this handler is where the CM aspects this
   emission preserves are stated (spec §5.2): they are acceptance criteria
   for the output, and their home in the model is a sentence here.
 
@@ -1350,6 +1365,8 @@ reaching zero, or `Hole`'s attempt cap (Task 6).
 
 **Files:**
 - Create: `tooling/code-generator/ProvingContext.riddl`
+- Modify: `tooling/code-generator/HoleFillingContext.riddl` — Step 2 adds the
+  proof-failure inlet, a boundary clause, and a re-derived shape ascription
 - Modify: `GeneratorDriver.riddl`, `code-generator.riddl`
 
 **Interfaces:**
@@ -1361,7 +1378,12 @@ reaching zero, or `Hole`'s attempt cap (Task 6).
 
 - [ ] **Step 1: Write the context**
 
-Stateless — the gates hold no identity — so no aggregate and no repository.
+Stateless — the gates hold no identity — so no aggregate and no repository,
+and therefore the **inlet-only** shape: no relay outlet, and a boundary
+handler that does the work directly. `Proving` is nonetheless `as flow`, not
+`as sink`, because it declares the `ProofFailures` outlet below — one inlet,
+one outlet. See `docs/superpowers/reference/verified-stateless-context.riddl`.
+
 Distinctive content:
 
 - `command RunBootGate` — pass-1. Its `do` prose must say that it runs with
@@ -1732,7 +1754,7 @@ with `git -C .. status --short` that only the CM changed.
 
 **Files:**
 - Create: `tooling/code-generator/code-generator.bast` (generated)
-- Modify: `NOTEBOOK.md`, `BACKLOG.md`
+- Modify: `NOTEBOOK.md`, `BACKLOG.md`, `CLAUDE.md` (Step 5)
 
 - [ ] **Step 1: Generate the `.bast`**
 
