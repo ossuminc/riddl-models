@@ -1,4 +1,4 @@
-context HoleFilling as flow is {
+context HoleFilling as merge is {
   command FillHoles is {
     holeFillingArtifactId: CodeEmission.ArtifactId with {
       briefly "Artifact"
@@ -57,6 +57,13 @@ context HoleFilling as flow is {
       |Where peers deliver commands for HoleFilling.
     }
   }
+  inlet ProofFailuresIn is event Proving.ProofFailed with {
+    briefly "Proof failure intake"
+    described as {
+      |Where Proving delivers a failed proof, closing the retry cycle back
+      |to HoleFilling rather than to Artifact itself.
+    }
+  }
   type HoleCommand is one of {
     Hole.OpenHole or Hole.FillHole or Hole.ProveHole or Hole.ReopenHole
   } with {
@@ -92,6 +99,9 @@ context HoleFilling as flow is {
       do "discard whatever fill state
          DiscardFills.holeFillingArtifactId's holes hold"
     }
+    on failureEvent: event Proving.ProofFailed is {
+      tell command HoleFilling.ReopenHoles(holeFillingArtifactId = failureEvent.failedArtifactId) to context HoleFilling
+    }
     on other is {
       error "Unexpected message at the HoleFilling boundary"
     }
@@ -101,7 +111,9 @@ context HoleFilling as flow is {
       |The context is the port at its own boundary. FillHoles, ReopenHoles
       |and DiscardFills are HoleFilling's own operations; the boundary
       |drives the Hole aggregate's lifecycle by relaying OpenHole, FillHole
-      |and ReopenHole onto HoleFillingCommandsFwd.
+      |and ReopenHole onto HoleFillingCommandsFwd. A ProofFailed arriving
+      |from Proving is turned into a ReopenHoles told to this same
+      |context — the retry cycle closing as an event, not a loop.
     }
   }
   type HoleId is Id(Hole)  with {

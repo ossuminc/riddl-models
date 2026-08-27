@@ -1,0 +1,135 @@
+context Proving as flow is {
+  command RunBootGate is {
+    gateArtifactId: CodeEmission.ArtifactId with {
+      briefly "Artifact"
+      described as {
+        |The artifact this gate is proving.
+      }
+    }
+    gateRunId: Intake.GenerationRunId with {
+      briefly "Run"
+      described as {
+        |The generation run this gate belongs to.
+      }
+    }
+  } with {
+    briefly "Run the pass-1 boot gate"
+    described as {
+      |Compiles, augments and boots the emitted artifact with its generated
+      |suite skipped, precisely because behaviour is not yet assertable: the
+      |suite that would assert it still contains open holes. Boot success is
+      |the whole of pass-1's acceptance.
+    }
+  }
+  command RunGreenGate yields event ProofFailed is {
+    gateArtifactId: CodeEmission.ArtifactId with {
+      briefly "Artifact"
+      described as {
+        |The artifact this gate is proving.
+      }
+    }
+    gateRunId: Intake.GenerationRunId with {
+      briefly "Run"
+      described as {
+        |The generation run this gate belongs to.
+      }
+    }
+  } with {
+    briefly "Run the pass-2 green gate"
+    described as {
+      |Runs the generated suite, now that hole filling has supplied the
+      |behaviour pass-1 could not assert. Acceptance is the suite going
+      |green; a red result is what ProofFailed reports.
+    }
+  }
+  type ProvingCommand is one of {
+    Proving.RunBootGate or Proving.RunGreenGate
+  } with {
+    briefly "Proving command alternation"
+    described as {
+      |Commands accepted at the Proving boundary.
+    }
+  }
+  inlet ProvingCommandsIn is type ProvingCommand with {
+    briefly "Proving command intake"
+    described as {
+      |Where peers deliver commands for Proving.
+    }
+  }
+  event ProofFailed is {
+    failedArtifactId: CodeEmission.ArtifactId with {
+      briefly "Artifact"
+      described as {
+        |The artifact whose proof did not go green.
+      }
+    }
+    failureDetail: String(1,4096) with {
+      briefly "Detail"
+      described as {
+        |What the generated suite reported when it did not go green.
+      }
+    }
+  } with {
+    briefly "A proof gate did not pass"
+    described as {
+      |Published so HoleFilling can reopen the holes implicated in the
+      |failure. This is the retry cycle's whole mechanism: an event, not a
+      |loop. A reactive system re-enters a prior stage by publishing what
+      |went wrong rather than iterating until something changes.
+    }
+  }
+  outlet ProofFailures is event ProofFailed
+ with {
+    briefly "Proof failure egress"
+    described as {
+      |Where a failed green gate republishes ProofFailed for HoleFilling.
+    }
+  }
+  handler ProvingBoundary is {
+    on command RunBootGate is {
+      do "compile, augment and boot the artifact identified by
+         RunBootGate.gateArtifactId with its generated suite skipped"
+    }
+    on command RunGreenGate is {
+      do "run the generated suite for the artifact identified by
+         RunGreenGate.gateArtifactId"
+      yield event ProofFailed(failedArtifactId = RunGreenGate.gateArtifactId, failureDetail = prompt("what the generated suite reported when it did not go green"))
+    }
+    on failureEvent: event ProofFailed is {
+      send failureEvent to outlet Proving.ProofFailures
+    }
+    on other is {
+      error "Unexpected message at the Proving boundary"
+    }
+  } with {
+    briefly "Context boundary and gate runner"
+    described as {
+      |Nothing inside needs routing to, so the boundary handler runs both
+      |gates directly rather than forwarding them. RunGreenGate's failure
+      |path is the one that matters: it yields ProofFailed and the same
+      |handler republishes it to ProofFailures, which is what closes the
+      |cycle back to HoleFilling rather than looping in place here.
+    }
+  }
+} with {
+  briefly "Proving the emitted artifact against its two gates"
+  described as {
+    |Two gates, not one, because they assert different things. Pass-1 —
+    |RunBootGate — compiles, augments and boots the artifact with its
+    |suite's own assertions skipped, because behaviour is not yet
+    |assertable while holes remain open. Pass-2 — RunGreenGate — runs
+    |that suite for real, now that hole filling has supplied the missing
+    |behaviour, and its acceptance is the suite going green.
+    |
+    |There is no loop construct here, and that is the correct shape.
+    |Retry-until-green is an event cycle, not iteration: a failed green
+    |gate yields ProofFailed, which this boundary republishes to
+    |ProofFailures; HoleFilling reopens the holes the failure implicates
+    |and refills them; a later RunGreenGate tries again. That is what a
+    |reactive system does instead of looping. The cycle terminates two
+    |ways — the artifact's open hole count reaching zero, or a Hole
+    |hitting its MaxFillAttempts cap — and neither termination is
+    |Proving's to enforce; both live where the state they depend on
+    |already lives.
+  }
+}
