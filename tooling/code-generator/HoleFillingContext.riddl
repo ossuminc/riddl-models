@@ -1,0 +1,389 @@
+context HoleFilling as flow is {
+  command FillHoles is {
+    holeFillingArtifactId: CodeEmission.ArtifactId with {
+      briefly "Artifact"
+      described as {
+        |The artifact whose open holes are owed a fill pass.
+      }
+    }
+  } with {
+    briefly "Fill the open holes for an artifact"
+    described as {
+      |HoleFilling's own boundary operation, not the Hole aggregate's —
+      |the boundary selects which hole is next owed a pass and relays both
+      |its opening and its fill attempt onto the entity that owns them.
+    }
+  }
+  command ReopenHoles is {
+    holeFillingArtifactId: CodeEmission.ArtifactId with {
+      briefly "Artifact"
+      described as {
+        |The artifact whose proven holes are to be reopened.
+      }
+    }
+  } with {
+    briefly "Reopen an artifact's proven holes"
+    described as {
+      |Told by Proving when an artifact-wide proof fails and a hole
+      |implicated in the failure is owed another fill attempt. Closes the
+      |retry cycle back to HoleFilling rather than to Artifact itself.
+    }
+  }
+  command DiscardFills is {
+    holeFillingArtifactId: CodeEmission.ArtifactId with {
+      briefly "Artifact"
+      described as {
+        |The artifact whose fill state is to be discarded.
+      }
+    }
+  } with {
+    briefly "Discard fill state"
+    described as {
+      |Compensates FillHoles: forgets whatever fills
+      |holeFillingArtifactId's holes previously produced.
+    }
+  }
+  type HoleFillingCommand is one of {
+    HoleFilling.FillHoles or HoleFilling.ReopenHoles or HoleFilling.DiscardFills
+  } with {
+    briefly "HoleFilling command alternation"
+    described as {
+      |Commands accepted at the HoleFilling boundary.
+    }
+  }
+  inlet HoleFillingCommandsIn is type HoleFillingCommand with {
+    briefly "HoleFilling command intake"
+    described as {
+      |Where peers deliver commands for HoleFilling.
+    }
+  }
+  type HoleCommand is one of {
+    Hole.OpenHole or Hole.FillHole or Hole.ProveHole or Hole.ReopenHole
+  } with {
+    briefly "Hole command alternation"
+    described as {
+      |Commands accepted by the Hole aggregate, relayed from this
+      |context's boundary.
+    }
+  }
+  outlet HoleFillingCommandsFwd is type HoleCommand
+ with {
+    briefly "Hole command relay"
+    described as {
+      |Where the boundary republishes commands for the entity that owns
+      |them.
+    }
+  }
+  handler HoleFillingBoundary is {
+    on command FillHoles is {
+      do "select the next [[AI FILL]] hole in
+         FillHoles.holeFillingArtifactId owed a fill pass"
+      let selectedHoleId: type HoleId = prompt("the HoleId for the hole in FillHoles.holeFillingArtifactId being opened and filled")
+      send command HoleFilling.Hole.OpenHole(holeId = selectedHoleId, holeArtifactId = FillHoles.holeFillingArtifactId, holePrompt = prompt("the do/prompt text this hole came from"), enclosingProcessor = prompt("the processor enclosing this hole"), codeSoFar = prompt("the artifact's code at the point of this hole"), declarationsInScope = prompt("the declarations this hole may draw on")) to outlet HoleFilling.HoleFillingCommandsFwd
+      send command HoleFilling.Hole.FillHole(holeId = selectedHoleId) to outlet HoleFilling.HoleFillingCommandsFwd
+    }
+    on command ReopenHoles is {
+      do "select the next Proven hole belonging to
+         ReopenHoles.holeFillingArtifactId"
+      let reopenedHoleId: type HoleId = prompt("the HoleId of the next Proven hole belonging to ReopenHoles.holeFillingArtifactId")
+      send command HoleFilling.Hole.ReopenHole(holeId = reopenedHoleId) to outlet HoleFilling.HoleFillingCommandsFwd
+    }
+    on command DiscardFills is {
+      do "discard whatever fill state
+         DiscardFills.holeFillingArtifactId's holes hold"
+    }
+    on other is {
+      error "Unexpected message at the HoleFilling boundary"
+    }
+  } with {
+    briefly "Context boundary relay"
+    described as {
+      |The context is the port at its own boundary. FillHoles, ReopenHoles
+      |and DiscardFills are HoleFilling's own operations; the boundary
+      |drives the Hole aggregate's lifecycle by relaying OpenHole, FillHole
+      |and ReopenHole onto HoleFillingCommandsFwd.
+    }
+  }
+  type HoleId is Id(Hole)  with {
+    briefly "Hole identifier"
+    described as {
+      |Identifies one [[AI FILL]] hole, across its whole lifecycle.
+    }
+  }
+  record FillContextRequest is {
+    requestHoleId: HoleFilling.HoleId with {
+      briefly "Hole"
+      described as {
+        |The hole a fill context is being assembled for.
+      }
+    }
+    requestArtifactId: CodeEmission.ArtifactId with {
+      briefly "Artifact"
+      described as {
+        |The artifact the hole belongs to.
+      }
+    }
+  } with {
+    briefly "Input to fill context assembly"
+    described as {
+      |What AssembleFillContext needs: which hole, and which artifact it
+      |belongs to.
+    }
+  }
+  record FillContext is {
+    contextProcessor: String(1,256) with {
+      briefly "Processor"
+      described as {
+        |The enclosing processor being worked on.
+      }
+    }
+    contextCodeSoFar: String(1,65535) with {
+      briefly "Code"
+      described as {
+        |The artifact's code at the point of the hole.
+      }
+    }
+    contextDeclarations: String(1,65535) with {
+      briefly "Declarations"
+      described as {
+        |The declarations in scope the AI may draw on.
+      }
+    }
+  } with {
+    briefly "Result of fill context assembly"
+    described as {
+      |The local slice a hole is filled against — not the whole model.
+    }
+  }
+  function AssembleFillContext is { 
+    requires record FillContextRequest
+    returns  record FillContext
+    return prompt("the enclosing processor, the artifact's code so far, and the declarations in scope for this hole — not the whole model")
+  } with {
+    briefly "Assemble the local slice a hole is filled against"
+    described as {
+      |Filling depends on a lot of context but NOT the entire context of
+      |the model being generated for. The local resources of the processor
+      |being worked on, and the code written so far, are what the AI should
+      |draw from. Sending more is not more accurate — it is what makes a
+      |fill hallucinate.
+    }
+  }
+  include "Hole.riddl"
+  type HoleRepositoryCommand is one of {
+    HoleRepository.PersistHoleOpened or HoleRepository.PersistHoleFilled or HoleRepository.PersistHoleProved or HoleRepository.PersistHoleReopened
+  } with {
+    briefly "HoleRepository command alternation"
+    described as {
+      |Persistence commands accepted by HoleRepository.
+    }
+  }
+  projector HoleProjection as flow is {
+    updates repository HoleFilling.HoleRepository
+    inlet HoleProjectionFromHole is type Hole.HoleEvent with {
+      briefly "Hole events in"
+      described as {
+        |Events arriving from the Hole entity.
+      }
+    }
+    outlet HoleProjectionToRepository is type HoleFilling.HoleRepositoryCommand
+ with {
+      briefly "Repository commands out"
+      described as {
+        |Persistence commands on their way to the repository.
+      }
+    }
+    handler HoleProjectionHandler is {
+      on openedEvent: event Hole.HoleOpened is {
+        tell command HoleFilling.HoleRepository.PersistHoleOpened(holeId = openedEvent.holeId, holeArtifactId = openedEvent.holeArtifactId, holePrompt = openedEvent.holePrompt) to repository HoleFilling.HoleRepository
+      }
+      on filledEvent: event Hole.HoleFilled is {
+        tell command HoleFilling.HoleRepository.PersistHoleFilled(holeId = filledEvent.holeId) to repository HoleFilling.HoleRepository
+      }
+      on provedEvent: event Hole.HoleProved is {
+        tell command HoleFilling.HoleRepository.PersistHoleProved(holeId = provedEvent.holeId) to repository HoleFilling.HoleRepository
+      }
+      on reopenedEvent: event Hole.HoleReopened is {
+        tell command HoleFilling.HoleRepository.PersistHoleReopened(holeId = reopenedEvent.holeId) to repository HoleFilling.HoleRepository
+      }
+    } with {
+      briefly "HoleProjection handler"
+      described as {
+        |Turns each Hole event into the repository command that writes it.
+      }
+    }
+  } with {
+    briefly "Hole persistence projection"
+    described as {
+      |Builds the stored Hole view from the entity's events.
+    }
+  }
+  repository HoleRepository as sink is {
+    inlet HoleRepositoryFromHoleProjection is type HoleFilling.HoleRepositoryCommand with {
+      briefly "Repository command intake"
+      described as {
+        |Persistence commands arriving from the projection.
+      }
+    }
+    record StoredHole is {
+      holeId: HoleId with {
+        briefly "holeId"
+        described as {
+          |The holeId column of the stored hole row.
+        }
+      }
+      holeArtifactId: CodeEmission.ArtifactId with {
+        briefly "holeArtifactId"
+        described as {
+          |The holeArtifactId column of the stored hole row.
+        }
+      }
+      holePrompt: String(1,4096) with {
+        briefly "holePrompt"
+        described as {
+          |The holePrompt column of the stored hole row.
+        }
+      }
+    } with {
+      briefly "Stored hole row"
+      described as {
+        |The persistence shape of a hole as this repository stores it.
+      }
+    }
+    schema HoleData is relational
+      of holes as record StoredHole
+        index on field StoredHole.holeId
+ with {
+      briefly "Hole data schema"
+      described as {
+        |Relational schema for persisting hole state.
+      }
+    }
+    command PersistHoleOpened is {
+      holeId: HoleId with {
+        briefly "ID"
+        described as {
+          |The stored row to create.
+        }
+      }
+      holeArtifactId: CodeEmission.ArtifactId with {
+        briefly "Artifact"
+        described as {
+          |The artifact this hole belongs to.
+        }
+      }
+      holePrompt: String(1,4096) with {
+        briefly "Prompt"
+        described as {
+          |The do/prompt text this hole came from.
+        }
+      }
+    } with {
+      briefly "Persist HoleOpened"
+      described as {
+        |Instructs this repository to record a new hole.
+      }
+    }
+    command PersistHoleFilled is {
+      holeId: HoleId with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+    } with {
+      briefly "Persist HoleFilled"
+      described as {
+        |Instructs this repository to mark the stored row filled.
+      }
+    }
+    command PersistHoleProved is {
+      holeId: HoleId with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+    } with {
+      briefly "Persist HoleProved"
+      described as {
+        |Instructs this repository to mark the stored row proven.
+      }
+    }
+    command PersistHoleReopened is {
+      holeId: HoleId with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+    } with {
+      briefly "Persist HoleReopened"
+      described as {
+        |Instructs this repository to mark the stored row reopened.
+      }
+    }
+    handler HolePersistence is {
+      on command PersistHoleOpened is {
+        do "insert into HoleData.holes a row for holeId with
+           holeArtifactId and holePrompt"
+      }
+      on command PersistHoleFilled is {
+        do "update HoleData.holes marking the row filled where holeId
+           matches"
+      }
+      on command PersistHoleProved is {
+        do "update HoleData.holes marking the row proven where holeId
+           matches"
+      }
+      on command PersistHoleReopened is {
+        do "update HoleData.holes marking the row reopened where holeId
+           matches"
+      }
+    } with {
+      briefly "Hole persistence handler"
+      described as {
+        |Applies each persistence command to the stored row.
+      }
+    }
+  } with {
+    briefly "Hole repository"
+    described as {
+      |Stores the current shape of each hole.
+    }
+  }
+  connector 'HoleCommand Intake' is from outlet HoleFilling.HoleFillingCommandsFwd to inlet HoleFilling.Hole.HoleCommands with {
+    briefly "Hole commands on their way to Hole"
+    described as {
+      |Carries commands from the context boundary to the entity that owns
+      |them.
+    }
+  }
+  connector 'HoleProjection Feed' is from outlet HoleFilling.Hole.HoleEvents to inlet HoleFilling.HoleProjection.HoleProjectionFromHole with {
+    briefly "Hole events feeding HoleProjection"
+    described as {
+      |Carries the entity's events to the projection that persists them.
+    }
+  }
+  connector 'HoleProjection Storage' is from outlet HoleFilling.HoleProjection.HoleProjectionToRepository to inlet HoleFilling.HoleRepository.HoleRepositoryFromHoleProjection with {
+    briefly "HoleProjection commands on their way to HoleRepository"
+    described as {
+      |Carries persistence commands to the repository that acts on them.
+    }
+  }
+} with {
+  briefly "Filling the holes an emission could not derive"
+  described as {
+    |Holes arise in different places and at different phases across every
+    |artifact, and filling one depends on a local slice of context rather
+    |than the whole model — the enclosing processor, the artifact's code
+    |so far, and the declarations in scope. A context of its own because
+    |assembling that slice, and bounding the retry cycle against runaway
+    |AI backend calls, are both modelled responsibilities in their own
+    |right.
+    |
+    |Only a do/prompt statement produces a hole. Conditions and branching
+    |are not holes: RIDDL 2.0's typed holes, closed boolean expressions and
+    |structured match patterns already made those deterministic.
+  }
+}
