@@ -137,8 +137,18 @@ Every task's requirements implicitly include this section.
 
 ```bash
 RIDDLC=~/.cache/riddlc/2.0.0-rc.26/bin/riddlc
-$RIDDLC --no-ansi-messages validate tooling/code-generator/code-generator.riddl 2>&1 | tail -30
+$RIDDLC --no-ansi-messages --provide-tips validate tooling/code-generator/code-generator.riddl 2>&1 | tail -30
 ```
+
+**`--provide-tips` is part of the gate, not a convenience.** Some completeness
+checks are tip-bearing and riddlc suppresses them without it. Measured
+2026-08-27: the same model reported `0 errors, 0 warnings` plain and
+`1 warning (1 completeness)` with the flag — a real
+`entity-command-not-handled` on a command declared with `yields` but given no
+`on command` clause. The plain form is the weaker gate and its zero is not
+the zero this corpus means. (The 190 pre-existing models are clean under
+both, checked on three of them — so this flag exposes new defects, it does
+not reclassify old ones.)
 
 **Read both streams.** `validate` has no stdout product — its diagnostics go
 to **stderr**. A harness reading stdout alone reports a clean corpus always,
