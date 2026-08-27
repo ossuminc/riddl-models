@@ -50,7 +50,7 @@ project — the `--provide-tips` gate, `any of`/`one of` separators,
 invariants, and the "declared but undriven" pattern (hit **four** times) —
 are also now in CLAUDE.md; do not re-derive them from the task reports.
 
-### Upstream: the saga-boundary task landed, and it is BIGGER than asked
+### Upstream: the saga-boundary task landed, and reactive-bbq is fixed
 
 The task filed 2026-08-26
 (`../riddl/task/2026-08-26-saga-tell-must-not-reach-into-a-context.md`,
@@ -58,14 +58,31 @@ now in riddl's `task/done/`) shipped as `msg-target-crosses-boundary`, an
 **Error**. It is wider than the ask: it also covers `forward`, and applies
 to **any** `tell`/`send`/`forward` from outside a context naming something
 inside it — not just saga steps. riddl filed the consequence back as
-**`task/2026-08-27-address-the-context-not-its-contents.md`** (still
-pending triage, not yet actioned): **6 sites in reactive-bbq** now trip
-it — 5 in `restaurant/{FrontOfHouseContext,OnlineOrderingContext}.riddl`,
-1 in `corporate/MenuManagementContext.riddl` — each an ordinary `on`
-clause reaching into a sibling context's entity. The fix is a relay
-(context inlet → bound handler → onward), not a path rename; riddl's own
-reply cites a worked example in `language/input/everything_APlant.riddl`.
-**Not yet started.**
+`task/2026-08-27-address-the-context-not-its-contents.md`, now in this
+repo's own `task/done/` with its Results appended:
+**6 sites in reactive-bbq** tripped it — 5 in
+`restaurant/{FrontOfHouseContext,OnlineOrderingContext}.riddl`, 1 in
+`corporate/MenuManagementContext.riddl` — each an ordinary `on` clause
+reaching into a sibling context's entity.
+
+**No relay was built — every one already existed.** Kitchen, Bar, Loyalty
+and FrontOfHouse all already carry the canonical inlet -> bound handler ->
+outlet -> connector -> entity wiring; the six `tell`s simply bypassed it.
+The fix was six one-line changes, `tell <msg> to entity <Context>.<Entity>`
+-> `tell <msg> to context <Context>` (riddlc's own `--provide-tips`
+suggestion, verbatim). The sixth crosses Corporate -> Restaurant too, and
+needed no new connector: an adaptor's `tell` is exempt from the
+same-domain rule ordinary handlers face (CM 3.6), and FrontOfHouse's
+boundary handler already had the `on createOrder` clause waiting.
+
+Verified against the staged `2.0.0-rc.26-5-ab3ada49` (has the rule) and
+the pinned `2.0.0-rc.26` (does not, so unaffected either way): 0 errors, 0
+warnings, same 3905 definitions before and after. Corpus-wide sweep with
+the staged binary: 0 findings, matching the pre-existing zero baseline
+with the new rule now live. `sbt r`/`pc`/`v`/`b` and
+`verify-bast-roundtrip.sh` all green; `sbt b` regenerated only
+`reactive-bbq.bast`. Full detail, including the RED canary, is in
+`task/done/2026-08-27-address-the-context-not-its-contents.md`.
 
 ### Older campaigns, unstarted
 
