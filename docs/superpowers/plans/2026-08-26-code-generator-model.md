@@ -104,6 +104,17 @@ Every task's requirements implicitly include this section.
   have previously written live credentials into a commit. Read the message
   back with `git log -1 --format=%B`.
 - **Commits are single-purpose.** One task, one commit.
+- **A reference's KEYWORD must match the referent's DECLARATION keyword.**
+  `record PackagePath is {…}` is referenced as `requires record PackagePath`;
+  `type SpendForPoints is {…}` as `requires type SpendForPoints`. Mismatching
+  them is `ref-wrong-keyword`. The corpus contains both forms for exactly this
+  reason (`LoyaltyContext.riddl:57` vs `OrderFulfillmentSaga.riddl:29`) —
+  neither is "the" spelling, the declaration decides. Same applies to a
+  repository inlet naming a single command: `is command X`, not `is type X`.
+- **`forward` requires the handled message to declare `yields` or `replies`.**
+  A boundary relay can only `forward` a command that yields an event. Where a
+  context has no aggregate its commands declare no `yields`, so its boundary
+  uses `send` (or does the work directly — see the stateless rule below).
 - **An `Id(X)` type is declared at CONTEXT scope, never inside the entity.**
   riddlc reports `entity-id-defined-inside` — "move it to the containing
   context so other entities can reference it" — as a completeness finding,
@@ -965,8 +976,8 @@ context Naming is {
     }
   }
   function DerivePackage is {
-    requires type PackagePath
-    returns type DerivedPackage
+    requires record PackagePath
+    returns record DerivedPackage
     return prompt("basePackage followed by each segment of hierarchyPath, lower-cased, with every non-alphanumeric character mapped to underscore")
   } with {
     briefly "Derive a package from a definition's hierarchy"
@@ -978,8 +989,8 @@ context Naming is {
     }
   }
   function Sanitize is {
-    requires type RawName
-    returns type SanitizedName
+    requires record RawName
+    returns record SanitizedName
     return prompt("sourceName with every character illegal in the target language replaced by underscore")
   } with {
     briefly "Make a model name legal in the target"
@@ -1063,8 +1074,8 @@ self-enforcing (spec §4.5) and what call `Naming`:
     }
   }
   function SelectParadigm is {
-    requires type ParadigmSelection
-    returns type SelectedParadigm
+    requires record ParadigmSelection
+    returns record SelectedParadigm
     return prompt("the selectedParadigm recorded in TargetProfileData.profiles for profileTarget and selectionKind")
   } with {
     briefly "Choose the paradigm for a kind on a target"
@@ -1083,8 +1094,8 @@ planned artifact's package, calling **both** `Naming.DerivePackage` and
 
 ```riddl
   function LowerDefinition is {
-    requires type LoweringRequest
-    returns type PlannedArtifact
+    requires record LoweringRequest
+    returns record PlannedArtifact
     let derived = call function Naming.DerivePackage(hierarchyPath = LoweringRequest.definitionPath, basePackage = LoweringRequest.basePackage)
     let safe = call function Naming.Sanitize(sourceName = LoweringRequest.definitionName)
     return prompt("a planned artifact in package derived.packageName named safe.safeName, per the catalogue rule for this kind and paradigm")
@@ -1350,8 +1361,8 @@ the fill-context assembly function:
 
 ```riddl
   function AssembleFillContext is {
-    requires type FillContextRequest
-    returns type FillContext
+    requires record FillContextRequest
+    returns record FillContext
     return prompt("the enclosing processor, the artifact's code so far, and the declarations in scope for this hole — not the whole model")
   } with {
     briefly "Assemble the local slice a hole is filled against"
