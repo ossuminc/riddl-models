@@ -1211,8 +1211,43 @@ repository now has **three correct-but-different** denominators, so
 | `sbt v` / `pc` / `collect-warnings.py` | excludes `patterns/` | 189 |
 | `sbt checkAll` | models + pattern examples as test cases | 191 |
 
-Flagged and deliberately left as-is at Task 11 (`.superpowers/sdd/
-2026-08-26-code-generator-model/task-10-12-report.md:36,75,88`) rather
-than picked arbitrarily. Fix requires Reid's call on which denominator
-the sentence should mean, then a matching update to the NAICS coverage
-prose around it.
+Flagged and deliberately left as-is during the code-generator model's
+Task 11 review (table above is the full finding — the session note it
+was first flagged in lived under the gitignored `.superpowers/sdd/`
+and does not survive the tree) rather than picked arbitrarily. Fix
+requires Reid's call on which denominator the sentence should mean,
+then a matching update to the NAICS coverage prose around it.
+
+## 27. Lowering catalogue consultation is unenforced
+
+Design spec §4.5
+(`docs/superpowers/specs/2026-08-26-code-generator-model-design.md`)
+claims consulting `LoweringCatalogue` makes an unused rule surface as
+a `usage` finding — the corpus's zero standard would then turn a
+dead rule into a build failure. The model as built cannot deliver
+that: `LowerDefinition`'s body
+(`tooling/code-generator/PlanningContext.riddl`, function
+`LowerDefinition`) is a bare `prompt` with no reference to
+`StoredLoweringRule`, because the catalogue's rules live as
+`described as` prose on `LoweringCatalogue`, not as RIDDL
+definitions riddlc can track usage of. Making consultation checkable
+would require turning each lowering rule into its own referenceable
+definition, one per `(definitionKind, paradigm)` pair — the design's
+own §4.5.1 table already runs to ten paradigm rows, so this would
+multiply out to dozens of definitions purely to make an unused-rule
+warning possible, a large model-size cost for one usage check. The
+gap also runs the other way and is equally unclosed: a definition
+kind with no rule at all is invisible to riddlc, visible only by
+inspection.
+
+`LowerDefinition`'s own `described as` already stated this gap
+honestly; the final review's correction was to `TargetProfiles`'
+`described as`, which had claimed its three worked examples
+"exercise" the paradigm indirection rather than merely assert it —
+now reworded to match `LowerDefinition`'s honesty. This item tracks
+the underlying design gap so it does not survive only in prose.
+Wanted: either accept the gap as permanent (cheapest, current
+default) or design a lighter-weight enforcement than one definition
+per rule — e.g. a generated completeness check outside riddlc's
+usage pass — before a real generator is built on this catalogue
+shape.

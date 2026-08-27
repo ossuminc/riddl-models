@@ -31,6 +31,13 @@ each definition, it selects the paradigm the target's profile names
 for that definition's kind, consults the matching lowering rule, and
 produces the planned artifact list. Everything upstream and
 downstream of `Planning` is target-agnostic by construction.
+**Before copying this structure, know its real status**: the
+catalogue's rules live as prose in `LoweringCatalogue`'s
+`described as`, not as RIDDL definitions `LowerDefinition` actually
+references, so nothing here mechanically checks that consultation
+happens or that every definition kind has a rule — see
+`LowerDefinition`'s own note in `PlanningContext.riddl` for what a
+real implementation still owes.
 
 **`SpecEmission`** emits the test suite derived from the model. It is
 necessarily red: the suite states what the filled code must do, and
