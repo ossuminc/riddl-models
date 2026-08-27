@@ -3,7 +3,12 @@
 **Date:** 2026-08-26
 **Branch:** `release/2`
 **riddlc:** `2.0.0-rc.26` (published; `riddlcPath := None`)
-**Status:** design approved in conversation; not yet implemented
+**Status:** revised after Reid's review, 2026-08-26. Sections **2.3**,
+**3**, **4.5**, **5**, **7**, **8**, **9** and **Appendix A** are new or
+rewritten in response to it, including his two follow-up rulings — ECS and
+tuple space dropped as viable targets, and a missing event-sourcing library
+made a cost rather than a disqualification. **No open questions remain for
+Reid.** Awaiting approval to plan; no RIDDL written.
 
 ---
 
@@ -80,22 +85,164 @@ code.
 VASTLY more relevant to the generic design than anything in the CM."* The CM
 supplies rules; riddlg supplies the design.
 
-### 2.3 Genericity is expressed as required capabilities
+### 2.3 What "generic" means: a precedence over representation paradigms
 
-RIDDL has no generics, so "entity → actor | object | bean" cannot be
-parameterised. The model therefore does not name a target construct at all.
-Each lowering states the **capabilities** its construct requires —
-single-writer per identity, ordered mailbox, durable append-only journal,
-location-transparent addressing — and a target profile declares which the
-platform natively provides. The decision is then a function of the two: use
-the native construct, or emit a facade that supplies the missing guarantee.
+This is the design's centre, and the previous draft got it wrong. That draft
+read "generic" as **genericity** — a type-parameter problem, "RIDDL has no
+generics, so `entity → actor | object | bean` cannot be parameterised."
+**Reid's correction, 2026-08-26:**
 
-This is the CM's own escape hatch, §4.1: *"where the target (e.g.,
-TypeScript/Effect) does not [support Actors], implementing the actor model can
-be challenging, and a runtime library should probably be developed to provide
-an Actor facade."*
+> So, all this is what I meant by a "generic" model, not the Genericity you
+> chose to include in section 2.3. Generic in the sense that this is the
+> uber-design for ANY code generator and we have to generalize (make generic)
+> the kinds of computing abstractions that will be used.
 
-Consequence: a new target is a new **profile**, not a new model.
+The model is generic because it abstracts over **the kinds of computing
+abstraction a target can offer, in an order of precedence**. It is not
+generic in the parametric-polymorphism sense at all, and the absence of
+generics in RIDDL turns out to be irrelevant to it.
+
+#### 2.3.1 Why the actor is first: every RIDDL processor is the same machine
+
+Reid:
+
+> All processors are essentially the same: they have input messages,
+> communicate over abstract channels/connectors, process messages the way
+> actors do (one at a time) while different processors can run in parallel
+> and the set of statements they can use is limited to the 19 that RIDDL
+> defines today. The "do" command allows an arbitrarily rich algorithmic
+> richness that can be written by AI. That model is based on actors and
+> actor systems.
+
+All four clauses check out against the grammar (§6.7). The statement count
+is exactly **19**, and `do` is not a twentieth: `prompt_statement =
+("do" | "prompt") literal_string_block` — `do` and `prompt` are two
+spellings of one statement. So the escape hatch Reid describes is a single
+production, which is precisely why it can be the single AI-fill seam (§4.7).
+
+That is the argument for the ordering. It is not that actors are
+fashionable; it is that a RIDDL processor **is** an actor — serial message
+consumption per identity, parallel across identities, interaction only over
+abstract channels — so the actor is the representation that requires no
+facade at all. Everything below it in the precedence needs something built.
+
+#### 2.3.2 The second tier: reactive architecture, not just the actor
+
+Below the representation choice sits a set of runtime tenets the target must
+also supply, and this is what makes the three chosen targets the ones they
+are. Reid:
+
+> The next thing to reach for are the tenets of reactive architecture:
+> asynch non-blocking interactions and invocations, reactive streams, R2DBC
+> (reactive JDBC), message queuing between contexts, etc. There are reasons
+> I selected Quarkus/Java, Pekko/Scala, and Typescript/Effect.
+
+| Target | Representation tier | Reactive tenets | Event sourcing / CQRS |
+|---|---|---|---|
+| Pekko / Scala | **actor**, native | Pekko Streams, async by construction | Pekko Persistence, native |
+| Quarkus / Java | **bean**, actor by facade | Mutiny, SmallRye Reactive Messaging, Hibernate Reactive | not native |
+| TypeScript / Effect | **actor** via `@effect/cluster`; fibers + `Queue` otherwise | Effect `Stream`, async by construction | generated, if no library |
+
+**The event-sourcing column does not gate a target — Reid, 2026-08-26:**
+
+> Regardless of whether event sourcing is supported by Effect or not, Effect
+> is a viable candidate and event sourcing could be handled by generated
+> code if there is no suitable library/plugin available.
+
+This settles what had been recorded as an open question, and it settles more
+than the Effect case. CM §4 makes event-sourced entities a first-class
+lowering, so a target with no durable append-only journal owes one — but
+*owing* a capability and *failing* on it are different things. **The
+generator can emit the journal.** The library is a shortcut, not a
+prerequisite, and the same reasoning covers a missing mailbox, missing
+sharding, or missing reactive data access. That is precisely what the facade
+bill in §2.3.4 accounts for, and why the taxonomy has one disqualifier
+(§2.3.3) rather than many.
+
+The precedence also explains what a *bad* target looks like without having
+to blacklist anything. Reid: *"if someone were to target, say, Visual Basic,
+they would have a hard go of it; much harder than Go, or Swift, or Python,
+where these kinds of programming idioms, practices, patterns and libraries
+are already implemented."* Go lands on CSP natively, Swift has `actor` in
+the language, Python has `asyncio` — each reaches a high tier cheaply. A
+target that reaches only `object` owes every guarantee as hand-written
+scaffolding, and the profile makes that bill explicit rather than letting a
+generator discover it artifact by artifact.
+
+#### 2.3.3 The admission test, and the full taxonomy
+
+Reid's bar for whether a target is expressible at all:
+
+> As long as that basic tenet (data + behavior in one abstraction) is
+> upheld, we can probably translate riddl models to it.
+
+So **encapsulation is the admission test**, and the precedence among those
+that pass is decided by how much of the rest a paradigm supplies *natively*.
+A RIDDL processor needs four things; encapsulation admits, and the other
+three rank:
+
+- **E — encapsulation:** data and behaviour in one unit *(admission)*
+- **S — serial execution:** one message at a time per identity
+- **A — addressable identity:** location-transparent, address-not-reference
+- **C — channel interaction:** asynchronous, non-blocking, no shared memory
+
+| Paradigm | E | S | A | C | Representative |
+|---|:-:|:-:|:-:|:-:|---|
+| **Actor** | ● | ● | ● | ● | Pekko, Akka, Erlang/Elixir, Orleans, `@effect/cluster` |
+| **Active Object** | ● | ● | ◐ | ● | ACE, proxy-plus-scheduler-plus-queue |
+| **CSP process** | ● | ● | ○ | ● | Go, Occam, `core.async` |
+| **Service / microservice** | ● | ○ | ● | ● | SOA, microservices |
+| **DDD Aggregate** | ● | ◐ | ● | ○ | the pattern RIDDL's `aggregate` names |
+| **FRP / Reactive Streams** | ◐ | ● | ○ | ● | RxJS, RxJava, Pekko Streams, Effect `Stream` |
+| **Bean / component** | ● | ○ | ◐ | ○ | EJB, CDI, Quarkus, OSGi, Spring, COM |
+| **Monadic state machine** | ● | ● | ○ | ○ | Elm, Redux, Haskell `State` |
+| **Object** | ● | ○ | ○ | ○ | any OO language |
+| **DCI** | ◐ | ○ | ● | ○ | roles bound to data per context |
+| ~~ECS~~ | ○ | — | — | — | game engines — **fails admission**, see below |
+| ~~Tuple space / Linda~~ | ○ | — | — | ● | JavaSpaces, Linda |
+
+● native · ◐ partial or container-dependent · ○ must be supplied by facade
+
+So Reid's short answer — **actor, bean, object** — is the top, middle and
+floor of this table, and those three are the ones a generator author will
+actually meet most often. The rest of the table exists so that a target that
+lands somewhere unusual (a Go generator, an Elm front end) has a named row
+rather than being forced into the wrong one.
+
+**Two entries from Reid's list are excluded, on his ruling of
+2026-08-26** — *"I'm okay with dropping ECS/tuple-space as a viable
+abstraction."* Both were raised here because they fail the admission test
+they were listed under. ECS's own core idea is the opposite of the tenet —
+*"instead of combining state and behavior in a single object, state is held
+in Entities/Components and behavior is executed by Systems"* — and tuple
+space is the same shape, inert tuples with the processes elsewhere. Both are
+sound architectures; neither can receive a RIDDL processor without first
+rebuilding the encapsulation RIDDL assumes.
+
+**This is the taxonomy's only disqualifier, and that is the point.** Every
+other gap — no mailbox, no sharding, no journal, no reactive driver — is a
+facade the generator emits (§2.3.2). Failing to bundle data with behaviour
+is the one thing no amount of generated code can paper over, because there
+is no boundary to generate *into*.
+
+#### 2.3.4 Capabilities remain — as the facade bill, not the selector
+
+The previous draft's capability mechanism survives, demoted to its proper
+job. The precedence **selects** the paradigm; capabilities **describe what
+the selection costs**.
+
+A `TargetProfile` names, per RIDDL processor kind, the highest-precedence
+paradigm the target supplies, and every capability that paradigm leaves
+unmet becomes a facade the generator must emit — the ○ and ◐ cells above,
+made concrete. This is the CM's own escape hatch generalised beyond the
+actor case it currently states (§4.1):
+
+> where the target (e.g., TypeScript/Effect) does not [support Actors],
+> implementing the actor model can be challenging, and a runtime library
+> should probably be developed to provide an Actor facade.
+
+Consequence, unchanged from the previous draft and now better founded: **a
+new target is a new profile, not a new model.**
 
 ### 2.4 A lowering is behaviour, not an entity
 
@@ -114,35 +261,59 @@ teach a generator builder a structure they should not copy.
 
 ### 2.5 Scope: the generation core only
 
-In scope: intake and the generability bar, naming derivation, target profile
-and mapping tables, per-definition lowering, spec and code emission, hole
-filling, and the proving gates.
+In scope: intake and the generability bar, naming derivation, target profiles
+and the lowering catalogue, per-definition lowering, spec and code emission,
+hole filling, and the proving gates.
 
 Out of scope: auth, Keycloak tiers, freemium gating, serve mode, MCP, and AI
 provider plumbing. Those are riddlg-the-product. A bespoke client generator
 would reproduce none of them.
 
+**§5 carries the full scope statement**, including the two boundaries that
+are narrower than an earlier draft claimed — the target runtime, which is in
+scope as catalogue and templates, and the eight CM aspects, which bind the
+design without being model data.
+
 ---
 
 ## 3. Location and gating
 
-`tooling/code-generation/code-generator/`
+`tooling/code-generator/`
+
+**Two levels, not three** — Reid, 2026-08-26: *"In section 3, I don't think
+we need 3 levels for this so `tooling/code-generator` is sufficient."* The
+corpus convention is `sector/subsector/model`, and the intermediate
+`code-generation/` level would have held exactly one model with no sibling
+in prospect.
+
+Verified safe, 2026-08-26: nothing in the build or the scripts assumes a
+depth. `build.sbt` sets `riddlcSourceDir := baseDirectory.value` and the
+plugin discovers models by scanning for `.conf` files; every script in
+`scripts/` globs `**/*.conf` and uses `relative_to(ROOT).parts` only to
+exclude `patterns/`. A two-level model is found by all of them.
 
 `tooling/` is a **new, 19th top-level sector**, chosen over squeezing the
 model into `technology/`. It gives future tooling models (Synapify, riddlc
 itself) a home, and is honest that this is our own toolchain rather than an
 industry domain.
 
+**No NAICS code** — Reid, 2026-08-26: *"a NAICS code is not needed for
+tooling so don't stress about it."* This is a deliberate, recorded exception
+to the convention in `CLAUDE.md` that every model README carries one, and it
+generalises to the `tooling/` sector as a whole: these models describe our
+own toolchain, which has no industry classification to give. `CLAUDE.md`'s
+NAICS paragraph gains that exception (§8, criterion 10).
+
 Consequences, all of which are wanted:
 
-- Every corpus gate applies: `sbt v`, `sbt pc`, `sbt checkAll`, the library-API
-  test suite, and a committed `.bast`.
+- Every corpus gate applies: `sbt v`, `sbt pc`, `sbt checkAll`, the
+  library-API test suite, and a committed `.bast`.
 - The corpus census moves **190 → 191**.
 - `CLAUDE.md`'s sector table and its "18 top-level sectors" line become 19;
   `README.md`'s repository tree gains a `tooling/` entry (it carries a tree,
   not a sector table).
 - The model must reach and hold **zero findings of every severity**, the
-  standard the rest of the corpus is held to.
+  standard the rest of the corpus is held to (§8, criterion 3).
 
 ---
 
@@ -155,7 +326,7 @@ domain CodeGeneration
 ├── saga GenerationPipeline        (domain level; addresses CONTEXTS only)
 ├── context Intake                 (GenerationRun entity)
 ├── context Naming                 (pure functions; no ports, no processors)
-├── context Planning               (LoweringRule repository)
+├── context Planning               (LoweringRule + TargetProfile repos)
 ├── context SpecEmission           (the derived, deliberately-red suite)
 ├── context CodeEmission           (Artifact entity, Decision repository)
 ├── context HoleFilling            (Hole entity, fill-context assembly)
@@ -208,7 +379,7 @@ none is stateless and holds only handlers or functions.
 |---|---|---|
 | `Intake` | `GenerationRun` entity | Load the model (source or `.bast`); apply the generability bar; refuse |
 | `Naming` | none — functions only | Hierarchy → package, sanitization, `namespace` precedence |
-| `Planning` | `LoweringRule` repository | One lowering function per definition kind; produce planned artifacts |
+| `Planning` | `LoweringRule`, `TargetProfile` repositories | Select a paradigm per kind; lower; produce planned artifacts |
 | `SpecEmission` | none | Emit the test suite derived from the model |
 | `CodeEmission` | `Artifact` entity, `Decision` repository | Emit structure and headers; open holes; record rationale |
 | `HoleFilling` | `Hole` entity | Assemble each hole's local context; fill it |
@@ -243,17 +414,64 @@ errors, and is callable cross-context (§6.2).
 
 ### 4.5 Planning and the lowering catalogue
 
-`Planning` holds a **`LoweringRule` repository**, one record per RIDDL
-definition kind, stating the capabilities that kind requires, the artifacts it
-plans, and the guarantees that must survive lowering. Each lowering function
-**consults** the repository rather than hard-coding its rule.
+`Planning` holds a **`LoweringRule` repository**, one record per lowering
+decision, stating the capabilities the target construct requires, the
+artifacts it plans, and the guarantees that must survive lowering. Each
+lowering function **consults** the repository rather than hard-coding its
+rule.
 
 Consulting rather than sitting beside is deliberate. It is what makes the
 catalogue partially self-enforcing: a rule nothing consults surfaces as a
 `usage` finding, and this corpus's zero standard turns that into a build
-failure. It does not enforce the converse — a definition kind with no rule is
-still only visible by inspection — so that gap is stated here rather than
-pretended away.
+failure. It does not enforce the converse — a definition kind with no rule
+is still only visible by inspection — so that gap is stated here rather than
+pretended away (§7.2).
+
+#### 4.5.1 The key is (definition kind × paradigm), not (definition kind × target)
+
+Reid raised the shape of the catalogue and left the call to me:
+
+> The lowering catalogue in 4.5 is most useful if it is specified for each
+> kind of target. Then the different kinds of targets only need to be
+> considered during lowering and the rest of the processing can be shared in
+> common across multiple target language/library/systems. That may or may
+> not be useful; I'll leave it to you to decide.
+
+**Adopting the goal, adjusting the key.** The goal — confine all
+target-awareness to lowering, share everything else — is right and the model
+is built to it: `Intake`, `Naming`, the traversal in `Planning`,
+`SpecEmission`'s derivation, `CodeEmission`'s mechanics, `HoleFilling` and
+`Proving` are all target-agnostic, and `LoweringRule` is the only place a
+target can be seen.
+
+Keying literally *by target* is the part I would change. Targets are
+unbounded and mostly identical to one another: a Quarkus catalogue and a
+Spring catalogue would differ in imports and agree on all forty lowerings,
+so the catalogue would carry N near-duplicate copies and the drift risk in
+§7.2 would multiply by N. **Paradigms are the axis that actually varies** —
+the table in §2.3.3 has ten rows and will not grow much — and the paradigm
+is what determines whether a lowering needs a facade.
+
+So:
+
+- **`LoweringRule`** is keyed by `(definitionKind, paradigm)`. "An
+  event-sourced entity lowered onto an **actor**" is one rule; "onto a
+  **bean**" is another, and it is the one that names the facades.
+- **`TargetProfile`** is a small record per target: for each RIDDL processor
+  kind, the highest-precedence paradigm this target supplies, plus the
+  capability gaps it must fill (§2.3.4).
+- **Selection** is `profile(kind) → paradigm`, then
+  `catalogue(kind, paradigm) → rule`.
+
+Adding Quarkus after Pekko therefore adds **one profile**, not forty rules,
+and the rules it selects are already exercised by any other bean-tier
+target. Adding Visual Basic adds a profile that resolves everything to
+`object` and consequently owes the longest facade bill in the catalogue —
+which is Reid's "hard go of it", made mechanical.
+
+**Where a target genuinely is unique** — a library's own idioms, its import
+lines, its build file — that is emission, not lowering, and it belongs in
+the templates of §5.1 rather than in the catalogue.
 
 ### 4.6 The two emissions
 
@@ -324,12 +542,69 @@ counter" may be the wrong answer.
 
 ---
 
-## 5. Out of scope
+## 5. Scope — and what the boundaries do NOT mean
 
-- Any model of the target *runtime system* (§2.1).
-- The eight CM aspects as model data (§2.2).
-- riddlg's product surface: auth, tiers, serve, MCP, AI providers (§2.5).
-- Per-target concrete models. One model plus target profiles (§2.3).
+Reid pushed back on the previous draft's flat "out of scope" list, and he is
+right that it was blunt where the truth is nuanced:
+
+> You characterized several things as "out of scope" in section 5. But I
+> think it is more nuanced than that.
+
+### 5.1 The target runtime IS in the design — as catalogue and templates
+
+Previously listed as out of scope. Reid:
+
+> The model of the target runtime section is essentially that lowering
+> catalogue in 4.5. A series of templates would suffice as well, especially
+> if substitution were possible. So the target runtime model must be
+> considered in the generic design, but perhaps not detailed; still, it is
+> instructive to be aware of the kinds of abstractions available in computer
+> science constrained to distributed reactive programming.
+
+What §2.1 actually retired was a *separate domain* for generated source — an
+AST per target language, or a set of running-system behaviours. What
+survives, and is squarely in scope, is the target runtime as it is actually
+needed:
+
+- the **`LoweringRule` catalogue** (§4.5) — what each RIDDL construct
+  becomes on each paradigm, and what facade covers the gap;
+- **emission templates with substitution** — the per-target idiom,
+  imports and build scaffolding that the catalogue deliberately does not
+  carry;
+- the **paradigm taxonomy** (§2.3.3) — the survey of what distributed
+  reactive programming has to offer, which is the "instructive to be aware
+  of" part.
+
+What stays out is a *detailed* model of any one runtime. The design must
+know that Pekko Persistence exists and what guarantee it supplies; it must
+not model Pekko.
+
+### 5.2 The eight CM aspects are constraints, not architecture
+
+§2.2's ruling stands — they are not model **data** — but "out of scope" was
+the wrong word for them. Reid:
+
+> Also the 8 CM aspects are not to be ignored, they just don't form the
+> architecture of the model we're trying to build. Those tenets are still
+> relevant in the details of the design as they must be upheld by that
+> design.
+
+So they bind, at three places: each lowering's `described as` states which
+guarantee it preserves; the narrow class of aspects that are genuine
+two-outcome decisions become **invariants** on the lowering that chooses
+(§2.2); and the generability bar in `Intake` (§4.3) is itself an aspect
+turned operational. They are acceptance criteria for the generator's output
+and they are checked — they are simply not forty fields on a record.
+
+### 5.3 Genuinely out
+
+- **riddlg's product surface** — auth, Keycloak tiers, freemium gating,
+  serve mode, MCP, AI-provider plumbing. Reid confirmed: *"You're correct
+  about riddlg's surface, we're only considering its code generation
+  capability here."* A bespoke client generator reproduces none of it.
+- **Per-target concrete models.** One model, plus profiles and templates
+  (§4.5.1).
+- **A generated-source domain.** Retired by Reid in design (§2.1).
 
 ---
 
@@ -403,48 +678,203 @@ answer the "module inside a context" question raised in design.
 
 ---
 
+### 6.7 There are exactly 19 statements, and `do` is not a twentieth
+
+`ebnf-grammar.ebnf:263-267` lists `statement` as 19 alternatives plus
+`comment`: `when`, `match`, `foreach`, `send`, `tell`, `forward`, `yield`,
+`reply`, `set`, `let`, `put`, `return`, `terminate`, `prompt`, `code`,
+`error`, `require`, `morph`, `become`. Reid's count is exact.
+
+Two consequences for the design:
+
+- **`do` and `prompt` are one statement**, spelled two ways:
+  `prompt_statement = ("do" | "prompt") literal_string_block` (line 471).
+  The arbitrary-algorithmic-richness escape hatch is therefore a single
+  production, which is what lets `HoleFilling` (§4.7) have one seam rather
+  than several.
+- **`code_statement` is a second, literal escape hatch** —
+  ` ```("scala" | "java" | "python" | "mojo") code_contents``` ` (line 472)
+  — and its language list is **closed and does not include TypeScript**,
+  though TypeScript/Effect is one of the three named targets (§2.3.2). A
+  model carrying inline target code for a Pekko/Scala generator has no
+  equivalent for an Effect one. To be filed upstream (§9).
+
+---
+
 ## 7. Risks and open questions
 
-1. **Size.** Seven contexts with declared APIs, three aggregates, a
-   repository and ~40 lowering functions is a large model — comparable to
-   reactive-bbq. It will not reach zero findings in one pass.
+1. **Size.** Seven contexts with declared APIs, three aggregates, three
+   repositories and ~40 lowering functions is a large model — comparable to
+   reactive-bbq. It will not reach zero findings in one pass; criterion 3
+   is a bar to converge on, not a first-run expectation.
 2. **The catalogue can drift.** Consulting makes an *unused* rule visible;
-   nothing makes a *missing* rule visible (§4.5).
+   nothing makes a *missing* rule visible (§4.5). Keying by paradigm rather
+   than target (§4.5.1) bounds how far it can drift but does not close the
+   gap.
 3. **The retry cycle may be clumsy** to express without a loop construct
-   (§4.8). If so, that is the dogfooding finding, not a defect to work around.
-4. **The sideways saga case is untested** (§6.1) and should be settled before
-   anyone relies on the corrected CLAUDE.md rule in the other direction.
+   (§4.8). If so, that is the dogfooding finding, not a defect to work
+   around.
+4. **The sideways saga case is untested** (§6.1) and should be settled
+   before anyone relies on the corrected `CLAUDE.md` rule in the other
+   direction.
 5. **`.bast` and the census.** Adding the model moves the corpus to 191 and
    requires a committed `.bast`; `verify-bast-roundtrip.sh` requires the
    source to be in prettify canonical form.
+6. **`code_statement` has no TypeScript** (§6.7). Not blocking for this
+   model, but it undercuts one of the three named targets.
 
 ---
 
 ## 8. Acceptance criteria
 
-1. The model lives at `tooling/code-generation/code-generator/` with a `.conf`
-   naming its entry file.
+1. The model lives at `tooling/code-generator/` with a `.conf` naming its
+   entry file.
 2. `riddlc validate --corpus .` reports **191 models, 0 failed, 191 ok**.
-3. `collect-warnings.py`, run with the pinned binary, reports **0 findings**
-   for the new model — every severity, style included.
+3. **The model meets the bar of the rest of the corpus: 0 errors and 0
+   warnings of any kind** — style, usage, missing and completeness
+   included. Reid, 2026-08-26: *"the model produced must meet the bar of
+   the rest of the corpus: 0 errors, 0 warnings (of any kind). That must be
+   validated by the staged riddlc or the installed riddlc at or later than
+   2.0.0-rc.26."* Measured with `collect-warnings.py` run against a binary
+   whose `riddlc info` reports **≥ 2.0.0-rc.26**, recorded in the commit —
+   not with `sbt v`, which validates through the `.conf` and is the lenient
+   gate (`CLAUDE.md`), and not with `../bin/riddlc`, which is currently a
+   tag behind.
 4. `sbt v`, `sbt pc` and `sbt checkAll` are green.
 5. A committed `.bast` that survives `verify-bast-roundtrip.sh`.
 6. No saga step names any definition inside a context.
-7. Every RIDDL definition kind that a generator must lower has a
-   `LoweringRule` record, and every lowering function consults one.
-8. `CLAUDE.md`'s "**18 top-level sectors**" (line 66) reads 19, its sector
+7. Every RIDDL definition kind a generator must lower has a `LoweringRule`
+   for each paradigm it can land on, and every lowering function consults
+   one (§4.5.1).
+8. At least two `TargetProfile` records exist — one actor-tier, one
+   bean-tier — so the paradigm indirection is exercised rather than
+   asserted.
+9. `CLAUDE.md`'s "**18 top-level sectors**" (line 66) reads 19, its sector
    table gains a `tooling` row, and `README.md`'s repository-tree listing
    gains a `tooling/` entry. README carries a directory tree, not a sector
    table — checked 2026-08-26.
-9. A README for the model explaining, for a generator builder, what each
-   context is for — with a NAICS code, per corpus convention.
+10. `CLAUDE.md`'s NAICS paragraph records the `tooling/` exception (§3).
+11. **`RIDDL-Computational-Model.md` §4.1 is enriched** with the paradigm
+    precedence and taxonomy — Reid: *"you should enrich section 4.1 (of the
+    CM) with those other forms of state + behavior. Updating the CM with
+    that should be part of this work."* Draft text in Appendix A, awaiting
+    his approval before it is applied.
+12. A README for the model explaining, for a generator builder, what each
+    context is for. **No NAICS code** (§3).
 
 ---
 
-## 9. Upstream tasks filed
+## 9. Upstream tasks
+
+### Filed
 
 - `../riddl/task/2026-08-26-saga-tell-must-not-reach-into-a-context.md` —
   make it an Error for a `tell`/`send` from outside a context to name a
   definition inside it. Includes both measured outputs, a four-case rule on
   enclosing contexts, and an impact analysis showing all three corpus sagas
-  are intra-context and unaffected.
+  are intra-context and unaffected. **Unacknowledged** as of 2026-08-26.
+
+### To file
+
+- **`code_statement` has no TypeScript** (§6.7). The fenced-code statement
+  accepts `scala | java | python | mojo`; TypeScript/Effect is one of the
+  three targets this design is built for, and Go and Swift are named as
+  cheap targets (§2.3.2). Ask for the list to be opened, or for the
+  rationale behind its being closed.
+
+### Not upstream — this repository's work
+
+- **`RIDDL-Computational-Model.md` §4.1** (Appendix A). The CM lives at
+  `ossuminc/` level, above every project, so this edit is a
+  cross-repository artifact rather than a riddl task.
+
+---
+
+## Appendix A — draft enrichment of CM §4.1
+
+Reid, 2026-08-26: *"you should enrich section 4.1 (of the CM) with those
+other forms of state + behavior. Updating the CM with that should be part of
+this work."*
+
+CM §4.1 currently ends with an **Implementation reality** paragraph that
+handles exactly one fallback — the target has actors, or it does not and
+needs an actor facade. That is a binary where the real situation is a
+ranking. The text below **replaces that paragraph** and leaves the preceding
+paragraph (the DDD/Akka mental model) untouched.
+
+Applied to `../RIDDL-Computational-Model.md` at line 1036, on approval.
+
+---
+
+**Implementation reality — a precedence of representations.** Not every
+target supplies actors, and the ones that do not are not all equally far
+away. The admissible representations for an Entity form an ordered
+preference, and a generator should take the highest one its target supports
+natively before reaching for a facade. The ordering is not a matter of
+taste: a RIDDL processor already *is* an actor — it consumes messages one at
+a time per identity, runs in parallel across identities, interacts only over
+abstract channels, and draws on a closed set of 19 statements — so the actor
+is the representation that costs nothing to reach, and every step down the
+list is a guarantee the generator must build instead of inherit.
+
+**The admission test is encapsulation:** data and behaviour bundled in one
+abstraction. Any paradigm upholding that can receive a RIDDL model. Among
+those that do, rank by how much of the rest comes for free — **serial
+execution** (one message at a time per identity), **addressable identity**
+(location-transparent, address rather than object reference), and **channel
+interaction** (asynchronous, non-blocking, no shared memory).
+
+| Representation | Encaps. | Serial | Address. | Channels | Representative |
+|---|:-:|:-:|:-:|:-:|---|
+| **Actor** | ● | ● | ● | ● | Pekko, Akka, Erlang/Elixir, Orleans, `@effect/cluster` |
+| **Active Object** | ● | ● | ◐ | ● | proxy + scheduler + activation queue |
+| **CSP process** | ● | ● | ○ | ● | Go, Occam, Clojure `core.async` |
+| **Service / microservice** | ● | ○ | ● | ● | SOA, microservices |
+| **DDD Aggregate** | ● | ◐ | ● | ○ | the pattern `aggregate` names |
+| **FRP / Reactive Streams** | ◐ | ● | ○ | ● | RxJS, RxJava, Pekko Streams, Effect `Stream` |
+| **Component / Bean** | ● | ○ | ◐ | ○ | EJB, CDI, Quarkus, OSGi, Spring, COM/DCOM |
+| **Monadic state machine** | ● | ● | ○ | ○ | Elm, Redux, Haskell `State` |
+| **Plain object** | ● | ○ | ○ | ○ | any OO language |
+| **DCI** | ◐ | ○ | ● | ○ | roles bound to data per context |
+
+● native · ◐ partial or container-dependent · ○ must be supplied by facade
+
+In short form, the three a generator author will actually meet are **actor,
+bean, object** — the top, middle and floor of that table.
+
+**Two widely used architectures are excluded, and for the same reason.**
+Entity-Component-System deliberately separates state (Entities and
+Components) from behaviour (Systems), and the tuple-space/Linda model holds
+inert tuples in a shared space with behaviour elsewhere. Both are sound
+designs and neither upholds the encapsulation tenet, so neither can receive
+a RIDDL Entity without first rebuilding the boundary RIDDL assumes. They are
+named here so the omission reads as a decision rather than an oversight.
+
+**Encapsulation is the only disqualifier.** Every other gap in the table —
+no mailbox, no location-transparent addressing, no channels — is a facade
+the generator can emit, and a target is not ruled out by owing one. Only the
+absence of a data-plus-behaviour boundary cannot be generated around, since
+there is nothing to generate into.
+
+**What the ranking costs, concretely.** Where a library supports actors
+(Akka, Pekko, etc.) it can be used directly. Where the target does not — the
+TypeScript/Effect case — implementing the actor model can be challenging,
+and a runtime library should probably be developed to provide an Actor
+facade, especially guaranteeing processing in order of mailbox receipt and
+no concurrent processing of messages for a single actor/entity. A bean-tier
+target such as Quarkus/Java inherits encapsulation and container-managed
+addressing but owes serial execution and channel semantics; an object-tier
+target owes all three, which is why a target like Visual Basic is a far
+harder proposition than Go (CSP native), Swift (`actor` in the language) or
+Python (`asyncio`). A generator should record this bill per target rather
+than rediscovering it per artifact.
+
+**Beyond the representation, the runtime tenets still apply:**
+asynchronous non-blocking interaction and invocation, reactive streams,
+reactive data access (R2DBC and equivalents), and message queuing between
+Contexts. A target may supply a first-rate Entity representation and still
+lack a durable append-only journal, in which case `event-sourced` (§4.5)
+owes a facade of its own: Pekko Persistence supplies it natively, and where
+no suitable library or plugin exists the generator emits the journal itself.
+A missing library is a cost, not a disqualification — the target remains
+viable and the generated code carries the guarantee.
