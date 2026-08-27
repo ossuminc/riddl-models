@@ -1,0 +1,428 @@
+context CodeEmission as flow is {
+  command EmitCode is {
+    codeRunId: Intake.GenerationRunId with {
+      briefly "Run"
+      described as {
+        |The generation run this artifact belongs to.
+      }
+    }
+    codeSubject: ModelRef with {
+      briefly "Model"
+      described as {
+        |The model the emitted artifact is derived from.
+      }
+    }
+  } with {
+    briefly "Emit framework and structure for a planned artifact"
+    described as {
+      |Requests that one of codeSubject's planned artifacts be advanced
+      |from Planned into Emitted. No yields: this command is CodeEmission's
+      |own boundary operation, not the Artifact aggregate's — the aggregate
+      |records the emission itself, once planned and kicked off.
+    }
+  }
+  command DiscardCode is {
+    codeRunId: Intake.GenerationRunId with {
+      briefly "Run"
+      described as {
+        |The generation run whose emitted code is to be discarded.
+      }
+    }
+  } with {
+    briefly "Discard emitted code"
+    described as {
+      |Compensates EmitCode: forgets whatever code codeRunId previously
+      |produced.
+    }
+  }
+  type CodeEmissionCommand is one of {
+    CodeEmission.EmitCode or CodeEmission.DiscardCode
+  } with {
+    briefly "CodeEmission command alternation"
+    described as {
+      |Commands accepted at the CodeEmission boundary.
+    }
+  }
+  inlet CodeEmissionCommandsIn is type CodeEmissionCommand with {
+    briefly "CodeEmission command intake"
+    described as {
+      |Where peers deliver commands for CodeEmission.
+    }
+  }
+  type ArtifactCommand is one of {
+    Artifact.PlanArtifact or Artifact.EmitArtifact or Artifact.FillArtifact or Artifact.VerifyArtifact
+  } with {
+    briefly "Artifact command alternation"
+    described as {
+      |Commands accepted by the Artifact aggregate, relayed from this
+      |context's boundary.
+    }
+  }
+  outlet CodeEmissionCommandsFwd is type ArtifactCommand
+ with {
+    briefly "Artifact command relay"
+    described as {
+      |Where the boundary republishes commands for the entity that owns
+      |them.
+    }
+  }
+  handler CodeEmissionBoundary is {
+    on command EmitCode is {
+      do "select the next of codeSubject's planned artifacts owed an
+         emission pass"
+      send command CodeEmission.Artifact.PlanArtifact(artifactId = prompt("the ArtifactId for the artifact codeRunId is emitting"), artifactPath = prompt("the file path this artifact will occupy"), artifactParadigm = prompt("the paradigm Planning selected for this artifact's definition")) to outlet CodeEmission.CodeEmissionCommandsFwd
+    }
+    on command DiscardCode is {
+      do "discard whatever code discardCode.codeRunId previously produced"
+    }
+    on other is {
+      error "Unexpected message at the CodeEmission boundary"
+    }
+  } with {
+    briefly "Context boundary relay"
+    described as {
+      |The context is the port at its own boundary. EmitCode and
+      |DiscardCode are CodeEmission's own operations; the boundary starts
+      |the Artifact aggregate's lifecycle by relaying its first command
+      |onto CodeEmissionCommandsFwd.
+    }
+  }
+  type ArtifactId is Id(Artifact)  with {
+    briefly "Artifact identifier"
+    described as {
+      |Identifies one generated file, by path, across its whole lifecycle.
+    }
+  }
+  include "Artifact.riddl"
+  type CodeEmissionRepositoryCommand is one of {
+    ArtifactRepository.PersistArtifactPlanned or ArtifactRepository.PersistArtifactEmitted or ArtifactRepository.PersistArtifactFilled or ArtifactRepository.PersistArtifactVerified
+  } with {
+    briefly "ArtifactRepository command alternation"
+    described as {
+      |Persistence commands accepted by ArtifactRepository.
+    }
+  }
+  projector ArtifactProjection as flow is {
+    updates repository CodeEmission.ArtifactRepository
+    inlet ArtifactProjectionFromArtifact is type Artifact.ArtifactEvent with {
+      briefly "Artifact events in"
+      described as {
+        |Events arriving from the Artifact entity.
+      }
+    }
+    outlet ArtifactProjectionToRepository is type CodeEmission.CodeEmissionRepositoryCommand
+ with {
+      briefly "Repository commands out"
+      described as {
+        |Persistence commands on their way to the repository.
+      }
+    }
+    handler ArtifactProjectionHandler is {
+      on plannedEvent: event Artifact.ArtifactPlanned is {
+        tell command CodeEmission.ArtifactRepository.PersistArtifactPlanned(artifactId = plannedEvent.artifactId, artifactPath = plannedEvent.artifactPath, artifactParadigm = plannedEvent.artifactParadigm) to repository CodeEmission.ArtifactRepository
+      }
+      on emittedEvent: event Artifact.ArtifactEmitted is {
+        tell command CodeEmission.ArtifactRepository.PersistArtifactEmitted(artifactId = emittedEvent.artifactId, openHoleCount = emittedEvent.openHoleCount) to repository CodeEmission.ArtifactRepository
+      }
+      on filledEvent: event Artifact.ArtifactFilled is {
+        tell command CodeEmission.ArtifactRepository.PersistArtifactFilled(artifactId = filledEvent.artifactId, openHoleCount = filledEvent.openHoleCount) to repository CodeEmission.ArtifactRepository
+      }
+      on verifiedEvent: event Artifact.ArtifactVerified is {
+        tell command CodeEmission.ArtifactRepository.PersistArtifactVerified(artifactId = verifiedEvent.artifactId) to repository CodeEmission.ArtifactRepository
+      }
+    } with {
+      briefly "ArtifactProjection handler"
+      described as {
+        |Turns each Artifact event into the repository command that writes
+        |it.
+      }
+    }
+  } with {
+    briefly "Artifact persistence projection"
+    described as {
+      |Builds the stored Artifact view from the entity's events.
+    }
+  }
+  repository ArtifactRepository as sink is {
+    inlet ArtifactRepositoryFromArtifactProjection is type CodeEmission.CodeEmissionRepositoryCommand with {
+      briefly "Repository command intake"
+      described as {
+        |Persistence commands arriving from the projection.
+      }
+    }
+    record StoredArtifact is {
+      artifactId: ArtifactId with {
+        briefly "artifactId"
+        described as {
+          |The artifactId column of the stored artifact row.
+        }
+      }
+      artifactPath: String(1,1024) with {
+        briefly "artifactPath"
+        described as {
+          |The artifactPath column of the stored artifact row.
+        }
+      }
+      artifactParadigm: Paradigm? with {
+        briefly "artifactParadigm"
+        described as {
+          |The artifactParadigm column of the stored artifact row, absent
+          |before planning completes.
+        }
+      }
+      openHoleCount: Natural? with {
+        briefly "openHoleCount"
+        described as {
+          |The openHoleCount column of the stored artifact row, absent
+          |before emission.
+        }
+      }
+    } with {
+      briefly "Stored artifact row"
+      described as {
+        |The persistence shape of an artifact as this repository stores
+        |it.
+      }
+    }
+    schema ArtifactData is relational
+      of artifacts as record StoredArtifact
+        index on field StoredArtifact.artifactId
+ with {
+      briefly "Artifact data schema"
+      described as {
+        |Relational schema for persisting artifact state.
+      }
+    }
+    command PersistArtifactPlanned is {
+      artifactId: ArtifactId with {
+        briefly "ID"
+        described as {
+          |The stored row to create.
+        }
+      }
+      artifactPath: String(1,1024) with {
+        briefly "Path"
+        described as {
+          |The path this artifact occupies.
+        }
+      }
+      artifactParadigm: Paradigm with {
+        briefly "Paradigm"
+        described as {
+          |The paradigm this artifact is planned in.
+        }
+      }
+    } with {
+      briefly "Persist ArtifactPlanned"
+      described as {
+        |Instructs this repository to record a new artifact.
+      }
+    }
+    command PersistArtifactEmitted is {
+      artifactId: ArtifactId with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+      openHoleCount: Natural with {
+        briefly "Holes"
+        described as {
+          |Holes this emission created.
+        }
+      }
+    } with {
+      briefly "Persist ArtifactEmitted"
+      described as {
+        |Instructs this repository to apply ArtifactEmitted to the stored
+        |row.
+      }
+    }
+    command PersistArtifactFilled is {
+      artifactId: ArtifactId with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+      openHoleCount: Natural with {
+        briefly "Holes"
+        described as {
+          |Holes remaining after this fill pass.
+        }
+      }
+    } with {
+      briefly "Persist ArtifactFilled"
+      described as {
+        |Instructs this repository to apply ArtifactFilled to the stored
+        |row.
+      }
+    }
+    command PersistArtifactVerified is {
+      artifactId: ArtifactId with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+    } with {
+      briefly "Persist ArtifactVerified"
+      described as {
+        |Instructs this repository to apply ArtifactVerified to the stored
+        |row.
+      }
+    }
+    handler ArtifactPersistence is {
+      on command PersistArtifactPlanned is {
+        do "insert into ArtifactData.artifacts a row for artifactId with artifactPath and artifactParadigm"
+      }
+      on command PersistArtifactEmitted is {
+        do "update ArtifactData.artifacts set openHoleCount where artifactId matches"
+      }
+      on command PersistArtifactFilled is {
+        do "update ArtifactData.artifacts set openHoleCount where artifactId matches"
+      }
+      on command PersistArtifactVerified is {
+        do "update ArtifactData.artifacts marking verification complete where artifactId matches"
+      }
+    } with {
+      briefly "Artifact persistence handler"
+      described as {
+        |Applies each persistence command to the stored row.
+      }
+    }
+  } with {
+    briefly "Artifact repository"
+    described as {
+      |Stores the current shape of each generated artifact.
+    }
+  }
+  repository DecisionLog as sink is {
+    inlet DecisionLogFromArtifact is command CodeEmission.DecisionLog.PersistDecision with {
+      briefly "Decision command intake"
+      described as {
+        |Persistence commands recording one non-obvious emission choice,
+        |sent directly by the emission handler rather than by a
+        |projector: a decision is recorded when the choice is made, not
+        |when an event is replayed.
+      }
+    }
+    record StoredDecision is {
+      decisionArtifactId: CodeEmission.ArtifactId with {
+        briefly "decisionArtifactId"
+        described as {
+          |The decisionArtifactId column of the stored decision row.
+        }
+      }
+      decisionSubject: String(1,256) with {
+        briefly "decisionSubject"
+        described as {
+          |The decisionSubject column of the stored decision row.
+        }
+      }
+      decisionRationale: String(1,2048) with {
+        briefly "decisionRationale"
+        described as {
+          |The decisionRationale column of the stored decision row.
+        }
+      }
+    } with {
+      briefly "Stored decision row"
+      described as {
+        |The persistence shape of a recorded decision as this repository
+        |stores it.
+      }
+    }
+    schema DecisionData is relational
+      of decisions as record StoredDecision
+        index on field StoredDecision.decisionArtifactId
+ with {
+      briefly "Decision data schema"
+      described as {
+        |Relational schema for persisting recorded decisions, one row per
+        |decision.
+      }
+    }
+    command PersistDecision is {
+      decisionArtifactId: CodeEmission.ArtifactId with {
+        briefly "Artifact"
+        described as {
+          |The artifact this decision was made for.
+        }
+      }
+      decisionSubject: String(1,256) with {
+        briefly "Subject"
+        described as {
+          |What the decision was about.
+        }
+      }
+      decisionRationale: String(1,2048) with {
+        briefly "Rationale"
+        described as {
+          |Why the decision was made.
+        }
+      }
+    } with {
+      briefly "Persist a decision"
+      described as {
+        |Instructs this repository to record one non-obvious choice and
+        |its reason.
+      }
+    }
+    handler DecisionPersistence is {
+      on command PersistDecision is {
+        do "insert into DecisionData.decisions a row for decisionArtifactId with decisionSubject and decisionRationale"
+      }
+    } with {
+      briefly "Decision persistence handler"
+      described as {
+        |Applies each persistence command to the stored row.
+      }
+    }
+  } with {
+    briefly "Decision log"
+    described as {
+      |Stores, one row per non-obvious choice, what it was and why it was
+      |made. Written by the emission handler directly rather than by a
+      |projector, because that is when the choice is actually made.
+    }
+  }
+  connector 'CodeEmissionCommand Intake' is from outlet CodeEmission.CodeEmissionCommandsFwd to inlet CodeEmission.Artifact.ArtifactCommands with {
+    briefly "CodeEmission commands on their way to Artifact"
+    described as {
+      |Carries commands from the context boundary to the entity that owns
+      |them.
+    }
+  }
+  connector 'ArtifactProjection Feed' is from outlet CodeEmission.Artifact.ArtifactEvents to inlet CodeEmission.ArtifactProjection.ArtifactProjectionFromArtifact with {
+    briefly "Artifact events feeding ArtifactProjection"
+    described as {
+      |Carries the entity's events to the projection that persists them.
+    }
+  }
+  connector 'ArtifactProjection Storage' is from outlet CodeEmission.ArtifactProjection.ArtifactProjectionToRepository to inlet CodeEmission.ArtifactRepository.ArtifactRepositoryFromArtifactProjection with {
+    briefly "ArtifactProjection commands on their way to ArtifactRepository"
+    described as {
+      |Carries persistence commands to the repository that acts on them.
+    }
+  }
+  connector 'DecisionLog Storage' is from outlet CodeEmission.Artifact.ArtifactDecisions to inlet CodeEmission.DecisionLog.DecisionLogFromArtifact with {
+    briefly "Decisions on their way to DecisionLog"
+    described as {
+      |Carries persistence commands straight from the entity's emission
+      |handler to the decision log, bypassing the projector.
+    }
+  }
+} with {
+  briefly "Emission of framework, structure and headers"
+  described as {
+    |Emits what can be derived deterministically — structure, signatures,
+    |headers, imports — and marks with a hole everything that cannot. A
+    |generated artifact is not correct because it compiles; it is correct
+    |because it ships with the means to prove itself, which is what
+    |SpecEmission emitted and Proving runs.
+    |
+    |Every non-obvious choice is recorded in the decision log with its
+    |reason. A generator that silently picks is one nobody can review.
+  }
+}
