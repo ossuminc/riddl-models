@@ -1495,6 +1495,35 @@ and the saga never addresses it.
 
 **Files:**
 - Modify: `tooling/code-generator/code-generator.riddl` — add the saga
+- Modify: `tooling/code-generator/CodeEmissionContext.riddl` — **close the
+  fill/verify gap (see below)**
+
+### 8.0 First, close the fill/verify gap
+
+Tasks 5 and 6 each reported half of one defect, from opposite sides. The
+`Artifact` entity's `FillArtifact` and `VerifyArtifact` commands are members
+of `ArtifactCommand` — the relay **outlet** type — but not of
+`CodeEmissionCommand`, the **inlet** type. So `CodeEmission`'s boundary can
+relay them and nothing can ask it to. **`Artifact` never leaves `Emitted`**,
+and `HoleFilling` has no way to report completion back.
+
+riddlc validates this at zero: it has no opinion about a message nothing
+sends. No other task closes it — Task 7 closes the *proof-failure* cycle
+(`ProofFailed` → `ReopenHoles`), which is a different edge.
+
+In `CodeEmissionContext.riddl`:
+
+- add `FillCode` and `VerifyCode` commands to `CodeEmissionCommand`, each
+  carrying the run and artifact ids, and neither declaring `yields` (the
+  context records no state of its own)
+- add a boundary clause per command relaying `FillArtifact` / `VerifyArtifact`
+  onto `CodeEmissionCommandsFwd`, in the same shape as the existing `EmitCode`
+  clause
+- keep name, `briefly`, `described as` and behaviour in agreement — `EmitCode`
+  had to be fixed once for exactly that
+
+Then the saga gains `StepFillCode` and `StepVerifyCode` addressing
+`context CodeEmission`, between `StepFillHoles` and `StepProve`.
 
 **Interfaces:**
 - Consumes: the command alternation of each of the six message-driven
