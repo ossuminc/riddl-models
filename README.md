@@ -33,7 +33,8 @@ riddl-models/
 ├── telecommunications/ # Network, Billing
 ├── government/         # Citizen Services, Public Safety
 ├── education/          # Academic, Training
-└── professional-services/ # Legal, Accounting, HR
+├── professional-services/ # Legal, Accounting, HR
+└── tooling/            # Our own toolchain (code generation)
 ```
 
 ## NAICS Industry Index

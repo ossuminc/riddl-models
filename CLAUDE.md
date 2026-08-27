@@ -63,7 +63,7 @@ riddl-models/
 
 ## Domain Ontology
 
-The repository organizes models into **18 top-level sectors** covering
+The repository organizes models into **19 top-level sectors** covering
 enterprise, SMB, and startup needs. Each sector has 2-5 subsectors, with
 individual models at level 3.
 
@@ -91,6 +91,7 @@ individual models at level 3.
 | `government` | Government & Public Sector | citizen-services, regulatory, public-safety |
 | `education` | Education & Training | academic, corporate-training, certification |
 | `professional-services` | Professional Services | legal, accounting, hr-services |
+| `tooling` | Our Own Toolchain | code-generation |
 
 ---
 
@@ -117,6 +118,10 @@ Every model README includes a `## NAICS Code` section near the top
 with the closest NAICS industry classification code. The repository
 uses BLS sector/subsector decomposition which doesn't map perfectly
 to NAICS, so codes are approximate best-fit matches.
+
+**Exception — `tooling/`.** Models under `tooling/` carry **no** NAICS
+code. They describe our own toolchain rather than an industry, so
+there is no classification to give. Reid's ruling, 2026-08-26.
 
 ### Metadata Schema
 
