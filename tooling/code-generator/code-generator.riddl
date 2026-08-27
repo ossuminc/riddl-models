@@ -90,6 +90,181 @@ domain CodeGeneration is {
       |producer.
     }
   }
+  saga GenerationPipeline is {
+    step StepAdmitModel is  {
+      do "Load the model and apply the generability bar"
+      let admitModel: type Intake.GenerationRun.AdmitModel = prompt("the admit model command for this run")
+      tell admitModel to context Intake
+    }
+    reverted by {
+      do "Refuse the model, which is the only way back from admission"
+      let refuseModel: type Intake.GenerationRun.RefuseModel = prompt("the refuse model command for this run")
+      tell refuseModel to context Intake
+    }
+ with {
+      briefly "Admit the model"
+      described as {
+        |The bar is operational, not advisory: a model with any warning
+        |other than Style is refused, because code cannot be generated from
+        |unstated intent. Compensating means refusing outright — there is
+        |no state between admitted and never-started.
+      }
+    }
+    step StepPlan is  {
+      do "Lower every definition in the admitted model against the target
+         profiles and lowering catalogue"
+      let planModel: type Planning.PlanModel = prompt("the plan model command for this run")
+      tell planModel to context Planning
+    }
+    reverted by {
+      do "Discard whatever planning the model previously produced"
+      let discardPlan: type Planning.DiscardPlan = prompt("the discard plan command for this run")
+      tell discardPlan to context Planning
+    }
+ with {
+      briefly "Plan the model"
+      described as {
+        |Lowers the admitted model's definitions against Naming's chosen
+        |identifiers, ready for the two contexts that emit from a plan.
+      }
+    }
+    step StepEmitSpecs is  {
+      do "Emit the derived test suite the plan calls for"
+      let emitSpecs: type SpecEmission.EmitSpecs = prompt("the emit specs command for this run")
+      tell emitSpecs to context SpecEmission
+    }
+    reverted by {
+      do "Discard whatever suite this run previously produced"
+      let discardSpecs: type SpecEmission.DiscardSpecs = prompt("the discard specs command for this run")
+      tell discardSpecs to context SpecEmission
+    }
+ with {
+      briefly "Emit the derived test suite"
+      described as {
+        |Writes out the suite the plan calls for, ahead of the code it will
+        |assert against — Proving's pass-2 gate is this suite, run for
+        |real.
+      }
+    }
+    step StepEmitCode is  {
+      do "Plan and emit framework, structure and headers for the plan's
+         artifacts"
+      let emitCode: type CodeEmission.EmitCode = prompt("the emit code command for this run")
+      tell emitCode to context CodeEmission
+    }
+    reverted by {
+      do "Discard whatever code this run previously produced"
+      let discardCode: type CodeEmission.DiscardCode = prompt("the discard code command for this run")
+      tell discardCode to context CodeEmission
+    }
+ with {
+      briefly "Emit framework and structure"
+      described as {
+        |Emits what can be derived deterministically and marks with a hole
+        |everything that cannot, advancing each artifact from Planned into
+        |Emitted.
+      }
+    }
+    step StepFillHoles is  {
+      do "Fill the open [[AI FILL]] holes the emission left behind"
+      let fillHoles: type HoleFilling.FillHoles = prompt("the fill holes command for this run")
+      tell fillHoles to context HoleFilling
+    }
+    reverted by {
+      do "Discard whatever fill state this run's holes hold"
+      let discardFills: type HoleFilling.DiscardFills = prompt("the discard fills command for this run")
+      tell discardFills to context HoleFilling
+    }
+ with {
+      briefly "Fill the open holes"
+      described as {
+        |Supplies the behaviour pass-1 could not assert, one open hole at
+        |a time, until none remain for this pass.
+      }
+    }
+    step StepFillCode is  {
+      do "Report HoleFilling's completed fill pass onto the artifact it
+         was filling"
+      let fillCode: type CodeEmission.FillCode = prompt("the fill code command for this run")
+      tell fillCode to context CodeEmission
+    }
+    reverted by {
+      do "Discard whatever code this run previously produced"
+      let discardCodeAfterFill: type CodeEmission.DiscardCode = prompt("the discard code command for this run")
+      tell discardCodeAfterFill to context CodeEmission
+    }
+ with {
+      briefly "Record the fill pass"
+      described as {
+        |Closes the gap between HoleFilling completing a pass and the
+        |Artifact aggregate that must record it: CodeEmission relays the
+        |report onto its own aggregate, which is the only thing that may
+        |change the aggregate's state.
+      }
+    }
+    step StepProve is  {
+      do "Run the pass-2 green gate over the filled artifact, now that
+         pass-1 has already booted it"
+      let runGreenGate: type Proving.RunGreenGate = prompt("the run green gate command for this run")
+      tell runGreenGate to context Proving
+    }
+    reverted by {
+      do "Forget the proof attempt, formally, then reopen the artifact's
+         proven holes for another fill pass — the only way back from a
+         proof, since Proving holds no state of its own to discard"
+      let discardProof: type Proving.DiscardProof = prompt("the discard proof command for this run")
+      tell discardProof to context Proving
+      let reopenHoles: type HoleFilling.ReopenHoles = prompt("the reopen holes command for this run")
+      tell reopenHoles to context HoleFilling
+    }
+ with {
+      briefly "Prove the artifact"
+      described as {
+        |Runs the pass-2 green gate: the generated suite, for real, now
+        |that hole filling has supplied the behaviour pass-1 could not
+        |assert. A red result yields ProofFailed, which Proving's own
+        |boundary already republishes to HoleFilling — the same path a
+        |failed proof always takes, whether from an ordinary red run or
+        |from this step's own compensation. DiscardProof formally
+        |acknowledges the step's undo without discarding anything real:
+        |Proving is stateless, so the substantive compensation is the
+        |retry cycle itself, not this command.
+      }
+    }
+    step StepVerifyCode is  {
+      do "Report Proving's acceptance onto the artifact it verified"
+      let verifyCode: type CodeEmission.VerifyCode = prompt("the verify code command for this run")
+      tell verifyCode to context CodeEmission
+    }
+    reverted by {
+      do "Discard whatever code this run previously produced"
+      let discardCodeAfterVerify: type CodeEmission.DiscardCode = prompt("the discard code command for this run")
+      tell discardCodeAfterVerify to context CodeEmission
+    }
+ with {
+      briefly "Record the verification"
+      described as {
+        |Closes the same gap as StepFillCode, on the other edge of the
+        |lifecycle: Proving's acceptance only becomes durable once
+        |CodeEmission relays it onto the Artifact aggregate that owns the
+        |state transition.
+      }
+    }
+  } with {
+    option timeout("PT30M")
+    briefly "The generation pipeline"
+    described as {
+      |Orchestrates the six message-driven contexts, addressing each context
+      |rather than reaching into it. Reaching past a context into one of its
+      |entities, streamlets or repositories is an encapsulation violation:
+      |the sender binds itself to the context's internal design, which is
+      |what the context exists to prevent.
+      |
+      |riddlc does not yet enforce this — both forms validate identically —
+      |so the rule is adopted here ahead of the check. Filed upstream as
+      |2026-08-26-saga-tell-must-not-reach-into-a-context.
+    }
+  }
 } with {
   briefly "Generic RIDDL code generation"
   described as {
