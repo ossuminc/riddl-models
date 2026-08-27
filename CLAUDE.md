@@ -480,6 +480,18 @@ answer:
    `tell ... to adaptor X` is **not** — that was tried and made things
    worse, because the adaptor itself then needs an inbound connector.
 
+**A context named as the target needs its OWN inbound connector — the
+`tell` itself does not establish reachability.** Since rule 2 now sends a
+domain-level saga to `tell ... to context X` rather than into one of X's
+internals, X must already be wired: a persistent connector landing on one
+of its own inlets (from a driver, an adaptor, or any upstream source), or
+the step draws `msg-tell-target-unreachable`. Measured on the
+code-generator model (rc.26): a step telling `Proving.RunBootGate` needed
+no new connector only because `Proving` was already fed by the
+pre-existing `'ProvingCommand Stream'` connector — a context with no such
+wiring trips the warning on the first step that addresses it, not on some
+later one. This is general to the corpus, not specific to that model.
+
 So a saga orchestrates its **own** aggregate. Calling an external system is
 *not* the step's `tell`: it belongs in the `do` prose, and the reply comes
 back through an inbound `from context` adaptor that issues the local
@@ -588,7 +600,78 @@ most one per scope. It is the **model's** version, never the RIDDL language
 version. reactive-bbq declares exactly one, at the domain root.
 
 Both `term` and `version` survive the BAST round trip at rc.13 (187/187,
-0 discrepancies) — unlike `constant`, so do not assume by analogy.
+0 discrepancies). **So does `constant`, as of rc.26** — the line above used
+to claim otherwise and that claim is now corrected, not merely annotated: it
+dated from rc.13 and was never re-checked. Verified by unbastifying
+reactive-bbq's committed `.bast` with `-o`: `constant PointsPerDollar` came
+back intact. Re-confirmed corpus-wide on 2026-08-27 —
+`./scripts/verify-bast-roundtrip.sh` passes all 189 models at 0
+discrepancies, including the code-generator model's
+`constant MaxFillAttempts`. Do not assume a construct's round-trip fidelity
+from an old measurement without re-checking against the current rc.
+
+### Findings from dogfooding: the code-generator model (2026-08-26)
+
+Building a 520-definition model whose own subject is code generation
+(`tooling/code-generator/`) surfaced five syntax/semantics facts, each
+cross-checked against a real RED/GREEN pair while writing it:
+
+**`any of { }` separates with COMMAS; `one of { }` separates with `or`.**
+Writing `any of { A or B }` **parses** — it does not error — and silently
+invents an enumerator member named `or`. Measured: `type Severity is any of
+{ Error or Warning or Style or Usage or Missing or Completeness }` reported
+`[style] [type-enumerator-capitalization]` and `[style] [name-too-short]`
+against the invented `or` member. The comma form — `any of { Error, Warning,
+Style, Usage, Missing, Completeness }` — is silent. Not a syntax error; a
+wrong model that reads as accepted.
+
+**A reference's keyword must match the referent's OWN declaration
+keyword** — `requires record X` / `returns record X` for `record X is
+{…}`, `requires type X` / `returns type X` for `type X is {…}`, `inlet Y is
+command Z` for a single command, `inlet Y is event Z` for a single event.
+Mismatch is a hard `[error] [ref-wrong-keyword]`, e.g. "'PackagePath' is
+declared a record, but this reference names it as a type" — hit six times
+across `NamingContext.riddl`/`PlanningContext.riddl`, and again for events
+in `HoleFillingContext.riddl`/`ProvingContext.riddl`. The corpus already
+carries both spellings for exactly this reason — `requires record
+OrderFulfillmentSagaArgs`
+(`commerce/e-commerce/order-management/OrderFulfillmentSaga.riddl:29`) vs.
+`requires type SpendForPoints`
+(`hospitality/food-service/reactive-bbq/restaurant/LoyaltyContext.riddl:57`)
+— because one references a `record` and the other a `type`. This is
+distinct from `let x: type Y = prompt(...)`, where the annotation position
+genuinely always uses the literal keyword `type` regardless of `Y`'s kind.
+
+**An `Id(X)` type is declared at CONTEXT scope, never inside entity `X`.**
+`type GenerationRunId is Id(GenerationRun)` written inside `entity
+GenerationRun` draws `[completeness] [entity-id-defined-inside]`: "move it
+to the containing context so other entities can reference it."
+
+**A `literal_string` invariant is never resolved or type-checked** — it is
+a comment shaped like a guarantee, not a check. `invariant AttemptsBounded
+is "HoleData.fillAttempts <= 5"` parses and validates at 0 errors whether
+or not `fillAttempts` or `5` mean anything; deleting the quotes and writing
+a real structured expression — `invariant AttemptsBounded is
+HoleData.fillAttempts <= HoleFilling.MaxFillAttempts` — is what actually
+gets resolved and type-checked, proven by a RED canary that broke the
+comparand and got a genuine `ref-path-unresolved` error. A bare numeric
+literal in that position still validates but draws `[style]
+[value-literal-comparison-style]` ("would read better as a named
+constant"); the fix is a `constant`, not a quoted string. Note the grammar
+has **no `implies`** — write `not A or B`.
+
+**"Declared, handled, and reachable" is not "driven."** A command riddlc
+can fully account for — it is a member of its alternation, an `on command`
+clause exists for it, and something could in principle reach it via a
+connector — still validates at zero if nothing ever actually `send`s or
+`tell`s it. riddlc has no opinion about an unsent message. This model hit
+it four separate times (`FillArtifact`/`VerifyArtifact`, `RunBootGate`,
+`ProveHole`), and the `ProveHole` gap was the expensive one: because
+nothing drove it, `Proven` was unreachable, so `ReopenHole` (handled only
+in `Proven`) was dead too, and the whole retry-cycle-as-event design was
+silently inert. No gate in this repository catches this class. The check
+is a manual sweep: for every command and event in a new model, name what
+actually sends it.
 
 
 ### The context IS the port at its own boundary
@@ -1118,7 +1201,7 @@ the same riddlc the rest of the build uses. Both `riddlcValidate` and
 
 | Command | What it checks |
 |---------|----------------|
-| `sbt v` | patterns, then all 188 models via the riddlc **CLI** |
+| `sbt v` | patterns, then all 189 models via the riddlc **CLI** |
 | `sbt test` | patterns, then the models via the **library API** |
 | `sbt checkAll` | both, with the full test suite forced |
 | `collect-warnings.py` | the models at **every severity** — see below |
@@ -1151,17 +1234,23 @@ whitespace-independent comparison gave 0 of 396.
 #### `sbt v` is the LENIENT gate, and this inverts the obvious assumption
 
 **A green `sbt v` does NOT mean the corpus is style- and usage-clean.** It
-validates through the `.conf` files, and **187 of the 188** set
+validates through the `.conf` files, and **187 of the 189** set
 
 ```hocon
 show-style-warnings   = false
 show-usage-warnings   = false
 ```
 
-so those two classes are suppressed before the build ever sees them. (The
-exception is `language-coverage.conf`, which carries only `input-file` — so
-that one model, alone, is style- and usage-checked by `sbt v`. Counted
-2026-08-24; do not assume uniformity here without recounting.)
+so those two classes are suppressed before the build ever sees them. Two
+`.conf` files carry only `input-file` and so omit the suppression, making
+`sbt v` enforce EVERY severity for that one model: `language-coverage.conf`
+(counted 2026-08-24) and, since 2026-08-26,
+`tooling/code-generator/code-generator.conf` — the second one **by choice**,
+not an oversight. A model whose own subject is code generation is exactly
+the one to hold to the stricter bar deliberately, rather than inherit the
+corpus-wide suppression by default; this is a technique worth reusing, not
+a coincidence to note twice. Do not assume uniformity here without
+recounting.
 `collect-warnings.py` invokes `riddlc validate <entry>.riddl` **directly**,
 never `from <conf>`, so it takes riddlc's defaults — which have every class
 ON. It is therefore the STRONGER check, and the one the zero standard means.
@@ -1179,6 +1268,23 @@ Same family as the `sbt test` trap below, but a level further out and more
 surprising: here it is the **build command** that is lenient, so "the gate is
 green" and "the corpus is at zero" are different claims. Run both.
 
+#### `--provide-tips` is part of the real gate, not just cosmetic tips
+
+**Some completeness checks are gated behind `--provide-tips` itself**,
+independent of any `.conf` setting. `riddlc validate` without the flag can
+report `0 errors, 0 warnings` on a model carrying a genuine defect, and the
+identical invocation with `--provide-tips` reports it as a real
+`[completeness] [entity-command-not-handled]` message — not a suggestion.
+Measured building the code-generator model: `GenerationRun.riddl`'s
+`StartRun` command validated clean without the flag and drew the finding
+with it. The 190 pre-existing models are clean under BOTH forms — this
+session's `riddlc validate --corpus .` (191 models, 0 failed, no
+`--provide-tips`) and `collect-warnings.py` (which already passes the flag,
+`scripts/collect-warnings.py:61`, 0 findings across 189 swept) confirm it —
+so the flag exposes genuinely NEW defect classes rather than reclassifying
+ones the corpus already had. A manual `riddlc validate` without the flag is
+the LENIENT form; always validate with it on.
+
 **Canary the harness before believing its zero.** Inject one unused type into
 a real model, confirm the sweep reports it, revert. A zero from a harness that
 cannot see is the failure this repository keeps re-learning — and a zero is
@@ -1188,8 +1294,8 @@ worth nothing until its DENOMINATOR is checked too, since
 `sbt test` is a **weak gate for model edits**: sbt 2 routes `test` to
 `testQuick`, which skips tests it believes unchanged, and the suite reads
 `.riddl` files at run time so sbt cannot see a model change as an input.
-`checkAll` uses `Test / executeTests`, which always runs all 189 cases
-(187 models + 2 pattern examples).
+`checkAll` uses `Test / executeTests`, which always runs all 191 cases
+(189 models + 2 pattern examples).
 
 The test suite is a genuinely independent check, not a duplicate: it links
 `riddl-language`, `riddl-passes` and `riddl-utils` and calls

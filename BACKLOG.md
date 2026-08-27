@@ -5,68 +5,6 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
-## 0. IN FLIGHT — model a generic RIDDL code generator ("dogfooding")
-
-**Design is DONE and approved. No RIDDL written yet.** The spec is
-`docs/superpowers/specs/2026-08-26-code-generator-model-design.md` (commit
-`680cf5cf`), 450 lines, self-reviewed.
-
-### Where it stopped, exactly
-
-**Awaiting Reid's review of the spec.** He was asked to read it and had not
-answered when the session ended for a reboot. **Do not start writing RIDDL or
-an implementation plan until he has.** After his approval the next step is the
-`superpowers:writing-plans` skill — the brainstorming skill's terminal state is
-writing-plans and no other.
-
-### What to put back in front of him, verbatim
-
-Sections most worth his eye: **§2** the four decisions with reasoning and his
-two corrections quoted; **§4.7–4.8** `HoleFilling` as its own context and the
-retry cycle as an event cycle rather than a loop; **§6** six measured language
-facts, three of which contradict prior belief; **§8** the nine acceptance
-criteria.
-
-Two weak points that were flagged rather than buried:
-
-- **§7.1 — it is a large model.** Seven contexts with declared APIs, three
-  aggregates, a repository and ~40 lowering functions, i.e. reactive-bbq
-  territory. It will not reach zero findings in one pass.
-- **§7.2 — the catalogue can still drift.** Each lowering *consults* the
-  `LoweringRule` repository, so an *unused* rule surfaces as a `usage`
-  finding. Nothing makes a *missing* rule surface. That half could not be
-  closed.
-
-One decision still open: the model needs a **NAICS code** per corpus
-convention and `tooling/` has no obvious industry. **541511** (Custom Computer
-Programming Services) is a guess, not a finding.
-
-### The design, in one paragraph
-
-One domain, seven contexts (`Intake`, `Naming`, `Planning`, `SpecEmission`,
-`CodeEmission`, `HoleFilling`, `Proving`), one **domain-level** saga that
-addresses contexts and never their internals. Genericity comes from required
-**capabilities** plus a target profile, not from naming a target construct — so
-a new target is a new profile, not a new model. A lowering is behaviour, not an
-entity; only `GenerationRun`, `Artifact` and `Hole` have identity and a
-lifecycle. Lives at `tooling/code-generation/code-generator/`, a new 19th
-sector, which moves the census 190 → 191 and drags in every corpus gate.
-
-**Two of Reid's own proposals were retired during design, by him:** the
-generator/generated-source two-domain split, and (implicitly) any role for the
-CM document's eight aspects as model data. §2.1 and §2.2 record why, so neither
-gets reinvented.
-
-### Upstream task filed as a by-product
-
-`../riddl/task/2026-08-26-saga-tell-must-not-reach-into-a-context.md` — make it
-an Error for a `tell`/`send` from outside a context to name a definition inside
-it. Reid's ruling: reaching past a context into its entity is an encapsulation
-violation, and riddlc currently accepts it and the correct form with equal
-silence. Not yet acknowledged by riddl.
-
----
-
 ## 1. Make reactive-bbq the reference model (ACTIVE CAMPAIGN)
 
 The plan is `~/.claude/plans/wobbly-whistling-finch.md`, approved
@@ -1242,3 +1180,39 @@ Both validate at rc.22, and a **negative control confirmed it is real checking**
 — substituting `ConfirmedData.base.bogusField` produced a precise unresolved-value
 error at exactly that span. Do not take the green run alone as evidence; that is
 what the control was for.
+
+---
+
+## 25. `code_statement` has no TypeScript — to file upstream
+
+`code_statement`'s language list is closed:
+` ```("scala" | "java" | "python" | "mojo") code_contents``` ` — and does
+not include TypeScript, even though TypeScript/Effect is one of the three
+named targets the code-generator model (`tooling/code-generator/`) is
+designed for; Go and Swift are also named as cheap future targets. Not
+blocking — the design's `do`/`prompt` escape hatch covers the same ground
+generically — but a model carrying inline target code for a Pekko/Scala
+generator has no equivalent for an Effect one. Recorded in the design
+spec's §9 "To file" list
+(`docs/superpowers/specs/2026-08-26-code-generator-model-design.md`); as
+of 2026-08-27 **not yet filed** as a `../riddl/task/*.md`. File it, or ask
+riddl for the rationale behind the closed list.
+
+## 26. `README.md:41` says "187 models" — three live denominators, deliberately unfixed
+
+`README.md:41` reads "All 187 models are classified by [NAICS]...". The
+true count has moved twice since that sentence was written and the
+repository now has **three correct-but-different** denominators, so
+"187" cannot simply be replaced by one number without picking a meaning:
+
+| command | counts | current value |
+|---|---|---|
+| `riddlc validate --corpus .` | every entry point, patterns included | 191 |
+| `sbt v` / `pc` / `collect-warnings.py` | excludes `patterns/` | 189 |
+| `sbt checkAll` | models + pattern examples as test cases | 191 |
+
+Flagged and deliberately left as-is at Task 11 (`.superpowers/sdd/
+2026-08-26-code-generator-model/task-10-12-report.md:36,75,88`) rather
+than picked arbitrarily. Fix requires Reid's call on which denominator
+the sentence should mean, then a matching update to the NAICS coverage
+prose around it.

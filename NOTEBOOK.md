@@ -4,99 +4,92 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-### FIRST: Reid owes a review, and was asked for it just before rebooting
+### The code-generator model is DONE — 13/13 tasks, corpus at zero
 
-**Ask him again.** The session ended mid-question for a security reboot, so
-the request never got an answer — it is not that he declined.
+The dogfooding project (design approved 2026-08-26, tracked in
+`.superpowers/sdd/2026-08-26-code-generator-model/`) is complete and
+committed. `tooling/code-generator/` — 7 contexts, a 9-step domain saga, a
+32-rule lowering catalogue, 3 target profiles, **520 definitions** — is the
+19th sector, and its `.bast` is generated and round-trip clean. Nothing
+about this project is in flight; do not re-open it without a new reason.
 
-> The design spec is
-> `docs/superpowers/specs/2026-08-26-code-generator-model-design.md`
-> (commit `680cf5cf`). Sections worth your eye: **§2** the four decisions with
-> reasoning, including your two corrections quoted verbatim; **§4.7–4.8**
-> `HoleFilling` as its own context and the retry cycle as an event cycle with
-> an attempt cap rather than a loop construct; **§6** six measured language
-> facts, three contradicting prior belief; **§8** the nine acceptance criteria.
->
-> Two weak points, flagged rather than buried: **§7.1** it is a large model
-> (reactive-bbq territory) and will not reach zero findings in one pass;
-> **§7.2** the lowering catalogue can still drift — consulting makes an
-> *unused* rule visible, nothing makes a *missing* one visible.
->
-> One open decision: the model needs a **NAICS code** and `tooling/` has no
-> obvious industry. 541511 is a guess.
+### Verified build state (2026-08-27)
 
-**Write NO RIDDL and NO implementation plan until he answers.** After approval
-the next step is `superpowers:writing-plans` — the brainstorming skill's only
-terminal state.
-
-### Build state
-
-**Branch** `release/2`. **riddlc `2.0.0-rc.26`**, a PUBLISHED release:
-`riddlVersion` names it, `riddlcPath := None` (`build.sbt:80`), so the plugin
-downloads to `~/.cache/riddlc/2.0.0-rc.26/bin/riddlc`. Verified this session
-with `riddlc info` — commit `c64f3388f`, matching the tag. Not from the pin.
-
-**`../bin/riddlc` is NOT what the build uses** — still the rc.25-11 staged
-binary, a whole tag behind. `scripts/` default to it, so any manual run that is
-evidence for a claim needs
-`RIDDLC=~/.cache/riddlc/2.0.0-rc.26/bin/riddlc`.
-
-### Corpus at ZERO, re-measured under rc.26
+**Branch** `release/2`. **riddlc `2.0.0-rc.26`**, a PUBLISHED release
+(`riddlcPath := None`); `riddlc info` confirms commit `c64f3388f`. Full
+gate set, all re-run this session with quoted output in
+`.superpowers/sdd/2026-08-26-code-generator-model/task-13-report.md`:
 
 ```
-riddlc validate --corpus .    190 models, 0 failed, 190 ok
-collect-warnings.py           188 swept, 0 findings, harness canaried
-sbt v / pc / checkAll         188 ok, 989 canonical, 2 suites, Passed
+riddlc validate --corpus .    191 models, 0 failed, 191 ok
+collect-warnings.py           189 swept, 0 findings (canaried live)
+verify-bast-roundtrip.sh      189 passing, 0 discrepancies
+sbt v / pc / checkAll         189 ok, 1003 canonical, 2 suites, Passed
 ```
 
-### Traps — the first one cost this session an hour and nearly a false claim
+The corpus has **three live denominators** and all three are correct for
+what they count: `--corpus` walks every entry point (191, includes the 2
+pattern examples); the sweep and `sbt v`/`pc` exclude `patterns/` (189);
+`checkAll` runs 189 models + 2 pattern examples = 191 test cases. Don't
+flatten these to one number.
 
-- **rc.26 put a RULE ID in every diagnostic** — `[usage]
-  [use-unused-definition] file.riddl(...)` — and it blinded **seven** parsers
-  in `scripts/` at once. Every one failed by reporting **nothing**:
-  `collect-warnings.py` swept all 188 models and printed zero while an
-  injected unused type sat in shopping-cart. All four build gates were green
-  throughout and *could not* have caught it — they read exit codes and never
-  parse messages. Fixed, and written up in CLAUDE.md. **Canary after every
-  riddlc bump**; the canary is a habit, not a gate.
-- **CLAUDE.md's saga rule was WRONG and is now narrowed.** A domain-level saga
-  telling `to entity Ctx.Ent` validates at 0 errors, identically to telling
-  `to context Ctx`. The old flat "may not cross a context boundary" came from
-  the context-level case. **The sideways case — a saga in context A telling
-  into context B — is UNTESTED.** Do not generalise in either direction.
-- **`call` is a VALUE, not a statement**: `let x = call function F(args)`. A
-  bare `call function F(args)` is a parse error listing every statement
-  keyword, which reads as though the function is wrong.
-- **A domain cannot hold functions** (`vital_definition_contents = type_def |
-  comment`). A context with only functions IS valid and callable
-  cross-context — measured, 0 errors, no finding against it.
+**`sbt b` regenerated only `tooling/code-generator/code-generator.bast`** —
+`git status` after showed no other `.bast` churn, so no pre-existing model
+was stale going in.
 
-### Certainty
+### The trap this project taught, now in CLAUDE.md
 
-**Verified by command this session:** the rc.26 binary identity and that
-`riddlcPath` is `None`; all five gate results above; that the warning harness
-is live (canary reported the injected type); that `.bast` is unchanged by
-rc.26 (`shopping-cart.bast` byte-identical, FORMAT_REVISION 23); every
-language fact in spec §6; that all three corpus sagas are intra-context.
+**A context a saga addresses needs its OWN inbound connector — `tell` does
+not count for reachability.** Once a domain-level saga is corrected to
+`tell ... to context X` (not into X's internals), X must already be wired
+by a persistent connector onto one of its own inlets, or the step draws
+`msg-tell-target-unreachable`. See CLAUDE.md's "Saga Steps" section for the
+measured case (`Proving.RunBootGate`). Four other findings from this
+project — the `--provide-tips` gate, `any of`/`one of` separators,
+`ref-wrong-keyword`, `entity-id-defined-inside`, `literal_string`
+invariants, and the "declared but undriven" pattern (hit **four** times) —
+are also now in CLAUDE.md; do not re-derive them from the task reports.
 
-**Assumed, not verified:** that the design in the spec is buildable at all —
-no RIDDL has been written against it. That 541511 is the right NAICS code.
-That the sideways saga case behaves like the domain-level one.
+### Upstream: the saga-boundary task landed, and it is BIGGER than asked
+
+The task filed 2026-08-26
+(`../riddl/task/2026-08-26-saga-tell-must-not-reach-into-a-context.md`,
+now in riddl's `task/done/`) shipped as `msg-target-crosses-boundary`, an
+**Error**. It is wider than the ask: it also covers `forward`, and applies
+to **any** `tell`/`send`/`forward` from outside a context naming something
+inside it — not just saga steps. riddl filed the consequence back as
+**`task/2026-08-27-address-the-context-not-its-contents.md`** (still
+pending triage, not yet actioned): **6 sites in reactive-bbq** now trip
+it — 5 in `restaurant/{FrontOfHouseContext,OnlineOrderingContext}.riddl`,
+1 in `corporate/MenuManagementContext.riddl` — each an ordinary `on`
+clause reaching into a sibling context's entity. The fix is a relay
+(context inlet → bound handler → onward), not a path rename; riddl's own
+reply cites a worked example in `language/input/everything_APlant.riddl`.
+**Not yet started.**
+
+### Older campaigns, unstarted
+
+**BACKLOG #23 and #24** remain open from before this project and were not
+touched this session.
 
 ### Pointers
 
-- **BACKLOG #0** — the in-flight project, where it stopped, and what to put
-  back to Reid.
-- **The spec** — `docs/superpowers/specs/2026-08-26-code-generator-model-design.md`.
-- **CLAUDE.md** — the rule-id trap, the corrected saga rule, why `sbt v` is the
-  LENIENT gate.
-- **BACKLOG #23 and #24** remain open and unstarted from earlier campaigns.
+- **CLAUDE.md** — "Findings from dogfooding" (RIDDL Syntax Reference), the
+  driver-connector rule (Saga Steps), `--provide-tips` and the `.conf`
+  lever (The gates).
+- **`.superpowers/sdd/2026-08-26-code-generator-model/`** — all 13 task
+  briefs/reports and the review diffs; the self-contained record of how
+  the model was built.
+- **`docs/superpowers/specs/2026-08-26-code-generator-model-design.md`** —
+  the approved design, including its Appendix A enrichment to
+  `../RIDDL-Computational-Model.md` §4.1.
 
-### `task/` — EMPTY
+### `task/` — NOT empty, one item awaiting triage
 
-No `.md` files; only `wire-a6-reachability.py` and `done/`. Nothing awaits
-triage here. One task was filed OUTWARD this session and is **unacknowledged**:
-`../riddl/task/2026-08-26-saga-tell-must-not-reach-into-a-context.md`.
+`task/2026-08-27-address-the-context-not-its-contents.md` (described
+above) is new and unactioned. Its predecessor request — the one this
+project filed outward — is closed on the riddl side (moved to
+`task/done/` there).
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
@@ -209,6 +202,67 @@ Note: `riddlc-13cc4baa` reports 2 pre-existing `[missing]`
 warnings in `healthcare/clinical/appointment-scheduling` (schema
 `AppointmentData` lacks metadata and a description) that older
 binaries did not flag. Unrelated to A6.
+
+### 2026-08-27: The code-generator model — 13 tasks, dogfooding done
+
+`tooling/code-generator/` shipped: a domain modelling how a RIDDL model is
+turned into code, built as its own 19th sector so the corpus validates its
+own tooling story. Thirteen tasks, each with a brief and a report under
+`.superpowers/sdd/2026-08-26-code-generator-model/`, landed 7 contexts, a
+9-step domain saga, a 32-rule `(DefinitionKind, Paradigm)` lowering
+catalogue, 3 target profiles, and 520 definitions at 0 errors/0 warnings of
+every severity — verified with `--provide-tips` on, not just the CLI
+default. The full gate set (`riddlc validate --corpus`,
+`collect-warnings.py`, `verify-bast-roundtrip.sh`, `sbt v`/`pc`/`checkAll`)
+is green; quoted output is in `task-13-report.md`.
+
+**What this taught, in the graduation pattern — durable facts moved to
+CLAUDE.md, the rest stays here:**
+
+- **Riddlc has no opinion about a message nothing sends.** "Declared,
+  handled, and technically reachable" is not "driven" — this project hit
+  it four times (`FillArtifact`/`VerifyArtifact`, `RunBootGate`,
+  `ProveHole`), and the `ProveHole` gap silently killed an entire retry
+  cycle (`Proven` unreachable → `ReopenHole` dead → the whole §4.8
+  teaching inert) while every gate stayed green throughout. No amount of
+  gate-running catches this; only naming, for every command and event,
+  what actually sends it does. Graduated to CLAUDE.md's new "Findings from
+  dogfooding" subsection.
+- **A saga's target context needs its own driver connector.** Correcting
+  the saga-boundary rule (`tell` to the context, not its internals) only
+  half-closes the gap: the context addressed still needs an inbound
+  connector for the reachability check to see it, or `tell` alone leaves
+  it `msg-tell-target-unreachable`. Graduated to CLAUDE.md's "Saga Steps"
+  section.
+- **`--provide-tips` gates real completeness checks, not just
+  suggestions.** `GenerationRun.StartRun`'s missing handler validated
+  clean without the flag and drew a genuine `entity-command-not-handled`
+  with it. `collect-warnings.py` already carries the flag
+  (`scripts/collect-warnings.py:61`); a bare `riddlc validate` does not,
+  which makes it the lenient form — same family as `sbt v`'s `.conf`
+  leniency, one layer further out. Graduated to CLAUDE.md's "The gates".
+- **Two grammar traps that parse cleanly into the wrong model:**
+  `any of { A or B }` invents an enumerator member named `or` instead of
+  erroring (comma-separated is correct); and a reference's keyword must
+  match what it points at (`requires record X` vs `requires type X`),
+  silently accepted either way as `type` but rejected as an error when
+  it's actually a `record`. Both graduated to CLAUDE.md.
+- **The `constant`-does-not-round-trip claim in CLAUDE.md was simply
+  stale**, dated to rc.13 and never re-checked. It survives fine at
+  rc.26, verified both by unbastifying reactive-bbq's own `.bast` and by
+  this session's full 189-model round-trip pass, including this model's
+  own `constant MaxFillAttempts`. Fixed in place, not just annotated.
+- **The upstream task this project filed
+  (`saga-tell-must-not-reach-into-a-context`) landed** as
+  `msg-target-crosses-boundary`, wider than asked (covers `forward`, not
+  scoped to sagas) — and it immediately found 6 genuine sites in
+  reactive-bbq. Filed back as an incoming task, not yet actioned; see
+  HANDOFF.
+- **Only the new model's `.bast` was stale going in.** `sbt b` after all
+  13 tasks touched only `tooling/code-generator/code-generator.bast` —
+  no other model's `.bast` had drifted, so there is no separate
+  stale-`.bast` finding or commit from this task, unlike some earlier
+  sessions in this notebook.
 
 ### 2026-08-01: riddlc 2.0.0-rc.8 — error-sink inlets
 
