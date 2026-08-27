@@ -1,4 +1,4 @@
-context Planning as flow is {
+context Planning as split is {
   command PlanModel is {
     subjectModel: ModelRef with {
       briefly "Model"
@@ -41,19 +41,33 @@ context Planning as flow is {
       |Where peers deliver commands for Planning.
     }
   }
-  outlet PlanningCommandsFwd is type PlanningCommand
+  outlet PlanningToProfiles is command Planning.TargetProfiles.PersistTargetProfile
  with {
-    briefly "Planning command relay"
+    briefly "Target profile egress"
     described as {
-      |Where the boundary republishes commands for PlanningExecution.
+      |Where a derived target profile row is published toward storage.
+    }
+  }
+  outlet PlanningToCatalogue is command Planning.LoweringCatalogue.PersistLoweringRule
+ with {
+    briefly "Lowering rule egress"
+    described as {
+      |Where a derived lowering rule row is published toward storage.
     }
   }
   handler PlanningBoundary is {
     on planModel: command Planning.PlanModel is {
-      send planModel to outlet Planning.PlanningCommandsFwd
+      let selection: type ParadigmSelection = prompt("the target and definition kind to select a paradigm for, given planModel.subjectModel")
+      let chosen = call function Planning.SelectParadigm(profileTarget = selection.profileTarget, selectionKind = selection.selectionKind)
+      let request: type LoweringRequest = prompt("the lowering request for the definition being planned, carrying selection.selectionKind and chosen.chosenParadigm")
+      let planned = call function Planning.LowerDefinition(definitionPath = request.definitionPath, definitionName = request.definitionName, basePackage = request.basePackage, requestKind = request.requestKind, requestParadigm = request.requestParadigm)
+      let owed: type Capability = prompt("the capability chosen.chosenParadigm owes for selection.selectionKind, if any")
+      let required: type Capability = prompt("the capability request.requestKind requires of request.requestParadigm")
+      send command Planning.TargetProfiles.PersistTargetProfile(targetName = selection.profileTarget, processorKind = selection.selectionKind, selectedParadigm = chosen.chosenParadigm, owedCapability = owed) to outlet Planning.PlanningToProfiles
+      send command Planning.LoweringCatalogue.PersistLoweringRule(ruleDefinitionKind = request.requestKind, ruleParadigm = request.requestParadigm, requiredCapability = required, plannedArtifactKind = planned.artifactPackage, preservedGuarantee = prompt("the guarantee this rule is bound to preserve")) to outlet Planning.PlanningToCatalogue
     }
     on discardPlan: command Planning.DiscardPlan is {
-      send discardPlan to outlet Planning.PlanningCommandsFwd
+      do "discard whatever planning discardPlan.subjectModel previously produced"
     }
     on other is {
       error "Unexpected message at the Planning boundary"
@@ -61,9 +75,11 @@ context Planning as flow is {
   } with {
     briefly "Context boundary relay"
     described as {
-      |The context is the port at its own boundary. Neither command
-      |declares 'yields', so the relay sends rather than forwards: there
-      |is no response obligation to delegate downstream.
+      |The context is the port at its own boundary. Planning is
+      |aggregate-free, so there is no entity to relay to: the boundary
+      |handler does the planning work itself, selecting a paradigm,
+      |lowering the definition against it, and sending both persistence
+      |commands to Planning's own outlets.
     }
   }
   record ParadigmSelection is {
@@ -182,58 +198,6 @@ context Planning as flow is {
       |makes an unused rule visible as a `usage` finding, which this
       |corpus's zero standard turns into a build failure. It does not make a
       |MISSING rule visible; that gap is real and is stated in the spec.
-    }
-  }
-  processor PlanningExecution as split is {
-    inlet PlanningExecutionIn is type PlanningCommand with {
-      briefly "Planning execution intake"
-      described as {
-        |Planning commands arriving from the context boundary.
-      }
-    }
-    outlet PlanningExecutionToProfiles is command Planning.TargetProfiles.PersistTargetProfile
- with {
-      briefly "Target profile egress"
-      described as {
-        |Where a derived target profile row is published toward storage.
-      }
-    }
-    outlet PlanningExecutionToCatalogue is command Planning.LoweringCatalogue.PersistLoweringRule
- with {
-      briefly "Lowering rule egress"
-      described as {
-        |Where a derived lowering rule row is published toward storage.
-      }
-    }
-    handler PlanningExecutionHandler is {
-      on command PlanModel is {
-        let selection: type ParadigmSelection = prompt("the target and definition kind to select a paradigm for, given PlanModel.subjectModel")
-        let chosen = call function Planning.SelectParadigm(profileTarget = selection.profileTarget, selectionKind = selection.selectionKind)
-        let request: type LoweringRequest = prompt("the lowering request for the definition being planned, carrying selection.selectionKind and chosen.chosenParadigm")
-        let planned = call function Planning.LowerDefinition(definitionPath = request.definitionPath, definitionName = request.definitionName, basePackage = request.basePackage, requestKind = request.requestKind, requestParadigm = request.requestParadigm)
-        let owed: type Capability = prompt("the capability chosen.chosenParadigm owes for selection.selectionKind, if any")
-        let required: type Capability = prompt("the capability request.requestKind requires of request.requestParadigm")
-        send command Planning.TargetProfiles.PersistTargetProfile(targetName = selection.profileTarget, processorKind = selection.selectionKind, selectedParadigm = chosen.chosenParadigm, owedCapability = owed) to outlet Planning.PlanningExecution.PlanningExecutionToProfiles
-        send command Planning.LoweringCatalogue.PersistLoweringRule(ruleDefinitionKind = request.requestKind, ruleParadigm = request.requestParadigm, requiredCapability = required, plannedArtifactKind = planned.artifactPackage, preservedGuarantee = prompt("the guarantee this rule is bound to preserve")) to outlet Planning.PlanningExecution.PlanningExecutionToCatalogue
-      }
-      on command DiscardPlan is {
-        do "discard whatever planning DiscardPlan.subjectModel previously produced"
-      }
-      on other is {
-        error "Unexpected message for PlanningExecution"
-      }
-    } with {
-      briefly "PlanningExecution handler"
-      described as {
-        |Selects a paradigm, lowers the definition against it, and persists
-        |both the profile and the rule that justified the choice.
-      }
-    }
-  } with {
-    briefly "Executes a planning command"
-    described as {
-      |The processor that actually consults SelectParadigm and
-      |LowerDefinition, and hands their results to the two repositories.
     }
   }
   repository TargetProfiles as sink is {
@@ -443,20 +407,13 @@ context Planning as flow is {
       |must follow and the guarantee it must preserve.
     }
   }
-  connector 'PlanningCommand Intake' is from outlet Planning.PlanningCommandsFwd to inlet Planning.PlanningExecution.PlanningExecutionIn with {
-    briefly "Planning commands on their way to PlanningExecution"
-    described as {
-      |Carries commands from the context boundary to the processor that
-      |acts on them.
-    }
-  }
-  connector 'TargetProfiles Storage' is from outlet Planning.PlanningExecution.PlanningExecutionToProfiles to inlet Planning.TargetProfiles.TargetProfilesInbound with {
+  connector 'TargetProfiles Storage' is from outlet Planning.PlanningToProfiles to inlet Planning.TargetProfiles.TargetProfilesInbound with {
     briefly "Target profile rows on their way to TargetProfiles"
     described as {
       |Carries persistence commands to the repository that stores them.
     }
   }
-  connector 'LoweringCatalogue Storage' is from outlet Planning.PlanningExecution.PlanningExecutionToCatalogue to inlet Planning.LoweringCatalogue.LoweringCatalogueInbound with {
+  connector 'LoweringCatalogue Storage' is from outlet Planning.PlanningToCatalogue to inlet Planning.LoweringCatalogue.LoweringCatalogueInbound with {
     briefly "Lowering rule rows on their way to LoweringCatalogue"
     described as {
       |Carries persistence commands to the repository that stores them.
@@ -466,8 +423,10 @@ context Planning as flow is {
   briefly "Confines all target-awareness to one context"
   described as {
     |Everything upstream and downstream of Planning is target-agnostic.
-    |SelectParadigm and LowerDefinition are the two functions PlanningExecution
-    |calls to plan a definition; the catalogue and profiles they consult
-    |are populated through this context's own Persist commands.
+    |SelectParadigm and LowerDefinition are the two functions the boundary
+    |handler calls to plan a definition; Planning is aggregate-free, so
+    |that handler does the work directly rather than relaying to an
+    |entity that does not exist here. The catalogue and profiles they
+    |consult are populated through this context's own Persist commands.
   }
 }
