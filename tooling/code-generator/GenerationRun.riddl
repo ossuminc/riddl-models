@@ -1,0 +1,263 @@
+event-sourced entity GenerationRun as flow is {
+  type GenerationRunEvent is one of {
+    GenerationRun.RunStarted or GenerationRun.ModelAdmitted or GenerationRun.ModelRefused
+  } with {
+    briefly "GenerationRun event alternation"
+    described as {
+      |Events published by the GenerationRun entity.
+    }
+  }
+  inlet GenerationRunCommands is type Intake.IntakeCommand with {
+    briefly "Commands routed to this run"
+    described as {
+      |Commands relayed from the Intake boundary.
+    }
+  }
+  outlet GenerationRunEvents is type GenerationRunEvent
+ with {
+    briefly "Events this run publishes"
+    described as {
+      |Lifecycle events, consumed by the projection that persists them.
+    }
+  }
+  command StartRun yields event RunStarted is {
+    generationRunId: GenerationRunId with {
+      briefly "Run"
+      described as {
+        |The run being started.
+      }
+    }
+    subjectModel: ModelRef with {
+      briefly "Model"
+      described as {
+        |The model to generate from.
+      }
+    }
+  } with {
+    briefly "Start a generation run"
+    described as {
+      |Begins a run against a named model, before anything is known about
+      |whether that model can be generated from.
+    }
+  }
+  command AdmitModel yields event ModelAdmitted is {
+    generationRunId: GenerationRunId with {
+      briefly "Run"
+      described as {
+        |The run whose model passed the bar.
+      }
+    }
+  } with {
+    briefly "Admit the model"
+    described as {
+      |Records that the model cleared the generability bar.
+    }
+  }
+  command RefuseModel yields event ModelRefused is {
+    generationRunId: GenerationRunId with {
+      briefly "Run"
+      described as {
+        |The run whose model failed the bar.
+      }
+    }
+    blockingSeverity: Severity with {
+      briefly "Blocking class"
+      described as {
+        |The severity class that blocked admission. Style never blocks.
+      }
+    }
+  } with {
+    briefly "Refuse the model"
+    described as {
+      |Records that the model failed the generability bar, and on what.
+    }
+  }
+  event RunStarted is {
+    generationRunId: GenerationRunId with {
+      briefly "Run"
+      described as {
+        |The run that started.
+      }
+    }
+    subjectModel: ModelRef with {
+      briefly "Model"
+      described as {
+        |The model it will generate from.
+      }
+    }
+  } with {
+    briefly "Run started"
+    described as {
+      |A run came into existence.
+    }
+  }
+  event ModelAdmitted is {
+    generationRunId: GenerationRunId with {
+      briefly "Run"
+      described as {
+        |The run admitted.
+      }
+    }
+  } with {
+    briefly "Model admitted"
+    described as {
+      |The model cleared the bar and the pipeline may proceed.
+    }
+  }
+  event ModelRefused is {
+    generationRunId: GenerationRunId with {
+      briefly "Run"
+      described as {
+        |The run refused.
+      }
+    }
+    blockingSeverity: Severity with {
+      briefly "Blocking class"
+      described as {
+        |What blocked it.
+      }
+    }
+  } with {
+    briefly "Model refused"
+    described as {
+      |The model failed the bar; nothing downstream runs.
+    }
+  }
+  record GenerationRunData is {
+    generationRunId: GenerationRunId with {
+      briefly "Run"
+      described as {
+        |The run this state belongs to, carried through every state so the
+        |record can be rebuilt by replaying the event log.
+      }
+    }
+    subjectModel: ModelRef with {
+      briefly "Model"
+      described as {
+        |The model under generation.
+      }
+    }
+    admissionBlocker: Severity? with {
+      briefly "Blocker"
+      described as {
+        |What blocked admission, absent while the run is still loading and
+        |on a run that was admitted.
+      }
+    }
+  } with {
+    briefly "Generation run state data"
+    described as {
+      |Full state of a run, shared across all its states.
+    }
+  }
+  initial state Loading of record GenerationRun.GenerationRunData is {
+    initial handler LoadingInit is {
+      on init is {
+        let creation: type RunStarted = prompt("the run started that brings this generation run into existence")
+        yield creation
+      }
+    } with {
+      briefly "Loading init handler"
+      described as {
+        |Brings the run into existence by yielding its entering event.
+      }
+    }
+    handler LoadingHandler is {
+      on command AdmitModel is {
+        yield event ModelAdmitted(generationRunId = AdmitModel.generationRunId)
+      }
+      on admittedEvent: event ModelAdmitted is {
+        send admittedEvent to outlet Intake.GenerationRun.GenerationRunEvents
+        morph entity Intake.GenerationRun to state Intake.GenerationRun.Admitted with record GenerationRun.GenerationRunData(generationRunId = admittedEvent.generationRunId, subjectModel = GenerationRunData.subjectModel, admissionBlocker = empty)
+      }
+      on command RefuseModel is {
+        yield event ModelRefused(generationRunId = RefuseModel.generationRunId, blockingSeverity = RefuseModel.blockingSeverity)
+      }
+      on refusedEvent: event ModelRefused is {
+        send refusedEvent to outlet Intake.GenerationRun.GenerationRunEvents
+        morph entity Intake.GenerationRun to state Intake.GenerationRun.Refused with record GenerationRun.GenerationRunData(generationRunId = refusedEvent.generationRunId, subjectModel = GenerationRunData.subjectModel, admissionBlocker = refusedEvent.blockingSeverity)
+      }
+      on startedEvent: event RunStarted is {
+        send startedEvent to outlet Intake.GenerationRun.GenerationRunEvents
+      }
+      on other is {
+        error "Unexpected message for GenerationRun while Loading"
+      }
+    } with {
+      briefly "Loading state handler"
+      described as {
+        |Applies the generability bar's verdict. The bar itself is riddlc's
+        |judgement, not this entity's: the entity records which way it went.
+      }
+    }
+  } with {
+    briefly "Loading state"
+    described as {
+      |The model is being read and checked. No artifact exists yet.
+    }
+  }
+  state Admitted of record GenerationRun.GenerationRunData is {
+    initial handler AdmittedInit is {
+      on init is {
+        let entering: type ModelAdmitted = prompt("the model admitted that enters this state")
+        yield entering
+      }
+    } with {
+      briefly "Admitted init handler"
+      described as {
+        |Enters the admitted state.
+      }
+    }
+    handler AdmittedHandler is {
+      on other is {
+        error "A run that has been admitted accepts no further commands"
+      }
+    } with {
+      briefly "Admitted state handler"
+      described as {
+        |Terminal. The pipeline proceeds from here by saga, not by further
+        |commands to this run.
+      }
+    }
+  } with {
+    briefly "Admitted state"
+    described as {
+      |The model cleared the bar.
+    }
+  }
+  state Refused of record GenerationRun.GenerationRunData is {
+    initial handler RefusedInit is {
+      on init is {
+        let entering: type ModelRefused = prompt("the model refused that enters this state")
+        yield entering
+      }
+    } with {
+      briefly "Refused init handler"
+      described as {
+        |Enters the refused state.
+      }
+    }
+    handler RefusedHandler is {
+      on other is {
+        error "A run that has been refused accepts no further commands"
+      }
+    } with {
+      briefly "Refused state handler"
+      described as {
+        |Terminal. A refusal is the generator's answer, not a retryable
+        |condition: the model has to change.
+      }
+    }
+  } with {
+    briefly "Refused state"
+    described as {
+      |The model failed the bar. Nothing downstream runs.
+    }
+  }
+} with {
+  briefly "One invocation of the generator"
+  described as {
+    |The only thing in Intake with identity and a lifecycle. Its states are
+    |the admission decision, which is the whole of what Intake does.
+  }
+}

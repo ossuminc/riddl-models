@@ -1,0 +1,235 @@
+context Intake as flow is {
+  type IntakeCommand is one of {
+    GenerationRun.StartRun or GenerationRun.AdmitModel or GenerationRun.RefuseModel
+  } with {
+    briefly "Intake command alternation"
+    described as {
+      |Commands accepted at the Intake boundary.
+    }
+  }
+  inlet IntakeCommandsIn is type IntakeCommand with {
+    briefly "Intake command intake"
+    described as {
+      |Where peers deliver commands for Intake.
+    }
+  }
+  outlet IntakeCommandsFwd is type IntakeCommand
+ with {
+    briefly "Intake command relay"
+    described as {
+      |Where the boundary republishes commands for the entity that owns them.
+    }
+  }
+  handler IntakeBoundary is {
+    on startRun: command GenerationRun.StartRun is {
+      forward startRun to outlet Intake.IntakeCommandsFwd
+    }
+    on admitModel: command GenerationRun.AdmitModel is {
+      forward admitModel to outlet Intake.IntakeCommandsFwd
+    }
+    on refuseModel: command GenerationRun.RefuseModel is {
+      forward refuseModel to outlet Intake.IntakeCommandsFwd
+    }
+    on other is {
+      error "Unexpected message at the Intake boundary"
+    }
+  } with {
+    briefly "Context boundary relay"
+    described as {
+      |The context is the port at its own boundary.
+    }
+  }
+  type GenerationRunId is Id(GenerationRun)  with {
+    briefly "Generation run identifier"
+    described as {
+      |Identifies one invocation of the generator.
+    }
+  }
+  include "GenerationRun.riddl"
+  type IntakeRepositoryCommand is one of {
+    GenerationRunRepository.PersistRunStarted or GenerationRunRepository.PersistModelAdmitted or GenerationRunRepository.PersistModelRefused
+  } with {
+    briefly "GenerationRun repository command alternation"
+    described as {
+      |Persistence commands accepted by GenerationRunRepository.
+    }
+  }
+  projector GenerationRunProjection as flow is {
+    updates repository Intake.GenerationRunRepository
+    inlet GenerationRunProjectionFromGenerationRun is type GenerationRun.GenerationRunEvent with {
+      briefly "GenerationRun events in"
+      described as {
+        |Events arriving from the GenerationRun entity.
+      }
+    }
+    outlet GenerationRunProjectionToRepository is type Intake.IntakeRepositoryCommand
+ with {
+      briefly "Repository commands out"
+      described as {
+        |Persistence commands on their way to the repository.
+      }
+    }
+    handler GenerationRunProjectionHandler is {
+      on startedEvent: event GenerationRun.RunStarted is {
+        tell command Intake.GenerationRunRepository.PersistRunStarted(generationRunId = startedEvent.generationRunId, subjectModel = startedEvent.subjectModel) to repository Intake.GenerationRunRepository
+      }
+      on admittedEvent: event GenerationRun.ModelAdmitted is {
+        tell command Intake.GenerationRunRepository.PersistModelAdmitted(generationRunId = admittedEvent.generationRunId) to repository Intake.GenerationRunRepository
+      }
+      on refusedEvent: event GenerationRun.ModelRefused is {
+        tell command Intake.GenerationRunRepository.PersistModelRefused(generationRunId = refusedEvent.generationRunId, blockingSeverity = refusedEvent.blockingSeverity) to repository Intake.GenerationRunRepository
+      }
+    } with {
+      briefly "GenerationRunProjection handler"
+      described as {
+        |Turns each GenerationRun event into the repository command that
+        |writes it.
+      }
+    }
+  } with {
+    briefly "GenerationRun persistence projection"
+    described as {
+      |Builds the stored GenerationRun view from the entity's events.
+    }
+  }
+  repository GenerationRunRepository as sink is {
+    inlet GenerationRunRepositoryFromGenerationRunProjection is type Intake.IntakeRepositoryCommand with {
+      briefly "Repository command intake"
+      described as {
+        |Persistence commands arriving from the projection.
+      }
+    }
+    record StoredGenerationRun is {
+      generationRunId: GenerationRunId with {
+        briefly "generationRunId"
+        described as {
+          |The generationRunId column of the stored run row.
+        }
+      }
+      subjectModel: ModelRef with {
+        briefly "subjectModel"
+        described as {
+          |The subjectModel column of the stored run row.
+        }
+      }
+      admissionBlocker: Severity? with {
+        briefly "admissionBlocker"
+        described as {
+          |The admissionBlocker column of the stored run row.
+        }
+      }
+    } with {
+      briefly "Stored generation run row"
+      described as {
+        |The persistence shape of a generation run as this repository stores
+        |it.
+      }
+    }
+    schema GenerationRunData is relational
+      of generationRuns as record StoredGenerationRun
+        index on field StoredGenerationRun.generationRunId
+ with {
+      briefly "GenerationRun data schema"
+      described as {
+        |Relational schema for persisting generation run state.
+      }
+    }
+    command PersistRunStarted is {
+      generationRunId: GenerationRunId with {
+        briefly "ID"
+        described as {
+          |The stored row to create.
+        }
+      }
+      subjectModel: ModelRef with {
+        briefly "Model"
+        described as {
+          |The model this run is generating from.
+        }
+      }
+    } with {
+      briefly "Persist RunStarted"
+      described as {
+        |Instructs this repository to record a new run.
+      }
+    }
+    command PersistModelAdmitted is {
+      generationRunId: GenerationRunId with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+    } with {
+      briefly "Persist ModelAdmitted"
+      described as {
+        |Instructs this repository to apply ModelAdmitted to the stored row.
+      }
+    }
+    command PersistModelRefused is {
+      generationRunId: GenerationRunId with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+      blockingSeverity: Severity with {
+        briefly "Blocking class"
+        described as {
+          |The severity class that blocked admission.
+        }
+      }
+    } with {
+      briefly "Persist ModelRefused"
+      described as {
+        |Instructs this repository to apply ModelRefused to the stored row.
+      }
+    }
+    handler GenerationRunPersistence is {
+      on command PersistRunStarted is {
+        do "insert into GenerationRunData.generationRuns a row for generationRunId with subjectModel"
+      }
+      on command PersistModelAdmitted is {
+        do "update GenerationRunData.generationRuns clearing admissionBlocker where generationRunId matches"
+      }
+      on command PersistModelRefused is {
+        do "update GenerationRunData.generationRuns set admissionBlocker where generationRunId matches"
+      }
+    } with {
+      briefly "GenerationRun persistence handler"
+      described as {
+        |Applies each persistence command to the stored row.
+      }
+    }
+  } with {
+    briefly "GenerationRun repository"
+    described as {
+      |Stores the current shape of each generation run.
+    }
+  }
+  connector 'IntakeCommand Intake' is from outlet Intake.IntakeCommandsFwd to inlet Intake.GenerationRun.GenerationRunCommands with {
+    briefly "Intake commands on their way to GenerationRun"
+    described as {
+      |Carries commands from the context boundary to the entity that owns
+      |them.
+    }
+  }
+  connector 'GenerationRunProjection Feed' is from outlet Intake.GenerationRun.GenerationRunEvents to inlet Intake.GenerationRunProjection.GenerationRunProjectionFromGenerationRun with {
+    briefly "GenerationRun events feeding GenerationRunProjection"
+    described as {
+      |Carries the entity's events to the projection that persists them.
+    }
+  }
+  connector 'GenerationRunProjection Storage' is from outlet Intake.GenerationRunProjection.GenerationRunProjectionToRepository to inlet Intake.GenerationRunRepository.GenerationRunRepositoryFromGenerationRunProjection with {
+    briefly "GenerationRunProjection commands on their way to GenerationRunRepository"
+    described as {
+      |Carries persistence commands to the repository that acts on them.
+    }
+  }
+} with {
+  briefly "Loads and admits a model into the pipeline"
+  described as {
+    |Applies the generability bar (§4.3): a conforming model has no Errors;
+    |a generable model has no Errors and no warnings other than Style.
+  }
+}
