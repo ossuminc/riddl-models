@@ -283,19 +283,63 @@ context Planning as split is {
     }
     handler TargetProfilePersistence is {
       on command PersistTargetProfile is {
-        do "insert or update TargetProfileData.profiles the row for targetName and processorKind with selectedParadigm and owedCapability"
+        do "insert or update TargetProfileData.profiles the row for
+           targetName and processorKind with selectedParadigm and
+           owedCapability.
+
+           owedCapability is a single optional field, but a target may owe
+           several capabilities for one kind (Quarkus/Java owes three for
+           EntityKind -- see described-as). Where that happens, send one
+           PersistTargetProfile per owed capability, all sharing the same
+           targetName and processorKind: the store then holds one row per
+           (targetName, processorKind, owedCapability) rather than the
+           last capability silently overwriting the others under an
+           upsert keyed on (targetName, processorKind) alone. A target
+           that owes nothing for a kind (Pekko/Scala for EntityKind) sends
+           exactly one row with owedCapability empty."
       }
     } with {
       briefly "TargetProfile persistence handler"
       described as {
-        |Applies each persistence command to the stored row.
+        |Applies each persistence command to the stored row. See the do
+        |text for how a target owing more than one capability for a kind
+        |is recorded without one overwriting another.
       }
     }
   } with {
     briefly "Target profile repository"
     described as {
-      |Stores, one row per target, which paradigm that target supplies for
-      |each definition kind.
+      |Stores, one row per target and definition kind, which paradigm
+      |that target supplies and what capability it owes as a result.
+      |Three worked examples exercise the paradigm indirection end to
+      |end, so it is exercised rather than merely asserted:
+      |
+      |Pekko/Scala selects Actor for EntityKind and owes nothing: Pekko
+      |supplies AddressableIdentity, SerialExecution, ChannelInteraction
+      |and, via Pekko Persistence, DurableJournal, all natively. This is
+      |the top of the precedence -- the representation that costs no
+      |facade at all (design 2.3.1).
+      |
+      |Quarkus/Java selects Component for EntityKind and owes three
+      |capabilities: SerialExecution (a bean's container gives no
+      |per-instance serialization guard of its own), ChannelInteraction
+      |(a bean is invoked, not addressed over a channel, until Reactive
+      |Messaging is wired in) and DurableJournal (Hibernate Reactive
+      |persists current state, not an append-only log). This is the
+      |middle tier the design names directly (2.3.2): reactive tenets
+      |(Mutiny, SmallRye Reactive Messaging, Hibernate Reactive) without
+      |the actor representation underneath them.
+      |
+      |TypeScript/Effect selects Actor for EntityKind, via @effect/
+      |cluster (CM 4.4's own example of a target reaching Actor without a
+      |native actor language feature: "sharded, addressable, durable
+      |entities modeled on Akka Cluster Sharding"), and owes exactly
+      |DurableJournal, since no event-sourcing library is assumed
+      |present. This is the design's proof case (spec 2.3.2, Reid's
+      |ruling): owing a capability never disqualifies a target -- the
+      |generator emits the journal, and TypeScript/Effect remains
+      |Actor-tier despite the gap, unlike Quarkus/Java which reaches
+      |Actor-tier at all only through Component's floor.
     }
   }
   repository LoweringCatalogue as sink is {
@@ -392,19 +436,165 @@ context Planning as split is {
     }
     handler LoweringRulePersistence is {
       on command PersistLoweringRule is {
-        do "insert or update LoweringRuleData.rules the row for ruleDefinitionKind and ruleParadigm with requiredCapability, plannedArtifactKind and preservedGuarantee"
+        require not PersistLoweringRule.ruleDefinitionKind == ConnectorKind or PersistLoweringRule.requiredCapability == DurableJournal
+        require not PersistLoweringRule.ruleDefinitionKind == EntityKind or PersistLoweringRule.requiredCapability == DurableJournal
+        require not PersistLoweringRule.ruleDefinitionKind == SagaKind or PersistLoweringRule.requiredCapability == DurableJournal
+        do "insert or update LoweringRuleData.rules the row for
+           ruleDefinitionKind and ruleParadigm with requiredCapability,
+           plannedArtifactKind and preservedGuarantee.
+
+           The three require statements above are the catalogue's genuine
+           two-outcome decisions -- CrossContextConnectorIsPersistent,
+           EventSourcedEntityAlwaysJournals and SagaProgressAlwaysDurable
+           (LoweringCatalogue's described-as gives each its CM citation).
+           Each is a structured boolean expression comparing
+           PersistLoweringRule's own enum fields against DefinitionKind
+           and Capability MEMBERS -- never a bare literal, and there is no
+           comparand form for a quoted string at all, so the mistake this
+           corpus forbids (a literal_string invariant that is a comment
+           shaped like a guarantee) is not even parseable here. 'not A or
+           B' is this grammar's spelling of 'A implies B': boolean_expression
+           has and/or/not/comparison but no implies operator.
+
+           They are inline require statements rather than named invariant
+           definitions because riddlc rc.26 carries a confirmed bug (filed
+           upstream, ../riddl/task/2026-08-27-invariant-requires-type-never-
+           applied-false-positive.md): an invariant declared 'requires
+           <type>' -- mandatory here, since a Repository has no state to
+           read implicitly, unlike an Entity's State -- and applied via
+           'require invariant X with <expr>' is unconditionally reported
+           [usage] [invariant-requires-never-applied], even though riddlc
+           dump --json shows the reference resolves to the exact right
+           invariant. Ruled out as an artifact of this model: reproduced
+           with a single bare comparison, with the with-value as a
+           constructor and as a bare reference, and with the invariant
+           moved into an Entity's State handler -- same finding every
+           time. The inline form checks the identical condition and
+           validates clean, which is the corpus's zero standard; the
+           named-invariant form does not, for a reason that is riddlc's,
+           not this model's."
       }
     } with {
       briefly "LoweringRule persistence handler"
       described as {
-        |Applies each persistence command to the stored row.
+        |Applies each persistence command to the stored row, after
+        |checking the three rules that are genuine two-outcome decisions
+        |rather than free choices (see the do text for why they are
+        |inline require statements and not named invariant definitions).
       }
     }
   } with {
     briefly "Lowering catalogue repository"
     described as {
-      |Stores, one row per (definitionKind, paradigm), the rule a lowering
-      |must follow and the guarantee it must preserve.
+      |Thirty rules, one per (DefinitionKind, Paradigm) pair that can
+      |actually occur -- not the full 13x10 cross product. TypeKind never
+      |lands on Actor, the design's own example of a non-occurring pair: a
+      |RIDDL Type is a DDD Value Object with no identity and no lifecycle
+      |(CM 11.1), so it is never itself represented as an actor regardless
+      |of what paradigm its enclosing processor selects.
+      |
+      |Six processor-family kinds carry the paradigm precedence directly,
+      |because CM Part One treats each as a first-class computational
+      |artifact with its own concurrency and addressing story:
+      |
+      |EntityKind -- Actor (native; a Pekko/Akka persistent actor, one
+      |instance per identity, per CM 4.1's own Akka-actor mental model),
+      |DddAggregate (a DDD aggregate class guarded by an explicit
+      |per-identity dispatcher), Component (a Quarkus bean over Hibernate
+      |Reactive), PlainObject (a plain class plus a hand-rolled
+      |dispatcher, queue and log). EventSourcedEntityAlwaysJournals pins
+      |requiredCapability to DurableJournal on all four rows: CM 4.8 says
+      |a generator may choose the journal, the snapshot policy and the
+      |replay mechanism, but never WHETHER a mutation is event-derived --
+      |so the requirement holds even on Actor, where Pekko Persistence
+      |supplies it natively and no facade is owed.
+      |
+      |RepositoryKind -- Actor (CM 5.6: "Repository is a Processor... like
+      |an actor"), Component (a Quarkus/Panache repository bean),
+      |PlainObject (a plain DAO with a hand-written write lock).
+      |requiredCapability varies per row -- AddressableIdentity,
+      |ChannelInteraction, SerialExecution -- tracking always-concurrent
+      |query execution (CM 5.6), which each paradigm either supplies
+      |natively or must facade.
+      |
+      |ProjectorKind -- Actor (a Pekko actor consuming its event stream),
+      |ReactiveStream (Pekko Streams / Effect Stream folding straight into
+      |repository writes -- CM 6.4 names this the projector's OWN native
+      |tier, since its computational artifact already reads as a stream),
+      |Component (a SmallRye Reactive Messaging bean). Key-based
+      |distribution for correlating projectors (CM 6.6) is the guarantee
+      |threaded through all three.
+      |
+      |ProcessorKind, the streamlet shape-kinds (source, sink, flow,
+      |merge, split, router, void) -- Actor (a Pekko Streams stage hosted
+      |for supervision), ReactiveStream (CM 8.4: "the most natural mapping
+      |in the whole language"), CspProcess (a Go goroutine over typed
+      |channels, where back-pressure becomes bounded channel capacity
+      |rather than a demand signal). Per-inlet ordering (CM 8.6) survives
+      |on all three.
+      |
+      |AdaptorKind -- Actor (a thin translating actor deployed inside the
+      |owning context), Component (a reactive converter bean), PlainObject
+      |(a plain synchronous translation class). The isolation seam (CM
+      |7.6 -- foreign types confined to the adaptor) and determinism of
+      |translation (CM 7.7) are the guarantees common to all three.
+      |
+      |SagaKind -- Actor (a Pekko Persistence FSM actor tracking step
+      |progress), MonadicStateMachine (CM 9.4's own named fallback: "the
+      |generator emits an explicit persisted FSM: saga-progress record +
+      |step dispatch + compensation walker"), Component (a Quarkus bean
+      |over a database-backed progress table). SagaProgressAlwaysDurable
+      |pins requiredCapability to DurableJournal on all three rows, per CM
+      |9.5: "saga progress must be durable... or a crash mid-saga strands
+      |participants" -- not optional, and not excused by Actor tier the
+      |way it might look, since Pekko Persistence's journal IS the
+      |durable store being required.
+      |
+      |Two kinds have their own rows precisely because their realization
+      |differs by tier without either landing on the full precedence:
+      |
+      |ContextKind -- CM 3.4 calls a Context a deployment unit, not an
+      |addressable per-identity instance, so it never lands on Actor or
+      |DddAggregate; it is recorded at Service (a Pekko-hosted composition
+      |root: an ActorSystem wiring every contained processor behind the
+      |context's own portlets) and Component (a Quarkus deployment unit
+      |wiring every contained bean behind a facade). Both preserve
+      |independent deployability (CM 3.8) regardless of what paradigm the
+      |contents individually select.
+      |
+      |HandlerKind is derivative of its enclosing processor's own
+      |paradigm -- CM 17.4 calls it "a dispatch function (message, state)
+      |-> Effect" belonging to whatever realizes the processor -- but its
+      |dispatch SHAPE genuinely differs between an actor's receive loop
+      |and a bean's dispatch method, which is why it gets two rows (Actor,
+      |Component) rather than one, never a paradigm of its own account.
+      |
+      |Four kinds select no paradigm at all, because none of them is
+      |addressable, concurrent, message-driven or durable: DomainKind (CM
+      |2.4: "None at runtime... a namespace/package path"), TypeKind (CM
+      |11.1: "no identity, no lifecycle, no behavior" -- the exemplar
+      |above), FunctionKind (CM 19.1: "Not a processor, not a service"),
+      |EpicKind (CM 26.3/26.5: "purely static... nothing to persist,
+      |nothing to recover"). The schema still requires a Capability value
+      |on every row regardless, so each of these four is recorded once
+      |under AddressableIdentity as a nominal placeholder: the one thing
+      |still true of a bare name -- a domain's path, a type's identifier,
+      |a function's signature, an epic's story -- is that it is ADDRESSED
+      |by reference, even though nothing about it runs.
+      |
+      |ConnectorKind -- Actor (a Pekko Streams / ActorRef-mediated pub-sub
+      |channel), Component (a SmallRye Reactive Messaging channel over
+      |Kafka/AMQP), CspProcess (a bounded Go channel fronted by a
+      |generated persistent buffer, since a bare channel supplies no
+      |durability of its own). CrossContextConnectorIsPersistent pins
+      |requiredCapability to DurableJournal on all three rows regardless
+      |of paradigm -- riddlg currently defaults this the OTHER way
+      |(riddl-generator BACKLOG item 6), and CM 25.8 is explicit that
+      |durability across a context boundary is not merely a deployment
+      |matter. The CspProcess row is this design's "owing a capability
+      |never disqualifies a target" claim (spec 2.3.2) made concrete for a
+      |Connector rather than an Entity: the channel plus an emitted
+      |persistent buffer is the facade a CSP-tier target owes.
     }
   }
   connector 'TargetProfiles Storage' is from outlet Planning.PlanningToProfiles to inlet Planning.TargetProfiles.TargetProfilesInbound with {
