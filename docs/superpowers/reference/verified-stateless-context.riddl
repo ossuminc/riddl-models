@@ -1,0 +1,511 @@
+domain Probe is {
+  author OssumInc is {
+    name = "Ossum Inc."
+    email = "info@ossuminc.com"
+  } with {
+    briefly "Author of this model"
+    described as {
+      |Ossum Inc., creators of RIDDL.
+    }
+  }
+  version 1 with {
+    briefly "Model version"
+    described as {
+      |The model's version, not the RIDDL language version.
+    }
+  }
+  context Alpha as flow is {
+    type AlphaCommand is one of {
+      Widget.DoAlpha or Widget.UndoAlpha
+    } with {
+      briefly "Alpha command alternation"
+      described as {
+        |Commands accepted at the Alpha boundary.
+      }
+    }
+    inlet AlphaCommandsIn is type AlphaCommand with {
+      briefly "Alpha command intake"
+      described as {
+        |Where peers deliver commands for Alpha.
+      }
+    }
+    outlet AlphaCommandsFwd is type AlphaCommand
+ with {
+      briefly "Alpha command relay"
+      described as {
+        |Where the boundary republishes commands for the entity that owns them.
+      }
+    }
+    handler AlphaBoundary is {
+      on doAlpha: command Widget.DoAlpha is {
+        forward doAlpha to outlet Alpha.AlphaCommandsFwd
+      }
+      on undoAlpha: command Widget.UndoAlpha is {
+        forward undoAlpha to outlet Alpha.AlphaCommandsFwd
+      }
+      on other is {
+        error "Unexpected message at the Alpha boundary"
+      }
+    } with {
+      briefly "Context boundary relay"
+      described as {
+        |The context is the port at its own boundary.
+      }
+    }
+    type WidgetId is Id(Widget)  with {
+      briefly "Widget identifier"
+      described as {
+        |Identifies one widget.
+      }
+    }
+    event-sourced entity Widget as flow is {
+      type WidgetEvent is one of {
+        Widget.AlphaDone or Widget.AlphaUndone
+      } with {
+        briefly "Widget event alternation"
+        described as {
+          |Events published by Widget.
+        }
+      }
+      inlet WidgetCommands is type Alpha.AlphaCommand with {
+        briefly "Widget command intake"
+        described as {
+          |Commands routed to this widget.
+        }
+      }
+      outlet WidgetEvents is type WidgetEvent
+ with {
+        briefly "Widget event egress"
+        described as {
+          |Events this widget publishes.
+        }
+      }
+      command DoAlpha yields event AlphaDone is {
+        widgetId: WidgetId with {
+          briefly "Widget"
+          described as {
+            |The widget addressed.
+          }
+        }
+      } with {
+        briefly "Do alpha"
+        described as {
+          |Perform the alpha step.
+        }
+      }
+      command UndoAlpha yields event AlphaUndone is {
+        widgetId: WidgetId with {
+          briefly "Widget"
+          described as {
+            |The widget addressed.
+          }
+        }
+      } with {
+        briefly "Undo alpha"
+        described as {
+          |Compensate the alpha step.
+        }
+      }
+      event AlphaDone is {
+        widgetId: WidgetId with {
+          briefly "Widget"
+          described as {
+            |The widget affected.
+          }
+        }
+      } with {
+        briefly "Alpha done"
+        described as {
+          |The alpha step completed.
+        }
+      }
+      event AlphaUndone is {
+        widgetId: WidgetId with {
+          briefly "Widget"
+          described as {
+            |The widget affected.
+          }
+        }
+      } with {
+        briefly "Alpha undone"
+        described as {
+          |The alpha step was compensated.
+        }
+      }
+      record WidgetData is {
+        widgetId: WidgetId with {
+          briefly "Widget"
+          described as {
+            |The widget this state belongs to.
+          }
+        }
+        alphaDone: Boolean with {
+          briefly "Alpha flag"
+          described as {
+            |Whether the alpha step currently stands.
+          }
+        }
+      } with {
+        briefly "Widget state data"
+        described as {
+          |Full state of a widget.
+        }
+      }
+      initial state Ready of record Widget.WidgetData is {
+        initial handler ReadyInit is {
+          on init is {
+            let creation: type AlphaDone = prompt("the alpha done that brings this widget into existence")
+            yield creation
+          }
+        } with {
+          briefly "Ready init handler"
+          described as {
+            |Brings the widget into existence.
+          }
+        }
+        handler ReadyHandler is {
+          on command DoAlpha is {
+            yield event AlphaDone(widgetId = DoAlpha.widgetId)
+          }
+          on doneEvent: event AlphaDone is {
+            set field Widget.Ready.alphaDone to prompt("true")
+            send doneEvent to outlet Alpha.Widget.WidgetEvents
+          }
+          on command UndoAlpha is {
+            yield event AlphaUndone(widgetId = UndoAlpha.widgetId)
+          }
+          on undoneEvent: event AlphaUndone is {
+            set field Widget.Ready.alphaDone to prompt("false")
+            send undoneEvent to outlet Alpha.Widget.WidgetEvents
+          }
+          on other is {
+            error "Unexpected message for Widget in Ready"
+          }
+        } with {
+          briefly "Ready state handler"
+          described as {
+            |Applies alpha and its compensation.
+          }
+        }
+      } with {
+        briefly "Ready state"
+        described as {
+          |The only state a widget has.
+        }
+      }
+    } with {
+      briefly "Widget aggregate"
+      described as {
+        |The thing the alpha step acts on.
+      }
+    }
+    type WidgetRepositoryCommand is one of {
+      WidgetRepository.PersistAlphaDone or WidgetRepository.PersistAlphaUndone
+    } with {
+      briefly "Widget repository command alternation"
+      described as {
+        |Persistence commands accepted by WidgetRepository.
+      }
+    }
+    projector WidgetProjection as flow is {
+      updates repository Alpha.WidgetRepository
+      inlet WidgetProjectionFromWidget is type Widget.WidgetEvent with {
+        briefly "Widget events in"
+        described as {
+          |Events arriving from the Widget entity.
+        }
+      }
+      outlet WidgetProjectionToRepository is type Alpha.WidgetRepositoryCommand
+ with {
+        briefly "Repository commands out"
+        described as {
+          |Persistence commands on their way to the repository.
+        }
+      }
+      handler WidgetProjectionHandler is {
+        on doneEvent: event Widget.AlphaDone is {
+          tell command Alpha.WidgetRepository.PersistAlphaDone(widgetId = doneEvent.widgetId) to repository Alpha.WidgetRepository
+        }
+        on undoneEvent: event Widget.AlphaUndone is {
+          tell command Alpha.WidgetRepository.PersistAlphaUndone(widgetId = undoneEvent.widgetId) to repository Alpha.WidgetRepository
+        }
+      } with {
+        briefly "WidgetProjection handler"
+        described as {
+          |Turns each Widget event into the repository command that writes it.
+        }
+      }
+    } with {
+      briefly "Widget persistence projection"
+      described as {
+        |Builds the stored Widget view from the entity's events.
+      }
+    }
+    repository WidgetRepository as sink is {
+      inlet WidgetRepositoryFromWidgetProjection is type Alpha.WidgetRepositoryCommand with {
+        briefly "Repository command intake"
+        described as {
+          |Persistence commands arriving from the projection.
+        }
+      }
+      record StoredWidget is {
+        widgetId: WidgetId with {
+          briefly "widgetId"
+          described as {
+            |The widgetId column of the stored widget row.
+          }
+        }
+        alphaDone: Boolean with {
+          briefly "alphaDone"
+          described as {
+            |The alphaDone column of the stored widget row.
+          }
+        }
+      } with {
+        briefly "Stored widget row"
+        described as {
+          |The persistence shape of widget data as this repository stores it.
+        }
+      }
+      schema WidgetData is relational
+        of widgets as record StoredWidget
+          index on field StoredWidget.widgetId
+ with {
+        briefly "Widget data schema"
+        described as {
+          |Relational schema for persisting widget state.
+        }
+      }
+      command PersistAlphaDone is {
+        widgetId: WidgetId with {
+          briefly "ID"
+          described as {
+            |The stored row to update.
+          }
+        }
+      } with {
+        briefly "Persist AlphaDone"
+        described as {
+          |Instructs this repository to apply AlphaDone to the stored row.
+        }
+      }
+      command PersistAlphaUndone is {
+        widgetId: WidgetId with {
+          briefly "ID"
+          described as {
+            |The stored row to update.
+          }
+        }
+      } with {
+        briefly "Persist AlphaUndone"
+        described as {
+          |Instructs this repository to apply AlphaUndone to the stored row.
+        }
+      }
+      handler WidgetPersistence is {
+        on command PersistAlphaDone is {
+          do "update WidgetData.widgets set alphaDone = true where widgetId matches"
+        }
+        on command PersistAlphaUndone is {
+          do "update WidgetData.widgets set alphaDone = false where widgetId matches"
+        }
+      } with {
+        briefly "Widget persistence handler"
+        described as {
+          |Applies each persistence command to the stored row.
+        }
+      }
+    } with {
+      briefly "Widget repository"
+      described as {
+        |Stores the current shape of each widget.
+      }
+    }
+    connector 'WidgetProjection Feed' is from outlet Alpha.Widget.WidgetEvents to inlet Alpha.WidgetProjection.WidgetProjectionFromWidget with {
+      briefly "Widget events feeding WidgetProjection"
+      described as {
+        |Carries the entity's events to the projection that persists them.
+      }
+    }
+    connector 'WidgetProjection Storage' is from outlet Alpha.WidgetProjection.WidgetProjectionToRepository to inlet Alpha.WidgetRepository.WidgetRepositoryFromWidgetProjection with {
+      briefly "WidgetProjection commands on their way to WidgetRepository"
+      described as {
+        |Carries persistence commands to the repository that acts on them.
+      }
+    }
+    connector 'AlphaCommand Intake' is from outlet Alpha.AlphaCommandsFwd to inlet Alpha.Widget.WidgetCommands with {
+      briefly "Alpha commands on their way to Widget"
+      described as {
+        |Carries commands from the context boundary to the entity that owns them.
+      }
+    }
+  } with {
+    briefly "Alpha bounded context"
+    described as {
+      |Owns the widget and the alpha step.
+    }
+  }
+  application context Driver as source is {
+    outlet StatelessCommands is type Stateless.StatelessCommand
+ with {
+      briefly "Stateless command egress"
+      described as {
+        |Where the driver publishes commands for the stateless context.
+      }
+    }
+    outlet DriverCommands is type Alpha.AlphaCommand
+ with {
+      briefly "Driver command egress"
+      described as {
+        |Where the command-line driver publishes commands for the pipeline.
+      }
+    }
+  } with {
+    briefly "Command-line driver"
+    described as {
+      |The process that starts a run and issues its commands.
+    }
+  }
+  persistent connector 'AlphaCommand Stream' is from outlet Driver.DriverCommands to inlet Alpha.AlphaCommandsIn with {
+    briefly "Alpha commands from the driver"
+    described as {
+      |Carries commands from the driver to the Alpha context boundary.
+    }
+  }
+  context Stateless as sink is {
+    command DoWork is {
+      workNote: String(1,64) with {
+        briefly "Note"
+        described as {
+          |What the work concerns.
+        }
+      }
+    } with {
+      briefly "Do the work"
+      described as {
+        |Asks the stateless context to do its job.
+      }
+    }
+    type StatelessCommand is one of {
+      Stateless.DoWork or Stateless.UndoWork
+    } with {
+      briefly "Stateless command alternation"
+      described as {
+        |Commands accepted at the Stateless boundary.
+      }
+    }
+    command UndoWork is {
+      workNote: String(1,64) with {
+        briefly "Note"
+        described as {
+          |What the work concerns.
+        }
+      }
+    } with {
+      briefly "Undo the work"
+      described as {
+        |Compensates the work.
+      }
+    }
+    inlet StatelessCommandsIn is type StatelessCommand with {
+      briefly "Stateless command intake"
+      described as {
+        |Where peers deliver commands for Stateless.
+      }
+    }
+    handler StatelessBoundary is {
+      on command DoWork is {
+        do "perform the work described by workNote"
+      }
+      on command UndoWork is {
+        do "undo the work described by workNote"
+      }
+      on other is {
+        error "Unexpected message at the Stateless boundary"
+      }
+    } with {
+      briefly "Context boundary and worker"
+      described as {
+        |Nothing inside needs routing to, so the boundary handler does the
+        |work directly rather than forwarding it.
+      }
+    }
+  } with {
+    briefly "A stateless bounded context"
+    described as {
+      |Holds no aggregate and no repository.
+    }
+  }
+  persistent connector 'StatelessCommand Stream' is from outlet Driver.StatelessCommands to inlet Stateless.StatelessCommandsIn with {
+    briefly "Stateless commands from the driver"
+    described as {
+      |Carries commands from the driver to the Stateless boundary.
+    }
+  }
+  context Sink as sink is {
+    inlet ErrorSink is record Riddl.GeneratorError with {
+      option error-sink()
+      briefly "Hard error destination"
+      described as {
+        |Where hard errors raised in this domain are delivered.
+      }
+    }
+  } with {
+    briefly "Domain-wide operational concerns"
+    described as {
+      |Holds the domain error sink.
+    }
+  }
+  saga Pipeline is {
+    step StepAlpha is  {
+      do "Ask Alpha to perform the alpha step"
+      let doAlpha: type Alpha.Widget.DoAlpha = prompt("the do alpha command for this run")
+      tell doAlpha to context Alpha
+    }
+    reverted by {
+      do "Ask Alpha to undo the alpha step"
+      let undoAlpha: type Alpha.Widget.UndoAlpha = prompt("the undo alpha command for this run")
+      tell undoAlpha to context Alpha
+    }
+ with {
+      briefly "Perform alpha"
+      described as {
+        |The first step, addressed to the context rather than its entity.
+      }
+    }
+    step StepConfirmAlpha is  {
+      do "Ask Alpha to confirm the alpha step stands"
+      let confirmAlpha: type Alpha.Widget.DoAlpha = prompt("the confirming do alpha for this run")
+      tell confirmAlpha to context Alpha
+    }
+    reverted by {
+      do "Ask Alpha to undo the confirmation"
+      let undoConfirm: type Alpha.Widget.UndoAlpha = prompt("the undo alpha that reverts the confirmation")
+      tell undoConfirm to context Alpha
+    }
+ with {
+      briefly "Confirm alpha"
+      described as {
+        |A second step, present because a saga requires at least two.
+      }
+    }
+  } with {
+    option timeout("PT10M")
+    briefly "Domain-level pipeline"
+    described as {
+      |Orchestrates the contexts of this domain, addressing each context
+      |rather than reaching into it.
+    }
+  }
+  connector ErrorsToSink is from outlet Riddl.ForeverEmpty.void to inlet Sink.ErrorSink with {
+    briefly "Hard errors to the domain error sink"
+    described as {
+      |No modelled component emits a GeneratorError; generators do, at run time.
+    }
+  }
+} with {
+  briefly "Probe domain"
+  described as {
+    |A minimal model probing domain-level saga addressing of a context.
+  }
+}
