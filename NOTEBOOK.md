@@ -105,12 +105,21 @@ balk.
 `main` is now the only branch, local and remote, and `sbt checkAll` is green
 on it (189 validate, 1003 canonical, 2 examples + 7 templates, Passed).
 
-**Filed outward:**
-`../riddl/task/2026-09-01-riddl-models-is-on-main-drop-the-branch-override.md`
-asks riddl to delete `RIDDL_MODELS_BRANCH: release/2` from `scala.yml`.
-**Synapify has NOT been told** — it selects models from this repo by branch
-and was to switch its default back to `main`; that is a separate repo and a
-separate session.
+**Filed outward, both consumers:**
+
+- `../riddl/task/2026-09-01-riddl-models-is-on-main-drop-the-branch-override.md`
+  — delete `RIDDL_MODELS_BRANCH: release/2` from `scala.yml`.
+- in `../synapify/task/`,
+  `2026-09-01-riddl-models-select-from-main-release2-deleted.md`
+  — its `modelLibraryRef` **default is already `main`**, so the code needs
+  nothing; what is wrong is `SettingsView.scala:527`, whose help text still
+  says "Use release/2". The real problem is that `modelLibraryRef` is a
+  localStorage `WebStorageVar`, so **a stored `release/2` beats the default**
+  and now 404s — anyone who followed that help text is stuck until they clear
+  it. Flagged as their call, not ours.
+
+Both tasks warn that `main` pins an unpublished riddlc, so a released `2.0.0`
+reading this corpus reports 240 `stream-processor-keyword` deprecations.
 
 **BACKLOG #23 and #24** remain open and untouched. BACKLOG #4 ("`main` stays
 on 1.x until riddl 2.0 ships") is removed — it is what just completed.
