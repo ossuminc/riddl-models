@@ -313,17 +313,6 @@ their `.bast` are still regenerated. Revisit if prettify's port/alternation
 formatting improves — riddl has recorded that **formatting waits for the 2.0
 release** (`fdc5c1718`).
 
-## 4. `main` stays on 1.x until riddl 2.0 ships
-
-`origin/main` is **72 commits behind** `release/2` and still carries
-`state X of type Y`. Reid's decision, 2026-08-04: leave it. `release/2` pins
-a staged, unpublished RC, so merging would make the default branch depend on
-something nobody can resolve.
-
-Synapify reads `release/2` and has a settings panel for it. **Merge when
-riddl 2.0 ships**, not before. Full reasoning in
-`task/done/main-still-1x-syntax-breaks-consumers.md`.
-
 ## 5. `sbt test` is a weak gate for model edits
 
 sbt 2 routes `test` to `testQuick`, which skips tests it believes unchanged,

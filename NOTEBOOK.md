@@ -6,9 +6,10 @@ Development journal for active work on the riddl-models repository.
 
 ### riddlc is on an UNPUBLISHED pin, and the override is ON
 
-**Branch** `release/2`. **riddlc `2.0.0-9-e895537f`** — riddl `main`, 9
-commits past the `2.0.0` tag, commit `e895537f3`. This is a **snapshot, not
-a release**: GitHub Packages stops at `2.0.0`, so
+**Branch** `main` — `release/2` is merged and deleted (see below).
+**riddlc `2.0.0-9-e895537f`** — riddl `main`, 9 commits past the `2.0.0`
+tag, commit `e895537f3`. This is a **snapshot, not a release**: GitHub
+Packages stops at `2.0.0`, so
 
 - `riddlcPath := Some(file("../bin/riddlc"))` — the override is back on,
   the posture CLAUDE.md warns about. **Verify with `riddlc info`, never the
@@ -84,28 +85,42 @@ The three denominators still differ on purpose: `--corpus` walks 191 entry
 points, the sweep and `sbt v`/`pc` exclude `patterns/` (189), `checkAll`
 runs 189 models + 2 examples. Don't flatten them.
 
-### Still open — NOT done this session
+### `release/2` is merged to `main` and DELETED
 
-**`task/upgrade-riddl-2.0.0.md` asks for two things beyond the upgrade**,
-neither requested and neither done:
+Done 2026-09-01, closing the last criterion of
+`task/upgrade-riddl-2.0.0.md`. It was a **pure fast-forward** — `origin/main`
+was an ancestor, 0 behind / 252 ahead — so there is no merge commit and
+`main` is exactly `022705ea`.
 
-1. **Merge `release/2` into `main` and delete the branch**, local and
-   remote. riddl's `scala.yml` carries `RIDDL_MODELS_BRANCH: release/2`
-   only because this corpus is on a branch, and Synapify wants to switch
-   its default back to `main`. Both unblock when this lands. **Tell riddl
-   when it does.**
-2. Its `.bast` acceptance criterion is already satisfied — revision **23**,
-   corpus-wide, `patterns/` included.
+**`git branch -d` refused it**, and the refusal was correct rather than a
+problem: `-d` checks the branch against its **upstream**, and `022705ea` had
+been committed locally but never pushed to `origin/release/2`. Git said so
+precisely — *"not yet merged to refs/remotes/origin/release/2, even though it
+is merged to HEAD."* `-D` was safe only because `main` AND `origin/main` both
+already carried the commit, which was verified before forcing, not assumed.
+The lesson generalises: when a branch's last commit goes to `main` by
+fast-forward without ever being pushed on its own branch, `-d` will always
+balk.
 
-**BACKLOG #23 and #24** remain open and untouched.
+`main` is now the only branch, local and remote, and `sbt checkAll` is green
+on it (189 validate, 1003 canonical, 2 examples + 7 templates, Passed).
+
+**Filed outward:**
+`../riddl/task/2026-09-01-riddl-models-is-on-main-drop-the-branch-override.md`
+asks riddl to delete `RIDDL_MODELS_BRANCH: release/2` from `scala.yml`.
+**Synapify has NOT been told** — it selects models from this repo by branch
+and was to switch its default back to `main`; that is a separate repo and a
+separate session.
+
+**BACKLOG #23 and #24** remain open and untouched. BACKLOG #4 ("`main` stays
+on 1.x until riddl 2.0 ships") is removed — it is what just completed.
 
 ### Pointers
 
 - **CLAUDE.md** — "`streamlet`, not `processor`" (RIDDL Syntax Reference),
   "riddlc Location" for the override posture, "Tracking riddl's `main`".
-- **`task/`** — both files have Results appended. The streamlet one is
-  in `task/done/`; **`upgrade-riddl-2.0.0.md` deliberately is NOT**, its
-  branch-merge criterion being unmet.
+- **`task/`** — empty; both files have Results appended and are in
+  `task/done/`.
 - Run **`/ossuminc-skills:check-tasks`** in the new session. Two files
   landed *during* this one, after its own start-of-session triage came back
   empty — so an empty `task/` is a fact with a timestamp, not a standing
@@ -140,9 +155,13 @@ to the task file and note completion in this notebook.
   invoked explicitly via `sbt v` / `sbt riddlcValidate`
 - All model READMEs have NAICS codes
 
-### In Progress: `release/2` — A6 tell-reachability
+### COMPLETED (historical): `release/2` — A6 tell-reachability
 
-Branch `release/2` migrates the corpus to RIDDL 2.0 streaming
+Recorded 2026-07-26, when `release/2` was live. That branch is now merged
+to `main` and deleted (2026-09-01); the entry is kept for its measurements,
+not as current status. The binary it names is long superseded.
+
+Branch `release/2` migrated the corpus to RIDDL 2.0 streaming
 syntax and wires every `tell` target so it is reachable via a
 connector (A6). Validate with `../bin/riddlc-13cc4baa` — it
 misreports its own git hash but is the latest `riddl` build.
