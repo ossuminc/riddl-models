@@ -270,13 +270,36 @@ handle one:
 - **Relays** (source/sink processors) use `on other`. A `source` has
   no inlets, so an `on command` clause in one can never fire.
 
+**`streamlet`, not `processor`** (2.0.0-9-e895537f). The generic
+streaming-processor keyword is now `streamlet`. Every other kind of processor
+already names a THING — `entity`, `repository`, `projector`, `adaptor`,
+`context` — so `processor` named the ABSTRACTION instead, and did not
+match the AST node it has always built, which is `Streamlet`.
+**"Processor" remains the right word in PROSE** for that abstraction; only
+the declaration keyword moved.
+
+`processor` keeps parsing forever — under the 3.0 rule riddl deprecates and
+renames but never deletes a spelling — and draws `[deprecated]
+[stream-processor-keyword]`. Both spellings build the **identical** AST node,
+which is not a claim to take on faith: after migrating all 242 declarations in
+this corpus, 188 of 189 `.bast` files came back **byte-identical**, as did both
+of `patterns/`.
+
+Migrating is mechanical, and `sbt r` is the way to do it here — prettify emits
+`streamlet`, and canonical form is required at commit time anyway.
+`riddlc validate --fix --fix-rule stream-processor-keyword` also works.
+**Do not touch `processor` inside string literals**: 195 handler bodies say
+`error "Unexpected message for processor X"`, and that prose is unaffected. A
+loose grep scores 455 in this repo against 242 real declarations, so grep the
+declaration SHAPE (`^\s*processor <Id>`), never the bare word.
+
 **Shape Ascriptions** — every ported processor carries one:
 
 ```riddl
 entity Cart as flow is { ... }
 repository CartRepository as merge is { ... }
 projector CartAnalytics as flow is { ... }
-processor CartEventSplit as split is { ... }
+streamlet CartEventSplit as split is { ... }
 application context ShoppingCartApp as merge is { ... }
 ```
 
@@ -296,7 +319,7 @@ riddl's `AST.scala`, by `(outlets, inlets)`:
 `shapeForArity` is **total** — every non-negative arity has a shape and
 there is no fallback. Checked against `AST.scala` on 2026-08-13; an earlier
 version of this table claimed (0,0) carried no ascription, which is wrong:
-`(0, 0) => Void(loc)`, and `processor NightlyCloseOut as void is { ... }`
+`(0, 0) => Void(loc)`, and `streamlet NightlyCloseOut as void is { ... }`
 validates and round-trips. reactive-bbq has one.
 
 Note also that a **sink is any pure drain and a source any pure origin**,
@@ -1055,11 +1078,16 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.0.0-rc.26**, a PUBLISHED release (set by `riddlVersion`
-in `build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
-There is no `riddlcPath` override: the plugin downloads the binary to
-`~/.cache/riddlc/2.0.0-rc.26/bin/riddlc` and the libraries resolve from GitHub
-Packages.
+Current version: **2.0.0-9-e895537f**, an UNPUBLISHED snapshot of riddl `main`
+— 9 commits past the `2.0.0` tag, commit `e895537f3` (set by `riddlVersion` in
+`build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries). It is
+tracked rather than the `2.0.0` tag because `streamlet` landed after the tag.
+
+Because it is unpublished, **the override is ON**: `riddlcPath :=
+Some(file("../bin/riddlc"))`, and the libraries resolve from `~/.ivy2/local`
+via `sbt publishLocal` in the riddl checkout. GitHub Packages stops at `2.0.0`.
+Move to the next published tag carrying `streamlet` as soon as there is one,
+and take the override off in the same edit.
 
 **`riddlcPath` WINS over the pin, so verify the binary, never the pin.** When
 `riddlVersion` names an unpublished staged RC the override points at
@@ -1086,6 +1114,12 @@ a claim, pass it the pinned binary:
 V=$(sed -n 's/.*riddlVersion = "\(.*\)"/\1/p' build.sbt)
 RIDDLC=~/.cache/riddlc/$V/bin/riddlc ./scripts/collect-warnings.py
 ```
+
+**On the CURRENT unpublished pin that cache path does not exist**, because
+the plugin never downloaded anything — `../bin/riddlc` IS the pinned binary,
+so the scripts' default is correct for once. That coincidence ends the moment
+the pin returns to a published tag, so keep verifying with `riddlc info`
+rather than assuming either path.
 
 ### Model Include Structure
 
@@ -1162,7 +1196,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.0.0-rc.26 | `riddlVersion` in `build.sbt` (published) |
+| riddlc | 2.0.0-9-e895537f | `riddlVersion` in `build.sbt` (unpublished) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
@@ -1308,15 +1342,19 @@ Both `verifyTemplates` and the `executeTests` hook need `Def.uncached`:
 sbt 2 caches task results, and a `Unit` task with no hashable inputs runs
 exactly once otherwise, while `Tests.Output` has no `JsonFormat` at all.
 
-### Tracking riddl's `release/2`
+### Tracking riddl's `main`
 
 riddl, riddl-generator and this repository move together — code generation
-needs drive language changes, which land here as model changes. The corpus
-tracks riddl's `release/2` line, but **on its published RC tags wherever
-possible**: it is on `2.0.0-rc.26` with no override. Point `riddlcPath` at a
-staged `../bin/riddlc` only to track an RC that has not been published yet,
-and **take the override off the moment it is** — a stale override is
-indistinguishable from a clean corpus.
+needs drive language changes, which land here as model changes. riddl's
+`release/2` is merged, tagged `2.0.0` and deleted, so the line to track is now
+**`main`**, and the corpus prefers **published tags wherever possible**.
+
+It is currently on `2.0.0-9-e895537f`, an unpublished snapshot, **with the
+override ON** — the exception, not the posture, taken because `streamlet`
+landed 9 commits past the tag. Point `riddlcPath` at a staged `../bin/riddlc`
+only to track a commit that has not been published yet, and **take the override
+off the moment it is** — a stale override is indistinguishable from a clean
+corpus.
 
 - **`riddlVersion` in `build.sbt` pins both** the riddlc binary and the
   riddl libraries the test suite links. They come from the same build.
@@ -1325,6 +1363,9 @@ indistinguishable from a clean corpus.
   task fails with a bare `Nonzero exit value: 56`.
 - **The libraries resolve from GitHub Packages** on a published pin; only a
   staged RC needs `sbt publishLocal` from the riddl checkout.
-- **`scalaVersion` must match riddl's** (`V.scala` in
-  `riddl/project/`). Its TASTy is not readable by an older compiler. A
-  `Test/compile` failure reading `.tasty` means this drifted.
+- **`scalaVersion` must match riddl's** — `val scala` in
+  `riddl/project/Dependencies.scala` (the object is `V`; there is no
+  `V.scala`, and looking for that filename finds nothing). Its TASTy is not
+  readable by an older compiler. A `Test/compile` failure reading `.tasty`
+  means this drifted. It moved to **3.9.0** final for this upgrade, from the
+  `3.9.0-RC4` that rc.26 needed.

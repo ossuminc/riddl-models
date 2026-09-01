@@ -14,10 +14,16 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. This is a PUBLISHED release (tag
-// 2.0.0-rc.26, commit c64f3388f), so `riddlcPath` below is None: the plugin
-// downloads the binary and the libraries resolve from GitHub Packages.
-lazy val riddlVersion = "2.0.0-rc.26"
+// same build, so one value pins both. This is an UNPUBLISHED snapshot of riddl
+// `main` -- 9 commits past the 2.0.0 tag, commit e895537f3 -- so `riddlcPath`
+// below names a staged binary and the libraries resolve from ~/.ivy2/local via
+// `sbt publishLocal` in the riddl checkout. GitHub Packages stops at 2.0.0.
+//
+// It is tracked rather than 2.0.0 because `streamlet` (BACKLOG [5.1], the head
+// commit) landed after the tag, and the corpus migrated off `processor` to it.
+// Move to the next PUBLISHED tag containing that change as soon as there is one,
+// and take the riddlcPath override off in the same edit.
+lazy val riddlVersion = "2.0.0-9-e895537f"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -51,24 +57,26 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // readable by an older compiler, and the test suite links those libraries
     // directly. If `Test/compile` starts failing with "TASTy file ... could not
     // be read", this is what drifted.
-    scalaVersion := "3.9.0-RC4",
+    scalaVersion := "3.9.0",
 
     riddlcVersion := riddlVersion,
 
     // The test suite validates the corpus through the library API, which is a
-    // different path from the CLI that riddlcValidate drives. These resolve
-    // from GitHub Packages now that riddlVersion names a published release;
-    // a staged RC would need `sbt publishLocal` from the riddl checkout.
+    // different path from the CLI that riddlcValidate drives. riddlVersion names
+    // an UNPUBLISHED snapshot, so these resolve from ~/.ivy2/local and require
+    // `sbt publishLocal` in the riddl checkout; a published tag would resolve
+    // from GitHub Packages with nothing else to do.
     libraryDependencies ++= Seq(
       "com.ossuminc" %% "riddl-language" % riddlVersion % Test,
       "com.ossuminc" %% "riddl-passes" % riddlVersion % Test,
       "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
     ),
 
-    // None because riddlVersion names a PUBLISHED release: the plugin downloads
-    // it to ~/.cache/riddlc/<version>/bin/riddlc. Set this to Some(staged path)
-    // ONLY while tracking an unpublished RC that the plugin cannot download --
-    // and take it off again the moment that RC is published.
+    // Some(...) because riddlVersion names an UNPUBLISHED snapshot the plugin
+    // cannot download -- every riddlc task would fail with a bare
+    // `Nonzero exit value: 56`. Set this back to None the moment a published tag
+    // carries `streamlet`; a stale override is indistinguishable from a clean
+    // corpus.
     //
     // Two traps, both paid for. This path WINS over riddlVersion, so while an
     // override is in place verify `riddlc info` against the pin rather than
@@ -77,7 +85,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // not in the binary. And a `git checkout -- .` reverts the pin silently,
     // which happened on 2026-08-19 and left the pin naming rc.19-3 while
     // rc.19-5 validated.
-    riddlcPath := None,
+    riddlcPath := Some(file("../bin/riddlc")),
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),

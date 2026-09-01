@@ -4,113 +4,112 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-### The code-generator model is DONE — 13/13 tasks, corpus at zero
+### riddlc is on an UNPUBLISHED pin, and the override is ON
 
-The dogfooding project (design approved 2026-08-26, tracked in
-`.superpowers/sdd/2026-08-26-code-generator-model/`) is complete and
-committed. `tooling/code-generator/` — 7 contexts, a 9-step domain saga, a
-32-rule lowering catalogue, 3 target profiles, **520 definitions** — is the
-19th sector, and its `.bast` is generated and round-trip clean. Nothing
-about this project is in flight; do not re-open it without a new reason.
+**Branch** `release/2`. **riddlc `2.0.0-9-e895537f`** — riddl `main`, 9
+commits past the `2.0.0` tag, commit `e895537f3`. This is a **snapshot, not
+a release**: GitHub Packages stops at `2.0.0`, so
 
-### Verified build state (2026-08-27)
+- `riddlcPath := Some(file("../bin/riddlc"))` — the override is back on,
+  the posture CLAUDE.md warns about. **Verify with `riddlc info`, never the
+  pin**; `sbt riddlcInfo` printed `2.0.0-9-e895537f` / `e895537f3` here.
+- the test-suite libraries resolve from `~/.ivy2/local` (already published
+  there; no `publishLocal` was needed this session)
+- `scalaVersion` moved `3.9.0-RC4` -> **`3.9.0`** to match riddl's
+  `project/Dependencies.scala`
 
-**Branch** `release/2`. **riddlc `2.0.0-rc.26`**, a PUBLISHED release
-(`riddlcPath := None`); `riddlc info` confirms commit `c64f3388f`. Full
-gate set, all re-run this session with quoted output in
-`.superpowers/sdd/2026-08-26-code-generator-model/task-13-report.md`:
+It is tracked instead of `2.0.0` for one reason: **`streamlet` landed after
+the tag**. Move to the next published tag carrying it and drop the override
+in the same edit.
+
+### `processor` -> `streamlet`, all 242 declarations migrated
+
+The head commit renames the generic streaming keyword. `processor` still
+parses forever and draws `[deprecated] [stream-processor-keyword]`.
+
+- **240 by `sbt r`** (prettify emits the new spelling), **2 by hand** in
+  `patterns/`, which `riddlcPrettify` excludes — true of any future syntax
+  migration, so check `patterns/` by hand every time.
+- **A third site was NOT in any model**: `scripts/verify-templates.py:158`
+  builds a scaffold containing `processor {EntityName}EventSource`. Only
+  `sbt checkAll` caught it, because the templates gate is the sole thing
+  that reads `patterns/`. `check-prettified.py` and
+  `verify-bast-roundtrip.sh` carry no `processor` pattern; the mentions in
+  `apply-ascriptions.py` and the one-off migration scripts are prose.
+- Prose is untouched and must stay so: **195** handler bodies say
+  `error "Unexpected message for processor X"`. Grep the declaration SHAPE.
+
+**"Processor" is still the right word in prose** for the abstraction; only
+the keyword moved.
+
+### Unexplained: one `.bast` grew 2 bytes
+
+`sbt b` rewrote exactly **one** of 189 — `fund-accounting.bast`, 50900 ->
+50902 — while the other 188 and both of `patterns/` came back
+**byte-identical**, which independently confirms riddl's claim that both
+spellings build the same AST node.
+
+What is established, not guessed:
+
+- it is **deterministic** (same file, same offset, on a repeat run)
+- the committed `.bast` was **current at HEAD** (reverted the source,
+  re-bastified, got a byte-exact match), so this is caused by the keyword
+  change, not by pre-existing staleness
+- the source file is the **same length** either way (`processor` and
+  `streamlet` are both 9 characters), and `FORMAT_REVISION` is **23**,
+  unchanged — what moved is the payload length and the checksum
+- the obvious string-table explanation is **dead**: shopping-cart has the
+  identical `error "... processor CartEventSplit"` prose and did not change
+
+**I do not know why.** It round-trips (189 passing, 0 discrepancies), so it
+is benign — but it is an anomaly, not a solved thing. Do not invent a
+reason for it; if it matters, ask riddl.
+
+### Gate results, all re-run at the final tree state
 
 ```
-riddlc validate --corpus .    191 models, 0 failed, 191 ok
-collect-warnings.py           189 swept, 0 findings (canaried live)
-verify-bast-roundtrip.sh      189 passing, 0 discrepancies
-sbt v / pc / checkAll         189 ok, 1003 canonical, 2 suites, Passed
+collect-warnings.py        189 swept, 0 findings  (canaried live: an
+                           injected unused type surfaced as exactly 1)
+sbt checkAll               189 validate, 1003 canonical, 2 examples +
+                           7 templates, 191 model cases + R10, Passed
+verify-bast-roundtrip.sh   189 passing, 0 discrepancies
 ```
 
-The corpus has **three live denominators** and all three are correct for
-what they count: `--corpus` walks every entry point (191, includes the 2
-pattern examples); the sweep and `sbt v`/`pc` exclude `patterns/` (189);
-`checkAll` runs 189 models + 2 pattern examples = 191 test cases. Don't
-flatten these to one number.
+Baseline before migrating was **240 findings, every one
+`stream-processor-keyword`** — 240 outside `patterns/` + 2 inside = the 242
+declarations, so nothing was silently unmeasured, and no other finding of
+any severity appeared under the new compiler.
 
-**`sbt b` regenerated only `tooling/code-generator/code-generator.bast`** —
-`git status` after showed no other `.bast` churn, so no pre-existing model
-was stale going in.
+The three denominators still differ on purpose: `--corpus` walks 191 entry
+points, the sweep and `sbt v`/`pc` exclude `patterns/` (189), `checkAll`
+runs 189 models + 2 examples. Don't flatten them.
 
-### The trap this project taught, now in CLAUDE.md
+### Still open — NOT done this session
 
-**A context a saga addresses needs its OWN inbound connector — `tell` does
-not count for reachability.** Once a domain-level saga is corrected to
-`tell ... to context X` (not into X's internals), X must already be wired
-by a persistent connector onto one of its own inlets, or the step draws
-`msg-tell-target-unreachable`. See CLAUDE.md's "Saga Steps" section for the
-measured case (`Proving.RunBootGate`). Four other findings from this
-project — the `--provide-tips` gate, `any of`/`one of` separators,
-`ref-wrong-keyword`, `entity-id-defined-inside`, `literal_string`
-invariants, and the "declared but undriven" pattern (hit **four** times) —
-are also now in CLAUDE.md; do not re-derive them from the task reports.
+**`task/upgrade-riddl-2.0.0.md` asks for two things beyond the upgrade**,
+neither requested and neither done:
 
-### Upstream: the saga-boundary task landed, and reactive-bbq is fixed
+1. **Merge `release/2` into `main` and delete the branch**, local and
+   remote. riddl's `scala.yml` carries `RIDDL_MODELS_BRANCH: release/2`
+   only because this corpus is on a branch, and Synapify wants to switch
+   its default back to `main`. Both unblock when this lands. **Tell riddl
+   when it does.**
+2. Its `.bast` acceptance criterion is already satisfied — revision **23**,
+   corpus-wide, `patterns/` included.
 
-The task filed 2026-08-26
-(`../riddl/task/2026-08-26-saga-tell-must-not-reach-into-a-context.md`,
-now in riddl's `task/done/`) shipped as `msg-target-crosses-boundary`, an
-**Error**. It is wider than the ask: it also covers `forward`, and applies
-to **any** `tell`/`send`/`forward` from outside a context naming something
-inside it — not just saga steps. riddl filed the consequence back as
-`task/2026-08-27-address-the-context-not-its-contents.md`, now in this
-repo's own `task/done/` with its Results appended:
-**6 sites in reactive-bbq** tripped it — 5 in
-`restaurant/{FrontOfHouseContext,OnlineOrderingContext}.riddl`, 1 in
-`corporate/MenuManagementContext.riddl` — each an ordinary `on` clause
-reaching into a sibling context's entity.
-
-**No relay was built — every one already existed.** Kitchen, Bar, Loyalty
-and FrontOfHouse all already carry the canonical inlet -> bound handler ->
-outlet -> connector -> entity wiring; the six `tell`s simply bypassed it.
-The fix was six one-line changes, `tell <msg> to entity <Context>.<Entity>`
--> `tell <msg> to context <Context>` (riddlc's own `--provide-tips`
-suggestion, verbatim). The sixth crosses Corporate -> Restaurant too, and
-needed no new connector: an adaptor's `tell` is exempt from the
-same-domain rule ordinary handlers face (CM 3.6), and FrontOfHouse's
-boundary handler already had the `on createOrder` clause waiting.
-
-Verified against the staged `2.0.0-rc.26-5-ab3ada49` (has the rule) and
-the pinned `2.0.0-rc.26` (does not, so unaffected either way): 0 errors, 0
-warnings, same 3905 definitions before and after. Corpus-wide sweep with
-the staged binary: 0 findings, matching the pre-existing zero baseline
-with the new rule now live. `sbt r`/`pc`/`v`/`b` and
-`verify-bast-roundtrip.sh` all green; `sbt b` regenerated only
-`reactive-bbq.bast`. Full detail, including the RED canary, is in
-`task/done/2026-08-27-address-the-context-not-its-contents.md`.
-
-### Older campaigns, unstarted
-
-**BACKLOG #23 and #24** remain open from before this project and were not
-touched this session.
+**BACKLOG #23 and #24** remain open and untouched.
 
 ### Pointers
 
-- **CLAUDE.md** — "Findings from dogfooding" (RIDDL Syntax Reference), the
-  driver-connector rule (Saga Steps), `--provide-tips` and the `.conf`
-  lever (The gates).
-- **`.superpowers/sdd/2026-08-26-code-generator-model/`** — all 13 task
-  briefs/reports and the review diffs; the self-contained record of how
-  the model was built.
-- **`docs/superpowers/specs/2026-08-26-code-generator-model-design.md`** —
-  the approved design, including its Appendix A enrichment to
-  `../RIDDL-Computational-Model.md` §4.1.
-
-### `task/` — NOT empty, one item awaiting triage
-
-`task/2026-08-27-address-the-context-not-its-contents.md` (described
-above) is new and unactioned. Its predecessor request — the one this
-project filed outward — is closed on the riddl side (moved to
-`task/done/` there).
-
-**Run `/ossuminc-skills:check-tasks` in the new session.**
-
----
+- **CLAUDE.md** — "`streamlet`, not `processor`" (RIDDL Syntax Reference),
+  "riddlc Location" for the override posture, "Tracking riddl's `main`".
+- **`task/`** — both files have Results appended. The streamlet one is
+  in `task/done/`; **`upgrade-riddl-2.0.0.md` deliberately is NOT**, its
+  branch-merge criterion being unmet.
+- Run **`/ossuminc-skills:check-tasks`** in the new session. Two files
+  landed *during* this one, after its own start-of-session triage came back
+  empty — so an empty `task/` is a fact with a timestamp, not a standing
+  one.
 
 ## Incoming Tasks
 

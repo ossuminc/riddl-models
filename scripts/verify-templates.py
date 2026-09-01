@@ -155,7 +155,7 @@ ORDER_EVENTS = """    type {EntityName}Event is one of {
         |What the source entity publishes.
       }
     }
-    processor {EntityName}EventSource as source is {
+    streamlet {EntityName}EventSource as source is {
       outlet {EntityName}Events is type {EntityName}Event
       handler {EntityName}EventEmitter is {
         on other is {
