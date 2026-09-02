@@ -66,6 +66,48 @@ What is established, not guessed:
 is benign — but it is an anomaly, not a solved thing. Do not invent a
 reason for it; if it matters, ask riddl.
 
+### reactive-bbq: five channels, a gateway, two merges and a router
+
+Two riddl-generator tasks (2026-09-02), worked together because they overlap.
+Both are in `task/done/` with full Results.
+
+**They contradicted each other, and the older one was wrong.** The gateway
+task said "every one of the 142 connectors is intra-context"; **37 already
+crossed a boundary, all 37 already `persistent`.** Its criterion 2 was
+satisfied before any work started. Measured with `riddlc dump --json`,
+resolving each endpoint to its owning context — the sibling task filed five
+hours later got it right. *Verify the world, not the file.*
+
+What was added: cross-context connectors for 5 of the 6 stranded `tell`s,
+`gateway context CustomerGateway`, merges fronting Kitchen and Loyalty, and
+`OnlineOrderSignalRouter` in OnlineOrdering. 142 -> 155 connectors, 3905 ->
+3994 definitions, still 0 errors and 0 warnings at every severity.
+
+**Four constraints, each learned by being refused — these are the durable
+part:**
+
+1. **An inlet accepts exactly ONE connector** (`stream-inlet-cardinality`,
+   error). To fan in, declare more inlets. This is why each source context
+   gets its own inlet into Kitchen and Loyalty.
+2. **A context's boundary handler cannot tell which inlet a message arrived
+   on** — it dispatches on message type. So two same-typed inlets necessarily
+   converge in the handler, and a pass-through streamlet whose input and
+   output carry the same concrete types cannot be wired through a context
+   boundary at all. This dictated where the router could go.
+3. **A `gateway context` MUST be a merge** (>=2 inlets, exactly 1 outlet) —
+   `context-gateway-shape`, error: "a gateway funnels several inputs into
+   one." A router-shaped gateway is rejected.
+4. **A connector may not cross a DOMAIN boundary** —
+   `stream-crosses-domains`, error, confirmed by building one. This is why the
+   sixth `tell` (Corporate.MenuManagement -> Restaurant.FrontOfHouse, inside
+   an adaptor) neither has nor needs a connector, and riddlg was told to treat
+   a cross-domain adaptor `tell` as lowerable rather than unmodelled.
+
+Also: `send x to outlet Foo` unqualified resolved into the WRONG CONTEXT once
+both merges declared an `IntakeMergedCommands` outlet, producing
+`msg-target-crosses-boundary`. CLAUDE.md already warns to qualify; this is the
+second time it has bitten. Qualify portlet paths in `send`.
+
 ### Gate results, all re-run at the final tree state
 
 ```

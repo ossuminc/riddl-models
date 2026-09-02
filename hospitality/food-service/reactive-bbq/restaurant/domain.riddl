@@ -37,11 +37,113 @@ domain Restaurant is {
       |for order readiness notification.
     }
   }
+  persistent connector 'ReceiveDrinkOrder Stream' is from outlet FrontOfHouse.FOHToBarOut to inlet Bar.FOHToBarIn with {
+    briefly "Drink orders from front of house to the bar"
+    described as {
+      |Gives the ToBar adaptor's `tell receiveDrinkOrder to context Bar` a
+      |channel. Durable because it crosses a context boundary.
+    }
+  }
   persistent connector DeliveryToOnline is from outlet Delivery.DeliveryToOnlineOut to inlet OnlineOrdering.DeliveryToOnlineIn with {
     briefly "Delivery to online ordering connector"
     described as {
       |Wires delivery order events to the online ordering
       |context for delivery status updates.
+    }
+  }
+  persistent connector 'AccruePoints Stream From FrontOfHouse' is from outlet FrontOfHouse.FOHToLoyaltyOut to inlet Loyalty.FOHToLoyaltyIn with {
+    briefly "Dine-in point accruals from front of house to loyalty"
+    described as {
+      |Gives the ToLoyalty adaptor's `tell accruePoints to context Loyalty`
+      |a channel. Durable because it crosses a context boundary.
+    }
+  }
+  persistent connector 'AccruePoints Stream From OnlineOrdering' is from outlet OnlineOrdering.OnlineToLoyaltyOut to inlet Loyalty.OnlineToLoyaltyIn with {
+    briefly "Online point accruals from online ordering to loyalty"
+    described as {
+      |The second leg into loyalty's intake merge, carrying what a paid
+      |online order earned.
+    }
+  }
+  persistent connector 'ReceiveTicket Stream From FrontOfHouse' is from outlet FrontOfHouse.FOHToKitchenOut to inlet Kitchen.FOHToKitchenIn with {
+    briefly "Dine-in tickets from front of house to the kitchen"
+    described as {
+      |Gives the ToKitchen adaptor's `tell receiveTicket to context Kitchen`
+      |a channel. Durable because it crosses a context boundary.
+    }
+  }
+  persistent connector 'ReceiveTicket Stream From OnlineOrdering' is from outlet OnlineOrdering.OnlineToKitchenOut to inlet Kitchen.OnlineToKitchenIn with {
+    briefly "Online tickets from online ordering to the kitchen"
+    described as {
+      |The second leg into the kitchen's intake merge, carrying the food
+      |lines of a submitted online order.
+    }
+  }
+  gateway context CustomerGateway as merge is {
+    inlet StorefrontOrdersIn is type OnlineOrdering.OnlineOrder.OnlineOrderCommand with {
+      briefly "Orders from the restaurant's own storefront"
+      described as {
+        |What a customer sends from the restaurant's own web and mobile
+        |ordering screens.
+      }
+    }
+    inlet PartnerOrdersIn is type OnlineOrdering.OnlineOrder.OnlineOrderCommand with {
+      briefly "Orders relayed by a delivery marketplace partner"
+      described as {
+        |The same order commands, arriving from a third-party marketplace
+        |rather than the restaurant's own storefront. A separate inlet
+        |because an inlet accepts exactly one connector, and because the two
+        |channels are separately trusted and separately rate-limited.
+      }
+    }
+    outlet AdmittedOrdersOut is type OnlineOrdering.OnlineOrder.OnlineOrderCommand
+ with {
+      briefly "One admitted order stream"
+      described as {
+        |Both channels funnelled into one. A gateway merges: past this point
+        |nothing downstream needs to know which channel an order came from.
+      }
+    }
+    handler CustomerGatewayBoundary is {
+      on browseMenu: command OnlineOrdering.OnlineOrder.BrowseMenu is {
+        forward browseMenu to outlet CustomerGateway.AdmittedOrdersOut
+      }
+      on addToCart: command OnlineOrdering.OnlineOrder.AddToCart is {
+        forward addToCart to outlet CustomerGateway.AdmittedOrdersOut
+      }
+      on removeFromCart: command OnlineOrdering.OnlineOrder.RemoveFromCart is {
+        forward removeFromCart to outlet CustomerGateway.AdmittedOrdersOut
+      }
+      on selectFulfillment: command OnlineOrdering.OnlineOrder.SelectFulfillment is {
+        forward selectFulfillment to outlet CustomerGateway.AdmittedOrdersOut
+      }
+      on submitOnlineOrder: command OnlineOrdering.OnlineOrder.SubmitOnlineOrder is {
+        forward submitOnlineOrder to outlet CustomerGateway.AdmittedOrdersOut
+      }
+      on processOnlinePayment: command OnlineOrdering.OnlineOrder.ProcessOnlinePayment is {
+        forward processOnlinePayment to outlet CustomerGateway.AdmittedOrdersOut
+      }
+      on cancelOnlineOrder: command OnlineOrdering.OnlineOrder.CancelOnlineOrder is {
+        forward cancelOnlineOrder to outlet CustomerGateway.AdmittedOrdersOut
+      }
+      on other is {
+        error "Unexpected message for gateway context CustomerGateway"
+      }
+    } with {
+      briefly "Gateway admission handler"
+      described as {
+        |Admits what a customer may legitimately ask for. Everything else is
+        |refused here: MarkReadyForPickup, MarkOutForDelivery and the rest
+        |are staff work and reach the context through RestaurantApp, never
+        |from outside the restaurant.
+      }
+    }
+  } with {
+    briefly "Public gateway for customer ordering"
+    described as {
+      |The boundary the restaurant presents to customers who are not on the
+      |premises, whether they come through its own storefront or a delivery
+      |marketplace. Staff reach the contexts through RestaurantApp instead.
     }
   }
   application context RestaurantApp as router is {
@@ -259,6 +361,7 @@ domain Restaurant is {
     outlet AppKitchenTicketCommands is type Kitchen.KitchenTicket.KitchenTicketCommand
     outlet AppLoyaltyAccountCommands is type Loyalty.LoyaltyAccount.LoyaltyAccountCommand
     outlet AppOnlineOrderCommands is type OnlineOrdering.OnlineOrder.OnlineOrderCommand
+    outlet AppPartnerOrderCommands is type OnlineOrdering.OnlineOrder.OnlineOrderCommand
     inlet AppTableOrderRepositoryResponses is result FrontOfHouse.TableOrder.TableOrderResult    inlet AppDrinkOrderRepositoryResponses is result Bar.DrinkOrder.DrinkOrderResult    inlet AppDeliveryRepositoryResponses is result Delivery.DeliveryOrder.DeliveryOrderResult    inlet AppReservationRepositoryResponses is result FrontOfHouse.ReservationBoardView    inlet AppKitchenTicketRepositoryResponses is result Kitchen.KitchenTicket.KitchenTicketResult    inlet AppLoyaltyAccountRepositoryResponses is result Loyalty.LoyaltyAccount.LoyaltyAccountResult    inlet AppOnlineOrderRepositoryResponses is result OnlineOrdering.OnlineOrder.OnlineOrderResult    handler RestaurantAppHandler is {
       on command ShowReservation is {
         put result FrontOfHouse.Reservation.ReservationResult(reservation = prompt("the reservation the host just took, as the book now holds it"), reservationId = prompt("the reservation id of this reservation result")) to output ReservationCreatedView
@@ -321,10 +424,23 @@ domain Restaurant is {
       |The pipe states the route; the endpoints state who owns each end.
     }
   }
-  persistent connector 'OnlineOrderCommand Stream' is from outlet RestaurantApp.AppOnlineOrderCommands to inlet OnlineOrdering.OnlineOrderCommandStreamIn with {
-    briefly "OnlineOrder commands from the application"
+  persistent connector 'OnlineOrderCommand Storefront Intake' is from outlet RestaurantApp.AppOnlineOrderCommands to inlet CustomerGateway.StorefrontOrdersIn with {
+    briefly "Storefront orders from the application to the gateway"
     described as {
-      |Carries what leaves AppOnlineOrderCommands to OnlineOrderCommandStreamIn, which is where it is acted on.
+      |Customer order traffic no longer reaches OnlineOrdering directly; it
+      |is admitted at the gateway first.
+    }
+  }
+  persistent connector 'OnlineOrderCommand Partner Intake' is from outlet RestaurantApp.AppPartnerOrderCommands to inlet CustomerGateway.PartnerOrdersIn with {
+    briefly "Marketplace orders from the application to the gateway"
+    described as {
+      |The gateway's second inbound channel, which is what makes it a merge.
+    }
+  }
+  persistent connector 'OnlineOrderCommand Stream' is from outlet CustomerGateway.AdmittedOrdersOut to inlet OnlineOrdering.OnlineOrderCommandStreamIn with {
+    briefly "Admitted OnlineOrder commands on their way to be acted on"
+    described as {
+      |Carries what leaves AdmittedOrdersOut to OnlineOrderCommandStreamIn, which is where it is acted on.
       |The pipe states the route; the endpoints state who owns each end.
     }
   }

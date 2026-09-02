@@ -3,6 +3,22 @@ context OnlineOrdering as router is {
   inlet DeliveryToOnlineIn is type DeliveryEvent  outlet DeliveryToOnlineOut is type DeliveryEvent
   inlet OnlineOrderCommandStreamIn is type OnlineOrderCommand  outlet OnlineOrderCommandStreamOut is type OnlineOrderCommand
   inlet OnlineOrderResultStreamIn is result OnlineOrder.OnlineOrderResult  outlet OnlineOrderResultStreamOut is result OnlineOrder.OnlineOrderResult
+  outlet OnlineToLoyaltyOut is command Loyalty.LoyaltyAccount.AccruePoints
+ with {
+    briefly "Point accruals leaving online ordering for loyalty"
+    described as {
+      |The channel the ToLoyalty adaptor's `tell` travels, carrying what a
+      |paid online order earned its member.
+    }
+  }
+  outlet OnlineToKitchenOut is command Kitchen.KitchenTicket.ReceiveTicket
+ with {
+    briefly "Food orders leaving online ordering for the kitchen"
+    described as {
+      |The channel the ToKitchen adaptor's `tell` travels. Food lines of a
+      |submitted online order are carried to the Kitchen context here.
+    }
+  }
   handler OnlineOrderingBoundary is {
     on deliveryCreated: event DeliveryOrder.DeliveryCreated is {
       send deliveryCreated to outlet OnlineOrdering.DeliveryToOnlineOut
@@ -82,7 +98,19 @@ context OnlineOrdering as router is {
       |The pipe states the route; the endpoints state who owns each end.
     }
   }
-  connector 'DeliveryToOnline Intake' is from outlet OnlineOrdering.DeliveryToOnlineOut to inlet OnlineOrdering.DeliveryEventSink.IncomingDeliveryEvents  connector 'OnlineOrderCommand Stream Intake' is from outlet OnlineOrdering.OnlineOrderCommandStreamOut to inlet OnlineOrdering.OnlineOrder.OnlineOrderCommands  connector 'OnlineOrderResult Stream Egress' is from outlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryResponses to inlet OnlineOrdering.OnlineOrderResultStreamIn  include "online-types.riddl"
+  connector 'DeliveryToOnline Intake' is from outlet OnlineOrdering.DeliveryToOnlineOut to inlet OnlineOrdering.OnlineOrderSignalRouter.RouterDeliveryEventsIn  connector 'OnlineOrderCommand Stream Intake' is from outlet OnlineOrdering.OnlineOrderCommandStreamOut to inlet OnlineOrdering.OnlineOrderSignalRouter.RouterCommandsIn  connector 'OnlineOrderCommand Routed Intake' is from outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut to inlet OnlineOrdering.OnlineOrder.OnlineOrderCommands with {
+    briefly "Routed commands reaching the OnlineOrder entity"
+    described as {
+      |The router's order leg.
+    }
+  }
+  connector 'DeliveryStatus Routed Intake' is from outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToDeliveryStatusOut to inlet OnlineOrdering.DeliveryEventSink.IncomingDeliveryEvents with {
+    briefly "Routed delivery events reaching the delivery sink"
+    described as {
+      |The router's delivery leg.
+    }
+  }
+  connector 'OnlineOrderResult Stream Egress' is from outlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryResponses to inlet OnlineOrdering.OnlineOrderResultStreamIn  include "online-types.riddl"
   include "OnlineOrder.riddl"
   type OnlineOrderRepositoryCommand is one of {
     OnlineOrdering.OnlineOrderRepository.PersistMenuBrowsed or OnlineOrdering.OnlineOrderRepository.PersistItemAddedToCart or OnlineOrdering.OnlineOrderRepository.PersistItemRemovedFromCart or OnlineOrdering.OnlineOrderRepository.PersistFulfillmentSelected or OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderSubmitted or OnlineOrdering.OnlineOrderRepository.PersistOnlinePaymentProcessed or OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderInPreparation or OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderReadyForPickup or OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderOutForDelivery or OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderCompleted or OnlineOrdering.OnlineOrderRepository.PersistOnlineOrderCancelled
@@ -490,6 +518,110 @@ context OnlineOrdering as router is {
     briefly "Log online order event"
     described as {
       |Append a published online order event to this context's event log.
+    }
+  }
+  streamlet OnlineOrderSignalRouter as router is {
+    inlet RouterCommandsIn is type OnlineOrder.OnlineOrderCommand with {
+      briefly "Order commands admitted into the context"
+      described as {
+        |Everything the boundary handler let through, whether it came from
+        |the gateway or from staff in the application.
+      }
+    }
+    inlet RouterDeliveryEventsIn is type DeliveryEvent with {
+      briefly "Delivery progress arriving from the Delivery context"
+      described as {
+        |What the courier side reports about an order already placed.
+      }
+    }
+    outlet RouterToOrderOut is type OnlineOrder.OnlineOrderCommand
+ with {
+      briefly "Commands on their way to the OnlineOrder entity"
+      described as {
+        |Signals that ask the order to change.
+      }
+    }
+    outlet RouterToDeliveryStatusOut is type DeliveryEvent
+ with {
+      briefly "Delivery events on their way to the delivery sink"
+      described as {
+        |Signals that only report, and never change the order themselves.
+      }
+    }
+    handler OnlineOrderSignalRouterHandler is {
+      on browseMenu: command OnlineOrder.BrowseMenu is {
+        send browseMenu to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
+      }
+      on addToCart: command OnlineOrder.AddToCart is {
+        send addToCart to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
+      }
+      on removeFromCart: command OnlineOrder.RemoveFromCart is {
+        send removeFromCart to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
+      }
+      on selectFulfillment: command OnlineOrder.SelectFulfillment is {
+        send selectFulfillment to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
+      }
+      on submitOnlineOrder: command OnlineOrder.SubmitOnlineOrder is {
+        send submitOnlineOrder to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
+      }
+      on processOnlinePayment: command OnlineOrder.ProcessOnlinePayment is {
+        send processOnlinePayment to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
+      }
+      on markOnlineInPreparation: command OnlineOrder.MarkOnlineInPreparation is {
+        send markOnlineInPreparation to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
+      }
+      on markReadyForPickup: command OnlineOrder.MarkReadyForPickup is {
+        send markReadyForPickup to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
+      }
+      on markOutForDelivery: command OnlineOrder.MarkOutForDelivery is {
+        send markOutForDelivery to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
+      }
+      on completeOnlineOrder: command OnlineOrder.CompleteOnlineOrder is {
+        send completeOnlineOrder to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
+      }
+      on cancelOnlineOrder: command OnlineOrder.CancelOnlineOrder is {
+        send cancelOnlineOrder to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
+      }
+      on deliveryCreated: event DeliveryOrder.DeliveryCreated is {
+        send deliveryCreated to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToDeliveryStatusOut
+      }
+      on driverAssigned: event DeliveryOrder.DriverAssigned is {
+        send driverAssigned to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToDeliveryStatusOut
+      }
+      on driverDispatched: event DeliveryOrder.DriverDispatched is {
+        send driverDispatched to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToDeliveryStatusOut
+      }
+      on deliveryLocationRecorded: event DeliveryOrder.DeliveryLocationRecorded is {
+        send deliveryLocationRecorded to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToDeliveryStatusOut
+      }
+      on deliveryConfirmed: event DeliveryOrder.DeliveryConfirmed is {
+        send deliveryConfirmed to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToDeliveryStatusOut
+      }
+      on deliveryPaymentRecorded: event DeliveryOrder.DeliveryPaymentRecorded is {
+        send deliveryPaymentRecorded to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToDeliveryStatusOut
+      }
+      on deliveryIssueReported: event DeliveryOrder.DeliveryIssueReported is {
+        send deliveryIssueReported to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToDeliveryStatusOut
+      }
+      on deliveryMarkedFailed: event DeliveryOrder.DeliveryMarkedFailed is {
+        send deliveryMarkedFailed to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToDeliveryStatusOut
+      }
+      on other is {
+        error "Unexpected message for streamlet OnlineOrderSignalRouter"
+      }
+    } with {
+      briefly "Online order signal router handler"
+      described as {
+        |Two inbound streams, two destinations. The one place that decides
+        |whether an inbound signal asks the order to change or merely
+        |reports on its delivery.
+      }
+    }
+  } with {
+    briefly "Online order signal router"
+    described as {
+      |Sits between everything arriving at OnlineOrdering and the two things
+      |that consume it, so neither consumer has to filter what it is sent.
     }
   }
   streamlet OnlineOrderEventLog as sink is {

@@ -2,9 +2,31 @@
 context Kitchen as router is {
   inlet KitchenTicketCommandStreamIn is type KitchenTicketCommand  outlet KitchenTicketCommandStreamOut is type KitchenTicketCommand
   inlet KitchenTicketResultStreamIn is result KitchenTicket.KitchenTicketResult  outlet KitchenTicketResultStreamOut is result KitchenTicket.KitchenTicketResult
+  inlet FOHToKitchenIn is command KitchenTicket.ReceiveTicket with {
+    briefly "Tickets arriving from front of house"
+    described as {
+      |Food lines split out of a submitted table order. Its own inlet because
+      |an inlet accepts exactly one connector.
+    }
+  }
+  inlet OnlineToKitchenIn is command KitchenTicket.ReceiveTicket with {
+    briefly "Tickets arriving from online ordering"
+    described as {
+      |Food lines from a submitted online order. Separate from the front of
+      |house inlet for the same cardinality reason, not because they differ.
+    }
+  }
+  outlet TicketIntakeOut is command KitchenTicket.ReceiveTicket
+ with {
+    briefly "Externally originated tickets on their way to the intake merge"
+    described as {
+      |Both source contexts converge here: KitchenBoundary handles
+      |ReceiveTicket from either inlet and forwards it to this one outlet.
+    }
+  }
   handler KitchenBoundary is {
     on receiveTicket: command KitchenTicket.ReceiveTicket is {
-      forward receiveTicket to outlet Kitchen.KitchenTicketCommandStreamOut
+      forward receiveTicket to outlet Kitchen.TicketIntakeOut
     }
     on assignStation: command KitchenTicket.AssignStation is {
       forward assignStation to outlet Kitchen.KitchenTicketCommandStreamOut
@@ -42,7 +64,20 @@ context Kitchen as router is {
       |The pipe states the route; the endpoints state who owns each end.
     }
   }
-  connector 'KitchenTicketCommand Stream Intake' is from outlet Kitchen.KitchenTicketCommandStreamOut to inlet Kitchen.KitchenTicket.KitchenTicketCommands  connector 'KitchenTicketResult Stream Egress' is from outlet Kitchen.KitchenTicketRepository.KitchenTicketRepositoryResponses to inlet Kitchen.KitchenTicketResultStreamIn  include "kitchen-types.riddl"
+  connector 'KitchenTicketCommand Stream Intake' is from outlet Kitchen.KitchenTicketCommandStreamOut to inlet Kitchen.KitchenTicketIntake.IntakeAppCommands  connector 'KitchenTicket External Intake' is from outlet Kitchen.TicketIntakeOut to inlet Kitchen.KitchenTicketIntake.IntakeExternalTickets with {
+    briefly "Externally originated tickets on their way into the intake merge"
+    described as {
+      |The second leg of the merge: what the two order-taking contexts sent.
+    }
+  }
+  connector 'KitchenTicketCommand Merged Intake' is from outlet Kitchen.KitchenTicketIntake.IntakeMergedCommands to inlet Kitchen.KitchenTicket.KitchenTicketCommands with {
+    briefly "The joined command stream reaching the KitchenTicket entity"
+    described as {
+      |One stream out of the merge, so the entity has a single command source
+      |however a command reached the kitchen.
+    }
+  }
+  connector 'KitchenTicketResult Stream Egress' is from outlet Kitchen.KitchenTicketRepository.KitchenTicketRepositoryResponses to inlet Kitchen.KitchenTicketResultStreamIn  include "kitchen-types.riddl"
   include "KitchenTicket.riddl"
   type KitchenTicketRepositoryCommand is one of {
     Kitchen.KitchenTicketRepository.PersistTicketReceived or Kitchen.KitchenTicketRepository.PersistStationAssigned or Kitchen.KitchenTicketRepository.PersistPreparationStarted or Kitchen.KitchenTicketRepository.PersistItemMarkedReady or Kitchen.KitchenTicketRepository.PersistTicketApproved or Kitchen.KitchenTicketRepository.PersistServerNotified
@@ -610,6 +645,65 @@ context Kitchen as router is {
     briefly "KitchenTicket event log connector"
     described as {
       |Wires published kitchen ticket events to the context's event log.
+    }
+  }
+  streamlet KitchenTicketIntake as merge is {
+    inlet IntakeAppCommands is type KitchenTicketCommand with {
+      briefly "Staff commands originated by the application"
+      described as {
+        |What RestaurantApp sends: station assignment, preparation, item
+        |readiness, approval, server notification.
+      }
+    }
+    inlet IntakeExternalTickets is command KitchenTicket.ReceiveTicket with {
+      briefly "Tickets originated by the order-taking contexts"
+      described as {
+        |What FrontOfHouse and OnlineOrdering send. A ticket enters the
+        |kitchen this way; it is never typed at a terminal in the kitchen.
+      }
+    }
+    outlet IntakeMergedCommands is type KitchenTicketCommand
+ with {
+      briefly "The two streams as one"
+      described as {
+        |Everything the KitchenTicket entity is asked to do, in one stream.
+      }
+    }
+    handler KitchenTicketIntakeHandler is {
+      on receiveTicket: command KitchenTicket.ReceiveTicket is {
+        send receiveTicket to outlet Kitchen.KitchenTicketIntake.IntakeMergedCommands
+      }
+      on assignStation: command KitchenTicket.AssignStation is {
+        send assignStation to outlet Kitchen.KitchenTicketIntake.IntakeMergedCommands
+      }
+      on startPreparation: command KitchenTicket.StartPreparation is {
+        send startPreparation to outlet Kitchen.KitchenTicketIntake.IntakeMergedCommands
+      }
+      on markItemReady: command KitchenTicket.MarkItemReady is {
+        send markItemReady to outlet Kitchen.KitchenTicketIntake.IntakeMergedCommands
+      }
+      on approveTicket: command KitchenTicket.ApproveTicket is {
+        send approveTicket to outlet Kitchen.KitchenTicketIntake.IntakeMergedCommands
+      }
+      on notifyServer: command KitchenTicket.NotifyServer is {
+        send notifyServer to outlet Kitchen.KitchenTicketIntake.IntakeMergedCommands
+      }
+      on other is {
+        error "Unexpected message for streamlet KitchenTicketIntake"
+      }
+    } with {
+      briefly "Kitchen ticket intake handler"
+      described as {
+        |One clause per concrete command: an alternation binding is a value,
+        |not a message, so a single generic clause could not be sent onward.
+      }
+    }
+  } with {
+    briefly "Kitchen ticket intake merge"
+    described as {
+      |Joins the two ways work reaches the kitchen -- staff acting in the
+      |application, and tickets arriving from front of house and online
+      |ordering -- so the entity sees one ordered command stream.
     }
   }
   streamlet KitchenTicketEventSplit as split is {

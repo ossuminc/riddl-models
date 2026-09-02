@@ -2,12 +2,34 @@
 context Loyalty as router is {
   inlet LoyaltyAccountCommandStreamIn is type LoyaltyAccountCommand  outlet LoyaltyAccountCommandStreamOut is type LoyaltyAccountCommand
   inlet LoyaltyAccountResultStreamIn is result LoyaltyAccount.LoyaltyAccountResult  outlet LoyaltyAccountResultStreamOut is result LoyaltyAccount.LoyaltyAccountResult
+  inlet FOHToLoyaltyIn is command LoyaltyAccount.AccruePoints with {
+    briefly "Point accruals arriving from front of house"
+    described as {
+      |What a closed dine-in check earns. Its own inlet because an inlet
+      |accepts exactly one connector.
+    }
+  }
+  inlet OnlineToLoyaltyIn is command LoyaltyAccount.AccruePoints with {
+    briefly "Point accruals arriving from online ordering"
+    described as {
+      |What a paid online order earns. Separate from the front of house
+      |inlet for the same cardinality reason, not because they differ.
+    }
+  }
+  outlet AccrualIntakeOut is command LoyaltyAccount.AccruePoints
+ with {
+    briefly "Externally originated accruals on their way to the intake merge"
+    described as {
+      |Both source contexts converge here: LoyaltyBoundary handles
+      |AccruePoints from either inlet and forwards it to this one outlet.
+    }
+  }
   handler LoyaltyBoundary is {
     on enrollCustomer: command LoyaltyAccount.EnrollCustomer is {
       forward enrollCustomer to outlet Loyalty.LoyaltyAccountCommandStreamOut
     }
     on accruePoints: command LoyaltyAccount.AccruePoints is {
-      forward accruePoints to outlet Loyalty.LoyaltyAccountCommandStreamOut
+      forward accruePoints to outlet Loyalty.AccrualIntakeOut
     }
     on redeemPoints: command LoyaltyAccount.RedeemPoints is {
       forward redeemPoints to outlet Loyalty.LoyaltyAccountCommandStreamOut
@@ -42,7 +64,20 @@ context Loyalty as router is {
       |The pipe states the route; the endpoints state who owns each end.
     }
   }
-  connector 'LoyaltyAccountCommand Stream Intake' is from outlet Loyalty.LoyaltyAccountCommandStreamOut to inlet Loyalty.LoyaltyAccount.LoyaltyAccountCommands  connector 'LoyaltyAccountResult Stream Egress' is from outlet Loyalty.LoyaltyAccountRepository.LoyaltyAccountRepositoryResponses to inlet Loyalty.LoyaltyAccountResultStreamIn  include "loyalty-types.riddl"
+  connector 'LoyaltyAccountCommand Stream Intake' is from outlet Loyalty.LoyaltyAccountCommandStreamOut to inlet Loyalty.LoyaltyAccountIntake.IntakeAppCommands  connector 'LoyaltyAccount External Intake' is from outlet Loyalty.AccrualIntakeOut to inlet Loyalty.LoyaltyAccountIntake.IntakeExternalAccruals with {
+    briefly "Externally originated accruals on their way into the intake merge"
+    described as {
+      |The second leg of the merge: what the two order-taking contexts sent.
+    }
+  }
+  connector 'LoyaltyAccountCommand Merged Intake' is from outlet Loyalty.LoyaltyAccountIntake.IntakeMergedCommands to inlet Loyalty.LoyaltyAccount.LoyaltyAccountCommands with {
+    briefly "The joined command stream reaching the LoyaltyAccount entity"
+    described as {
+      |One stream out of the merge, so the entity has a single command source
+      |however a command reached loyalty.
+    }
+  }
+  connector 'LoyaltyAccountResult Stream Egress' is from outlet Loyalty.LoyaltyAccountRepository.LoyaltyAccountRepositoryResponses to inlet Loyalty.LoyaltyAccountResultStreamIn  include "loyalty-types.riddl"
   include "LoyaltyAccount.riddl"
   constant PointsPerDollar: Natural = 10 with {
     briefly "Points earned per dollar of settled spend"
@@ -291,6 +326,65 @@ context Loyalty as router is {
     briefly "LoyaltyAccount persistence projection"
     described as {
       |Builds the stored LoyaltyAccount view from the entity's events.
+    }
+  }
+  streamlet LoyaltyAccountIntake as merge is {
+    inlet IntakeAppCommands is type LoyaltyAccountCommand with {
+      briefly "Member-facing commands originated by the application"
+      described as {
+        |What RestaurantApp sends: enrolment, redemption, and the account
+        |lifecycle a member or an agent drives directly.
+      }
+    }
+    inlet IntakeExternalAccruals is command LoyaltyAccount.AccruePoints with {
+      briefly "Accruals originated by the order-taking contexts"
+      described as {
+        |What FrontOfHouse and OnlineOrdering send when spend is settled.
+        |Nobody types an accrual; it is earned by paying for something.
+      }
+    }
+    outlet IntakeMergedCommands is type LoyaltyAccountCommand
+ with {
+      briefly "The two streams as one"
+      described as {
+        |Everything the LoyaltyAccount entity is asked to do, in one stream.
+      }
+    }
+    handler LoyaltyAccountIntakeHandler is {
+      on enrollCustomer: command LoyaltyAccount.EnrollCustomer is {
+        send enrollCustomer to outlet Loyalty.LoyaltyAccountIntake.IntakeMergedCommands
+      }
+      on accruePoints: command LoyaltyAccount.AccruePoints is {
+        send accruePoints to outlet Loyalty.LoyaltyAccountIntake.IntakeMergedCommands
+      }
+      on redeemPoints: command LoyaltyAccount.RedeemPoints is {
+        send redeemPoints to outlet Loyalty.LoyaltyAccountIntake.IntakeMergedCommands
+      }
+      on suspendAccount: command LoyaltyAccount.SuspendAccount is {
+        send suspendAccount to outlet Loyalty.LoyaltyAccountIntake.IntakeMergedCommands
+      }
+      on reactivateAccount: command LoyaltyAccount.ReactivateAccount is {
+        send reactivateAccount to outlet Loyalty.LoyaltyAccountIntake.IntakeMergedCommands
+      }
+      on closeAccount: command LoyaltyAccount.CloseAccount is {
+        send closeAccount to outlet Loyalty.LoyaltyAccountIntake.IntakeMergedCommands
+      }
+      on other is {
+        error "Unexpected message for streamlet LoyaltyAccountIntake"
+      }
+    } with {
+      briefly "Loyalty account intake handler"
+      described as {
+        |One clause per concrete command: an alternation binding is a value,
+        |not a message, so a single generic clause could not be sent onward.
+      }
+    }
+  } with {
+    briefly "Loyalty account intake merge"
+    described as {
+      |Joins the two ways a loyalty account changes -- a member or agent
+      |acting in the application, and points earned by settled spend in
+      |front of house and online ordering.
     }
   }
   streamlet LoyaltyAccountEventSource as source is {

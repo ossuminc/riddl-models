@@ -697,6 +697,34 @@ is a manual sweep: for every command and event in a new model, name what
 actually sends it.
 
 
+### Portlet cardinality, and what it forces
+
+**An inlet accepts exactly ONE connector; an outlet feeds exactly ONE**
+(`stream-inlet-cardinality` / `stream-outlet-cardinality`, both **errors**).
+To fan in, declare more inlets — riddlc's own suggestion is "declare
+additional inlets on the processor (which makes it a merge or router) and
+connect each separately". Two sources sending the *same* message type to one
+context therefore need one inlet each, not one shared inlet.
+
+**A context's boundary handler cannot tell which inlet a message arrived on.**
+Handlers dispatch on message TYPE. Two same-typed inlets necessarily converge
+in the handler, so their streams cannot be kept apart downstream — and a
+pass-through streamlet whose input and output carry the same concrete message
+types **cannot be wired through a context boundary at all**, because the
+handler cannot distinguish the pre- and post-streamlet legs. Give the two legs
+different types, or put the streamlet where both its consumers are
+intra-context.
+
+Both measured on reactive-bbq, 2026-09-02, while giving six stranded `tell`s
+their channels.
+
+**A `gateway context` MUST have a merge shape** — >=2 inlets, exactly 1 outlet
+(`context-gateway-shape`, **error**): "a gateway funnels several inputs into
+one." `gateway` is one of four context intentions
+(`application | external | gateway | service`, `ebnf-grammar.ebnf:81`). A
+gateway ascribed `as router` is rejected, so a gateway cannot fan out to two
+destinations — it admits, and something downstream dispatches.
+
 ### The context IS the port at its own boundary
 
 **A cross-context connector must terminate on the CONTEXT'S OWN portlet** — an
