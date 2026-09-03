@@ -4,28 +4,38 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-### THE GATE IS RED, on purpose — read BACKLOG #28 first
+### The A6 contradiction is RESOLVED — gate is green
 
-`sbt r`, `sbt pc`, `sbt v` and `sbt checkAll` all FAIL, and that is an accepted
-state, not something to fix by editing the model. One A6 error in reactive-bbq
-(`ToRestaurants` -> `Restaurant.FrontOfHouse`) cannot be fixed here: A6 demands
-a connector, `stream-crosses-domains` forbids one, and both are Errors. Filed
-to riddl as sibling-domain connectors; Reid ruled 2026-09-03 to leave it.
+Everything red in the previous handoff is fixed. riddl shipped
+`b57376fa3`, permitting a connector to cross a domain boundary when both ends
+**share an ancestor domain** — implemented as common-ancestor, which is wider
+than the sibling rule Reid asked for and subsumes it. `stream-crosses-domains`
+still fires for genuinely unrelated domains.
 
-The reach is wider than the one error suggests: **prettify emits nothing for a
-model with validation errors**, so reactive-bbq's source cannot be
-canonicalised, which is what takes `pc`/`v`/`checkAll` down with it and makes
-the bast round-trip's byte-compare meaningless for that model. `sbt b` is fine
-(189/189), and `collect-warnings.py` reports exactly that one finding corpus
-wide.
+reactive-bbq gained `'CreateOrder Distribution'` (outlet on `MenuManagement`,
+inlet on `FrontOfHouse`, `persistent connector` declared at the `ReactiveBBQ`
+scope — the only scope that can see both ends) and is at **4009 definitions,
+0 errors, 0 warnings**.
+
+**The lesson worth keeping is about blast radius, not about A6.** One
+unfixable error cost this repository every formatting-dependent gate, because
+`riddlc prettify` emits NOTHING for a model with any validation error — so the
+source could not be canonicalised, which took `pc`, `v` and `checkAll` down
+with it and made the bast round-trip's byte-compare meaningless. `sbt b` and
+`collect-warnings.py` were unaffected throughout. When a rule lands that a
+model cannot satisfy, expect to lose formatting too, and do not read the
+formatting failure as a separate defect.
+
+Note also `persistent` is now REQUIRED on a related-domain connector: it falls
+through to checks that were skipped while `crossDomain` was true.
 
 ### riddlc is on an UNPUBLISHED pin, and the override is ON
 
 **Branch** `main` — `release/2` is merged and deleted (see below).
-**riddlc `2.1.0-2-0e2efb3e`** — riddl `main`, 2 commits past the `2.1.0`
-tag, commit `0e2efb3e5`. (`2.1.0` IS published, but the A6 rule landed in the
-commit after it, so the override stays on.) This is a **snapshot, not a
-release**: GitHub Packages stops at `2.1.0`, so
+**riddlc `2.1.0-4-b57376fa`** — riddl `main`, 4 commits past the `2.1.0`
+tag, commit `b57376fa3`. (`2.1.0` IS published, but BOTH A6 and
+related-domain connectors landed after it, so the override stays on.) This is
+a **snapshot, not a release**: GitHub Packages stops at `2.1.0`, so
 
 - `riddlcPath := Some(file("../bin/riddlc"))` — the override is back on,
   the posture CLAUDE.md warns about. **Verify with `riddlc info`, never the

@@ -15,15 +15,17 @@ enablePlugins(RiddlSbtPlugin)
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
 // same build, so one value pins both. This is an UNPUBLISHED snapshot of riddl
-// `main` -- 2 commits past the 2.1.0 tag, commit 0e2efb3e5 -- so `riddlcPath`
+// `main` -- 4 commits past the 2.1.0 tag, commit b57376fa3 -- so `riddlcPath`
 // below names a staged binary and the libraries resolve from ~/.ivy2/local via
 // `sbt publishLocal` in the riddl checkout. GitHub Packages stops at 2.1.0.
 //
-// It is tracked rather than the published 2.1.0 because the A6 rule -- a `tell`
-// needs a channel FROM ITS SENDER, and it is now an Error -- landed in the
-// commit AFTER that tag. Move to the next PUBLISHED tag carrying A6 as soon as
-// there is one, and take the riddlcPath override off in the same edit.
-lazy val riddlVersion = "2.1.0-2-0e2efb3e"
+// It is tracked rather than the published 2.1.0 because two rules this corpus
+// depends on landed AFTER that tag: A6 (a `tell` needs a channel from its
+// SENDER, now an Error) and related-domain connectors (a connector may cross a
+// domain boundary when both ends share an ancestor domain). Move to the next
+// PUBLISHED tag carrying both as soon as there is one, and take the riddlcPath
+// override off in the same edit.
+lazy val riddlVersion = "2.1.0-4-b57376fa"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
