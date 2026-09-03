@@ -15,15 +15,15 @@ enablePlugins(RiddlSbtPlugin)
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
 // same build, so one value pins both. This is an UNPUBLISHED snapshot of riddl
-// `main` -- 9 commits past the 2.0.0 tag, commit e895537f3 -- so `riddlcPath`
+// `main` -- 2 commits past the 2.1.0 tag, commit 0e2efb3e5 -- so `riddlcPath`
 // below names a staged binary and the libraries resolve from ~/.ivy2/local via
-// `sbt publishLocal` in the riddl checkout. GitHub Packages stops at 2.0.0.
+// `sbt publishLocal` in the riddl checkout. GitHub Packages stops at 2.1.0.
 //
-// It is tracked rather than 2.0.0 because `streamlet` (BACKLOG [5.1], the head
-// commit) landed after the tag, and the corpus migrated off `processor` to it.
-// Move to the next PUBLISHED tag containing that change as soon as there is one,
-// and take the riddlcPath override off in the same edit.
-lazy val riddlVersion = "2.0.0-9-e895537f"
+// It is tracked rather than the published 2.1.0 because the A6 rule -- a `tell`
+// needs a channel FROM ITS SENDER, and it is now an Error -- landed in the
+// commit AFTER that tag. Move to the next PUBLISHED tag carrying A6 as soon as
+// there is one, and take the riddlcPath override off in the same edit.
+lazy val riddlVersion = "2.1.0-2-0e2efb3e"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -75,7 +75,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // Some(...) because riddlVersion names an UNPUBLISHED snapshot the plugin
     // cannot download -- every riddlc task would fail with a bare
     // `Nonzero exit value: 56`. Set this back to None the moment a published tag
-    // carries `streamlet`; a stale override is indistinguishable from a clean
+    // carries the A6 rule; a stale override is indistinguishable from a clean
     // corpus.
     //
     // Two traps, both paid for. This path WINS over riddlVersion, so while an

@@ -1172,6 +1172,42 @@ what the control was for.
 
 ---
 
+## 28. THE GATE IS RED: one unfixable A6 error in reactive-bbq
+
+**Blocked on riddl, not on us.** `riddlc validate` reports
+`4006 definitions checked, 1 error, 0 warnings` for reactive-bbq. The one
+error is `msg-tell-target-unreachable` at
+`corporate/MenuManagementContext.riddl:634`,
+`ToRestaurants` -> `Restaurant.FrontOfHouse`.
+
+**It cannot be fixed here.** A6 demands a connector; `stream-crosses-domains`
+forbids one across a domain boundary. Verified by building that connector and
+validating it — both are Errors, so no legal spelling satisfies both. Filed as
+`../riddl/task/2026-09-03-allow-connectors-between-sibling-domains.md`, asking
+that sibling domains under a common parent be permitted (`Restaurant`,
+`BackOffice` and `Corporate` are all direct children of `ReactiveBBQ`). Reid's
+ruling 2026-09-03: leave the site alone.
+
+**What is red because of it**, and this is wider than it looks:
+`riddlc prettify` emits NOTHING for a model with validation errors (`-o <dir>`
+leaves the directory empty), so
+
+- `sbt r` fails -> reactive-bbq's source **cannot be canonicalised**
+- `sbt pc`, `sbt v` and `sbt checkAll` all fail
+- `verify-bast-roundtrip.sh`'s byte-compare is not meaningful for this model
+  while its source is non-canonical
+
+`sbt b` is unaffected (189/189 succeeded) and `collect-warnings.py` reports
+**exactly this one finding** across the whole corpus — everything else is
+clean.
+
+**When the rule lands:** add the `Corporate -> Restaurant` connector, run
+`sbt r`, and the gate goes green. Do not "fix" this by rewriting the `tell`;
+cross-domain integration by adaptor is correct RIDDL and riddl-generator has
+already been told so.
+
+---
+
 ## 25. `code_statement` has no TypeScript — to file upstream
 
 `code_statement`'s language list is closed:

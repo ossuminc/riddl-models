@@ -4,12 +4,28 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
+### THE GATE IS RED, on purpose — read BACKLOG #28 first
+
+`sbt r`, `sbt pc`, `sbt v` and `sbt checkAll` all FAIL, and that is an accepted
+state, not something to fix by editing the model. One A6 error in reactive-bbq
+(`ToRestaurants` -> `Restaurant.FrontOfHouse`) cannot be fixed here: A6 demands
+a connector, `stream-crosses-domains` forbids one, and both are Errors. Filed
+to riddl as sibling-domain connectors; Reid ruled 2026-09-03 to leave it.
+
+The reach is wider than the one error suggests: **prettify emits nothing for a
+model with validation errors**, so reactive-bbq's source cannot be
+canonicalised, which is what takes `pc`/`v`/`checkAll` down with it and makes
+the bast round-trip's byte-compare meaningless for that model. `sbt b` is fine
+(189/189), and `collect-warnings.py` reports exactly that one finding corpus
+wide.
+
 ### riddlc is on an UNPUBLISHED pin, and the override is ON
 
 **Branch** `main` — `release/2` is merged and deleted (see below).
-**riddlc `2.0.0-9-e895537f`** — riddl `main`, 9 commits past the `2.0.0`
-tag, commit `e895537f3`. This is a **snapshot, not a release**: GitHub
-Packages stops at `2.0.0`, so
+**riddlc `2.1.0-2-0e2efb3e`** — riddl `main`, 2 commits past the `2.1.0`
+tag, commit `0e2efb3e5`. (`2.1.0` IS published, but the A6 rule landed in the
+commit after it, so the override stays on.) This is a **snapshot, not a
+release**: GitHub Packages stops at `2.1.0`, so
 
 - `riddlcPath := Some(file("../bin/riddlc"))` — the override is back on,
   the posture CLAUDE.md warns about. **Verify with `riddlc info`, never the
