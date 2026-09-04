@@ -47,6 +47,22 @@ sinks to 0**, so sources nobody touched (`ReservationEventSource`,
 `TableOrderEventSource`) now drain into nothing. 42 findings: 26 Adaptor, 15
 Source, 1 Context, across 6 models.
 
+**Sharper diagnosis (2026-09-04): there are TWO causes, not one.**
+
+- **15 `Source` findings** — the sink cascade above: the logs they drained into
+  became flows.
+- **26 `Adaptor` findings** — **a context inlet is a dead end in the connector
+  graph.** All 27 connectors leaving a warned sender land on a **context**
+  (`as router`), never on a repository. That is forced:
+  `adaptor-targets-context-only` says an adaptor may address only a context, A6
+  says it must own an outlet with a connector to that target, so the connector
+  necessarily lands on a context inlet — which is consumed by the context's
+  HANDLER, not by another connector, so the sink walk stops there.
+
+**So any adaptor obeying `adaptor-targets-context-only` will trip
+`stream-source-reaches-no-sink`.** The two rules cannot both be satisfied by a
+model that routes through a context boundary. Not fixable here.
+
 **It cannot be wired away** — tested, not assumed: repointing an adaptor's
 connector onto the repository that handles the message left the warning,
 because that repository is `as merge` (it answers queries) and is not a sink
