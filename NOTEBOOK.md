@@ -4,6 +4,41 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
+### Every adaptor `tell` now addresses a CONTEXT
+
+Reid's ruling, 2026-09-03: *adaptors translate between contexts, period* — so
+an adaptor's target must be a context whether or not a boundary is crossed.
+29 of reactive-bbq's 35 adaptor `tell`s addressed an entity or repository
+directly; all 35 now name a context. 0 errors, 0 warnings throughout, 4009
+definitions before and after.
+
+**28 of the 29 point at the adaptor's OWN containing context.** So this is
+mostly about *inbound* adaptors: a `from`-adaptor now hands its translated
+message to its own context and lets the boundary handler route it inward over
+the connector that already existed, instead of writing straight into the
+entity. Only one retarget crosses to a different context. Flagged back to
+riddl-generator in case the intent was only the boundary-crossing cases.
+
+**Two method points worth keeping:**
+
+- **Edit by LINE NUMBER from `riddlc find`, not by text substitution.**
+  Several of these target strings (`to entity Loyalty.LoyaltyAccount`,
+  `to repository Reporting.SalesReportRepository`) also occur in `tell`s that
+  are NOT under an adaptor, and a global replace would have silently changed
+  them. Each line was asserted to contain the expected text before rewriting.
+- **Resolve the owning context from `dump --json`, do not trim the last path
+  segment.** `Restaurant.NotificationService` IS a context (external), so
+  trimming would have produced `to context Restaurant` — naming a DOMAIN —
+  and the other 28 correct edits would have hidden it in the diff.
+
+**No compiler enforces this yet.** `adaptor-targets-own-context` exists but
+governs the adaptor's *declaration* (`ValidationPass.scala:4805`), not its tell
+targets, and predates the ruling. The corpus conforms to a rule riddlc does not
+check; the guarantee is the `riddlc find` query, not a validation pass. Also
+NOT done, deliberately: outlets on the adaptors, which riddl-generator expects
+to need once A6 requires a sender to own its channel. That rule is unwritten;
+ports added against it now would be guesses.
+
 ### The A6 contradiction is RESOLVED — gate is green
 
 Everything red in the previous handoff is fixed. riddl shipped
