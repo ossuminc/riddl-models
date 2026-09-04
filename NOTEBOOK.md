@@ -4,76 +4,48 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-### A6 migration: 0 ERRORS corpus-wide; 42 warnings blocked on a riddl ruling
+### A6 migration COMPLETE — corpus at zero, `task/` empty
 
-537 findings -> **0 errors** across 32 models plus the `patterns/`
-example.
-`task/2026-09-03-senders-must-own-their-outlet.md` is STILL OPEN for the 42
-`stream-source-reaches-no-sink` that remain — read its Results first.
+Pinned riddlc **`2.1.0-12-ef74c0fe`**. The corpus is at **0 findings of every
+severity**, canaried live, and every gate is green:
 
-**Pinned riddlc `2.1.0-8-238144af`.** The earlier `2.1.0-4-b57376fa` reported
-0 findings here because it predates the rules.
+```
+collect-warnings.py       189 swept, 0 findings
+sbt checkAll              189 validate, 1003 canonical, 2+7 patterns, Passed
+sbt r / sbt b             189/189
+verify-bast-roundtrip.sh  189 passing, 0 discrepancies
+```
 
-**The unit of work is the PAIR.** 510 findings collapsed to 118 distinct
-(sender, target) pairs — reachability is transitive, so one channel serves
-every tell sharing a pair.
+**The last 42 warnings cleared with NO model change.** riddl `3658d79f1` — *"A
+stream chain ends where its message is CONSUMED, not at a sink shape; cycles
+are an Error"* — was the ruling asked for, and it addressed both causes we
+reported: the sink cascade and the context dead end. Holding out for that
+ruling rather than adding artificial sinks to 6 models was the right call.
 
-**`tell` becomes `send`.** Giving the sender an outlet satisfies A6 but leaves
-that outlet unsent-to, so `stream-streamlet-sends-nothing` fires instead. CM
-§25.7 defines `tell` as sugar for a `send` on the connected outlet, so the
-conversion is the documented equivalence and settles both rules at once.
+**What the migration took**, across `49cc22aa`, `15356fd5`, `6d291ad8`:
+118 channels, 27 adaptor retargets, 60 ascriptions, 30 reference keywords,
+13 shapes, two new alternations (`DrinkServiceNotice`,
+`MenuDistributionCommand`), one missing handler clause, and the `tell` ->
+`send` conversion.
 
-**Never hand-derive an ascription, a reference keyword or a shape.** riddlc
-names the right answer in `stream-ascribed-shape-mismatch`, `ref-wrong-keyword`
-and `stream-ports-without-shape`; the fixers read it back.
+**Durable lessons, all paid for:**
 
-**Three tooling traps, each caught by riddlc rather than by inspection:**
-
-1. **Resolving a sender by SIMPLE NAME wires the wrong one** — reactive-bbq
-   has two `ToKitchen`, two `ToLoyalty`, two `FromFrontOfHouse`, two
-   `FromOnlineOrdering`. Caught by `stream-crosses-contexts` on connectors
-   joining unrelated contexts. Resolve by the FILE AND LINE of the finding.
-2. **A port's type comes from the MESSAGE, not the target's inlets** — the
-   latter produced 35 `stream-portlet-type-mismatch`.
-3. **A pair sending several types needs an alternation admitting them all**;
-   where none existed, declare one (`DrinkServiceNotice`,
-   `MenuDistributionCommand` in reactive-bbq).
-
-**THE FINDING THAT MATTERS — A6 consumed the corpus's terminal sinks.** An
-event-log sink receives events and `tell`s a `Persist…` command to its
-repository. A6 makes it own an outlet, and its arity becomes (1 out, 1 in) — a
-**flow**, not a sink. `restaurant/FrontOfHouseContext.riddl` went from **5
-sinks to 0**, so sources nobody touched (`ReservationEventSource`,
-`TableOrderEventSource`) now drain into nothing. 42 findings: 26 Adaptor, 15
-Source, 1 Context, across 6 models.
-
-**Sharper diagnosis (2026-09-04): there are TWO causes, not one.**
-
-- **15 `Source` findings** — the sink cascade above: the logs they drained into
-  became flows.
-- **26 `Adaptor` findings** — **a context inlet is a dead end in the connector
-  graph.** All 27 connectors leaving a warned sender land on a **context**
-  (`as router`), never on a repository. That is forced:
-  `adaptor-targets-context-only` says an adaptor may address only a context, A6
-  says it must own an outlet with a connector to that target, so the connector
-  necessarily lands on a context inlet — which is consumed by the context's
-  HANDLER, not by another connector, so the sink walk stops there.
-
-**So any adaptor obeying `adaptor-targets-context-only` will trip
-`stream-source-reaches-no-sink`.** The two rules cannot both be satisfied by a
-model that routes through a context boundary. Not fixable here.
-
-**It cannot be wired away** — tested, not assumed: repointing an adaptor's
-connector onto the repository that handles the message left the warning,
-because that repository is `as merge` (it answers queries) and is not a sink
-either. Filed as
-`../riddl/task/2026-09-04-a6-consumes-the-corpus-terminal-sinks.md`. Do NOT add
-artificial sinks to satisfy the check.
-
-**Gates:** `sbt r` 189/189, `sbt b` 189/189, round-trip 189/0 — prettify works
-again so the corpus is canonical. `sbt checkAll` fails only on the R10 test,
-which requires zero warnings as well as zero errors; that single failure is the
-42 above.
+- **`tell` becomes `send` once a channel exists.** CM §25.7 says they are the
+  same thing; keeping the `tell` leaves the new outlet unsent-to and trips
+  `stream-streamlet-sends-nothing`. Converting settles A6 and that rule at once.
+- **Never hand-derive an ascription, reference keyword or shape** — riddlc
+  names the right answer in `stream-ascribed-shape-mismatch`,
+  `ref-wrong-keyword` and `stream-ports-without-shape`; read it back.
+- **Resolve a sender by FILE AND LINE, never by simple name.** reactive-bbq has
+  two `ToKitchen`, two `ToLoyalty`, two `FromFrontOfHouse`, two
+  `FromOnlineOrdering`; name-matching wired the wrong one and was caught only
+  by `stream-crosses-contexts`.
+- **A port's type comes from the MESSAGE, not the target's inlets**, and a pair
+  sending several types needs an alternation admitting them all.
+- **A context is the SOURCE for everything leaving it** — a cross-context
+  connector may not leave an adaptor's own outlet, so 25 of 26 adaptors own an
+  outlet and the one crossing a boundary (`ToNotificationService`) sends on its
+  context's.
 
 ### Every adaptor `tell` now addresses a CONTEXT
 
