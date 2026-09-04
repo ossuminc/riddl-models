@@ -1,5 +1,11 @@
 // CustomerSuccessContext - Main bounded context for customer success operations
 context CustomerSuccessContext as router is {
+  connector 'ChurnMetricsProjector Storage' is from outlet CustomerSuccessContext.ChurnMetricsProjector.ChurnMetricsProjectorToRepository to inlet CustomerSuccessContext.CustomerAccountRepository.CustomerAccountRepositoryFromChurnMetricsProjector with {
+    briefly "ChurnMetricsProjector messages on their way to CustomerAccountRepository"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
   inlet CustomerAccountCommandStreamIn is type CustomerAccountCommand  outlet CustomerAccountCommandStreamOut is type CustomerAccountCommand
   inlet CustomerAccountResultStreamIn is result CustomerAccount.CustomerAccountResult  outlet CustomerAccountResultStreamOut is result CustomerAccount.CustomerAccountResult
   handler CustomerSuccessContextBoundary is {
@@ -134,7 +140,13 @@ context CustomerSuccessContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository CustomerAccountRepository as flow is {
+  repository CustomerAccountRepository as merge is {
+    inlet CustomerAccountRepositoryFromChurnMetricsProjector is type CustomerAccountRepositoryCommand with {
+      briefly "What ChurnMetricsProjector sends CustomerAccountRepository"
+      described as {
+        |Its own inlet: an inlet accepts exactly one connector.
+      }
+    }
     inlet CustomerAccountRepositoryFromHealthScoreTrendsProjector is type CustomerAccountRepositoryCommand    command PersistCustomerOnboarded is {
       accountId: AccountId with {
         briefly "Row addressed"
@@ -701,8 +713,16 @@ context CustomerSuccessContext as router is {
       |Read model view carrying the churn metrics state projection.
     }
   }
-  projector ChurnMetricsProjector as sink is {
+  projector ChurnMetricsProjector as flow is {
     updates repository CustomerSuccessContext.CustomerAccountRepository
+    outlet ChurnMetricsProjectorToRepository is type CustomerAccountRepositoryCommand
+ with {
+      briefly "What ChurnMetricsProjector publishes to CustomerAccountRepository"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to CustomerAccountRepository needs this port to travel on.
+      }
+    }
     inlet ChurnMetricsProjectorFromCustomerAccount is type CustomerAccountEvent    record ChurnMetric is {
       period: String(1,20) with {
         briefly "Period"

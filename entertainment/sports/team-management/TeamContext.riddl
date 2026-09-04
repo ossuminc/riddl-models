@@ -1,5 +1,17 @@
 // Team Management bounded context
 context TeamContext as router is {
+  connector 'PlayerEventSplit Intake' is from outlet TeamContext.PlayerEventSplit.PlayerEventSplitToPlayer to inlet TeamContext.Player.PlayerFromPlayerEventSplit with {
+    briefly "PlayerEventSplit messages on their way to Player"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
+  connector 'RosterMetrics Storage' is from outlet TeamContext.RosterMetrics.RosterMetricsToRepository to inlet TeamContext.PlayerRepository.PlayerRepositoryFromRosterMetrics with {
+    briefly "RosterMetrics messages on their way to PlayerRepository"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
   inlet PlayerCommandStreamIn is type PlayerCommand  outlet PlayerCommandStreamOut is type PlayerCommand
   inlet TeamCommandStreamIn is command Team.CreateTeam  outlet TeamCommandStreamOut is command Team.CreateTeam
   inlet PlayerResultStreamIn is result Player.PlayerResult  outlet PlayerResultStreamOut is result Player.PlayerResult
@@ -301,7 +313,13 @@ context TeamContext as router is {
     }
   }
   // Repository for player data persistence
-  repository PlayerRepository as flow is {
+  repository PlayerRepository as merge is {
+    inlet PlayerRepositoryFromRosterMetrics is command TeamContext.PlayerRepository.PersistTeamCreated with {
+      briefly "What RosterMetrics sends PlayerRepository"
+      described as {
+        |Its own inlet: an inlet accepts exactly one connector.
+      }
+    }
     command PersistContractExtended is {
       playerId: PlayerId with {
         briefly "Row addressed"
@@ -621,8 +639,16 @@ context TeamContext as router is {
     }
   }
   // Projector for roster analytics
-  projector RosterMetrics as sink is {
+  projector RosterMetrics as merge is {
     updates repository TeamContext.PlayerRepository
+    outlet RosterMetricsToRepository is command TeamContext.PlayerRepository.PersistTeamCreated
+ with {
+      briefly "What RosterMetrics publishes to PlayerRepository"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to PlayerRepository needs this port to travel on.
+      }
+    }
     inlet RosterMetricsFromPlayer is type PlayerEvent    inlet RosterMetricsFromTeam is type TeamEvent    record RosterMetricsRecord is {
       teamId: TeamId with {
         briefly "Team identifier"
@@ -741,7 +767,15 @@ context TeamContext as router is {
       | front office decision support and league compliance reporting.
     }
   }
-  streamlet PlayerEventSplit as flow is {
+  streamlet PlayerEventSplit as split is {
+    outlet PlayerEventSplitToPlayer is type PlayerCommand
+ with {
+      briefly "What PlayerEventSplit publishes to Player"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to Player needs this port to travel on.
+      }
+    }
     inlet PlayerEventSplitIn is type PlayerEvent    outlet PlayerEventSplitToRosterMetrics is type PlayerEvent
     handler PlayerEventSplitHandler is {
       on playerSigned: event Player.PlayerSigned is {

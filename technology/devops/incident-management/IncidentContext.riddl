@@ -1,5 +1,35 @@
 // Incident Management Bounded Context
 context IncidentContext as router is {
+  connector 'AlertAdapter Intake' is from outlet IncidentContext.AlertAdapter.AlertAdapterToIncidentContext to inlet IncidentContext.IncidentContextFromAlertAdapter with {
+    briefly "AlertAdapter messages on their way to IncidentContext"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
+  inlet IncidentContextFromAlertAdapter is type IncidentCommand with {
+    briefly "What AlertAdapter sends IncidentContext"
+    described as {
+      |Its own inlet: an inlet accepts exactly one connector.
+    }
+  }
+  connector 'IncidentTrendsProjector Storage' is from outlet IncidentContext.IncidentTrendsProjector.IncidentTrendsProjectorToRepository to inlet IncidentContext.IncidentRepository.IncidentRepositoryFromIncidentTrendsProjector with {
+    briefly "IncidentTrendsProjector messages on their way to IncidentRepository"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
+  connector 'FromPagerDutyIntegration Intake' is from outlet IncidentContext.FromPagerDutyIntegration.FromPagerDutyIntegrationToIncidentContext to inlet IncidentContext.IncidentContextFromFromPagerDutyIntegration with {
+    briefly "FromPagerDutyIntegration messages on their way to IncidentContext"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
+  inlet IncidentContextFromFromPagerDutyIntegration is type IncidentCommand with {
+    briefly "What FromPagerDutyIntegration sends IncidentContext"
+    described as {
+      |Its own inlet: an inlet accepts exactly one connector.
+    }
+  }
   inlet IncidentCommandStreamIn is type IncidentCommand  outlet IncidentCommandStreamOut is type IncidentCommand
   inlet TranslationFromContextAlertiIn is type AlertingService.AlertEvent  outlet TranslationFromContextAlertiOut is type AlertingService.AlertEvent
   inlet IncidentQueryResultStreamIn is result Incident.IncidentResult  outlet IncidentQueryResultStreamOut is result Incident.IncidentResult
@@ -51,7 +81,15 @@ context IncidentContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'IncidentCommand Stream Intake' is from outlet IncidentContext.IncidentCommandStreamOut to inlet IncidentContext.Incident.IncidentCommands  connector 'Translation From Context AlertingService Intake' is from outlet IncidentContext.TranslationFromContextAlertiOut to inlet IncidentContext.AlertAdapter.IncomingAlertEvents  connector 'IncidentQueryResult Stream Egress' is from outlet IncidentContext.IncidentRepository.IncidentRepositoryResponses to inlet IncidentContext.IncidentQueryResultStreamIn  adaptor FromPagerDutyIntegration from context PagerDutyIntegration is { 
+  connector 'IncidentCommand Stream Intake' is from outlet IncidentContext.IncidentCommandStreamOut to inlet IncidentContext.Incident.IncidentCommands  connector 'Translation From Context AlertingService Intake' is from outlet IncidentContext.TranslationFromContextAlertiOut to inlet IncidentContext.AlertAdapter.IncomingAlertEvents  connector 'IncidentQueryResult Stream Egress' is from outlet IncidentContext.IncidentRepository.IncidentRepositoryResponses to inlet IncidentContext.IncidentQueryResultStreamIn  adaptor FromPagerDutyIntegration from context PagerDutyIntegration as source is { 
+    outlet FromPagerDutyIntegrationToIncidentContext is type IncidentCommand
+ with {
+      briefly "What FromPagerDutyIntegration publishes to IncidentContext"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to IncidentContext needs this port to travel on.
+      }
+    }
     handler FromPagerDutyIntegrationHandler is {
       on result PagerDutyIntegration.OnCallResult is {
         do "the model receives on call result"
@@ -67,7 +105,7 @@ context IncidentContext as router is {
     }
     handler InboundPages is {
       on pageAcknowledged: event PagerDutyIntegration.PageAcknowledged is {
-        tell command AcknowledgeIncident(incidentId = pageAcknowledged.incidentId, acknowledgedBy = pageAcknowledged.acknowledgedBy, initialAssessment = prompt("the initial assessment of this acknowledge incident")) to entity Incident
+        tell command AcknowledgeIncident(incidentId = pageAcknowledged.incidentId, acknowledgedBy = pageAcknowledged.acknowledgedBy, initialAssessment = prompt("the initial assessment of this acknowledge incident")) to context IncidentContext
       }
       on other is {
         error "Unexpected message for adaptor PagerDutyAdapter"
@@ -96,7 +134,13 @@ context IncidentContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository IncidentRepository as flow is {
+  repository IncidentRepository as merge is {
+    inlet IncidentRepositoryFromIncidentTrendsProjector is type IncidentRepositoryCommand with {
+      briefly "What IncidentTrendsProjector sends IncidentRepository"
+      described as {
+        |Its own inlet: an inlet accepts exactly one connector.
+      }
+    }
     inlet IncidentRepositoryFromIncidentMetricsProjector is type IncidentRepositoryCommand    outlet IncidentRepositoryResponses is result Incident.IncidentResult
     record StoredIncident is {
       incidentId: IncidentId with {
@@ -489,8 +533,16 @@ context IncidentContext as router is {
       |Read model view carrying the trends state projection.
     }
   }
-  projector IncidentTrendsProjector as sink is {
+  projector IncidentTrendsProjector as flow is {
     updates repository IncidentContext.IncidentRepository
+    outlet IncidentTrendsProjectorToRepository is type IncidentRepositoryCommand
+ with {
+      briefly "What IncidentTrendsProjector publishes to IncidentRepository"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to IncidentRepository needs this port to travel on.
+      }
+    }
     inlet IncidentTrendsProjectorFromIncident is type IncidentEvent    record TrendsState is {
       weeklyIncidentCount: Natural with {
         briefly "Weekly count"
@@ -599,11 +651,19 @@ context IncidentContext as router is {
     }
   }
   // Adaptor for alerting service integration
-  adaptor AlertAdapter from context AlertingService as sink is { 
+  adaptor AlertAdapter from context AlertingService as flow is { 
+    outlet AlertAdapterToIncidentContext is type IncidentCommand
+ with {
+      briefly "What AlertAdapter publishes to IncidentContext"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to IncidentContext needs this port to travel on.
+      }
+    }
     inlet IncomingAlertEvents is type AlertingService.AlertEvent    handler InboundAlerts is {
       on event AlertingService.AlertTriggered is {
         let createIncident: type CreateIncident = prompt("the create incident that results from alert triggered")
-        tell createIncident to entity Incident
+        tell createIncident to context IncidentContext
       }
       on event AlertingService.AlertResolved is {
         do "Check if incident should be auto-resolved"

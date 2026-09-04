@@ -1,6 +1,42 @@
 // Order Management - Order Context
 // The primary bounded context for order lifecycle management
 context OrderContext as router is {
+  connector 'ShippingAdapter Intake' is from outlet OrderContext.ShippingAdapter.ShippingAdapterToOrderContext to inlet OrderContext.OrderContextFromShippingAdapter with {
+    briefly "ShippingAdapter messages on their way to OrderContext"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
+  inlet OrderContextFromShippingAdapter is type OrderCommand with {
+    briefly "What ShippingAdapter sends OrderContext"
+    described as {
+      |Its own inlet: an inlet accepts exactly one connector.
+    }
+  }
+  connector 'InventoryAdapter Intake' is from outlet OrderContext.InventoryAdapter.InventoryAdapterToOrderContext to inlet OrderContext.OrderContextFromInventoryAdapter with {
+    briefly "InventoryAdapter messages on their way to OrderContext"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
+  inlet OrderContextFromInventoryAdapter is type OrderCommand with {
+    briefly "What InventoryAdapter sends OrderContext"
+    described as {
+      |Its own inlet: an inlet accepts exactly one connector.
+    }
+  }
+  connector 'PaymentAdapter Intake' is from outlet OrderContext.PaymentAdapter.PaymentAdapterToOrderContext to inlet OrderContext.OrderContextFromPaymentAdapter with {
+    briefly "PaymentAdapter messages on their way to OrderContext"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
+  inlet OrderContextFromPaymentAdapter is type OrderCommand with {
+    briefly "What PaymentAdapter sends OrderContext"
+    described as {
+      |Its own inlet: an inlet accepts exactly one connector.
+    }
+  }
   inlet OrderCommandStreamIn is type OrderCommand  outlet OrderCommandStreamOut is type OrderCommand
   inlet ReturnCommandStreamIn is type ReturnCommand  outlet ReturnCommandStreamOut is type ReturnCommand
   inlet ShipmentCommandStreamIn is type ShipmentCommand  outlet ShipmentCommandStreamOut is type ShipmentCommand
@@ -71,10 +107,18 @@ context OrderContext as router is {
   include "Return.riddl"
   include "OrderFulfillmentSaga.riddl"
   // Adaptors for external system integration
-  adaptor PaymentAdapter from context PaymentGateway is { 
+  adaptor PaymentAdapter from context PaymentGateway as source is { 
+    outlet PaymentAdapterToOrderContext is type OrderCommand
+ with {
+      briefly "What PaymentAdapter publishes to OrderContext"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to OrderContext needs this port to travel on.
+      }
+    }
     handler InboundPayments is {
       on paymentSucceeded: event PaymentGateway.PaymentSucceeded is {
-        tell command ConfirmPayment(orderId = paymentSucceeded.orderId, transactionId = paymentSucceeded.transactionId, amountPaid = prompt("the amount paid of this confirm payment")) to entity Order
+        tell command ConfirmPayment(orderId = paymentSucceeded.orderId, transactionId = paymentSucceeded.transactionId, amountPaid = prompt("the amount paid of this confirm payment")) to context OrderContext
       }
       on event PaymentGateway.PaymentFailed is {
         do "Log payment failure and notify order processing"
@@ -98,10 +142,18 @@ context OrderContext as router is {
       | and translates them into commands for the Order entity.
     }
   }
-  adaptor InventoryAdapter from context InventoryService is { 
+  adaptor InventoryAdapter from context InventoryService as source is { 
+    outlet InventoryAdapterToOrderContext is type OrderCommand
+ with {
+      briefly "What InventoryAdapter publishes to OrderContext"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to OrderContext needs this port to travel on.
+      }
+    }
     handler InboundInventory is {
       on stockAllocated: event InventoryService.StockAllocated is {
-        tell command AllocateInventory(orderId = stockAllocated.orderId, allocations = prompt("the allocations of this allocate inventory")) to entity Order
+        tell command AllocateInventory(orderId = stockAllocated.orderId, allocations = prompt("the allocations of this allocate inventory")) to context OrderContext
       }
       on event InventoryService.StockAllocationFailed is {
         do "Handle inventory shortage - may need to cancel or partial fulfill"
@@ -122,20 +174,28 @@ context OrderContext as router is {
       | and updates order status accordingly.
     }
   }
-  adaptor ShippingAdapter from context ShippingCarrier is { 
+  adaptor ShippingAdapter from context ShippingCarrier as source is { 
+    outlet ShippingAdapterToOrderContext is type OrderCommand
+ with {
+      briefly "What ShippingAdapter publishes to OrderContext"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to OrderContext needs this port to travel on.
+      }
+    }
     handler InboundShipping is {
       on shipmentCreatedByCarrier: event ShippingCarrier.ShipmentCreatedByCarrier is {
-        tell command Shipment.InitShipment(shipmentId = shipmentCreatedByCarrier.shipmentId, orderId = shipmentCreatedByCarrier.orderId, trackingNumber = shipmentCreatedByCarrier.trackingNumber, carrier = prompt("the carrier of this init shipment"), shippingAddress = prompt("the shipping address of this init shipment"), items = prompt("the items of this init shipment")) to entity Shipment
+        tell command Shipment.InitShipment(shipmentId = shipmentCreatedByCarrier.shipmentId, orderId = shipmentCreatedByCarrier.orderId, trackingNumber = shipmentCreatedByCarrier.trackingNumber, carrier = prompt("the carrier of this init shipment"), shippingAddress = prompt("the shipping address of this init shipment"), items = prompt("the items of this init shipment")) to context OrderContext
       }
       on shipmentPickedUp: event ShippingCarrier.ShipmentPickedUp is {
-        tell command UpdateTracking(shipmentId = shipmentPickedUp.shipmentId, status = prompt("the status of this update tracking"), location = empty, description = prompt("the description of this update tracking")) to entity Shipment
+        tell command UpdateTracking(shipmentId = shipmentPickedUp.shipmentId, status = prompt("the status of this update tracking"), location = empty, description = prompt("the description of this update tracking")) to context OrderContext
       }
       on shipmentInTransit: event ShippingCarrier.ShipmentInTransit is {
-        tell command UpdateTracking(shipmentId = shipmentInTransit.shipmentId, status = prompt("the status of this update tracking"), location = empty, description = prompt("the description of this update tracking")) to entity Shipment
+        tell command UpdateTracking(shipmentId = shipmentInTransit.shipmentId, status = prompt("the status of this update tracking"), location = empty, description = prompt("the description of this update tracking")) to context OrderContext
       }
       on shipmentDeliveredByCarrier: event ShippingCarrier.ShipmentDeliveredByCarrier is {
-        tell command MarkDelivered(shipmentId = shipmentDeliveredByCarrier.shipmentId, deliveredAt = shipmentDeliveredByCarrier.deliveredAt, signedBy = shipmentDeliveredByCarrier.signedBy) to entity Shipment
-        tell command DeliverOrder(deliveredAt = shipmentDeliveredByCarrier.deliveredAt, signedBy = shipmentDeliveredByCarrier.signedBy, orderId = prompt("the order id of this deliver order")) to entity Order
+        tell command MarkDelivered(shipmentId = shipmentDeliveredByCarrier.shipmentId, deliveredAt = shipmentDeliveredByCarrier.deliveredAt, signedBy = shipmentDeliveredByCarrier.signedBy) to context OrderContext
+        tell command DeliverOrder(deliveredAt = shipmentDeliveredByCarrier.deliveredAt, signedBy = shipmentDeliveredByCarrier.signedBy, orderId = prompt("the order id of this deliver order")) to context OrderContext
       }
       on other is {
         error "Unexpected message for adaptor ShippingAdapter"

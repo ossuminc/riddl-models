@@ -1,5 +1,47 @@
 // Claims Processing Bounded Context
 context ClaimsContext as router is {
+  connector 'CycleTimeProjector Storage' is from outlet ClaimsContext.CycleTimeProjector.CycleTimeProjectorToRepository to inlet ClaimsContext.ClaimRepository.ClaimRepositoryFromCycleTimeProjector with {
+    briefly "CycleTimeProjector messages on their way to ClaimRepository"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
+  connector 'FraudAdapter Intake' is from outlet ClaimsContext.FraudAdapter.FraudAdapterToClaimsContext to inlet ClaimsContext.ClaimsContextFromFraudAdapter with {
+    briefly "FraudAdapter messages on their way to ClaimsContext"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
+  inlet ClaimsContextFromFraudAdapter is type ClaimCommand with {
+    briefly "What FraudAdapter sends ClaimsContext"
+    described as {
+      |Its own inlet: an inlet accepts exactly one connector.
+    }
+  }
+  connector 'PaymentAdapter Intake' is from outlet ClaimsContext.PaymentAdapter.PaymentAdapterToClaimsContext to inlet ClaimsContext.ClaimsContextFromPaymentAdapter with {
+    briefly "PaymentAdapter messages on their way to ClaimsContext"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
+  inlet ClaimsContextFromPaymentAdapter is type ClaimCommand with {
+    briefly "What PaymentAdapter sends ClaimsContext"
+    described as {
+      |Its own inlet: an inlet accepts exactly one connector.
+    }
+  }
+  connector 'PolicyAdapter Intake' is from outlet ClaimsContext.PolicyAdapter.PolicyAdapterToClaimsContext to inlet ClaimsContext.ClaimsContextFromPolicyAdapter with {
+    briefly "PolicyAdapter messages on their way to ClaimsContext"
+    described as {
+      |The channel the `tell` travels.
+    }
+  }
+  inlet ClaimsContextFromPolicyAdapter is type ClaimCommand with {
+    briefly "What PolicyAdapter sends ClaimsContext"
+    described as {
+      |Its own inlet: an inlet accepts exactly one connector.
+    }
+  }
   inlet ClaimCommandStreamIn is type ClaimCommand  outlet ClaimCommandStreamOut is type ClaimCommand
   inlet ClaimResultStreamIn is result Claim.ClaimResult  outlet ClaimResultStreamOut is result Claim.ClaimResult
   handler ClaimsContextBoundary is {
@@ -44,15 +86,23 @@ context ClaimsContext as router is {
   connector 'ClaimCommand Stream Intake' is from outlet ClaimsContext.ClaimCommandStreamOut to inlet ClaimsContext.Claim.ClaimCommands  connector 'ClaimResult Stream Egress' is from outlet ClaimsContext.ClaimRepository.ClaimRepositoryResponses to inlet ClaimsContext.ClaimResultStreamIn  include "types.riddl"
   include "Claim.riddl"
   // Adaptors for external system integration
-  adaptor PolicyAdapter from context PolicyService is { 
+  adaptor PolicyAdapter from context PolicyService as source is { 
+    outlet PolicyAdapterToClaimsContext is type ClaimCommand
+ with {
+      briefly "What PolicyAdapter publishes to ClaimsContext"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to ClaimsContext needs this port to travel on.
+      }
+    }
     handler InboundPolicy is {
       on event PolicyService.PolicyDetailsRetrieved is {
         let fileClaim: type FileClaim = prompt("the file claim that results from policy details retrieved")
-        tell fileClaim to entity Claim
+        tell fileClaim to context ClaimsContext
       }
       on event PolicyService.CoverageVerified is {
         let approveClaim: type ApproveClaim = prompt("the approve claim that results from coverage verified")
-        tell approveClaim to entity Claim
+        tell approveClaim to context ClaimsContext
       }
       on other is {
         error "Unexpected message for adaptor PolicyAdapter"
@@ -70,15 +120,23 @@ context ClaimsContext as router is {
       | and applies them to claim processing.
     }
   }
-  adaptor PaymentAdapter from context PaymentService is { 
+  adaptor PaymentAdapter from context PaymentService as source is { 
+    outlet PaymentAdapterToClaimsContext is type ClaimCommand
+ with {
+      briefly "What PaymentAdapter publishes to ClaimsContext"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to ClaimsContext needs this port to travel on.
+      }
+    }
     handler InboundPayments is {
       on event PaymentService.PaymentProcessed is {
         let issuePay: type IssuePay = prompt("the issue pay that results from payment processed")
-        tell issuePay to entity Claim
+        tell issuePay to context ClaimsContext
       }
       on event PaymentService.PaymentVoided is {
         let issuePay: type IssuePay = prompt("the issue pay that results from payment voided")
-        tell issuePay to entity Claim
+        tell issuePay to context ClaimsContext
       }
       on other is {
         error "Unexpected message for adaptor PaymentAdapter"
@@ -96,19 +154,27 @@ context ClaimsContext as router is {
       | and updates claim payment status.
     }
   }
-  adaptor FraudAdapter from context FraudDetection is { 
+  adaptor FraudAdapter from context FraudDetection as source is { 
+    outlet FraudAdapterToClaimsContext is type ClaimCommand
+ with {
+      briefly "What FraudAdapter publishes to ClaimsContext"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to ClaimsContext needs this port to travel on.
+      }
+    }
     handler InboundFraud is {
       on event FraudDetection.FraudAnalysisComplete is {
         let investigateClaim: type InvestigateClaim = prompt("the investigate claim that results from fraud analysis complete")
-        tell investigateClaim to entity Claim
+        tell investigateClaim to context ClaimsContext
       }
       on event FraudDetection.SIUReferralAccepted is {
         let investigateClaim: type InvestigateClaim = prompt("the investigate claim that results from s i u referral accepted")
-        tell investigateClaim to entity Claim
+        tell investigateClaim to context ClaimsContext
       }
       on event FraudDetection.SIUInvestigationClosed is {
         let approveClaim: type ApproveClaim = prompt("the approve claim that results from s i u investigation closed")
-        tell approveClaim to entity Claim
+        tell approveClaim to context ClaimsContext
       }
       on other is {
         error "Unexpected message for adaptor FraudAdapter"
@@ -136,7 +202,13 @@ context ClaimsContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository ClaimRepository as flow is {
+  repository ClaimRepository as merge is {
+    inlet ClaimRepositoryFromCycleTimeProjector is type ClaimRepositoryCommand with {
+      briefly "What CycleTimeProjector sends ClaimRepository"
+      described as {
+        |Its own inlet: an inlet accepts exactly one connector.
+      }
+    }
     inlet ClaimRepositoryFromLossRatioProjector is type ClaimRepositoryCommand    outlet ClaimRepositoryResponses is result Claim.ClaimResult
     record StoredClaim is {
       claimId: ClaimId with {
@@ -553,8 +625,16 @@ context ClaimsContext as router is {
       |Read model view carrying the claim cycle tracking projection.
     }
   }
-  projector CycleTimeProjector as sink is {
+  projector CycleTimeProjector as flow is {
     updates repository ClaimsContext.ClaimRepository
+    outlet CycleTimeProjectorToRepository is type ClaimRepositoryCommand
+ with {
+      briefly "What CycleTimeProjector publishes to ClaimRepository"
+      described as {
+        |A sender publishes only through its OWN outlet, so the
+        |`tell` to ClaimRepository needs this port to travel on.
+      }
+    }
     inlet CycleTimeProjectorFromClaim is type ClaimEvent    record CycleTimeMetric is {
       periodStart: Date with {
         briefly "Period start"

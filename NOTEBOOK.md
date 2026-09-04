@@ -4,6 +4,56 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
+### THE GATE IS RED again — A6 migration is PART DONE (task still open)
+
+riddl `35bb8abcf` made A6 require the sender to OWN the connector's outlet, and
+added `adaptor-targets-context-only`. Corpus went **537 findings -> 77**;
+**26 of 32 models are fully clean**. `task/2026-09-03-senders-must-own-their-
+outlet.md` is deliberately STILL OPEN — read its Results before resuming.
+
+**Pinned riddlc is now `2.1.0-8-238144af`.** The prior `2.1.0-4-b57376fa`
+reported **0 findings** on this corpus because it predates the rules — another
+instance of a green sweep from a harness that cannot see.
+
+**The unit of work is the PAIR, not the finding.** 510 findings collapsed to
+118 distinct (sender, target) pairs, because reachability is transitive. One
+channel — outlet on the sender, inlet on the target, connector between —
+serves every tell sharing a pair.
+
+**Scripts are kept** in the session scratchpad pattern: generate channels from
+`dump --json`, then apply riddlc's OWN verdicts for ascriptions
+(`stream-ascribed-shape-mismatch`), reference keywords (`ref-wrong-keyword`)
+and shapes (`stream-ports-without-shape`). Never hand-derive any of those —
+riddlc names the right answer in the message.
+
+**The bug to remember: resolving a sender by SIMPLE NAME wires the wrong one.**
+reactive-bbq has two `ToKitchen`, two `ToLoyalty`, two `FromFrontOfHouse` and
+two `FromOnlineOrdering` adaptors. Matching on name produced connectors joining
+contexts that have no relationship, caught only because
+`stream-crosses-contexts` fired. Resolve by the FILE AND LINE of the finding.
+Only reactive-bbq is ambiguous — verified, the other 31 models are safe.
+
+**What remains, and why it was left:**
+
+1. **reactive-bbq, 65 errors, untouched.** Its 22 sink pairs wire fine
+   (65 -> 35, measured) but its 23 adaptor pairs expose a **rule tension**:
+   giving a sender its own outlet satisfies A6, but the sender still delivers
+   with `tell`, never `send`, so `stream-streamlet-sends-nothing` fires 22
+   times. CM §25.7 calls `tell` sugar for a `send` on the connected outlet, so
+   riddlc arguably should count it. **Asked riddl to rule before converting 22
+   `tell`s to `send`s in the reference model.**
+2. **12 `stream-source-reaches-no-sink` in 5 models, caused by this work.** An
+   adaptor with only an outlet is a `source`, and its output must reach a sink.
+   In order-management it cannot: `external context PaymentGateway` declares no
+   ports at all and `OrderContext` has no sink of any kind. The corpus idiom is
+   an adaptor `as flow` with an inlet from the external context (reactive-bbq
+   has ten), and reproducing that means giving external contexts ports and
+   these contexts a sink — beyond the task.
+
+`sbt b` 189/189; `sbt r` **188 of 189**. reactive-bbq cannot be prettified
+while it holds errors, so `pc`/`v`/`checkAll` stay RED — the same coupling as
+2026-09-03, now hit a second time.
+
 ### Every adaptor `tell` now addresses a CONTEXT
 
 Reid's ruling, 2026-09-03: *adaptors translate between contexts, period* — so
