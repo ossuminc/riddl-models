@@ -1,6 +1,6 @@
 // Loyalty bounded context
 context Loyalty as router is {
-  inlet LoyaltyAccountCommandStreamIn is type LoyaltyAccountCommand  outlet LoyaltyAccountCommandStreamOut is type LoyaltyAccountCommand
+  connector 'LoyaltyAccountEventLog To LoyaltyAccountRepository' is from outlet Loyalty.LoyaltyAccountEventLog.LoyaltyAccountEventLogToLoyaltyAccountRepository to inlet Loyalty.LoyaltyAccountRepository.LoyaltyAccountRepositoryFromLoyaltyAccountEventLog  connector 'FromOnlinePayment To Loyalty' is from outlet Loyalty.FromOnlinePayment.FromOnlinePaymentToLoyalty to inlet Loyalty.LoyaltyFromFromOnlinePayment  inlet LoyaltyFromFromOnlinePayment is command AccruePoints  connector 'FromPayment To Loyalty' is from outlet Loyalty.FromPayment.FromPaymentToLoyalty to inlet Loyalty.LoyaltyFromFromPayment  inlet LoyaltyFromFromPayment is command AccruePoints  connector 'FromMarketing To Loyalty' is from outlet Loyalty.FromMarketing.FromMarketingToLoyalty to inlet Loyalty.LoyaltyFromFromMarketing  inlet LoyaltyFromFromMarketing is command LoyaltyAccount.AccruePoints  inlet LoyaltyAccountCommandStreamIn is type LoyaltyAccountCommand  outlet LoyaltyAccountCommandStreamOut is type LoyaltyAccountCommand
   inlet LoyaltyAccountResultStreamIn is result LoyaltyAccount.LoyaltyAccountResult  outlet LoyaltyAccountResultStreamOut is result LoyaltyAccount.LoyaltyAccountResult
   inlet FOHToLoyaltyIn is command LoyaltyAccount.AccruePoints with {
     briefly "Point accruals arriving from front of house"
@@ -114,8 +114,8 @@ context Loyalty as router is {
       |takes commands and queries only.
     }
   }
-  repository LoyaltyAccountRepository as flow is {
-    inlet LoyaltyAccountRepositoryFromLoyaltyAccountProjection is type LoyaltyAccountRepositoryCommand    outlet LoyaltyAccountRepositoryResponses is result LoyaltyAccount.LoyaltyAccountResult
+  repository LoyaltyAccountRepository as merge is {
+    inlet LoyaltyAccountRepositoryFromLoyaltyAccountEventLog is command LogLoyaltyAccountEvent    inlet LoyaltyAccountRepositoryFromLoyaltyAccountProjection is type LoyaltyAccountRepositoryCommand    outlet LoyaltyAccountRepositoryResponses is result LoyaltyAccount.LoyaltyAccountResult
     record StoredLoyaltyAccount is {
       loyaltyAccountId: LoyaltyAccountId with {
         briefly "loyaltyAccountId"
@@ -423,16 +423,17 @@ context Loyalty as router is {
       |Publishes loyalty account entity events.
     }
   }
-  adaptor FromMarketing from context Corporate.Marketing is { 
+  adaptor FromMarketing from context Corporate.Marketing as source is { 
+    outlet FromMarketingToLoyalty is command LoyaltyAccount.AccruePoints
     handler CampaignEventIntake is {
       on event Corporate.Marketing.Campaign.CampaignLaunched is {
         let accruePoints: type LoyaltyAccount.AccruePoints = prompt("the accrue points that results from campaign launched")
-        tell accruePoints to context Loyalty
+        send accruePoints to outlet Loyalty.FromMarketing.FromMarketingToLoyalty
         do "apply loyalty bonus from launched campaign promotion"
       }
       on event Corporate.Marketing.Campaign.CampaignEnded is {
         let accruePoints: type LoyaltyAccount.AccruePoints = prompt("the accrue points that results from campaign ended")
-        tell accruePoints to context Loyalty
+        send accruePoints to outlet Loyalty.FromMarketing.FromMarketingToLoyalty
         do "finalize campaign promotion points for loyalty accounts"
       }
       on other is {
@@ -452,7 +453,8 @@ context Loyalty as router is {
       |for promotion distribution to loyalty accounts.
     }
   }
-  adaptor FromPayment from context Restaurant.FrontOfHouse is { 
+  adaptor FromPayment from context Restaurant.FrontOfHouse as source is { 
+    outlet FromPaymentToLoyalty is command AccruePoints
     handler DineInLoyaltyIntake is {
       on event Restaurant.FrontOfHouse.TableOrder.PaymentProcessed is {
         let pointsEarned = call function PointsForSpend(spendAmount = "event.orderPayment.paymentAmount")
@@ -462,7 +464,7 @@ context Loyalty as router is {
             pointsEarned, accrualReason = dine-in purchase,
             accrualOrderRef = event.tableOrderId"
           let accruePoints: type AccruePoints = prompt("the accrue points that results from payment processed")
-          tell accruePoints to context Loyalty
+          send accruePoints to outlet Loyalty.FromPayment.FromPaymentToLoyalty
         end
       }
       on other is {
@@ -481,7 +483,8 @@ context Loyalty as router is {
       |Receives dine-in payment events for loyalty accrual.
     }
   }
-  adaptor FromOnlinePayment from context Restaurant.OnlineOrdering is { 
+  adaptor FromOnlinePayment from context Restaurant.OnlineOrdering as source is { 
+    outlet FromOnlinePaymentToLoyalty is command AccruePoints
     handler OnlineLoyaltyIntake is {
       on event Restaurant.OnlineOrdering.OnlineOrder.OnlinePaymentProcessed is {
         let pointsEarned = "event.onlinePayment
@@ -493,7 +496,7 @@ context Loyalty as router is {
             pointsEarned, accrualReason = online purchase,
             accrualOrderRef = event.onlineOrderId"
           let accruePoints: type AccruePoints = prompt("the accrue points that results from online payment processed")
-          tell accruePoints to context Loyalty
+          send accruePoints to outlet Loyalty.FromOnlinePayment.FromOnlinePaymentToLoyalty
         end
       }
       on other is {
@@ -534,11 +537,12 @@ context Loyalty as router is {
       |Append a published loyalty account event to this context's event log.
     }
   }
-  streamlet LoyaltyAccountEventLog as sink is {
+  streamlet LoyaltyAccountEventLog as flow is {
+    outlet LoyaltyAccountEventLogToLoyaltyAccountRepository is command LogLoyaltyAccountEvent
     inlet IncomingLoyaltyAccountLog is type LoyaltyEvent    handler LoyaltyAccountLogIntake is {
       on other is {
         let logLoyaltyAccountEvent: type LogLoyaltyAccountEvent = prompt("the log loyalty account event to issue for this this")
-        tell logLoyaltyAccountEvent to repository Loyalty.LoyaltyAccountRepository
+        send logLoyaltyAccountEvent to outlet Loyalty.LoyaltyAccountEventLog.LoyaltyAccountEventLogToLoyaltyAccountRepository
         do "append the loyalty account event to the context event log"
       }
     } with {

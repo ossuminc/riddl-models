@@ -1,6 +1,6 @@
 // Kitchen bounded context
 context Kitchen as router is {
-  inlet KitchenTicketCommandStreamIn is type KitchenTicketCommand  outlet KitchenTicketCommandStreamOut is type KitchenTicketCommand
+  connector 'KitchenTicketEventLog To KitchenTicketRepository' is from outlet Kitchen.KitchenTicketEventLog.KitchenTicketEventLogToKitchenTicketRepository to inlet Kitchen.KitchenTicketRepository.KitchenTicketRepositoryFromKitchenTicketEventLog  connector 'FromOnlineOrdering To Kitchen' is from outlet Kitchen.FromOnlineOrdering.FromOnlineOrderingToKitchen to inlet Kitchen.KitchenFromFromOnlineOrdering  inlet KitchenFromFromOnlineOrdering is command ReceiveTicket  connector 'FromFrontOfHouse To Kitchen' is from outlet Kitchen.FromFrontOfHouse.FromFrontOfHouseToKitchen to inlet Kitchen.KitchenFromFromFrontOfHouse  inlet KitchenFromFromFrontOfHouse is command ReceiveTicket  connector 'TicketDisplaySink To KitchenTicket' is from outlet Kitchen.TicketDisplaySink.TicketDisplaySinkToKitchenTicket to inlet Kitchen.KitchenTicket.KitchenTicketFromTicketDisplaySink  inlet KitchenTicketCommandStreamIn is type KitchenTicketCommand  outlet KitchenTicketCommandStreamOut is type KitchenTicketCommand
   inlet KitchenTicketResultStreamIn is result KitchenTicket.KitchenTicketResult  outlet KitchenTicketResultStreamOut is result KitchenTicket.KitchenTicketResult
   inlet FOHToKitchenIn is command KitchenTicket.ReceiveTicket with {
     briefly "Tickets arriving from front of house"
@@ -90,7 +90,7 @@ context Kitchen as router is {
     }
   }
   repository KitchenTicketRepository as merge is {
-    inlet KitchenTicketRepositoryFromKitchenTicketProjection is type KitchenTicketRepositoryCommand    inlet KitchenTicketRepositoryFromKitchenDisplay is type KitchenTicketRepositoryCommand    outlet KitchenTicketRepositoryResponses is result KitchenTicket.KitchenTicketResult
+    inlet KitchenTicketRepositoryFromKitchenTicketEventLog is command LogKitchenTicketEvent    inlet KitchenTicketRepositoryFromKitchenTicketProjection is type KitchenTicketRepositoryCommand    inlet KitchenTicketRepositoryFromKitchenDisplay is type KitchenTicketRepositoryCommand    outlet KitchenTicketRepositoryResponses is result KitchenTicket.KitchenTicketResult
     record StoredKitchenTicket is {
       kitchenTicketId: KitchenTicketId with {
         briefly "kitchenTicketId"
@@ -484,13 +484,14 @@ context Kitchen as router is {
       |backpressure when the kitchen is at capacity.
     }
   }
-  streamlet TicketDisplaySink as sink is {
+  streamlet TicketDisplaySink as flow is {
+    outlet TicketDisplaySinkToKitchenTicket is event KitchenTicket.TicketReceived
     inlet DisplayedTickets is type KitchenTicketEvent    handler TicketDisplayHandler is {
       on other is {
         do "the remaining members of this inlet's type - rejections and events this sink does not act on - change nothing here"
       }
       on ticketReceived: event KitchenTicket.TicketReceived is {
-        tell ticketReceived to entity Kitchen.KitchenTicket
+        send ticketReceived to outlet Kitchen.TicketDisplaySink.TicketDisplaySinkToKitchenTicket
         do "render ticket on kitchen display screen"
       }
     } with {
@@ -515,7 +516,8 @@ context Kitchen as router is {
       |sink for rendering on the kitchen screen.
     }
   }
-  adaptor FromFrontOfHouse from context Restaurant.FrontOfHouse is { 
+  adaptor FromFrontOfHouse from context Restaurant.FrontOfHouse as source is { 
+    outlet FromFrontOfHouseToKitchen is command ReceiveTicket
     handler FrontOfHouseIntake is {
       on event Restaurant.FrontOfHouse.TableOrder.OrderSubmitted is {
         do "filter event.orderItems where
@@ -531,7 +533,7 @@ context Kitchen as router is {
           DineIn, ticketItems = mapped list, receivedAt =
           current timestamp"
         let receiveTicket: type ReceiveTicket = prompt("the receive ticket that results from order submitted")
-        tell receiveTicket to context Kitchen
+        send receiveTicket to outlet Kitchen.FromFrontOfHouse.FromFrontOfHouseToKitchen
       }
       on other is {
         error "Unexpected message for adaptor FromFrontOfHouse"
@@ -550,7 +552,8 @@ context Kitchen as router is {
       |to kitchen tickets.
     }
   }
-  adaptor FromOnlineOrdering from context Restaurant.OnlineOrdering is { 
+  adaptor FromOnlineOrdering from context Restaurant.OnlineOrdering as source is { 
+    outlet FromOnlineOrderingToKitchen is command ReceiveTicket
     handler OnlineIntake is {
       on event Restaurant.OnlineOrdering.OnlineOrder.OnlineOrderSubmitted is {
         do "map each event.orderCartItems CartItem to TicketItem
@@ -563,7 +566,7 @@ context Kitchen as router is {
           Online, ticketItems = mapped list, receivedAt =
           current timestamp"
         let receiveTicket: type ReceiveTicket = prompt("the receive ticket that results from online order submitted")
-        tell receiveTicket to context Kitchen
+        send receiveTicket to outlet Kitchen.FromOnlineOrdering.FromOnlineOrderingToKitchen
       }
       on other is {
         error "Unexpected message for adaptor FromOnlineOrdering"
@@ -621,11 +624,12 @@ context Kitchen as router is {
       |Append a published kitchen ticket event to this context's event log.
     }
   }
-  streamlet KitchenTicketEventLog as sink is {
+  streamlet KitchenTicketEventLog as flow is {
+    outlet KitchenTicketEventLogToKitchenTicketRepository is command LogKitchenTicketEvent
     inlet IncomingKitchenTicketLog is type KitchenTicketEvent    handler KitchenTicketLogIntake is {
       on other is {
         let logKitchenTicketEvent: type LogKitchenTicketEvent = prompt("the log kitchen ticket event to issue for this this")
-        tell logKitchenTicketEvent to repository Kitchen.KitchenTicketRepository
+        send logKitchenTicketEvent to outlet Kitchen.KitchenTicketEventLog.KitchenTicketEventLogToKitchenTicketRepository
         do "append the kitchen ticket event to the context event log"
       }
     } with {

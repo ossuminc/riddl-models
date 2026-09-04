@@ -1,6 +1,6 @@
 // Menu Management bounded context
 context MenuManagement as router is {
-  inlet PrintingToMenuIn is type PrintingEvent  outlet PrintingToMenuFwd is type PrintingEvent
+  connector 'MenuReleaseEventLog To MenuReleaseRepository' is from outlet MenuManagement.MenuReleaseEventLog.MenuReleaseEventLogToMenuReleaseRepository to inlet MenuManagement.MenuReleaseRepository.MenuReleaseRepositoryFromMenuReleaseEventLog  connector 'MenuItemEventLog To MenuItemRepository' is from outlet MenuManagement.MenuItemEventLog.MenuItemEventLogToMenuItemRepository to inlet MenuManagement.MenuItemRepository.MenuItemRepositoryFromMenuItemEventLog  connector 'ToRestaurants To MenuManagement' is from outlet MenuManagement.ToRestaurants.ToRestaurantsToMenuManagement to inlet MenuManagement.MenuManagementFromToRestaurants  inlet MenuManagementFromToRestaurants is event MenuRelease.MenuDistributed  connector 'PhotoConfirmSink To MenuItemRepository' is from outlet MenuManagement.PhotoConfirmSink.PhotoConfirmSinkToMenuItemRepository to inlet MenuManagement.MenuItemRepository.MenuItemRepositoryFromPhotoConfirmSink  connector 'PrintConfirmSink To MenuReleaseRepository' is from outlet MenuManagement.PrintConfirmSink.PrintConfirmSinkToMenuReleaseRepository to inlet MenuManagement.MenuReleaseRepository.MenuReleaseRepositoryFromPrintConfirmSink  inlet PrintingToMenuIn is type PrintingEvent  outlet PrintingToMenuFwd is type PrintingEvent
   inlet PhotographyToMenuIn is type PhotographyEvent  outlet PhotographyToMenuFwd is type PhotographyEvent
   outlet CreateOrderToFOH is command Restaurant.FrontOfHouse.TableOrder.CreateOrder
  with {
@@ -114,8 +114,8 @@ context MenuManagement as router is {
       |takes commands and queries only.
     }
   }
-  repository MenuItemRepository as flow is {
-    inlet MenuItemRepositoryFromMenuItemProjection is type MenuItemRepositoryCommand    outlet MenuItemRepositoryResponses is result MenuItem.MenuItemResult
+  repository MenuItemRepository as merge is {
+    inlet MenuItemRepositoryFromMenuItemEventLog is command LogMenuItemEvent    inlet MenuItemRepositoryFromPhotoConfirmSink is command RecordPhotoShootCompletion    inlet MenuItemRepositoryFromMenuItemProjection is type MenuItemRepositoryCommand    outlet MenuItemRepositoryResponses is result MenuItem.MenuItemResult
     record StoredMenuItem is {
       menuItemId: MenuItemId with {
         briefly "menuItemId"
@@ -309,8 +309,8 @@ context MenuManagement as router is {
       |takes commands and queries only.
     }
   }
-  repository MenuReleaseRepository as flow is {
-    inlet MenuReleaseRepositoryFromMenuReleaseProjection is type MenuReleaseRepositoryCommand    outlet MenuReleaseRepositoryResponses is result MenuRelease.MenuReleaseResult
+  repository MenuReleaseRepository as merge is {
+    inlet MenuReleaseRepositoryFromMenuReleaseEventLog is command LogMenuReleaseEvent    inlet MenuReleaseRepositoryFromPrintConfirmSink is command RecordPrintCompletion    inlet MenuReleaseRepositoryFromMenuReleaseProjection is type MenuReleaseRepositoryCommand    outlet MenuReleaseRepositoryResponses is result MenuRelease.MenuReleaseResult
     schema MenuReleaseData is relational
       of releases as record StoredMenuRelease
         index on field StoredMenuRelease.menuReleaseId
@@ -560,10 +560,11 @@ context MenuManagement as router is {
       |applies them inside MenuManagement.
     }
   }
-  streamlet PrintConfirmSink as sink is {
+  streamlet PrintConfirmSink as flow is {
+    outlet PrintConfirmSinkToMenuReleaseRepository is command RecordPrintCompletion
     inlet IncomingPrintResults is type PrintingEvent    handler PrintConfirmHandler is {
       on menusPrinted: event PrintingService.MenusPrinted is {
-        tell command RecordPrintCompletion(printJobId = menusPrinted.printJobId) to repository MenuManagement.MenuReleaseRepository
+        send command RecordPrintCompletion(printJobId = menusPrinted.printJobId) to outlet MenuManagement.PrintConfirmSink.PrintConfirmSinkToMenuReleaseRepository
         do "log print job completion for
           MenusPrinted.printJobId completed at
           MenusPrinted.printedAt"
@@ -612,10 +613,11 @@ context MenuManagement as router is {
       |applies them inside MenuManagement.
     }
   }
-  streamlet PhotoConfirmSink as sink is {
+  streamlet PhotoConfirmSink as flow is {
+    outlet PhotoConfirmSinkToMenuItemRepository is command RecordPhotoShootCompletion
     inlet IncomingShootResults is type PhotographyEvent    handler PhotoConfirmHandler is {
       on photoShootCompleted: event PhotographyService.PhotoShootCompleted is {
-        tell command RecordPhotoShootCompletion(shootId = photoShootCompleted.shootId) to repository MenuManagement.MenuItemRepository
+        send command RecordPhotoShootCompletion(shootId = photoShootCompleted.shootId) to outlet MenuManagement.PhotoConfirmSink.PhotoConfirmSinkToMenuItemRepository
         do "update menu item images from completed photo
           shoot PhotoShootCompleted.shootId completed at
           PhotoShootCompleted.completedAt"
@@ -634,14 +636,15 @@ context MenuManagement as router is {
       |external photography service.
     }
   }
-  adaptor ToRestaurants to context Restaurant.FrontOfHouse is { 
+  adaptor ToRestaurants to context Restaurant.FrontOfHouse as source is { 
+    outlet ToRestaurantsToMenuManagement is event MenuRelease.MenuDistributed
     handler MenuDistribution is {
       on releasePublished: event MenuRelease.ReleasePublished is {
         do "distribute published menu updates to restaurant
           locations"
         let createOrder: type Restaurant.FrontOfHouse.TableOrder.CreateOrder = prompt("the create order that results from release published")
-        tell createOrder to context Restaurant.FrontOfHouse
-        tell event MenuRelease.MenuDistributed(menuReleaseId = releasePublished.menuReleaseId, menuDistributedAt = system.now) to context MenuManagement
+        send createOrder to outlet MenuManagement.CreateOrderToFOH
+        send event MenuRelease.MenuDistributed(menuReleaseId = releasePublished.menuReleaseId, menuDistributedAt = system.now) to outlet MenuManagement.ToRestaurants.ToRestaurantsToMenuManagement
       }
       on other is {
         error "Unexpected message for adaptor ToRestaurants"
@@ -681,11 +684,12 @@ context MenuManagement as router is {
       |Append a published menu item event to this context's event log.
     }
   }
-  streamlet MenuItemEventLog as sink is {
+  streamlet MenuItemEventLog as flow is {
+    outlet MenuItemEventLogToMenuItemRepository is command LogMenuItemEvent
     inlet IncomingMenuItemLog is type MenuItemEvent    handler MenuItemLogIntake is {
       on other is {
         let logMenuItemEvent: type LogMenuItemEvent = prompt("the log menu item event to issue for this this")
-        tell logMenuItemEvent to repository MenuManagement.MenuItemRepository
+        send logMenuItemEvent to outlet MenuManagement.MenuItemEventLog.MenuItemEventLogToMenuItemRepository
         do "append the menu item event to the context event log"
       }
     } with {
@@ -729,11 +733,12 @@ context MenuManagement as router is {
       |Append a published menu release event to this context's event log.
     }
   }
-  streamlet MenuReleaseEventLog as sink is {
+  streamlet MenuReleaseEventLog as flow is {
+    outlet MenuReleaseEventLogToMenuReleaseRepository is command LogMenuReleaseEvent
     inlet IncomingMenuReleaseLog is type MenuReleaseEvent    handler MenuReleaseLogIntake is {
       on other is {
         let logMenuReleaseEvent: type LogMenuReleaseEvent = prompt("the log menu release event to issue for this this")
-        tell logMenuReleaseEvent to repository MenuManagement.MenuReleaseRepository
+        send logMenuReleaseEvent to outlet MenuManagement.MenuReleaseEventLog.MenuReleaseEventLogToMenuReleaseRepository
         do "append the menu release event to the context event log"
       }
     } with {

@@ -1,6 +1,6 @@
 // Marketing bounded context
 context Marketing as router is {
-  inlet CampaignCommandStreamIn is type CampaignCommand  outlet CampaignCommandStreamOut is type CampaignCommand
+  connector 'CampaignEventLog To CampaignRepository' is from outlet Marketing.CampaignEventLog.CampaignEventLogToCampaignRepository to inlet Marketing.CampaignRepository.CampaignRepositoryFromCampaignEventLog  connector 'FromLoyalty To Marketing' is from outlet Marketing.FromLoyalty.FromLoyaltyToMarketing to inlet Marketing.MarketingFromFromLoyalty  inlet MarketingFromFromLoyalty is command RecordLoyaltyActivity  inlet CampaignCommandStreamIn is type CampaignCommand  outlet CampaignCommandStreamOut is type CampaignCommand
   inlet CampaignResultStreamIn is result Campaign.CampaignResult  outlet CampaignResultStreamOut is result Campaign.CampaignResult
   handler MarketingBoundary is {
     on createCampaign: command Campaign.CreateCampaign is {
@@ -80,8 +80,8 @@ context Marketing as router is {
       |takes commands and queries only.
     }
   }
-  repository CampaignRepository as flow is {
-    inlet CampaignRepositoryFromCampaignProjection is type CampaignRepositoryCommand    outlet CampaignRepositoryResponses is result Campaign.CampaignResult
+  repository CampaignRepository as merge is {
+    inlet CampaignRepositoryFromCampaignEventLog is command LogCampaignEvent    inlet CampaignRepositoryFromCampaignProjection is type CampaignRepositoryCommand    outlet CampaignRepositoryResponses is result Campaign.CampaignResult
     record StoredCampaign is {
       campaignId: CampaignId with {
         briefly "campaignId"
@@ -292,16 +292,17 @@ context Marketing as router is {
       |Publishes campaign entity events.
     }
   }
-  adaptor FromLoyalty from context Restaurant.Loyalty is { 
+  adaptor FromLoyalty from context Restaurant.Loyalty as source is { 
+    outlet FromLoyaltyToMarketing is command RecordLoyaltyActivity
     handler LoyaltyEventIntake is {
       on event Restaurant.Loyalty.LoyaltyAccount.PointsAccrued is {
         let recordLoyaltyActivity: type RecordLoyaltyActivity = prompt("the record loyalty activity that results from points accrued")
-        tell recordLoyaltyActivity to context Marketing
+        send recordLoyaltyActivity to outlet Marketing.FromLoyalty.FromLoyaltyToMarketing
         do "evaluate loyalty activity for campaign targeting"
       }
       on event Restaurant.Loyalty.LoyaltyAccount.CustomerEnrolled is {
         let recordLoyaltyActivity: type RecordLoyaltyActivity = prompt("the record loyalty activity that results from customer enrolled")
-        tell recordLoyaltyActivity to context Marketing
+        send recordLoyaltyActivity to outlet Marketing.FromLoyalty.FromLoyaltyToMarketing
         do "target new loyalty member for welcome campaign"
       }
       on other is {
@@ -343,11 +344,12 @@ context Marketing as router is {
       |Append a published campaign event to this context's event log.
     }
   }
-  streamlet CampaignEventLog as sink is {
+  streamlet CampaignEventLog as flow is {
+    outlet CampaignEventLogToCampaignRepository is command LogCampaignEvent
     inlet IncomingCampaignLog is type CampaignEvent    handler CampaignLogIntake is {
       on other is {
         let logCampaignEvent: type LogCampaignEvent = prompt("the log campaign event to issue for this this")
-        tell logCampaignEvent to repository Marketing.CampaignRepository
+        send logCampaignEvent to outlet Marketing.CampaignEventLog.CampaignEventLogToCampaignRepository
         do "append the campaign event to the context event log"
       }
     } with {

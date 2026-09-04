@@ -1,6 +1,6 @@
 // Online Ordering bounded context
 context OnlineOrdering as router is {
-  inlet DeliveryToOnlineIn is type DeliveryEvent  outlet DeliveryToOnlineOut is type DeliveryEvent
+  connector 'DeliveryEventSink To OnlineOrder' is from outlet OnlineOrdering.DeliveryEventSink.DeliveryEventSinkToOnlineOrder to inlet OnlineOrdering.OnlineOrder.OnlineOrderFromDeliveryEventSink  connector 'ToLoyalty To OnlineOrdering' is from outlet OnlineOrdering.ToLoyalty.ToLoyaltyToOnlineOrdering to inlet OnlineOrdering.OnlineOrderingFromToLoyalty  inlet OnlineOrderingFromToLoyalty is event OnlineOrder.OnlinePointsAccrualRouted  connector 'ToKitchen To OnlineOrdering' is from outlet OnlineOrdering.ToKitchen.ToKitchenToOnlineOrdering to inlet OnlineOrdering.OnlineOrderingFromToKitchen  inlet OnlineOrderingFromToKitchen is event OnlineOrder.OnlineTicketRouted  connector 'OnlineOrderEventLog To OnlineOrderRepository' is from outlet OnlineOrdering.OnlineOrderEventLog.OnlineOrderEventLogToOnlineOrderRepository to inlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryFromOnlineOrderEventLog  inlet DeliveryToOnlineIn is type DeliveryEvent  outlet DeliveryToOnlineOut is type DeliveryEvent
   inlet OnlineOrderCommandStreamIn is type OnlineOrderCommand  outlet OnlineOrderCommandStreamOut is type OnlineOrderCommand
   inlet OnlineOrderResultStreamIn is result OnlineOrder.OnlineOrderResult  outlet OnlineOrderResultStreamOut is result OnlineOrder.OnlineOrderResult
   outlet OnlineToLoyaltyOut is command Loyalty.LoyaltyAccount.AccruePoints
@@ -122,8 +122,8 @@ context OnlineOrdering as router is {
       |takes commands and queries only.
     }
   }
-  repository OnlineOrderRepository as flow is {
-    inlet OnlineOrderRepositoryFromOnlineOrderProjection is type OnlineOrderRepositoryCommand    outlet OnlineOrderRepositoryResponses is result OnlineOrder.OnlineOrderResult
+  repository OnlineOrderRepository as merge is {
+    inlet OnlineOrderRepositoryFromOnlineOrderEventLog is command LogOnlineOrderEvent    inlet OnlineOrderRepositoryFromOnlineOrderProjection is type OnlineOrderRepositoryCommand    outlet OnlineOrderRepositoryResponses is result OnlineOrder.OnlineOrderResult
     record StoredOnlineOrder is {
       onlineOrderId: OnlineOrderId with {
         briefly "onlineOrderId"
@@ -320,6 +320,10 @@ context OnlineOrdering as router is {
       }
     }
     handler OnlineOrderPersistence is {
+      on command LogOnlineOrderEvent is {
+        do "append the published event to the context's event log,
+          keyed by loggedOnlineOrderId"
+      }
       on command PersistMenuBrowsed is {
         do "insert row into OnlineOrderSchema.onlineOrders
           with onlineOrderId, customerId, createdAt =
@@ -624,11 +628,12 @@ context OnlineOrdering as router is {
       |that consume it, so neither consumer has to filter what it is sent.
     }
   }
-  streamlet OnlineOrderEventLog as sink is {
+  streamlet OnlineOrderEventLog as flow is {
+    outlet OnlineOrderEventLogToOnlineOrderRepository is command LogOnlineOrderEvent
     inlet IncomingOnlineOrderLog is type OnlineOrderEvent    handler OnlineOrderLogIntake is {
       on other is {
         let logOnlineOrderEvent: type LogOnlineOrderEvent = prompt("the online order event to append to this context's log")
-        tell logOnlineOrderEvent to repository OnlineOrdering.OnlineOrderRepository
+        send logOnlineOrderEvent to outlet OnlineOrdering.OnlineOrderEventLog.OnlineOrderEventLogToOnlineOrderRepository
         do "append the online order event to the context event log"
       }
     } with {
@@ -676,7 +681,8 @@ context OnlineOrdering as router is {
       |kitchen routing.
     }
   }
-  adaptor ToKitchen to context Restaurant.Kitchen is { 
+  adaptor ToKitchen to context Restaurant.Kitchen as source is { 
+    outlet ToKitchenToOnlineOrdering is event OnlineOrder.OnlineTicketRouted
     handler OnlineKitchenRouting is {
       on onlineOrderSubmitted: event OnlineOrder.OnlineOrderSubmitted is {
         do "map each OnlineOrderSubmitted.orderCartItems CartItem
@@ -689,8 +695,8 @@ context OnlineOrdering as router is {
           Online, ticketItems = mapped list, receivedAt =
           current timestamp"
         let receiveTicket: type ReceiveTicket = prompt("the receive ticket that results from online order submitted")
-        tell receiveTicket to context Kitchen
-        tell event OnlineOrder.OnlineTicketRouted(onlineOrderId = onlineOrderSubmitted.onlineOrderId, onlineTicketRoutedAt = system.now) to context OnlineOrdering
+        send receiveTicket to outlet FrontOfHouse.FOHToKitchenOut
+        send event OnlineOrder.OnlineTicketRouted(onlineOrderId = onlineOrderSubmitted.onlineOrderId, onlineTicketRoutedAt = system.now) to outlet OnlineOrdering.ToKitchen.ToKitchenToOnlineOrdering
       }
       on other is {
         error "Unexpected message for adaptor ToKitchen"
@@ -707,7 +713,8 @@ context OnlineOrdering as router is {
       |Sends submitted online orders to kitchen.
     }
   }
-  adaptor ToLoyalty to context Restaurant.Loyalty is { 
+  adaptor ToLoyalty to context Restaurant.Loyalty as source is { 
+    outlet ToLoyaltyToOnlineOrdering is event OnlineOrder.OnlinePointsAccrualRouted
     handler OnlineLoyaltyRouting is {
       on onlinePaymentProcessed: event OnlineOrder.OnlinePaymentProcessed is {
         let pointsEarned = "OnlinePaymentProcessed.onlinePayment
@@ -718,8 +725,8 @@ context OnlineOrdering as router is {
           accrualReason = online purchase, accrualOrderRef =
           OnlinePaymentProcessed.onlineOrderId"
         let accruePoints: type AccruePoints = prompt("the accrue points that results from online payment processed")
-        tell accruePoints to context Loyalty
-        tell event OnlineOrder.OnlinePointsAccrualRouted(onlineOrderId = onlinePaymentProcessed.onlineOrderId, onlinePointsAccrualRoutedAt = system.now) to context OnlineOrdering
+        send accruePoints to outlet FrontOfHouse.FOHToLoyaltyOut
+        send event OnlineOrder.OnlinePointsAccrualRouted(onlineOrderId = onlinePaymentProcessed.onlineOrderId, onlinePointsAccrualRoutedAt = system.now) to outlet OnlineOrdering.ToLoyalty.ToLoyaltyToOnlineOrdering
       }
       on other is {
         error "Unexpected message for adaptor ToLoyalty"
@@ -736,23 +743,24 @@ context OnlineOrdering as router is {
       |Sends online payment events to loyalty context.
     }
   }
-  streamlet DeliveryEventSink as sink is {
+  streamlet DeliveryEventSink as flow is {
+    outlet DeliveryEventSinkToOnlineOrder is type OnlineOrderCommand
     inlet IncomingDeliveryEvents is type DeliveryEvent    handler DeliveryEventIntake is {
       on other is {
         do "the remaining members of this inlet's type - rejections and events this sink does not act on - change nothing here"
       }
       on driverDispatched: event Restaurant.Delivery.DeliveryOrder.DriverDispatched is {
-        tell command OnlineOrder.MarkOutForDelivery(dispatchedAt = driverDispatched.dispatchedAt, onlineOrderId = prompt("the online order id of this mark out for delivery")) to entity OnlineOrdering.OnlineOrder
+        send command OnlineOrder.MarkOutForDelivery(dispatchedAt = driverDispatched.dispatchedAt, onlineOrderId = prompt("the online order id of this mark out for delivery")) to outlet OnlineOrdering.DeliveryEventSink.DeliveryEventSinkToOnlineOrder
         do "update online order status to out for delivery"
       }
       on event Restaurant.Delivery.DeliveryOrder.DeliveryConfirmed is {
         let completeOnlineOrder: type OnlineOrder.CompleteOnlineOrder = prompt("the complete online order that results from delivery confirmed")
-        tell completeOnlineOrder to entity OnlineOrdering.OnlineOrder
+        send completeOnlineOrder to outlet OnlineOrdering.DeliveryEventSink.DeliveryEventSinkToOnlineOrder
         do "complete online order upon delivery confirmation"
       }
       on event Restaurant.Delivery.DeliveryOrder.DeliveryMarkedFailed is {
         let cancelOnlineOrder: type OnlineOrder.CancelOnlineOrder = prompt("the cancel online order that results from delivery marked failed")
-        tell cancelOnlineOrder to entity OnlineOrdering.OnlineOrder
+        send cancelOnlineOrder to outlet OnlineOrdering.DeliveryEventSink.DeliveryEventSinkToOnlineOrder
         do "cancel online order upon delivery failure"
       }
     } with {

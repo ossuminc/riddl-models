@@ -1,6 +1,6 @@
 // Front of House bounded context
 context FrontOfHouse as router is {
-  inlet NotificationToFOHIn is type NotificationEvent  outlet NotificationToFOHFwd is type NotificationEvent
+  connector 'TableOrderEventLog To TableOrderRepository' is from outlet FrontOfHouse.TableOrderEventLog.TableOrderEventLogToTableOrderRepository to inlet FrontOfHouse.TableOrderRepository.TableOrderRepositoryFromTableOrderEventLog  connector 'ReservationEventLog To ReservationRepository' is from outlet FrontOfHouse.ReservationEventLog.ReservationEventLogToReservationRepository to inlet FrontOfHouse.ReservationRepository.ReservationRepositoryFromReservationEventLog  connector 'FromMenuManagementItems To FrontOfHouse' is from outlet FrontOfHouse.FromMenuManagementItems.FromMenuManagementItemsToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromFromMenuManagementItems  inlet FrontOfHouseFromFromMenuManagementItems is type MenuDistributionCommand  connector 'DrinkOrderEventSink To TableOrderRepository' is from outlet FrontOfHouse.DrinkOrderEventSink.DrinkOrderEventSinkToTableOrderRepository to inlet FrontOfHouse.TableOrderRepository.TableOrderRepositoryFromDrinkOrderEventSink  connector 'NotificationAckSink To ReservationRepository' is from outlet FrontOfHouse.NotificationAckSink.NotificationAckSinkToReservationRepository to inlet FrontOfHouse.ReservationRepository.ReservationRepositoryFromNotificationAckSink  connector 'PaymentResultSink To TableOrder' is from outlet FrontOfHouse.PaymentResultSink.PaymentResultSinkToTableOrder to inlet FrontOfHouse.TableOrder.TableOrderFromPaymentResultSink  connector 'ToLoyalty To FrontOfHouse' is from outlet FrontOfHouse.ToLoyalty.ToLoyaltyToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromToLoyalty  inlet FrontOfHouseFromToLoyalty is event TableOrder.PointsAccrualRouted  connector 'ToBar To FrontOfHouse' is from outlet FrontOfHouse.ToBar.ToBarToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromToBar  inlet FrontOfHouseFromToBar is event TableOrder.DrinkOrderRouted  connector 'ToKitchen To FrontOfHouse' is from outlet FrontOfHouse.ToKitchen.ToKitchenToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromToKitchen  inlet FrontOfHouseFromToKitchen is event TableOrder.TicketRouted  inlet NotificationToFOHIn is type NotificationEvent  outlet NotificationToFOHFwd is type NotificationEvent
   inlet CreateOrderFromCorporate is command FrontOfHouse.TableOrder.CreateOrder with {
     briefly "Menu-driven order creation arriving from Corporate"
     described as {
@@ -168,6 +168,24 @@ context FrontOfHouse as router is {
   include "front-of-house-types.riddl"
   include "Reservation.riddl"
   include "TableOrder.riddl"
+  type DrinkServiceNotice is one of {
+    NotifyDrinkReady or NotifyDrinksServed
+  } with {
+    briefly "What the bar tells the table order about drinks"
+    described as {
+      |A port carries a single type, and this channel carries both drink
+      |service notices, so they need a name of their own.
+    }
+  }
+  type MenuDistributionCommand is one of {
+    ApplyMenuItemUpdate or ApplyMenuItemPriceChange or ApplyMenuRelease or RollbackMenuRelease
+  } with {
+    briefly "What Corporate menu management asks the restaurants to apply"
+    described as {
+      |Item edits, price changes and whole-release apply/rollback all arrive
+      |on one channel from the menu-management adaptor.
+    }
+  }
   command NotifyDrinkReady is {
     tableOrderId: TableOrderId with {
       briefly "ID"
@@ -270,7 +288,7 @@ context FrontOfHouse as router is {
     }
   }
   repository ReservationRepository as merge is {
-    inlet ReservationRepositoryFromReservationProjection is type ReservationRepositoryCommand    inlet ReservationRepositoryFromReservationBoard is type ReservationRepositoryCommand    outlet ReservationRepositoryResponses is result ReservationBoardView
+    inlet ReservationRepositoryFromReservationEventLog is command LogReservationEvent    inlet ReservationRepositoryFromNotificationAckSink is command RecordNotificationAck    inlet ReservationRepositoryFromReservationProjection is type ReservationRepositoryCommand    inlet ReservationRepositoryFromReservationBoard is type ReservationRepositoryCommand    outlet ReservationRepositoryResponses is result ReservationBoardView
     record StoredReservation is {
       reservationId: ReservationId with {
         briefly "reservationId"
@@ -558,8 +576,8 @@ context FrontOfHouse as router is {
       |takes commands and queries only.
     }
   }
-  repository TableOrderRepository as flow is {
-    inlet TableOrderRepositoryFromTableOrderProjection is type TableOrderRepositoryCommand    outlet TableOrderRepositoryResponses is result TableOrder.TableOrderResult
+  repository TableOrderRepository as merge is {
+    inlet TableOrderRepositoryFromTableOrderEventLog is command LogTableOrderEvent    inlet TableOrderRepositoryFromDrinkOrderEventSink is type DrinkServiceNotice    inlet TableOrderRepositoryFromTableOrderProjection is type TableOrderRepositoryCommand    outlet TableOrderRepositoryResponses is result TableOrder.TableOrderResult
     schema TableOrderSchema is relational
       of orders as record StoredTableOrder
         index on field StoredTableOrder.tableOrderId
@@ -1040,7 +1058,8 @@ context FrontOfHouse as router is {
       |consumption via the streaming topology.
     }
   }
-  adaptor ToKitchen to context Restaurant.Kitchen is { 
+  adaptor ToKitchen to context Restaurant.Kitchen as source is { 
+    outlet ToKitchenToFrontOfHouse is event TableOrder.TicketRouted
     handler KitchenRouting is {
       on orderSubmitted: event TableOrder.OrderSubmitted is {
         do "filter OrderSubmitted.orderItems where
@@ -1058,8 +1077,8 @@ context FrontOfHouse as router is {
           ticketItems = mapped TicketItem list, receivedAt =
           current timestamp"
         let receiveTicket: type ReceiveTicket = prompt("the receive ticket that results from order submitted")
-        tell receiveTicket to context Kitchen
-        tell event TableOrder.TicketRouted(tableOrderId = orderSubmitted.tableOrderId, ticketRoutedAt = system.now) to context FrontOfHouse
+        send receiveTicket to outlet FrontOfHouse.FOHToKitchenOut
+        send event TableOrder.TicketRouted(tableOrderId = orderSubmitted.tableOrderId, ticketRoutedAt = system.now) to outlet FrontOfHouse.ToKitchen.ToKitchenToFrontOfHouse
       }
       on other is {
         error "Unexpected message for adaptor ToKitchen"
@@ -1077,7 +1096,8 @@ context FrontOfHouse as router is {
       |Sends submitted food orders to the kitchen.
     }
   }
-  adaptor ToBar to context Restaurant.Bar is { 
+  adaptor ToBar to context Restaurant.Bar as source is { 
+    outlet ToBarToFrontOfHouse is event TableOrder.DrinkOrderRouted
     handler BarRouting is {
       on orderSubmitted: event TableOrder.OrderSubmitted is {
         do "filter OrderSubmitted.orderItems where
@@ -1093,8 +1113,8 @@ context FrontOfHouse as router is {
           OrderSubmitted.tableNumber, drinkItems = mapped
           DrinkItem list, drinkReceivedAt = current timestamp"
         let receiveDrinkOrder: type ReceiveDrinkOrder = prompt("the receive drink order that results from order submitted")
-        tell receiveDrinkOrder to context Bar
-        tell event TableOrder.DrinkOrderRouted(tableOrderId = orderSubmitted.tableOrderId, drinkOrderRoutedAt = system.now) to context FrontOfHouse
+        send receiveDrinkOrder to outlet FrontOfHouse.FOHToBarOut
+        send event TableOrder.DrinkOrderRouted(tableOrderId = orderSubmitted.tableOrderId, drinkOrderRoutedAt = system.now) to outlet FrontOfHouse.ToBar.ToBarToFrontOfHouse
       }
       on other is {
         error "Unexpected message for adaptor ToBar"
@@ -1112,7 +1132,8 @@ context FrontOfHouse as router is {
       |Sends submitted drink orders to the bar.
     }
   }
-  adaptor ToLoyalty to context Restaurant.Loyalty is { 
+  adaptor ToLoyalty to context Restaurant.Loyalty as source is { 
+    outlet ToLoyaltyToFrontOfHouse is event TableOrder.PointsAccrualRouted
     handler LoyaltyRouting is {
       on paymentProcessed: event TableOrder.PaymentProcessed is {
         let pointsEarned = "PaymentProcessed.orderPayment.paymentAmount
@@ -1122,8 +1143,8 @@ context FrontOfHouse as router is {
           pointsEarned, accrualReason = dine-in purchase,
           accrualOrderRef = PaymentProcessed.tableOrderId"
         let accruePoints: type AccruePoints = prompt("the accrue points that results from payment processed")
-        tell accruePoints to context Loyalty
-        tell event TableOrder.PointsAccrualRouted(tableOrderId = paymentProcessed.tableOrderId, pointsAccrualRoutedAt = system.now) to context FrontOfHouse
+        send accruePoints to outlet FrontOfHouse.FOHToLoyaltyOut
+        send event TableOrder.PointsAccrualRouted(tableOrderId = paymentProcessed.tableOrderId, pointsAccrualRoutedAt = system.now) to outlet FrontOfHouse.ToLoyalty.ToLoyaltyToFrontOfHouse
       }
       on other is {
         error "Unexpected message for adaptor ToLoyalty"
@@ -1175,11 +1196,12 @@ context FrontOfHouse as router is {
       |applies them inside FrontOfHouse.
     }
   }
-  streamlet PaymentResultSink as sink is {
+  streamlet PaymentResultSink as flow is {
+    outlet PaymentResultSinkToTableOrder is type TableOrderCommand
     inlet IncomingPaymentResults is type PaymentGatewayEvent    handler PaymentResultHandler is {
       on event PaymentGateway.PaymentAuthorized is {
         let processPayment: type TableOrder.ProcessPayment = prompt("the process payment that results from payment authorized")
-        tell processPayment to entity FrontOfHouse.TableOrder
+        send processPayment to outlet FrontOfHouse.PaymentResultSink.PaymentResultSinkToTableOrder
         do "match PaymentAuthorized.paymentGatewayTransactionId
           to pending TableOrder by payment reference and
           trigger payment capture via PaymentGateway
@@ -1187,7 +1209,7 @@ context FrontOfHouse as router is {
       }
       on event PaymentGateway.PaymentCaptured is {
         let closeOrder: type TableOrder.CloseOrder = prompt("the close order that results from payment captured")
-        tell closeOrder to entity FrontOfHouse.TableOrder
+        send closeOrder to outlet FrontOfHouse.PaymentResultSink.PaymentResultSinkToTableOrder
         do "mark payment as fully settled for the matching
           TableOrder using PaymentCaptured
           .captureTransactionId"
@@ -1239,11 +1261,12 @@ context FrontOfHouse as router is {
       |applies them inside FrontOfHouse.
     }
   }
-  streamlet NotificationAckSink as sink is {
+  streamlet NotificationAckSink as flow is {
+    outlet NotificationAckSinkToReservationRepository is command RecordNotificationAck
     inlet NotificationAcks is type NotificationEvent    handler NotificationAckHandler is {
       on event NotificationService.PushNotificationSent is {
         let recordNotificationAck: type RecordNotificationAck = prompt("the record notification ack that results from push notification sent")
-        tell recordNotificationAck to repository FrontOfHouse.ReservationRepository
+        send recordNotificationAck to outlet FrontOfHouse.NotificationAckSink.NotificationAckSinkToReservationRepository
         do "log notification delivery confirmation for
           PushNotificationSent.notificationRecipient at
           PushNotificationSent.sentAt for audit trail"
@@ -1262,19 +1285,20 @@ context FrontOfHouse as router is {
       |external push notification service.
     }
   }
-  streamlet DrinkOrderEventSink as sink is {
+  streamlet DrinkOrderEventSink as flow is {
+    outlet DrinkOrderEventSinkToTableOrderRepository is type DrinkServiceNotice
     inlet IncomingDrinkOrderEvents is type DrinkOrderEvent    handler DrinkOrderEventIntake is {
       on other is {
         do "the remaining members of this inlet's type - rejections and events this sink does not act on - change nothing here"
       }
       on event Restaurant.Bar.DrinkOrder.DrinkMarkedReady is {
         let notifyDrinkReady: type NotifyDrinkReady = prompt("the notify drink ready that results from drink marked ready")
-        tell notifyDrinkReady to repository FrontOfHouse.TableOrderRepository
+        send notifyDrinkReady to outlet FrontOfHouse.DrinkOrderEventSink.DrinkOrderEventSinkToTableOrderRepository
         do "notify server that drinks are ready for table"
       }
       on event Restaurant.Bar.DrinkOrder.ServerNotifiedDrinksReady is {
         let notifyDrinksServed: type NotifyDrinksServed = prompt("the notify drinks served that results from server notified drinks ready")
-        tell notifyDrinksServed to repository FrontOfHouse.TableOrderRepository
+        send notifyDrinksServed to outlet FrontOfHouse.DrinkOrderEventSink.DrinkOrderEventSinkToTableOrderRepository
         do "record drink readiness notification acknowledgment"
       }
     } with {
@@ -1291,14 +1315,15 @@ context FrontOfHouse as router is {
       |topology for order readiness notification.
     }
   }
-  adaptor FromMenuManagementItems from context Corporate.MenuManagement is { 
+  adaptor FromMenuManagementItems from context Corporate.MenuManagement as source is { 
+    outlet FromMenuManagementItemsToFrontOfHouse is type MenuDistributionCommand
     handler MenuItemEventIntake is {
       on menuItemUpdated: event Corporate.MenuManagement.MenuItem.MenuItemUpdated is {
-        tell command ApplyMenuItemUpdate(menuItemId = menuItemUpdated.menuItemId) to context FrontOfHouse
+        send command ApplyMenuItemUpdate(menuItemId = menuItemUpdated.menuItemId) to outlet FrontOfHouse.FromMenuManagementItems.FromMenuManagementItemsToFrontOfHouse
         do "update local menu item cache with changes"
       }
       on priceSet: event Corporate.MenuManagement.MenuItem.PriceSet is {
-        tell command ApplyMenuItemPriceChange(menuItemId = priceSet.menuItemId) to context FrontOfHouse
+        send command ApplyMenuItemPriceChange(menuItemId = priceSet.menuItemId) to outlet FrontOfHouse.FromMenuManagementItems.FromMenuManagementItemsToFrontOfHouse
         do "update local menu pricing from corporate"
       }
       on other is {
@@ -1314,12 +1339,12 @@ context FrontOfHouse as router is {
     handler MenuReleaseEventIntake is {
       on event Corporate.MenuManagement.MenuRelease.ReleasePublished is {
         let applyMenuRelease: type ApplyMenuRelease = prompt("the apply menu release that results from release published")
-        tell applyMenuRelease to context FrontOfHouse
+        send applyMenuRelease to outlet FrontOfHouse.FromMenuManagementItems.FromMenuManagementItemsToFrontOfHouse
         do "apply published menu release to restaurant"
       }
       on event Corporate.MenuManagement.MenuRelease.ReleaseRolledBack is {
         let rollbackMenuRelease: type RollbackMenuRelease = prompt("the rollback menu release that results from release rolled back")
-        tell rollbackMenuRelease to context FrontOfHouse
+        send rollbackMenuRelease to outlet FrontOfHouse.FromMenuManagementItems.FromMenuManagementItemsToFrontOfHouse
         do "rollback menu release at restaurant"
       }
       on other is {
@@ -1361,11 +1386,12 @@ context FrontOfHouse as router is {
       |Append a published reservation event to this context's event log.
     }
   }
-  streamlet ReservationEventLog as sink is {
+  streamlet ReservationEventLog as flow is {
+    outlet ReservationEventLogToReservationRepository is command LogReservationEvent
     inlet IncomingReservationLog is type ReservationEvent    handler ReservationLogIntake is {
       on other is {
         let logReservationEvent: type LogReservationEvent = prompt("the log reservation event to issue for this this")
-        tell logReservationEvent to repository FrontOfHouse.ReservationRepository
+        send logReservationEvent to outlet FrontOfHouse.ReservationEventLog.ReservationEventLogToReservationRepository
         do "append the reservation event to the context event log"
       }
     } with {
@@ -1409,11 +1435,12 @@ context FrontOfHouse as router is {
       |Append a published table order event to this context's event log.
     }
   }
-  streamlet TableOrderEventLog as sink is {
+  streamlet TableOrderEventLog as flow is {
+    outlet TableOrderEventLogToTableOrderRepository is command LogTableOrderEvent
     inlet IncomingTableOrderLog is type OrderEvent    handler TableOrderLogIntake is {
       on other is {
         let logTableOrderEvent: type LogTableOrderEvent = prompt("the log table order event to issue for this this")
-        tell logTableOrderEvent to repository FrontOfHouse.TableOrderRepository
+        send logTableOrderEvent to outlet FrontOfHouse.TableOrderEventLog.TableOrderEventLogToTableOrderRepository
         do "append the table order event to the context event log"
       }
     } with {

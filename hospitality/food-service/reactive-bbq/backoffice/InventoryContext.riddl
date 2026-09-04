@@ -1,6 +1,6 @@
 // Inventory bounded context
 context Inventory as router is {
-  inlet SupplierToInventoryIn is type SupplierEvent  outlet SupplierToInventoryFwd is type SupplierEvent
+  connector 'FromKitchen To Inventory' is from outlet Inventory.FromKitchen.FromKitchenToInventory to inlet Inventory.InventoryFromFromKitchen  inlet InventoryFromFromKitchen is command InventoryItem.ConsumeStock  connector 'FromSupplyChain To Inventory' is from outlet Inventory.FromSupplyChain.FromSupplyChainToInventory to inlet Inventory.InventoryFromFromSupplyChain  inlet InventoryFromFromSupplyChain is command InventoryItem.ReceiveStock  connector 'StockReceiptSink To InventoryItem' is from outlet Inventory.StockReceiptSink.StockReceiptSinkToInventoryItem to inlet Inventory.InventoryItem.InventoryItemFromStockReceiptSink  inlet SupplierToInventoryIn is type SupplierEvent  outlet SupplierToInventoryFwd is type SupplierEvent
   connector 'InventoryItemProjection Storage' is from outlet Inventory.InventoryItemProjection.InventoryItemProjectionToRepository to inlet Inventory.InventoryItemRepository.InventoryItemRepositoryFromInventoryItemProjection with {
     briefly "InventoryItemProjection commands on their way to InventoryItemRepository"
     described as {
@@ -89,12 +89,13 @@ context Inventory as router is {
       |applies them inside Inventory.
     }
   }
-  streamlet StockReceiptSink as sink is {
+  streamlet StockReceiptSink as flow is {
+    outlet StockReceiptSinkToInventoryItem is command InventoryItem.ReceiveStock
     inlet IncomingStockDeliveries is type SupplierEvent    handler StockReceiptHandler is {
       on shipmentDelivered: event SupplierSystem.ShipmentDelivered is {
         do "match the delivered quantity to the inventory item it
           replenishes"
-        tell command InventoryItem.ReceiveStock(inventoryItemId = shipmentDelivered.inventoryItemId, receivedQuantity = prompt("the received quantity of this receive stock"), receivedUnit = prompt("the received unit of this receive stock"), supplierRef = prompt("the supplier ref of this receive stock"), stockReceivedAt = system.now) to entity Inventory.InventoryItem
+        send command InventoryItem.ReceiveStock(inventoryItemId = shipmentDelivered.inventoryItemId, receivedQuantity = prompt("the received quantity of this receive stock"), receivedUnit = prompt("the received unit of this receive stock"), supplierRef = prompt("the supplier ref of this receive stock"), stockReceivedAt = system.now) to outlet Inventory.StockReceiptSink.StockReceiptSinkToInventoryItem
       }
       on other is {
         error "Unexpected message for sink StockReceiptSink"
@@ -333,16 +334,17 @@ context Inventory as router is {
       |Publishes inventory item entity events.
     }
   }
-  adaptor FromSupplyChain from context Corporate.SupplyChain is { 
+  adaptor FromSupplyChain from context Corporate.SupplyChain as source is { 
+    outlet FromSupplyChainToInventory is command InventoryItem.ReceiveStock
     handler PurchaseOrderEventIntake is {
       on event Corporate.SupplyChain.PurchaseOrder.ShipmentReceived is {
         let receiveStock: type InventoryItem.ReceiveStock = prompt("the receive stock that results from shipment received")
-        tell receiveStock to context Inventory
+        send receiveStock to outlet Inventory.FromSupplyChain.FromSupplyChainToInventory
         do "receive stock from delivered purchase order shipment"
       }
       on event Corporate.SupplyChain.PurchaseOrder.OrderShipped is {
         let receiveStock: type InventoryItem.ReceiveStock = prompt("the receive stock that results from order shipped")
-        tell receiveStock to context Inventory
+        send receiveStock to outlet Inventory.FromSupplyChain.FromSupplyChainToInventory
         do "prepare for incoming stock from shipped order"
       }
       on other is {
@@ -362,16 +364,17 @@ context Inventory as router is {
       |topology for stock receipt notification.
     }
   }
-  adaptor FromKitchen from context Restaurant.Kitchen is { 
+  adaptor FromKitchen from context Restaurant.Kitchen as source is { 
+    outlet FromKitchenToInventory is command InventoryItem.ConsumeStock
     handler KitchenConsumptionIntake is {
       on event Restaurant.Kitchen.KitchenTicket.PreparationStarted is {
         do "look up recipe ingredients for ticket items"
         let consumeStock: type InventoryItem.ConsumeStock = prompt("the consume stock that results from preparation started")
-        tell consumeStock to context Inventory
+        send consumeStock to outlet Inventory.FromKitchen.FromKitchenToInventory
       }
       on event Restaurant.Kitchen.KitchenTicket.TicketApproved is {
         let consumeStock: type InventoryItem.ConsumeStock = prompt("the consume stock that results from ticket approved")
-        tell consumeStock to context Inventory
+        send consumeStock to outlet Inventory.FromKitchen.FromKitchenToInventory
         do "finalize stock consumption for approved ticket"
       }
       on other is {

@@ -1,6 +1,6 @@
 // Reporting bounded context - CQRS projectors only
 context Reporting as router is {
-  inlet AccountingToReportingIn is type AccountingEvent  outlet AccountingToReportingFwd is type AccountingEvent
+  connector 'InventoryEventSink To InventoryReportRepository' is from outlet Reporting.InventoryEventSink.InventoryEventSinkToInventoryReportRepository to inlet Reporting.InventoryReportRepository.InventoryReportRepositoryFromInventoryEventSink  connector 'ShiftEventSink To LaborReportRepository' is from outlet Reporting.ShiftEventSink.ShiftEventSinkToLaborReportRepository to inlet Reporting.LaborReportRepository.LaborReportRepositoryFromShiftEventSink  connector 'FromFrontOfHouseReservations To Reporting' is from outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting to inlet Reporting.ReportingFromFromFrontOfHouseReservations  inlet ReportingFromFromFrontOfHouseReservations is type SalesReportCommand  connector 'AccountingConfirmSink To SalesReportRepository' is from outlet Reporting.AccountingConfirmSink.AccountingConfirmSinkToSalesReportRepository to inlet Reporting.SalesReportRepository.SalesReportRepositoryFromAccountingConfirmSink  inlet AccountingToReportingIn is type AccountingEvent  outlet AccountingToReportingFwd is type AccountingEvent
   connector 'AccountingToReporting Intake' is from outlet Reporting.AccountingToReportingFwd to inlet Reporting.AccountingSystemAdapter.IncomingAccountingSystemEvents  inlet ShiftToReportingIn is type ShiftEvent  outlet ShiftToReportingOut is type ShiftEvent
   inlet InventoryToReportingIn is type InventoryEvent  outlet InventoryToReportingOut is type InventoryEvent
   outlet SalesReportDirectWrites is type SalesReportCommand
@@ -239,7 +239,7 @@ context Reporting as router is {
     }
   }
   repository SalesReportRepository as sink is {
-    inlet SalesReportRepositoryFromSalesReport is type SalesReportCommand    inlet SalesReportRepositoryDirectWrites is type SalesReportCommand with {
+    inlet SalesReportRepositoryFromAccountingConfirmSink is command RecordAccountingPosting    inlet SalesReportRepositoryFromSalesReport is type SalesReportCommand    inlet SalesReportRepositoryDirectWrites is type SalesReportCommand with {
       briefly "Writes told directly by this context's sinks and adaptors"
       described as {
         |What reaches the repository other than through the projector.
@@ -392,7 +392,7 @@ context Reporting as router is {
     }
   }
   repository LaborReportRepository as sink is {
-    inlet LaborReportRepositoryFromLaborReport is type LaborReportCommand    inlet LaborReportRepositoryDirectWrites is type LaborReportCommand with {
+    inlet LaborReportRepositoryFromShiftEventSink is command RecordShiftEvent    inlet LaborReportRepositoryFromLaborReport is type LaborReportCommand    inlet LaborReportRepositoryDirectWrites is type LaborReportCommand with {
       briefly "Writes told directly by this context's sinks and adaptors"
       described as {
         |What reaches the repository other than through the projector.
@@ -510,7 +510,7 @@ context Reporting as router is {
     }
   }
   repository InventoryReportRepository as sink is {
-    inlet InventoryReportRepositoryFromInventoryReport is type InventoryReportCommand    inlet InventoryReportRepositoryDirectWrites is type InventoryReportCommand with {
+    inlet InventoryReportRepositoryFromInventoryEventSink is command RecordInventoryEvent    inlet InventoryReportRepositoryFromInventoryReport is type InventoryReportCommand    inlet InventoryReportRepositoryDirectWrites is type InventoryReportCommand with {
       briefly "Writes told directly by this context's sinks and adaptors"
       described as {
         |What reaches the repository other than through the projector.
@@ -903,11 +903,12 @@ context Reporting as router is {
       |applies them inside Reporting.
     }
   }
-  streamlet AccountingConfirmSink as sink is {
+  streamlet AccountingConfirmSink as flow is {
+    outlet AccountingConfirmSinkToSalesReportRepository is command RecordAccountingPosting
     inlet IncomingPostingResults is type AccountingEvent    handler AccountingConfirmHandler is {
       on event AccountingSystem.TransactionPosted is {
         let recordAccountingPosting: type RecordAccountingPosting = prompt("the record accounting posting that results from transaction posted")
-        tell recordAccountingPosting to repository Reporting.SalesReportRepository
+        send recordAccountingPosting to outlet Reporting.AccountingConfirmSink.AccountingConfirmSinkToSalesReportRepository
         do "log accounting confirmation for
           TransactionPosted.accountingTransactionId posted
           at TransactionPosted.postedAt for reconciliation"
@@ -926,14 +927,15 @@ context Reporting as router is {
       |external accounting system.
     }
   }
-  adaptor FromFrontOfHouseReservations from context Restaurant.FrontOfHouse is { 
+  adaptor FromFrontOfHouseReservations from context Restaurant.FrontOfHouse as source is { 
+    outlet FromFrontOfHouseReservationsToReporting is type SalesReportCommand
     handler ReservationEventIntake is {
       on reservationMade: event Restaurant.FrontOfHouse.Reservation.ReservationMade is {
-        tell command RecordReservationEvent(reservationId = reservationMade.reservationId, eventType = prompt("the event type of this record reservation event")) to context Reporting
+        send command RecordReservationEvent(reservationId = reservationMade.reservationId, eventType = prompt("the event type of this record reservation event")) to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting
         do "record reservation creation for sales reporting"
       }
       on reservationCancelled: event Restaurant.FrontOfHouse.Reservation.ReservationCancelled is {
-        tell command RecordReservationEvent(reservationId = reservationCancelled.reservationId, eventType = prompt("the event type of this record reservation event")) to context Reporting
+        send command RecordReservationEvent(reservationId = reservationCancelled.reservationId, eventType = prompt("the event type of this record reservation event")) to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting
         do "record reservation cancellation for sales reporting"
       }
       on other is {
@@ -948,11 +950,11 @@ context Reporting as router is {
     }
     handler TableOrderEventIntake is {
       on paymentProcessed: event Restaurant.FrontOfHouse.TableOrder.PaymentProcessed is {
-        tell command RecordTableOrderEvent(tableOrderId = paymentProcessed.tableOrderId, eventType = prompt("the event type of this record table order event"), paymentAmount = prompt("the payment amount of this record table order event")) to context Reporting
+        send command RecordTableOrderEvent(tableOrderId = paymentProcessed.tableOrderId, eventType = prompt("the event type of this record table order event"), paymentAmount = prompt("the payment amount of this record table order event")) to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting
         do "record payment for sales reporting"
       }
       on orderClosed: event Restaurant.FrontOfHouse.TableOrder.OrderClosed is {
-        tell command RecordTableOrderEvent(tableOrderId = orderClosed.tableOrderId, eventType = prompt("the event type of this record table order event"), paymentAmount = prompt("the payment amount of this record table order event")) to context Reporting
+        send command RecordTableOrderEvent(tableOrderId = orderClosed.tableOrderId, eventType = prompt("the event type of this record table order event"), paymentAmount = prompt("the payment amount of this record table order event")) to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting
         do "record order closure for sales reporting"
       }
       on other is {
@@ -972,21 +974,22 @@ context Reporting as router is {
       |topology for sales and reservation reports.
     }
   }
-  streamlet ShiftEventSink as sink is {
+  streamlet ShiftEventSink as flow is {
+    outlet ShiftEventSinkToLaborReportRepository is command RecordShiftEvent
     inlet IncomingShiftEvents is type ShiftEvent    handler ShiftEventIntake is {
       on other is {
         do "the remaining members of this inlet's type - rejections and events this sink does not act on - change nothing here"
       }
       on clockedIn: event BackOffice.Scheduling.Shift.ClockedIn is {
-        tell command RecordShiftEvent(shiftId = clockedIn.shiftId, eventType = prompt("the event type of this record shift event"), eventTime = clockedIn.clockedInAt) to repository Reporting.LaborReportRepository
+        send command RecordShiftEvent(shiftId = clockedIn.shiftId, eventType = prompt("the event type of this record shift event"), eventTime = clockedIn.clockedInAt) to outlet Reporting.ShiftEventSink.ShiftEventSinkToLaborReportRepository
         do "record clock-in for labor reporting"
       }
       on clockedOut: event BackOffice.Scheduling.Shift.ClockedOut is {
-        tell command RecordShiftEvent(shiftId = clockedOut.shiftId, eventType = prompt("the event type of this record shift event"), eventTime = clockedOut.clockedOutAt) to repository Reporting.LaborReportRepository
+        send command RecordShiftEvent(shiftId = clockedOut.shiftId, eventType = prompt("the event type of this record shift event"), eventTime = clockedOut.clockedOutAt) to outlet Reporting.ShiftEventSink.ShiftEventSinkToLaborReportRepository
         do "record clock-out for labor reporting"
       }
       on shiftCancelled: event BackOffice.Scheduling.Shift.ShiftCancelled is {
-        tell command RecordShiftEvent(shiftId = shiftCancelled.shiftId, eventType = prompt("the event type of this record shift event"), eventTime = shiftCancelled.shiftCancelledAt) to repository Reporting.LaborReportRepository
+        send command RecordShiftEvent(shiftId = shiftCancelled.shiftId, eventType = prompt("the event type of this record shift event"), eventTime = shiftCancelled.shiftCancelledAt) to outlet Reporting.ShiftEventSink.ShiftEventSinkToLaborReportRepository
         do "record cancellation for labor reporting"
       }
     } with {
@@ -1002,21 +1005,22 @@ context Reporting as router is {
       |for labor reports.
     }
   }
-  streamlet InventoryEventSink as sink is {
+  streamlet InventoryEventSink as flow is {
+    outlet InventoryEventSinkToInventoryReportRepository is command RecordInventoryEvent
     inlet IncomingInventoryEvents is type InventoryEvent    handler InventoryEventIntake is {
       on other is {
         do "the remaining members of this inlet's type - rejections and events this sink does not act on - change nothing here"
       }
       on stockReceived: event BackOffice.Inventory.InventoryItem.StockReceived is {
-        tell command RecordInventoryEvent(inventoryItemId = stockReceived.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockReceived.receivedQuantity) to repository Reporting.InventoryReportRepository
+        send command RecordInventoryEvent(inventoryItemId = stockReceived.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockReceived.receivedQuantity) to outlet Reporting.InventoryEventSink.InventoryEventSinkToInventoryReportRepository
         do "record stock received for inventory reporting"
       }
       on stockConsumed: event BackOffice.Inventory.InventoryItem.StockConsumed is {
-        tell command RecordInventoryEvent(inventoryItemId = stockConsumed.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockConsumed.consumedQuantity) to repository Reporting.InventoryReportRepository
+        send command RecordInventoryEvent(inventoryItemId = stockConsumed.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockConsumed.consumedQuantity) to outlet Reporting.InventoryEventSink.InventoryEventSinkToInventoryReportRepository
         do "record stock consumed for inventory reporting"
       }
       on stockAdjusted: event BackOffice.Inventory.InventoryItem.StockAdjusted is {
-        tell command RecordInventoryEvent(inventoryItemId = stockAdjusted.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockAdjusted.adjustmentQuantity) to repository Reporting.InventoryReportRepository
+        send command RecordInventoryEvent(inventoryItemId = stockAdjusted.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockAdjusted.adjustmentQuantity) to outlet Reporting.InventoryEventSink.InventoryEventSinkToInventoryReportRepository
         do "record stock adjusted for inventory reporting"
       }
     } with {

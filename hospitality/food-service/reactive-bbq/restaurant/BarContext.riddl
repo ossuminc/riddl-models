@@ -1,6 +1,6 @@
 // Bar bounded context
 context Bar as router is {
-  inlet DrinkOrderCommandStreamIn is type DrinkOrderCommand  outlet DrinkOrderCommandStreamOut is type DrinkOrderCommand
+  connector 'FromFrontOfHouse To Bar' is from outlet Bar.FromFrontOfHouse.FromFrontOfHouseToBar to inlet Bar.BarFromFromFrontOfHouse  inlet BarFromFromFrontOfHouse is command ReceiveDrinkOrder  connector 'DrinkOrderQueue To DrinkOrder' is from outlet Bar.DrinkOrderQueue.DrinkOrderQueueToDrinkOrder to inlet Bar.DrinkOrder.DrinkOrderFromDrinkOrderQueue  inlet DrinkOrderCommandStreamIn is type DrinkOrderCommand  outlet DrinkOrderCommandStreamOut is type DrinkOrderCommand
   inlet BarToFOHIn is type DrinkOrderEvent  outlet BarToFOHOut is type DrinkOrderEvent
   inlet FOHToBarIn is command DrinkOrder.ReceiveDrinkOrder with {
     briefly "Drink orders arriving from front of house"
@@ -284,7 +284,8 @@ context Bar as router is {
       |Publishes drink order entity events.
     }
   }
-  streamlet DrinkOrderQueue as sink is {
+  streamlet DrinkOrderQueue as flow is {
+    outlet DrinkOrderQueueToDrinkOrder is command DrinkOrder.PrepareDrink
     inlet IncomingDrinks is type DrinkOrderEvent    handler DrinkQueueHandler is {
       on other is {
         do "the remaining members of this inlet's type - rejections and events this sink does not act on - change nothing here"
@@ -292,7 +293,7 @@ context Bar as router is {
       on drinkOrderReceived: event DrinkOrder.DrinkOrderReceived is {
         do "enqueue drink order for bartender preparation
           in FIFO sequence"
-        tell command DrinkOrder.PrepareDrink(drinkOrderId = drinkOrderReceived.drinkOrderId, drinkPreparationStartedAt = system.now) to entity Bar.DrinkOrder
+        send command DrinkOrder.PrepareDrink(drinkOrderId = drinkOrderReceived.drinkOrderId, drinkPreparationStartedAt = system.now) to outlet Bar.DrinkOrderQueue.DrinkOrderQueueToDrinkOrder
       }
     } with {
       briefly "Drink queue handler"
@@ -309,7 +310,8 @@ context Bar as router is {
       |backpressure during peak bar hours.
     }
   }
-  adaptor FromFrontOfHouse from context Restaurant.FrontOfHouse is { 
+  adaptor FromFrontOfHouse from context Restaurant.FrontOfHouse as source is { 
+    outlet FromFrontOfHouseToBar is command ReceiveDrinkOrder
     handler DrinkIntake is {
       on event Restaurant.FrontOfHouse.TableOrder.OrderSubmitted is {
         do "filter event.orderItems where
@@ -325,7 +327,7 @@ context Bar as router is {
             drinkItems = mapped list, drinkReceivedAt =
             current timestamp"
           let receiveDrinkOrder: type ReceiveDrinkOrder = prompt("the receive drink order that results from order submitted")
-          tell receiveDrinkOrder to context Bar
+          send receiveDrinkOrder to outlet Bar.FromFrontOfHouse.FromFrontOfHouseToBar
         end
       }
       on other is {

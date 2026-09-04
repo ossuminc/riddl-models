@@ -4,55 +4,60 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-### THE GATE IS RED again — A6 migration is PART DONE (task still open)
+### A6 migration: 0 ERRORS corpus-wide; 42 warnings blocked on a riddl ruling
 
-riddl `35bb8abcf` made A6 require the sender to OWN the connector's outlet, and
-added `adaptor-targets-context-only`. Corpus went **537 findings -> 77**;
-**26 of 32 models are fully clean**. `task/2026-09-03-senders-must-own-their-
-outlet.md` is deliberately STILL OPEN — read its Results before resuming.
+537 findings -> **0 errors** across 32 models plus the `patterns/`
+example.
+`task/2026-09-03-senders-must-own-their-outlet.md` is STILL OPEN for the 42
+`stream-source-reaches-no-sink` that remain — read its Results first.
 
-**Pinned riddlc is now `2.1.0-8-238144af`.** The prior `2.1.0-4-b57376fa`
-reported **0 findings** on this corpus because it predates the rules — another
-instance of a green sweep from a harness that cannot see.
+**Pinned riddlc `2.1.0-8-238144af`.** The earlier `2.1.0-4-b57376fa` reported
+0 findings here because it predates the rules.
 
-**The unit of work is the PAIR, not the finding.** 510 findings collapsed to
-118 distinct (sender, target) pairs, because reachability is transitive. One
-channel — outlet on the sender, inlet on the target, connector between —
-serves every tell sharing a pair.
+**The unit of work is the PAIR.** 510 findings collapsed to 118 distinct
+(sender, target) pairs — reachability is transitive, so one channel serves
+every tell sharing a pair.
 
-**Scripts are kept** in the session scratchpad pattern: generate channels from
-`dump --json`, then apply riddlc's OWN verdicts for ascriptions
-(`stream-ascribed-shape-mismatch`), reference keywords (`ref-wrong-keyword`)
-and shapes (`stream-ports-without-shape`). Never hand-derive any of those —
-riddlc names the right answer in the message.
+**`tell` becomes `send`.** Giving the sender an outlet satisfies A6 but leaves
+that outlet unsent-to, so `stream-streamlet-sends-nothing` fires instead. CM
+§25.7 defines `tell` as sugar for a `send` on the connected outlet, so the
+conversion is the documented equivalence and settles both rules at once.
 
-**The bug to remember: resolving a sender by SIMPLE NAME wires the wrong one.**
-reactive-bbq has two `ToKitchen`, two `ToLoyalty`, two `FromFrontOfHouse` and
-two `FromOnlineOrdering` adaptors. Matching on name produced connectors joining
-contexts that have no relationship, caught only because
-`stream-crosses-contexts` fired. Resolve by the FILE AND LINE of the finding.
-Only reactive-bbq is ambiguous — verified, the other 31 models are safe.
+**Never hand-derive an ascription, a reference keyword or a shape.** riddlc
+names the right answer in `stream-ascribed-shape-mismatch`, `ref-wrong-keyword`
+and `stream-ports-without-shape`; the fixers read it back.
 
-**What remains, and why it was left:**
+**Three tooling traps, each caught by riddlc rather than by inspection:**
 
-1. **reactive-bbq, 65 errors, untouched.** Its 22 sink pairs wire fine
-   (65 -> 35, measured) but its 23 adaptor pairs expose a **rule tension**:
-   giving a sender its own outlet satisfies A6, but the sender still delivers
-   with `tell`, never `send`, so `stream-streamlet-sends-nothing` fires 22
-   times. CM §25.7 calls `tell` sugar for a `send` on the connected outlet, so
-   riddlc arguably should count it. **Asked riddl to rule before converting 22
-   `tell`s to `send`s in the reference model.**
-2. **12 `stream-source-reaches-no-sink` in 5 models, caused by this work.** An
-   adaptor with only an outlet is a `source`, and its output must reach a sink.
-   In order-management it cannot: `external context PaymentGateway` declares no
-   ports at all and `OrderContext` has no sink of any kind. The corpus idiom is
-   an adaptor `as flow` with an inlet from the external context (reactive-bbq
-   has ten), and reproducing that means giving external contexts ports and
-   these contexts a sink — beyond the task.
+1. **Resolving a sender by SIMPLE NAME wires the wrong one** — reactive-bbq
+   has two `ToKitchen`, two `ToLoyalty`, two `FromFrontOfHouse`, two
+   `FromOnlineOrdering`. Caught by `stream-crosses-contexts` on connectors
+   joining unrelated contexts. Resolve by the FILE AND LINE of the finding.
+2. **A port's type comes from the MESSAGE, not the target's inlets** — the
+   latter produced 35 `stream-portlet-type-mismatch`.
+3. **A pair sending several types needs an alternation admitting them all**;
+   where none existed, declare one (`DrinkServiceNotice`,
+   `MenuDistributionCommand` in reactive-bbq).
 
-`sbt b` 189/189; `sbt r` **188 of 189**. reactive-bbq cannot be prettified
-while it holds errors, so `pc`/`v`/`checkAll` stay RED — the same coupling as
-2026-09-03, now hit a second time.
+**THE FINDING THAT MATTERS — A6 consumed the corpus's terminal sinks.** An
+event-log sink receives events and `tell`s a `Persist…` command to its
+repository. A6 makes it own an outlet, and its arity becomes (1 out, 1 in) — a
+**flow**, not a sink. `restaurant/FrontOfHouseContext.riddl` went from **5
+sinks to 0**, so sources nobody touched (`ReservationEventSource`,
+`TableOrderEventSource`) now drain into nothing. 42 findings: 26 Adaptor, 15
+Source, 1 Context, across 6 models.
+
+**It cannot be wired away** — tested, not assumed: repointing an adaptor's
+connector onto the repository that handles the message left the warning,
+because that repository is `as merge` (it answers queries) and is not a sink
+either. Filed as
+`../riddl/task/2026-09-04-a6-consumes-the-corpus-terminal-sinks.md`. Do NOT add
+artificial sinks to satisfy the check.
+
+**Gates:** `sbt r` 189/189, `sbt b` 189/189, round-trip 189/0 — prettify works
+again so the corpus is canonical. `sbt checkAll` fails only on the R10 test,
+which requires zero warnings as well as zero errors; that single failure is the
+42 above.
 
 ### Every adaptor `tell` now addresses a CONTEXT
 
