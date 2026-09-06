@@ -14,19 +14,19 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. This is an UNPUBLISHED snapshot of riddl
-// `main` -- 12 commits past the 2.1.0 tag, commit ef74c0fed -- so `riddlcPath`
-// below names a staged binary and the libraries resolve from ~/.ivy2/local via
-// `sbt publishLocal` in the riddl checkout. GitHub Packages stops at 2.1.0.
+// same build, so one value pins both. This is a PUBLISHED release, so
+// `riddlcPath` below is None: the plugin downloads the binary and the libraries
+// resolve from GitHub Packages.
 //
-// It is tracked rather than the published 2.1.0 because four rules this corpus
-// depends on landed AFTER that tag: A6 (a `tell` needs a channel from its
-// SENDER), related-domain connectors (a connector may cross a domain boundary
-// when both ends share an ancestor domain), A6 tightened so the sender must OWN
-// the connector's outlet, and `adaptor-targets-context-only`. Move to the next
-// PUBLISHED tag carrying them as soon as there is one, and take the riddlcPath
-// override off in the same edit.
-lazy val riddlVersion = "2.1.0-12-ef74c0fe"
+// 2.1.1 carries every rule this corpus depends on -- A6 (a `tell` needs a
+// channel from its SENDER, which the sender must OWN), related-domain
+// connectors, `adaptor-targets-context-only`, and chain-ends-at-consumption
+// (a stream chain ends where its message is CONSUMED, not at a sink shape).
+// It is also behaviourally IDENTICAL to the 2.1.0-12-ef74c0fe snapshot the
+// corpus was migrated against: the only commits between them are two NOTEBOOK
+// handoffs, and the diff over language/, passes/ and riddlc/ is empty. That is
+// why the override could come off without re-validating against a new parser.
+lazy val riddlVersion = "2.1.1"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -66,20 +66,21 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
 
     // The test suite validates the corpus through the library API, which is a
     // different path from the CLI that riddlcValidate drives. riddlVersion names
-    // an UNPUBLISHED snapshot, so these resolve from ~/.ivy2/local and require
-    // `sbt publishLocal` in the riddl checkout; a published tag would resolve
-    // from GitHub Packages with nothing else to do.
+    // a published release, so these resolve from GitHub Packages with nothing
+    // else to do; an unpublished snapshot would need `sbt publishLocal` in the
+    // riddl checkout and would resolve from ~/.ivy2/local.
     libraryDependencies ++= Seq(
       "com.ossuminc" %% "riddl-language" % riddlVersion % Test,
       "com.ossuminc" %% "riddl-passes" % riddlVersion % Test,
       "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
     ),
 
-    // Some(...) because riddlVersion names an UNPUBLISHED snapshot the plugin
-    // cannot download -- every riddlc task would fail with a bare
-    // `Nonzero exit value: 56`. Set this back to None the moment a published tag
-    // carries the A6 rule; a stale override is indistinguishable from a clean
-    // corpus.
+    // None because riddlVersion names a PUBLISHED release: the plugin downloads
+    // it to ~/.cache/riddlc/<version>/bin/riddlc. Set this to Some(staged path)
+    // ONLY while tracking an unpublished commit the plugin cannot download --
+    // every riddlc task then fails with a bare `Nonzero exit value: 56` -- and
+    // take it off again the moment that commit is published. A stale override
+    // is indistinguishable from a clean corpus.
     //
     // Two traps, both paid for. This path WINS over riddlVersion, so while an
     // override is in place verify `riddlc info` against the pin rather than
@@ -88,7 +89,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // not in the binary. And a `git checkout -- .` reverts the pin silently,
     // which happened on 2026-08-19 and left the pin naming rc.19-3 while
     // rc.19-5 validated.
-    riddlcPath := Some(file("../bin/riddlc")),
+    riddlcPath := None,
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),

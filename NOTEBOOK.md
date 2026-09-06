@@ -4,6 +4,40 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
+### Pin is PUBLISHED again: riddlc 2.1.1, override OFF
+
+`riddlVersion = "2.1.1"`, `riddlcPath := None`. The plugin downloads the binary
+and the libraries come from GitHub Packages — the first published pin since
+2026-08-31, ending a five-day run of unpublished snapshots.
+
+**Safe because 2.1.1 is behaviourally identical to the snapshot the corpus was
+migrated against.** Verified rather than assumed: the only commits between
+`ef74c0fed` and `2.1.1` are two NOTEBOOK handoffs, and
+`git diff ef74c0fed..2.1.1 -- language passes riddlc` is **empty**. All gates
+re-run green on the downloaded binary, sweep canaried at 0 findings.
+
+**`../bin/riddlc` now DIVERGES from the build again** — staged is
+`2.1.0-12-ef74c0fe`, the build uses `2.1.1`. Scripts default to
+`RIDDLC=../bin/riddlc`, so pass the cached binary for any manual run that is
+evidence for a claim:
+
+```bash
+V=$(sed -n 's/.*riddlVersion = "\(.*\)"/\1/p' build.sbt)
+RIDDLC=~/.cache/riddlc/$V/bin/riddlc ./scripts/collect-warnings.py
+```
+
+### `do` prose task is OPEN and deliberately HELD
+
+`task/2026-09-05-do-prose-must-be-an-instruction.md`. Reid chose **option 1 —
+author real translations** — and held it pending a **change to the CM on
+adaptors** that may redefine what an adaptor is.
+
+The measurement that shaped the decision: all **2629** "the model ..." `do`
+statements are the **sole body of their clause**, 2272 of them inside adaptors.
+So riddl-generator's "mechanically fixable" does not hold — there is nothing
+to paraphrase, and any generated imperative would INVENT the translation. These
+are unimplemented clauses, i.e. a modelling gap, not a prose gap.
+
 ### A6 migration COMPLETE — corpus at zero, `task/` empty
 
 Pinned riddlc **`2.1.0-12-ef74c0fe`**. The corpus is at **0 findings of every

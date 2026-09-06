@@ -1106,16 +1106,19 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.0.0-9-e895537f**, an UNPUBLISHED snapshot of riddl `main`
-— 9 commits past the `2.0.0` tag, commit `e895537f3` (set by `riddlVersion` in
-`build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries). It is
-tracked rather than the `2.0.0` tag because `streamlet` landed after the tag.
+Current version: **2.1.1**, a PUBLISHED release (set by `riddlVersion` in
+`build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
+**The override is OFF** — `riddlcPath := None` — so the plugin downloads the
+binary to `~/.cache/riddlc/2.1.1/bin/riddlc` and the libraries resolve from
+GitHub Packages.
 
-Because it is unpublished, **the override is ON**: `riddlcPath :=
-Some(file("../bin/riddlc"))`, and the libraries resolve from `~/.ivy2/local`
-via `sbt publishLocal` in the riddl checkout. GitHub Packages stops at `2.0.0`.
-Move to the next published tag carrying `streamlet` as soon as there is one,
-and take the override off in the same edit.
+The corpus spent 2026-08-31 to 2026-09-05 on unpublished snapshots because
+four rules it depends on landed after a tag each time (`streamlet`; A6
+sender-owns-outlet; related-domain connectors; `adaptor-targets-context-only`;
+chain-ends-at-consumption). 2.1.1 carries all of them, so the exception ended.
+**Whenever an override goes back on, take it off at the first published tag
+that carries what you needed** — that edit is easy to forget and a stale
+override reads exactly like a clean corpus.
 
 **`riddlcPath` WINS over the pin, so verify the binary, never the pin.** When
 `riddlVersion` names an unpublished staged RC the override points at
@@ -1224,7 +1227,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.0.0-9-e895537f | `riddlVersion` in `build.sbt` (unpublished) |
+| riddlc | 2.1.1 | `riddlVersion` in `build.sbt` (published, no override) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
@@ -1377,12 +1380,15 @@ needs drive language changes, which land here as model changes. riddl's
 `release/2` is merged, tagged `2.0.0` and deleted, so the line to track is now
 **`main`**, and the corpus prefers **published tags wherever possible**.
 
-It is currently on `2.0.0-9-e895537f`, an unpublished snapshot, **with the
-override ON** — the exception, not the posture, taken because `streamlet`
-landed 9 commits past the tag. Point `riddlcPath` at a staged `../bin/riddlc`
-only to track a commit that has not been published yet, and **take the override
-off the moment it is** — a stale override is indistinguishable from a clean
-corpus.
+It is currently on the published **2.1.1** with **no override**. Point
+`riddlcPath` at a staged `../bin/riddlc` only to track a commit that has not
+been published yet, and **take the override off the moment it is** — a stale
+override is indistinguishable from a clean corpus.
+
+When the pin returns to a published tag, `../bin/riddlc` and the build's binary
+**diverge immediately**. On 2026-09-06 the staged binary was `2.1.0-12-ef74c0fe`
+while the build ran `2.1.1`. Scripts default to `RIDDLC=../bin/riddlc`, so a
+manual run takes the WRONG compiler unless you pass the cached one.
 
 - **`riddlVersion` in `build.sbt` pins both** the riddlc binary and the
   riddl libraries the test suite links. They come from the same build.
