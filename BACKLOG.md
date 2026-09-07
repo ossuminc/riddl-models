@@ -1172,6 +1172,24 @@ what the control was for.
 
 ---
 
+## 29. `external-contexts.riddl` should be one include per context
+
+Most models put every external context in a single `external-contexts.riddl`.
+That file is the reason a generated alternation swept in commands belonging to
+other services on 2026-09-07: a regex for `^  command (\w+) is` over the file
+cannot tell which context owns what, and nine of ten models validated clean
+while carrying a wrong alternation.
+
+**Wanted:** `external-contexts.riddl` becomes a list of `include` directives,
+one file per external context, named for it. Ownership then falls out of the
+file boundary.
+
+**Until then:** determine ownership with `riddlc find` / `dump --json`, never
+by scanning the file. `dump` gives each definition its `parent` and
+`ancestors`; the file does not.
+
+---
+
 ## 25. `code_statement` has no TypeScript — to file upstream
 
 `code_statement`'s language list is closed:
