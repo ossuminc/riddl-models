@@ -1,6 +1,7 @@
 // Menu Management bounded context
 context MenuManagement as router is {
-  connector 'MenuReleaseEventLog To MenuReleaseRepository' is from outlet MenuManagement.MenuReleaseEventLog.MenuReleaseEventLogToMenuReleaseRepository to inlet MenuManagement.MenuReleaseRepository.MenuReleaseRepositoryFromMenuReleaseEventLog  connector 'MenuItemEventLog To MenuItemRepository' is from outlet MenuManagement.MenuItemEventLog.MenuItemEventLogToMenuItemRepository to inlet MenuManagement.MenuItemRepository.MenuItemRepositoryFromMenuItemEventLog  connector 'ToRestaurants To MenuManagement' is from outlet MenuManagement.ToRestaurants.ToRestaurantsToMenuManagement to inlet MenuManagement.MenuManagementFromToRestaurants  inlet MenuManagementFromToRestaurants is event MenuRelease.MenuDistributed  connector 'PhotoConfirmSink To MenuItemRepository' is from outlet MenuManagement.PhotoConfirmSink.PhotoConfirmSinkToMenuItemRepository to inlet MenuManagement.MenuItemRepository.MenuItemRepositoryFromPhotoConfirmSink  connector 'PrintConfirmSink To MenuReleaseRepository' is from outlet MenuManagement.PrintConfirmSink.PrintConfirmSinkToMenuReleaseRepository to inlet MenuManagement.MenuReleaseRepository.MenuReleaseRepositoryFromPrintConfirmSink  outlet PrintingToMenuFwd is type PrintingEvent
+  outlet MenuReleaseEventsToRestaurants is type MenuReleaseEvent
+  connector 'MenuReleaseEventLog To MenuReleaseRepository' is from outlet MenuManagement.MenuReleaseEventLog.MenuReleaseEventLogToMenuReleaseRepository to inlet MenuManagement.MenuReleaseRepository.MenuReleaseRepositoryFromMenuReleaseEventLog  connector 'MenuItemEventLog To MenuItemRepository' is from outlet MenuManagement.MenuItemEventLog.MenuItemEventLogToMenuItemRepository to inlet MenuManagement.MenuItemRepository.MenuItemRepositoryFromMenuItemEventLog  connector 'PhotoConfirmSink To MenuItemRepository' is from outlet MenuManagement.PhotoConfirmSink.PhotoConfirmSinkToMenuItemRepository to inlet MenuManagement.MenuItemRepository.MenuItemRepositoryFromPhotoConfirmSink  connector 'PrintConfirmSink To MenuReleaseRepository' is from outlet MenuManagement.PrintConfirmSink.PrintConfirmSinkToMenuReleaseRepository to inlet MenuManagement.MenuReleaseRepository.MenuReleaseRepositoryFromPrintConfirmSink  outlet PrintingToMenuFwd is type PrintingEvent
   outlet PhotographyToMenuFwd is type PhotographyEvent
   connector 'MenuReleaseProjection Storage' is from outlet MenuManagement.MenuReleaseProjection.MenuReleaseProjectionToRepository to inlet MenuManagement.MenuReleaseRepository.MenuReleaseRepositoryFromMenuReleaseProjection with {
     briefly "MenuReleaseProjection commands on their way to MenuReleaseRepository"
@@ -21,6 +22,13 @@ context MenuManagement as router is {
   inlet MenuItemResultStreamIn is result MenuItem.MenuItemResult  outlet MenuItemResultStreamOut is result MenuItem.MenuItemResult
   inlet MenuReleaseResultStreamIn is result MenuRelease.MenuReleaseResult  outlet MenuReleaseResultStreamOut is result MenuRelease.MenuReleaseResult
   handler MenuManagementBoundary is {
+    on releasePublished: event MenuRelease.ReleasePublished is {
+      send releasePublished to outlet MenuManagement.MenuReleaseEventsToRestaurants
+      tell event MenuRelease.MenuDistributed(menuReleaseId = releasePublished.menuReleaseId, menuDistributedAt = system.now) to entity MenuManagement.MenuRelease
+    }
+    on releaseRolledBack: event MenuRelease.ReleaseRolledBack is {
+      send releaseRolledBack to outlet MenuManagement.MenuReleaseEventsToRestaurants
+    }
     on createMenuItem: command MenuItem.CreateMenuItem is {
       forward createMenuItem to outlet MenuManagement.MenuItemCommandStreamOut
     }
@@ -625,32 +633,6 @@ context MenuManagement as router is {
     described as {
       |Receives photo shoot completion events from the
       |external photography service.
-    }
-  }
-  adaptor ToRestaurants to context Restaurant.FrontOfHouse as flow is { 
-    outlet ToRestaurantsToMenuManagement is event MenuRelease.MenuDistributed
-    handler MenuDistribution is {
-      on releasePublished: event MenuRelease.ReleasePublished is {
-        do "distribute published menu updates to restaurant
-          locations"
-        let createOrder: type Restaurant.FrontOfHouse.TableOrder.CreateOrder = prompt("the create order that results from release published")
-        tell createOrder to context Restaurant.FrontOfHouse
-        send event MenuRelease.MenuDistributed(menuReleaseId = releasePublished.menuReleaseId, menuDistributedAt = system.now) to outlet MenuManagement.ToRestaurants.ToRestaurantsToMenuManagement
-      }
-      on other is {
-        error "Unexpected message for adaptor ToRestaurants"
-      }
-    } with {
-      briefly "Menu distribution"
-      described as {
-        |Distributes menu updates to restaurants.
-      }
-    }
-  } with {
-    briefly "Restaurant menu adaptor"
-    described as {
-      | Distributes published menu releases atomically
-      | to all restaurant locations.
     }
   }
   // ---- Local event log for menu item events ----

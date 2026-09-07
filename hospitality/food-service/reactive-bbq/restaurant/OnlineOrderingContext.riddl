@@ -1,9 +1,19 @@
 // Online Ordering bounded context
 context OnlineOrdering as router is {
-  connector 'DeliveryEventSink To OnlineOrder' is from outlet OnlineOrdering.DeliveryEventSink.DeliveryEventSinkToOnlineOrder to inlet OnlineOrdering.OnlineOrder.OnlineOrderFromDeliveryEventSink  connector 'ToLoyalty To OnlineOrdering' is from outlet OnlineOrdering.ToLoyalty.ToLoyaltyToOnlineOrdering to inlet OnlineOrdering.OnlineOrderingFromToLoyalty  inlet OnlineOrderingFromToLoyalty is event OnlineOrder.OnlinePointsAccrualRouted  connector 'ToKitchen To OnlineOrdering' is from outlet OnlineOrdering.ToKitchen.ToKitchenToOnlineOrdering to inlet OnlineOrdering.OnlineOrderingFromToKitchen  inlet OnlineOrderingFromToKitchen is event OnlineOrder.OnlineTicketRouted  connector 'OnlineOrderEventLog To OnlineOrderRepository' is from outlet OnlineOrdering.OnlineOrderEventLog.OnlineOrderEventLogToOnlineOrderRepository to inlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryFromOnlineOrderEventLog  inlet DeliveryToOnlineIn is type DeliveryEvent  outlet DeliveryToOnlineOut is type DeliveryEvent
+  outlet OnlineOrderSubmittedToKitchen is event OnlineOrder.OnlineOrderSubmitted
+  outlet OnlinePaymentProcessedToLoyalty is event OnlineOrder.OnlinePaymentProcessed
+  connector 'DeliveryEventSink To OnlineOrder' is from outlet OnlineOrdering.DeliveryEventSink.DeliveryEventSinkToOnlineOrder to inlet OnlineOrdering.OnlineOrder.OnlineOrderFromDeliveryEventSink  connector 'OnlineOrderEventLog To OnlineOrderRepository' is from outlet OnlineOrdering.OnlineOrderEventLog.OnlineOrderEventLogToOnlineOrderRepository to inlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryFromOnlineOrderEventLog  inlet DeliveryToOnlineIn is type DeliveryEvent  outlet DeliveryToOnlineOut is type DeliveryEvent
   inlet OnlineOrderCommandStreamIn is type OnlineOrderCommand  outlet OnlineOrderCommandStreamOut is type OnlineOrderCommand
   inlet OnlineOrderResultStreamIn is result OnlineOrder.OnlineOrderResult  outlet OnlineOrderResultStreamOut is result OnlineOrder.OnlineOrderResult
   handler OnlineOrderingBoundary is {
+    on onlineOrderSubmitted: event OnlineOrder.OnlineOrderSubmitted is {
+      send onlineOrderSubmitted to outlet OnlineOrdering.OnlineOrderSubmittedToKitchen
+      tell event OnlineOrder.OnlineTicketRouted(onlineOrderId = onlineOrderSubmitted.onlineOrderId, onlineTicketRoutedAt = system.now) to entity OnlineOrdering.OnlineOrder
+    }
+    on onlinePaymentProcessed: event OnlineOrder.OnlinePaymentProcessed is {
+      send onlinePaymentProcessed to outlet OnlineOrdering.OnlinePaymentProcessedToLoyalty
+      tell event OnlineOrder.OnlinePointsAccrualRouted(onlineOrderId = onlinePaymentProcessed.onlineOrderId, onlinePointsAccrualRoutedAt = system.now) to entity OnlineOrdering.OnlineOrder
+    }
     on deliveryCreated: event DeliveryOrder.DeliveryCreated is {
       send deliveryCreated to outlet OnlineOrdering.DeliveryToOnlineOut
     }
@@ -663,68 +673,6 @@ context OnlineOrdering as router is {
       |Emits online order submission events from the
       |OnlineOrder entity into the streaming topology for
       |kitchen routing.
-    }
-  }
-  adaptor ToKitchen to context Restaurant.Kitchen as flow is { 
-    outlet ToKitchenToOnlineOrdering is event OnlineOrder.OnlineTicketRouted
-    handler OnlineKitchenRouting is {
-      on onlineOrderSubmitted: event OnlineOrder.OnlineOrderSubmitted is {
-        do "map each OnlineOrderSubmitted.orderCartItems CartItem
-          to TicketItem with ticketMenuItemId = cartMenuItemId,
-          ticketItemName = cartItemName, ticketItemQuantity =
-          cartItemQuantity, ticketItemNotes = cartItemNotes,
-          ticketItemReady = false"
-        do "construct ReceiveTicket with new KitchenTicketId,
-          sourceOrderId = event.onlineOrderId, ticketSource =
-          Online, ticketItems = mapped list, receivedAt =
-          current timestamp"
-        let receiveTicket: type ReceiveTicket = prompt("the receive ticket that results from online order submitted")
-        tell receiveTicket to context Restaurant.Kitchen
-        send event OnlineOrder.OnlineTicketRouted(onlineOrderId = onlineOrderSubmitted.onlineOrderId, onlineTicketRoutedAt = system.now) to outlet OnlineOrdering.ToKitchen.ToKitchenToOnlineOrdering
-      }
-      on other is {
-        error "Unexpected message for adaptor ToKitchen"
-      }
-    } with {
-      briefly "Kitchen routing"
-      described as {
-        |Routes online orders to the kitchen.
-      }
-    }
-  } with {
-    briefly "Kitchen adaptor"
-    described as {
-      |Sends submitted online orders to kitchen.
-    }
-  }
-  adaptor ToLoyalty to context Restaurant.Loyalty as flow is { 
-    outlet ToLoyaltyToOnlineOrdering is event OnlineOrder.OnlinePointsAccrualRouted
-    handler OnlineLoyaltyRouting is {
-      on onlinePaymentProcessed: event OnlineOrder.OnlinePaymentProcessed is {
-        let pointsEarned = "OnlinePaymentProcessed.onlinePayment
-          .onlinePaymentAmount truncated to integer as
-          accrualPoints"
-        do "construct AccruePoints with loyaltyAccountId looked
-          up by event.customerId, accrualPoints = pointsEarned,
-          accrualReason = online purchase, accrualOrderRef =
-          OnlinePaymentProcessed.onlineOrderId"
-        let accruePoints: type AccruePoints = prompt("the accrue points that results from online payment processed")
-        tell accruePoints to context Restaurant.Loyalty
-        send event OnlineOrder.OnlinePointsAccrualRouted(onlineOrderId = onlinePaymentProcessed.onlineOrderId, onlinePointsAccrualRoutedAt = system.now) to outlet OnlineOrdering.ToLoyalty.ToLoyaltyToOnlineOrdering
-      }
-      on other is {
-        error "Unexpected message for adaptor ToLoyalty"
-      }
-    } with {
-      briefly "Loyalty routing"
-      described as {
-        |Routes payment events for loyalty accrual.
-      }
-    }
-  } with {
-    briefly "Loyalty adaptor"
-    described as {
-      |Sends online payment events to loyalty context.
     }
   }
   streamlet DeliveryEventSink as flow is {

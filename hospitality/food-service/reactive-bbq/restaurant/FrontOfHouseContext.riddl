@@ -1,6 +1,9 @@
 // Front of House bounded context
 context FrontOfHouse as router is {
-  connector 'TableOrderEventLog To TableOrderRepository' is from outlet FrontOfHouse.TableOrderEventLog.TableOrderEventLogToTableOrderRepository to inlet FrontOfHouse.TableOrderRepository.TableOrderRepositoryFromTableOrderEventLog  connector 'ReservationEventLog To ReservationRepository' is from outlet FrontOfHouse.ReservationEventLog.ReservationEventLogToReservationRepository to inlet FrontOfHouse.ReservationRepository.ReservationRepositoryFromReservationEventLog  connector 'FromMenuManagementItems To FrontOfHouse' is from outlet FrontOfHouse.FromMenuManagementItems.FromMenuManagementItemsToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromFromMenuManagementItems  inlet FrontOfHouseFromFromMenuManagementItems is type MenuDistributionCommand  connector 'DrinkOrderEventSink To TableOrderRepository' is from outlet FrontOfHouse.DrinkOrderEventSink.DrinkOrderEventSinkToTableOrderRepository to inlet FrontOfHouse.TableOrderRepository.TableOrderRepositoryFromDrinkOrderEventSink  connector 'NotificationAckSink To ReservationRepository' is from outlet FrontOfHouse.NotificationAckSink.NotificationAckSinkToReservationRepository to inlet FrontOfHouse.ReservationRepository.ReservationRepositoryFromNotificationAckSink  connector 'PaymentResultSink To TableOrder' is from outlet FrontOfHouse.PaymentResultSink.PaymentResultSinkToTableOrder to inlet FrontOfHouse.TableOrder.TableOrderFromPaymentResultSink  connector 'ToLoyalty To FrontOfHouse' is from outlet FrontOfHouse.ToLoyalty.ToLoyaltyToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromToLoyalty  inlet FrontOfHouseFromToLoyalty is event TableOrder.PointsAccrualRouted  connector 'ToBar To FrontOfHouse' is from outlet FrontOfHouse.ToBar.ToBarToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromToBar  inlet FrontOfHouseFromToBar is event TableOrder.DrinkOrderRouted  connector 'ToKitchen To FrontOfHouse' is from outlet FrontOfHouse.ToKitchen.ToKitchenToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromToKitchen  inlet FrontOfHouseFromToKitchen is event TableOrder.TicketRouted  outlet NotificationToFOHFwd is type NotificationEvent
+  outlet FOHOrderSubmittedToKitchen is event TableOrder.OrderSubmitted
+  outlet FOHOrderSubmittedToBar is event TableOrder.OrderSubmitted
+  outlet FOHPaymentProcessedToLoyalty is event TableOrder.PaymentProcessed
+  connector 'TableOrderEventLog To TableOrderRepository' is from outlet FrontOfHouse.TableOrderEventLog.TableOrderEventLogToTableOrderRepository to inlet FrontOfHouse.TableOrderRepository.TableOrderRepositoryFromTableOrderEventLog  connector 'ReservationEventLog To ReservationRepository' is from outlet FrontOfHouse.ReservationEventLog.ReservationEventLogToReservationRepository to inlet FrontOfHouse.ReservationRepository.ReservationRepositoryFromReservationEventLog  connector 'FromMenuManagementItems To FrontOfHouse' is from outlet FrontOfHouse.FromMenuManagementItems.FromMenuManagementItemsToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromFromMenuManagementItems  inlet FrontOfHouseFromFromMenuManagementItems is type MenuDistributionCommand  connector 'DrinkOrderEventSink To TableOrderRepository' is from outlet FrontOfHouse.DrinkOrderEventSink.DrinkOrderEventSinkToTableOrderRepository to inlet FrontOfHouse.TableOrderRepository.TableOrderRepositoryFromDrinkOrderEventSink  connector 'NotificationAckSink To ReservationRepository' is from outlet FrontOfHouse.NotificationAckSink.NotificationAckSinkToReservationRepository to inlet FrontOfHouse.ReservationRepository.ReservationRepositoryFromNotificationAckSink  connector 'PaymentResultSink To TableOrder' is from outlet FrontOfHouse.PaymentResultSink.PaymentResultSinkToTableOrder to inlet FrontOfHouse.TableOrder.TableOrderFromPaymentResultSink  outlet NotificationToFOHFwd is type NotificationEvent
   connector 'TableOrderProjection Storage' is from outlet FrontOfHouse.TableOrderProjection.TableOrderProjectionToRepository to inlet FrontOfHouse.TableOrderRepository.TableOrderRepositoryFromTableOrderProjection with {
     briefly "TableOrderProjection commands on their way to TableOrderRepository"
     described as {
@@ -22,6 +25,16 @@ context FrontOfHouse as router is {
   inlet ReservationBoardViewStreamIn is result ReservationBoardView  outlet ReservationBoardViewStreamOut is result ReservationBoardView
   inlet TableOrderResultStreamIn is result TableOrder.TableOrderResult  outlet TableOrderResultStreamOut is result TableOrder.TableOrderResult
   handler FrontOfHouseBoundary is {
+    on orderSubmitted: event TableOrder.OrderSubmitted is {
+      send orderSubmitted to outlet FrontOfHouse.FOHOrderSubmittedToKitchen
+      send orderSubmitted to outlet FrontOfHouse.FOHOrderSubmittedToBar
+      tell event TableOrder.TicketRouted(tableOrderId = orderSubmitted.tableOrderId, ticketRoutedAt = system.now) to entity FrontOfHouse.TableOrder
+      tell event TableOrder.DrinkOrderRouted(tableOrderId = orderSubmitted.tableOrderId, drinkOrderRoutedAt = system.now) to entity FrontOfHouse.TableOrder
+    }
+    on paymentProcessed: event TableOrder.PaymentProcessed is {
+      send paymentProcessed to outlet FrontOfHouse.FOHPaymentProcessedToLoyalty
+      tell event TableOrder.PointsAccrualRouted(tableOrderId = paymentProcessed.tableOrderId, pointsAccrualRoutedAt = system.now) to entity FrontOfHouse.TableOrder
+    }
     on paymentAuthorized: event PaymentGateway.PaymentAuthorized is {
       send paymentAuthorized to outlet FrontOfHouse.PaymentGatewayToFOHOut
     }
@@ -1025,110 +1038,6 @@ context FrontOfHouse as router is {
     described as {
       |Publishes table order entity events for external
       |consumption via the streaming topology.
-    }
-  }
-  adaptor ToKitchen to context Restaurant.Kitchen as flow is { 
-    outlet ToKitchenToFrontOfHouse is event TableOrder.TicketRouted
-    handler KitchenRouting is {
-      on orderSubmitted: event TableOrder.OrderSubmitted is {
-        do "filter OrderSubmitted.orderItems where
-          orderLineItem.itemCategory is not drink to produce
-          food-only OrderLine list"
-        do "map each food OrderLine to TicketItem with
-          ticketMenuItemId = orderLineItem.itemCode,
-          ticketItemName = orderLineItem.itemName,
-          ticketItemQuantity = orderLineQuantity,
-          ticketItemNotes = orderLineNotes,
-          ticketItemReady = false"
-        do "construct ReceiveTicket command with new
-          KitchenTicketId, sourceOrderId =
-          OrderSubmitted.tableOrderId, ticketSource = DineIn,
-          ticketItems = mapped TicketItem list, receivedAt =
-          current timestamp"
-        let receiveTicket: type ReceiveTicket = prompt("the receive ticket that results from order submitted")
-        tell receiveTicket to context Restaurant.Kitchen
-        send event TableOrder.TicketRouted(tableOrderId = orderSubmitted.tableOrderId, ticketRoutedAt = system.now) to outlet FrontOfHouse.ToKitchen.ToKitchenToFrontOfHouse
-      }
-      on other is {
-        error "Unexpected message for adaptor ToKitchen"
-      }
-    } with {
-      briefly "Kitchen routing"
-      described as {
-        |Routes food items to kitchen context, transforming
-        |order lines into kitchen ticket format.
-      }
-    }
-  } with {
-    briefly "Kitchen adaptor"
-    described as {
-      |Sends submitted food orders to the kitchen.
-    }
-  }
-  adaptor ToBar to context Restaurant.Bar as flow is { 
-    outlet ToBarToFrontOfHouse is event TableOrder.DrinkOrderRouted
-    handler BarRouting is {
-      on orderSubmitted: event TableOrder.OrderSubmitted is {
-        do "filter OrderSubmitted.orderItems where
-          orderLineItem.itemCategory is drink to produce
-          drink-only OrderLine list"
-        do "map each drink OrderLine to DrinkItem with
-          drinkName = orderLineItem.itemName,
-          drinkQuantity = orderLineQuantity,
-          drinkNotes = orderLineNotes"
-        do "construct ReceiveDrinkOrder command with new
-          DrinkOrderId, sourceOrderId =
-          OrderSubmitted.tableOrderId, drinkTableNumber =
-          OrderSubmitted.tableNumber, drinkItems = mapped
-          DrinkItem list, drinkReceivedAt = current timestamp"
-        let receiveDrinkOrder: type ReceiveDrinkOrder = prompt("the receive drink order that results from order submitted")
-        tell receiveDrinkOrder to context Restaurant.Bar
-        send event TableOrder.DrinkOrderRouted(tableOrderId = orderSubmitted.tableOrderId, drinkOrderRoutedAt = system.now) to outlet FrontOfHouse.ToBar.ToBarToFrontOfHouse
-      }
-      on other is {
-        error "Unexpected message for adaptor ToBar"
-      }
-    } with {
-      briefly "Bar routing"
-      described as {
-        |Routes drink items to bar context, transforming
-        |order lines into drink order format.
-      }
-    }
-  } with {
-    briefly "Bar adaptor"
-    described as {
-      |Sends submitted drink orders to the bar.
-    }
-  }
-  adaptor ToLoyalty to context Restaurant.Loyalty as flow is { 
-    outlet ToLoyaltyToFrontOfHouse is event TableOrder.PointsAccrualRouted
-    handler LoyaltyRouting is {
-      on paymentProcessed: event TableOrder.PaymentProcessed is {
-        let pointsEarned = "PaymentProcessed.orderPayment.paymentAmount
-          truncated to integer as accrualPoints"
-        do "construct AccruePoints command with loyaltyAccountId
-          looked up by table association, accrualPoints =
-          pointsEarned, accrualReason = dine-in purchase,
-          accrualOrderRef = PaymentProcessed.tableOrderId"
-        let accruePoints: type AccruePoints = prompt("the accrue points that results from payment processed")
-        tell accruePoints to context Restaurant.Loyalty
-        send event TableOrder.PointsAccrualRouted(tableOrderId = paymentProcessed.tableOrderId, pointsAccrualRoutedAt = system.now) to outlet FrontOfHouse.ToLoyalty.ToLoyaltyToFrontOfHouse
-      }
-      on other is {
-        error "Unexpected message for adaptor ToLoyalty"
-      }
-    } with {
-      briefly "Loyalty routing"
-      described as {
-        |Routes payment events for loyalty accrual, calculating
-        |points from payment amounts.
-      }
-    }
-  } with {
-    briefly "Loyalty adaptor"
-    described as {
-      |Sends payment events to the loyalty context.
     }
   }
   adaptor PaymentGatewayAdapter from context PaymentGateway as flow is { 
