@@ -3,22 +3,6 @@ context OnlineOrdering as router is {
   connector 'DeliveryEventSink To OnlineOrder' is from outlet OnlineOrdering.DeliveryEventSink.DeliveryEventSinkToOnlineOrder to inlet OnlineOrdering.OnlineOrder.OnlineOrderFromDeliveryEventSink  connector 'ToLoyalty To OnlineOrdering' is from outlet OnlineOrdering.ToLoyalty.ToLoyaltyToOnlineOrdering to inlet OnlineOrdering.OnlineOrderingFromToLoyalty  inlet OnlineOrderingFromToLoyalty is event OnlineOrder.OnlinePointsAccrualRouted  connector 'ToKitchen To OnlineOrdering' is from outlet OnlineOrdering.ToKitchen.ToKitchenToOnlineOrdering to inlet OnlineOrdering.OnlineOrderingFromToKitchen  inlet OnlineOrderingFromToKitchen is event OnlineOrder.OnlineTicketRouted  connector 'OnlineOrderEventLog To OnlineOrderRepository' is from outlet OnlineOrdering.OnlineOrderEventLog.OnlineOrderEventLogToOnlineOrderRepository to inlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryFromOnlineOrderEventLog  inlet DeliveryToOnlineIn is type DeliveryEvent  outlet DeliveryToOnlineOut is type DeliveryEvent
   inlet OnlineOrderCommandStreamIn is type OnlineOrderCommand  outlet OnlineOrderCommandStreamOut is type OnlineOrderCommand
   inlet OnlineOrderResultStreamIn is result OnlineOrder.OnlineOrderResult  outlet OnlineOrderResultStreamOut is result OnlineOrder.OnlineOrderResult
-  outlet OnlineToLoyaltyOut is command Loyalty.LoyaltyAccount.AccruePoints
- with {
-    briefly "Point accruals leaving online ordering for loyalty"
-    described as {
-      |The channel the ToLoyalty adaptor's `tell` travels, carrying what a
-      |paid online order earned its member.
-    }
-  }
-  outlet OnlineToKitchenOut is command Kitchen.KitchenTicket.ReceiveTicket
- with {
-    briefly "Food orders leaving online ordering for the kitchen"
-    described as {
-      |The channel the ToKitchen adaptor's `tell` travels. Food lines of a
-      |submitted online order are carried to the Kitchen context here.
-    }
-  }
   handler OnlineOrderingBoundary is {
     on deliveryCreated: event DeliveryOrder.DeliveryCreated is {
       send deliveryCreated to outlet OnlineOrdering.DeliveryToOnlineOut
@@ -681,7 +665,7 @@ context OnlineOrdering as router is {
       |kitchen routing.
     }
   }
-  adaptor ToKitchen to context Restaurant.Kitchen as source is { 
+  adaptor ToKitchen to context Restaurant.Kitchen as flow is { 
     outlet ToKitchenToOnlineOrdering is event OnlineOrder.OnlineTicketRouted
     handler OnlineKitchenRouting is {
       on onlineOrderSubmitted: event OnlineOrder.OnlineOrderSubmitted is {
@@ -695,7 +679,7 @@ context OnlineOrdering as router is {
           Online, ticketItems = mapped list, receivedAt =
           current timestamp"
         let receiveTicket: type ReceiveTicket = prompt("the receive ticket that results from online order submitted")
-        send receiveTicket to outlet FrontOfHouse.FOHToKitchenOut
+        tell receiveTicket to context Restaurant.Kitchen
         send event OnlineOrder.OnlineTicketRouted(onlineOrderId = onlineOrderSubmitted.onlineOrderId, onlineTicketRoutedAt = system.now) to outlet OnlineOrdering.ToKitchen.ToKitchenToOnlineOrdering
       }
       on other is {
@@ -713,7 +697,7 @@ context OnlineOrdering as router is {
       |Sends submitted online orders to kitchen.
     }
   }
-  adaptor ToLoyalty to context Restaurant.Loyalty as source is { 
+  adaptor ToLoyalty to context Restaurant.Loyalty as flow is { 
     outlet ToLoyaltyToOnlineOrdering is event OnlineOrder.OnlinePointsAccrualRouted
     handler OnlineLoyaltyRouting is {
       on onlinePaymentProcessed: event OnlineOrder.OnlinePaymentProcessed is {
@@ -725,7 +709,7 @@ context OnlineOrdering as router is {
           accrualReason = online purchase, accrualOrderRef =
           OnlinePaymentProcessed.onlineOrderId"
         let accruePoints: type AccruePoints = prompt("the accrue points that results from online payment processed")
-        send accruePoints to outlet FrontOfHouse.FOHToLoyaltyOut
+        tell accruePoints to context Restaurant.Loyalty
         send event OnlineOrder.OnlinePointsAccrualRouted(onlineOrderId = onlinePaymentProcessed.onlineOrderId, onlinePointsAccrualRoutedAt = system.now) to outlet OnlineOrdering.ToLoyalty.ToLoyaltyToOnlineOrdering
       }
       on other is {

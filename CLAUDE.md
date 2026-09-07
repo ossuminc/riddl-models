@@ -725,6 +725,38 @@ one." `gateway` is one of four context intentions
 gateway ascribed `as router` is rejected, so a gateway cannot fan out to two
 destinations — it admits, and something downstream dispatches.
 
+### A103 — the ADAPTOR is the boundary, and its ports are IMPLIED
+
+**An adaptor declared in context A `to context B` (or `from context B`) IS A's
+boundary surface for that ordered pair and direction.** This REVERSES the older
+"no adaptor exemption" reading; where the two conflict, A103 wins.
+
+- **Ports are implied.** A port-less adaptor counts as one inlet and one outlet,
+  so its shape is **`flow`** — `as source` / `as merge` on an adaptor is an
+  **Error**. Declaring a port overrides that side.
+- **An adaptor's implied port is nameable as a CONNECTOR endpoint**:
+  `from outlet Sales.ToBilling`. It is **not** nameable in a `send`; a
+  `send ... to inlet <Adaptor>` does not resolve. If a context handler must
+  reach the adaptor, give the context an outlet and run an intra-context
+  connector from it into the adaptor.
+- **Exclusivity** (`stream-connector-bypasses-adaptor`): where A declares an
+  outbound adaptor toward B, a connector from A's own outlet into B is an
+  Error; where A declares an inbound adaptor from B, a connector from B onto
+  A's own inlet is an Error. **An adaptor that can be routed around is not a
+  boundary.** This kills the old two-hop shape (adaptor → the context's own
+  inlet), which now also shows up as `stream-graph-cycle`.
+- **Typing is VALIDATED, never SYNTHESISED**
+  (`adaptor-target-no-admitting-inlet`): `tell ... to context X` from inside an
+  adaptor is an Error unless X declares an inlet whose type IS the message or
+  whose alternation contains it.
+- **`send` obeys ownership** (`stmt-outlet-not-owned`): a `send` may name only
+  an outlet whose parent chain contains the sending processor. An entity may
+  not publish on a neighbouring streamlet's outlet — it publishes on its own.
+
+**Consequence for adaptors: prefer `tell ... to context X` over `send`.** The
+adaptor's outlet is implied and the `tell` publishes on it, so no port need be
+declared and no ownership rule is engaged.
+
 ### The context IS the port at its own boundary
 
 **A cross-context connector must terminate on the CONTEXT'S OWN portlet** — an
@@ -1106,11 +1138,11 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.1.1**, a PUBLISHED release (set by `riddlVersion` in
-`build.sbt`, which feeds `riddlcVersion` *and* the test-suite libraries).
-**The override is OFF** — `riddlcPath := None` — so the plugin downloads the
-binary to `~/.cache/riddlc/2.1.1/bin/riddlc` and the libraries resolve from
-GitHub Packages.
+Current version: **2.1.1-4-e7de502c**, an UNPUBLISHED snapshot of riddl `main`
+carrying **A103** (the adaptor is the boundary). **The override is back ON** —
+`riddlcPath := Some(file("../bin/riddlc"))` — and the libraries resolve from
+`~/.ivy2/local`. GitHub Packages stops at 2.1.1. Take the override off at the
+first published tag carrying A103.
 
 The corpus spent 2026-08-31 to 2026-09-05 on unpublished snapshots because
 four rules it depends on landed after a tag each time (`streamlet`; A6
@@ -1227,7 +1259,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.1.1 | `riddlVersion` in `build.sbt` (published, no override) |
+| riddlc | 2.1.1-4-e7de502c | `riddlVersion` in `build.sbt` (unpublished) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 

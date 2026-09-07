@@ -4,6 +4,48 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
+### A103 migration: the adaptor IS the boundary — corpus back to zero
+
+Pinned **`2.1.1-4-e7de502c`**, unpublished, **override back ON** (it came off
+for 2.1.1 one day earlier; A103 landed after that tag). 161 findings -> **0**,
+canaried.
+
+**What A103 changed, and what it cost us here** — full rules now in CLAUDE.md:
+
+- **`stmt-outlet-not-owned` (103)** — 96 entities were publishing on a
+  neighbouring `*EventSource`'s outlet; redirected to their OWN outlet. 7
+  adaptors reverted from `send`-on-context-outlet back to
+  `tell ... to context X`.
+- **`stream-ascribed-shape-mismatch` (32)** — an adaptor's ports are implied,
+  so it is a `flow`; `as source` on one is an Error.
+- **`stream-connector-bypasses-adaptor` (25)** — crossings rerouted through
+  the adaptor's implied port.
+- **`adaptor-target-no-admitting-inlet` (1)** — a channel typed `CartCommand`
+  actually carried an event.
+
+**The A6 migration's `tell` -> `send` conversion was RIGHT for streamlets and
+WRONG for adaptors.** A103 gives an adaptor implied ports, so `tell ... to
+context X` publishes on its implied outlet and needs no declaration — while a
+`send` on the *context's* outlet now violates ownership. Prefer `tell` from an
+adaptor.
+
+**An implied port is nameable as a CONNECTOR endpoint, not in a `send`.**
+`from outlet Ctx.Adaptor` resolves; `send ... to inlet Ctx.Adaptor` does not.
+Where a context handler must reach its adaptor, give the context an outlet and
+run an intra-context connector into the adaptor.
+
+**The old two-hop shape is now a CYCLE.** assembly-operations had adaptor ->
+the context's own inlet; once the crossing also left the adaptor, riddlc
+reported `stream-graph-cycle` (context -> adaptor -> context). Deleting the
+stale return leg is the fix, not adding another connector.
+
+**Simple-name matching bit again — third time.** Removing 25 orphaned portlets
+by name removed **26**, because `PaymentGatewayToFOHIn` exists in both
+`FrontOfHouse` and the `PaymentGateway` external context. Caught by
+`ref-path-unresolved`, restored. The count mismatch (26 removed vs 25 reported)
+was the tell: **always reconcile the number you changed against the number
+reported.**
+
 ### Pin is PUBLISHED again: riddlc 2.1.1, override OFF
 
 `riddlVersion = "2.1.1"`, `riddlcPath := None`. The plugin downloads the binary
