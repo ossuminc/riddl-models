@@ -4,6 +4,41 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
+### WHERE THIS STOPPED — PAUSED on riddl, 2026-09-07
+
+The adaptor-wiring campaign is **deliberately paused**, not stalled. Reid's
+call: the remaining clusters would be built on a workaround that riddl is
+about to replace.
+
+**Waiting on:** `../riddl/task/2026-09-07-temporal-semantics-in-the-model.md`
+— `send ... at <timestamp>` and an `on timeout` / `on quiescence` clause.
+Reid has taken it to riddl. Tracked here as **BACKLOG #30**, which lists what
+to revisit when it lands.
+
+**Done and committed** (notification cluster, decisions 1-4): confirmations,
+alerts, and all 14 reminder integrations except one. 13 reminders use the
+**deadline handoff** — trigger on the event that establishes the schedule,
+hand the deadline to whoever owns delivery. That is the workaround; its cost
+is that "schedule this, do not send it now" lives in a `prompt` STRING.
+
+**Not started** (do not begin these until the language question resolves):
+status-update (12), invitation/request (5), generic-send (6), notification
+"other" (45), then payment/billing (63), compliance (35), document (29),
+inventory (27), risk/fraud (27), scheduling (24), and a 324-pair long tail.
+
+**The one deliberate omission:** learning-management's `SendProgressReminder`
+has no deadline, only free `message` text. It is an inactivity nudge with no
+possible triggering event — exactly the `on quiescence` case. Unwired on
+purpose.
+
+**Run `/ossuminc-skills:check-tasks` in a new session** — triage is the
+driver's call, and this handoff never runs it.
+
+**This HANDOFF has grown to ~400 lines and wants pruning** (see
+`/ossuminc-skills:prune-notebook`). It was not pruned this session because
+nobody asked and the detail below is still load-bearing.
+
+
 ### 97% of the corpus's adaptors are UNWIRED — the finding that matters
 
 Measured 2026-09-07 with `dump --json`, resolving every connector endpoint:
@@ -96,27 +131,22 @@ by name removed **26**, because `PaymentGatewayToFOHIn` exists in both
 was the tell: **always reconcile the number you changed against the number
 reported.**
 
-### Pin is PUBLISHED again: riddlc 2.1.1, override OFF
+### Pin: riddlc `2.1.1-10-4be9193e`, unpublished, override ON
 
-`riddlVersion = "2.1.1"`, `riddlcPath := None`. The plugin downloads the binary
-and the libraries come from GitHub Packages — the first published pin since
-2026-08-31, ending a five-day run of unpublished snapshots.
+`riddlVersion = "2.1.1-10-4be9193e"`, `riddlcPath := Some(file("../bin/riddlc"))`,
+libraries from `~/.ivy2/local`. GitHub Packages stops at 2.1.1.
+**Take the override off at the first published tag carrying this commit.**
 
-**Safe because 2.1.1 is behaviourally identical to the snapshot the corpus was
-migrated against.** Verified rather than assumed: the only commits between
-`ef74c0fed` and `2.1.1` are two NOTEBOOK handoffs, and
-`git diff ef74c0fed..2.1.1 -- language passes riddlc` is **empty**. All gates
-re-run green on the downloaded binary, sweep canaried at 0 findings.
+This build **cleared the 7 `adaptor-direction-advisory` warnings** the corpus
+had carried since the A103 migration — the advisory contradicted A103 itself,
+asking an OUTBOUND adaptor to reference the target context's types in its
+on-clauses, which it cannot do. Corpus is now at **0 findings at every
+severity**, verified with the harness canaried (inject an unused type, confirm
+it is reported, revert) — a zero from an unchecked harness is worth nothing.
 
-**`../bin/riddlc` now DIVERGES from the build again** — staged is
-`2.1.0-12-ef74c0fe`, the build uses `2.1.1`. Scripts default to
-`RIDDLC=../bin/riddlc`, so pass the cached binary for any manual run that is
-evidence for a claim:
-
-```bash
-V=$(sed -n 's/.*riddlVersion = "\(.*\)"/\1/p' build.sbt)
-RIDDLC=~/.cache/riddlc/$V/bin/riddlc ./scripts/collect-warnings.py
-```
+On this pin `../bin/riddlc` IS the build's binary, so the scripts' default
+`RIDDLC=../bin/riddlc` is correct. **That coincidence ends the moment the pin
+returns to a published tag**, when the two diverge silently again.
 
 ### `do` prose task is OPEN and deliberately HELD
 

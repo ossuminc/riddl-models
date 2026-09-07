@@ -47,9 +47,33 @@ that "schedule this for later, do not send it now" lives in a `prompt` STRING
 rather than in structure — the same prose-trust problem as
 `task/2026-09-05-do-prose-must-be-an-instruction.md`, one level up.
 
-**If `send ... at` lands, revisit those clauses** so the schedule is stated
-structurally. If it does not, the handoff stands and this item closes with
-that recorded as the deliberate answer.
+**Reid took this to riddl 2026-09-07 and PAUSED the adaptor-wiring campaign
+until it lands.** The remaining clusters would otherwise be built on a
+workaround that is about to be replaced.
+
+### What to revisit when the capability arrives
+
+1. **The 13 wired reminders** (commits c5d741a7, a51e88f8). Each says
+   "schedule this, do not send it now" in a `prompt` STRING. With
+   `send ... at` the schedule becomes structural and nothing has to be
+   inferred from prose. This is a rewrite of existing, working clauses — do
+   not treat it as new integration work.
+2. **learning-management `SendProgressReminder`** — the 14th reminder, left
+   unwired on purpose. No deadline, only free `message` text; it is an
+   inactivity nudge, so it needs `on quiescence` specifically, not
+   `send ... at`.
+3. **The 18 unfireable time-caused facts** across 17 models (table in the
+   riddl task file). `ExpireReservation`, `LapsePolicy`, `EscalateTicket`,
+   `AbandonCart` and the rest become drivable for the first time. This is the
+   largest of the three and is genuinely new modelling, not a rewrite.
+4. **`remindDaysBefore`** now appears on five commands as a lead time. If the
+   language gains a way to express the offset, check whether the field is
+   still carrying its weight or has become redundant.
+
+If the capability is declined, the deadline handoff stands and this item
+closes with that recorded as the deliberate answer — items 1 and 2 then need
+no action, and item 3 becomes a permanent known limitation worth stating in
+CLAUDE.md.
 
 ---
 
