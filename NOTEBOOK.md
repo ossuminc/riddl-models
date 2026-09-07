@@ -4,6 +4,56 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
+### 97% of the corpus's adaptors are UNWIRED — the finding that matters
+
+Measured 2026-09-07 with `dump --json`, resolving every connector endpoint:
+
+```
+adaptors total                  : 1469
+WIRED (a connector touches them):   38
+UNWIRED                         : 1431  = 97%
+```
+
+All **2629** `do "the model …"` statements are the **sole body** of their
+clause, **2272** inside adaptors. So those adaptors have no connector, no ports
+in use, and a body that does nothing: **bulk-generated placeholders**. The
+prose is not badly worded — there is no translation to describe.
+
+**Consequence for `task/2026-09-05-do-prose-must-be-an-instruction.md`** (hold
+lifted now A103 landed, still OPEN): "author real translations" is not a prose
+job, it is **building 1431 integrations**. Writing imperative prose over an
+unwired adaptor is worse than leaving it, because riddlg would then generate
+confident code for an integration the model never wired. Awaiting Reid's call.
+
+### Mirrored adaptor pairs collapsed (6, not the 4 reported)
+
+`task/done/2026-09-07-mirrored-adaptor-pairs-translate-twice.md`. Pairing each
+adaptor's DECLARED referent rather than its name found two more than
+riddl-generator's name-based list, including two it called correct
+(`Loyalty.FromPayment`, `Loyalty.FromOnlinePayment`). reactive-bbq 26 -> 20
+adaptors.
+
+**Deleting the outbound side was not just a deletion**: each also recorded a
+routing event (`TicketRouted` and five siblings) that the entities handle on
+replay. All six were re-homed into the publishing context's boundary handler.
+Connectors were renamed because they had been named for the TRANSLATED message
+and now carry the source event.
+
+### The plumbing cleanup CANNOT be finished as specified
+
+`task/2026-09-06-adaptors-lose-their-plumbing.md` stays OPEN. Its "0 shape
+ascriptions" and "no declared ports" criteria contradict riddlc:
+
+- removing the 36 remaining `as flow` gives 36 `stream-ports-without-shape` —
+  **an adaptor with DECLARED ports is asked for an ascription**
+- so the ports must go too, but removing one adaptor's ports gave
+  `stream-inlet-cardinality`: **an implied port has cardinality one**, so an
+  adaptor that fans in must keep declared inlets
+
+**Removing a port must be done by SPAN, not by line** — a generated port owns a
+`with { }` block, and deleting the declaration alone orphans it and breaks the
+parse.
+
 ### A103 migration: the adaptor IS the boundary — corpus back to zero
 
 Pinned **`2.1.1-4-e7de502c`**, unpublished, **override back ON** (it came off
