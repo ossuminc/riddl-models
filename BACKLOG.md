@@ -5,6 +5,54 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
+## 30. Temporal semantics — the corpus cannot express a scheduled or
+## absence-driven action
+
+Filed upstream 2026-09-07 as
+`../riddl/task/2026-09-07-temporal-semantics-in-the-model.md`, asking for
+DESIGN discussion (not implementation) on two constructs:
+
+1. `send ... at <timestamp expression>` — scheduled delivery, mechanism still
+   the generator's choice.
+2. `on timeout` / `on quiescence` in ordinary handlers — the general case of
+   what a projector correlation's mandatory timeout already does in the
+   specific one.
+
+Arithmetic was reconsidered from the temporal direction and **rejected again**
+(Reid, 2026-09-07), consistent with #21. It is recorded in the task file so it
+dies there; do not file it a third time.
+
+### Why this repository cares
+
+Verified 2026-09-07 with `riddlc dump --json` at `2.1.1-10-4be9193e`:
+
+- **18 of 18 time-caused facts across 17 models cannot fire.** Every event
+  named `*Expired` / `*Escalated` / `*Lapsed` / `*Overdue` / `*Abandoned` is
+  either raised by nothing, or raised by a command (`ExpireReservation`,
+  `LapsePolicy`, `EscalateTicket`) that nothing sends — because the only
+  plausible sender is a clock. riddlc is correctly silent: it has no opinion
+  on an unsent message. 189 models at zero findings still cannot say when an
+  invoice goes overdue.
+- **5 of 14 reminder commands carry a countdown** (`daysUntilEvent`,
+  `daysUntilDue`, `daysUntilExpiration`) rather than a deadline. A countdown
+  is only computable at send time, so its presence is the missing feature
+  leaking into the type.
+
+### The dependency to revisit
+
+Decision 3 adopted the **deadline handoff** as the workaround: trigger on the
+event that establishes the schedule, hand the deadline to whoever owns
+delivery. Eight triggers are wired that way (commit c5d741a7). Its cost is
+that "schedule this for later, do not send it now" lives in a `prompt` STRING
+rather than in structure — the same prose-trust problem as
+`task/2026-09-05-do-prose-must-be-an-instruction.md`, one level up.
+
+**If `send ... at` lands, revisit those clauses** so the schedule is stated
+structurally. If it does not, the handoff stands and this item closes with
+that recorded as the deliberate answer.
+
+---
+
 ## 1. Make reactive-bbq the reference model (ACTIVE CAMPAIGN)
 
 The plan is `~/.claude/plans/wobbly-whistling-finch.md`, approved
