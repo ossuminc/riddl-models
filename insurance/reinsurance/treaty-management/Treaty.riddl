@@ -2,7 +2,7 @@
 // Core entity managing reinsurance treaty lifecycle
 aggregate entity Treaty as flow is {
   type TreatyCommand is one of {
-    Treaty.NegotiateTreaty or Treaty.ExecuteTreaty or Treaty.RecordCession or Treaty.SubmitBordereau or Treaty.ProcessSettlement or Treaty.RenewTreaty or Treaty.SuspendTreaty or Treaty.TerminateTreaty
+    Treaty.NegotiateTreaty or Treaty.ExecuteTreaty or Treaty.RecordCession or Treaty.SubmitBordereau or Treaty.ProcessSettlement or Treaty.RenewTreaty or Treaty.SuspendTreaty or Treaty.TerminateTreaty or Treaty.ExpireTreaty
   } with {
     briefly "Treaty command alternation"
     described as {
@@ -187,6 +187,28 @@ aggregate entity Treaty as flow is {
     briefly "Calculate and process settlement for a period"
     described as {
       |Calculates the net settlement between parties.
+    }
+  }
+  command ExpireTreaty is {
+    treatyId: TreatyId with {
+      briefly "Treaty"
+      described as {
+        |Treaty whose coverage period has run out.
+      }
+    }
+    expirationDate: DateTime with {
+      briefly "Expires"
+      described as {
+        |The end of the coverage period this expiry was scheduled against.
+      }
+    }
+  } with {
+    briefly "Expire a treaty whose coverage period has ended"
+    described as {
+      |Scheduled when the treaty is executed, for the end of its coverage
+      |period, and reconsidered when it arrives. A treaty renewed or
+      |terminated in the meantime refuses it: there is no way to cancel a
+      |scheduled message, so the receiver decides whether it is still wanted.
     }
   }
   command RenewTreaty yields event TreatyRenewed is {
@@ -580,7 +602,7 @@ aggregate entity Treaty as flow is {
         |The treaty identifier.
       }
     }
-    expirationDate: Date with {
+    expirationDate: DateTime with {
       briefly "Expiration"
       described as {
         |Expiration date.
@@ -875,7 +897,7 @@ aggregate entity Treaty as flow is {
         |Treaty terms.
       }
     }
-    expirationDate: Date with {
+    expirationDate: DateTime with {
       briefly "Expired"
       described as {
         |Expiration date.
@@ -1149,6 +1171,13 @@ aggregate entity Treaty as flow is {
     on executeTreaty: command ExecuteTreaty is {
       morph entity Treaty to state Treaty.ExecutedState with record Treaty.ExecutedData(treatyId = executeTreaty.treatyId, executionDate = executeTreaty.executionDate, signatories = executeTreaty.signatories, cedingCompanyId = prompt("the ceding company id of this executed data"), reinsurerId = prompt("the reinsurer id of this executed data"), terms = prompt("the terms of this executed data"), commission = prompt("the commission of this executed data"))
       yield event TreatyExecuted(treatyId = executeTreaty.treatyId, finalTerms = executeTreaty.finalTerms, finalCommission = executeTreaty.finalCommission, executionDate = executeTreaty.executionDate, signatories = executeTreaty.signatories, timestamp = prompt("the timestamp of this treaty executed"))
+    }
+    on expireTreaty: command ExpireTreaty is {
+      when prompt("the treaty is still in force on the coverage period this message was scheduled for, and was not since renewed, suspended or terminated") then
+        tell event TreatyExpired(treatyId = expireTreaty.treatyId, expirationDate = expireTreaty.expirationDate, finalSettlementDue = prompt("when the final settlement for this treaty falls due"), timestamp = prompt("when the treaty expired")) to entity TreatyContext.Treaty
+      else
+        error "The treaty was already renewed, suspended or terminated; this scheduled expiry is stale"
+      end
     }
     on recordCession: command RecordCession is {
       yield event CessionRecorded(treatyId = recordCession.treatyId, cession = recordCession.cession, remainingCapacity = empty, timestamp = prompt("the timestamp of this cession recorded"))
