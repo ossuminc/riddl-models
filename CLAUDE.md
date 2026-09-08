@@ -1185,7 +1185,7 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.1.1-22-a62e5c48**, an UNPUBLISHED snapshot of riddl `main`
+Current version: **2.1.1-26-4d17b1ef**, an UNPUBLISHED snapshot of riddl `main`
 carrying **A103** (the adaptor is the boundary). **The override is back ON** —
 `riddlcPath := Some(file("../bin/riddlc"))` — and the libraries resolve from
 `~/.ivy2/local`. GitHub Packages stops at 2.1.1. Take the override off at the
@@ -1317,7 +1317,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.1.1-22-a62e5c48 | `riddlVersion` in `build.sbt` (unpublished) |
+| riddlc | 2.1.1-26-4d17b1ef | `riddlVersion` in `build.sbt` (unpublished) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
