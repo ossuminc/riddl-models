@@ -833,6 +833,43 @@ the record actually named, because seeing through nesting is an unbounded search
 Where two ids of the same entity are genuinely present, `tell … by <field>` names
 which one addresses it.
 
+### Which events notify — the counterparty test
+
+A generic notification command (`SendLoanNotification`, `SendNotification`,
+`SendClaimNotification`) carries a `notificationType: String` discriminator
+and pairs with an entity publishing 8-12 lifecycle events, so wiring it is a
+question of WHICH EVENTS deserve to notify, not which command to send.
+
+**Notify on a decision, a terminal outcome, or a transition the counterparty
+actually experiences. Never on internal bookkeeping.** The test is not "did
+something happen" but **"must the recipient now do something, or have their
+expectations changed?"**
+
+| notifies | stays silent |
+|---|---|
+| `LoanApproved`, `ClaimDenied`, `BenefitSuspended` | `DocumentUploaded`, `ScoreCalculated` |
+| `CorrectionsRequested`, `ChangeOrderSubmitted` — nothing proceeds until they act | `NoteAdded`, `CommentAdded`, `MetadataUpdated` |
+| `InspectionScheduled`, `ClosingScheduled` — they must attend | `BudgetUpdated`, `TaskAdded` |
+| `MarkedOutForDelivery` — they must arrange to receive | `ETAUpdated`, `LocationUpdated`, `TrackingEventAdded` |
+| `PatientNoShow` — consequences for rebooking | `PaymentAuthorized`, `PaymentCaptured` — steps inside one payment |
+
+The same event can fall either way depending on the recipient, and that is
+the point: `MarkedOutForDelivery` notifies in both last-mile-delivery and
+shipment-tracking, while `ETAUpdated` notifies in neither. A channel that
+carries telemetry is a channel people stop reading.
+
+Reid was AFK when this rule was set (2026-09-07); it is applied uniformly
+across 18 models and every clause is one `let`/`send` pair, so it is cheap
+to revise. Two authoring notes learned by validating:
+
+- **Name the binding `notice`, not for its meaning.** `approved`, `paid`,
+  `denied` collided with existing definitions in 4 of 6 models
+  (`name-shadows-definition`). Bindings are clause-local; they should say
+  what the message IS.
+- **A single-command service takes no alternation.** `one of` with one
+  member is `[deprecated] [single-alternation]`; the inlet and the adaptor
+  outlet reference the command directly.
+
 ### Connector Naming
 
 Name a connector for **what flows through it**, never for its endpoints —

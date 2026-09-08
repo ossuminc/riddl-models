@@ -26,9 +26,18 @@ idiom legal.
   declares an outlet and `send`s, where A103 prefers `tell ... to context X`
   on the IMPLIED port. Every further cluster adds more of the same.
 
-**Cluster campaign — resuming.** Notification decisions 1-4 are done
-(confirmations, alerts, 13 of 14 reminders). Next up: status-update (12),
-then invitation/request (5), generic-send (6), notification "other" (45),
+**Cluster campaign — decision 5 in flight.** Decisions 1-4 done
+(confirmations, alerts, 13 of 14 reminders). Decision 5 is the
+status-update cluster, which is **51 pairs, not the 12 previously
+estimated** — the earlier figure came from a narrower keyword set and this
+overlaps what was called "other".
+
+**18 of ~51 wired** in three batches (3dc03367, 84a75c77, dd8f1b52), 87
+clauses, under a rule now recorded in CLAUDE.md - "Which events notify".
+Reid was AFK; the rule is mine and every clause is one `let`/`send` pair,
+so revising it is cheap.
+
+Remaining after this cluster: invitation/request (5), generic-send (6),
 then payment/billing (63), compliance (35), document (29), inventory (27),
 risk/fraud (27), scheduling (24) and a 324-pair long tail.
 
