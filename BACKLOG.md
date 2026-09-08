@@ -286,6 +286,27 @@ unverified applicant.
 **Not done, 1 of 26:** licensing `[CredentialVerificationService]`
 (`VerifyEducation`, `VerifyEmployment`, `VerifyOtherStateLicense`).
 
+### Fraud / risk / regulatory filing — 21 pairs DONE 2026-09-08
+
+> **A FRAUD or RISK command fires on the event that creates the EXPOSURE** —
+> when the transaction enters, not when it is reviewed afterwards.
+> **A REGULATORY FILING command fires on the event that produces the
+> REPORTABLE FACT.**
+
+**The cluster measured 46 pairs, not the 27 the keyword estimate suggested** —
+the fourth time a narrower keyword set has understated one. 21 are done; the
+remainder (CRM, tax, legal-filing, audit-scheduling) are measured and listed
+in the census but not yet wired.
+
+**A model's directory name predicts NEITHER its context name NOR its entity
+name.** game-economy's context is `WalletContext`, advertising-delivery's is
+`AdContext`, water-utility's is `WaterUtilityContext`. Second naming
+assumption to cost rework this session, after basenames not being unique.
+
+**No outbound adaptor to insert into** (needs one built, not a clause added):
+claims-processing `[FraudDetection]`, equipment-maintenance
+`[ProductionSchedule]`, licensing `[CredentialVerificationService]`.
+
 ### Remaining, in order
 
 payment/billing (41 pairs), compliance/regulatory (35), document/storage (29),
