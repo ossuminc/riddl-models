@@ -17,10 +17,13 @@ round-trip 189/189.
 ### In flight
 
 **The adaptor-wiring cluster campaign — see BACKLOG #33**, which carries the
-method, the eight traps and the remaining ~1300 pairs. Short version: the
-notification cluster (72 pairs) is COMPLETE and payment/billing is 12 of 53,
-on the rule *a payment command is driven by the event that creates or
-discharges the financial obligation*.
+method, the traps, the census recipe and the remaining pairs. Short version:
+payment/billing is **18 of 51**, on the rule *a payment command is driven by
+the event that creates or discharges the financial obligation*.
+
+**The notification cluster is NOT complete, despite being recorded as such.**
+A census with a wider keyword set finds four unsent `MarketingService`
+commands in ticket-sales alone. Re-measure before trusting that line.
 
 `on quiescence` and `send ... at` landed in this pin and are in use: nine
 dead behaviours now fire (BACKLOG #30), ticketing schedules its own hold
@@ -65,6 +68,54 @@ became. It awaits triage in the new session all the same.
 ---
 
 ## Session detail, to 2026-09-08 (was HANDOFF)
+
+
+### Payment cluster batch 3, and a census that was wrong in a familiar way
+
+Six models wired (order-management, ticket-sales, point-of-sale,
+order-orchestration, permit-management, ride-sharing), 11 commands given a
+sender under the obligation rule. Gates: prettify 189/189, `pc` green,
+bastify 189/189 with exactly the six `.bast` files changed, corpus sweep **0
+findings at every severity**, harness canaried at session start.
+
+**The census bug is the lesson.** The first version counted a command as
+driven only if a `tell`/`send` message ref resolved to it. But the wiring
+idiom is
+
+```riddl
+let notice: type PaymentGateway.ProcessPayment = prompt("...")
+send notice to outlet TicketContext.ToPaymentGateway.ToPaymentGatewayOut
+```
+
+and a `send` of a BOUND value has no message ref — its `message` is
+`{"value": "notice"}`. The driver is the **let's `declaredType`**. So the
+census reported every one of the 12 already-wired payment models as still
+unwired, and would have had this session wire them a second time.
+
+It was caught by reconciliation, not by inspection: the models a previous
+batch wired must come back CLEAR. Ten of twelve did, and point-of-sale
+correctly still showed the two commands its batch never touched. **That
+agreement is what makes a census believable** — the same standard as
+canarying the warning sweep, applied to a different tool.
+
+A second probe was wrong the same way minutes later: an "is this event ever
+raised?" check that looked only at `yield-statement` reported all nine of
+point-of-sale's events dead, because a non-event-sourced entity raises by
+`tell event X to entity <self>`. Both bugs report **nothing wrong** when
+they fail, which is the house failure mode.
+
+### Trigger choice is per-model, and the probe changed one of them
+
+`OrderCompleted` in order-orchestration is never raised by anything, so
+capture hangs off `SubOrderDelivered` instead — the vendor has delivered and
+the amount is final. Without the raisedness probe that clause would have
+been built on an event that cannot occur, which is the campaign's own defect
+one level down.
+
+ride-sharing takes two sends in ONE clause: completing a trip both fixes the
+rider's fare and earns the driver their share, and a handler dispatches on
+message TYPE, so `TripCompleted` gets one clause carrying both.
+
 
 
 ### WHERE THIS IS — pause LIFTED, cluster work resuming, 2026-09-07

@@ -27,10 +27,56 @@ produces confident wrong answers.
 the corpus has a sender. Five decisions: confirmations, alerts, reminders
 (14), status-updates (51 pairs / 215 clauses), and the tail.
 
-**Payment/billing — 12 of 53 pairs.** Rule: *a payment command is driven by
+**Payment/billing — 18 of 51 pairs.** Rule: *a payment command is driven by
 the event that CREATES or DISCHARGES the financial obligation.* Authorize
 where the customer becomes committed, capture where the amount is final,
 refund where the commitment is released; nothing on intermediate steps.
+
+Batch 3, 2026-09-08 (6 models, 11 commands): order-management
+`OrderPlaced`->ProcessPayment / `OrderCancelled`->RefundPayment; ticket-sales
+`TicketPurchased`/`TicketRefunded` (the exact twin of ticketing);
+point-of-sale `PaymentProcessed`->AuthorizePayment /
+`TransactionCompleted`->CapturePayment; order-orchestration
+`SubOrderDelivered`->CapturePayment / `SubOrderCancelled`->RefundPayment;
+permit-management `FeesCalculated`->ProcessPermitPayment; ride-sharing
+`TripCompleted`->ChargeRide **and** ->PayDriver in the one clause.
+
+### The census, and how to rebuild it
+
+There is no tracked census script; `scratchpad/census.py` this session was
+~90 lines over `riddlc dump --json`, and the method is what matters:
+
+1. external contexts are `kind == "context"` with `intention == "External"`;
+2. a command is UNSENT unless something drives it;
+3. an unsent command owned by an external context is a wiring gap.
+
+**Step 2 is where it goes wrong.** The wiring idiom is
+`let notice: type Far.Cmd = prompt(...)` then `send notice to outlet ...`,
+and a `send` of a BOUND value carries no message ref at all — its `message`
+is `{"value": "notice"}`. So the driver is the **let-statement's
+`declaredType.resolved`**, not the send's. A census counting only
+tell/send message refs reported all 12 already-wired payment models as still
+unwired, and would have had this session re-wire them.
+
+The reconciliation that caught it is worth repeating on any rebuild: run the
+census and check that the models a previous batch wired come back CLEAR.
+Ten of twelve did; point-of-sale correctly still showed the two commands its
+batch never touched. That agreement is the evidence the census is live —
+the same standard as canarying the warning sweep.
+
+**Counts move with the keyword set, so quote the set.** 45 pairs / 66
+commands remained before this batch, against BACKLOG's "41", because
+`payout|disburs|dues|premium|remit` were not in the earlier cut. Same
+phenomenon as status-updates ("51 pairs, not the 12 previously estimated").
+
+### The notification cluster is NOT as complete as recorded
+
+The census finds `MarketingService.AnnounceEvent`, `NotifySubscribers`,
+`SendConfirmation` and `NotifyTransfer` unsent in ticket-sales — its
+`MarketingAdapter` is connected to the external context but nothing ever
+creates the commands it forwards. "Every notification command in the corpus
+has a sender" was measured over a narrower keyword set than this census
+uses. **Re-measure the notification cluster before treating it as done.**
 
 ### Remaining, in order
 
@@ -269,7 +315,8 @@ expiry, so it keeps its domain name and only its TYPE widens. `expiresAt` is
 the name where the field genuinely names an expiry. Say so if that is wrong;
 it is a rename, not a redesign.
 
-NOT YET APPLIED.
+NOT YET APPLIED — this is the next unit of #30 work after the payment
+cluster batch in flight.
 
 **Also open:** `OrderExpired` (order-management) — the model does not say
 whether a resting order dies at end-of-day (`send ... at`) or from
