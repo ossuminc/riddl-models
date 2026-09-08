@@ -27,8 +27,8 @@ produces confident wrong answers.
 the corpus has a sender. Five decisions: confirmations, alerts, reminders
 (14), status-updates (51 pairs / 215 clauses), and the tail.
 
-**Payment/billing — 33 pairs / 47 commands REMAIN** (measured 2026-09-08
-after batch 4; quote the remainder, not a fraction — pairs close partially,
+**Payment/billing — 21 pairs / 28 commands REMAIN** (measured 2026-09-08
+after batch 5; quote the remainder, not a fraction — pairs close partially,
 so "N of M done" cannot be reconciled across batches and an earlier line
 here claiming it was wrong). Rule: *a payment command is driven by
 the event that CREATES or DISCHARGES the financial obligation.* Authorize
@@ -53,14 +53,52 @@ cannot key the message however plausible it sounds. customs-brokerage's
 overpayment becomes refundable; `ProtestFiled` only contests and determines
 nothing.
 
-### Still deferred — the invoicing / provisioning sub-cluster
+### The invoicing / provisioning sub-cluster — RULED 2026-09-08 by Reid
 
-`CreateInvoice`, `GenerateInvoice`, `SetupBilling`, `CreateBillingAccount`
-(~14 pairs). **An invoice is not a payment**: it STATES an obligation rather
-than creating or discharging one, so the rule above has nothing to say about
-when to raise one. `SetupBilling` and `CreateBillingAccount` are not about an
-obligation at all — they are account provisioning that belongs to whatever
-creates the customer relationship. Needs its own rule from Reid.
+18 commands across 14 pairs, which the payment rule does not cover: **an
+invoice STATES an obligation rather than creating or discharging one**, and a
+billing account is not about an obligation at all. Reid chose **three rules,
+one per kind**, rather than one flattened lifecycle mapping:
+
+| | rule | commands |
+|---|---|---|
+| **A** | raise an invoice when the billable work becomes **countable and closed for the period** | `CreateInvoice`, `GenerateInvoice`, `SendInvoice`, `GenerateCommercialInvoice` |
+| **B** | provision billing on the event that **creates the customer relationship** | `CreateBillingAccount`, `SetupBilling`, `CreateBillingSchedule` |
+| **C** | amend billing on the event that **changes what is billed** | `AdjustBilling`, `SuspendBilling`, `UpdateBillingTier` |
+
+The one-rule alternative was refused because it flattens the real difference
+between stating an obligation and provisioning an account.
+
+**DONE 2026-09-08 — 13 models, 19 commands.** A: engagement-management and
+engineering-project on `MilestoneCompleted`, usage-metering on
+`BillingRecordGenerated`, subscription-management on `SubscriptionRenewed`,
+port-operations on `PortChargesGenerated`, distribution on `OrderShipped`,
+case-management on `CaseClosed` (invoice AND send). B: multi-tenant
+`TenantProvisioned`, tenant-provisioning `TenantCreated`,
+subscriber-management `SubscriberCreated`, policy-administration
+`PolicyIssued`, policy-management `PolicyIssued`. C: revenue-assurance
+`CaseResolved`, tenant-provisioning `TierUpgraded`, policy-administration
+`EndorsementAdded` and `PolicyCancelled`.
+
+**Read the placeholder's own prose before choosing a trigger.** distribution
+was going to get `OrderDelivered` until its bulk-generated placeholder turned
+out to say *"Triggers invoicing on shipment"* / *"Generate invoice for
+shipped order"*. The model stated its own billing policy and that beats a
+plausible guess. Most placeholders are the generic `"the model sends X"` and
+say nothing — but the bespoke ones are evidence, so look.
+
+**`GenerateCommercialInvoice` (freight-forwarding) is deliberately NOT here.**
+It matched the census on the word "invoice" and is a **customs document**, not
+a billing invoice — it belongs to the document/storage cluster. A keyword
+census will keep offering it; keep declining.
+
+Three commands are left as placeholders in adaptors this batch touched, each
+for a stated reason: case-management `RecordPayment` (discharges an
+obligation, so it belongs to an inbound `PaymentReceived` a `to context`
+adaptor cannot handle), multi-tenant `RecordUsageMetrics` and
+`UpdateSubscription` (neither is a billing lifecycle event), and the
+`GetBillingRecords` / `GetAccountBalance` QUERIES (a query is `ask query`, a
+different shape entirely).
 
 subscriber-management is the visible edge of this: its `AddCharges` is wired,
 while `CreateBillingAccount` and the `GetAccountBalance` QUERY are left as
