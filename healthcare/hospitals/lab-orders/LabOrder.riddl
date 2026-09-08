@@ -1,7 +1,7 @@
 // Lab Orders - LabOrder Entity
 entity LabOrder as split is {
   type LabOrderCommand is one of {
-    LabOrder.PlaceLabOrder or LabOrder.CollectSpecimen or LabOrder.ReceiveSpecimen or LabOrder.StartTesting or LabOrder.RecordResult or LabOrder.VerifyResult or LabOrder.ReportCriticalValue or LabOrder.CancelOrder
+    LabOrder.PlaceLabOrder or LabOrder.CollectSpecimen or LabOrder.ReceiveSpecimen or LabOrder.StartTesting or LabOrder.RecordResult or LabOrder.VerifyResult or LabOrder.ReportCriticalValue or LabOrder.ConfirmCriticalValueReadBack or LabOrder.CancelOrder
   } with {
     briefly "LabOrder command alternation"
     described as {
@@ -201,6 +201,72 @@ entity LabOrder as split is {
     briefly "Verify result"
     described as {
       |Pathologist verification and release of result.
+    }
+  }
+  command ConfirmCriticalValueReadBack is {
+    orderId: LabOrderId with {
+      briefly "Order"
+      described as {
+        |The order whose critical value was read back.
+      }
+    }
+    resultId: ResultId with {
+      briefly "Result"
+      described as {
+        |The result carrying the critical value.
+      }
+    }
+    confirmedBy: String(1,200) with {
+      briefly "Confirmed by"
+      described as {
+        |The clinician who read the value back.
+      }
+    }
+    confirmedAt: TimeStamp with {
+      briefly "Confirmed at"
+      described as {
+        |When the read-back happened.
+      }
+    }
+  } with {
+    briefly "Confirm that a clinician read a critical value back"
+    described as {
+      |A critical value is not considered communicated until the receiving
+      |clinician repeats it back. The lab records who did so and when,
+      |because the read-back is the evidence that the result was actually
+      |received by a person.
+    }
+  }
+  event CriticalValueReadBack is {
+    orderId: LabOrderId with {
+      briefly "Order"
+      described as {
+        |The order whose critical value was read back.
+      }
+    }
+    resultId: ResultId with {
+      briefly "Result"
+      described as {
+        |The result carrying the critical value.
+      }
+    }
+    confirmedBy: String(1,200) with {
+      briefly "Confirmed by"
+      described as {
+        |The clinician who read the value back.
+      }
+    }
+    confirmedAt: TimeStamp with {
+      briefly "Confirmed at"
+      described as {
+        |When the read-back happened.
+      }
+    }
+  } with {
+    briefly "A clinician read a critical value back"
+    described as {
+      |Closes the loop opened by CriticalValueReported. Until this, the
+      |critical value has been sent but not demonstrably received.
     }
   }
   command ReportCriticalValue is {
@@ -952,6 +1018,11 @@ entity LabOrder as split is {
       let sendCriticalAlert: type PhysicianNotificationService.SendCriticalAlert = prompt("the send critical alert that results from report critical value")
       send sendCriticalAlert to outlet LabOrderToPhysicianNotification
     }
+    on confirmCriticalValueReadBack: command ConfirmCriticalValueReadBack is {
+      tell event CriticalValueReadBack(orderId = confirmCriticalValueReadBack.orderId, resultId = confirmCriticalValueReadBack.resultId, confirmedBy = confirmCriticalValueReadBack.confirmedBy, confirmedAt = confirmCriticalValueReadBack.confirmedAt) to entity LabContext.LabOrder
+      let recordReadBack: type PhysicianNotificationService.RecordReadBack = prompt("a RecordReadBack telling the notification service who repeated the critical value back and when, so its record of the alert is closed")
+      send recordReadBack to outlet LabOrderToPhysicianNotification
+    }
     on cancelOrder: command CancelOrder is {
       morph entity LabContext.LabOrder to state LabContext.LabOrder.CancelledState with record LabOrder.CancelledStateData(orderId = cancelOrder.orderId, cancelledBy = cancelOrder.cancelledBy, cancelledAt = cancelOrder.cancelledAt, reason = cancelOrder.reason, patient = prompt("the patient of this cancelled state data"), orderingProvider = prompt("the ordering provider of this cancelled state data"), orderDetails = prompt("the order details of this cancelled state data"), status = prompt("the status of this cancelled state data"))
       tell event OrderCancelled(orderId = cancelOrder.orderId, cancelledBy = cancelOrder.cancelledBy, cancelledAt = cancelOrder.cancelledAt, reason = cancelOrder.reason) to entity LabContext.LabOrder
@@ -961,6 +1032,9 @@ entity LabOrder as split is {
     }
     on criticalValueReported: event CriticalValueReported is {
       do "apply CriticalValueReported to the labOrder so it can be persisted and replayed"
+    }
+    on criticalValueReadBack: event CriticalValueReadBack is {
+      do "apply CriticalValueReadBack to the lab order so it can be persisted and replayed"
     }
     on labOrderPlaced: event LabOrderPlaced is {
       do "apply LabOrderPlaced to the labOrder so it can be persisted and replayed"
