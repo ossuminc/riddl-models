@@ -1,7 +1,7 @@
 // Fleet Management - Vehicle Entity
 entity Vehicle as flow is {
   type VehicleCommand is one of {
-    Vehicle.RegisterVehicle or Vehicle.UpdateLocation or Vehicle.UpdateOdometer or Vehicle.UpdateFuelLevel or Vehicle.AssignDriver or Vehicle.UnassignDriver or Vehicle.StartTrip or Vehicle.EndTrip or Vehicle.ScheduleMaintenance or Vehicle.StartMaintenance or Vehicle.CompleteMaintenance or Vehicle.RaiseAlert or Vehicle.AcknowledgeAlert or Vehicle.DecommissionVehicle
+    Vehicle.RegisterVehicle or Vehicle.UpdateLocation or Vehicle.UpdateOdometer or Vehicle.UpdateFuelLevel or Vehicle.AssignDriver or Vehicle.UnassignDriver or Vehicle.StartTrip or Vehicle.EndTrip or Vehicle.ScheduleMaintenance or Vehicle.StartMaintenance or Vehicle.CompleteMaintenance or Vehicle.RaiseAlert or Vehicle.AcknowledgeAlert or Vehicle.DecommissionVehicle or Vehicle.MaintenanceReminderDue
   } with {
     briefly "Vehicle command alternation"
     described as {
@@ -355,6 +355,47 @@ entity Vehicle as flow is {
     briefly "Acknowledge alert"
     described as {
       |Acknowledges alert.
+    }
+  }
+  command MaintenanceReminderDue is {
+    vehicleId: VehicleId with {
+      briefly "Subject"
+      described as {
+        |What this scheduled message concerns.
+      }
+    }
+    scheduledFor: TimeStamp with {
+      briefly "Scheduled for"
+      described as {
+        |The instant this message was scheduled against.
+      }
+    }
+  } with {
+    briefly "A scheduled maintenance reminder has come due"
+    described as {
+      |Scheduled to the entity itself and delivered when the instant arrives.
+      |It is RECONSIDERED on arrival rather than trusted, because nothing can
+      |cancel a scheduled message: a stale one must be refused, not acted on.
+    }
+  }
+  event MaintenanceReminderRaised is {
+    vehicleId: VehicleId with {
+      briefly "Subject"
+      described as {
+        |What the reminder concerns.
+      }
+    }
+    scheduledFor: TimeStamp with {
+      briefly "Scheduled for"
+      described as {
+        |The instant the reminder was scheduled against.
+      }
+    }
+  } with {
+    briefly "A maintenance reminder is due and still warranted"
+    described as {
+      |Raised only when the scheduled message survived the staleness check, so
+      |anything translating it may send without deciding again.
     }
   }
   command DecommissionVehicle is {
@@ -901,6 +942,16 @@ entity Vehicle as flow is {
     }
     on maintenanceCompleted: event MaintenanceCompleted is {
       do "apply MaintenanceCompleted to the vehicle so it can be persisted and replayed"
+    }
+    on due: command MaintenanceReminderDue is {
+      when prompt("the maintenance this message was scheduled against is still outstanding, and was not since started, completed or rescheduled, and the vehicle was not decommissioned") then
+        tell event MaintenanceReminderRaised(vehicleId = due.vehicleId, scheduledFor = due.scheduledFor) to entity VehicleContext.Vehicle
+      else
+        error "The subject was already resolved; this scheduled reminder is stale"
+      end
+    }
+    on raised: event MaintenanceReminderRaised is {
+      do "apply MaintenanceReminderRaised to the vehicle so it can be persisted and replayed"
     }
     on maintenanceScheduled: event MaintenanceScheduled is {
       do "apply MaintenanceScheduled to the vehicle so it can be persisted and replayed"

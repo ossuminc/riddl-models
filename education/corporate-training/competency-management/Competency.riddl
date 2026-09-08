@@ -1,7 +1,7 @@
 // Competency Management - Competency Entity
 entity Competency as flow is {
   type CompetencyCommand is one of {
-    Competency.CreateCompetency or Competency.UpdateCompetency or Competency.CreateFramework or Competency.AssignCompetency or Competency.RecordAssessment or Competency.UpdateAssessmentStatus or Competency.CreateDevelopmentPlan or Competency.AddDevelopmentActivity or Competency.CompleteDevelopmentActivity or Competency.UpdateCompetencyLevel or Competency.IdentifySkillGaps
+    Competency.CreateCompetency or Competency.UpdateCompetency or Competency.CreateFramework or Competency.AssignCompetency or Competency.RecordAssessment or Competency.UpdateAssessmentStatus or Competency.CreateDevelopmentPlan or Competency.AddDevelopmentActivity or Competency.CompleteDevelopmentActivity or Competency.UpdateCompetencyLevel or Competency.IdentifySkillGaps or Competency.AssessmentReminderDue
   } with {
     briefly "Competency command alternation"
     described as {
@@ -118,6 +118,14 @@ entity Competency as flow is {
       briefly "Target"
       described as {
         |Target level.
+      }
+    }
+    assessmentDueDate: TimeStamp with {
+      briefly "Assessment due"
+      described as {
+        |When the assessment this assignment creates falls due. Supplied by the
+        |caller rather than invented, because it is what the reminder is
+        |scheduled against.
       }
     }
   } with {
@@ -276,6 +284,59 @@ entity Competency as flow is {
       |Updates employee competency level.
     }
   }
+  command AssessmentReminderDue is {
+    competencyId: CompetencyId with {
+      briefly "Competency"
+      described as {
+        |The competency assignment this scheduled message addresses.
+      }
+    }
+    employeeId: EmployeeId with {
+      briefly "Subject"
+      described as {
+        |What this scheduled message concerns.
+      }
+    }
+    scheduledFor: TimeStamp with {
+      briefly "Scheduled for"
+      described as {
+        |The instant this message was scheduled against.
+      }
+    }
+  } with {
+    briefly "A scheduled assessment reminder has come due"
+    described as {
+      |Scheduled to the entity itself and delivered when the instant arrives.
+      |It is RECONSIDERED on arrival rather than trusted, because nothing can
+      |cancel a scheduled message: a stale one must be refused, not acted on.
+    }
+  }
+  event AssessmentReminderRaised is {
+    competencyId: CompetencyId with {
+      briefly "Competency"
+      described as {
+        |The competency assignment this scheduled message addresses.
+      }
+    }
+    employeeId: EmployeeId with {
+      briefly "Subject"
+      described as {
+        |What the reminder concerns.
+      }
+    }
+    scheduledFor: TimeStamp with {
+      briefly "Scheduled for"
+      described as {
+        |The instant the reminder was scheduled against.
+      }
+    }
+  } with {
+    briefly "An assessment reminder is due and still warranted"
+    described as {
+      |Raised only when the scheduled message survived the staleness check, so
+      |anything translating it may send without deciding again.
+    }
+  }
   command IdentifySkillGaps is {
     competencyId: CompetencyId with {
       briefly "Competency ID"
@@ -412,7 +473,7 @@ entity Competency as flow is {
         |on this event.
       }
     }
-    assessmentDueDate: Date with {
+    assessmentDueDate: TimeStamp with {
       briefly "Due"
       described as {
         |When that assessment is due. The deadline a reminder is scheduled
@@ -758,7 +819,7 @@ entity Competency as flow is {
       tell event FrameworkCreated(framework = createFramework.framework, competencyId = prompt("the competency id of this framework created"), createdAt = prompt("the created at of this framework created")) to entity CompetencyContext.Competency
     }
     on assignCompetency: command AssignCompetency is {
-      tell event CompetencyAssigned(employeeId = assignCompetency.employeeId, competencyId = assignCompetency.competencyId, targetLevel = assignCompetency.targetLevel, assessmentId = prompt("the identity of the assessment this assignment creates"), assessmentDueDate = prompt("when the assessment this assignment creates falls due"), assignedAt = prompt("the assigned at of this competency assigned")) to entity CompetencyContext.Competency
+      tell event CompetencyAssigned(employeeId = assignCompetency.employeeId, competencyId = assignCompetency.competencyId, targetLevel = assignCompetency.targetLevel, assessmentId = prompt("the identity of the assessment this assignment creates"), assessmentDueDate = assignCompetency.assessmentDueDate, assignedAt = prompt("the assigned at of this competency assigned")) to entity CompetencyContext.Competency
     }
     on recordAssessment: command RecordAssessment is {
       tell event AssessmentRecorded(assessment = recordAssessment.assessment, competencyId = prompt("the competency id of this assessment recorded"), recordedAt = prompt("the recorded at of this assessment recorded")) to entity CompetencyContext.Competency
@@ -786,6 +847,16 @@ entity Competency as flow is {
     }
     on assessmentStatusUpdated: event AssessmentStatusUpdated is {
       do "apply AssessmentStatusUpdated to the competency so it can be persisted and replayed"
+    }
+    on due: command AssessmentReminderDue is {
+      when prompt("the assessment this message was scheduled against is still outstanding, and was not since recorded, and the competency assignment still stands") then
+        tell event AssessmentReminderRaised(competencyId = due.competencyId, employeeId = due.employeeId, scheduledFor = due.scheduledFor) to entity CompetencyContext.Competency
+      else
+        error "The subject was already resolved; this scheduled reminder is stale"
+      end
+    }
+    on raised: event AssessmentReminderRaised is {
+      do "apply AssessmentReminderRaised to the competency so it can be persisted and replayed"
     }
     on competencyAssigned: event CompetencyAssigned is {
       do "apply CompetencyAssigned to the competency so it can be persisted and replayed"

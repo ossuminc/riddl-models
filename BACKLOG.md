@@ -450,8 +450,54 @@ carrying two types in a context, and optionality preserved (`Date?` ->
 | competency-management | `dueDate` | 2 |
 | event-registration | `eventStart` | 1 |
 
-**Widening only made `send ... at` POSSIBLE; nothing was rewritten to use
-it.** That is the still-open work below.
+### The reminders are now SCHEDULED — done 2026-09-08, on two rulings
+
+Reid ruled the 13 wired reminders after the options were laid out with their
+consequences. **The split is driven by one measured fact: there is no
+arithmetic.** `at <deadline> - <leadTime>` is a PARSE error, so a reminder
+that must fire *N days before* a deadline cannot compute its own instant.
+
+**Option 2 — schedule to yourself, guarded — for the 7 with no lead time.**
+The shape, proven on ticketing and confirmed on credentialing:
+
+- the **context boundary** schedules a `<X>ReminderDue` onto the context's OWN
+  command outlet `at` the instant. It must be the boundary: an entity cannot
+  send on the context's outlet (`stmt-outlet-not-owned`), and the existing
+  connector already delivers that stream to the entity, so no new ports;
+- the **entity** handles it GUARDED, raising `<X>ReminderRaised` when still
+  warranted and `error`-ing otherwise — nothing can cancel a scheduled
+  message, so a stale one must be refused rather than acted on;
+- the **to-adaptor** translates the raised event without deciding again.
+
+Applied to credentialing (2 clauses collapsed to 1 — the renewal's stale
+reminder is now refused rather than "replaced"), car-rental,
+engagement-management, fleet-management and competency-management.
+
+**Option 4 — an explicit `remindAt: TimeStamp` — for the 5 with a lead time**
+(licensing ×2, compliance-reporting, venue-management, tour-operations). The
+instant is carried on the reminder command and filled from the two fields
+beside it, so `send ... at reminder.remindAt` schedules structurally without
+arithmetic. Their prose no longer claims to hand over a deadline.
+
+Two model corrections fell out and are improvements in their own right:
+`AssignCompetency` now CARRIES `assessmentDueDate` instead of the entity
+inventing it with a prompt, and fleet's `scheduledDate` widened to TimeStamp.
+
+**training-administration is the one deliberate exception**, and its handoff
+prose is still true. `SendSessionReminder` is per-TRAINEE
+(`traineeId, sessionId, scheduledTime`), but the session's `scheduledStart`
+lives on the Session and is not reachable from `RegisterTrainee`. Scheduling
+from `ScheduleSession` instead would be per-session, which cannot fan out to
+a roster; putting the session time on the registration command would
+duplicate a fact that belongs elsewhere and can change. The service knows
+both the time and the roster, so the handoff is the right allocation here.
+
+**A message told to an entity must carry `Id(<Entity>)`.** competency's first
+attempt keyed on `EmployeeId` and was rejected — the employee is not the
+Competency instance.
+
+Corpus now has **13 scheduled sends**: the 11 here plus ticketing's hold
+expiry and treaty-management's.
 
 **Also open:** `OrderExpired` (order-management) — the model does not say
 whether a resting order dies at end-of-day (`send ... at`) or from

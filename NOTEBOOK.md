@@ -28,6 +28,9 @@ and closed; provision on relationship-created; amend on arrangement-changed).
 A census with a wider keyword set finds four unsent `MarketingService`
 commands in ticket-sales alone. Re-measure before trusting that line.
 
+**All 13 wired reminders now SCHEDULE** rather than hand a deadline to the
+service in prose — 7 via schedule-to-self-guarded, 5 via an explicit
+`remindAt`, 1 (training-administration) deliberately left as a handoff.
 `on quiescence` and `send ... at` landed in this pin and are in use: nine
 dead behaviours now fire (BACKLOG #30), ticketing schedules its own hold
 expiry, and learning-management gained a `LearnerEnrollment` aggregate so a

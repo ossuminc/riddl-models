@@ -1,7 +1,7 @@
 // Car Rental - Rental Entity
 entity Rental as flow is {
   type RentalCommand is one of {
-    Rental.CreateRental or Rental.AddAddOn or Rental.SelectInsurance or Rental.AuthorizePayment or Rental.CheckOutVehicle or Rental.ExtendRental or Rental.ModifyReturnLocation or Rental.CheckInVehicle or Rental.AssessDamages or Rental.ProcessFinalCharges or Rental.CompleteRental or Rental.CancelRental
+    Rental.CreateRental or Rental.AddAddOn or Rental.SelectInsurance or Rental.AuthorizePayment or Rental.CheckOutVehicle or Rental.ExtendRental or Rental.ModifyReturnLocation or Rental.CheckInVehicle or Rental.AssessDamages or Rental.ProcessFinalCharges or Rental.CompleteRental or Rental.CancelRental or Rental.ReturnReminderDue
   } with {
     briefly "Rental command alternation"
     described as {
@@ -287,6 +287,47 @@ entity Rental as flow is {
     briefly "Complete rental"
     described as {
       |Completes the rental.
+    }
+  }
+  command ReturnReminderDue is {
+    rentalId: RentalId with {
+      briefly "Subject"
+      described as {
+        |What this scheduled message concerns.
+      }
+    }
+    scheduledFor: TimeStamp with {
+      briefly "Scheduled for"
+      described as {
+        |The instant this message was scheduled against.
+      }
+    }
+  } with {
+    briefly "A scheduled return reminder has come due"
+    described as {
+      |Scheduled to the entity itself and delivered when the instant arrives.
+      |It is RECONSIDERED on arrival rather than trusted, because nothing can
+      |cancel a scheduled message: a stale one must be refused, not acted on.
+    }
+  }
+  event ReturnReminderRaised is {
+    rentalId: RentalId with {
+      briefly "Subject"
+      described as {
+        |What the reminder concerns.
+      }
+    }
+    scheduledFor: TimeStamp with {
+      briefly "Scheduled for"
+      described as {
+        |The instant the reminder was scheduled against.
+      }
+    }
+  } with {
+    briefly "A return reminder is due and still warranted"
+    described as {
+      |Raised only when the scheduled message survived the staleness check, so
+      |anything translating it may send without deciding again.
     }
   }
   command CancelRental is {
@@ -815,6 +856,16 @@ entity Rental as flow is {
     }
     on rentalCreated: event RentalCreated is {
       do "apply RentalCreated to the rental so it can be persisted and replayed"
+    }
+    on due: command ReturnReminderDue is {
+      when prompt("the rental is still out with the return time this message was scheduled against, and was not since extended again, checked in or cancelled") then
+        tell event ReturnReminderRaised(rentalId = due.rentalId, scheduledFor = due.scheduledFor) to entity RentalContext.Rental
+      else
+        error "The subject was already resolved; this scheduled reminder is stale"
+      end
+    }
+    on raised: event ReturnReminderRaised is {
+      do "apply ReturnReminderRaised to the rental so it can be persisted and replayed"
     }
     on rentalExtended: event RentalExtended is {
       do "apply RentalExtended to the rental so it can be persisted and replayed"

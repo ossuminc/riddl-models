@@ -1,7 +1,7 @@
 // Engagement Management - Engagement Entity
 entity Engagement as flow is {
   type EngagementCommand is one of {
-    Engagement.CreateEngagement or Engagement.UpdateEngagement or Engagement.ApproveEngagement or Engagement.StartEngagement or Engagement.AssignTeamMember or Engagement.RemoveTeamMember or Engagement.AddDeliverable or Engagement.UpdateDeliverableStatus or Engagement.AddMilestone or Engagement.CompleteMilestone or Engagement.RecordTime or Engagement.ApproveTimeEntry or Engagement.PutOnHold or Engagement.ResumeEngagement or Engagement.CompleteEngagement
+    Engagement.CreateEngagement or Engagement.UpdateEngagement or Engagement.ApproveEngagement or Engagement.StartEngagement or Engagement.AssignTeamMember or Engagement.RemoveTeamMember or Engagement.AddDeliverable or Engagement.UpdateDeliverableStatus or Engagement.AddMilestone or Engagement.CompleteMilestone or Engagement.RecordTime or Engagement.ApproveTimeEntry or Engagement.PutOnHold or Engagement.ResumeEngagement or Engagement.CompleteEngagement or Engagement.MilestoneReminderDue
   } with {
     briefly "Engagement command alternation"
     described as {
@@ -308,6 +308,47 @@ entity Engagement as flow is {
     briefly "Resume engagement"
     described as {
       |Resumes held engagement.
+    }
+  }
+  command MilestoneReminderDue is {
+    engagementId: EngagementId with {
+      briefly "Subject"
+      described as {
+        |What this scheduled message concerns.
+      }
+    }
+    scheduledFor: TimeStamp with {
+      briefly "Scheduled for"
+      described as {
+        |The instant this message was scheduled against.
+      }
+    }
+  } with {
+    briefly "A scheduled milestone reminder has come due"
+    described as {
+      |Scheduled to the entity itself and delivered when the instant arrives.
+      |It is RECONSIDERED on arrival rather than trusted, because nothing can
+      |cancel a scheduled message: a stale one must be refused, not acted on.
+    }
+  }
+  event MilestoneReminderRaised is {
+    engagementId: EngagementId with {
+      briefly "Subject"
+      described as {
+        |What the reminder concerns.
+      }
+    }
+    scheduledFor: TimeStamp with {
+      briefly "Scheduled for"
+      described as {
+        |The instant the reminder was scheduled against.
+      }
+    }
+  } with {
+    briefly "A milestone reminder is due and still warranted"
+    described as {
+      |Raised only when the scheduled message survived the staleness check, so
+      |anything translating it may send without deciding again.
     }
   }
   command CompleteEngagement is {
@@ -994,6 +1035,16 @@ entity Engagement as flow is {
     }
     on engagementUpdated: event EngagementUpdated is {
       do "apply EngagementUpdated to the engagement so it can be persisted and replayed"
+    }
+    on due: command MilestoneReminderDue is {
+      when prompt("the milestone this message was scheduled against is still outstanding, and was not since completed, and the engagement was not put on hold or completed") then
+        tell event MilestoneReminderRaised(engagementId = due.engagementId, scheduledFor = due.scheduledFor) to entity EngagementContext.Engagement
+      else
+        error "The subject was already resolved; this scheduled reminder is stale"
+      end
+    }
+    on raised: event MilestoneReminderRaised is {
+      do "apply MilestoneReminderRaised to the engagement so it can be persisted and replayed"
     }
     on milestoneAdded: event MilestoneAdded is {
       do "apply MilestoneAdded to the engagement so it can be persisted and replayed"
