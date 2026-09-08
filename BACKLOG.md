@@ -218,6 +218,26 @@ creates the commands it forwards. "Every notification command in the corpus
 has a sender" was measured over a narrower keyword set than this census
 uses. **Re-measure the notification cluster before treating it as done.**
 
+### Inventory / stock — DONE 2026-09-08 (23 pairs, 43 commands)
+
+> **An inventory command fires on the event that changes the CLAIM on stock,
+> or the stock itself.** Reserve where something commits to needing it,
+> release where that commitment ends unused, consume/issue where it leaves,
+> receive/restock where it arrives.
+
+The same shape as the payment rule — create, discharge, release — applied to
+goods rather than money, and the corpus already models the four phases
+(`FabricReserved`/`FabricConsumed`, `PartsReserved`/`PartsConsumed`/
+`PartsReleased`). Issue fires where the work STARTS, because that is where
+stock physically moves; consume where the material is irreversibly used.
+
+**BASENAMES ARE NOT UNIQUE IN THIS CORPUS**, and it cost two wrong models
+before validation caught it: `property-management` exists under BOTH
+`construction/real-estate` and `hospitality/lodging`, and
+`inventory-management` is under `logistics/warehousing`, not
+`commerce/retail`. `find -name <basename> | head -1` picked the wrong one and
+its events were read. **Resolve a model by the census's own path.**
+
 ### Remaining, in order
 
 payment/billing (41 pairs), compliance/regulatory (35), document/storage (29),
