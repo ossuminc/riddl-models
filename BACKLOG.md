@@ -269,6 +269,23 @@ not the moment someone asks for the file — `TermSheetIssued` for a signature
 request, `EngagementCancelled` for an archive (a closed file must be RETAINED,
 not discarded), `StageCompleted` for an artifact upload.
 
+### Identity / verification — DONE 2026-09-08 (25 of 26 pairs)
+
+> **A VERIFICATION command fires on the event that first makes the claim
+> needing proof. A PROVISIONING command fires on the event that creates the
+> party or account needing it.**
+
+Verification keys on the moment an assertion ENTERS the model, not a later
+gate — `SubcontractorRegistered`, `ApplicationSubmitted`, `InsuranceAdded`,
+`PaymentMethodAdded`. Two placements worth keeping: credentialing checks on
+`ApplicationCreated` because the check is a precondition of the CREDENTIAL
+rather than of the application, and credit-decisioning on
+`ApplicationEvaluationStarted` because nothing may be decided about an
+unverified applicant.
+
+**Not done, 1 of 26:** licensing `[CredentialVerificationService]`
+(`VerifyEducation`, `VerifyEmployment`, `VerifyOtherStateLicense`).
+
 ### Remaining, in order
 
 payment/billing (41 pairs), compliance/regulatory (35), document/storage (29),
