@@ -4,6 +4,69 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
+**Branch `main`. Pin `2.1.1-16-9ef209d1`, UNPUBLISHED, `riddlcPath` override
+ON** (`build.sbt:28,89`); `../bin/riddlc` IS the build's binary on this pin,
+so `scripts/` defaults are correct — that stops being true the moment the pin
+returns to a published tag. Verified this session with `riddlc info`; commit
+`9ef209d18`. **Take the override off at the first published tag carrying it.**
+
+Corpus: **189 models, 0 findings at every severity**, sweep canaried (inject
+an unused type, confirm it is reported, revert). `checkAll` green, BAST
+round-trip 189/189.
+
+### In flight
+
+**The adaptor-wiring cluster campaign — see BACKLOG #33**, which carries the
+method, the eight traps and the remaining ~1300 pairs. Short version: the
+notification cluster (72 pairs) is COMPLETE and payment/billing is 12 of 53,
+on the rule *a payment command is driven by the event that creates or
+discharges the financial obligation*.
+
+`on quiescence` and `send ... at` landed in this pin and are in use: nine
+dead behaviours now fire (BACKLOG #30), ticketing schedules its own hold
+expiry, and learning-management gained a `LearnerEnrollment` aggregate so a
+per-learner clock has something to attach to.
+
+### What a fresh session would get wrong
+
+- **`sbt v` is the LENIENT gate.** 187 of 189 `.conf` files suppress style and
+  usage warnings. `scripts/collect-warnings.py` is the real check — it calls
+  riddlc directly, with `--provide-tips`, at every severity. A green build and
+  a clean corpus are different claims.
+- **A zero from an unchecked harness is worth nothing.** Seven parsers in
+  `scripts/` have silently broken on a riddlc format change before, each
+  reporting nothing on a corpus with a real defect in it. Canary after ANY
+  bump.
+- **riddlc has no opinion about an unsent message.** "Declared, handled and
+  reachable" is not "driven"; that gap is the entire campaign, and the corpus
+  sat at 0 findings throughout it.
+- **Do not parse RIDDL with regex** — use `riddlc dump --json` / `find`. Both
+  helper scripts this session were wrong in ways only the validator caught.
+
+### Certainty
+
+Verified this session: the pin and binary identity, the 0-finding sweep,
+`checkAll`, the round trip, 189 models, and every per-model count quoted in
+the last 38 commits. Assumed: nothing load-bearing — where a claim could not
+be checked it was recorded as open in BACKLOG rather than asserted.
+
+### Pointers
+
+Open work: **BACKLOG.md** (#33 campaign, #30 temporal remainder, #34 Course
+roster). Durable facts: **CLAUDE.md** — A103, "Which events notify", the
+implied-port rule. Session narrative: below.
+
+`task/2026-09-05-do-prose-must-be-an-instruction.md` is the only file in
+`task/`, and it is **in progress, not untriaged** — BACKLOG #33 is what it
+became. It awaits triage in the new session all the same.
+
+**Run `/ossuminc-skills:check-tasks` in the new session.**
+
+---
+
+## Session detail, to 2026-09-08 (was HANDOFF)
+
+
 ### WHERE THIS IS — pause LIFTED, cluster work resuming, 2026-09-07
 
 Pinned **`2.1.1-16-9ef209d1`**, unpublished, override ON. `on quiescence`

@@ -5,6 +5,100 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
+## 33. Adaptor-wiring cluster campaign — IN FLIGHT, ~1300 pairs to go
+
+**This is the campaign that `task/2026-09-05-do-prose-must-be-an-instruction.md`
+turned into.** That task asked for real translations in place of
+`do "the model sends ..."` prose; measuring it showed 1431 of 1469 adaptors
+were unwired placeholders, so the work is BUILDING INTEGRATIONS, not
+rewriting sentences.
+
+### Method that works, and is not obvious
+
+Cluster pairs by the FAR context's command semantics, then take ONE decision
+at a time to Reid with RIDDL context and options that do the work — never
+options that defer it. Extrapolate his ruling to **identical**, not merely
+similar, cases. Wiring by mechanical name/field matching was tried and
+produces confident wrong answers.
+
+### Done
+
+**Notification cluster (72 pairs) — COMPLETE.** Every notification command in
+the corpus has a sender. Five decisions: confirmations, alerts, reminders
+(14), status-updates (51 pairs / 215 clauses), and the tail.
+
+**Payment/billing — 12 of 53 pairs.** Rule: *a payment command is driven by
+the event that CREATES or DISCHARGES the financial obligation.* Authorize
+where the customer becomes committed, capture where the amount is final,
+refund where the commitment is released; nothing on intermediate steps.
+
+### Remaining, in order
+
+payment/billing (41 pairs), compliance/regulatory (35), document/storage (29),
+inventory/stock (27), risk/fraud (27), scheduling/calendar (24),
+geo/weather (22), telemetry/device (19), pricing/rating (16), crm (16),
+erp/mes/plm (15), identity/auth (15), shipping/logistics (15),
+vendor/supplier (14), analytics/reporting (12), lab/clinical (9),
+hr/workforce (5), plus a 324-pair `other` long tail.
+
+### Traps, every one of which has already bitten
+
+- **A handler dispatches on message TYPE, so an event gets ONE clause.** A
+  second message to a second audience rides the existing clause as another
+  `let`/`send` pair. Adding a duplicate clause is
+  `[error] [name-duplicate-content]` (hit in returns-processing, licensing,
+  airline-reservations). **List a target adaptor's existing clauses before
+  adding.**
+- **A channel typed with a SINGLE command admits one message.** Adding a
+  second means retyping every portlet along it — external inlet, entity
+  outlet, context inlet, adaptor ports — not just the emitter (lab-orders).
+- **Scope any "already handled?" search to the target adaptor's own block.**
+  Searching the whole file finds clauses in OTHER adaptors, and appending a
+  send there publishes on an outlet its owner does not own
+  (`stmt-outlet-not-owned`, six models reverted 2026-09-08).
+- **Resolve a far command by the adaptor's TARGET CONTEXT, never by name.**
+  `ProcessRefund` exists on both `Return` (Return.riddl:206) and
+  `PaymentGateway` (external-contexts.riddl:110) in returns-processing.
+- **Qualify alternation members** (`PaymentGateway.ProcessRefund`) wherever
+  the bare name could collide — otherwise `ref-ambiguous`.
+- **Name bindings `notice`, never for their meaning.** `approved`, `paid`,
+  `feedback` each collided with existing definitions
+  (`name-shadows-definition`, five times).
+- **A single-command service takes no alternation** — `one of` with one
+  member is `[deprecated] [single-alternation]`.
+- **The insert path leaves the placeholder behind**; the setup path replaces
+  it. Five adaptors ended up with live clauses AND dead
+  `do "the model sends ..."` beside them, at 0 findings, because riddlc has
+  no opinion about a clause that does nothing. Delete it explicitly.
+
+### Tooling
+
+`scratchpad/apply3.py` (setup) and `scratchpad/wire2.py` (`wire_set`, the
+clause-level helper) are SESSION-LOCAL and will not survive. Both are ~100
+lines and were rewritten twice; rebuilding them from the traps above is
+cheap, but do not assume they exist.
+
+---
+
+## 34. Course still holds a roster that LearnerEnrollment now owns
+
+Left deliberately when #32 closed (commit a9bdd684).
+`education/academic/learning-management/Course.riddl:773` has
+`enrollments: Enrollment+` inside `PublishedCourseData`, and `types.riddl`
+still declares the `Enrollment` record and a plain-UUID `EnrollmentId`
+beside the new `LearnerEnrollmentId`.
+
+That duplicates what the `LearnerEnrollment` entity now owns. The right end
+state is for the course to stop holding learner state, but removing the
+field touches Course's records, its handler and the analytics projection —
+a separate change from introducing the aggregate, and not bundled with it.
+
+**Verified, not assumed:** `LearnerEnrollment` validates and the nudge is
+wired (591 definitions, 0/0). The duplication is a modelling smell, not a
+defect riddlc reports.
+
+---
+
 ## 30. Temporal semantics — the corpus cannot express a scheduled or
 ## absence-driven action
 
