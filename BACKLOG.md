@@ -115,9 +115,53 @@ scheduled message". Every reminder case has a cancellation path.
   only then tells the service. The CM's stated idiom, and the reason the
   cycle rule was relaxed. Roughly 3x the work.
 
-Recommended: Option 2 for the reminders, Group A first overall since it
-needs no new field types and unblocks the largest genuinely-dead behaviour
-in the corpus. **Not started — awaiting Reid.**
+### Progress, 2026-09-07
+
+**Group A is DONE** (commit f7f38055) — all 9 wired with `on quiescence`,
+each telling the EXISTING command rather than duplicating its body, so the
+command becomes driven, which was the actual defect. Verified with
+`dump --json` that all 9 now resolve to a sender. observability needed two
+handlers in `FiringState` with `become` between them, because escalate and
+expire are both silence-caused in the same state and only ONE quiescence
+clause is allowed per handler.
+
+**Group B pilot is DONE** — ticketing, the only case with a `TimeStamp`.
+Two things were learned the hard way and are worth keeping:
+
+- **`send ... to inlet` is DEPRECATED** (`[deprecated] [send-to-inlet]`).
+  Schedule-to-yourself must go through an OUTLET. Scheduling from the
+  entity to its own inlet therefore does not work; scheduling from the
+  CONTEXT onto its own command-stream outlet does, needs no new ports, and
+  the existing connector delivers it to the entity.
+- **Guarding the effect breaks the response obligation.** Wrapping the
+  `tell` in a bare `when ... then ... end` drew
+  `[completeness] [handler-command-no-response]`. The fix is an `else` that
+  **refuses**: `error "The reservation was already resolved; this scheduled
+  expiry is stale"`. That is also the honest model — a stale scheduled
+  command should be refused, not silently ignored — and it is exactly the
+  "receiver must tolerate a stale scheduled message" the CM requires.
+
+### STILL OPEN — needs a ruling
+
+**The three Date-typed Group B cases** (contract-lifecycle,
+treaty-management, policy-lifecycle) and the **7 Date-typed reminders**.
+`at` rejects a `Date` (`stmt-send-at-not-instant`, verified). Two ways
+forward, and this is a domain judgement rather than a mechanical one:
+
+1. **Widen the field** (`Date` -> `DateTime`) where the domain really does
+   have a time of day. Removes duplication, but changes the business type
+   on insurance, legal and licensing models.
+2. **Add a separate instant** (`expiresAt: TimeStamp`) beside the business
+   `Date`, filled by a prompt. Non-invasive, but carries the same fact
+   twice.
+
+**Deliberately not done unasked** — changing a domain field's type across
+insurance and legal models is a modelling decision, not a migration.
+
+**Also open:** `OrderExpired` (order-management) — the model does not say
+whether a resting order dies at end-of-day (`send ... at`) or from
+inactivity (`on quiescence`). And Option 1 vs 2 for rewriting the 13 wired
+reminders, which the ticketing pilot now gives a proven shape for.
 
 ### What to revisit when the capability arrives
 
