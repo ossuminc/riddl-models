@@ -734,6 +734,16 @@ boundary surface for that ordered pair and direction.** This REVERSES the older
 - **Ports are implied.** A port-less adaptor counts as one inlet and one outlet,
   so its shape is **`flow`** — `as source` / `as merge` on an adaptor is an
   **Error**. Declaring a port overrides that side.
+- **An implied port carries exactly ONE TYPE, so a multi-type adaptor MUST
+  declare an outlet** (`adaptor-implied-outlet-ambiguous`, an **Error**).
+  riddlc's own suggestion is to "declare an outlet typed with an alternation of
+  those types, or split the translation across adaptors, one type each". A
+  declared outlet on an adaptor is therefore **not** pre-A103 residue to be
+  cleaned up — it is required the moment the adaptor translates a second
+  message, and a declared port in turn requires the `as flow` ascription
+  (`stream-ports-without-shape`). Measured 2026-09-07: 17 adaptors carry more
+  than one type and all 17 need the port. Do not "simplify" these away; the
+  attempt is recorded in `task/done/2026-09-06-adaptors-lose-their-plumbing.md`.
 - **An adaptor's implied port is nameable as a CONNECTOR endpoint**:
   `from outlet Sales.ToBilling`. It is **not** nameable in a `send`; a
   `send ... to inlet <Adaptor>` does not resolve. If a context handler must

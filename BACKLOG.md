@@ -145,7 +145,7 @@ CLAUDE.md.
 
 ---
 
-## 31. Adaptor plumbing cleanup — the two criteria riddlc contradicts
+## ~~31. Adaptor plumbing cleanup~~ — RESOLVED 2026-09-07: the criterion was wrong
 
 `task/2026-09-06-adaptors-lose-their-plumbing.md` is **open with its
 error-level work DONE**. Corpus is at 0 findings; three of its five
@@ -187,20 +187,29 @@ IMPLIED and the `tell` publishes on it, so no port need be declared and no
 ownership rule is engaged." Had the wirer done that, these 23 would not
 exist and the cleanup surface would have shrunk rather than grown.
 
-### The ruling wanted
+### RESOLVED — settled by experiment, not by ruling
 
-1. **Narrow the criterion** to "no adaptor carries a shape ascription
-   unless it declares a port", accept the 59, and close the task; **or**
-2. **File upstream** that `stream-ports-without-shape` firing on an adaptor
-   is wrong now that A103 makes the shape derivable either way; **or**
-3. **Rework the wired adaptors to implied ports + `tell`**, which would
-   shrink all three counts at once but touches every adaptor wired in
-   decisions 1-4.
+Converting one wired adaptor to the requested shape produced
+**`[error] [adaptor-implied-outlet-ambiguous]`**: *"tells 2 distinct types
+through its implied outlet; an implied port carries one type. Suggestion:
+declare an outlet typed with an alternation of those types."*
 
-Option 3 is the only one that reduces the numbers, and it is also the one
-that makes future cluster work cheaper — every remaining cluster would
-otherwise add more of the same. **Decide this before the next cluster
-batch**, not after.
+**An implied port carries ONE type.** The declared outlet is the sanctioned
+shape for a multi-type adaptor, not residue — and riddlc suggests it
+unprompted. 17 adaptors carry >1 type and all 17 require the port; 31 carry
+exactly one and are deliberately left alone, because the cluster campaign
+turns single-type adaptors into multi-type ones as it proceeds.
+
+**Criterion narrowed to "no adaptor carries a shape ascription unless it
+declares a port", under which the corpus already complies.** Nothing to file
+upstream: `stream-ports-without-shape` on an adaptor is correct.
+
+The 36 -> 59 growth was misread as our mess. It was the corpus becoming more
+correct — those adaptors gained a second translation, which is exactly when
+the declared outlet becomes mandatory.
+
+Task closed to `task/done/2026-09-06-adaptors-lose-their-plumbing.md`.
+Durable fact recorded in CLAUDE.md's A103 section.
 
 ---
 
