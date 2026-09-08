@@ -238,6 +238,24 @@ before validation caught it: `property-management` exists under BOTH
 `commerce/retail`. `find -name <basename> | head -1` picked the wrong one and
 its events were read. **Resolve a model by the census's own path.**
 
+### Scheduling / dispatch — DONE 2026-09-08 (23 of 24 pairs)
+
+> **A scheduling or dispatch command fires on the event that creates, changes
+> or ends the NEED for a slot, a person, or a vehicle.** Book/assign where the
+> need arises, release/cancel where it ends, update where what is needed
+> changes.
+
+**Not done, 1 of 24:** equipment-maintenance `[ProductionSchedule]`
+(`RequestMaintenanceWindow`, `CancelMaintenanceWindow`,
+`NotifyMaintenanceComplete`). That model has only a `from context
+ProductionSchedule` adaptor, so there is no outbound one to insert into — it
+needs a `To` adaptor built from scratch rather than a clause added.
+
+**The applier had an ACRONYM bug** that would have hit every later cluster:
+`_prose("RecalculateETA")` returned `"recalculate e t a"`, because in
+`[A-Z][a-z0-9]*|[A-Z]+(?![a-z])` the first branch matches a single capital
+with an empty tail. **The acronym branch must come first.**
+
 ### Remaining, in order
 
 payment/billing (41 pairs), compliance/regulatory (35), document/storage (29),
