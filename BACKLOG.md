@@ -47,9 +47,77 @@ that "schedule this for later, do not send it now" lives in a `prompt` STRING
 rather than in structure — the same prose-trust problem as
 `task/2026-09-05-do-prose-must-be-an-instruction.md`, one level up.
 
-**Reid took this to riddl 2026-09-07 and PAUSED the adaptor-wiring campaign
-until it lands.** The remaining clusters would otherwise be built on a
-workaround that is about to be replaced.
+**LANDED 2026-09-07 in riddlc `2.1.1-16-9ef209d1`. The pause is lifted.**
+Both constructs verified against the binary, not assumed:
+
+| probe | result |
+|---|---|
+| `send ... at <TimeStamp field>` | 0 errors |
+| `send ... at <Date field>` | `[error] [stmt-send-at-not-instant]` |
+| `on quiescence "15 minutes" is { yield ... }` in a state handler | 0 errors |
+| `on quiescence "a while"` | `[error] [value-vague-duration]` |
+| `on quiescence "0 minutes"` | `[error] [value-non-positive-duration]` |
+
+### The census, measured 2026-09-07 — and a correction to our own number
+
+We reported "18 of 18 time-caused facts cannot fire". **Three of those are
+owned by EXTERNAL contexts** — `LegalService.CollectionsEscalated`,
+`IdentityService.SessionExpired`, `BillingService.InvoiceOverdue`. An
+external system's timeout is its business; we receive those events and
+never raise them. **The real population is 15**, and the corpus itself
+says which construct each wants, because the deadline-driven ones carry an
+expiry field and the silence-driven ones carry none.
+
+**Group A — `on quiescence`, silence is the cause (9).** shopping-cart
+`CartAbandoned`; attribution `PathExpired`; observability `AlertExpired`
+and `AlertEscalated`; incident-management, network-operations,
+trouble-ticketing, revenue-assurance, guest-services (all
+escalate-if-not-acknowledged). All nine sit on entities with per-state
+handlers, which is exactly the CM's arming scope, and their commands
+(`ExpireAlert`, `EscalateTicket`, ...) are already fully implemented and
+merely unsendable.
+
+**Group B — `send ... at`, a deadline is the cause (4).**
+
+| model | instant | type | usable as `at`? |
+|---|---|---|---|
+| ticketing | `ActiveStateData.currentReservedUntil` | `TimeStamp?` | **yes** |
+| contract-lifecycle | `ContractInfo.expirationDate` | `Date?` | no |
+| treaty-management | `DateRange.expirationDate` | `Date` | no |
+| policy-lifecycle | `reinstatementDeadline` | `Date` | no |
+
+**Group C — neither (2).** `WellAbandoned` is a deliberate human act and
+should stay a command. `OrderExpired` carries no expiry field anywhere, so
+the model does not say whether a trading order dies at end-of-day or from
+inactivity — that needs a ruling.
+
+### The obstacle: `Date` is not an instant
+
+Seven of the 13 wired reminders also carry `Date` deadlines (licensing,
+credentialing, engagement, fleet, compliance, competency,
+event-registration); six carry `TimeStamp`. With Group B, roughly **half of
+everything that wants `at` cannot currently supply an operand.** Ways out:
+widen the field where the domain has a time of day; add a separate
+`remindAt: TimeStamp` filled by a prompt (no arithmetic needed, per #21);
+or use quiescence where silence is the honest predicate anyway.
+
+### The design question still open
+
+The CM provides **no cancellation construct** — the idiom is *schedule to
+yourself and decide at fire time*, and a receiver "must tolerate a stale
+scheduled message". Every reminder case has a cancellation path.
+
+- **Option 1, direct:** `send <ServiceCommand> to <adaptor outlet> at
+  remindAt`. Minimal change to the 13, but a cancelled booking still gets
+  reminded and nothing in the model says otherwise.
+- **Option 2, schedule to self:** schedule a `ReminderDue` event to the
+  entity's own inlet at `remindAt`; the receiving clause consults state and
+  only then tells the service. The CM's stated idiom, and the reason the
+  cycle rule was relaxed. Roughly 3x the work.
+
+Recommended: Option 2 for the reminders, Group A first overall since it
+needs no new field types and unblocks the largest genuinely-dead behaviour
+in the corpus. **Not started — awaiting Reid.**
 
 ### What to revisit when the capability arrives
 
@@ -74,6 +142,65 @@ If the capability is declined, the deadline handoff stands and this item
 closes with that recorded as the deliberate answer — items 1 and 2 then need
 no action, and item 3 becomes a permanent known limitation worth stating in
 CLAUDE.md.
+
+---
+
+## 31. Adaptor plumbing cleanup — the two criteria riddlc contradicts
+
+`task/2026-09-06-adaptors-lose-their-plumbing.md` is **open with its
+error-level work DONE**. Corpus is at 0 findings; three of its five
+acceptance criteria are met and recorded in that file's Results section.
+What remains is **cosmetic and needs Reid's ruling**, not more migration.
+
+### The two criteria that cannot both hold
+
+- "No adaptor carries a shape ascription"
+- "The previously-wired adaptors have no declared ports"
+
+They are the same criterion, and riddlc refuses it. Measured, reverted:
+
+1. Removing an adaptor's `as flow` while it still declares a port gives
+   `stream-ports-without-shape` — **only a PORT-LESS adaptor is exempt**.
+2. So the ports must go too. But removing all of one adaptor's ports gave
+   `stream-inlet-cardinality`: two connectors then land on the single
+   **implied** inlet, and an implied port has cardinality one.
+
+**So an adaptor that genuinely fans in must keep declared inlets, and any
+declared port forces the ascription.** Both criteria can only hold for
+adaptors with at most one connector per side.
+
+### Re-measured 2026-09-07 against `2.1.1-16-9ef209d1` — the counts GREW
+
+| | task, 2026-09-06 | now |
+|---|---:|---:|
+| adaptors with a shape ascription | 36 | **59** |
+| adaptor-declared ports | 48 | **60** |
+
+**The growth is ours.** `git grep` across this session's commits: 36 at
+`f0809812`, 58 at `c5d741a7`, 59 at `a51e88f8` — the notification-cluster
+wiring of decisions 1-4 added 23. The wirer declares an outlet and `send`s
+to it, which is legal and validates at 0.
+
+**But CLAUDE.md's own A103 section prefers the opposite for adaptors:**
+"prefer `tell ... to context X` over `send` — the adaptor's outlet is
+IMPLIED and the `tell` publishes on it, so no port need be declared and no
+ownership rule is engaged." Had the wirer done that, these 23 would not
+exist and the cleanup surface would have shrunk rather than grown.
+
+### The ruling wanted
+
+1. **Narrow the criterion** to "no adaptor carries a shape ascription
+   unless it declares a port", accept the 59, and close the task; **or**
+2. **File upstream** that `stream-ports-without-shape` firing on an adaptor
+   is wrong now that A103 makes the shape derivable either way; **or**
+3. **Rework the wired adaptors to implied ports + `tell`**, which would
+   shrink all three counts at once but touches every adaptor wired in
+   decisions 1-4.
+
+Option 3 is the only one that reduces the numbers, and it is also the one
+that makes future cluster work cheaper — every remaining cluster would
+otherwise add more of the same. **Decide this before the next cluster
+batch**, not after.
 
 ---
 

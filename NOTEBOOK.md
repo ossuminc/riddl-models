@@ -4,40 +4,39 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-### WHERE THIS STOPPED — PAUSED on riddl, 2026-09-07
+### WHERE THIS IS — pause LIFTED, cluster work resuming, 2026-09-07
 
-The adaptor-wiring campaign is **deliberately paused**, not stalled. Reid's
-call: the remaining clusters would be built on a workaround that riddl is
-about to replace.
+Pinned **`2.1.1-16-9ef209d1`**, unpublished, override ON. `on quiescence`
+and `send ... at` have landed; the corpus took **no fallout** (189 models,
+0 findings, harness canaried). CM 8.1's cycle rule was re-ruled NARROWER
+the same day, which is why nothing broke — it now forbids an infinite
+message loop rather than any per-type ring, making the schedule-to-yourself
+idiom legal.
 
-**Waiting on:** `../riddl/task/2026-09-07-temporal-semantics-in-the-model.md`
-— `send ... at <timestamp>` and an `on timeout` / `on quiescence` clause.
-Reid has taken it to riddl. Tracked here as **BACKLOG #30**, which lists what
-to revisit when it lands.
+**Two tracked decisions are waiting on Reid, both in BACKLOG:**
 
-**Done and committed** (notification cluster, decisions 1-4): confirmations,
-alerts, and all 14 reminder integrations except one. 13 reminders use the
-**deadline handoff** — trigger on the event that establishes the schedule,
-hand the deadline to whoever owns delivery. That is the workaround; its cost
-is that "schedule this, do not send it now" lives in a `prompt` STRING.
+- **#30** — the temporal census. 15 (not 18 — three are external-context
+  events that were never ours) split into 9 quiescence candidates, 4
+  deadline candidates, 2 neither. Blocked on: Option 1 vs 2 for the 13
+  wired reminders, and what to do about `Date` deadlines, which `at`
+  rejects (`stmt-send-at-not-instant`, verified).
+- **#31** — the plumbing task's two cosmetic criteria, which riddlc
+  contradicts. **Decide this BEFORE the next cluster batch:** the
+  ascription count went 36 -> 59 during decisions 1-4 because the wirer
+  declares an outlet and `send`s, where A103 prefers `tell ... to context X`
+  on the IMPLIED port. Every further cluster adds more of the same.
 
-**Not started** (do not begin these until the language question resolves):
-status-update (12), invitation/request (5), generic-send (6), notification
-"other" (45), then payment/billing (63), compliance (35), document (29),
-inventory (27), risk/fraud (27), scheduling (24), and a 324-pair long tail.
-
-**The one deliberate omission:** learning-management's `SendProgressReminder`
-has no deadline, only free `message` text. It is an inactivity nudge with no
-possible triggering event — exactly the `on quiescence` case. Unwired on
-purpose.
+**Cluster campaign — resuming.** Notification decisions 1-4 are done
+(confirmations, alerts, 13 of 14 reminders). Next up: status-update (12),
+then invitation/request (5), generic-send (6), notification "other" (45),
+then payment/billing (63), compliance (35), document (29), inventory (27),
+risk/fraud (27), scheduling (24) and a 324-pair long tail.
 
 **Run `/ossuminc-skills:check-tasks` in a new session** — triage is the
 driver's call, and this handoff never runs it.
 
-**This HANDOFF has grown to ~400 lines and wants pruning** (see
-`/ossuminc-skills:prune-notebook`). It was not pruned this session because
-nobody asked and the detail below is still load-bearing.
-
+**This HANDOFF is ~400 lines and wants pruning**
+(`/ossuminc-skills:prune-notebook`); the detail below is still load-bearing.
 
 ### 97% of the corpus's adaptors are UNWIRED — the finding that matters
 
