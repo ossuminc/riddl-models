@@ -409,30 +409,49 @@ Two things were learned the hard way and are worth keeping:
   command should be refused, not silently ignored — and it is exactly the
   "receiver must tolerate a stale scheduled message" the CM requires.
 
-### RULED 2026-09-08 by Reid — widen, do not duplicate
+### RULED and APPLIED 2026-09-08 — widen the type, keep the domain name
 
-> "use a TimeStamp field, expiresAt which is widened by the model using
-> that type"
+**The section this replaces was STALE, and a ruling was recorded onto it
+before the tree was checked.** The three Group B cases were ALREADY widened
+in commit `8675b675`, under an earlier ruling of Reid's: *"a Date has no time
+of day, so turning one into an instant would need a static time-of-day rule
+the model never states. These fields were simply the wrong type."* That
+commit moved contract-lifecycle `expirationDate` (1 site), treaty-management
+`expirationDate` (5) and policy-lifecycle `gracePeriodEnd` +
+`reinstatementDeadline` (2) to **`DateTime`**, and treaty-management already
+schedules on it. **Verify a BACKLOG premise against the tree before writing
+a ruling onto it.**
 
-**Option 1. The deadline field becomes `TimeStamp` and is named
-`expiresAt`; the widening happens in each model that declares the type.**
-Option 2 (a parallel instant beside the business `Date`) is refused — it
-carries the same fact twice.
+Reid's ruling on the remainder, once the conflict was put to him:
 
-Population: the **three Date-typed Group B cases** (contract-lifecycle
-`ContractInfo.expirationDate`, treaty-management `DateRange.expirationDate`,
-policy-lifecycle `reinstatementDeadline`) and the **7 Date-typed reminders**
-(licensing, credentialing, engagement, fleet, compliance, competency,
-event-registration). `at` rejects a `Date` (`stmt-send-at-not-instant`,
-verified), which is what forces this.
+> "A TimeStamp is the natural temporal type to use for scheduling because it
+> is precise, a 64-bit value of milliseconds after the epoch. But a DateTime
+> can be converted to a Timestamp easily so using a DateTime isn't 'wrong'."
 
-**One judgement taken rather than asked:** `reinstatementDeadline` is not an
-expiry, so it keeps its domain name and only its TYPE widens. `expiresAt` is
-the name where the field genuinely names an expiry. Say so if that is wrong;
-it is a rename, not a redesign.
+**`TimeStamp`, each field keeping its own domain name.** `expiresAt` is
+refused as a rename: `dueDate` and `eventStart` are not expiries. The 8
+already-`DateTime` sites are deliberately LEFT — DateTime is not wrong, and
+converting them would re-open insurance and legal domain types for tidiness.
+The corpus therefore carries both spellings on purpose; **TimeStamp is the
+canonical one for anything new.**
 
-NOT YET APPLIED — this is the next unit of #30 work after the payment
-cluster batch in flight.
+**APPLIED — 15 sites across the 7 reminder models**, every occurrence of each
+name in its model because the field-overloading rule forbids one name
+carrying two types in a context, and optionality preserved (`Date?` ->
+`TimeStamp?` in compliance-reporting):
+
+| model | field | sites |
+|---|---|---:|
+| licensing | `expirationDate` | 3 |
+| credentialing | `expirationDate` | 2 |
+| engagement-management | `dueDate` | 3 |
+| fleet-management | `dueDate` | 1 |
+| compliance-reporting | `dueDate` (2 optional) | 3 |
+| competency-management | `dueDate` | 2 |
+| event-registration | `eventStart` | 1 |
+
+**Widening only made `send ... at` POSSIBLE; nothing was rewritten to use
+it.** That is the still-open work below.
 
 **Also open:** `OrderExpired` (order-management) — the model does not say
 whether a resting order dies at end-of-day (`send ... at`) or from
