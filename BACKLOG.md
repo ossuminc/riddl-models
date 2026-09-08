@@ -27,10 +27,45 @@ produces confident wrong answers.
 the corpus has a sender. Five decisions: confirmations, alerts, reminders
 (14), status-updates (51 pairs / 215 clauses), and the tail.
 
-**Payment/billing — 18 of 51 pairs.** Rule: *a payment command is driven by
+**Payment/billing — 33 pairs / 47 commands REMAIN** (measured 2026-09-08
+after batch 4; quote the remainder, not a fraction — pairs close partially,
+so "N of M done" cannot be reconciled across batches and an earlier line
+here claiming it was wrong). Rule: *a payment command is driven by
 the event that CREATES or DISCHARGES the financial obligation.* Authorize
 where the customer becomes committed, capture where the amount is final,
 refund where the commitment is released; nothing on intermediate steps.
+
+Batch 4, 2026-09-08 (7 models, 10 commands): digital-wallet
+`PaymentMade`->ProcessPayment; claims-adjudication
+`ClaimApproved`->IssuePayment; guest-services `ServiceCompleted`->PostCharge;
+client-accounting `InvoiceGenerated`->ProcessPayment; subscriber-management
+`ServiceActivated` and `PlanChanged`->AddCharges; customs-brokerage
+`EntrySubmitted`->SubmitPayment and `EntryLiquidated`->RequestRefund;
+billing-settlement `BillGenerated`->ProcessPayment and
+`BillDisputed`->IssueRefund.
+
+**Two of those were decided by MESSAGE SHAPE, not by the rule alone**, and
+that technique is worth reusing. billing-settlement's `IssueRefund` is
+invoice-scoped (`invoiceId`, amount, reason) and `BillDisputed` is the only
+event in the model carrying an `invoiceId` — `AccountClosed` has none, so it
+cannot key the message however plausible it sounds. customs-brokerage's
+`EntryLiquidated` is CBP's FINAL determination of duty, which is where an
+overpayment becomes refundable; `ProtestFiled` only contests and determines
+nothing.
+
+### Still deferred — the invoicing / provisioning sub-cluster
+
+`CreateInvoice`, `GenerateInvoice`, `SetupBilling`, `CreateBillingAccount`
+(~14 pairs). **An invoice is not a payment**: it STATES an obligation rather
+than creating or discharging one, so the rule above has nothing to say about
+when to raise one. `SetupBilling` and `CreateBillingAccount` are not about an
+obligation at all — they are account provisioning that belongs to whatever
+creates the customer relationship. Needs its own rule from Reid.
+
+subscriber-management is the visible edge of this: its `AddCharges` is wired,
+while `CreateBillingAccount` and the `GetAccountBalance` QUERY are left as
+placeholders in the same adaptor. That is deliberate, not an oversight —
+they are separate unwired commands, not orphans of this batch.
 
 Batch 3, 2026-09-08 (6 models, 11 commands): order-management
 `OrderPlaced`->ProcessPayment / `OrderCancelled`->RefundPayment; ticket-sales

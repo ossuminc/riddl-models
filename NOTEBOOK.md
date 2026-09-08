@@ -18,8 +18,10 @@ round-trip 189/189.
 
 **The adaptor-wiring cluster campaign — see BACKLOG #33**, which carries the
 method, the traps, the census recipe and the remaining pairs. Short version:
-payment/billing is **18 of 51**, on the rule *a payment command is driven by
-the event that creates or discharges the financial obligation*.
+payment/billing has **33 pairs / 47 commands left**, on the rule *a payment
+command is driven by the event that creates or discharges the financial
+obligation*. The invoicing/provisioning sub-cluster (~14 pairs) is
+deliberately NOT covered by that rule and needs its own.
 
 **The notification cluster is NOT complete, despite being recorded as such.**
 A census with a wider keyword set finds four unsent `MarketingService`
@@ -69,6 +71,31 @@ became. It awaits triage in the new session all the same.
 
 ## Session detail, to 2026-09-08 (was HANDOFF)
 
+
+### riddlc 2.1.1-22, and payment batch 4
+
+Pin moved to **`2.1.1-22-a62e5c48`**, still unpublished, override still on.
+Two of the six commits are functional: `msg-tell-crosses-unrelated-domains`
+(a re-diagnosis on the same trigger, so zero new error surface) and the
+confirmation that **`tell` and `send` are semantically identical** — which
+matters here because A103's preference for `tell ... to context X` is about
+PORTS, not semantics.
+
+**The round trip failed 189 of 189 and it was a PATH.** `RIDDLC=../bin/riddlc`
+— correct for the python scripts, which resolve a relative value against the
+repository root — breaks `verify-bast-roundtrip.sh`, whose bastify step runs
+inside `( cd "$src" && "$RIDDLC" ... )`. Its unbastify step runs from the
+root and kept working, which is why only step 1 failed and the output read
+as a corpus-wide catastrophe. Its own default is already absolute: run it
+with no override. Recorded in CLAUDE.md, which had not distinguished the two
+kinds of script.
+
+Batch 4 wired 7 models / 9 commands / 11 clauses. **Two triggers were chosen
+by MESSAGE SHAPE rather than by the obligation rule**, which is a technique
+worth keeping: billing-settlement's `IssueRefund` is invoice-scoped and
+`BillDisputed` is the only event carrying an `invoiceId` to key it by, so
+`AccountClosed` was excluded by the type rather than by taste. The census
+reconciled to the command: 758 unsent before, 749 after.
 
 ### Payment cluster batch 3, and a census that was wrong in a familiar way
 
