@@ -185,7 +185,31 @@ commands remained before this batch, against BACKLOG's "41", because
 `payout|disburs|dues|premium|remit` were not in the earlier cut. Same
 phenomenon as status-updates ("51 pairs, not the 12 previously estimated").
 
-### The notification cluster is NOT as complete as recorded
+### The notification cluster — REOPENED and FINISHED 2026-09-08
+
+Recorded as "every notification command in the corpus has a sender". It was
+not: 12 pairs / 24 commands were unsent, now wired under the existing "which
+events notify" rule.
+
+**Classify a cluster by the TARGET CONTEXT, not the command name.** The first
+re-measure used `^send` and reported 66 commands / 49 pairs — but had swept in
+`SendBidRequest` to an RTB exchange, `SendControlCommand` to SCADA,
+`SendToAnalyzer` to a lab instrument and `SendDisconnectCommand` to a meter
+head-end. Counting comms services instead (notification, email, sms,
+messaging, portal, marketing, reminder, alerting) gives 14 pairs, of which 2
+are regulatory-portal filings belonging to compliance. Same lesson as
+"resolve a far command by the adaptor's TARGET CONTEXT, never by name",
+applied to census classification rather than to resolution.
+
+`ticket-sales` shows why the cluster was not done: its `MarketingAdapter`
+handled the COMMANDS, so it was connected to the external context and nothing
+ever created a message for it to carry.
+
+**Left unwired, with cause:** case-management `SendSecureMessage` — no event
+represents composing a message to a client, and `NoteAdded` is the internal
+bookkeeping the notify rule excludes.
+
+### The superseded claim
 
 The census finds `MarketingService.AnnounceEvent`, `NotifySubscribers`,
 `SendConfirmation` and `NotifyTransfer` unsent in ticket-sales — its
