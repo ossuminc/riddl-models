@@ -257,6 +257,43 @@ Durable fact recorded in CLAUDE.md's A103 section.
 
 ---
 
+## 32. `SendProgressReminder` needs an Enrollment entity, not wiring
+
+learning-management is the **only** notification command in the corpus that
+cannot be wired, and the reason is a modelling gap rather than a missing
+trigger. Established 2026-09-08 while closing the notification cluster.
+
+`SendProgressReminder(learnerId, courseId, message)` is an inactivity nudge
+— "you have not touched this course" — which is exactly what
+`on quiescence` exists for. But the clause's clock is **per instance**, and
+learning-management has exactly one entity: `Course`, whose states are
+`Draft`, `Published` and `Archived`.
+
+A quiescence clause on `Course` would mean *no learner touched this course
+at all*, which is a statement about the course's popularity, not about a
+learner stalling. The model tracks enrolment and progress as EVENTS on
+Course (`LearnerEnrolled`, `ProgressRecorded`) with no aggregate per
+learner, so there is nothing for a per-learner clock to be attached to.
+
+### What it would take
+
+An `Enrollment` (or `LearnerProgress`) entity keyed by learner and course,
+with an active state carrying a quiescence clause that tells the nudge.
+That is a real design change with the usual blast radius — repository,
+projector, connectors, command and event alternations — and arguably the
+right one, since an LMS that cannot address a single learner's progress is
+missing its central aggregate.
+
+**Not done unasked.** Introducing an aggregate is a modelling decision, not
+a wiring one, and every other notification command in the corpus was wired
+without inventing structure.
+
+`SendCourseCompletion` in the same model WAS wired (`CourseCompleted`), so
+the adaptor, alternation, inlet and connector all exist; only the nudge is
+outstanding.
+
+---
+
 ## 1. Make reactive-bbq the reference model (ACTIVE CAMPAIGN)
 
 The plan is `~/.claude/plans/wobbly-whistling-finch.md`, approved
