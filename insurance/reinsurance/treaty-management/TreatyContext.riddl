@@ -53,7 +53,37 @@ context TreatyContext as router is {
   connector 'CessionMetricsProjector Storage' is from outlet TreatyContext.CessionMetricsProjector.CessionMetricsProjectorToRepository to inlet TreatyContext.TreatyRepository.TreatyRepositoryFromCessionMetricsProjector with {
     briefly "CessionMetricsProjector projections on their way to storage"
   }
-  connector 'TreatyCommand Stream Intake' is from outlet TreatyContext.TreatyCommandStreamOut to inlet TreatyContext.Treaty.TreatyCommands  connector 'TreatyQueryResult Stream Egress' is from outlet TreatyContext.TreatyRepository.TreatyRepositoryResponses to inlet TreatyContext.TreatyQueryResultStreamIn  adaptor FromAccountingService from context AccountingService is { 
+  connector 'TreatyCommand Stream Intake' is from outlet TreatyContext.TreatyCommandStreamOut to inlet TreatyContext.Treaty.TreatyCommands  connector 'TreatyQueryResult Stream Egress' is from outlet TreatyContext.TreatyRepository.TreatyRepositoryResponses to inlet TreatyContext.TreatyQueryResultStreamIn  adaptor ToAccountingService to context AccountingService as flow is { 
+    outlet ToAccountingServiceOut is type AccountingService.AccountingServiceCommand
+    handler ToAccountingServiceHandler is {
+      on cessionRecorded: event Treaty.CessionRecorded is {
+        let receipt: type AccountingService.RecordPremiumReceipt = prompt("translate the cessionRecorded event into a RecordPremiumReceipt booking the premium the cession cedes to us")
+        send receipt to outlet TreatyContext.ToAccountingService.ToAccountingServiceOut
+      }
+      on bordereauReceived: event Treaty.BordereauReceived is {
+        let statement: type AccountingService.GenerateSettlementStatement = prompt("translate the bordereauReceived event into a GenerateSettlementStatement, the bordereau being the period's report of cessions from which the statement is drawn")
+        send statement to outlet TreatyContext.ToAccountingService.ToAccountingServiceOut
+      }
+      on settlementProcessed: event Treaty.SettlementProcessed is {
+        let notice: type AccountingService.RequestSettlementPayment = prompt("translate the settlementProcessed event into a RequestSettlementPayment moving the balance the agreed settlement leaves owing between the parties")
+        send notice to outlet TreatyContext.ToAccountingService.ToAccountingServiceOut
+      }
+      on other is {
+        error "Unexpected message for adaptor ToAccountingService"
+      }
+    } with {
+      briefly "to accounting service"
+      described as {
+        |Carries messages to the external AccountingService.
+      }
+    }
+  } with {
+    briefly "AccountingService integration"
+    described as {
+      |The model's side of the AccountingService conversation.
+    }
+  }
+  adaptor FromAccountingService from context AccountingService is { 
     handler FromAccountingServiceHandler is {
       on event AccountingService.PaymentFailed is {
         do "the model receives payment failed"

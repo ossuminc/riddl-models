@@ -27,10 +27,53 @@ produces confident wrong answers.
 the corpus has a sender. Five decisions: confirmations, alerts, reminders
 (14), status-updates (51 pairs / 215 clauses), and the tail.
 
-**Payment/billing — 21 pairs / 28 commands REMAIN** (measured 2026-09-08
-after batch 5; quote the remainder, not a fraction — pairs close partially,
-so "N of M done" cannot be reconciled across batches and an earlier line
-here claiming it was wrong). Rule: *a payment command is driven by
+**Payment/billing — COMPLETE 2026-09-08.** Every payment, billing, payout,
+disbursement and settlement command in the corpus now has a sender, bar the
+two recorded exclusions below. Quote a remainder rather than a fraction when
+reporting a cluster mid-flight: pairs close partially, so "N of M done"
+cannot be reconciled across batches, and an earlier line here claiming it
+was wrong.
+
+### Batch 6 — the last 21 pairs, under four rules
+
+The final tranche needed more than the payment rule, and the extra rules are
+stated rather than smuggled in:
+
+- **payouts and disbursements are the payment rule**, which never specified a
+  direction: vendor-management, transaction-management (escrow), and
+  loan-origination all fire where the obligation to pay a counterparty is
+  created.
+- **charge capture is rule A** (billable work countable and closed):
+  clinical-encounter `EncounterCompleted`, admission-discharge
+  `DischargeCompleted`, lab-orders `ResultVerified`.
+- **a SETTLEMENT command fires on the event that fixes the amount to be
+  settled and closes the cycle** — a new rule, because settlement is netting
+  and clearing rather than discharging one obligation: payment-processing
+  `PaymentCaptured`, trade-settlement `TradeAffirmed`, billing-settlement
+  `SettlementInitiated`, treaty-management (`CessionRecorded`,
+  `BordereauReceived`, `SettlementProcessed`).
+- **a DOCUMENT command fires on the event that fixes the document's content**
+  (freight-forwarding), **a CLINICAL ORDER on the event that establishes the
+  need for it** (admission-discharge), **a RATING command on the event that
+  changes what must be rated** (policy-management).
+
+**reactive-bbq mirrors the point-of-sale precedent** — tender presented
+(`PaymentProcessed`) authorises, closing the check (`OrderClosed`) captures —
+and was the only pair needing a SHAPE change: its external `PaymentGateway`
+gained a command inlet, so it moved `as flow` -> **`as merge`**. Its boundary
+clauses had to `yield` the events those commands declare
+(`msg-yield-undeclared`), which is stricter than the port-less external
+contexts elsewhere and is the better model.
+
+**Two commands are deliberately NOT wired, each with its cause:**
+
+- vendor-management `ProcessPayout` — its cause is
+  `OrderService.OrderFulfilled`, an EXTERNAL event this model never turns
+  into a local fact, so there is nothing of ours to trigger on. Wiring it
+  needs a new local command and event: modelling, not wiring.
+- case-management `RecordPayment` — it DISCHARGES an obligation, so it
+  belongs to an inbound `PaymentReceived`, which an adaptor declared
+  `to context` cannot handle. Rule: *a payment command is driven by
 the event that CREATES or DISCHARGES the financial obligation.* Authorize
 where the customer becomes committed, capture where the amount is final,
 refund where the commitment is released; nothing on intermediate steps.

@@ -18,7 +18,7 @@ round-trip 189/189.
 
 **The adaptor-wiring cluster campaign — see BACKLOG #33**, which carries the
 method, the traps, the census recipe and the remaining pairs. Short version:
-payment/billing has **21 pairs / 28 commands left**, on the rule *a payment
+payment/billing is **COMPLETE** (2 deliberate exclusions, each with a cause), on the rule *a payment
 command is driven by the event that creates or discharges the financial
 obligation*. The invoicing/provisioning sub-cluster is **DONE** under three
 separate rules Reid gave on 2026-09-08 (invoice when the work is countable
