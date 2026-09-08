@@ -4,70 +4,62 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch `main`. Pin `2.1.1-16-9ef209d1`, UNPUBLISHED, `riddlcPath` override
-ON** (`build.sbt:28,89`); `../bin/riddlc` IS the build's binary on this pin,
-so `scripts/` defaults are correct — that stops being true the moment the pin
-returns to a published tag. Verified this session with `riddlc info`; commit
-`9ef209d18`. **Take the override off at the first published tag carrying it.**
+**Branch `main`. Pin `2.1.1-26-4d17b1ef`, UNPUBLISHED, `riddlcPath` override
+ON** (`build.sbt:28,89`); `../bin/riddlc` IS the build's binary on this pin.
+Take the override off at the first published tag carrying it.
 
-Corpus: **189 models, 0 findings at every severity**, sweep canaried (inject
-an unused type, confirm it is reported, revert). `checkAll` green, BAST
-round-trip 189/189.
+Corpus: **189 models, 0 findings at every severity**, sweep canaried after the
+riddlc bump. `checkAll` green, prettify/bastify 189/189.
 
-### In flight
+### What happened this session
 
-**The adaptor-wiring cluster campaign — see BACKLOG #33**, which carries the
-method, the traps, the census recipe and the remaining pairs. Short version:
-payment/billing is **COMPLETE** (2 deliberate exclusions, each with a cause), on the rule *a payment
-command is driven by the event that creates or discharges the financial
-obligation*. The invoicing/provisioning sub-cluster is **DONE** under three
-separate rules Reid gave on 2026-09-08 (invoice when the work is countable
-and closed; provision on relationship-created; amend on arrangement-changed).
+The adaptor-wiring campaign moved a long way. **Seven clusters closed**, each
+under a rule stated in its commit rather than inferred:
 
-**The notification cluster is NOT complete, despite being recorded as such.**
-A census with a wider keyword set finds four unsent `MarketingService`
-commands in ticket-sales alone. Re-measure before trusting that line.
+| cluster | pairs | rule |
+|---|---:|---|
+| payment/billing | all | drives on the event that CREATES or DISCHARGES the obligation |
+| invoicing/provisioning | 13 models | three rules: state / provision / amend |
+| notification | 12 | which events notify (reopened — it was recorded done and was not) |
+| inventory/stock | 23 | the event that changes the CLAIM on stock |
+| scheduling/dispatch | 23 | the event that creates/ends the NEED for a slot, person or vehicle |
+| document/storage | 27 | the event that PRODUCES or FINALISES the artifact |
+| identity/verification | 25 | verify where the claim enters; provision where the party is created |
+| fraud/risk + filing | 21 | exposure created / reportable fact produced |
 
-**All 13 wired reminders now SCHEDULE** rather than hand a deadline to the
-service in prose — 7 via schedule-to-self-guarded, 5 via an explicit
-`remindAt`, 1 (training-administration) deliberately left as a handoff.
-`on quiescence` and `send ... at` landed in this pin and are in use: nine
-dead behaviours now fire (BACKLOG #30), ticketing schedules its own hold
-expiry, and learning-management gained a `LearnerEnrollment` aggregate so a
-per-learner clock has something to attach to.
+All 13 wired reminders now **schedule** (`send ... at`) instead of describing
+a schedule in prose — 7 schedule-to-self-guarded, 5 via an explicit
+`remindAt`, 1 left as a handoff on purpose.
 
-### What a fresh session would get wrong
+### What a fresh session must not get wrong
 
-- **`sbt v` is the LENIENT gate.** 187 of 189 `.conf` files suppress style and
-  usage warnings. `scripts/collect-warnings.py` is the real check — it calls
-  riddlc directly, with `--provide-tips`, at every severity. A green build and
-  a clean corpus are different claims.
-- **A zero from an unchecked harness is worth nothing.** Seven parsers in
-  `scripts/` have silently broken on a riddlc format change before, each
-  reporting nothing on a corpus with a real defect in it. Canary after ANY
-  bump.
-- **riddlc has no opinion about an unsent message.** "Declared, handled and
-  reachable" is not "driven"; that gap is the entire campaign, and the corpus
-  sat at 0 findings throughout it.
-- **Do not parse RIDDL with regex** — use `riddlc dump --json` / `find`. Both
-  helper scripts this session were wrong in ways only the validator caught.
+- **Classify a cluster by the TARGET CONTEXT, never the command name.** A
+  `^send` pattern swept SCADA control commands and lab-instrument
+  instructions into "notification". The context says WHO is being asked,
+  which is what a rule is about.
+- **Every keyword estimate has UNDERSTATED its cluster** — four times now.
+  Re-measure before quoting a number, and quote a remainder, not a fraction.
+- **Names predict nothing.** Model basenames are not unique
+  (`property-management` ×2, `inventory-management` under logistics), and a
+  model's directory name predicts neither its context name
+  (game-economy → `WalletContext`) nor its entity name.
+- **The binding-shadow trap is the most frequent error by far** — it bit
+  ~8 times. Name a binding for what the message IS (`notice`), never for its
+  meaning.
+- **`sbt v` is the LENIENT gate**; `scripts/collect-warnings.py` is the real
+  one. Canary it after ANY riddlc bump.
 
-### Certainty
+### Next
 
-Verified this session: the pin and binary identity, the 0-finding sweep,
-`checkAll`, the round trip, 189 models, and every per-model count quoted in
-the last 38 commits. Assumed: nothing load-bearing — where a claim could not
-be checked it was recorded as open in BACKLOG rather than asserted.
+`scratchpad/wire.py` (the setup-path applier, transactional, with the
+acronym fix) and `census.py` are SESSION-LOCAL and will not survive.
+BACKLOG #33 carries the method to rebuild them.
 
-### Pointers
-
-Open work: **BACKLOG.md** (#33 campaign, #30 temporal remainder, #34 Course
-roster). Durable facts: **CLAUDE.md** — A103, "Which events notify", the
-implied-port rule. Session narrative: below.
-
-`task/2026-09-05-do-prose-must-be-an-instruction.md` is the only file in
-`task/`, and it is **in progress, not untriaged** — BACKLOG #33 is what it
-became. It awaits triage in the new session all the same.
+Remaining: the rest of compliance/CRM/tax/legal (~25 pairs, measured), three
+models needing an outbound adaptor BUILT rather than a clause added
+(claims-processing, equipment-maintenance, licensing), and the **~500-command
+long tail**, which is domain-specific integrations that will NOT yield to
+cluster rules — that needs its own decision, and BACKLOG #33 says so.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
