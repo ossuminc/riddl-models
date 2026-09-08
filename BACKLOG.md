@@ -80,18 +80,30 @@ cheap, but do not assume they exist.
 
 ---
 
-## 34. Course still holds a roster that LearnerEnrollment now owns
+## 34. Delete Course's roster; decide what `LearnerEnrolled.enrollmentId` is
 
-Left deliberately when #32 closed (commit a9bdd684).
-`education/academic/learning-management/Course.riddl:773` has
-`enrollments: Enrollment+` inside `PublishedCourseData`, and `types.riddl`
-still declares the `Enrollment` record and a plain-UUID `EnrollmentId`
-beside the new `LearnerEnrollmentId`.
+Left deliberately when #32 closed (commit a9bdd684). **This is queued work,
+not a question** — Reid, 2026-09-08, correcting an earlier framing that
+presented it as a decision. The end state was already settled: the course
+stops holding learner state.
 
-That duplicates what the `LearnerEnrollment` entity now owns. The right end
-state is for the course to stop holding learner state, but removing the
-field touches Course's records, its handler and the analytics projection —
-a separate change from introducing the aggregate, and not bundled with it.
+Scope, read off the code 2026-09-08 rather than remembered:
+
+- `education/academic/learning-management/Course.riddl:773` —
+  `enrollments: Enrollment+` inside `PublishedCourseData`. **Deleting it is
+  the whole job.** Nothing replaces it: the analytics projection already
+  carries `totalEnrollments: Natural` (`LearningContext.riddl:522`).
+- `types.riddl:282` `record Enrollment`, `:40` `type EnrollmentId is UUID`,
+  `:88` `type EnrollmentStatus` all go dead with it — and an unused type is
+  a `[usage]` finding, so they must be deleted in the same change, run to a
+  fixed point.
+
+**The one genuine question**, and the reason this is not purely mechanical:
+`Course.riddl:544`, the `LearnerEnrolled` event, carries
+`enrollmentId: EnrollmentId` — a plain UUID — beside the new
+`LearnerEnrollmentId is Id(LearningContext.LearnerEnrollment)`. Either the
+event should name the aggregate's id, or the two are genuinely different
+things and both stay. Decide before deleting `EnrollmentId`.
 
 **Verified, not assumed:** `LearnerEnrollment` validates and the nudge is
 wired (591 definitions, 0/0). The duplication is a modelling smell, not a
@@ -235,22 +247,29 @@ Two things were learned the hard way and are worth keeping:
   command should be refused, not silently ignored — and it is exactly the
   "receiver must tolerate a stale scheduled message" the CM requires.
 
-### STILL OPEN — needs a ruling
+### RULED 2026-09-08 by Reid — widen, do not duplicate
 
-**The three Date-typed Group B cases** (contract-lifecycle,
-treaty-management, policy-lifecycle) and the **7 Date-typed reminders**.
-`at` rejects a `Date` (`stmt-send-at-not-instant`, verified). Two ways
-forward, and this is a domain judgement rather than a mechanical one:
+> "use a TimeStamp field, expiresAt which is widened by the model using
+> that type"
 
-1. **Widen the field** (`Date` -> `DateTime`) where the domain really does
-   have a time of day. Removes duplication, but changes the business type
-   on insurance, legal and licensing models.
-2. **Add a separate instant** (`expiresAt: TimeStamp`) beside the business
-   `Date`, filled by a prompt. Non-invasive, but carries the same fact
-   twice.
+**Option 1. The deadline field becomes `TimeStamp` and is named
+`expiresAt`; the widening happens in each model that declares the type.**
+Option 2 (a parallel instant beside the business `Date`) is refused — it
+carries the same fact twice.
 
-**Deliberately not done unasked** — changing a domain field's type across
-insurance and legal models is a modelling decision, not a migration.
+Population: the **three Date-typed Group B cases** (contract-lifecycle
+`ContractInfo.expirationDate`, treaty-management `DateRange.expirationDate`,
+policy-lifecycle `reinstatementDeadline`) and the **7 Date-typed reminders**
+(licensing, credentialing, engagement, fleet, compliance, competency,
+event-registration). `at` rejects a `Date` (`stmt-send-at-not-instant`,
+verified), which is what forces this.
+
+**One judgement taken rather than asked:** `reinstatementDeadline` is not an
+expiry, so it keeps its domain name and only its TYPE widens. `expiresAt` is
+the name where the field genuinely names an expiry. Say so if that is wrong;
+it is a rename, not a redesign.
+
+NOT YET APPLIED.
 
 **Also open:** `OrderExpired` (order-management) — the model does not say
 whether a resting order dies at end-of-day (`send ... at`) or from
