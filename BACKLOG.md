@@ -257,7 +257,7 @@ Durable fact recorded in CLAUDE.md's A103 section.
 
 ---
 
-## 32. `SendProgressReminder` needs an Enrollment entity, not wiring
+## ~~32. `SendProgressReminder` needs an Enrollment entity~~ — DONE 2026-09-08
 
 learning-management is the **only** notification command in the corpus that
 cannot be wired, and the reason is a modelling gap rather than a missing
@@ -275,22 +275,42 @@ learner stalling. The model tracks enrolment and progress as EVENTS on
 Course (`LearnerEnrolled`, `ProgressRecorded`) with no aggregate per
 learner, so there is nothing for a per-learner clock to be attached to.
 
-### What it would take
+### DONE — `LearnerEnrollment` built, and the nudge is wired
 
-An `Enrollment` (or `LearnerProgress`) entity keyed by learner and course,
-with an active state carrying a quiescence clause that tells the nudge.
-That is a real design change with the usual blast radius — repository,
-projector, connectors, command and event alternations — and arguably the
-right one, since an LMS that cannot address a single learner's progress is
-missing its central aggregate.
+The aggregate exists (`education/academic/learning-management/
+LearnerEnrollment.riddl`), with a `on quiescence "14 days"` clause in its
+active state that tells `NudgeLearner`, whose clause raises
+`LearnerWentQuiet`, which the notification adaptor translates to
+`SendProgressReminder`. 591 definitions, 0 errors, 0 warnings.
 
-**Not done unasked.** Introducing an aggregate is a modelling decision, not
-a wiring one, and every other notification command in the corpus was wired
-without inventing structure.
+**Named `LearnerEnrollment`, not `Enrollment`, because the name was taken.**
+`types.riddl` already declares `type Enrollment` — a RECORD — and
+`Course.riddl:773` holds `enrollments: Enrollment+` inside the published
+course state, alongside a plain-UUID `EnrollmentId`. So enrolment was
+already modelled, as a collection nested in the course. That nesting IS the
+gap this item describes: a value inside an aggregate that serves many
+learners cannot carry a per-learner clock.
 
-`SendCourseCompletion` in the same model WAS wired (`CourseCompleted`), so
-the adaptor, alternation, inlet and connector all exist; only the nudge is
-outstanding.
+### Follow-up left deliberately
+
+**Course still carries its roster copy.** `enrollments: Enrollment+` in
+`PublishedCourseData` now duplicates what `LearnerEnrollment` owns. The
+right end state is for the course to stop holding learner state and for
+the entity to be the single source of truth, but removing a field from
+Course's state touches its records, its handler and the analytics
+projection, and it is a separate change from introducing the aggregate.
+Worth doing; not bundled.
+
+What the build needed beyond the entity, none of it optional and all of it
+demanded by riddlc rather than guessed: an `Id(...)` type at context
+scope, an inlet fed by the application context through a new connector, an
+outlet whose events reach the `LearningAnalytics` projector (the adaptor's
+implied inlet REFUSED them — `stream-connector-type-mismatch`, since a
+connector carries one type and the adaptor already handles others), four
+projector clauses, an `on query` clause, and an `on init` on the completed
+state. Two shape ascriptions moved as a consequence: the app context
+became `split` and the projector became `merge`.
+
 
 ---
 

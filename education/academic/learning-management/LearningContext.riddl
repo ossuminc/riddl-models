@@ -1,6 +1,7 @@
 // Learning Management - Learning Context
 context LearningContext as router is {
   inlet CourseCommandStreamIn is type CourseCommand  outlet CourseCommandStreamOut is type CourseCommand
+  inlet LearnerEnrollmentCommandStreamIn is type LearnerEnrollment.LearnerEnrollmentCommand  outlet LearnerEnrollmentCommandStreamOut is type LearnerEnrollment.LearnerEnrollmentCommand
   inlet CourseResultStreamIn is result Course.CourseResult  outlet CourseResultStreamOut is result Course.CourseResult
   handler LearningContextBoundary is {
     on createCourse: command Course.CreateCourse is {
@@ -56,7 +57,7 @@ context LearningContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'CourseCommand Stream Intake' is from outlet LearningContext.CourseCommandStreamOut to inlet LearningContext.Course.CourseCommands  connector 'CourseResult Stream Egress' is from outlet LearningContext.CourseRepository.CourseRepositoryResponses to inlet LearningContext.CourseResultStreamIn  adaptor FromCertificationService from context CertificationService is { 
+  connector 'LearnerEnrollmentCommand Stream Intake' is from outlet LearningContext.LearnerEnrollmentCommandStreamOut to inlet LearningContext.LearnerEnrollment.LearnerEnrollmentCommands  connector 'CourseCommand Stream Intake' is from outlet LearningContext.CourseCommandStreamOut to inlet LearningContext.Course.CourseCommands  connector 'CourseResult Stream Egress' is from outlet LearningContext.CourseRepository.CourseRepositoryResponses to inlet LearningContext.CourseResultStreamIn  adaptor FromCertificationService from context CertificationService is { 
     handler FromCertificationServiceHandler is {
       on event CertificationService.CertificateIssued is {
         do "the model receives certificate issued"
@@ -166,8 +167,9 @@ context LearningContext as router is {
         let notice: type NotificationService.SendCourseCompletion = prompt("translate the courseCompleted event into a SendCourseCompletion telling the learner they have finished the course and what they are now entitled to")
         send notice to outlet LearningContext.ToNotificationService.ToNotificationServiceOut
       }
-      on command NotificationService.SendProgressReminder is {
-        do "the model sends send progress reminder"
+      on learnerWentQuiet: event LearnerEnrollment.LearnerWentQuiet is {
+        let notice: type NotificationService.SendProgressReminder = prompt("translate the learnerWentQuiet event into a SendProgressReminder nudging the learner back to the course they have stopped working on, naming the course and where they left off")
+        send notice to outlet LearningContext.ToNotificationService.ToNotificationServiceOut
       }
       on other is {
         error "Unexpected message for adaptor ToNotificationService"
@@ -186,6 +188,7 @@ context LearningContext as router is {
   }
   include "types.riddl"
   include "Course.riddl"
+  include "LearnerEnrollment.riddl"
   // Repository for course persistence
   type CourseRepositoryCommand is one of {
     LearningContext.CourseRepository.PersistAssessmentGraded or LearningContext.CourseRepository.PersistAssessmentSubmitted or LearningContext.CourseRepository.PersistContentAdded or LearningContext.CourseRepository.PersistCourseArchived or LearningContext.CourseRepository.PersistCourseCompleted or LearningContext.CourseRepository.PersistCourseCreated or LearningContext.CourseRepository.PersistCoursePublished or LearningContext.CourseRepository.PersistCourseUpdated or LearningContext.CourseRepository.PersistLearnerEnrolled or LearningContext.CourseRepository.PersistModuleAdded or LearningContext.CourseRepository.PersistModuleRemoved or LearningContext.CourseRepository.PersistModuleUpdated or LearningContext.CourseRepository.PersistProgressRecorded
@@ -506,10 +509,10 @@ context LearningContext as router is {
       |Read model view carrying the progress summary projection.
     }
   }
-  projector LearningAnalytics as flow is {
+  projector LearningAnalytics as merge is {
     updates repository LearningContext.CourseRepository
     outlet LearningAnalyticsToRepository is type CourseRepositoryCommand
-    inlet LearningAnalyticsFromCourse is type CourseEvent    record ProgressSummary is {
+    inlet LearningAnalyticsFromCourse is type CourseEvent    inlet LearningAnalyticsFromLearnerEnrollment is type LearnerEnrollment.LearnerEnrollmentEvent    record ProgressSummary is {
       courseId: CourseId with {
         briefly "Course"
         described as {
@@ -547,6 +550,18 @@ context LearningContext as router is {
       }
     }
     handler AnalyticsHandler is {
+      on learnerEnrollmentOpened: event LearnerEnrollment.LearnerEnrollmentOpened is {
+        do "apply LearnerEnrollmentOpened to the LearningAnalytics projection"
+      }
+      on learnerActivityRecorded: event LearnerEnrollment.LearnerActivityRecorded is {
+        do "apply LearnerActivityRecorded to the LearningAnalytics projection"
+      }
+      on learnerEnrollmentCompleted: event LearnerEnrollment.LearnerEnrollmentCompleted is {
+        do "apply LearnerEnrollmentCompleted to the LearningAnalytics projection"
+      }
+      on learnerWentQuiet: event LearnerEnrollment.LearnerWentQuiet is {
+        do "apply LearnerWentQuiet to the LearningAnalytics projection"
+      }
       on assessmentSubmitted: event Course.AssessmentSubmitted is {
         tell command LearningContext.CourseRepository.PersistAssessmentSubmitted(courseId = assessmentSubmitted.courseId) to repository LearningContext.CourseRepository
         do "apply AssessmentSubmitted to the LearningAnalytics projection"
@@ -693,6 +708,9 @@ context LearningContext as router is {
   }
   connector 'CourseEvent Stream' is from outlet LearningContext.Course.CourseEvents2 to inlet LearningContext.CourseEventSplit.CourseEventSplitIn with {
     briefly "Course events, fanned out to storage and read models"
+  }
+  connector 'LearningAnalytics From LearnerEnrollment Feed' is from outlet LearningContext.LearnerEnrollment.LearnerEnrollmentEvents to inlet LearningContext.LearningAnalytics.LearningAnalyticsFromLearnerEnrollment with {
+    briefly "One learner's enrollment events, on their way to the analytics projection"
   }
   connector 'LearningAnalytics Feed' is from outlet LearningContext.CourseEventSplit.CourseEventSplitToLearningAnalytics to inlet LearningContext.LearningAnalytics.LearningAnalyticsFromCourse with {
     briefly "Course events feeding the LearningAnalytics projection"
