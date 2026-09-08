@@ -256,6 +256,19 @@ needs a `To` adaptor built from scratch rather than a clause added.
 `[A-Z][a-z0-9]*|[A-Z]+(?![a-z])` the first branch matches a single capital
 with an empty tail. **The acronym branch must come first.**
 
+### Document / storage — DONE 2026-09-08 (27 pairs, 25 models)
+
+> **A document command fires on the event that PRODUCES, FINALISES or
+> SUPERSEDES the artifact.** Store where it comes into being, generate where
+> its content is settled, sign/verify where it needs authority, archive or
+> delete where retention rather than use decides its fate.
+
+Fifteen of twenty-seven are `StoreDocument`/`UploadDocument` on the model's
+own document event. The rest key on **the moment the content stops moving**,
+not the moment someone asks for the file — `TermSheetIssued` for a signature
+request, `EngagementCancelled` for an archive (a closed file must be RETAINED,
+not discarded), `StageCompleted` for an artifact upload.
+
 ### Remaining, in order
 
 payment/billing (41 pairs), compliance/regulatory (35), document/storage (29),
