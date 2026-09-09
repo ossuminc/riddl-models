@@ -307,6 +307,78 @@ assumption to cost rework this session, after basenames not being unique.
 claims-processing `[FraudDetection]`, equipment-maintenance
 `[ProductionSchedule]`, licensing `[CredentialVerificationService]`.
 
+### Compliance / legal / tax / CRM — 39 pairs DONE 2026-09-08
+
+Four rules, stated rather than smuggled in, each an extension of one already
+ruled:
+
+> **A COMPLIANCE, REGULATORY or AUDIT command fires on the event that produces
+> the REPORTABLE FACT** — the batch-6 filing rule, widened. An audit is
+> *scheduled* on the event that creates the thing to be audited.
+> **A LEGAL command fires on the event that creates the INSTRUMENT or the
+> EXPOSURE** counsel must act on.
+> **A TAX or ACCOUNTING command fires on the event that FIXES THE AMOUNT to be
+> posted** — the general-ledger analogue of the settlement rule: not when the
+> work is done, but when the number is final.
+> **A CRM command fires on the event that makes what the CRM holds WRONG.**
+> **A LOOKUP command fires on the event that creates the NEED TO KNOW** — the
+> earliest point at which the answer changes what happens next.
+
+**The measurement came out at 41 pairs / 58 commands against the "~25" the
+handoff carried — the fifth consecutive under-estimate.** The keyword set was
+`Compliance|Regulatory|Audit|SaferWeb|CBPAce|Customs|EnvironmentalAgency|
+ContractorRegistry|Legal|CourtFiling|Conflict|ClientPortal|ContractService|
+TitleService|^Tax|Accounting|GeneralLedger|FinancialReporting|FundAccounting|
+FinancialSystem|Payroll|CRM|Crm|CustomerService$|KnowledgeBase|Loyalty`, over
+the TARGET CONTEXT. Quote the set with the count.
+
+The placements that carry the argument:
+
+- **asset-lifecycle** splits one external system three ways on the amount-fixing
+  rule: `AssetRegistered` -> `CreateFixedAssetRecord`, `DepreciationScheduled`
+  -> `RecordDepreciation`, `AssetDisposed` -> `RecordDisposalEntry`. Three
+  clauses, because three different events fix three different numbers.
+- **payroll-processing** puts both tax calls on `PayrollCalculated` (gross pay
+  being what withholding is computed on) and the journal entry on
+  `PayrollApproved` (approval being what makes the amounts final) — the same
+  rule separating a computation from a posting.
+- **carrier-management** fires both SaferWeb lookups on `CarrierRegistered`:
+  authority and safety record must be known before a carrier may be used, so
+  the need to know arises at registration, not at activation.
+- **trouble-ticketing** distinguishes two lookups by what they are searched
+  WITH: the CRM history on `TicketCreated`, the knowledge base on
+  `DiagnosticAdded`, because a knowledge base is searched with a symptom.
+- **case-management** `SendSecureMessage` on `CaseClosed` — the portal already
+  carries status and documents; a closing letter is privileged, so it is a
+  secure message rather than a portal notice.
+
+**Two commands deliberately NOT wired, because the model has no event for
+them** — recorded rather than forced onto an unrelated event:
+
+- portfolio-management `LegalSystem.ReviewTermSheet` — VCPortfolioContext has
+  no term-sheet event (deal-flow has `TermSheetIssued`; this is a different
+  model)
+- case-management `ConflictDatabase.RecordConflictWaiver` — CaseContext has no
+  waiver event (matter-management has `ConflictCheckRecorded`)
+
+Their placeholder clauses are left in place ON PURPOSE. This is the one case
+where the "dead placeholder beside a live clause" defect is intended: it marks
+work, and the alternative is inventing a trigger.
+
+**Two pairs need an adaptor BUILT, not a clause added** — same category as
+#3 below: order-management `[CustomerService]` (4 commands) and reactive-bbq
+`[AccountingSystem]` (`PostTransaction`). order-management has `from context`
+adaptors for InventoryService, ShippingCarrier and PaymentGateway but no
+outbound one to CustomerService at all.
+
+**One model needed the alternation members QUALIFIED**: customs-brokerage has
+`SubmitEntry` on both `Entry` and `CBPAceService`, so the bare-name alternation
+was `ref-ambiguous`. The applier now takes a `qualify` flag. It was caught by
+the transactional revert, not by inspection.
+
+The census reconciled EXACTLY: 524 unsent external commands before, 473 after,
+against 51 wired. Nothing cleared that was not wired, and nothing new appeared.
+
 ### Remaining, in order
 
 payment/billing (41 pairs), compliance/regulatory (35), document/storage (29),
