@@ -25,6 +25,9 @@ context NursingContext as router is {
     on createTask: command NurseShift.CreateTask is {
       send createTask to outlet NursingContext.NurseShiftCommandStreamOut
     }
+    on holdTask: command NurseShift.HoldTask is {
+      send holdTask to outlet NursingContext.NurseShiftCommandStreamOut
+    }
     on completeTask: command NurseShift.CompleteTask is {
       send completeTask to outlet NursingContext.NurseShiftCommandStreamOut
     }
@@ -141,8 +144,9 @@ context NursingContext as router is {
   adaptor ToMedicationAdministration to context MedicationAdministration as flow is { 
     outlet ToMedicationAdministrationOut is type MedicationAdministration.MedicationAdministrationCommand
     handler ToMedicationAdministrationHandler is {
-      on command MedicationAdministration.DocumentHold is {
-        do "the model sends document hold"
+      on taskHeld: event NurseShift.TaskHeld is {
+        let item0: type MedicationAdministration.DocumentHold = prompt("translate the taskHeld event into a DocumentHold, a held medication being what the administration record must show was not given")
+        send item0 to outlet NursingContext.ToMedicationAdministration.ToMedicationAdministrationOut
       }
       on query MedicationAdministration.GetDueMedications is {
         do "the model sends get due medications"
@@ -236,7 +240,7 @@ context NursingContext as router is {
   // Repository
   // ==========================================================================
   type NursingRepositoryCommand is one of {
-    NursingContext.NursingRepository.PersistAssessmentDocumented or NursingContext.NursingRepository.PersistHandoffCompleted or NursingContext.NursingRepository.PersistHandoffInitiated or NursingContext.NursingRepository.PersistPatientsAssigned or NursingContext.NursingRepository.PersistShiftStarted or NursingContext.NursingRepository.PersistTaskCompleted or NursingContext.NursingRepository.PersistTaskCreated or NursingContext.NursingRepository.PersistVitalsRecorded
+    NursingContext.NursingRepository.PersistAssessmentDocumented or NursingContext.NursingRepository.PersistHandoffCompleted or NursingContext.NursingRepository.PersistHandoffInitiated or NursingContext.NursingRepository.PersistPatientsAssigned or NursingContext.NursingRepository.PersistShiftStarted or NursingContext.NursingRepository.PersistTaskCompleted or NursingContext.NursingRepository.PersistTaskHeld or NursingContext.NursingRepository.PersistTaskCreated or NursingContext.NursingRepository.PersistVitalsRecorded
   } with {
     briefly "Anything that writes NursingRepository"
     described as {
@@ -347,6 +351,21 @@ context NursingContext as router is {
         |because storing a row records no new entity state.
       }
     }
+    command PersistTaskHeld is {
+      shiftId: ShiftId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row TaskHeld applies to.
+        }
+      }
+    } with {
+      briefly "Persist TaskHeld"
+      described as {
+        |Instructs this repository to apply TaskHeld to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     command PersistTaskCompleted is {
       shiftId: ShiftId with {
         briefly "Row addressed"
@@ -419,6 +438,9 @@ context NursingContext as router is {
       }
       on persistShiftStarted: command PersistShiftStarted is {
         do "apply ShiftStarted to the stored row"
+      }
+      on persistTaskHeld: command PersistTaskHeld is {
+        do "apply TaskHeld to the stored row"
       }
       on persistTaskCompleted: command PersistTaskCompleted is {
         do "apply TaskCompleted to the stored row"
@@ -782,6 +804,10 @@ context NursingContext as router is {
       }
     }
     handler RatioProjectionHandler is {
+      on taskHeld: event NurseShift.TaskHeld is {
+        tell command NursingContext.NursingRepository.PersistTaskHeld(shiftId = taskHeld.shiftId) to repository NursingContext.NursingRepository
+        do "apply TaskHeld to the NursePatientRatioProjector projection"
+      }
       on assessmentDocumented: event NurseShift.AssessmentDocumented is {
         tell command NursingContext.NursingRepository.PersistAssessmentDocumented(shiftId = assessmentDocumented.shiftId) to repository NursingContext.NursingRepository
         do "apply AssessmentDocumented to the NursePatientRatioProjector projection"
@@ -935,6 +961,10 @@ context NursingContext as router is {
       }
     }
     handler TaskMetricsHandler is {
+      on taskHeld: event NurseShift.TaskHeld is {
+        tell command NursingContext.NursingRepository.PersistTaskHeld(shiftId = taskHeld.shiftId) to repository NursingContext.NursingRepository
+        do "apply TaskHeld to the TaskCompletionProjector projection"
+      }
       on assessmentDocumented: event NurseShift.AssessmentDocumented is {
         tell command NursingContext.NursingRepository.PersistAssessmentDocumented(shiftId = assessmentDocumented.shiftId) to repository NursingContext.NursingRepository
         do "apply AssessmentDocumented to the TaskCompletionProjector projection"
@@ -1065,6 +1095,10 @@ context NursingContext as router is {
       }
     }
     handler HandoffMetricsHandler is {
+      on taskHeld: event NurseShift.TaskHeld is {
+        tell command NursingContext.NursingRepository.PersistTaskHeld(shiftId = taskHeld.shiftId) to repository NursingContext.NursingRepository
+        do "apply TaskHeld to the HandoffMetricsProjector projection"
+      }
       on assessmentDocumented: event NurseShift.AssessmentDocumented is {
         tell command NursingContext.NursingRepository.PersistAssessmentDocumented(shiftId = assessmentDocumented.shiftId) to repository NursingContext.NursingRepository
         do "apply AssessmentDocumented to the HandoffMetricsProjector projection"
@@ -1110,7 +1144,7 @@ context NursingContext as router is {
     }
   }
   type NurseShiftEvent is one of {
-    NursingContext.NurseShift.ShiftStarted or NursingContext.NurseShift.PatientsAssigned or NursingContext.NurseShift.TaskCreated or NursingContext.NurseShift.TaskCompleted or NursingContext.NurseShift.AssessmentDocumented or NursingContext.NurseShift.VitalsRecorded or NursingContext.NurseShift.HandoffInitiated or NursingContext.NurseShift.HandoffCompleted
+    NursingContext.NurseShift.ShiftStarted or NursingContext.NurseShift.PatientsAssigned or NursingContext.NurseShift.TaskCreated or NursingContext.NurseShift.TaskCompleted or NursingContext.NurseShift.TaskHeld or NursingContext.NurseShift.AssessmentDocumented or NursingContext.NurseShift.VitalsRecorded or NursingContext.NurseShift.HandoffInitiated or NursingContext.NurseShift.HandoffCompleted
   } with {
     briefly "Nurse shift events"
     described as {

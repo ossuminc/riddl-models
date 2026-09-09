@@ -6,6 +6,9 @@ context InventoryContext as router is {
     on initializeInventory: command Inventory.InitializeInventory is {
       send initializeInventory to outlet InventoryContext.InventoryCommandStreamOut
     }
+    on recordInspection: command Inventory.RecordInspection is {
+      send recordInspection to outlet InventoryContext.InventoryCommandStreamOut
+    }
     on receiveStock: command Inventory.ReceiveStock is {
       send receiveStock to outlet InventoryContext.InventoryCommandStreamOut
     }
@@ -220,8 +223,9 @@ context InventoryContext as router is {
   adaptor ToQualityControlService to context QualityControlService as flow is { 
     outlet ToQualityControlServiceOut is type QualityControlService.QualityControlServiceCommand
     handler ToQualityControlServiceHandler is {
-      on command QualityControlService.RecordInspectionResult is {
-        do "the model sends record inspection result"
+      on inspectionRecorded: event Inventory.InspectionRecorded is {
+        let item0: type QualityControlService.RecordInspectionResult = prompt("translate the inspectionRecorded event into a RecordInspectionResult so quality control holds the outcome of the inspection it was asked for")
+        send item0 to outlet InventoryContext.ToQualityControlService.ToQualityControlServiceOut
       }
       on stockReceived: event Inventory.StockReceived is {
         let item0: type QualityControlService.InspectReceipt = prompt("translate the stockReceived event into a InspectReceipt, receipt being where stock of unknown quality enters")
@@ -343,7 +347,7 @@ context InventoryContext as router is {
   include "Inventory.riddl"
   // Repository for inventory persistence
   type InventoryRepositoryCommand is one of {
-    InventoryContext.InventoryRepository.PersistCycleCountRecorded or InventoryContext.InventoryRepository.PersistInventoryInitialized or InventoryContext.InventoryRepository.PersistReplenishmentRequested or InventoryContext.InventoryRepository.PersistReservationReleased or InventoryContext.InventoryRepository.PersistStockAdjusted or InventoryContext.InventoryRepository.PersistStockAllocated or InventoryContext.InventoryRepository.PersistStockPicked or InventoryContext.InventoryRepository.PersistStockReceived or InventoryContext.InventoryRepository.PersistStockReserved or InventoryContext.InventoryRepository.PersistStockTransferred
+    InventoryContext.InventoryRepository.PersistCycleCountRecorded or InventoryContext.InventoryRepository.PersistInspectionRecorded or InventoryContext.InventoryRepository.PersistInventoryInitialized or InventoryContext.InventoryRepository.PersistReplenishmentRequested or InventoryContext.InventoryRepository.PersistReservationReleased or InventoryContext.InventoryRepository.PersistStockAdjusted or InventoryContext.InventoryRepository.PersistStockAllocated or InventoryContext.InventoryRepository.PersistStockPicked or InventoryContext.InventoryRepository.PersistStockReceived or InventoryContext.InventoryRepository.PersistStockReserved or InventoryContext.InventoryRepository.PersistStockTransferred
   } with {
     briefly "Anything that writes InventoryRepository"
     described as {
@@ -440,6 +444,21 @@ context InventoryContext as router is {
         |Instructs this repository to apply StockTransferred to the stored row. A
         |persistence command, not a domain command: it declares no `yields`
         |because storing a row records no new entity state.
+      }
+    }
+    command PersistInspectionRecorded is {
+      inventoryId: InventoryId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row InspectionRecorded applies to.
+        }
+      }
+    } with {
+      briefly "Persist InspectionRecorded"
+      described as {
+        |Instructs this repository to apply InspectionRecorded to the stored
+        |row. A persistence command, not a domain command: it declares no
+        |`yields` because storing a row records no new entity state.
       }
     }
     command PersistCycleCountRecorded is {
@@ -557,6 +576,9 @@ context InventoryContext as router is {
       }
       on persistStockTransferred: command PersistStockTransferred is {
         do "apply StockTransferred to the stored row"
+      }
+      on persistInspectionRecorded: command PersistInspectionRecorded is {
+        do "apply InspectionRecorded to the stored row"
       }
       on persistCycleCountRecorded: command PersistCycleCountRecorded is {
         do "apply CycleCountRecorded to the stored row"
@@ -694,6 +716,10 @@ context InventoryContext as router is {
       on cycleCountRecorded: event Inventory.CycleCountRecorded is {
         tell command InventoryContext.InventoryRepository.PersistCycleCountRecorded(inventoryId = cycleCountRecorded.inventoryId) to repository InventoryContext.InventoryRepository
       }
+      on inspectionRecorded: event Inventory.InspectionRecorded is {
+        tell command InventoryContext.InventoryRepository.PersistInspectionRecorded(inventoryId = inspectionRecorded.inventoryId) to repository InventoryContext.InventoryRepository
+        do "apply InspectionRecorded to the InventoryAnalytics projection"
+      }
       on stockAdjusted: event Inventory.StockAdjusted is {
         tell command InventoryContext.InventoryRepository.PersistStockAdjusted(inventoryId = stockAdjusted.inventoryId) to repository InventoryContext.InventoryRepository
       }
@@ -710,7 +736,7 @@ context InventoryContext as router is {
     }
   }
   type InventoryEvent is one of {
-    InventoryContext.Inventory.InventoryInitialized or InventoryContext.Inventory.StockReceived or InventoryContext.Inventory.StockPicked or InventoryContext.Inventory.CycleCountRecorded or InventoryContext.Inventory.ReplenishmentRequested or InventoryContext.Inventory.ReservationReleased or InventoryContext.Inventory.StockAdjusted or InventoryContext.Inventory.StockAllocated or InventoryContext.Inventory.StockReserved or InventoryContext.Inventory.StockTransferred
+    InventoryContext.Inventory.InventoryInitialized or InventoryContext.Inventory.StockReceived or InventoryContext.Inventory.StockPicked or InventoryContext.Inventory.CycleCountRecorded or InventoryContext.Inventory.InspectionRecorded or InventoryContext.Inventory.ReplenishmentRequested or InventoryContext.Inventory.ReservationReleased or InventoryContext.Inventory.StockAdjusted or InventoryContext.Inventory.StockAllocated or InventoryContext.Inventory.StockReserved or InventoryContext.Inventory.StockTransferred
   } with {
     briefly "Inventory event union"
     described as {

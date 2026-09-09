@@ -24,6 +24,9 @@ context ApparelContext as router is {
     on createCutOrder: command CutOrder.CreateCutOrder is {
       send createCutOrder to outlet ApparelContext.CutOrderCommandStreamOut
     }
+    on recordMachineBreakdown: command CutOrder.RecordMachineBreakdown is {
+      send recordMachineBreakdown to outlet ApparelContext.CutOrderCommandStreamOut
+    }
     on generateMarker: command CutOrder.GenerateMarker is {
       send generateMarker to outlet ApparelContext.CutOrderCommandStreamOut
     }
@@ -146,13 +149,15 @@ context ApparelContext as router is {
       |The model's side of the MachineMaintenance conversation.
     }
   }
-  adaptor ToMachineMaintenance to context MachineMaintenance is { 
+  adaptor ToMachineMaintenance to context MachineMaintenance as flow is { 
+    outlet ToMachineMaintenanceOut is command MachineMaintenance.ReportMachineBreakdown
     handler ToMachineMaintenanceHandler is {
       on query MachineMaintenance.GetMachineStatus is {
         do "the model sends get machine status"
       }
-      on command MachineMaintenance.ReportMachineBreakdown is {
-        do "the model sends report machine breakdown"
+      on machineBreakdownRecorded: event CutOrder.MachineBreakdownRecorded is {
+        let item0: type MachineMaintenance.ReportMachineBreakdown = prompt("translate the machineBreakdownRecorded event into a ReportMachineBreakdown, a machine failing on the floor being what maintenance is called for")
+        send item0 to outlet ApparelContext.ToMachineMaintenance.ToMachineMaintenanceOut
       }
       on other is {
         error "Unexpected message for adaptor ToMachineMaintenance"
@@ -348,7 +353,7 @@ context ApparelContext as router is {
   include "CutOrder.riddl"
   // Repository for cut order persistence
   type CutOrderRepositoryCommand is one of {
-    ApparelContext.CutOrderRepository.PersistBundleAssigned or ApparelContext.CutOrderRepository.PersistBundlesCreated or ApparelContext.CutOrderRepository.PersistCutOrderCancelled or ApparelContext.CutOrderRepository.PersistCutOrderCreated or ApparelContext.CutOrderRepository.PersistFabricCut or ApparelContext.CutOrderRepository.PersistGarmentsPacked or ApparelContext.CutOrderRepository.PersistMarkerGenerated or ApparelContext.CutOrderRepository.PersistQualityCheckRecorded or ApparelContext.CutOrderRepository.PersistSewingCompleted or ApparelContext.CutOrderRepository.PersistTrimmingCompleted
+    ApparelContext.CutOrderRepository.PersistBundleAssigned or ApparelContext.CutOrderRepository.PersistBundlesCreated or ApparelContext.CutOrderRepository.PersistCutOrderCancelled or ApparelContext.CutOrderRepository.PersistCutOrderCreated or ApparelContext.CutOrderRepository.PersistFabricCut or ApparelContext.CutOrderRepository.PersistGarmentsPacked or ApparelContext.CutOrderRepository.PersistMarkerGenerated or ApparelContext.CutOrderRepository.PersistMachineBreakdownRecorded or ApparelContext.CutOrderRepository.PersistQualityCheckRecorded or ApparelContext.CutOrderRepository.PersistSewingCompleted or ApparelContext.CutOrderRepository.PersistTrimmingCompleted
   } with {
     briefly "Anything that writes CutOrderRepository"
     described as {
@@ -480,6 +485,21 @@ context ApparelContext as router is {
         |because storing a row records no new entity state.
       }
     }
+    command PersistMachineBreakdownRecorded is {
+      cutOrderId: CutOrderId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row MachineBreakdownRecorded applies to.
+        }
+      }
+    } with {
+      briefly "Persist MachineBreakdownRecorded"
+      described as {
+        |Instructs this repository to apply MachineBreakdownRecorded to the
+        |stored row. A persistence command, not a domain command: it declares
+        |no `yields` because storing a row records no new entity state.
+      }
+    }
     command PersistQualityCheckRecorded is {
       cutOrderId: CutOrderId with {
         briefly "Row addressed"
@@ -577,6 +597,9 @@ context ApparelContext as router is {
       }
       on persistGarmentsPacked: command PersistGarmentsPacked is {
         do "apply GarmentsPacked to the stored row"
+      }
+      on persistMachineBreakdownRecorded: command PersistMachineBreakdownRecorded is {
+        do "apply MachineBreakdownRecorded to the stored row"
       }
       on persistQualityCheckRecorded: command PersistQualityCheckRecorded is {
         do "apply QualityCheckRecorded to the stored row"
@@ -696,6 +719,10 @@ context ApparelContext as router is {
       }
     }
     handler SAMEfficiencyHandler is {
+      on machineBreakdownRecorded: event CutOrder.MachineBreakdownRecorded is {
+        tell command ApparelContext.CutOrderRepository.PersistMachineBreakdownRecorded(cutOrderId = machineBreakdownRecorded.cutOrderId) to repository ApparelContext.CutOrderRepository
+        do "apply MachineBreakdownRecorded to the SAMEfficiencyProjector projection"
+      }
       on bundleAssigned: event CutOrder.BundleAssigned is {
         tell command ApparelContext.CutOrderRepository.PersistBundleAssigned(cutOrderId = bundleAssigned.cutOrderId) to repository ApparelContext.CutOrderRepository
         do "apply BundleAssigned to the SAMEfficiencyProjector projection"
@@ -841,6 +868,10 @@ context ApparelContext as router is {
       }
     }
     handler BundleThroughputHandler is {
+      on machineBreakdownRecorded: event CutOrder.MachineBreakdownRecorded is {
+        tell command ApparelContext.CutOrderRepository.PersistMachineBreakdownRecorded(cutOrderId = machineBreakdownRecorded.cutOrderId) to repository ApparelContext.CutOrderRepository
+        do "apply MachineBreakdownRecorded to the BundleThroughputProjector projection"
+      }
       on cutOrderCancelled: event CutOrder.CutOrderCancelled is {
         tell command ApparelContext.CutOrderRepository.PersistCutOrderCancelled(cutOrderId = cutOrderCancelled.cutOrderId) to repository ApparelContext.CutOrderRepository
         do "apply CutOrderCancelled to the BundleThroughputProjector projection"
@@ -998,6 +1029,10 @@ context ApparelContext as router is {
       }
     }
     handler OperatorPerformanceHandler is {
+      on machineBreakdownRecorded: event CutOrder.MachineBreakdownRecorded is {
+        tell command ApparelContext.CutOrderRepository.PersistMachineBreakdownRecorded(cutOrderId = machineBreakdownRecorded.cutOrderId) to repository ApparelContext.CutOrderRepository
+        do "apply MachineBreakdownRecorded to the OperatorPerformanceProjector projection"
+      }
       on bundlesCreatedEvt: event CutOrder.BundlesCreated is {
         tell command ApparelContext.CutOrderRepository.PersistBundlesCreated(cutOrderId = bundlesCreatedEvt.cutOrderId) to repository ApparelContext.CutOrderRepository
         do "apply BundlesCreated to the OperatorPerformanceProjector projection"
@@ -1168,6 +1203,10 @@ context ApparelContext as router is {
       }
     }
     handler QualityMetricsHandler is {
+      on machineBreakdownRecorded: event CutOrder.MachineBreakdownRecorded is {
+        tell command ApparelContext.CutOrderRepository.PersistMachineBreakdownRecorded(cutOrderId = machineBreakdownRecorded.cutOrderId) to repository ApparelContext.CutOrderRepository
+        do "apply MachineBreakdownRecorded to the QualityMetricsProjector projection"
+      }
       on bundleAssigned: event CutOrder.BundleAssigned is {
         tell command ApparelContext.CutOrderRepository.PersistBundleAssigned(cutOrderId = bundleAssigned.cutOrderId) to repository ApparelContext.CutOrderRepository
         do "apply BundleAssigned to the QualityMetricsProjector projection"
@@ -1222,7 +1261,7 @@ context ApparelContext as router is {
   }
   // ---- Event publication for CutOrder ----
   type CutOrderEvent is one of {
-    ApparelContext.CutOrder.CutOrderCreated or ApparelContext.CutOrder.MarkerGenerated or ApparelContext.CutOrder.FabricCut or ApparelContext.CutOrder.BundlesCreated or ApparelContext.CutOrder.BundleAssigned or ApparelContext.CutOrder.SewingCompleted or ApparelContext.CutOrder.TrimmingCompleted or ApparelContext.CutOrder.QualityCheckRecorded or ApparelContext.CutOrder.GarmentsPacked or ApparelContext.CutOrder.CutOrderCancelled
+    ApparelContext.CutOrder.CutOrderCreated or ApparelContext.CutOrder.MarkerGenerated or ApparelContext.CutOrder.FabricCut or ApparelContext.CutOrder.BundlesCreated or ApparelContext.CutOrder.BundleAssigned or ApparelContext.CutOrder.SewingCompleted or ApparelContext.CutOrder.TrimmingCompleted or ApparelContext.CutOrder.QualityCheckRecorded or ApparelContext.CutOrder.MachineBreakdownRecorded or ApparelContext.CutOrder.GarmentsPacked or ApparelContext.CutOrder.CutOrderCancelled
   } with {
     briefly "CutOrder event alternation"
     described as {

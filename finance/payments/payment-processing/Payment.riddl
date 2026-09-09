@@ -1,7 +1,7 @@
 // Payment Processing - Payment Entity
 entity Payment as flow is {
   type PaymentCommand is one of {
-    Payment.AuthorizePayment or Payment.DeclinePayment or Payment.CapturePayment or Payment.VoidPayment or Payment.RefundPayment or Payment.SettlePayment or Payment.RecordDispute or Payment.ResolveDispute
+    Payment.InitiatePayment or Payment.RecordAuthentication or Payment.AuthorizePayment or Payment.DeclinePayment or Payment.CapturePayment or Payment.VoidPayment or Payment.RefundPayment or Payment.SettlePayment or Payment.RecordDispute or Payment.ResolveDispute
   } with {
     briefly "Payment command alternation"
     described as {
@@ -10,6 +10,55 @@ entity Payment as flow is {
   }
   inlet PaymentCommands is type PaymentCommand  outlet PaymentEvents2 is type PaymentEvent
   // Commands
+  command InitiatePayment is {
+    paymentId: PaymentId with {
+      briefly "Payment ID"
+      described as {
+        |Identifier assigned to the payment as it enters.
+      }
+    }
+    info: PaymentInfo with {
+      briefly "Info"
+      described as {
+        |What is being paid, to whom, and how much.
+      }
+    }
+    card: CardDetails with {
+      briefly "Card"
+      described as {
+        |The instrument presented.
+      }
+    }
+  } with {
+    briefly "Initiate a payment"
+    described as {
+      |Take a payment request in. This is the FIRST thing that happens to a
+      |payment and the model had no way to say it: every event began at
+      |authorization, so the steps that must precede authorization -- 3-D
+      |Secure, and the authorization request to the card network itself --
+      |had nothing to fire on.
+    }
+  }
+  command RecordAuthentication is {
+    paymentId: PaymentId with {
+      briefly "Payment ID"
+      described as {
+        |Payment the authentication belongs to.
+      }
+    }
+    authenticationOutcome: String(1,50) with {
+      briefly "Outcome"
+      described as {
+        |What the cardholder authentication came back as.
+      }
+    }
+  } with {
+    briefly "Record cardholder authentication"
+    described as {
+      |Record the outcome of 3-D Secure, which is what makes a payment fit to
+      |send to the card network for authorization.
+    }
+  }
   command AuthorizePayment is {
     paymentId: PaymentId with {
       briefly "Payment ID"
@@ -181,6 +230,52 @@ entity Payment as flow is {
     }
   }
   // Events
+  event PaymentInitiated is {
+    paymentId: PaymentId with {
+      briefly "Payment"
+      described as {
+        |Payment that has entered.
+      }
+    }
+    info: PaymentInfo with {
+      briefly "Info"
+      described as {
+        |Payment info.
+      }
+    }
+    card: CardDetails with {
+      briefly "Card"
+      described as {
+        |Card presented.
+      }
+    }
+  } with {
+    briefly "Payment initiated"
+    described as {
+      |Emitted when a payment request enters, before any authentication or
+      |authorization has been attempted.
+    }
+  }
+  event PaymentAuthenticated is {
+    paymentId: PaymentId with {
+      briefly "Payment"
+      described as {
+        |Payment authenticated.
+      }
+    }
+    authenticationOutcome: String(1,50) with {
+      briefly "Outcome"
+      described as {
+        |Cardholder authentication outcome.
+      }
+    }
+  } with {
+    briefly "Payment authenticated"
+    described as {
+      |Emitted when cardholder authentication has come back, which is when
+      |the payment may be presented to the card network.
+    }
+  }
   event PaymentAuthorized is {
     paymentId: PaymentId with {
       briefly "Payment"
@@ -628,6 +723,18 @@ entity Payment as flow is {
   }
   // Handler
   handler PaymentHandler is {
+    on initiatePayment: command InitiatePayment is {
+      tell event PaymentInitiated(paymentId = initiatePayment.paymentId, info = initiatePayment.info, card = initiatePayment.card) to entity PaymentContext.Payment
+    }
+    on recordAuthentication: command RecordAuthentication is {
+      tell event PaymentAuthenticated(paymentId = recordAuthentication.paymentId, authenticationOutcome = recordAuthentication.authenticationOutcome) to entity PaymentContext.Payment
+    }
+    on paymentInitiated: event PaymentInitiated is {
+      do "apply PaymentInitiated to the payment so it can be persisted and replayed"
+    }
+    on paymentAuthenticated: event PaymentAuthenticated is {
+      do "apply PaymentAuthenticated to the payment so it can be persisted and replayed"
+    }
     on declinePayment: command DeclinePayment is {
       yield event PaymentDeclined(paymentId = declinePayment.paymentId, info = prompt("the info of this payment declined"), result = declinePayment.result, declinedAt = prompt("the declined at of this payment declined"))
     }

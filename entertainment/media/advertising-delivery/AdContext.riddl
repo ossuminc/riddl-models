@@ -3,6 +3,9 @@ context AdContext as router is {
   inlet AdImpressionCommandStreamIn is type AdImpressionCommand  outlet AdImpressionCommandStreamOut is type AdImpressionCommand
   inlet AdImpressionResultStreamIn is result AdImpression.AdImpressionResult  outlet AdImpressionResultStreamOut is result AdImpression.AdImpressionResult
   handler AdContextBoundary is {
+    on openImpressionOpportunity: command AdImpression.OpenImpressionOpportunity is {
+      send openImpressionOpportunity to outlet AdContext.AdImpressionCommandStreamOut
+    }
     on recordImpression: command AdImpression.RecordImpression is {
       send recordImpression to outlet AdContext.AdImpressionCommandStreamOut
     }
@@ -229,10 +232,12 @@ context AdContext as router is {
       |The model's side of the RTBExchange conversation.
     }
   }
-  adaptor ToRTBExchange to context RTBExchange is { 
+  adaptor ToRTBExchange to context RTBExchange as flow is { 
+    outlet ToRTBExchangeOut is command RTBExchange.SendBidRequest
     handler ToRTBExchangeHandler is {
-      on command RTBExchange.SendBidRequest is {
-        do "the model sends send bid request"
+      on impressionOpportunityOpened: event AdImpression.ImpressionOpportunityOpened is {
+        let item0: type RTBExchange.SendBidRequest = prompt("translate the impressionOpportunityOpened event into a SendBidRequest, a slot coming free being what is auctioned, before any ad has been chosen")
+        send item0 to outlet AdContext.ToRTBExchange.ToRTBExchangeOut
       }
       on other is {
         error "Unexpected message for adaptor ToRTBExchange"
@@ -293,7 +298,7 @@ context AdContext as router is {
   include "AdImpression.riddl"
   // Repository for ad persistence
   type AdRepositoryCommand is one of {
-    AdContext.AdRepository.PersistAdClicked or AdContext.AdRepository.PersistAdCompleted or AdContext.AdRepository.PersistAdErrorOccurred or AdContext.AdRepository.PersistAdSkipped or AdContext.AdRepository.PersistAdStarted or AdContext.AdRepository.PersistImpressionRecorded or AdContext.AdRepository.PersistQuartileReached
+    AdContext.AdRepository.PersistAdClicked or AdContext.AdRepository.PersistAdCompleted or AdContext.AdRepository.PersistAdErrorOccurred or AdContext.AdRepository.PersistAdSkipped or AdContext.AdRepository.PersistAdStarted or AdContext.AdRepository.PersistImpressionOpportunityOpened or AdContext.AdRepository.PersistImpressionRecorded or AdContext.AdRepository.PersistQuartileReached
   } with {
     briefly "Anything that writes AdRepository"
     described as {
@@ -392,6 +397,22 @@ context AdContext as router is {
         |because storing a row records no new entity state.
       }
     }
+    command PersistImpressionOpportunityOpened is {
+      impressionId: ImpressionId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ImpressionOpportunityOpened applies to.
+        }
+      }
+    } with {
+      briefly "Persist ImpressionOpportunityOpened"
+      described as {
+        |Instructs this repository to apply ImpressionOpportunityOpened to
+        |the stored row. A persistence command, not a domain command: it
+        |declares no `yields` because storing a row records no new entity
+        |state.
+      }
+    }
     command PersistImpressionRecorded is {
       impressionId: ImpressionId with {
         briefly "Row addressed"
@@ -461,6 +482,9 @@ context AdContext as router is {
       }
       on persistAdStarted: command PersistAdStarted is {
         do "apply AdStarted to the stored row"
+      }
+      on persistImpressionOpportunityOpened: command PersistImpressionOpportunityOpened is {
+        do "apply ImpressionOpportunityOpened to the stored row"
       }
       on persistImpressionRecorded: command PersistImpressionRecorded is {
         do "apply ImpressionRecorded to the stored row"
@@ -562,6 +586,10 @@ context AdContext as router is {
       }
     }
     handler AnalyticsHandler is {
+      on impressionOpportunityOpened: event AdImpression.ImpressionOpportunityOpened is {
+        tell command AdContext.AdRepository.PersistImpressionOpportunityOpened(impressionId = impressionOpportunityOpened.impressionId) to repository AdContext.AdRepository
+        do "apply ImpressionOpportunityOpened to the AdAnalytics projection"
+      }
       on adErrorOccurred: event AdImpression.AdErrorOccurred is {
         tell command AdContext.AdRepository.PersistAdErrorOccurred(impressionId = adErrorOccurred.impressionId) to repository AdContext.AdRepository
         do "apply AdErrorOccurred to the AdAnalytics projection"

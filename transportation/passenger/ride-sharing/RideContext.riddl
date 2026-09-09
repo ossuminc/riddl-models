@@ -33,6 +33,9 @@ context RideContext as router is {
     on cancelRide: command Ride.CancelRide is {
       send cancelRide to outlet RideContext.RideCommandStreamOut
     }
+    on reportRideIncident: command Ride.ReportRideIncident is {
+      send reportRideIncident to outlet RideContext.RideCommandStreamOut
+    }
     on rideResult: result Ride.RideResult is {
       send rideResult to outlet RideContext.RideResultStreamOut
     }
@@ -315,8 +318,9 @@ context RideContext as router is {
   adaptor ToSafetyService to context SafetyService as flow is { 
     outlet ToSafetyServiceOut is type SafetyService.SafetyServiceCommand
     handler ToSafetyServiceHandler is {
-      on command SafetyService.ReportSafetyIncident is {
-        do "the model sends report safety incident"
+      on safetyIncidentReported: event Ride.SafetyIncidentReported is {
+        let item0: type SafetyService.ReportSafetyIncident = prompt("translate the safetyIncidentReported event into a ReportSafetyIncident, the ride's own record of the incident being what the safety service is told")
+        send item0 to outlet RideContext.ToSafetyService.ToSafetyServiceOut
       }
       on tripStarted: event Ride.TripStarted is {
         let item0: type SafetyService.ShareTripStatus = prompt("translate the tripStarted event into a ShareTripStatus, a trip in progress being what a rider's contacts watch")
@@ -341,7 +345,7 @@ context RideContext as router is {
   include "Ride.riddl"
   // Repository for ride persistence
   type RideRepositoryCommand is one of {
-    RideContext.RideRepository.PersistDriverAssigned or RideContext.RideRepository.PersistDriverHasArrived or RideContext.RideRepository.PersistDriverIsEnRoute or RideContext.RideRepository.PersistLocationUpdated or RideContext.RideRepository.PersistPaymentProcessed or RideContext.RideRepository.PersistRideCancelled or RideContext.RideRepository.PersistRideRated or RideContext.RideRepository.PersistRideRequested or RideContext.RideRepository.PersistTripCompleted or RideContext.RideRepository.PersistTripStarted
+    RideContext.RideRepository.PersistDriverAssigned or RideContext.RideRepository.PersistDriverHasArrived or RideContext.RideRepository.PersistDriverIsEnRoute or RideContext.RideRepository.PersistLocationUpdated or RideContext.RideRepository.PersistPaymentProcessed or RideContext.RideRepository.PersistRideCancelled or RideContext.RideRepository.PersistRideRated or RideContext.RideRepository.PersistSafetyIncidentReported or RideContext.RideRepository.PersistRideRequested or RideContext.RideRepository.PersistTripCompleted or RideContext.RideRepository.PersistTripStarted
   } with {
     briefly "Anything that writes RideRepository"
     described as {
@@ -438,6 +442,21 @@ context RideContext as router is {
         |Instructs this repository to apply TripStarted to the stored row. A
         |persistence command, not a domain command: it declares no `yields`
         |because storing a row records no new entity state.
+      }
+    }
+    command PersistSafetyIncidentReported is {
+      rideId: RideId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row SafetyIncidentReported applies to.
+        }
+      }
+    } with {
+      briefly "Persist SafetyIncidentReported"
+      described as {
+        |Instructs this repository to apply SafetyIncidentReported to the
+        |stored row. A persistence command, not a domain command: it declares
+        |no `yields` because storing a row records no new entity state.
       }
     }
     command PersistRideCancelled is {
@@ -555,6 +574,9 @@ context RideContext as router is {
       }
       on persistTripStarted: command PersistTripStarted is {
         do "apply TripStarted to the stored row"
+      }
+      on persistSafetyIncidentReported: command PersistSafetyIncidentReported is {
+        do "apply SafetyIncidentReported to the stored row"
       }
       on persistRideCancelled: command PersistRideCancelled is {
         do "apply RideCancelled to the stored row"
@@ -699,6 +721,10 @@ context RideContext as router is {
         tell command RideContext.RideRepository.PersistRideCancelled(rideId = rideCancelled.rideId) to repository RideContext.RideRepository
         do "Update cancellation metrics"
       }
+      on safetyIncidentReported: event Ride.SafetyIncidentReported is {
+        tell command RideContext.RideRepository.PersistSafetyIncidentReported(rideId = safetyIncidentReported.rideId) to repository RideContext.RideRepository
+        do "Update safety incident metrics"
+      }
     } with {
       briefly "Maintains ride analytics"
       described as {
@@ -713,7 +739,7 @@ context RideContext as router is {
   }
   // ---- Event publication for Ride ----
   type RideEvent is one of {
-    RideContext.Ride.RideRequested or RideContext.Ride.DriverAssigned or RideContext.Ride.DriverIsEnRoute or RideContext.Ride.DriverHasArrived or RideContext.Ride.TripStarted or RideContext.Ride.LocationUpdated or RideContext.Ride.TripCompleted or RideContext.Ride.PaymentProcessed or RideContext.Ride.RideRated or RideContext.Ride.RideCancelled
+    RideContext.Ride.RideRequested or RideContext.Ride.DriverAssigned or RideContext.Ride.DriverIsEnRoute or RideContext.Ride.DriverHasArrived or RideContext.Ride.TripStarted or RideContext.Ride.LocationUpdated or RideContext.Ride.TripCompleted or RideContext.Ride.PaymentProcessed or RideContext.Ride.RideRated or RideContext.Ride.RideCancelled or RideContext.Ride.SafetyIncidentReported
   } with {
     briefly "Ride event alternation"
     described as {
@@ -763,6 +789,10 @@ context RideContext as router is {
       on rideCancelled: event Ride.RideCancelled is {
         send rideCancelled to outlet RideEventSplitToRideAnalytics
         tell rideCancelled to entity RideContext.Ride
+      }
+      on safetyIncidentReported: event Ride.SafetyIncidentReported is {
+        send safetyIncidentReported to outlet RideEventSplitToRideAnalytics
+        tell safetyIncidentReported to entity RideContext.Ride
       }
       on other is {
         error "Unexpected message for processor RideEventSplit"

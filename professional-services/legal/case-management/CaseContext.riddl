@@ -30,6 +30,12 @@ context CaseContext as router is {
     on recordExpense: command LegalCase.RecordExpense is {
       forward recordExpense to outlet CaseContext.LegalCaseCommandStreamOut
     }
+    on recordClientPayment: command LegalCase.RecordClientPayment is {
+      forward recordClientPayment to outlet CaseContext.LegalCaseCommandStreamOut
+    }
+    on recordConflictWaiverObtained: command LegalCase.RecordConflictWaiverObtained is {
+      forward recordConflictWaiverObtained to outlet CaseContext.LegalCaseCommandStreamOut
+    }
     on addDocument: command LegalCase.AddDocument is {
       forward addDocument to outlet CaseContext.LegalCaseCommandStreamOut
     }
@@ -109,8 +115,9 @@ context CaseContext as router is {
         let delivery: type BillingSystem.SendInvoice = prompt("translate the caseClosed event into a SendInvoice putting that invoice in front of the client once it exists")
         send delivery to outlet CaseContext.ToBillingSystem.ToBillingSystemOut
       }
-      on command BillingSystem.RecordPayment is {
-        do "the model sends record payment"
+      on clientPaymentReceived: event LegalCase.ClientPaymentReceived is {
+        let item0: type BillingSystem.RecordPayment = prompt("translate the clientPaymentReceived event into a RecordPayment settling the invoice the matter was billed on")
+        send item0 to outlet CaseContext.ToBillingSystem.ToBillingSystemOut
       }
       on other is {
         error "Unexpected message for adaptor ToBillingSystem"
@@ -274,8 +281,9 @@ context CaseContext as router is {
   adaptor ToConflictDatabase to context ConflictDatabase as flow is { 
     outlet ToConflictDatabaseOut is type ConflictDatabase.ConflictDatabaseCommand
     handler ToConflictDatabaseHandler is {
-      on command ConflictDatabase.RecordConflictWaiver is {
-        do "the model sends record conflict waiver"
+      on conflictWaiverObtained: event LegalCase.ConflictWaiverObtained is {
+        let item0: type ConflictDatabase.RecordConflictWaiver = prompt("translate the conflictWaiverObtained event into a RecordConflictWaiver so the waiver stands against the conflict the search found")
+        send item0 to outlet CaseContext.ToConflictDatabase.ToConflictDatabaseOut
       }
       on caseCreated: event LegalCase.CaseCreated is {
         let item0: type ConflictDatabase.SearchConflicts = prompt("translate the caseCreated event into a SearchConflicts, a new case having to be cleared before work begins")
@@ -355,7 +363,7 @@ context CaseContext as router is {
   include "types.riddl"
   include "LegalCase.riddl"
   type CaseRepositoryCommand is one of {
-    CaseContext.CaseRepository.PersistCaseArchived or CaseContext.CaseRepository.PersistCaseClosed or CaseContext.CaseRepository.PersistCaseCreated or CaseContext.CaseRepository.PersistCasePlacedOnHold or CaseContext.CaseRepository.PersistCasePrioritySet or CaseContext.CaseRepository.PersistCaseReactivated or CaseContext.CaseRepository.PersistCaseStatusUpdated or CaseContext.CaseRepository.PersistCourtDateCancelled or CaseContext.CaseRepository.PersistCourtDateScheduled or CaseContext.CaseRepository.PersistDocumentAdded or CaseContext.CaseRepository.PersistExpenseRecorded or CaseContext.CaseRepository.PersistNoteAdded or CaseContext.CaseRepository.PersistTeamMemberAssigned or CaseContext.CaseRepository.PersistTeamMemberRemoved or CaseContext.CaseRepository.PersistTimeEntryRecorded
+    CaseContext.CaseRepository.PersistClientPaymentReceived or CaseContext.CaseRepository.PersistConflictWaiverObtained or CaseContext.CaseRepository.PersistCaseArchived or CaseContext.CaseRepository.PersistCaseClosed or CaseContext.CaseRepository.PersistCaseCreated or CaseContext.CaseRepository.PersistCasePlacedOnHold or CaseContext.CaseRepository.PersistCasePrioritySet or CaseContext.CaseRepository.PersistCaseReactivated or CaseContext.CaseRepository.PersistCaseStatusUpdated or CaseContext.CaseRepository.PersistCourtDateCancelled or CaseContext.CaseRepository.PersistCourtDateScheduled or CaseContext.CaseRepository.PersistDocumentAdded or CaseContext.CaseRepository.PersistExpenseRecorded or CaseContext.CaseRepository.PersistNoteAdded or CaseContext.CaseRepository.PersistTeamMemberAssigned or CaseContext.CaseRepository.PersistTeamMemberRemoved or CaseContext.CaseRepository.PersistTimeEntryRecorded
   } with {
     briefly "Anything that writes CaseRepository"
     described as {
@@ -376,7 +384,37 @@ context CaseContext as router is {
         |Its own inlet: an inlet accepts exactly one connector.
       }
     }
-    inlet CaseRepositoryFromCaseDashboard is type CaseRepositoryCommand    command PersistCaseArchived is {
+    inlet CaseRepositoryFromCaseDashboard is type CaseRepositoryCommand    command PersistClientPaymentReceived is {
+      caseId: CaseId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ClientPaymentReceived applies to.
+        }
+      }
+    } with {
+      briefly "Persist ClientPaymentReceived"
+      described as {
+        |Instructs this repository to apply ClientPaymentReceived to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistConflictWaiverObtained is {
+      caseId: CaseId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ConflictWaiverObtained applies to.
+        }
+      }
+    } with {
+      briefly "Persist ConflictWaiverObtained"
+      described as {
+        |Instructs this repository to apply ConflictWaiverObtained to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistCaseArchived is {
       caseId: CaseId with {
         briefly "Row addressed"
         described as {
@@ -645,6 +683,12 @@ context CaseContext as router is {
       }
     }
     handler CaseQueryHandler is {
+      on persistClientPaymentReceived: command PersistClientPaymentReceived is {
+        do "apply ClientPaymentReceived to the stored row"
+      }
+      on persistConflictWaiverObtained: command PersistConflictWaiverObtained is {
+        do "apply ConflictWaiverObtained to the stored row"
+      }
       on persistCaseArchived: command PersistCaseArchived is {
         do "apply CaseArchived to the stored row"
       }
@@ -879,6 +923,14 @@ context CaseContext as router is {
       }
     }
     handler DashboardHandler is {
+      on clientPaymentReceived: event LegalCase.ClientPaymentReceived is {
+        tell command CaseContext.CaseRepository.PersistClientPaymentReceived(caseId = clientPaymentReceived.caseId) to repository CaseContext.CaseRepository
+        do "apply ClientPaymentReceived to the CaseDashboard projection"
+      }
+      on conflictWaiverObtained: event LegalCase.ConflictWaiverObtained is {
+        tell command CaseContext.CaseRepository.PersistConflictWaiverObtained(caseId = conflictWaiverObtained.caseId) to repository CaseContext.CaseRepository
+        do "apply ConflictWaiverObtained to the CaseDashboard projection"
+      }
       on caseArchived: event LegalCase.CaseArchived is {
         tell command CaseContext.CaseRepository.PersistCaseArchived(caseId = caseArchived.caseId) to repository CaseContext.CaseRepository
         do "apply CaseArchived to the CaseDashboard projection"
@@ -1012,6 +1064,14 @@ context CaseContext as router is {
       }
     }
     handler WorkloadHandler is {
+      on clientPaymentReceived: event LegalCase.ClientPaymentReceived is {
+        tell command CaseContext.CaseRepository.PersistClientPaymentReceived(caseId = clientPaymentReceived.caseId) to repository CaseContext.CaseRepository
+        do "apply ClientPaymentReceived to the AttorneyWorkload projection"
+      }
+      on conflictWaiverObtained: event LegalCase.ConflictWaiverObtained is {
+        tell command CaseContext.CaseRepository.PersistConflictWaiverObtained(caseId = conflictWaiverObtained.caseId) to repository CaseContext.CaseRepository
+        do "apply ConflictWaiverObtained to the AttorneyWorkload projection"
+      }
       on caseArchived: event LegalCase.CaseArchived is {
         tell command CaseContext.CaseRepository.PersistCaseArchived(caseId = caseArchived.caseId) to repository CaseContext.CaseRepository
         do "apply CaseArchived to the AttorneyWorkload projection"
@@ -1134,6 +1194,14 @@ context CaseContext as router is {
       }
     }
     handler BillingHandler is {
+      on clientPaymentReceived: event LegalCase.ClientPaymentReceived is {
+        tell command CaseContext.CaseRepository.PersistClientPaymentReceived(caseId = clientPaymentReceived.caseId) to repository CaseContext.CaseRepository
+        do "apply ClientPaymentReceived to the BillingProjection projection"
+      }
+      on conflictWaiverObtained: event LegalCase.ConflictWaiverObtained is {
+        tell command CaseContext.CaseRepository.PersistConflictWaiverObtained(caseId = conflictWaiverObtained.caseId) to repository CaseContext.CaseRepository
+        do "apply ConflictWaiverObtained to the BillingProjection projection"
+      }
       on caseArchived: event LegalCase.CaseArchived is {
         tell command CaseContext.CaseRepository.PersistCaseArchived(caseId = caseArchived.caseId) to repository CaseContext.CaseRepository
         do "apply CaseArchived to the BillingProjection projection"
@@ -1207,7 +1275,7 @@ context CaseContext as router is {
   }
   // ---- Event publication for LegalCase ----
   type LegalCaseEvent is one of {
-    CaseContext.LegalCase.CaseCreated or CaseContext.LegalCase.TeamMemberAssigned or CaseContext.LegalCase.TeamMemberRemoved or CaseContext.LegalCase.TimeEntryRecorded or CaseContext.LegalCase.ExpenseRecorded or CaseContext.LegalCase.DocumentAdded or CaseContext.LegalCase.CourtDateScheduled or CaseContext.LegalCase.CourtDateCancelled or CaseContext.LegalCase.NoteAdded or CaseContext.LegalCase.CaseStatusUpdated or CaseContext.LegalCase.CasePrioritySet or CaseContext.LegalCase.CasePlacedOnHold or CaseContext.LegalCase.CaseReactivated or CaseContext.LegalCase.CaseClosed or CaseContext.LegalCase.CaseArchived
+    CaseContext.LegalCase.CaseCreated or CaseContext.LegalCase.TeamMemberAssigned or CaseContext.LegalCase.TeamMemberRemoved or CaseContext.LegalCase.TimeEntryRecorded or CaseContext.LegalCase.ExpenseRecorded or CaseContext.LegalCase.ClientPaymentReceived or CaseContext.LegalCase.ConflictWaiverObtained or CaseContext.LegalCase.DocumentAdded or CaseContext.LegalCase.CourtDateScheduled or CaseContext.LegalCase.CourtDateCancelled or CaseContext.LegalCase.NoteAdded or CaseContext.LegalCase.CaseStatusUpdated or CaseContext.LegalCase.CasePrioritySet or CaseContext.LegalCase.CasePlacedOnHold or CaseContext.LegalCase.CaseReactivated or CaseContext.LegalCase.CaseClosed or CaseContext.LegalCase.CaseArchived
   } with {
     briefly "LegalCase event alternation"
     described as {

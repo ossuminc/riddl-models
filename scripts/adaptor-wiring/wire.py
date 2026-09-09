@@ -38,8 +38,11 @@ def validate(d, e):
     p = subprocess.run([RIDDLC, "--provide-tips", "--no-ansi-messages",
                         "validate", e.name], cwd=d, capture_output=True, text=True)
     txt = p.stdout + p.stderr
-    bad = [l for l in txt.splitlines()
-           if re.match(r"^\[(error|warning|style|usage|missing|completeness)\]", l.strip())]
+    # ANY bracketed level, not an enumerated list: a filter that names the
+    # levels it knows silently passes the ones it does not, and `[deprecated]`
+    # was exactly that omission (found 2026-09-09 dropping a command to a
+    # single-member alternation).
+    bad = [l for l in txt.splitlines() if re.match(r"^\[[a-z-]+\]", l.strip())]
     return bad, txt
 
 TO = re.compile(r'adaptor\s+(\w+)\s+to\s+context\s+([\w.]+)')

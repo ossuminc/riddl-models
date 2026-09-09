@@ -3,6 +3,12 @@ context PaymentContext as router is {
   inlet PaymentCommandStreamIn is type PaymentCommand  outlet PaymentCommandStreamOut is type PaymentCommand
   inlet PaymentResultStreamIn is result Payment.PaymentResult  outlet PaymentResultStreamOut is result Payment.PaymentResult
   handler PaymentContextBoundary is {
+    on initiatePayment: command Payment.InitiatePayment is {
+      send initiatePayment to outlet PaymentContext.PaymentCommandStreamOut
+    }
+    on recordAuthentication: command Payment.RecordAuthentication is {
+      send recordAuthentication to outlet PaymentContext.PaymentCommandStreamOut
+    }
     on authorizePayment: command Payment.AuthorizePayment is {
       send authorizePayment to outlet PaymentContext.PaymentCommandStreamOut
     }
@@ -61,10 +67,12 @@ context PaymentContext as router is {
       |The model's side of the CardNetworkService conversation.
     }
   }
-  adaptor ToCardNetworkService to context CardNetworkService is { 
+  adaptor ToCardNetworkService to context CardNetworkService as flow is { 
+    outlet ToCardNetworkServiceOut is command CardNetworkService.SendAuthRequest
     handler ToCardNetworkServiceHandler is {
-      on command CardNetworkService.SendAuthRequest is {
-        do "the model sends send auth request"
+      on paymentAuthenticated: event Payment.PaymentAuthenticated is {
+        let item0: type CardNetworkService.SendAuthRequest = prompt("translate the paymentAuthenticated event into a SendAuthRequest, authentication having come back being what makes the payment fit to present to the network")
+        send item0 to outlet PaymentContext.ToCardNetworkService.ToCardNetworkServiceOut
       }
       on other is {
         error "Unexpected message for adaptor ToCardNetworkService"
@@ -263,10 +271,12 @@ context PaymentContext as router is {
       |The model's side of the ThreeDSecureService conversation.
     }
   }
-  adaptor ToThreeDSecureService to context ThreeDSecureService is { 
+  adaptor ToThreeDSecureService to context ThreeDSecureService as flow is { 
+    outlet ToThreeDSecureServiceOut is command ThreeDSecureService.InitiateAuthentication
     handler ToThreeDSecureServiceHandler is {
-      on command ThreeDSecureService.InitiateAuthentication is {
-        do "the model sends initiate authentication"
+      on paymentInitiated: event Payment.PaymentInitiated is {
+        let item0: type ThreeDSecureService.InitiateAuthentication = prompt("translate the paymentInitiated event into a InitiateAuthentication, a payment entering being when the cardholder must be authenticated, before anything is authorized")
+        send item0 to outlet PaymentContext.ToThreeDSecureService.ToThreeDSecureServiceOut
       }
       on other is {
         error "Unexpected message for adaptor ToThreeDSecureService"
@@ -287,7 +297,7 @@ context PaymentContext as router is {
   include "Payment.riddl"
   // Repository for payment persistence
   type PaymentRepositoryCommand is one of {
-    PaymentContext.PaymentRepository.PersistDisputeRecorded or PaymentContext.PaymentRepository.PersistDisputeResolved or PaymentContext.PaymentRepository.PersistPaymentAuthorized or PaymentContext.PaymentRepository.PersistPaymentCaptured or PaymentContext.PaymentRepository.PersistPaymentDeclined or PaymentContext.PaymentRepository.PersistPaymentRefunded or PaymentContext.PaymentRepository.PersistPaymentSettled or PaymentContext.PaymentRepository.PersistPaymentVoided
+    PaymentContext.PaymentRepository.PersistPaymentInitiated or PaymentContext.PaymentRepository.PersistPaymentAuthenticated or PaymentContext.PaymentRepository.PersistDisputeRecorded or PaymentContext.PaymentRepository.PersistDisputeResolved or PaymentContext.PaymentRepository.PersistPaymentAuthorized or PaymentContext.PaymentRepository.PersistPaymentCaptured or PaymentContext.PaymentRepository.PersistPaymentDeclined or PaymentContext.PaymentRepository.PersistPaymentRefunded or PaymentContext.PaymentRepository.PersistPaymentSettled or PaymentContext.PaymentRepository.PersistPaymentVoided
   } with {
     briefly "Anything that writes PaymentRepository"
     described as {
@@ -386,6 +396,36 @@ context PaymentContext as router is {
         |because storing a row records no new entity state.
       }
     }
+    command PersistPaymentInitiated is {
+      paymentId: PaymentId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row PaymentInitiated applies to.
+        }
+      }
+    } with {
+      briefly "Persist PaymentInitiated"
+      described as {
+        |Instructs this repository to apply PaymentInitiated to the stored
+        |row. A persistence command, not a domain command: it declares no
+        |`yields` because storing a row records no new entity state.
+      }
+    }
+    command PersistPaymentAuthenticated is {
+      paymentId: PaymentId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row PaymentAuthenticated applies to.
+        }
+      }
+    } with {
+      briefly "Persist PaymentAuthenticated"
+      described as {
+        |Instructs this repository to apply PaymentAuthenticated to the
+        |stored row. A persistence command, not a domain command: it declares
+        |no `yields` because storing a row records no new entity state.
+      }
+    }
     command PersistPaymentAuthorized is {
       paymentId: PaymentId with {
         briefly "Row addressed"
@@ -464,6 +504,12 @@ context PaymentContext as router is {
       }
       on persistDisputeRecorded: command PersistDisputeRecorded is {
         do "apply DisputeRecorded to the stored row"
+      }
+      on persistPaymentInitiated: command PersistPaymentInitiated is {
+        do "apply PaymentInitiated to the stored row"
+      }
+      on persistPaymentAuthenticated: command PersistPaymentAuthenticated is {
+        do "apply PaymentAuthenticated to the stored row"
       }
       on persistPaymentAuthorized: command PersistPaymentAuthorized is {
         do "apply PaymentAuthorized to the stored row"
@@ -585,6 +631,14 @@ context PaymentContext as router is {
       on paymentAuthorized: event Payment.PaymentAuthorized is {
         tell command PaymentContext.PaymentRepository.PersistPaymentAuthorized(paymentId = paymentAuthorized.paymentId) to repository PaymentContext.PaymentRepository
       }
+      on paymentInitiated: event Payment.PaymentInitiated is {
+        tell command PaymentContext.PaymentRepository.PersistPaymentInitiated(paymentId = paymentInitiated.paymentId) to repository PaymentContext.PaymentRepository
+        do "Count the payment as entered"
+      }
+      on paymentAuthenticated: event Payment.PaymentAuthenticated is {
+        tell command PaymentContext.PaymentRepository.PersistPaymentAuthenticated(paymentId = paymentAuthenticated.paymentId) to repository PaymentContext.PaymentRepository
+        do "Record the authentication outcome against the payment"
+      }
       on paymentCaptured: event Payment.PaymentCaptured is {
         tell command PaymentContext.PaymentRepository.PersistPaymentCaptured(paymentId = paymentCaptured.paymentId) to repository PaymentContext.PaymentRepository
       }
@@ -609,6 +663,14 @@ context PaymentContext as router is {
       on paymentAuthorized: event Payment.PaymentAuthorized is {
         send paymentAuthorized to outlet PaymentEventSplitToPaymentAnalytics
         tell paymentAuthorized to entity PaymentContext.Payment
+      }
+      on paymentInitiated: event Payment.PaymentInitiated is {
+        send paymentInitiated to outlet PaymentEventSplitToPaymentAnalytics
+        tell paymentInitiated to entity PaymentContext.Payment
+      }
+      on paymentAuthenticated: event Payment.PaymentAuthenticated is {
+        send paymentAuthenticated to outlet PaymentEventSplitToPaymentAnalytics
+        tell paymentAuthenticated to entity PaymentContext.Payment
       }
       on paymentDeclined: event Payment.PaymentDeclined is {
         send paymentDeclined to outlet PaymentEventSplitToPaymentAnalytics
