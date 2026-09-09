@@ -77,7 +77,11 @@ def apply_model(model, recs, dry=False):
             af = ad["file"]; asrc = (d / af).read_text().splitlines()
             decl_i = ad["span"]["start"]["line"] - 1
 
-        wired = [c for cl in r["clauses"] for c, _ in cl["sends"]]
+        # dedupe, preserving order: the SAME command may be sent from two
+        # clauses (a room is released on checkout AND on cancellation), and
+        # naming it twice in the alternation is `name-duplicate-content`,
+        # an Error, plus a shadowed second boundary clause.
+        wired = list(dict.fromkeys(c for cl in r["clauses"] for c, _ in cl["sends"]))
         keep  = r.get("keep", [])
         multi = len(wired) + len(keep) > 1
         outlet = f"{adname}Out"
@@ -111,11 +115,14 @@ def apply_model(model, recs, dry=False):
                     "  }"])
             edits[af].append((ai, 0, blk))
         else:
-            # 1. ascription + outlet on the existing adaptor
+            # 1. ascription + outlet on the existing adaptor. Under A103 an
+            # adaptor's ports are IMPLIED, so a placeholder may already carry
+            # `as flow` with no ports at all -- then only the outlet is new.
             line = asrc[decl_i]
-            assert " as " not in line, f"{model}/{ctx}: adaptor already ascribed"
-            edits[af].append((decl_i, 1, [line.replace(" is {", " as flow is {", 1),
-                                          f"    outlet {outlet} is {otype}"]))
+            ascribed = " as " in line.split(" is {")[0]
+            edits[af].append((decl_i, 1, ([line] if ascribed else
+                                          [line.replace(" is {", " as flow is {", 1)])
+                                         + [f"    outlet {outlet} is {otype}"]))
 
         # 2. clauses of this adaptor's handler
         hnd = None if build else next(
@@ -214,6 +221,11 @@ for l in open(sys.argv[1]):
 dry = "--dry" in sys.argv
 ok = fail = 0
 for m, rs in recs.items():
-    if apply_model(m, rs, dry): ok += 1
+    try:
+        good = apply_model(m, rs, dry)
+    except Exception as ex:          # a model this applier cannot handle
+        print(f"SKIP   {m}: {ex}")   # must not abort the whole batch
+        good = False
+    if good: ok += 1
     else: fail += 1
 print(f"\n{ok} models applied, {fail} reverted")

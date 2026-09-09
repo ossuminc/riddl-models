@@ -551,6 +551,40 @@ inspection event, and `CycleCountRecorded` counts stock rather than judging
 quality. Third of its kind, after `ReviewTermSheet` and
 `RecordConflictWaiver`.
 
+#### Shape batch 2 — claim/release: 26 pairs, 55 commands, DONE 2026-09-08
+
+> **A CLAIM fires on the event that CREATES it; its RELEASE fires on the event
+> that ENDS it.** Where a claim can end more than one way, that is more than
+> one clause, not a choice between them.
+
+All 26 SETUP. Baseline 380 -> 325. These pairs are symmetric by construction —
+`Reserve`/`Release`, `Provision`/`Deprovision`, `Index`/`Remove`,
+`Escrow`/`ReleaseEscrow` — which is why they batch cleanly and why the second
+half of the rule earns its keep: a room is released on **checkout and on
+cancellation**, a vehicle on **check-in and on cancellation**, a table on
+**closing and on cancellation**, a seat on **expiry and on cancellation**.
+Six pairs needed that third clause.
+
+**Two applier bugs, both found by the transactional revert rather than by
+inspection**, and both now fixed in `wire.py`:
+
+- **The same command sent from two clauses was emitted twice** in the
+  alternation and twice in the boundary handler —
+  `[error] [name-duplicate-content]` plus `[style] [handler-clause-shadowed]`,
+  six models at once. The wired list is deduped preserving order.
+- **A placeholder adaptor may ALREADY carry `as flow`** — legal under A103,
+  where an adaptor's ports are implied — so rewriting the declaration is
+  wrong; only the outlet is new. The applier now detects an existing
+  ascription, and a model it cannot handle is skipped rather than aborting
+  the batch.
+
+**One command left**: radiology-workflow `SpeechRecognition.InsertMacro`.
+A macro is inserted *during* a dictation session by the radiologist; it is not
+caused by anything `ImagingExam` publishes. Fourth of its kind.
+
+Note this makes a pair with a `keep` still appear in the census, which is
+correct — do not read it as unwired work.
+
 ### Traps, every one of which has already bitten
 
 - **A handler dispatches on message TYPE, so an event gets ONE clause.** A
