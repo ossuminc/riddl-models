@@ -176,10 +176,21 @@ def apply_model(model, recs, dry=False):
                     t = (d / cl["file"]).read_text().splitlines()[cl["span"]["start"]["line"]-1]
                     already |= {w for w in allc if re.search(rf"\b{w}\b", t)}
         if not set(allc) <= already:
+            # A command that declares `yields` must have its event YIELDED by
+            # whatever handles it -- `do "deliver it"` alone is
+            # msg-yield-undeclared, an Error (port-operations `OrderTugs`).
+            yields = {}
+            for n in ns:
+                if n.get("kind") == "command" and n.get("parent") == ext["path"]:
+                    m2 = re.search(r"yields event (\w+)", str(n.get("type", "")))
+                    if m2: yields[n["id"]] = m2.group(1)
             blk.append(f"  handler {ctx}Boundary is {{")
             for c in allc:
                 if c in already: continue
-                blk += [f"    on command {q}{c} is {{", '      do "deliver it to the recipient"', "    }"]
+                body = ([f'      let done: type {yields[c]} = prompt("the {yields[c]} that results from {c}")',
+                         "      yield done"] if c in yields
+                        else ['      do "deliver it to the recipient"'])
+                blk += [f"    on command {q}{c} is {{"] + body + ["    }"]
             blk += ["    on other is {",
                     f'      error "Unexpected message for external context {ctx}"',
                     "    }", "  } with {", f'    briefly "{ctx} boundary"', "  }"]

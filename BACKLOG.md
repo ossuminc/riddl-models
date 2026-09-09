@@ -5,7 +5,7 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
-## 33. Adaptor-wiring cluster campaign — IN FLIGHT, ~1300 pairs to go
+## 33. Adaptor-wiring campaign — COMPLETE 2026-09-08, 22 recorded exceptions
 
 **This is the campaign that `task/2026-09-05-do-prose-must-be-an-instruction.md`
 turned into.** That task asked for real translations in place of
@@ -693,6 +693,40 @@ useful if it happens early.
   from publishing on `PaymentAdapter`'s outlet. VendorContext has no
   fulfilment event of its own. This is a new residue kind: **the trigger
   exists but belongs to another context.**
+
+#### Shape batch 6 — the rest: 71 pairs, 108 commands, DONE 2026-09-08
+
+Baseline 130 -> 22. Everything that was left, under the four rules already
+stated, and the campaign ends here.
+
+**One applier gap, found by the transactional revert**: port-operations'
+`OrderTugs` **declares `yields event TugsOrdered`**, and a boundary handler
+saying `do "deliver it to the recipient"` does not yield it —
+`msg-yield-undeclared`, an Error. This is the BUILD-pair lesson at a smaller
+scale: there, an existing handler already yielded; here there was none, so the
+generated boundary has to yield it itself. `wire.py` now reads each command's
+declared `yields` out of the projection and emits a `let`/`yield` pair instead
+of the prose. The same model also needed `qualify`.
+
+### THE CAMPAIGN IS COMPLETE — 22 recorded exceptions
+
+**Every command owned by an external context in this corpus now has something
+that sends it, bar 22 that are recorded with a reason.** `sbt uc` holds the
+line at 22; `scripts/unsent-baseline.tsv` names them.
+
+| # | why it is not wired | commands |
+|---|---|---|
+| 6 | **no event exists to fire on** | nursing-workflow `DocumentHold`, radiology-workflow `InsertMacro`, hotel-reservations and reservation-system `SyncRates`, case-management `RecordPayment`, inventory-management `RecordInspectionResult`, supply-chain `ResolveMatchException`, case-management `RecordConflictWaiver`, portfolio-management `ReviewTermSheet` |
+| 4 | **the command OPENS an exchange the model only observes the end of** | payment-processing `SendAuthRequest` and `InitiateAuthentication`, advertising-delivery `SendBidRequest`, apparel-manufacturing `ReportMachineBreakdown`, ride-sharing `ReportSafetyIncident` |
+| 2 | **the direction is wrong in the model** | shopping-cart `CreateOrder` (an outbound adaptor that HANDLES the far command and tells an event back), supply-chain `RequestSupplies` (a clinical area asks US) |
+| 1 | **the trigger belongs to another context** | vendor-management `ProcessPayout` |
+| 1 | **a single-command channel five portlets deep** | assembly-operations `ReportAssemblyFailure` |
+| 4 | **reactive-bbq, by Reid's ruling** | `PostTransaction`, `SyncEmployeeData`, `SchedulePhotoShoot`, `PrintMenus` — its external contexts already carry an inbound leg, so an outbound one changes their shapes; belongs to #1's campaign |
+
+**The first three rows are not wiring work.** They are modelling defects the
+campaign FOUND, and each is a small, well-specified change to one model. That
+is the useful residue: the campaign's real output is not only the wiring but
+this list.
 
 ### Traps, every one of which has already bitten
 
