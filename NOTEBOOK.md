@@ -9,55 +9,57 @@ ON** (`build.sbt:28`); `../bin/riddlc` IS the build's binary on this pin.
 Take the override off at the first published tag carrying A103.
 
 Corpus: **189 models, 0 findings at every severity**, sweep canaried.
-`prettify`/`validate`/`bastify` 189/189, `pc` and the new `uc` green.
+prettify/validate/bastify 189/189, `pc` and `uc` green.
 
-### What happened this session
+### The adaptor-wiring campaign is COMPLETE
 
-Four tasks, all closed.
+**Every command owned by an external context now has something that sends it,
+bar 22 recorded exceptions.** 524 -> 22 this session, in nine batches. The
+last six were **shape batches** — grouped by speech act, not industry, on
+Reid's ruling, because 270 distinct external contexts over 305 pairs meant
+industry clustering yielded batches of one.
 
-1. **The temporal constructs landed in `language-coverage`**, not as the
-   donated `Banking` model. riddl-generator sent a validated model because the
-   corpus used `on quiescence` and `send ... at` **nowhere**; its own third
-   acceptance criterion allowed folding them into an existing model, and
-   `language-coverage` exists for exactly this and is one of only two `.conf`
-   files with no severity suppression. A resurvey schedule carries both.
-2. **Compliance / legal / tax / CRM: 39 pairs**, on four rules that extend
-   ones already ruled. Measured at 41 pairs against the handoff's "~25" — the
-   fifth consecutive under-estimate.
-3. **The BUILD pairs: 13 of 17.** licensing did NOT need an adaptor built (it
-   has one); four models nobody had listed did.
-4. **The tail measured and RULED.** 434 commands / 305 pairs / 144 models over
-   **270 distinct external contexts** — industry clustering is exhausted.
+The four rules, each now applied corpus-wide:
 
-### The three findings a fresh session should not re-derive
+| shape | fires on |
+|---|---|
+| **need** | the event that CREATES the need |
+| **undo** | the event that ENDS it |
+| **fact** | the event that PRODUCES or FIXES the fact — or, for keeping a far system's picture right, the event that makes it WRONG |
+| **know** | the event that creates the NEED TO KNOW, at the earliest point the answer changes what happens next |
 
-- **A BUILD pair needs LESS on the external side, not more.** All 17 already
-  had a handler that handled every command, with `yields`. Adding the SETUP
-  path's `<Ctx>Boundary` is `msg-yield-undeclared`, an Error — six models
-  reverted on it at once. Only the `as sink` ascription and an inlet.
-- **The tail is not lawless.** Every command is one of four speech acts
-  (need / undo / fact / know) and each has a rule already ruled. 29 of 32
-  randomly sampled pairs had an obvious trigger. What varies is never the
-  rule, only WHICH event is the trigger.
-- **`plan.py` beats recollection.** It classifies every pair SETUP / INSERT /
-  BUILD, and it corrected the handoff in both directions.
+### What a fresh session must not get wrong
+
+- **`sbt uc` is the only check in this build that sees an unsent command.**
+  `sbt v`, `checkAll` and `collect-warnings.py` are all green on a model that
+  declares a whole integration and drives none of it. It holds the line at 22
+  over `scripts/unsent-baseline.tsv`; refresh with
+  `./scripts/check-unsent.py --update` after any wiring.
+- **The tooling is TRACKED** in `scripts/adaptor-wiring/` (census, plan, dig,
+  wire + README). It had been rebuilt from scratch three sessions running.
+  `plan.py` is the one that matters: it separates SETUP / INSERT / BUILD
+  before any editing, and it corrected the handoff in both directions.
+- **A BUILD pair needs LESS on the external side, not more** — its external
+  context already has a handler, so adding a boundary is
+  `msg-yield-undeclared`. But a command that declares `yields` and has NO
+  handler needs the generated boundary to yield it. Both are in `wire.py`.
+- **Reconcile every batch**: the drop must equal the number wired, and nothing
+  may clear that was not wired. That agreement is what proves the census is
+  live rather than quiet.
 
 ### In flight
 
-**Task #5, authorised by Reid: finish the tail in SHAPE batches** (by speech
-act, not industry), ~10 batches of ~30 pairs, residue recorded as met.
-Refresh `scripts/unsent-baseline.tsv` after each so the ratchet tightens.
+**Task: the 18 modelling defects the campaign found** (BACKLOG #33's residue
+table, minus reactive-bbq's 4). Nine commands have no event to fire on, five
+open an exchange the model only observes the end of, two have the direction
+backwards, one's trigger belongs to another context, one sits on a
+single-command channel five portlets deep. Each is a small change to one
+model, and **that list is as much the campaign's output as the wiring is**.
 
-Reid also ruled **reactive-bbq's four BUILD pairs stay with its own campaign**
-(#1), because they change existing external-context shapes rather than only
-adding to them.
+**reactive-bbq's four stay with its own campaign** (#1), by Reid's ruling.
 
-### Two things are TRACKED now that were not
-
-- `scripts/adaptor-wiring/` — census, plan, dig, wire, with a README. They had
-  been rebuilt from scratch three sessions running.
-- `sbt uc` — the ratchet. **It is the only check in this build that sees an
-  unsent command**; everything else is green on one. Canaried.
+`language-coverage` now covers `on quiescence` and `send ... at <instant>`,
+donated by riddl-generator and folded in rather than landed as a 190th model.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
