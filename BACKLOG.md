@@ -619,6 +619,46 @@ been enough.
 Also left: nursing-workflow `DocumentHold` (no hold event), hotel-reservations
 and reservation-system `SyncRates` (neither model has a rate-change event).
 
+#### Shape batch 4 — `fact`, tell-someone: 49 pairs, 55 commands, DONE 2026-09-08
+
+> **A command that TELLS a far party something fires on the event that produces
+> the thing they must be told.** For a control command to a plant system, that
+> is the event that creates the need to ACT, not the one that records having
+> acted.
+
+Baseline 262 -> 207. The control-command half is the part worth stating:
+pipeline-operations and water-utility send their SCADA signal on
+`LeakIndicatorReported` / `LeakReported`, and grid-operations sends its control
+command on `OutageReported` — **not** on `SegmentShutDown`, `LeakResolved` or
+`SwitchingExecuted`, which are the model recording that the signal already
+worked. Firing on those would model the effect as its own cause.
+
+**Five recorded rather than wired, and four are the same defect**: the command
+must be sent BEFORE anything the model publishes.
+
+- payment-processing `CardNetworkService.SendAuthRequest` — an auth request
+  precedes authorization; every `PaymentContext` event is post-authorization.
+  Exactly the `ThreeDSecureService.InitiateAuthentication` gap already
+  recorded, in the same model.
+- advertising-delivery `RTBExchange.SendBidRequest` — a bid request precedes
+  the impression; `AdContext` has no impression-opportunity event.
+- apparel-manufacturing `MachineMaintenance.ReportMachineBreakdown` — no
+  breakdown event; `CutOrder` models the order, not the machine.
+- ride-sharing `SafetyService.ReportSafetyIncident` — no incident event.
+
+**A fifth is structural**: assembly-operations
+`WorkOrderService.ReportAssemblyFailure`. Its channel is a fully-wired
+pass-through typed with a SINGLE command — entity outlet, adaptor inlet,
+adaptor outlet and external inlet all `command ReportAssemblyComplete`, with
+two connectors feeding the adaptor. Admitting a second message means retyping
+five portlets and adding an alternation, which is the lab-orders trap at its
+deepest. It deserves its own change rather than a line in a batch.
+
+**A pattern is now visible in the residue**: the commonest reason a command
+cannot be wired is that it is the FIRST step of an exchange, and the model
+only publishes events about what happened after. That is a real modelling
+observation about the corpus, not a limitation of the rules.
+
 ### Traps, every one of which has already bitten
 
 - **A handler dispatches on message TYPE, so an event gets ONE clause.** A
