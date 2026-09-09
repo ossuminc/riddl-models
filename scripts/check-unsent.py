@@ -28,12 +28,22 @@ def current():
                        capture_output=True, text=True)
     if p.returncode != 0:
         sys.exit(f"census failed:\n{p.stderr}")
-    import json
+    import json, re
     rows = [json.loads(l) for l in p.stdout.splitlines() if l.strip()]
-    if not rows:
-        # A census that finds nothing is indistinguishable from a clean
-        # corpus, and this repository has been bitten by exactly that.
-        sys.exit("census returned NOTHING -- refusing to treat that as clean")
+    # ZERO FINDINGS IS NOW THE TRUE STATE, so an empty result can no longer be
+    # the blindness check -- the DENOMINATOR is. A census that swept no models
+    # or found no external commands has not measured anything, whatever its
+    # finding count says.
+    m = re.search(r"# models: (\d+)\s+external contexts: (\d+)\s+"
+                  r"external commands: (\d+)", p.stderr)
+    if not m:
+        sys.exit("census printed no denominator -- refusing to trust its count")
+    nmodels, nctx, ncmd = (int(x) for x in m.groups())
+    if nmodels < 100 or nctx < 100 or ncmd < 100:
+        sys.exit(f"census looks BLIND, not clean: {nmodels} models, {nctx} "
+                 f"external contexts, {ncmd} external commands")
+    print(f"swept {nmodels} models, {nctx} external contexts, "
+          f"{ncmd} external commands")
     return {f"{r['model']}\t{r['ctx']}\t{r['id']}" for r in rows}
 
 
@@ -45,6 +55,7 @@ def main():
         return
     if not BASELINE.exists():
         sys.exit(f"no baseline at {BASELINE}; run with --update to create one")
+    # an empty baseline file is legitimate: it means nothing is unsent
     known = {l for l in BASELINE.read_text().splitlines() if l.strip()}
     new = sorted(now - known)
     closed = sorted(known - now)

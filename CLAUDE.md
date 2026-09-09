@@ -1381,11 +1381,17 @@ tightens.
 It is deliberately NOT wired to `riddlcValidate` — it costs a `riddlc dump`
 per model (~15s corpus-wide) and `sbt v` is meant to stay quick.
 
-It refuses to treat an EMPTY census as clean, because a census that finds
-nothing is indistinguishable from a clean corpus and that is the failure this
-repository keeps re-learning. Canaried 2026-09-08 by injecting one unsent
-command into an external context; it named the model, context and command and
-exited 1.
+**The corpus is at ZERO** as of 2026-09-09: 904 external commands across 782
+external contexts in 189 models, every one driven. The baseline file is
+empty, which is legitimate.
+
+Its blindness check is the **DENOMINATOR, not the finding count** — the census
+reports how many models, external contexts and external commands it swept, and
+the gate fails if any is implausibly low. It used to refuse an EMPTY census
+instead, which was right while the answer was non-zero and became wrong the
+moment the work succeeded. **A "nothing found" guard must key on how much was
+looked at, not on how much was found.** Canaried at zero by injecting one
+unsent command; it named the model, context and command and exited 1.
 
 #### Always commit prettified code
 

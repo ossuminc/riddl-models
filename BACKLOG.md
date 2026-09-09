@@ -5,7 +5,7 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
-## 33. Adaptor-wiring campaign — COMPLETE 2026-09-08, 22 recorded exceptions
+## 33. Adaptor-wiring campaign — CLOSED 2026-09-09 at ZERO
 
 **This is the campaign that `task/2026-09-05-do-prose-must-be-an-instruction.md`
 turned into.** That task asked for real translations in place of
@@ -801,6 +801,53 @@ was found by reading.
 levels it knew (`error|warning|style|usage|missing|completeness`) and so
 silently passed `[deprecated]`. It now matches any bracketed level. A filter
 that names what it looks for cannot see what it was not told about.
+
+### reactive-bbq's four — DONE 2026-09-09. The campaign is at ZERO.
+
+**904 external commands across 782 external contexts in 189 models, and every
+one has something that sends it.** `sbt uc` reports that denominator on every
+run.
+
+All four were the same defect: **the external context was fully modelled and
+had no way for a command to ARRIVE.** Each already declared the command, a
+handler that yields its event, an internal event source and an egress
+connector — the whole return leg — but its only inlet carried results the
+other way. Each needed an inlet, an outbound adaptor and a connector, taking
+the external context from `as flow` to `as merge`.
+
+| pair | fires on |
+|---|---|
+| MenuManagement -> PrintingService | `MenuRelease.ReleaseFinalized` — a finalised release is what there is to print |
+| MenuManagement -> PhotographyService | `MenuItem.MenuItemCreated` — a new dish has no photograph |
+| Scheduling -> HRSystem | `Shift.EmployeeAssigned` — the rota needs the employee's HR record once it puts them on a shift |
+| Reporting -> AccountingSystem | Reporting's own `RecordInventoryEvent` — see below |
+
+**The accounting one is the finding.** Firing it on
+`Inventory.InventoryItem.StockReceived` is an Error:
+`adaptor-message-not-in-context` — an adaptor may reference only messages of
+the two contexts it BRIDGES, and Inventory is a third. Reporting owns no
+events at all, only commands, so the posting fires on its own
+`RecordInventoryEvent`: `InventoryEventSink` gained a second outlet (making it
+`as split`) and a connector to the adaptor's implied inlet. **The rule is the
+same one vendor-management hit** — a neighbour's event must become a fact of
+yours before you can act on it — and here riddlc names it directly.
+
+The adaptors declare **no ports**: A103 makes them implied, one type each way,
+so they need no ascription and the `tell ... to context X` publishes on the
+implied outlet. That is why these four are three lines of plumbing each.
+
+### The ratchet had to change at zero
+
+`check-unsent.py` refused an EMPTY census as blind, which was right while the
+answer was non-zero and became wrong the moment it hit zero. **The blindness
+check is now the DENOMINATOR, not the finding count**: the census reports
+models, external contexts and external commands swept, and the gate fails if
+any is implausibly low. Canaried at zero — an injected unsent command still
+fails it.
+
+This is worth generalising: *a "nothing found" guard has to key on how much
+was looked at, not on how much was found.* The first form stops working
+exactly when the work succeeds.
 
 ### Traps, every one of which has already bitten
 

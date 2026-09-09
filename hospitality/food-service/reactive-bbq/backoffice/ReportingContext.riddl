@@ -872,6 +872,29 @@ context Reporting as router is {
       |Builds inventory reports from stock events.
     }
   }
+  adaptor ToAccountingSystem to context AccountingSystem is { 
+    handler OutboundAccountingSystem is {
+      on recordInventoryEvent: command RecordInventoryEvent is {
+        let item0: type AccountingSystem.PostTransaction = prompt("translate the recordInventoryEvent into a PostTransaction, a goods receipt being what creates a payable the ledger must carry")
+        tell item0 to context AccountingSystem
+      }
+      on other is {
+        error "Unexpected message for adaptor ToAccountingSystem"
+      }
+    } with {
+      briefly "Outbound AccountingSystem translation"
+      described as {
+        |The other half of the ledger conversation. AccountingSystemAdapter
+        |brings posting confirmations back; this sends the posting.
+      }
+    }
+  } with {
+    briefly "Anti-corruption layer to AccountingSystem"
+    described as {
+      |Stands between reporting and the ledger so neither names the other's
+      |wire types directly.
+    }
+  }
   adaptor AccountingSystemAdapter from context AccountingSystem as flow is { 
     inlet IncomingAccountingSystemEvents is type AccountingEvent    outlet TranslatedAccountingSystemEvents is type AccountingEvent
     handler InboundAccountingSystem is {
@@ -1005,15 +1028,18 @@ context Reporting as router is {
       |for labor reports.
     }
   }
-  streamlet InventoryEventSink as flow is {
+  streamlet InventoryEventSink as split is {
     outlet InventoryEventSinkToInventoryReportRepository is command RecordInventoryEvent
+    outlet InventoryEventSinkToAccounting is command RecordInventoryEvent
     inlet IncomingInventoryEvents is type InventoryEvent    handler InventoryEventIntake is {
       on other is {
         do "the remaining members of this inlet's type - rejections and events this sink does not act on - change nothing here"
       }
       on stockReceived: event BackOffice.Inventory.InventoryItem.StockReceived is {
         send command RecordInventoryEvent(inventoryItemId = stockReceived.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockReceived.receivedQuantity) to outlet Reporting.InventoryEventSink.InventoryEventSinkToInventoryReportRepository
-        do "record stock received for inventory reporting"
+        send command RecordInventoryEvent(inventoryItemId = stockReceived.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockReceived.receivedQuantity) to outlet Reporting.InventoryEventSink.InventoryEventSinkToAccounting
+        do "record stock received for inventory reporting, and hand the same
+          receipt to the ledger, which is where it becomes a payable"
       }
       on stockConsumed: event BackOffice.Inventory.InventoryItem.StockConsumed is {
         send command RecordInventoryEvent(inventoryItemId = stockConsumed.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockConsumed.consumedQuantity) to outlet Reporting.InventoryEventSink.InventoryEventSinkToInventoryReportRepository
@@ -1035,6 +1061,13 @@ context Reporting as router is {
     described as {
       |Receives inventory events from the streaming topology
       |for inventory reports.
+    }
+  }
+  connector 'InventoryEvent To Accounting' is from outlet Reporting.InventoryEventSink.InventoryEventSinkToAccounting to inlet Reporting.ToAccountingSystem with {
+    briefly "Goods receipts on their way to the ledger"
+    described as {
+      |The adaptor's inlet is implied, and this is the channel the posting
+      |travels on to reach it.
     }
   }
   streamlet NightlyCloseOut as void is {

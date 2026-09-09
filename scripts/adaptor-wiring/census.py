@@ -66,20 +66,26 @@ def census(model_dir, entry):
         elif k == "let-statement":
             r = (n.get("declaredType") or {}).get("resolved")
             if r: driven.add(r)
-    return [{"model": str(model_dir.relative_to(ROOT)), "cmd": p, **v}
-            for p, v in sorted(cmds.items()) if p not in driven], None
+    rows = [{"model": str(model_dir.relative_to(ROOT)), "cmd": p, **v}
+            for p, v in sorted(cmds.items()) if p not in driven]
+    return (rows, len(ext), len(cmds)), None
 
 def main():
     only = sys.argv[1] if len(sys.argv) > 1 else None
-    rows, errs, n = [], [], 0
+    rows, errs, n, nctx, ncmd = [], [], 0, 0, 0
     for d, e in models():
         if only and only not in str(d): continue
         if not e.exists(): continue
         n += 1
         r, err = census(d, e)
         if err: errs.append(err)
-        else: rows.extend(r)
-    print(f"# models: {n}  unsent external commands: {len(rows)}", file=sys.stderr)
+        else:
+            rs, c, m = r
+            rows.extend(rs); nctx += c; ncmd += m
+    # The denominator is what tells "clean" from "blind". Zero unsent commands
+    # is a legitimate answer; zero external contexts never is.
+    print(f"# models: {n}  external contexts: {nctx}  external commands: {ncmd}"
+          f"  unsent: {len(rows)}", file=sys.stderr)
     for x in errs: print("# ERR " + x, file=sys.stderr)
     for r in rows: print(json.dumps(r))
 
