@@ -434,14 +434,84 @@ moves its ascription to `merge`. That edits the reference model's existing
 external-context shapes rather than only adding to them, and reactive-bbq has
 its own campaign and its own scoping decisions in #1.
 
-### Remaining, in order
+### Remaining: 434 commands / 305 pairs / 144 models — MEASURED 2026-09-08
 
-payment/billing (41 pairs), compliance/regulatory (35), document/storage (29),
-inventory/stock (27), risk/fraud (27), scheduling/calendar (24),
-geo/weather (22), telemetry/device (19), pricing/rating (16), crm (16),
-erp/mes/plm (15), identity/auth (15), shipping/logistics (15),
-vendor/supplier (14), analytics/reporting (12), lab/clinical (9),
-hr/workforce (5), plus a 324-pair `other` long tail.
+The old estimate list here has been deleted rather than updated. It predated
+seven closed clusters, quoted no keyword set, and every number in it was
+low. This is the census, run after the three batches above.
+
+**Cluster-by-industry is EXHAUSTED, and the numbers say why**: 305 pairs
+across **270 distinct external contexts**, with 55 models carrying exactly one
+pair and 40 carrying two. There is no next cluster of any size — the tail is
+flat, not lumpy, and grouping by industry now yields batches of one.
+
+#### But it is NOT lawless, which is the finding that matters
+
+Every command in the tail is one of **four speech acts**, and each already has
+a ruled rule:
+
+| shape | verbs | the rule, already ruled |
+|---|---|---|
+| **need** | Request, Order, Book, Schedule, Reserve, Provision, Assign, Run | fires on the event that CREATES the need |
+| **undo** | Release, Cancel, Void, Deprovision, Archive | fires on the event that ENDS it |
+| **fact** | Send, Notify, Report, Record, Post, Publish, Update, Sync, Submit | fires on the event that PRODUCES or FIXES the fact |
+| **know** | Get, Fetch, Check, Validate, Verify, Analyze, Estimate | fires on the event that creates the NEED TO KNOW |
+
+By leading verb: 177 fact, 78 need, 59 know, 26 undo, 29 ambiguous (all
+`Request`, which is genuinely both "ask for work" and "ask a question"), 65
+unclassified only because the verb list above is short — `Process`, `Ingest`,
+`Transcode`, `Build` are plainly *need*; `Document`, `Share`, `Distribute` are
+plainly *fact*; `Recommend`, `Identify`, `List` are plainly *know*.
+
+**Sampled 32 pairs at random (seeds 20260908 and 99) and read them: 29 had an
+obvious defensible trigger** under one of those four. What varies per pair is
+never the rule — it is WHICH internal event is the trigger, and that is a
+judgment `dig.py` makes cheap and no script can make for you.
+
+#### The residue, measured rather than guessed
+
+Three of 32, so call it ~10%, and the three kinds are worth naming because
+each needs something other than wiring:
+
+- **no event exists to fire on.** payment-processing `ThreeDSecureService.
+  InitiateAuthentication` must run BEFORE authorization and `PaymentContext`
+  has no pre-authorization event. Same shape as `ReviewTermSheet` and
+  `RecordConflictWaiver` above: record it, do not force it onto an unrelated
+  event.
+- **the direction is wrong in the model.** healthcare supply-chain
+  `ClinicalUsage.RequestSupplies` — a clinical area requests supplies FROM the
+  supply context; it is not something the supply context sends. That is a
+  modelling defect, not a wiring gap, and wiring it would make the model
+  wronger.
+- **genuinely periodic, not event-caused.** Roughly 6 corpus-wide by name
+  (`PollDevice`, `PollMeter`, `RotateSecret`, `BackupDeviceConfig`,
+  `PurgeCreative`, and one or two `Sync*`) — **now expressible**, since
+  `send ... at <instant>` and `on quiescence` landed and the corpus covers
+  them (see #30). Note the name is a poor guide: 19 match a periodic-looking
+  pattern and most are ordinary event-driven syncs, and store-operations'
+  `GenerateDailyReport` has a perfectly good `StoreClosed` to fire on.
+
+#### The decision this needs — OPEN, for Reid
+
+Not "is the tail wirable" (it is) but how much of it to do, and whether to
+gate it. Four options, with what each costs:
+
+1. **Finish it in SHAPE batches, not industry batches.** ~10 batches of ~30
+   pairs, each under one of the four rules above, residue recorded as it is
+   met. This is the only option that ends the campaign.
+2. **Stop and record the tail as a known limitation.** Cheapest, and leaves
+   434 commands that riddlc validates while nothing drives them — the defect
+   class CLAUDE.md already says no gate here catches.
+3. **Wire mechanically where the name matches.** *Rejected on evidence*, not
+   taste: BACKLOG's own traps record that name/field matching produces
+   confident wrong answers, and it has already been tried once.
+4. **Gate it first, then do 1 or 2.** `census.py` becomes a tracked check with
+   a ratchet, so the count can only fall. Worth doing under EITHER 1 or 2,
+   because it is what stops the number silently growing when a new model is
+   added — which is how the corpus got here.
+
+**Recommendation: 4 then 1.** The gate is small and independent of the
+decision; shape batches are what remains once industry clusters are exhausted.
 
 ### Traps, every one of which has already bitten
 
