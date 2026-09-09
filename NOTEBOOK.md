@@ -5,61 +5,59 @@ Development journal for active work on the riddl-models repository.
 ## HANDOFF
 
 **Branch `main`. Pin `2.1.1-26-4d17b1ef`, UNPUBLISHED, `riddlcPath` override
-ON** (`build.sbt:28,89`); `../bin/riddlc` IS the build's binary on this pin.
-Take the override off at the first published tag carrying it.
+ON** (`build.sbt:28`); `../bin/riddlc` IS the build's binary on this pin.
+Take the override off at the first published tag carrying A103.
 
-Corpus: **189 models, 0 findings at every severity**, sweep canaried after the
-riddlc bump. `checkAll` green, prettify/bastify 189/189.
+Corpus: **189 models, 0 findings at every severity**, sweep canaried.
+`prettify`/`validate`/`bastify` 189/189, `pc` and the new `uc` green.
 
 ### What happened this session
 
-The adaptor-wiring campaign moved a long way. **Seven clusters closed**, each
-under a rule stated in its commit rather than inferred:
+Four tasks, all closed.
 
-| cluster | pairs | rule |
-|---|---:|---|
-| payment/billing | all | drives on the event that CREATES or DISCHARGES the obligation |
-| invoicing/provisioning | 13 models | three rules: state / provision / amend |
-| notification | 12 | which events notify (reopened — it was recorded done and was not) |
-| inventory/stock | 23 | the event that changes the CLAIM on stock |
-| scheduling/dispatch | 23 | the event that creates/ends the NEED for a slot, person or vehicle |
-| document/storage | 27 | the event that PRODUCES or FINALISES the artifact |
-| identity/verification | 25 | verify where the claim enters; provision where the party is created |
-| fraud/risk + filing | 21 | exposure created / reportable fact produced |
+1. **The temporal constructs landed in `language-coverage`**, not as the
+   donated `Banking` model. riddl-generator sent a validated model because the
+   corpus used `on quiescence` and `send ... at` **nowhere**; its own third
+   acceptance criterion allowed folding them into an existing model, and
+   `language-coverage` exists for exactly this and is one of only two `.conf`
+   files with no severity suppression. A resurvey schedule carries both.
+2. **Compliance / legal / tax / CRM: 39 pairs**, on four rules that extend
+   ones already ruled. Measured at 41 pairs against the handoff's "~25" — the
+   fifth consecutive under-estimate.
+3. **The BUILD pairs: 13 of 17.** licensing did NOT need an adaptor built (it
+   has one); four models nobody had listed did.
+4. **The tail measured and RULED.** 434 commands / 305 pairs / 144 models over
+   **270 distinct external contexts** — industry clustering is exhausted.
 
-All 13 wired reminders now **schedule** (`send ... at`) instead of describing
-a schedule in prose — 7 schedule-to-self-guarded, 5 via an explicit
-`remindAt`, 1 left as a handoff on purpose.
+### The three findings a fresh session should not re-derive
 
-### What a fresh session must not get wrong
+- **A BUILD pair needs LESS on the external side, not more.** All 17 already
+  had a handler that handled every command, with `yields`. Adding the SETUP
+  path's `<Ctx>Boundary` is `msg-yield-undeclared`, an Error — six models
+  reverted on it at once. Only the `as sink` ascription and an inlet.
+- **The tail is not lawless.** Every command is one of four speech acts
+  (need / undo / fact / know) and each has a rule already ruled. 29 of 32
+  randomly sampled pairs had an obvious trigger. What varies is never the
+  rule, only WHICH event is the trigger.
+- **`plan.py` beats recollection.** It classifies every pair SETUP / INSERT /
+  BUILD, and it corrected the handoff in both directions.
 
-- **Classify a cluster by the TARGET CONTEXT, never the command name.** A
-  `^send` pattern swept SCADA control commands and lab-instrument
-  instructions into "notification". The context says WHO is being asked,
-  which is what a rule is about.
-- **Every keyword estimate has UNDERSTATED its cluster** — four times now.
-  Re-measure before quoting a number, and quote a remainder, not a fraction.
-- **Names predict nothing.** Model basenames are not unique
-  (`property-management` ×2, `inventory-management` under logistics), and a
-  model's directory name predicts neither its context name
-  (game-economy → `WalletContext`) nor its entity name.
-- **The binding-shadow trap is the most frequent error by far** — it bit
-  ~8 times. Name a binding for what the message IS (`notice`), never for its
-  meaning.
-- **`sbt v` is the LENIENT gate**; `scripts/collect-warnings.py` is the real
-  one. Canary it after ANY riddlc bump.
+### In flight
 
-### Next
+**Task #5, authorised by Reid: finish the tail in SHAPE batches** (by speech
+act, not industry), ~10 batches of ~30 pairs, residue recorded as met.
+Refresh `scripts/unsent-baseline.tsv` after each so the ratchet tightens.
 
-`scratchpad/wire.py` (the setup-path applier, transactional, with the
-acronym fix) and `census.py` are SESSION-LOCAL and will not survive.
-BACKLOG #33 carries the method to rebuild them.
+Reid also ruled **reactive-bbq's four BUILD pairs stay with its own campaign**
+(#1), because they change existing external-context shapes rather than only
+adding to them.
 
-Remaining: the rest of compliance/CRM/tax/legal (~25 pairs, measured), three
-models needing an outbound adaptor BUILT rather than a clause added
-(claims-processing, equipment-maintenance, licensing), and the **~500-command
-long tail**, which is domain-specific integrations that will NOT yield to
-cluster rules — that needs its own decision, and BACKLOG #33 says so.
+### Two things are TRACKED now that were not
+
+- `scripts/adaptor-wiring/` — census, plan, dig, wire, with a README. They had
+  been rebuilt from scratch three sessions running.
+- `sbt uc` — the ratchet. **It is the only check in this build that sees an
+  unsent command**; everything else is green on one. Canaried.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
