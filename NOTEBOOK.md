@@ -47,19 +47,32 @@ The four rules, each now applied corpus-wide:
   may clear that was not wired. That agreement is what proves the census is
   live rather than quiet.
 
-### In flight
+### In flight — nothing. The campaign and its residue are both closed.
 
-**Task: the 18 modelling defects the campaign found** (BACKLOG #33's residue
-table, minus reactive-bbq's 4). Nine commands have no event to fire on, five
-open an exchange the model only observes the end of, two have the direction
-backwards, one's trigger belongs to another context, one sits on a
-single-command channel five portlets deep. Each is a small change to one
-model, and **that list is as much the campaign's output as the wiring is**.
+**22 unsent commands -> 4**, and the four are reactive-bbq's
+(`PostTransaction`, `SyncEmployeeData`, `SchedulePhotoShoot`, `PrintMenus`),
+held for its own campaign (#1) by Reid's ruling because its external contexts
+already carry an inbound leg and an outbound one changes their shapes.
 
-**reactive-bbq's four stay with its own campaign** (#1), by Reid's ruling.
+The 18 defects the campaign found were fixed in three kinds, and **which kind
+applies is the whole judgement**:
 
-`language-coverage` now covers `on quiescence` and `send ... at <instant>`,
-donated by riddl-generator and folded in rather than landed as a 190th model.
+- **5 deleted** — the model correctly does not drive them, so declaring them
+  asserted an integration that does not exist (precedent: Reid's 2026-08-18
+  deletion of unreferenced external-context types). supply-chain's
+  `RequestSupplies` was the sharpest: the model ALREADY expressed that
+  relationship correctly as an inbound `event SupplyRequested`.
+- **9 events added across 7 models** — payment-processing had no event before
+  authorization at all, and advertising-delivery no impression *opportunity*,
+  so in both the first step of the exchange had nothing to fire on.
+- **4 restructured** — a backwards adaptor, a trigger owned by another
+  context, and a five-portlet single-command channel.
+
+**Adding an event is never a one-line change.** Every new member of an event
+alternation must be accounted for wherever that alternation flows: the apply
+clause, the boundary relay, the split, EVERY projector fed by it, and a
+repository persistence command with its handler clause. riddlc's
+`stream-inlet-not-received` found each one; reading found none.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
