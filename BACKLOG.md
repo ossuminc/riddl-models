@@ -523,6 +523,34 @@ residue recorded as it is met.
 than being folded into this one, because they change existing external-context
 shapes rather than only adding to them.
 
+#### Shape batch 1 — `know`: 38 pairs, 54 commands, DONE 2026-09-08
+
+> **A LOOKUP command fires on the event that creates the NEED TO KNOW** — the
+> earliest point at which the answer changes what happens next.
+
+All 38 were SETUP; not one needed an adaptor built. Baseline 434 -> 380.
+
+The rule's edge is *earliest*, and it is what makes the placements
+non-obvious. Rating fires on the event that changes what must be rated
+(`PolicyIssued`, `EndorsementAdded`, `RenewalOfferGenerated` — three clauses,
+not one); infrastructure-as-code evaluates policy on `PlanGenerated`, which is
+before the apply rather than after it; credit-decisioning evaluates policy on
+`ScoreCalculated`, because policy is applied to a score and not to an
+application; ride-sharing splits the fare in two, `RideRequested` for the quote
+a rider commits against and `TripCompleted` for what is actually charged.
+
+Two lookups against the same event are one clause with two sends
+(merchant-acquiring checks credit and verifies the business, both on
+`ApplicationSubmitted`); two lookups against different events are two clauses
+(shipment-tracking geocodes on `ShipmentCreated` and routes on
+`PickupRecorded`, because a route needs a real origin).
+
+**One command left, recorded not forced**: inventory-management
+`QualityControlService.RecordInspectionResult` — `InventoryContext` has no
+inspection event, and `CycleCountRecorded` counts stock rather than judging
+quality. Third of its kind, after `ReviewTermSheet` and
+`RecordConflictWaiver`.
+
 ### Traps, every one of which has already bitten
 
 - **A handler dispatches on message TYPE, so an event gets ONE clause.** A
