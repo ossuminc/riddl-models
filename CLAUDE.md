@@ -548,6 +548,30 @@ CLI/library disagreement noted under "The gates" — it is real, and the
 library is the stricter of the two. **Do not conclude a model is clean from
 the CLI alone.**
 
+**`ask` needs a CHANNEL, and riddlc does not check that it has one.**
+`ask query X of <processor>` is a **value**, not a statement —
+`let answer: type R = ask query Ext.GetThing of context Ext` — and the query it
+names must declare `replies result R`.
+
+> **`ask` is `send` plus a declared correlation.** The request travels a
+> connector like any other message, and so does the answer. The reply
+> mechanism a generator picks — a reply actor, a future, a correlation id — is
+> a lowering with no model-level representation. **There is no communication
+> without wiring, even inside one process.** (Reid, 2026-09-09.)
+
+**riddlc enforces only `msg-ask-not-handled`** — the target context must
+declare `on query X`. It does **not** check for an admitting portlet or for
+reachability, though it checks BOTH for `tell`
+(`adaptor-target-no-admitting-inlet`, `msg-tell-target-unreachable`). Measured
+on the same unwired adaptor: `tell` errors, `ask` reports nothing at all.
+
+**So a clean validate on an `ask` is not evidence the model is connected**, and
+that silence taught this repository the wrong rule once already — a session
+concluded "wiring is irrelevant to ask" from 0 findings and nearly applied it
+to 363 sites. Filed upstream as
+`../riddl/task/2026-09-09-ask-is-not-checked-for-a-channel.md`. **Wire the
+target yourself; do not wait for the validator to ask.**
+
 **`correlation`** lives **only in a projector** and joins events arriving
 apart in time:
 
