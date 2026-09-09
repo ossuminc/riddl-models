@@ -1037,8 +1037,7 @@ event-sourced entity DeliveryOrder as flow is {
               could not be found, so dispatch can correct it"
           }
           case "CustomerUnavailable" {
-            do "schedule FailDelivery command after 10-minute
-              timeout if no customer response"
+            become entity Delivery.DeliveryOrder to handler InTransitAwaitingCustomerHandler
           }
           case "FoodDamaged" {
             do "construct ReceiveTicket replacement order from
@@ -1084,6 +1083,42 @@ event-sourced entity DeliveryOrder as flow is {
         |handles various issue types including VehicleBreakdown
         |which morphs back to Pending for driver reassignment.
         |FailDelivery moves to the terminal Failed state.
+      }
+    }
+    handler InTransitAwaitingCustomerHandler is {
+      on quiescence "10 minutes" is {
+        tell command FailDelivery(deliveryId = prompt("the delivery this silence concerns"), failureReason = prompt("that the customer could not be reached within the grace period"), failedAt = prompt("when the wait ran out")) to entity Delivery.DeliveryOrder
+      }
+      on confirmDelivery: command ConfirmDelivery is {
+        yield event DeliveryConfirmed(deliveryId = confirmDelivery.deliveryId, confirmedAt = confirmDelivery.confirmedAt)
+        send event DeliveryConfirmed(deliveryId = confirmDelivery.deliveryId, confirmedAt = confirmDelivery.confirmedAt) to outlet Delivery.DeliveryOrder.DeliveryOrderEvents2
+        do "the customer answered after all; the wait ends here rather than in a failure"
+      }
+      on recordDeliveryLocation: command RecordDeliveryLocation is {
+        yield event DeliveryLocationRecorded(deliveryId = recordDeliveryLocation.deliveryId, driverLocation = recordDeliveryLocation.driverLocation)
+        send event DeliveryLocationRecorded(deliveryId = recordDeliveryLocation.deliveryId, driverLocation = recordDeliveryLocation.driverLocation) to outlet Delivery.DeliveryOrder.DeliveryOrderEvents2
+        do "the driver is still at the door; movement resets the wait"
+      }
+      on failDelivery: command FailDelivery is {
+        yield event DeliveryMarkedFailed(deliveryId = failDelivery.deliveryId, failureReason = failDelivery.failureReason, failedAt = failDelivery.failedAt)
+        send event DeliveryMarkedFailed(deliveryId = failDelivery.deliveryId, failureReason = failDelivery.failureReason, failedAt = failDelivery.failedAt) to outlet Delivery.DeliveryOrder.DeliveryOrderEvents2
+        do "close the wait as a failure and raise the refund"
+      }
+      on other is {
+        error "Unexpected message for a delivery waiting on an unreachable customer"
+      }
+    } with {
+      briefly "In transit, waiting on an unreachable customer"
+      described as {
+        |The same InTransit state, watched on a clock. Entered with `become`
+        |when the driver reports the customer unavailable: nothing about the
+        |delivery has changed, only what silence now means for it.
+        |
+        |The ten-minute wait is `on quiescence` rather than prose because
+        |SILENCE is the cause. It gets its own handler rather than sharing
+        |the escalation one, since only one quiescence clause is allowed per
+        |handler and a traffic delay going quiet for ten minutes is ordinary
+        |where an unanswered door is not.
       }
     }
     handler InTransitEscalatedHandler is {

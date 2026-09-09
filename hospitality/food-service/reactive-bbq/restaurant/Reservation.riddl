@@ -44,6 +44,15 @@ event-sourced entity Reservation as flow is {
         |Requested reservation date and time.
       }
     }
+    noShowAt: TimeStamp with {
+      briefly "No-show at"
+      described as {
+        |The instant at which a party that has still not arrived is judged a
+        |no-show. Carried explicitly rather than derived: it is the
+        |reservation time plus the house's grace period, and the language has
+        |no arithmetic with which to add one to the other.
+      }
+    }
   } with {
     briefly "Make reservation"
     described as {
@@ -827,8 +836,12 @@ event-sourced entity Reservation as flow is {
         morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.Cancelled with record Reservation.CancelledData(cancelledAt = reservationCancelled.cancelledAt, cancellationReason = reservationCancelled.cancellationReason, base = ConfirmedData.base)
       }
       on markNoShow: command MarkNoShow is {
-        yield event NoShowMarked(reservationId = markNoShow.reservationId, markedNoShowAt = markNoShow.markedNoShowAt)
-        send event NoShowMarked(reservationId = markNoShow.reservationId, markedNoShowAt = markNoShow.markedNoShowAt) to outlet FrontOfHouse.Reservation.ReservationEvents2
+        when prompt("the booking has not been rescheduled since this message was scheduled, so the instant it was scheduled against is still the one that matters") then
+          yield event NoShowMarked(reservationId = markNoShow.reservationId, markedNoShowAt = markNoShow.markedNoShowAt)
+          send event NoShowMarked(reservationId = markNoShow.reservationId, markedNoShowAt = markNoShow.markedNoShowAt) to outlet FrontOfHouse.Reservation.ReservationEvents2
+        else
+          error "The booking was rescheduled; this scheduled no-show is stale"
+        end
       }
       on noShowMarked: event NoShowMarked is {
         morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.NoShow with record Reservation.NoShowData(markedNoShowAt = noShowMarked.markedNoShowAt, base = ConfirmedData.base)
