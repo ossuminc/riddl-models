@@ -58,10 +58,24 @@ def apply_model(model, recs, dry=False):
             m = TO.search(src[a["span"]["start"]["line"]-1][a["span"]["start"]["col"]-1:])
             if m and m.group(2).split(".")[-1] == ctx:
                 ad, adname = a, m.group(1); break
-        assert ad, f"{model}: no outbound adaptor to {ctx}"
-        ctxname = ad["parent"].split(".")[-1]
-        af = ad["file"]; asrc = (d / af).read_text().splitlines()
-        decl_i = ad["span"]["start"]["line"] - 1
+        build = ad is None
+        assert ad or r.get("build"), f"{model}: no outbound adaptor to {ctx}"
+        if build:
+            # the adaptor goes in the context that owns the driving events
+            ev = r["clauses"][0]["event"]
+            evn = next(n for n in ns if n.get("kind") == "event"
+                       and n["path"].endswith("." + ev))
+            owner = next(a for a in reversed(evn["ancestors"])
+                         if any(c.get("kind") == "context" and c["path"] == a
+                                and c.get("intention") != "External" for c in ns))
+            octx = next(c for c in ns if c.get("kind") == "context" and c["path"] == owner)
+            adname = f"To{ctx}"; ctxname = owner.split(".")[-1]
+            af = octx["file"]; asrc = (d / af).read_text().splitlines()
+        else:
+            adname = adname
+            ctxname = ad["parent"].split(".")[-1]
+            af = ad["file"]; asrc = (d / af).read_text().splitlines()
+            decl_i = ad["span"]["start"]["line"] - 1
 
         wired = [c for cl in r["clauses"] for c, _ in cl["sends"]]
         keep  = r.get("keep", [])
@@ -69,34 +83,56 @@ def apply_model(model, recs, dry=False):
         outlet = f"{adname}Out"
         otype = (f"type {ctx}.{ctx}Command" if multi else f"command {ctx}.{wired[0]}")
 
-        # 1. ascription + outlet on the adaptor
-        line = asrc[decl_i]
-        assert " as " not in line, f"{model}/{ctx}: adaptor already ascribed"
-        edits[af].append((decl_i, 1, [line.replace(" is {", " as flow is {", 1),
-                                      f"    outlet {outlet} is {otype}"]))
-
-        # 2. clauses of this adaptor's handler
-        hnd = next(h for h in ns if h.get("kind") == "handler" and h.get("parent") == ad["path"])
-        cls = [c for c in ns if c.get("parent") == hnd["path"]
-               and c.get("kind") in ("onmessageclause", "on-event", "on-other")]
-        other = next(c for c in cls if c["kind"] == "on-other")
-        # delete the placeholder clause for every command we are wiring
-        for c in cls:
-            if c["kind"] != "onmessageclause": continue
-            txt = asrc[c["span"]["start"]["line"]-1]
-            if any(re.search(rf"\b{ctx}\.{w}\b", txt) for w in wired):
-                s = c["span"]["start"]["line"]-1; en = c["span"]["end"]["line"]-1
-                edits[af].append((s, en - s, []))
-        # insert the driving clauses just before `on other`
-        new = []
+        # the driving clauses, identical whether the adaptor is new or existing
+        new_clauses = []
         for cl in r["clauses"]:
             ev = cl["event"]; b = ev.split(".")[-1]; b = b[0].lower() + b[1:]
-            new.append(f"      on {b}: event {ev} is {{")
+            new_clauses.append(f"      on {b}: event {ev} is {{")
             for i, (cmd, why) in enumerate(cl["sends"]):
-                new.append(f'        let item{i}: type {ctx}.{cmd} = prompt("translate the {b} event into a {cmd}, {why}")')
-                new.append(f"        send item{i} to outlet {ctxname}.{adname}.{outlet}")
-            new.append("      }")
-        edits[af].append((other["span"]["start"]["line"]-1, 0, new))
+                new_clauses.append(f'        let item{i}: type {ctx}.{cmd} = prompt("translate the {b} event into a {cmd}, {why}")')
+                new_clauses.append(f"        send item{i} to outlet {ctxname}.{adname}.{outlet}")
+            new_clauses.append("      }")
+
+        if build:
+            # 1b. a whole adaptor, beside the context's existing ones
+            ai = next(i for i, l in enumerate(asrc) if l.startswith("  adaptor "))
+            words = re.sub(r"(?<!^)(?=[A-Z])", " ", ctx).lower()
+            blk = ([f"  adaptor {adname} to context {ctx} as flow is {{",
+                    f"    outlet {outlet} is {otype}",
+                    f"    handler {adname}Handler is {{"] + new_clauses +
+                   ["      on other is {",
+                    f'        error "Unexpected message for adaptor {adname}"',
+                    "      }", "    } with {", f'      briefly "to {words}"',
+                    "      described as {",
+                    f"        |Carries messages to the external {ctx}.", "      }",
+                    "    }", "  } with {", f'    briefly "{ctx} integration"',
+                    "    described as {",
+                    f"      |The model's side of the {ctx} conversation.", "    }",
+                    "  }"])
+            edits[af].append((ai, 0, blk))
+        else:
+            # 1. ascription + outlet on the existing adaptor
+            line = asrc[decl_i]
+            assert " as " not in line, f"{model}/{ctx}: adaptor already ascribed"
+            edits[af].append((decl_i, 1, [line.replace(" is {", " as flow is {", 1),
+                                          f"    outlet {outlet} is {otype}"]))
+
+        # 2. clauses of this adaptor's handler
+        hnd = None if build else next(
+            h for h in ns if h.get("kind") == "handler" and h.get("parent") == ad["path"])
+        if hnd is not None:
+            cls = [c for c in ns if c.get("parent") == hnd["path"]
+                   and c.get("kind") in ("onmessageclause", "on-event", "on-other")]
+            other = next(c for c in cls if c["kind"] == "on-other")
+            # delete the placeholder clause for every command we are wiring
+            for c in cls:
+                if c["kind"] != "onmessageclause": continue
+                txt = asrc[c["span"]["start"]["line"]-1]
+                if any(re.search(rf"\b{ctx}\.{w}\b", txt) for w in wired):
+                    s = c["span"]["start"]["line"]-1; en = c["span"]["end"]["line"]-1
+                    edits[af].append((s, en - s, []))
+            # insert the driving clauses just before `on other`
+            edits[af].append((other["span"]["start"]["line"]-1, 0, new_clauses))
 
         # 3. the external context gains a sink boundary
         ext = next(c for c in ns if c.get("kind") == "context"
@@ -120,12 +156,26 @@ def apply_model(model, recs, dry=False):
             blk += [f"  inlet {ctx}Requests is command {q}{allc[0]} with {{",
                     '    briefly "What this context asks the service to send"',
                     "  }"]
-        blk.append(f"  handler {ctx}Boundary is {{")
-        for c in allc:
-            blk += [f"    on command {q}{c} is {{", '      do "deliver it to the recipient"', "    }"]
-        blk += ["    on other is {",
-                f'      error "Unexpected message for external context {ctx}"',
-                "    }", "  } with {", f'    briefly "{ctx} boundary"', "  }"]
+        # A model that specified its external contexts fully already HAS a
+        # handler for these commands -- and where the command declares
+        # `yields`, a second boundary handler saying `do "deliver it"` is
+        # `msg-yield-undeclared`, an Error.  All 17 BUILD pairs were of this
+        # kind.  So add a boundary ONLY where the commands are unhandled.
+        ehs = [h for h in ns if h.get("kind") == "handler" and h.get("parent") == ext["path"]]
+        already = set()
+        for h in ehs:
+            for cl in ns:
+                if cl.get("parent") == h["path"] and cl.get("kind") == "onmessageclause":
+                    t = (d / cl["file"]).read_text().splitlines()[cl["span"]["start"]["line"]-1]
+                    already |= {w for w in allc if re.search(rf"\b{w}\b", t)}
+        if not set(allc) <= already:
+            blk.append(f"  handler {ctx}Boundary is {{")
+            for c in allc:
+                if c in already: continue
+                blk += [f"    on command {q}{c} is {{", '      do "deliver it to the recipient"', "    }"]
+            blk += ["    on other is {",
+                    f'      error "Unexpected message for external context {ctx}"',
+                    "    }", "  } with {", f'    briefly "{ctx} boundary"', "  }"]
         edits[ef].append((ei, 1, blk))
 
         # 4. the connector, beside the model root's other persistent ones

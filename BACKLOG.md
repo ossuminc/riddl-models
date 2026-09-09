@@ -379,6 +379,61 @@ the transactional revert, not by inspection.
 The census reconciled EXACTLY: 524 unsent external commands before, 473 after,
 against 51 wired. Nothing cleared that was not wired, and nothing new appeared.
 
+### The BUILD pairs — 13 of 17 DONE 2026-09-08, and a correction
+
+`plan.py` classifies every census pair by the state of its outbound adaptor,
+and the corpus-wide answer is **295 SETUP, 8 INSERT, 17 BUILD** — so needing
+an adaptor built is rare, not the norm, and it is now measured rather than
+remembered.
+
+**The handoff's list of three was wrong in both directions.** licensing was
+recorded as needing an adaptor BUILT; it has one, `ToCredentialVerification
+Service` at `LicenseContext.riddl:185`, and was an ordinary SETUP pair — wired
+here in four commands on the identity rule (all three verifications on
+`ApplicationSubmitted`, "verify where the claim enters"; `ScheduleExam` on
+`CredentialsVerified`). Meanwhile four models nobody had listed do need one:
+ticket-sales, treaty-management, incident-management and order-management.
+
+**What makes a BUILD pair is NOT a missing external context — it is a missing
+adaptor.** Every one of the 17 external contexts already had a full handler
+that already handled every command, with `yields` declared. These models
+specified the far side completely and never wired the near side.
+
+That has a sharp consequence the first attempt got wrong, and all six models
+reverted on it: **adding the SETUP path's `<Ctx>Boundary` handler is an Error
+here**, `msg-yield-undeclared`, because a second handler saying
+`do "deliver it to the recipient"` does not yield the event the command
+declares. The external side of a BUILD pair needs **only** the `as sink`
+ascription and an inlet. `wire.py` now detects an existing handler and emits
+the boundary only for commands nothing already handles.
+
+The placements follow rules already ruled — inventory (the event that changes
+the CLAIM on stock) for order-management/InventoryService and
+equipment-maintenance/SparePartsInventory, scheduling (the event that
+creates/ends the NEED) for ShippingCarrier, VenueManagement and
+ProductionSchedule, fraud (the event that creates the EXPOSURE) for
+claims-processing, and "which events notify" for CustomerService and
+SlackIntegration. Two are worth naming:
+
+- **equipment-maintenance/EquipmentRegistry** sends `UpdateEquipmentStatus`
+  from **two** clauses — `MaintenanceStarted` and `MaintenanceCompleted` —
+  because the equipment leaves service and returns to it, and one clause
+  cannot say both.
+- **incident-management/SlackIntegration** puts `PostUpdate` and
+  `PostToStatusPage` in one `IncidentStatusUpdated` clause: same event, two
+  audiences, which is exactly what the "an event gets ONE clause" trap says to
+  do with a second message.
+
+**Four left, all in reactive-bbq** (`AccountingSystem` `PostTransaction`,
+`HRSystem` `SyncEmployeeData`, `PhotographyService` `SchedulePhotoShoot`,
+`PrintingService` `PrintMenus`). They are a **different shape** and want a
+decision, not a batch: reactive-bbq's external contexts are already `as flow`
+with an inbound leg of their own (an event source, an egress connector, an
+anti-corruption adaptor), so an outbound leg takes each to two inlets and
+moves its ascription to `merge`. That edits the reference model's existing
+external-context shapes rather than only adding to them, and reactive-bbq has
+its own campaign and its own scoping decisions in #1.
+
 ### Remaining, in order
 
 payment/billing (41 pairs), compliance/regulatory (35), document/storage (29),

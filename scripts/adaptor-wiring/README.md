@@ -72,3 +72,17 @@ One JSON object per line:
 It snapshots every file it will touch, applies all of a model's pairs,
 validates with `--provide-tips` at every severity, and **restores the snapshot
 on any finding**. A model is therefore either fully wired or untouched.
+
+## BUILD pairs need LESS on the external side, not more
+
+A pair is `BUILD` because the **adaptor** is missing, not because the external
+context is empty. All 17 in the corpus already had a full handler that already
+handled every command, with `yields` declared on the commands.
+
+So adding the SETUP path's `<Ctx>Boundary` handler there is an **Error** —
+`msg-yield-undeclared`, because `do "deliver it to the recipient"` does not
+yield what the command declares. Six models reverted on this at once. The
+external side of a BUILD pair needs only the `as sink` ascription and an inlet.
+
+`wire.py` detects this: it emits boundary clauses only for commands that no
+existing handler already covers, and no handler at all when none are left.
