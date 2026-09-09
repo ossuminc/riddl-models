@@ -418,12 +418,17 @@ hr/workforce (5), plus a 324-pair `other` long tail.
   `do "the model sends ..."` beside them, at 0 findings, because riddlc has
   no opinion about a clause that does nothing. Delete it explicitly.
 
-### Tooling
+### Tooling — TRACKED as of 2026-09-08, stop rebuilding it
 
-`scratchpad/apply3.py` (setup) and `scratchpad/wire2.py` (`wire_set`, the
-clause-level helper) are SESSION-LOCAL and will not survive. Both are ~100
-lines and were rewritten twice; rebuilding them from the traps above is
-cheap, but do not assume they exist.
+`scripts/adaptor-wiring/` holds `census.py`, `plan.py`, `dig.py` and
+`wire.py`, with a README carrying the census trap, the spec format and the
+reconciliation standard. They had been rebuilt from scratch in three
+consecutive sessions.
+
+`plan.py` is the one that was missing before: it classifies every census pair
+as **SETUP** (placeholder adaptor), **INSERT** (adaptor already wired) or
+**BUILD** (no outbound adaptor at all), so the three kinds of work are
+separated before any of it starts rather than discovered one model at a time.
 
 ---
 
