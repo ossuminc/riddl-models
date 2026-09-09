@@ -11,68 +11,47 @@ Take the override off at the first published tag carrying A103.
 Corpus: **189 models, 0 findings at every severity**, sweep canaried.
 prettify/validate/bastify 189/189, `pc` and `uc` green.
 
-### The adaptor-wiring campaign is COMPLETE
+### The adaptor-wiring campaign is CLOSED AT ZERO
 
-**Every command owned by an external context now has something that sends it,
-bar 22 recorded exceptions.** 524 -> 22 this session, in nine batches. The
-last six were **shape batches** — grouped by speech act, not industry, on
-Reid's ruling, because 270 distinct external contexts over 305 pairs meant
-industry clustering yielded batches of one.
+**904 external commands across 782 external contexts in 189 models, and every
+one has something that sends it.** 524 -> 0. `sbt uc` reports that denominator
+on every run and the baseline file is empty, which is legitimate.
 
-The four rules, each now applied corpus-wide:
-
-| shape | fires on |
-|---|---|
-| **need** | the event that CREATES the need |
-| **undo** | the event that ENDS it |
-| **fact** | the event that PRODUCES or FIXES the fact — or, for keeping a far system's picture right, the event that makes it WRONG |
-| **know** | the event that creates the NEED TO KNOW, at the earliest point the answer changes what happens next |
+The last four were reactive-bbq's, and they were mislabelled as needing an
+adaptor BUILT. The far side was never missing: each external context already
+declared the command, a handler yielding its event, an event source and an
+egress connector — the whole return leg — and had no inlet a command could
+arrive on. Each needed an inlet, an outbound adaptor and a connector, moving
+the external context from `as flow` to `as merge`.
 
 ### What a fresh session must not get wrong
 
-- **`sbt uc` is the only check in this build that sees an unsent command.**
-  `sbt v`, `checkAll` and `collect-warnings.py` are all green on a model that
-  declares a whole integration and drives none of it. It holds the line at 22
-  over `scripts/unsent-baseline.tsv`; refresh with
-  `./scripts/check-unsent.py --update` after any wiring.
+- **`sbt uc` keys its blindness check on the DENOMINATOR, not the finding
+  count.** It used to refuse an empty census as blind; that was right while
+  the answer was non-zero and became wrong the moment the work succeeded — the
+  guard would have failed the build for being finished. Generalise it: *a
+  "nothing found" guard must key on how much was looked at.*
+- **An adaptor may reference only messages of the two contexts it BRIDGES**
+  (`adaptor-message-not-in-context`). Reporting could not post a ledger entry
+  on Inventory's `StockReceived`; it fires on Reporting's own
+  `RecordInventoryEvent` instead. Same rule vendor-management hit: a
+  neighbour's event must become a fact of YOURS before you act on it.
+- **An outbound adaptor usually needs NO ports.** A103 makes them implied, one
+  type each way, so `tell ... to context X` publishes on the implied outlet.
+  Declare an outlet only when the adaptor carries a second message type.
+- **Adding an event is never a one-line change.** Every new member of an event
+  alternation must be accounted for wherever it flows: the apply clause, the
+  boundary relay, the split, EVERY projector fed by it, and a repository
+  persistence command with its handler clause.
 - **The tooling is TRACKED** in `scripts/adaptor-wiring/` (census, plan, dig,
-  wire + README). It had been rebuilt from scratch three sessions running.
-  `plan.py` is the one that matters: it separates SETUP / INSERT / BUILD
-  before any editing, and it corrected the handoff in both directions.
-- **A BUILD pair needs LESS on the external side, not more** — its external
-  context already has a handler, so adding a boundary is
-  `msg-yield-undeclared`. But a command that declares `yields` and has NO
-  handler needs the generated boundary to yield it. Both are in `wire.py`.
-- **Reconcile every batch**: the drop must equal the number wired, and nothing
-  may clear that was not wired. That agreement is what proves the census is
-  live rather than quiet.
+  wire + README). `plan.py` separates SETUP / INSERT / BUILD before any
+  editing.
 
-### In flight — nothing. The campaign and its residue are both closed.
+### In flight
 
-**22 unsent commands -> 4**, and the four are reactive-bbq's
-(`PostTransaction`, `SyncEmployeeData`, `SchedulePhotoShoot`, `PrintMenus`),
-held for its own campaign (#1) by Reid's ruling because its external contexts
-already carry an inbound leg and an outbound one changes their shapes.
-
-The 18 defects the campaign found were fixed in three kinds, and **which kind
-applies is the whole judgement**:
-
-- **5 deleted** — the model correctly does not drive them, so declaring them
-  asserted an integration that does not exist (precedent: Reid's 2026-08-18
-  deletion of unreferenced external-context types). supply-chain's
-  `RequestSupplies` was the sharpest: the model ALREADY expressed that
-  relationship correctly as an inbound `event SupplyRequested`.
-- **9 events added across 7 models** — payment-processing had no event before
-  authorization at all, and advertising-delivery no impression *opportunity*,
-  so in both the first step of the exchange had nothing to fire on.
-- **4 restructured** — a backwards adaptor, a trigger owned by another
-  context, and a five-portlet single-command channel.
-
-**Adding an event is never a one-line change.** Every new member of an event
-alternation must be accounted for wherever that alternation flows: the apply
-clause, the boundary relay, the split, EVERY projector fed by it, and a
-repository persistence command with its handler clause. riddlc's
-`stream-inlet-not-received` found each one; reading found none.
+Nothing. BACKLOG #33 is closed; #34 (Course's roster), #23 and #24 remain
+accepted and unimplemented, and #1 (reactive-bbq as reference model) is its
+own campaign.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
