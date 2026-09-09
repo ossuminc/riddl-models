@@ -617,6 +617,35 @@ whether a resting order dies at end-of-day (`send ... at`) or from
 inactivity (`on quiescence`). And Option 1 vs 2 for rewriting the 13 wired
 reminders, which the ticketing pilot now gives a proven shape for.
 
+### The corpus now COVERS both constructs — 2026-09-08
+
+riddl-generator donated a model for `on quiescence` and `send ... at`
+(`task/done/2026-09-08-a-model-for-the-temporal-constructs.md`) because the
+corpus used **neither**, 0 occurrences across 190 models, while riddlg had
+already learned to lower both. **We took the constructs, not the file**: they
+went into `language-coverage`, which exists for exactly this and whose `.conf`
+is one of only two with no severity suppression, rather than landing a
+synthetic `Banking` domain as a 190th industry model.
+
+`Cartography` gained a `ScheduleResurvey` command carrying a `TimeStamp`, its
+boundary handler schedules the delivery with `at scheduleResurvey.resurveyAt`,
+and `SurveyStation`'s commissioned state carries `on quiescence "PT6H"`. Both
+are driven and consumed, not decorative: the viewer books the resurvey and the
+repository records it when it falls due.
+
+**Both are in the AST, proven, not assumed.** `dump --json` carries an
+`on-quiescence` node, `prettify` re-emits the `at` clause from the AST, and a
+RED canary pointing `at` at a `StationId` produced
+`[error] [stmt-send-at-not-instant]`.
+
+**One gap found**: `dump --json`'s `send-statement` node carries `target` and
+`message` but **not the `at` instant**, so the projection cannot census
+scheduled sends. `prettify` is currently the only way to read one back.
+
+This closes the coverage question. The four rewrites below are unaffected —
+they are about the corpus's own 18 unfireable facts, not about whether the
+language can express them.
+
 ### What to revisit when the capability arrives
 
 1. **The 13 wired reminders** (commits c5d741a7, a51e88f8). Each says

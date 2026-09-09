@@ -4,6 +4,7 @@
 context Cartography as router is {
   inlet StationCommandStreamIn is type StationCommand  outlet StationCommandStreamOut is type StationCommand
   inlet StationResultStreamIn is result SurveyStation.StationResult  outlet StationResultStreamOut is result SurveyStation.StationResult
+  inlet ResurveyRequestsIn is command ScheduleResurvey  outlet ResurveyDue is command ScheduleResurvey
   handler CartographyBoundary is {
     on commissionStation: command CommissionStation is {
       forward commissionStation to outlet Cartography.StationCommandStreamOut
@@ -16,6 +17,9 @@ context Cartography as router is {
     }
     on stationResult: result SurveyStation.StationResult is {
       send stationResult to outlet Cartography.StationResultStreamOut
+    }
+    on scheduleResurvey: command ScheduleResurvey is {
+      send command ScheduleResurvey(stationId = scheduleResurvey.stationId, resurveyAt = scheduleResurvey.resurveyAt) to outlet Cartography.ResurveyDue at scheduleResurvey.resurveyAt
     }
     on other is {
       error "Unexpected message at the Cartography boundary"
@@ -30,8 +34,8 @@ context Cartography as router is {
   }
   connector 'StationCommand Stream Intake' is from outlet Cartography.StationCommandStreamOut to inlet Cartography.SurveyStation.StationCommands  connector 'StationResult Stream Egress' is from outlet Cartography.StationRepository.StationRepositoryResponses to inlet Cartography.StationResultStreamIn  include "types.riddl"
   include "SurveyStation.riddl"
-  repository StationRepository as flow is {
-    inlet StationRepositoryFromStationEventLog is command LogStationEvent    outlet StationRepositoryResponses is result SurveyStation.StationResult
+  repository StationRepository as merge is {
+    inlet StationRepositoryFromStationEventLog is command LogStationEvent    inlet StationRepositoryResurveySchedule is command ScheduleResurvey    outlet StationRepositoryResponses is result SurveyStation.StationResult
     record StoredStation is {
       stationId: StationId with {
         briefly "stationId"
@@ -111,6 +115,11 @@ context Cartography as router is {
       on command LogStationEvent is {
         do "append the station event to the Cartography event log"
       }
+      on command ScheduleResurvey is {
+        do "record that the station is due for resurvey, so the revisit
+          stands in the schedule rather than only in the delivery that
+          woke it"
+      }
     } with {
       briefly "Station persistence"
       described as {
@@ -121,6 +130,32 @@ context Cartography as router is {
     briefly "Station repository"
     described as {
       |Stores station rows and answers queries about them.
+    }
+  }
+  // ---- Resurvey scheduling ----
+  // The `send ... at` construct needs a message carrying an instant, and
+  // this is the one honest reason a survey has for holding one.
+  command ScheduleResurvey is {
+    stationId: StationId with {
+      briefly "Station to revisit"
+      described as {
+        |The station whose patch of ground is to be surveyed again.
+      }
+    }
+    resurveyAt: TimeStamp with {
+      briefly "When the revisit falls due"
+      described as {
+        |The instant the resurvey becomes due. An instant rather than a
+        |date because the grid publishes revisit windows to the minute and
+        |a station on a tidal flat is only reachable inside one.
+      }
+    }
+  } with {
+    briefly "Schedule a resurvey"
+    described as {
+      |Ask that a station be revisited at a stated instant. The request is
+      |made now and delivered then, which is why it carries the instant
+      |rather than being issued when the instant arrives.
     }
   }
   // ---- Local event log for station events ----
@@ -168,6 +203,15 @@ context Cartography as router is {
   }
   connector 'StationEventLog Storage' is from outlet Cartography.StationEventLog.StationEventLogToRepository to inlet Cartography.StationRepository.StationRepositoryFromStationEventLog with {
     briefly "Logged station events on their way to storage"
+  }
+  connector 'ScheduleResurvey Storage' is from outlet Cartography.ResurveyDue to inlet Cartography.StationRepository.StationRepositoryResurveySchedule with {
+    briefly "Due resurvey requests on their way to storage"
+    described as {
+      |Carries a resurvey request from the boundary to the ledger. The
+      |boundary publishes it at the instant the request named, so what
+      |arrives here is a revisit that has fallen due, not one being asked
+      |for.
+    }
   }
   connector StationToLog is from outlet Cartography.SurveyStation.StationEvents to inlet Cartography.StationEventLog.IncomingStationLog with {
     briefly "Station events to the context log"
