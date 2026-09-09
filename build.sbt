@@ -36,6 +36,11 @@ lazy val prettifyCheck = taskKey[Unit](
   "FAIL if any model is not in `riddlc prettify` canonical form"
 )
 
+lazy val unsentCheck = taskKey[Unit](
+  "RATCHET: FAIL if any model gained an external-context command that " +
+    "nothing drives"
+)
+
 lazy val checkTests = taskKey[Unit](
   "Run every test and FAIL the build if any of them failed"
 )
@@ -152,6 +157,35 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       }
     },
 
+    // Nothing else in this build sees an unsent command: riddlc has no opinion
+    // about a message nothing sends, so a model can declare a whole external
+    // integration and drive none of it at 0 findings. This is the only check
+    // that notices. It is NOT on riddlcValidate -- it costs a `dump` per model
+    // -- so it rides checkAll, and `sbt uc` runs it alone.
+    //
+    // Def.uncached for the same reason verifyTemplates needs it.
+    unsentCheck := Def.uncached {
+      val log = streams.value.log
+      val base = baseDirectory.value
+      val riddlc = riddlcBinary.value
+      val script = base / "scripts" / "check-unsent.py"
+      if (!script.exists()) sys.error(s"check-unsent.py not found at $script")
+      log.info("Checking no model gained a command that nothing drives")
+      val forward = ProcessLogger(l => log.info(l), l => log.error(l))
+      val code = Process(
+        Seq("python3", script.getAbsolutePath),
+        base,
+        "RIDDLC" -> riddlc.getAbsolutePath
+      ) ! forward
+      if (code != 0) {
+        sys.error(
+          "unsent-command ratchet failed -- see the list above. Wire it, or " +
+            "add it to scripts/unsent-baseline.tsv deliberately with a reason " +
+            "in BACKLOG."
+        )
+      }
+    },
+
     // patterns/ is excluded from riddlcValidate, so bolt the check onto it:
     // `sbt v` now means the whole repository, not just the 187 gated models.
     riddlcValidate := riddlcValidate.dependsOn(verifyTemplates, prettifyCheck).value,
@@ -190,10 +224,11 @@ addCommandAlias("b", "riddlcBastify")
 addCommandAlias("r", "riddlcPrettify")
 addCommandAlias("vt", "verifyTemplates")
 addCommandAlias("pc", "prettifyCheck")
+addCommandAlias("uc", "unsentCheck")
 
 // The whole-repository gate: patterns, the corpus through the CLI, and the
 // corpus again through the library API. `checkTests` rather than `Test/test`
 // because the latter skips tests sbt believes are unchanged, and rather than a
 // bare `Test/executeTests` because that yields its outcome as a value and so
 // exits 0 on a red suite.
-addCommandAlias("checkAll", "; riddlcValidate; checkTests")
+addCommandAlias("checkAll", "; riddlcValidate; unsentCheck; checkTests")

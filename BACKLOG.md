@@ -513,6 +513,16 @@ gate it. Four options, with what each costs:
 **Recommendation: 4 then 1.** The gate is small and independent of the
 decision; shape batches are what remains once industry clusters are exhausted.
 
+**RULED 2026-09-08 by Reid: 4 then 1.** The gate is BUILT — `sbt uc`
+(`unsentCheck`, part of `checkAll`), over `scripts/unsent-baseline.tsv` at 434,
+canaried by injecting an unsent command. The tail is now to be finished in
+**shape batches**, grouped by speech act rather than by industry, with the
+residue recorded as it is met.
+
+**Also ruled: reactive-bbq's four stay with its own campaign** (#1) rather
+than being folded into this one, because they change existing external-context
+shapes rather than only adding to them.
+
 ### Traps, every one of which has already bitten
 
 - **A handler dispatches on message TYPE, so an event gets ONE clause.** A

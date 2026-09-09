@@ -1361,6 +1361,31 @@ the same riddlc the rest of the build uses. Both `riddlcValidate` and
 | `sbt checkAll` | both, with the full test suite forced |
 | `collect-warnings.py` | the models at **every severity** — see below |
 | `sbt pc` | every model is in **prettify canonical form** |
+| `sbt uc` | **no model gained a command that nothing drives** — see below |
+
+#### `sbt uc` — the only check that sees an UNSENT command
+
+**riddlc has no opinion about a message nothing sends.** A model can declare a
+whole external integration — the context, its commands, a handler for each —
+and drive none of it, at 0 findings of every severity. `sbt v`, `checkAll` and
+`collect-warnings.py` are all green on it. The code-generator model hit this
+class four times in one build; nothing in the repository caught it.
+
+`unsentCheck` (alias `uc`, and part of `checkAll`) is the ratchet. It runs
+`scripts/adaptor-wiring/census.py` and fails on any external-context command
+that nothing tells or sends and that is **not** in the tracked baseline,
+`scripts/unsent-baseline.tsv`. Closing gaps is reported, not failed; refresh
+the baseline with `./scripts/check-unsent.py --update` and the ratchet
+tightens.
+
+It is deliberately NOT wired to `riddlcValidate` — it costs a `riddlc dump`
+per model (~15s corpus-wide) and `sbt v` is meant to stay quick.
+
+It refuses to treat an EMPTY census as clean, because a census that finds
+nothing is indistinguishable from a clean corpus and that is the failure this
+repository keeps re-learning. Canaried 2026-09-08 by injecting one unsent
+command into an external context; it named the model, context and command and
+exited 1.
 
 #### Always commit prettified code
 
