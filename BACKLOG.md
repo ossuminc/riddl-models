@@ -728,6 +728,80 @@ campaign FOUND, and each is a small, well-specified change to one model. That
 is the useful residue: the campaign's real output is not only the wiring but
 this list.
 
+### The 18 defects are FIXED — 2026-09-09. Four remain, all reactive-bbq.
+
+22 unsent commands -> **4**, and the four are reactive-bbq's, held back by
+Reid's ruling for its own campaign (#1). Three kinds of fix, and which kind
+applies is the whole judgement:
+
+**FIVE COMMANDS DELETED.** The model correctly does not drive them, and
+declaring them asserted an integration that does not exist. Precedent: Reid's
+2026-08-18 ruling deleting unreferenced external-context types rather than
+keeping them as documentation.
+
+| deleted | because |
+|---|---|
+| radiology-workflow `InsertMacro` | a dictation-editor keystroke, not an `ImagingExam` event |
+| hotel-reservations / reservation-system `SyncRates` | neither model models a rate at all, so nothing in them could know one changed |
+| supply-chain `ResolveMatchException` | resolving an AP three-way-match exception is AP's workflow |
+| portfolio-management `ReviewTermSheet` | term sheets belong to deal-flow; this context manages investments already made |
+| supply-chain `RequestSupplies` | **a backwards duplicate** — the model ALREADY had `event ClinicalUsage.SupplyRequested` handled by a `from context` adaptor |
+
+Four of those left a single-member alternation, which is `[deprecated]
+[single-alternation]`, so each collapsed to referencing the command directly.
+
+**NINE EVENTS ADDED across seven models**, because the model genuinely lacked
+a domain event. Two are findings rather than edits:
+
+- **payment-processing had no event before authorization.** Every event began
+  at `PaymentAuthorized`, so 3-D Secure and the authorization request itself —
+  the two steps that must PRECEDE it — had nothing to fire on. Now
+  `PaymentInitiated` and `PaymentAuthenticated`, in the right order.
+- **advertising-delivery had no impression OPPORTUNITY**, only
+  `ImpressionRecorded`, which is after an ad has been chosen. The bid request
+  that chooses one now fires on `ImpressionOpportunityOpened`.
+
+The rest: nursing-workflow `TaskHeld`, case-management `ClientPaymentReceived`
+and `ConflictWaiverObtained`, inventory-management `InspectionRecorded`,
+apparel-manufacturing `MachineBreakdownRecorded`, ride-sharing
+`SafetyIncidentReported`.
+
+**Adding an event is never a one-line change, and riddlc is why.** Every new
+member of an event alternation must be accounted for everywhere that
+alternation flows: the entity's apply clause, the context boundary relay, the
+split, EVERY projector fed by it, and a persistence command in the repository
+with its own handler clause. nursing-workflow needed three projector clauses,
+apparel-manufacturing four. `stream-inlet-not-received` found every one; none
+was found by reading.
+
+**FOUR RESTRUCTURED.**
+
+- **shopping-cart `CreateOrder` was pointing the wrong way.** An adaptor
+  `to context OrderService` HANDLED the far command and told a
+  `Cart.CartCheckedOut` back into `CartContext` over its own outlet and a
+  connector. It now fires on `CartCheckedOut` and sends `CreateOrder`; the
+  outlet, the context inlet and the connector that existed only to carry the
+  backwards tell are gone.
+- **vendor-management `ProcessPayout`: the trigger belonged to another
+  context.** `OrderService.OrderFulfilled` creates the obligation, and
+  `stmt-outlet-not-owned` forbids the adaptor handling it from publishing on
+  `PaymentAdapter`'s outlet. The inbound adaptor now translates it into the
+  vendor's own `RecordSaleFulfilled`, and the payout fires on the resulting
+  `SaleFulfilled`. **A `tell ... to context` needs its own channel**: the
+  context gained an inlet and a connector from the adaptor's implied outlet,
+  because `VendorCommandStreamIn` already had the application's connector and
+  an inlet accepts exactly one.
+- **assembly-operations `ReportAssemblyFailure`: five portlets retyped.**
+  Entity outlet, context outlet, adaptor inlet, adaptor outlet and external
+  inlet were all `command ReportAssemblyComplete`. All five now carry a
+  `WorkOrderServiceCommand` alternation, and the entity emits the failure
+  where it yields `AssemblyFailed`.
+
+**One tool bug this found**: `wire.py`'s diagnostic filter enumerated the
+levels it knew (`error|warning|style|usage|missing|completeness`) and so
+silently passed `[deprecated]`. It now matches any bracketed level. A filter
+that names what it looks for cannot see what it was not told about.
+
 ### Traps, every one of which has already bitten
 
 - **A handler dispatches on message TYPE, so an event gets ONE clause.** A

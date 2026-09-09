@@ -1,10 +1,23 @@
 // Vendor Management - Vendor Context
 context VendorContext as router is {
   inlet VendorCommandStreamIn is type VendorCommand  outlet VendorCommandStreamOut is type VendorCommand
+  inlet VendorSaleCommandsIn is command Vendor.RecordSaleFulfilled with {
+    briefly "Fulfilment commands from the order adaptor"
+    described as {
+      |Its own inlet, because an inlet accepts exactly one connector and the
+      |application already has the command stream.
+    }
+  }
+  connector 'VendorSaleCommand Intake' is from outlet VendorContext.OrderAdapter to inlet VendorContext.VendorSaleCommandsIn with {
+    briefly "Fulfilment, translated, on its way into the context"
+  }
   inlet VendorResultStreamIn is result Vendor.VendorResult  outlet VendorResultStreamOut is result Vendor.VendorResult
   handler VendorContextBoundary is {
     on submitApplication: command Vendor.SubmitApplication is {
       send submitApplication to outlet VendorContext.VendorCommandStreamOut
+    }
+    on recordSaleFulfilled: command Vendor.RecordSaleFulfilled is {
+      send recordSaleFulfilled to outlet VendorContext.VendorCommandStreamOut
     }
     on approveVendor: command Vendor.ApproveVendor is {
       send approveVendor to outlet VendorContext.VendorCommandStreamOut
@@ -113,14 +126,15 @@ context VendorContext as router is {
   include "Vendor.riddl"
   // Adaptors for external system integration
   adaptor PaymentAdapter to context PaymentService as flow is { 
-    outlet PaymentAdapterOut is command PaymentService.CreatePayoutAccount
+    outlet PaymentAdapterOut is type PaymentService.PaymentServiceCommand
     handler PayoutProcessing is {
       on bankAccountSet: event Vendor.BankAccountSet is {
         let account: type PaymentService.CreatePayoutAccount = prompt("translate the bankAccountSet event into a CreatePayoutAccount, the banking details being exactly what a payout account needs to exist")
         send account to outlet VendorContext.PaymentAdapter.PaymentAdapterOut
       }
-      on command PaymentService.ProcessPayout is {
-        do "Process vendor payout"
+      on saleFulfilled: event Vendor.SaleFulfilled is {
+        let item0: type PaymentService.ProcessPayout = prompt("translate the saleFulfilled event into a ProcessPayout, fulfilment being what makes the vendor's money payable")
+        send item0 to outlet VendorContext.PaymentAdapter.PaymentAdapterOut
       }
       on other is {
         error "Unexpected message for adaptor PaymentAdapter"
@@ -139,8 +153,9 @@ context VendorContext as router is {
   }
   adaptor OrderAdapter from context OrderService is { 
     handler OrderEvents is {
-      on event OrderService.OrderFulfilled is {
-        do "Calculate vendor commission and queue payout"
+      on orderFulfilled: event OrderService.OrderFulfilled is {
+        let item0: type Vendor.RecordSaleFulfilled = prompt("translate the orderFulfilled event into a RecordSaleFulfilled, net of commission, so the payout is driven by a fact of the vendor rather than by another context's event")
+        tell item0 to context VendorContext
       }
       on event OrderService.OrderReturned is {
         do "Adjust vendor balance for return"
@@ -196,7 +211,7 @@ context VendorContext as router is {
   }
   // Repository for vendor persistence
   type VendorRepositoryCommand is one of {
-    VendorContext.VendorRepository.PersistApplicationSubmitted or VendorContext.VendorRepository.PersistBankAccountSet or VendorContext.VendorRepository.PersistPerformanceUpdated or VendorContext.VendorRepository.PersistVendorApproved or VendorContext.VendorRepository.PersistVendorInfoUpdated or VendorContext.VendorRepository.PersistVendorReinstated or VendorContext.VendorRepository.PersistVendorRejected or VendorContext.VendorRepository.PersistVendorSuspended or VendorContext.VendorRepository.PersistVendorTerminated
+    VendorContext.VendorRepository.PersistSaleFulfilled or VendorContext.VendorRepository.PersistApplicationSubmitted or VendorContext.VendorRepository.PersistBankAccountSet or VendorContext.VendorRepository.PersistPerformanceUpdated or VendorContext.VendorRepository.PersistVendorApproved or VendorContext.VendorRepository.PersistVendorInfoUpdated or VendorContext.VendorRepository.PersistVendorReinstated or VendorContext.VendorRepository.PersistVendorRejected or VendorContext.VendorRepository.PersistVendorSuspended or VendorContext.VendorRepository.PersistVendorTerminated
   } with {
     briefly "Anything that writes VendorRepository"
     described as {
@@ -216,6 +231,21 @@ context VendorContext as router is {
       briefly "Persist ApplicationSubmitted"
       described as {
         |Instructs this repository to apply ApplicationSubmitted to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistSaleFulfilled is {
+      vendorId: VendorId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row SaleFulfilled applies to.
+        }
+      }
+    } with {
+      briefly "Persist SaleFulfilled"
+      described as {
+        |Instructs this repository to apply SaleFulfilled to the stored row. A
         |persistence command, not a domain command: it declares no `yields`
         |because storing a row records no new entity state.
       }
@@ -384,6 +414,9 @@ context VendorContext as router is {
       }
     }
     handler VendorPersistence is {
+      on persistSaleFulfilled: command PersistSaleFulfilled is {
+        do "apply SaleFulfilled to the stored row"
+      }
       on persistApplicationSubmitted: command PersistApplicationSubmitted is {
         do "apply ApplicationSubmitted to the stored row"
       }
@@ -502,6 +535,10 @@ context VendorContext as router is {
       }
     }
     handler AnalyticsHandler is {
+      on saleFulfilled: event Vendor.SaleFulfilled is {
+        tell command VendorContext.VendorRepository.PersistSaleFulfilled(vendorId = saleFulfilled.vendorId) to repository VendorContext.VendorRepository
+        do "apply SaleFulfilled to the VendorAnalytics projection"
+      }
       on applicationSubmitted: event Vendor.ApplicationSubmitted is {
         tell command VendorContext.VendorRepository.PersistApplicationSubmitted(vendorId = applicationSubmitted.vendorId) to repository VendorContext.VendorRepository
         do "apply ApplicationSubmitted to the VendorAnalytics projection"
@@ -552,7 +589,7 @@ context VendorContext as router is {
   }
   // ---- Event publication for Vendor ----
   type VendorEvent is one of {
-    VendorContext.Vendor.ApplicationSubmitted or VendorContext.Vendor.VendorApproved or VendorContext.Vendor.VendorRejected or VendorContext.Vendor.VendorInfoUpdated or VendorContext.Vendor.BankAccountSet or VendorContext.Vendor.VendorSuspended or VendorContext.Vendor.VendorReinstated or VendorContext.Vendor.VendorTerminated or VendorContext.Vendor.PerformanceUpdated
+    VendorContext.Vendor.ApplicationSubmitted or VendorContext.Vendor.VendorApproved or VendorContext.Vendor.VendorRejected or VendorContext.Vendor.VendorInfoUpdated or VendorContext.Vendor.BankAccountSet or VendorContext.Vendor.VendorSuspended or VendorContext.Vendor.VendorReinstated or VendorContext.Vendor.VendorTerminated or VendorContext.Vendor.PerformanceUpdated or VendorContext.Vendor.SaleFulfilled
   } with {
     briefly "Vendor event alternation"
     described as {

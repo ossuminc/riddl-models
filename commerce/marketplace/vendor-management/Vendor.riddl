@@ -1,7 +1,7 @@
 // Vendor Management - Vendor Entity
 entity Vendor as flow is {
   type VendorCommand is one of {
-    Vendor.SubmitApplication or Vendor.ApproveVendor or Vendor.RejectVendor or Vendor.UpdateVendorInfo or Vendor.SetBankAccount or Vendor.SuspendVendor or Vendor.ReinstateVendor or Vendor.TerminateVendor or Vendor.UpdatePerformance
+    Vendor.SubmitApplication or Vendor.ApproveVendor or Vendor.RejectVendor or Vendor.UpdateVendorInfo or Vendor.SetBankAccount or Vendor.SuspendVendor or Vendor.ReinstateVendor or Vendor.TerminateVendor or Vendor.UpdatePerformance or Vendor.RecordSaleFulfilled
   } with {
     briefly "Vendor command alternation"
     described as {
@@ -280,6 +280,35 @@ entity Vendor as flow is {
       |Permanently ends the vendor relationship.
     }
   }
+  command RecordSaleFulfilled is {
+    vendorId: VendorId with {
+      briefly "Vendor ID"
+      described as {
+        |Vendor whose sale was fulfilled.
+      }
+    }
+    fulfilledOrderId: String(1,64) with {
+      briefly "Order"
+      described as {
+        |The order the marketplace fulfilled on this vendor's behalf.
+      }
+    }
+    payableAmount: Decimal(15,2) with {
+      briefly "Payable"
+      described as {
+        |What the vendor is owed for it, net of commission.
+      }
+    }
+  } with {
+    briefly "Record a fulfilled sale"
+    described as {
+      |Record that a sale for this vendor has been fulfilled and is therefore
+      |payable. The obligation to pay is created by an OrderService event, and
+      |an adaptor may not publish on another adaptor's outlet -- so the
+      |fulfilment has to become a fact of the vendor before a payout can be
+      |driven from it.
+    }
+  }
   command UpdatePerformance is {
     vendorId: VendorId with {
       briefly "Vendor ID"
@@ -528,6 +557,31 @@ entity Vendor as flow is {
     briefly "Vendor was terminated"
     described as {
       |Emitted when vendor relationship ends.
+    }
+  }
+  event SaleFulfilled is {
+    vendorId: VendorId with {
+      briefly "Vendor"
+      described as {
+        |Vendor owed for the sale.
+      }
+    }
+    fulfilledOrderId: String(1,64) with {
+      briefly "Order"
+      described as {
+        |Order fulfilled.
+      }
+    }
+    payableAmount: Decimal(15,2) with {
+      briefly "Payable"
+      described as {
+        |What is owed.
+      }
+    }
+  } with {
+    briefly "Sale fulfilled"
+    described as {
+      |Emitted when a sale becomes payable to the vendor.
     }
   }
   event PerformanceUpdated is {
@@ -874,6 +928,12 @@ entity Vendor as flow is {
     on terminateVendor: command TerminateVendor is {
       morph entity VendorContext.Vendor to state VendorContext.Vendor.TerminatedState with record Vendor.TerminatedVendorData(vendorId = terminateVendor.vendorId, reason = terminateVendor.reason, businessName = prompt("the business name of this terminated vendor data"), terminatedAt = prompt("the terminated at of this terminated vendor data"))
       tell event VendorTerminated(vendorId = terminateVendor.vendorId, reason = terminateVendor.reason, terminatedBy = terminateVendor.terminatedBy, terminatedAt = prompt("the terminated at of this vendor terminated")) to entity VendorContext.Vendor
+    }
+    on recordSaleFulfilled: command RecordSaleFulfilled is {
+      tell event SaleFulfilled(vendorId = recordSaleFulfilled.vendorId, fulfilledOrderId = recordSaleFulfilled.fulfilledOrderId, payableAmount = recordSaleFulfilled.payableAmount) to entity VendorContext.Vendor
+    }
+    on saleFulfilled: event SaleFulfilled is {
+      do "apply SaleFulfilled to the vendor so it can be persisted and replayed"
     }
     on updatePerformance: command UpdatePerformance is {
       tell event PerformanceUpdated(vendorId = updatePerformance.vendorId, metrics = updatePerformance.metrics, updatedAt = prompt("the updated at of this performance updated")) to entity VendorContext.Vendor
