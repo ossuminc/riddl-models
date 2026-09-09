@@ -585,6 +585,40 @@ caused by anything `ImagingExam` publishes. Fourth of its kind.
 Note this makes a pair with a `keep` still appear in the census, which is
 correct — do not read it as unwired work.
 
+#### Shape batch 3 — `fact`, keep-a-picture-right: 56 pairs, 63 commands, DONE 2026-09-08
+
+> **A command that keeps a far system's picture right fires on the event that
+> makes that picture WRONG.**
+
+54 SETUP plus two INSERT. Baseline 325 -> 262. Placements worth the argument:
+inventory-control syncs the ERP on `QuantityAdjusted` (the adjustment IS what
+makes its figure wrong); bill-of-materials updates standard cost on
+`CostCalculated`; cnc-operations updates tool life on `CycleCompleted`, each
+cycle consuming it; hotel-reservations syncs availability on **`RoomHeld` and
+`RoomVacated`**, the two events that change what is sellable, rather than on
+the reservation.
+
+**`multi-tenant` is the worked example of the single-command-channel trap.**
+Its outlet was typed `command BillingSystem.CreateBillingAccount`, so admitting
+`RecordUsageMetrics` and `UpdateSubscription` meant retyping the whole channel:
+a new `BillingSystemCommand` alternation, the adaptor outlet, the external
+inlet, and two more boundary clauses. Retyping only the emitter would not have
+been enough.
+
+**Two recorded rather than wired, both genuine model defects:**
+
+- **shopping-cart `[OrderService] CreateOrder` — the direction is backwards.**
+  `OrderAdapter to context OrderService` HANDLES `CreateOrder` and `tell`s a
+  `Cart.CartCheckedOut` back into `CartContext`. That is the far system asking
+  us, written on an outbound adaptor. Wiring a send would collide with the
+  existing clause; fixing it is a redesign of the adaptor, not a wiring batch.
+  Same class as healthcare supply-chain's `RequestSupplies`.
+- case-management `[BillingSystem] RecordPayment` — `CaseContext` records time
+  and expenses but has no payment event. Fifth of the no-event kind.
+
+Also left: nursing-workflow `DocumentHold` (no hold event), hotel-reservations
+and reservation-system `SyncRates` (neither model has a rate-change event).
+
 ### Traps, every one of which has already bitten
 
 - **A handler dispatches on message TYPE, so an event gets ONE clause.** A
