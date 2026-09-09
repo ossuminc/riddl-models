@@ -47,6 +47,31 @@ the external context from `as flow` to `as merge`.
   wire + README). `plan.py` separates SETUP / INSERT / BUILD before any
   editing.
 
+### `initial handler` — reading 1 ruled and migrated, 2026-09-09
+
+riddl-generator found that a state's handler marked `initial` is the LIVE one
+(CM §17), while 34 reactive-bbq states put every message clause in a SECOND
+handler — so under the strict reading those states accepted nothing. Reid ruled
+**reading 1**: the models were wrong.
+
+**44 states migrated**, in just two models — reactive-bbq (34) and
+code-generator (10), both our own showcase models, which is why riddlg met it
+there. Each clause-less `initial handler` had its `on init` folded into the
+state's first clause-bearing handler, that handler marked `initial`, and the
+empty one deleted.
+
+**The measurement is what made the decision cheap.** Corpus-wide, of 618
+states, **399 already had the clauses at ENTITY level** — reading 1's own
+recommended shape, per §13.7 — and only 44 were in the problematic shape. The
+corpus was already ~90% conformant.
+
+**And that is the trap for riddlg**: its `liveFirst` accommodation was carrying
+**443** states, not 34. Deleting it outright breaks the 399, which are correct
+as they stand. The rule the corpus now needs is *fall back to the ENTITY-level
+handler*, not *the first handler that declares a message clause* — the latter
+would pick a `become` target. Told them in
+`../riddl-generator/task/2026-09-09-initial-handler-ruled-reading-1.md`.
+
 ### In flight
 
 Nothing. BACKLOG #33 is closed; #34 (Course's roster), #23 and #24 remain
