@@ -893,6 +893,48 @@ separated before any of it starts rather than discovered one model at a time.
 
 ---
 
+## 35. Outbound queries: the `ask` recipe, proven on one site
+
+**Reid ruled the `ask` form, 2026-09-09**, and the full round trip for all 363
+outbound query placeholders. The recipe below is validated end to end on
+`production-management` / `CrewManagement.GetAvailableCrew` at 0 findings.
+
+**`ask` needs a CHANNEL.** riddlc does not check that (see CLAUDE.md and
+`../riddl/task/2026-09-09-ask-is-not-checked-for-a-channel.md`) so the wiring
+is ours to get right — a clean validate proves nothing here.
+
+### The six edits, per site
+
+1. external ctx: `query Q is {` -> `query Q replies result R is {`
+2. external ctx: request inlet retyped to an alternation `<Ctx>Request`
+   carrying the existing command(s) **and** Q
+3. external ctx: boundary handler gains
+   `on query Q is { let ans: type R = prompt("…"); reply ans }`
+4. near adaptor: **outlet retyped to the same alternation** — widening only
+   the inlet gives `stream-connector-type-mismatch`, the channel-retyping trap
+5. near adaptor: the placeholder query clause becomes an event-driven `ask`,
+   on the event that creates the NEED TO KNOW (shape batch 1's rule)
+6. inbound adaptor: the **paired `on result` placeholder is DELETED** — the
+   `ask` binds the answer, so a separate inbound clause would say it arrives
+   twice
+
+### Why step 6 is safe
+
+**361 of the 363 outbound queries pair 1:1 with an inbound `on result`
+placeholder** in the same external context — they were generated together as
+the two halves of one round trip. The `ask` subsumes both at model level; the
+reply mechanism (reply actor, future, correlation id) is a generator lowering,
+per CM §40.4 and Reid.
+
+### Remaining
+
+**362 sites.** 222 in wired adaptors, 141 unwired (those also need the
+connector built). 242 pair with exactly one result and are unambiguous; 119
+have 2-4 candidate results and need the pairing chosen; 2 have none.
+
+Do NOT mechanically name-match query to result — the paired `on result`
+placeholder names it, which is evidence rather than a guess.
+
 ## 34. Delete Course's roster; decide what `LearnerEnrolled.enrollmentId` is
 
 Left deliberately when #32 closed (commit a9bdd684). **This is queued work,
