@@ -659,6 +659,41 @@ cannot be wired is that it is the FIRST step of an exchange, and the model
 only publishes events about what happened after. That is a real modelling
 observation about the corpus, not a limitation of the rules.
 
+#### Shape batch 5 — `need`, first half: 51 pairs, 77 commands, DONE 2026-09-08
+
+> **A command that ASKS FOR SOMETHING fires on the event that CREATES the
+> need** — the point at which the thing asked for becomes necessary, not the
+> point at which it arrives.
+
+Baseline 207 -> 130. The largest batch so far, and the one where a single
+external context most often takes three clauses because a clinical or
+operational workflow asks the same partner for different things at different
+moments:
+
+- **operating-room `[AnesthesiaService]`** — `CaseScheduled` -> cover the case,
+  `SurgeryCompleted` -> document the record, `InRecovery` -> hand off to PACU.
+- **radiology-workflow `[PACSIntegration]`** — `ExamScheduled` -> prefetch
+  priors (scheduling is early enough that they are there when wanted),
+  `AcquisitionCompleted` -> store, `DraftReportCreated` -> retrieve.
+- **airline-reservations `[BoardingService]`** — `PassengerCheckedIn` ->
+  start, `BoardingPassIssued` -> scan, `PassengerBoarded` -> complete.
+
+`PrefetchPriorStudies` is the clearest case of the rule's "creates the need"
+half: the need arises at scheduling precisely because prefetching is only
+useful if it happens early.
+
+**Two recorded rather than wired:**
+
+- payment-processing `[ThreeDSecureService] InitiateAuthentication` — the pair
+  is now entirely unwireable for the reason already recorded twice in that
+  model: there is no pre-authorization event.
+- vendor-management `[PaymentService] ProcessPayout` — the payout obligation
+  is created by `OrderService.OrderFulfilled`, an event of a DIFFERENT
+  context, and `stmt-outlet-not-owned` forbids the adaptor that handles it
+  from publishing on `PaymentAdapter`'s outlet. VendorContext has no
+  fulfilment event of its own. This is a new residue kind: **the trigger
+  exists but belongs to another context.**
+
 ### Traps, every one of which has already bitten
 
 - **A handler dispatches on message TYPE, so an event gets ONE clause.** A
