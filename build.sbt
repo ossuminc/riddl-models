@@ -25,7 +25,7 @@ enablePlugins(RiddlSbtPlugin)
 // `send` obeys ownership, and ascriptions are checked). The corpus was adapted
 // to it. Move to the first PUBLISHED tag carrying A103 and take the riddlcPath
 // override off in the same edit.
-lazy val riddlVersion = "2.1.1-26-4d17b1ef"
+lazy val riddlVersion = "2.1.1-33-dd3c2d80"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
