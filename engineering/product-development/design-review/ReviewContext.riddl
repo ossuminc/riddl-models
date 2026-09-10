@@ -1,5 +1,17 @@
 // Design Review - Review Context
 context ReviewContext as router is {
+  inlet ReviewContextFromPLMService is command Review.StartReview with {
+    briefly "What FromPLMService makes of that service's news"
+  }
+  connector 'FromPLMService Intake' is from outlet ReviewContext.FromPLMService.FromPLMServiceToReviewContext to inlet ReviewContext.ReviewContextFromPLMService with {
+    briefly "What FromPLMService makes of that news, on its way in"
+  }
+  inlet ReviewContextFromWorkflowService is command Review.FinalizeReview with {
+    briefly "What FromWorkflowService makes of that service's news"
+  }
+  connector 'FromWorkflowService Intake' is from outlet ReviewContext.FromWorkflowService.FromWorkflowServiceToReviewContext to inlet ReviewContext.ReviewContextFromWorkflowService with {
+    briefly "What FromWorkflowService makes of that news, on its way in"
+  }
   inlet ReviewCommandStreamIn is type ReviewCommand  outlet ReviewCommandStreamOut is type ReviewCommand
   inlet ReviewResultStreamIn is result Review.ReviewResult  outlet ReviewResultStreamOut is result Review.ReviewResult
   handler ReviewContextBoundary is {
@@ -50,10 +62,10 @@ context ReviewContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'ReviewCommand Stream Intake' is from outlet ReviewContext.ReviewCommandStreamOut to inlet ReviewContext.Review.ReviewCommands  connector 'ReviewResult Stream Egress' is from outlet ReviewContext.ReviewRepository.ReviewRepositoryResponses to inlet ReviewContext.ReviewResultStreamIn  adaptor FromDocumentService from context DocumentService is { 
-    handler FromDocumentServiceHandler is {
-      on event DocumentService.DocumentUploaded is {
-        do "the model receives document uploaded"
+  connector 'ReviewCommand Stream Intake' is from outlet ReviewContext.ReviewCommandStreamOut to inlet ReviewContext.Review.ReviewCommands  connector 'ReviewResult Stream Egress' is from outlet ReviewContext.ReviewRepository.ReviewRepositoryResponses to inlet ReviewContext.ReviewResultStreamIn  adaptor FromDocumentService from context DocumentService as flow is { 
+    inlet FromDocumentServiceIn is event DocumentService.DocumentUploaded    handler FromDocumentServiceHandler is {
+      on documentUploaded: event DocumentService.DocumentUploaded is {
+        do "the document is stored; the review already records what it is for"
       }
       on other is {
         error "Unexpected message for adaptor FromDocumentService"
@@ -130,13 +142,15 @@ context ReviewContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromPLMService from context PLMService is { 
+  adaptor FromPLMService from context PLMService as flow is { 
+    inlet FromPLMServiceIn is type PLMService.PLMServiceEvent    outlet FromPLMServiceToReviewContext is command Review.StartReview
     handler FromPLMServiceHandler is {
-      on event PLMService.DesignReleased is {
-        do "the model receives design released"
+      on designReleased: event PLMService.DesignReleased is {
+        let item0: type Review.StartReview = prompt("translate the designReleased event into a StartReview, a released design is what a review exists to examine")
+        send item0 to outlet ReviewContext.FromPLMService.FromPLMServiceToReviewContext
       }
-      on event PLMService.DesignUpdated is {
-        do "the model receives design updated"
+      on designUpdated: event PLMService.DesignUpdated is {
+        do "the design moved upstream; whether the review must look again is the reviewer's call"
       }
       on other is {
         error "Unexpected message for adaptor FromPLMService"
@@ -175,10 +189,12 @@ context ReviewContext as router is {
       |The model's side of the UserDirectoryService conversation.
     }
   }
-  adaptor FromWorkflowService from context WorkflowService is { 
+  adaptor FromWorkflowService from context WorkflowService as flow is { 
+    inlet FromWorkflowServiceIn is event WorkflowService.WorkflowCompleted    outlet FromWorkflowServiceToReviewContext is command Review.FinalizeReview
     handler FromWorkflowServiceHandler is {
-      on event WorkflowService.WorkflowCompleted is {
-        do "the model receives workflow completed"
+      on workflowCompleted: event WorkflowService.WorkflowCompleted is {
+        let item0: type Review.FinalizeReview = prompt("translate the workflowCompleted event into a FinalizeReview, the approval workflow finishing is what finalises the review it was run for")
+        send item0 to outlet ReviewContext.FromWorkflowService.FromWorkflowServiceToReviewContext
       }
       on other is {
         error "Unexpected message for adaptor FromWorkflowService"

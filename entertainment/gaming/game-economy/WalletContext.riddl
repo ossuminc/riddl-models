@@ -1,5 +1,17 @@
 // Game Economy - Wallet Context
 context WalletContext as router is {
+  inlet WalletContextFromIAPService is command Wallet.AddCurrency with {
+    briefly "What FromIAPService makes of that service's news"
+  }
+  connector 'FromIAPService Intake' is from outlet WalletContext.FromIAPService.FromIAPServiceToWalletContext to inlet WalletContext.WalletContextFromIAPService with {
+    briefly "What FromIAPService makes of that news, on its way in"
+  }
+  inlet WalletContextFromTradeEscrowService is command Wallet.CompleteTrade with {
+    briefly "What FromTradeEscrowService makes of that service's news"
+  }
+  connector 'FromTradeEscrowService Intake' is from outlet WalletContext.FromTradeEscrowService.FromTradeEscrowServiceToWalletContext to inlet WalletContext.WalletContextFromTradeEscrowService with {
+    briefly "What FromTradeEscrowService makes of that news, on its way in"
+  }
   inlet WalletCommandStreamIn is type WalletCommand  outlet WalletCommandStreamOut is type WalletCommand
   inlet WalletResultStreamIn is result Wallet.WalletResult  outlet WalletResultStreamOut is result Wallet.WalletResult
   handler WalletContextBoundary is {
@@ -44,10 +56,10 @@ context WalletContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'WalletCommand Stream Intake' is from outlet WalletContext.WalletCommandStreamOut to inlet WalletContext.Wallet.WalletCommands  connector 'WalletResult Stream Egress' is from outlet WalletContext.WalletRepository.WalletRepositoryResponses to inlet WalletContext.WalletResultStreamIn  adaptor FromFraudDetectionService from context FraudDetectionService is { 
-    handler FromFraudDetectionServiceHandler is {
-      on event FraudDetectionService.TransactionChecked is {
-        do "the model receives transaction checked"
+  connector 'WalletCommand Stream Intake' is from outlet WalletContext.WalletCommandStreamOut to inlet WalletContext.Wallet.WalletCommands  connector 'WalletResult Stream Egress' is from outlet WalletContext.WalletRepository.WalletRepositoryResponses to inlet WalletContext.WalletResultStreamIn  adaptor FromFraudDetectionService from context FraudDetectionService as flow is { 
+    inlet FromFraudDetectionServiceIn is event FraudDetectionService.TransactionChecked    handler FromFraudDetectionServiceHandler is {
+      on transactionChecked: event FraudDetectionService.TransactionChecked is {
+        do "fraud has looked; the wallet acts on the purchase, not on the check"
       }
       on other is {
         error "Unexpected message for adaptor FromFraudDetectionService"
@@ -86,10 +98,12 @@ context WalletContext as router is {
       |The model's side of the FraudDetectionService conversation.
     }
   }
-  adaptor FromIAPService from context IAPService is { 
+  adaptor FromIAPService from context IAPService as flow is { 
+    inlet FromIAPServiceIn is event IAPService.PurchaseVerified    outlet FromIAPServiceToWalletContext is command Wallet.AddCurrency
     handler FromIAPServiceHandler is {
-      on event IAPService.PurchaseVerified is {
-        do "the model receives purchase verified"
+      on purchaseVerified: event IAPService.PurchaseVerified is {
+        let item0: type Wallet.AddCurrency = prompt("translate the purchaseVerified event into a AddCurrency, a verified real-money purchase is what puts currency in the wallet")
+        send item0 to outlet WalletContext.FromIAPService.FromIAPServiceToWalletContext
       }
       on other is {
         error "Unexpected message for adaptor FromIAPService"
@@ -180,10 +194,12 @@ context WalletContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromTradeEscrowService from context TradeEscrowService is { 
+  adaptor FromTradeEscrowService from context TradeEscrowService as flow is { 
+    inlet FromTradeEscrowServiceIn is event TradeEscrowService.EscrowReleased    outlet FromTradeEscrowServiceToWalletContext is command Wallet.CompleteTrade
     handler FromTradeEscrowServiceHandler is {
-      on event TradeEscrowService.EscrowReleased is {
-        do "the model receives escrow released"
+      on escrowReleased: event TradeEscrowService.EscrowReleased is {
+        let item0: type Wallet.CompleteTrade = prompt("translate the escrowReleased event into a CompleteTrade, escrow releasing the items is what completes the trade")
+        send item0 to outlet WalletContext.FromTradeEscrowService.FromTradeEscrowServiceToWalletContext
       }
       on other is {
         error "Unexpected message for adaptor FromTradeEscrowService"

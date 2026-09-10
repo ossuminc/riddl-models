@@ -1,5 +1,27 @@
 // Event Ticketing - Ticketing Context
 context TicketingContext as router is {
+  type FromPaymentGatewayCommand is one of {
+    Ticket.PurchaseTicket or Ticket.RefundTicket
+  } with {
+    briefly "What FromPaymentGateway turns that service's news into"
+  }
+  inlet TicketingContextFromPaymentGateway is type TicketingContext.FromPaymentGatewayCommand with {
+    briefly "What FromPaymentGateway makes of that service's news"
+  }
+  connector 'FromPaymentGateway Intake' is from outlet TicketingContext.FromPaymentGateway.FromPaymentGatewayToTicketingContext to inlet TicketingContext.TicketingContextFromPaymentGateway with {
+    briefly "What FromPaymentGateway makes of that news, on its way in"
+  }
+  type FromVenueSystemCommand is one of {
+    Ticket.ExpireReservation or Ticket.ReserveTicket
+  } with {
+    briefly "What FromVenueSystem turns that service's news into"
+  }
+  inlet TicketingContextFromVenueSystem is type TicketingContext.FromVenueSystemCommand with {
+    briefly "What FromVenueSystem makes of that service's news"
+  }
+  connector 'FromVenueSystem Intake' is from outlet TicketingContext.FromVenueSystem.FromVenueSystemToTicketingContext to inlet TicketingContext.TicketingContextFromVenueSystem with {
+    briefly "What FromVenueSystem makes of that news, on its way in"
+  }
   inlet TicketCommandStreamIn is type TicketCommand  outlet TicketCommandStreamOut is type TicketCommand
   inlet TicketResultStreamIn is result Ticket.TicketResult  outlet TicketResultStreamOut is result Ticket.TicketResult
   handler TicketingContextBoundary is {
@@ -43,13 +65,16 @@ context TicketingContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'TicketCommand Stream Intake' is from outlet TicketingContext.TicketCommandStreamOut to inlet TicketingContext.Ticket.TicketCommands  connector 'TicketResult Stream Egress' is from outlet TicketingContext.TicketingRepository.TicketingRepositoryResponses to inlet TicketingContext.TicketResultStreamIn  adaptor FromPaymentGateway from context PaymentGateway is { 
+  connector 'TicketCommand Stream Intake' is from outlet TicketingContext.TicketCommandStreamOut to inlet TicketingContext.Ticket.TicketCommands  connector 'TicketResult Stream Egress' is from outlet TicketingContext.TicketingRepository.TicketingRepositoryResponses to inlet TicketingContext.TicketResultStreamIn  adaptor FromPaymentGateway from context PaymentGateway as flow is { 
+    inlet FromPaymentGatewayIn is type PaymentGateway.PaymentGatewayEvent    outlet FromPaymentGatewayToTicketingContext is type TicketingContext.FromPaymentGatewayCommand
     handler FromPaymentGatewayHandler is {
-      on event PaymentGateway.PaymentProcessed is {
-        do "the model receives payment processed"
+      on paymentProcessed: event PaymentGateway.PaymentProcessed is {
+        let item0: type Ticket.PurchaseTicket = prompt("translate the paymentProcessed event into a PurchaseTicket, a paid ticket is a purchased ticket; a reservation alone is not")
+        send item0 to outlet TicketingContext.FromPaymentGateway.FromPaymentGatewayToTicketingContext
       }
-      on event PaymentGateway.RefundProcessed is {
-        do "the model receives refund processed"
+      on refundProcessed: event PaymentGateway.RefundProcessed is {
+        let item0: type Ticket.RefundTicket = prompt("translate the refundProcessed event into a RefundTicket, money actually returned is what makes the ticket refunded")
+        send item0 to outlet TicketingContext.FromPaymentGateway.FromPaymentGatewayToTicketingContext
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentGateway"
@@ -92,13 +117,16 @@ context TicketingContext as router is {
       |The model's side of the PaymentGateway conversation.
     }
   }
-  adaptor FromVenueSystem from context VenueSystem is { 
+  adaptor FromVenueSystem from context VenueSystem as flow is { 
+    inlet FromVenueSystemIn is type VenueSystem.VenueSystemEvent    outlet FromVenueSystemToTicketingContext is type TicketingContext.FromVenueSystemCommand
     handler FromVenueSystemHandler is {
-      on event VenueSystem.SeatReleased is {
-        do "the model receives seat released"
+      on seatReleased: event VenueSystem.SeatReleased is {
+        let item0: type Ticket.ExpireReservation = prompt("translate the seatReleased event into a ExpireReservation, a seat given back cannot still be held by a reservation")
+        send item0 to outlet TicketingContext.FromVenueSystem.FromVenueSystemToTicketingContext
       }
-      on event VenueSystem.SeatReserved is {
-        do "the model receives seat reserved"
+      on seatReserved: event VenueSystem.SeatReserved is {
+        let item0: type Ticket.ReserveTicket = prompt("translate the seatReserved event into a ReserveTicket, the venue holding the seat is what a ticket reservation rests on")
+        send item0 to outlet TicketingContext.FromVenueSystem.FromVenueSystemToTicketingContext
       }
       on other is {
         error "Unexpected message for adaptor FromVenueSystem"

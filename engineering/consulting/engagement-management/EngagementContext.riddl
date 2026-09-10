@@ -1,5 +1,11 @@
 // Engagement Management - Engagement Context
 context EngagementContext as router is {
+  inlet EngagementContextFromResourceService is command Engagement.AssignTeamMember with {
+    briefly "What FromResourceService makes of that service's news"
+  }
+  connector 'FromResourceService Intake' is from outlet EngagementContext.FromResourceService.FromResourceServiceToEngagementContext to inlet EngagementContext.EngagementContextFromResourceService with {
+    briefly "What FromResourceService makes of that news, on its way in"
+  }
   inlet EngagementCommandStreamIn is type EngagementCommand  outlet EngagementCommandStreamOut is type EngagementCommand
   inlet EngagementQueryResultStreamIn is result Engagement.EngagementResult  outlet EngagementQueryResultStreamOut is result Engagement.EngagementResult
   handler EngagementContextBoundary is {
@@ -64,13 +70,13 @@ context EngagementContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'EngagementCommand Stream Intake' is from outlet EngagementContext.EngagementCommandStreamOut to inlet EngagementContext.Engagement.EngagementCommands  connector 'EngagementQueryResult Stream Egress' is from outlet EngagementContext.EngagementRepository.EngagementRepositoryResponses to inlet EngagementContext.EngagementQueryResultStreamIn  adaptor FromBillingService from context BillingService is { 
-    handler FromBillingServiceHandler is {
-      on event BillingService.InvoiceCreated is {
-        do "the model receives invoice created"
+  connector 'EngagementCommand Stream Intake' is from outlet EngagementContext.EngagementCommandStreamOut to inlet EngagementContext.Engagement.EngagementCommands  connector 'EngagementQueryResult Stream Egress' is from outlet EngagementContext.EngagementRepository.EngagementRepositoryResponses to inlet EngagementContext.EngagementQueryResultStreamIn  adaptor FromBillingService from context BillingService as flow is { 
+    inlet FromBillingServiceIn is type BillingService.BillingServiceEvent    handler FromBillingServiceHandler is {
+      on invoiceCreated: event BillingService.InvoiceCreated is {
+        do "the invoice exists; the time and milestones it bills were recorded here"
       }
-      on event BillingService.PaymentReceived is {
-        do "the model receives payment received"
+      on paymentReceived: event BillingService.PaymentReceived is {
+        do "payment settles the invoice; the engagement's own progress is unaffected"
       }
       on other is {
         error "Unexpected message for adaptor FromBillingService"
@@ -109,13 +115,13 @@ context EngagementContext as router is {
       |The model's side of the BillingService conversation.
     }
   }
-  adaptor FromCRMService from context CRMService is { 
-    handler FromCRMServiceHandler is {
-      on event CRMService.ClientCreated is {
-        do "the model receives client created"
+  adaptor FromCRMService from context CRMService as flow is { 
+    inlet FromCRMServiceIn is type CRMService.CRMServiceEvent    handler FromCRMServiceHandler is {
+      on clientCreated: event CRMService.ClientCreated is {
+        do "a client in CRM is someone we may engage; an engagement is created deliberately"
       }
-      on event CRMService.ClientUpdated is {
-        do "the model receives client updated"
+      on clientUpdated: event CRMService.ClientUpdated is {
+        do "client details live in CRM; the engagement carries only what it needs"
       }
       on other is {
         error "Unexpected message for adaptor FromCRMService"
@@ -132,10 +138,10 @@ context EngagementContext as router is {
       |The model's side of the CRMService conversation.
     }
   }
-  adaptor FromDocumentService from context DocumentService is { 
-    handler FromDocumentServiceHandler is {
-      on event DocumentService.DocumentStored is {
-        do "the model receives document stored"
+  adaptor FromDocumentService from context DocumentService as flow is { 
+    inlet FromDocumentServiceIn is event DocumentService.DocumentStored    handler FromDocumentServiceHandler is {
+      on documentStored: event DocumentService.DocumentStored is {
+        do "the document is safe; the deliverable it belongs to was already recorded"
       }
       on other is {
         error "Unexpected message for adaptor FromDocumentService"
@@ -216,10 +222,12 @@ context EngagementContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromResourceService from context ResourceService is { 
+  adaptor FromResourceService from context ResourceService as flow is { 
+    inlet FromResourceServiceIn is event ResourceService.AvailabilityConfirmed    outlet FromResourceServiceToEngagementContext is command Engagement.AssignTeamMember
     handler FromResourceServiceHandler is {
-      on event ResourceService.AvailabilityConfirmed is {
-        do "the model receives availability confirmed"
+      on availabilityConfirmed: event ResourceService.AvailabilityConfirmed is {
+        let item0: type Engagement.AssignTeamMember = prompt("translate the availabilityConfirmed event into a AssignTeamMember, someone confirmed as available is who can actually be put on the engagement")
+        send item0 to outlet EngagementContext.FromResourceService.FromResourceServiceToEngagementContext
       }
       on other is {
         error "Unexpected message for adaptor FromResourceService"

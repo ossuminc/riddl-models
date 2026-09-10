@@ -1,5 +1,17 @@
 // Content Management - Content Context
 context ContentContext as router is {
+  inlet ContentContextFromMediaAssetService is command Content.AddAsset with {
+    briefly "What FromMediaAssetService makes of that service's news"
+  }
+  connector 'FromMediaAssetService Intake' is from outlet ContentContext.FromMediaAssetService.FromMediaAssetServiceToContentContext to inlet ContentContext.ContentContextFromMediaAssetService with {
+    briefly "What FromMediaAssetService makes of that news, on its way in"
+  }
+  inlet ContentContextFromTranscodingService is command Content.CreateVersion with {
+    briefly "What FromTranscodingService makes of that service's news"
+  }
+  connector 'FromTranscodingService Intake' is from outlet ContentContext.FromTranscodingService.FromTranscodingServiceToContentContext to inlet ContentContext.ContentContextFromTranscodingService with {
+    briefly "What FromTranscodingService makes of that news, on its way in"
+  }
   inlet ContentCommandStreamIn is type ContentCommand  outlet ContentCommandStreamOut is type ContentCommand
   inlet ContentResultStreamIn is result Content.ContentResult  outlet ContentResultStreamOut is result Content.ContentResult
   handler ContentContextBoundary is {
@@ -53,10 +65,10 @@ context ContentContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'ContentCommand Stream Intake' is from outlet ContentContext.ContentCommandStreamOut to inlet ContentContext.Content.ContentCommands  connector 'ContentResult Stream Egress' is from outlet ContentContext.ContentRepository.ContentRepositoryResponses to inlet ContentContext.ContentResultStreamIn  adaptor FromCDNService from context CDNService is { 
-    handler FromCDNServiceHandler is {
-      on event CDNService.ContentDistributed is {
-        do "the model receives content distributed"
+  connector 'ContentCommand Stream Intake' is from outlet ContentContext.ContentCommandStreamOut to inlet ContentContext.Content.ContentCommands  connector 'ContentResult Stream Egress' is from outlet ContentContext.ContentRepository.ContentRepositoryResponses to inlet ContentContext.ContentResultStreamIn  adaptor FromCDNService from context CDNService as flow is { 
+    inlet FromCDNServiceIn is event CDNService.ContentDistributed    handler FromCDNServiceHandler is {
+      on contentDistributed: event CDNService.ContentDistributed is {
+        do "the CDN has it; publishing was decided here before it was pushed"
       }
       on other is {
         error "Unexpected message for adaptor FromCDNService"
@@ -95,10 +107,12 @@ context ContentContext as router is {
       |The model's side of the CDNService conversation.
     }
   }
-  adaptor FromMediaAssetService from context MediaAssetService is { 
+  adaptor FromMediaAssetService from context MediaAssetService as flow is { 
+    inlet FromMediaAssetServiceIn is event MediaAssetService.AssetUploaded    outlet FromMediaAssetServiceToContentContext is command Content.AddAsset
     handler FromMediaAssetServiceHandler is {
-      on event MediaAssetService.AssetUploaded is {
-        do "the model receives asset uploaded"
+      on assetUploaded: event MediaAssetService.AssetUploaded is {
+        let item0: type Content.AddAsset = prompt("translate the assetUploaded event into a AddAsset, an asset that has actually landed is what the content record can point at")
+        send item0 to outlet ContentContext.FromMediaAssetService.FromMediaAssetServiceToContentContext
       }
       on other is {
         error "Unexpected message for adaptor FromMediaAssetService"
@@ -193,10 +207,10 @@ context ContentContext as router is {
       |The model's side of the RightsService conversation.
     }
   }
-  adaptor FromSearchService from context SearchService is { 
-    handler FromSearchServiceHandler is {
-      on event SearchService.ContentIndexed is {
-        do "the model receives content indexed"
+  adaptor FromSearchService from context SearchService as flow is { 
+    inlet FromSearchServiceIn is event SearchService.ContentIndexed    handler FromSearchServiceHandler is {
+      on contentIndexed: event SearchService.ContentIndexed is {
+        do "the content is findable; publishing it here is what made it worth indexing"
       }
       on other is {
         error "Unexpected message for adaptor FromSearchService"
@@ -235,10 +249,12 @@ context ContentContext as router is {
       |The model's side of the SearchService conversation.
     }
   }
-  adaptor FromTranscodingService from context TranscodingService is { 
+  adaptor FromTranscodingService from context TranscodingService as flow is { 
+    inlet FromTranscodingServiceIn is event TranscodingService.TranscodingCompleted    outlet FromTranscodingServiceToContentContext is command Content.CreateVersion
     handler FromTranscodingServiceHandler is {
-      on event TranscodingService.TranscodingCompleted is {
-        do "the model receives transcoding completed"
+      on transcodingCompleted: event TranscodingService.TranscodingCompleted is {
+        let item0: type Content.CreateVersion = prompt("translate the transcodingCompleted event into a CreateVersion, a transcoded rendition is a new version of the content, not a change to the old one")
+        send item0 to outlet ContentContext.FromTranscodingService.FromTranscodingServiceToContentContext
       }
       on other is {
         error "Unexpected message for adaptor FromTranscodingService"

@@ -1,5 +1,22 @@
 // Store Operations - Store Context
 context StoreContext as router is {
+  type FromFacilitiesServiceCommand is one of {
+    Store.AssignTask or Store.CompleteTask
+  } with {
+    briefly "What FromFacilitiesService turns that service's news into"
+  }
+  inlet StoreContextFromFacilitiesService is type StoreContext.FromFacilitiesServiceCommand with {
+    briefly "What FromFacilitiesService makes of that service's news"
+  }
+  connector 'FromFacilitiesService Intake' is from outlet StoreContext.FromFacilitiesService.FromFacilitiesServiceToStoreContext to inlet StoreContext.StoreContextFromFacilitiesService with {
+    briefly "What FromFacilitiesService makes of that news, on its way in"
+  }
+  inlet StoreContextFromHRService is command Store.EndShift with {
+    briefly "What FromHRService makes of that service's news"
+  }
+  connector 'FromHRService Intake' is from outlet StoreContext.FromHRService.FromHRServiceToStoreContext to inlet StoreContext.StoreContextFromHRService with {
+    briefly "What FromHRService makes of that news, on its way in"
+  }
   inlet StoreCommandStreamIn is type StoreCommand  outlet StoreCommandStreamOut is type StoreCommand
   inlet StoreResultStreamIn is result Store.StoreResult  outlet StoreResultStreamOut is result Store.StoreResult
   handler StoreContextBoundary is {
@@ -44,13 +61,16 @@ context StoreContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'StoreCommand Stream Intake' is from outlet StoreContext.StoreCommandStreamOut to inlet StoreContext.Store.StoreCommands  connector 'StoreResult Stream Egress' is from outlet StoreContext.StoreRepository.StoreRepositoryResponses to inlet StoreContext.StoreResultStreamIn  adaptor FromFacilitiesService from context FacilitiesService is { 
+  connector 'StoreCommand Stream Intake' is from outlet StoreContext.StoreCommandStreamOut to inlet StoreContext.Store.StoreCommands  connector 'StoreResult Stream Egress' is from outlet StoreContext.StoreRepository.StoreRepositoryResponses to inlet StoreContext.StoreResultStreamIn  adaptor FromFacilitiesService from context FacilitiesService as flow is { 
+    inlet FromFacilitiesServiceIn is type FacilitiesService.FacilitiesServiceEvent    outlet FromFacilitiesServiceToStoreContext is type StoreContext.FromFacilitiesServiceCommand
     handler FromFacilitiesServiceHandler is {
-      on event FacilitiesService.MaintenanceCompleted is {
-        do "the model receives maintenance completed"
+      on maintenanceCompleted: event FacilitiesService.MaintenanceCompleted is {
+        let item0: type Store.CompleteTask = prompt("translate the maintenanceCompleted event into a CompleteTask, work the facility has finished closes the task the store was holding for it")
+        send item0 to outlet StoreContext.FromFacilitiesService.FromFacilitiesServiceToStoreContext
       }
-      on event FacilitiesService.MaintenanceRequired is {
-        do "the model receives maintenance required"
+      on maintenanceRequired: event FacilitiesService.MaintenanceRequired is {
+        let item0: type Store.AssignTask = prompt("translate the maintenanceRequired event into a AssignTask, maintenance the facility flags is work someone in the store must be given")
+        send item0 to outlet StoreContext.FromFacilitiesService.FromFacilitiesServiceToStoreContext
       }
       on other is {
         error "Unexpected message for adaptor FromFacilitiesService"
@@ -67,10 +87,12 @@ context StoreContext as router is {
       |The model's side of the FacilitiesService conversation.
     }
   }
-  adaptor FromHRService from context HRService is { 
+  adaptor FromHRService from context HRService as flow is { 
+    inlet FromHRServiceIn is event HRService.EmployeeTerminated    outlet FromHRServiceToStoreContext is command Store.EndShift
     handler FromHRServiceHandler is {
-      on event HRService.EmployeeTerminated is {
-        do "the model receives employee terminated"
+      on employeeTerminated: event HRService.EmployeeTerminated is {
+        let item0: type Store.EndShift = prompt("translate the employeeTerminated event into a EndShift, someone no longer employed cannot remain on an open shift")
+        send item0 to outlet StoreContext.FromHRService.FromHRServiceToStoreContext
       }
       on other is {
         error "Unexpected message for adaptor FromHRService"
@@ -103,10 +125,10 @@ context StoreContext as router is {
       |The model's side of the HRService conversation.
     }
   }
-  adaptor FromReportingService from context ReportingService is { 
-    handler FromReportingServiceHandler is {
-      on event ReportingService.ReportGenerated is {
-        do "the model receives report generated"
+  adaptor FromReportingService from context ReportingService as flow is { 
+    inlet FromReportingServiceIn is event ReportingService.ReportGenerated    handler FromReportingServiceHandler is {
+      on reportGenerated: event ReportingService.ReportGenerated is {
+        do "the report exists; the day it covers was already closed here"
       }
       on other is {
         error "Unexpected message for adaptor FromReportingService"
@@ -145,10 +167,10 @@ context StoreContext as router is {
       |The model's side of the ReportingService conversation.
     }
   }
-  adaptor FromSecurityService from context SecurityService is { 
-    handler FromSecurityServiceHandler is {
-      on event SecurityService.SecurityAlertIssued is {
-        do "the model receives security alert issued"
+  adaptor FromSecurityService from context SecurityService as flow is { 
+    inlet FromSecurityServiceIn is event SecurityService.SecurityAlertIssued    handler FromSecurityServiceHandler is {
+      on securityAlertIssued: event SecurityService.SecurityAlertIssued is {
+        do "security has raised it; the store records the incidents it observes itself"
       }
       on other is {
         error "Unexpected message for adaptor FromSecurityService"

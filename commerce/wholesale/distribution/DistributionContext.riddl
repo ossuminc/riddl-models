@@ -1,5 +1,27 @@
 // Distribution - Distribution Context
 context DistributionContext as router is {
+  type FromInventoryServiceCommand is one of {
+    DistributionOrder.AllocateInventory or DistributionOrder.CancelOrder
+  } with {
+    briefly "What FromInventoryService turns that service's news into"
+  }
+  inlet DistributionContextFromInventoryService is type DistributionContext.FromInventoryServiceCommand with {
+    briefly "What FromInventoryService makes of that service's news"
+  }
+  connector 'FromInventoryService Intake' is from outlet DistributionContext.FromInventoryService.FromInventoryServiceToDistributionContext to inlet DistributionContext.DistributionContextFromInventoryService with {
+    briefly "What FromInventoryService makes of that news, on its way in"
+  }
+  type FromShippingServiceCommand is one of {
+    DistributionOrder.DeliverOrder or DistributionOrder.ShipOrder
+  } with {
+    briefly "What FromShippingService turns that service's news into"
+  }
+  inlet DistributionContextFromShippingService is type DistributionContext.FromShippingServiceCommand with {
+    briefly "What FromShippingService makes of that service's news"
+  }
+  connector 'FromShippingService Intake' is from outlet DistributionContext.FromShippingService.FromShippingServiceToDistributionContext to inlet DistributionContext.DistributionContextFromShippingService with {
+    briefly "What FromShippingService makes of that news, on its way in"
+  }
   inlet DistributionOrderCommandStreIn is type DistributionOrderCommand  outlet DistributionOrderCommandStreOut is type DistributionOrderCommand
   inlet MarketplaceOrderResultStreamIn is result DistributionOrder.DistributionOrderResult  outlet MarketplaceOrderResultStreamOut is result DistributionOrder.DistributionOrderResult
   handler DistributionContextBoundary is {
@@ -35,13 +57,13 @@ context DistributionContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'DistributionOrderCommand Stream Intake' is from outlet DistributionContext.DistributionOrderCommandStreOut to inlet DistributionContext.DistributionOrder.DistributionOrderCommands  connector 'MarketplaceOrderResult Stream Egress' is from outlet DistributionContext.OrderRepository.OrderRepositoryResponses to inlet DistributionContext.MarketplaceOrderResultStreamIn  adaptor FromBillingService from context BillingService is { 
-    handler FromBillingServiceHandler is {
-      on event BillingService.InvoiceCreated is {
-        do "the model receives invoice created"
+  connector 'DistributionOrderCommand Stream Intake' is from outlet DistributionContext.DistributionOrderCommandStreOut to inlet DistributionContext.DistributionOrder.DistributionOrderCommands  connector 'MarketplaceOrderResult Stream Egress' is from outlet DistributionContext.OrderRepository.OrderRepositoryResponses to inlet DistributionContext.MarketplaceOrderResultStreamIn  adaptor FromBillingService from context BillingService as flow is { 
+    inlet FromBillingServiceIn is type BillingService.BillingServiceEvent    handler FromBillingServiceHandler is {
+      on invoiceCreated: event BillingService.InvoiceCreated is {
+        do "the invoice exists; the order was already confirmed when it was raised"
       }
-      on event BillingService.PaymentReceived is {
-        do "the model receives payment received"
+      on paymentReceived: event BillingService.PaymentReceived is {
+        do "payment settles the invoice; the order's own progress is unaffected"
       }
       on other is {
         error "Unexpected message for adaptor FromBillingService"
@@ -58,13 +80,13 @@ context DistributionContext as router is {
       |The model's side of the BillingService conversation.
     }
   }
-  adaptor FromCRMService from context CRMService is { 
-    handler FromCRMServiceHandler is {
-      on event CRMService.CustomerCreditUpdated is {
-        do "the model receives customer credit updated"
+  adaptor FromCRMService from context CRMService as flow is { 
+    inlet FromCRMServiceIn is type CRMService.CRMServiceEvent    handler FromCRMServiceHandler is {
+      on customerCreditUpdated: event CRMService.CustomerCreditUpdated is {
+        do "credit limits shape whether future orders are accepted; one already placed is unaffected"
       }
-      on event CRMService.CustomerPricingUpdated is {
-        do "the model receives customer pricing updated"
+      on customerPricingUpdated: event CRMService.CustomerPricingUpdated is {
+        do "new pricing applies to orders yet to be created, not to one already priced"
       }
       on other is {
         error "Unexpected message for adaptor FromCRMService"
@@ -81,13 +103,16 @@ context DistributionContext as router is {
       |The model's side of the CRMService conversation.
     }
   }
-  adaptor FromInventoryService from context InventoryService is { 
+  adaptor FromInventoryService from context InventoryService as flow is { 
+    inlet FromInventoryServiceIn is type InventoryService.InventoryServiceEvent    outlet FromInventoryServiceToDistributionContext is type DistributionContext.FromInventoryServiceCommand
     handler FromInventoryServiceHandler is {
-      on event InventoryService.StockAllocated is {
-        do "the model receives stock allocated"
+      on stockAllocated: event InventoryService.StockAllocated is {
+        let item0: type DistributionOrder.AllocateInventory = prompt("translate the stockAllocated event into a AllocateInventory, stock actually set aside is what the order's allocation records")
+        send item0 to outlet DistributionContext.FromInventoryService.FromInventoryServiceToDistributionContext
       }
-      on event InventoryService.StockUnavailable is {
-        do "the model receives stock unavailable"
+      on stockUnavailable: event InventoryService.StockUnavailable is {
+        let item0: type DistributionOrder.CancelOrder = prompt("translate the stockUnavailable event into a CancelOrder, an order that cannot be filled is cancelled rather than left waiting")
+        send item0 to outlet DistributionContext.FromInventoryService.FromInventoryServiceToDistributionContext
       }
       on other is {
         error "Unexpected message for adaptor FromInventoryService"
@@ -104,13 +129,16 @@ context DistributionContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor FromShippingService from context ShippingService is { 
+  adaptor FromShippingService from context ShippingService as flow is { 
+    inlet FromShippingServiceIn is type ShippingService.ShippingServiceEvent    outlet FromShippingServiceToDistributionContext is type DistributionContext.FromShippingServiceCommand
     handler FromShippingServiceHandler is {
-      on event ShippingService.PickupScheduled is {
-        do "the model receives pickup scheduled"
+      on pickupScheduled: event ShippingService.PickupScheduled is {
+        let item0: type DistributionOrder.ShipOrder = prompt("translate the pickupScheduled event into a ShipOrder, a booked pickup is what puts the order on its way")
+        send item0 to outlet DistributionContext.FromShippingService.FromShippingServiceToDistributionContext
       }
-      on event ShippingService.ShipmentDelivered is {
-        do "the model receives shipment delivered"
+      on shipmentDelivered: event ShippingService.ShipmentDelivered is {
+        let item0: type DistributionOrder.DeliverOrder = prompt("translate the shipmentDelivered event into a DeliverOrder, delivery is the carrier's fact and the order's completion")
+        send item0 to outlet DistributionContext.FromShippingService.FromShippingServiceToDistributionContext
       }
       on other is {
         error "Unexpected message for adaptor FromShippingService"
