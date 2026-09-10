@@ -67,12 +67,6 @@ context IncidentContext as router is {
   }
   connector 'IncidentCommand Stream Intake' is from outlet IncidentContext.IncidentCommandStreamOut to inlet IncidentContext.Incident.IncidentCommands  connector 'IncidentQueryResult Stream Egress' is from outlet IncidentContext.IncidentRepository.IncidentRepositoryResponses to inlet IncidentContext.IncidentQueryResultStreamIn  adaptor FromAVLService from context AVLService is { 
     handler FromAVLServiceHandler is {
-      on result AVLService.NearestUnitsResult is {
-        do "the model receives nearest units result"
-      }
-      on result AVLService.UnitLocationResult is {
-        do "the model receives unit location result"
-      }
       on event AVLService.UnitLocationUpdated is {
         do "the model receives unit location updated"
       }
@@ -91,13 +85,16 @@ context IncidentContext as router is {
       |The model's side of the AVLService conversation.
     }
   }
-  adaptor ToAVLService to context AVLService is { 
+  adaptor ToAVLService to context AVLService as flow is { 
+    outlet ToAVLServiceOut is type AVLService.AVLServiceRequest
     handler ToAVLServiceHandler is {
-      on query AVLService.FindNearestUnits is {
-        do "the model sends find nearest units"
+      on incidentCreated: event Incident.IncidentCreated is {
+        let askAnswer: type AVLService.NearestUnitsResult = ask query AVLService.FindNearestUnits of context AVLService
+        do "a new incident needing the closest units to it"
       }
-      on query AVLService.GetUnitLocation is {
-        do "the model sends get unit location"
+      on unitEnRoute: event Incident.UnitEnRoute is {
+        let askAnswer: type AVLService.UnitLocationResult = ask query AVLService.GetUnitLocation of context AVLService
+        do "a unit en route needing its position tracked"
       }
       on other is {
         error "Unexpected message for adaptor ToAVLService"
@@ -122,9 +119,6 @@ context IncidentContext as router is {
       on event E911Service.CallEnded is {
         do "the model receives call ended"
       }
-      on result E911Service.CallRecordingResult is {
-        do "the model receives call recording result"
-      }
       on event E911Service.IncomingCall is {
         do "the model receives incoming call"
       }
@@ -143,10 +137,12 @@ context IncidentContext as router is {
       |The model's side of the E911Service conversation.
     }
   }
-  adaptor ToE911Service to context E911Service is { 
+  adaptor ToE911Service to context E911Service as flow is { 
+    outlet ToE911ServiceOut is query E911Service.GetCallRecording
     handler ToE911ServiceHandler is {
-      on query E911Service.GetCallRecording is {
-        do "the model sends get call recording"
+      on incidentDetailsUpdated: event Incident.IncidentDetailsUpdated is {
+        let askAnswer: type E911Service.CallRecordingResult = ask query E911Service.GetCallRecording of context E911Service
+        do "details being corrected needing the original call heard again"
       }
       on other is {
         error "Unexpected message for adaptor ToE911Service"
@@ -163,48 +159,24 @@ context IncidentContext as router is {
       |The model's side of the E911Service conversation.
     }
   }
-  adaptor FromGISService from context GISService is { 
-    handler FromGISServiceHandler is {
-      on result GISService.AddressResult is {
-        do "the model receives address result"
-      }
-      on result GISService.CoordinatesResult is {
-        do "the model receives coordinates result"
-      }
-      on result GISService.DispatchZoneResult is {
-        do "the model receives dispatch zone result"
-      }
-      on result GISService.HazardsResult is {
-        do "the model receives hazards result"
-      }
-      on other is {
-        error "Unexpected message for adaptor FromGISService"
-      }
-    } with {
-      briefly "from gis service"
-      described as {
-        |Carries messages from the external GISService.
-      }
-    }
-  } with {
-    briefly "GISService integration"
-    described as {
-      |The model's side of the GISService conversation.
-    }
-  }
-  adaptor ToGISService to context GISService is { 
+  adaptor ToGISService to context GISService as flow is { 
+    outlet ToGISServiceOut is type GISService.GISServiceRequest
     handler ToGISServiceHandler is {
-      on query GISService.GetAddressFromCoordinates is {
-        do "the model sends get address from coordinates"
+      on incidentCreated: event Incident.IncidentCreated is {
+        let askAnswer: type GISService.AddressResult = ask query GISService.GetAddressFromCoordinates of context GISService
+        do "an incident reported by position needing a street address"
       }
-      on query GISService.GetCoordinatesFromAddress is {
-        do "the model sends get coordinates from address"
+      on incidentDetailsUpdated: event Incident.IncidentDetailsUpdated is {
+        let askAnswer: type GISService.CoordinatesResult = ask query GISService.GetCoordinatesFromAddress of context GISService
+        do "a corrected address needing coordinates to dispatch against"
       }
-      on query GISService.GetDispatchZone is {
-        do "the model sends get dispatch zone"
+      on priorityUpgraded: event Incident.PriorityUpgraded is {
+        let askAnswer: type GISService.DispatchZoneResult = ask query GISService.GetDispatchZone of context GISService
+        do "an upgraded priority needing the zone that decides who responds"
       }
-      on query GISService.GetHazards is {
-        do "the model sends get hazards"
+      on unitDispatched: event Incident.UnitDispatched is {
+        let askAnswer: type GISService.HazardsResult = ask query GISService.GetHazards of context GISService
+        do "a dispatched unit needing to know what is dangerous at the address"
       }
       on other is {
         error "Unexpected message for adaptor ToGISService"
@@ -270,36 +242,16 @@ context IncidentContext as router is {
       |The model's side of the MDTService conversation.
     }
   }
-  adaptor FromRMSService from context RMSService is { 
-    handler FromRMSServiceHandler is {
-      on result RMSService.LocationHistoryResult is {
-        do "the model receives location history result"
-      }
-      on result RMSService.PersonWarningsResult is {
-        do "the model receives person warnings result"
-      }
-      on other is {
-        error "Unexpected message for adaptor FromRMSService"
-      }
-    } with {
-      briefly "from rms service"
-      described as {
-        |Carries messages from the external RMSService.
-      }
-    }
-  } with {
-    briefly "RMSService integration"
-    described as {
-      |The model's side of the RMSService conversation.
-    }
-  }
-  adaptor ToRMSService to context RMSService is { 
+  adaptor ToRMSService to context RMSService as flow is { 
+    outlet ToRMSServiceOut is type RMSService.RMSServiceRequest
     handler ToRMSServiceHandler is {
-      on query RMSService.GetLocationHistory is {
-        do "the model sends get location history"
+      on incidentCreated: event Incident.IncidentCreated is {
+        let askAnswer: type RMSService.LocationHistoryResult = ask query RMSService.GetLocationHistory of context RMSService
+        do "a new incident needing what has happened at this address before"
       }
-      on query RMSService.GetPersonWarnings is {
-        do "the model sends get person warnings"
+      on unitArrived: event Incident.UnitArrived is {
+        let askAnswer: type RMSService.PersonWarningsResult = ask query RMSService.GetPersonWarnings of context RMSService
+        do "a unit on scene needing warnings about who they will meet"
       }
       on other is {
         error "Unexpected message for adaptor ToRMSService"

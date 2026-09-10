@@ -1,7 +1,6 @@
 // Assembly Operations - Assembly Context
 context AssemblyContext as router is {
   inlet TranslationToContextQualSrc is type QualityService.QualityCommand  connector 'Translation To Context QualityService Egress' is from outlet AssemblyContext.ToQualityService.TranslatedQualityCommands to inlet AssemblyContext.TranslationToContextQualSrc  inlet AssemblyOrderCommandStreamIn is type AssemblyOrderCommand  outlet AssemblyOrderCommandStreamOut is type AssemblyOrderCommand
-  outlet TranslationToContextWorkOrdeOut is type WorkOrderService.WorkOrderServiceCommand
   inlet AssemblyOrderResultStreamIn is result AssemblyOrder.AssemblyOrderResult  outlet AssemblyOrderResultStreamOut is result AssemblyOrder.AssemblyOrderResult
   handler AssemblyContextBoundary is {
     on createAssemblyOrder: command AssemblyOrder.CreateAssemblyOrder is {
@@ -28,12 +27,6 @@ context AssemblyContext as router is {
     on failAssembly: command AssemblyOrder.FailAssembly is {
       send failAssembly to outlet AssemblyContext.AssemblyOrderCommandStreamOut
     }
-    on reportAssemblyComplete: command WorkOrderService.ReportAssemblyComplete is {
-      send reportAssemblyComplete to outlet AssemblyContext.TranslationToContextWorkOrdeOut
-    }
-    on reportAssemblyFailure: command WorkOrderService.ReportAssemblyFailure is {
-      send reportAssemblyFailure to outlet AssemblyContext.TranslationToContextWorkOrdeOut
-    }
     on assemblyOrderResult: result AssemblyOrder.AssemblyOrderResult is {
       send assemblyOrderResult to outlet AssemblyContext.AssemblyOrderResultStreamOut
     }
@@ -48,7 +41,7 @@ context AssemblyContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'ReportAssemblyComplete To Adaptor' is from outlet AssemblyContext.TranslationToContextWorkOrdeOut to inlet AssemblyContext.ToWorkOrderService  connector 'AssemblyOrderCommand Stream Intake' is from outlet AssemblyContext.AssemblyOrderCommandStreamOut to inlet AssemblyContext.AssemblyOrder.AssemblyOrderCommands  connector 'AssemblyOrderResult Stream Egress' is from outlet AssemblyContext.AssemblyOrderRepository.AssemblyOrderRepositoryResponses to inlet AssemblyContext.AssemblyOrderResultStreamIn  adaptor FromInventoryService from context InventoryService is { 
+  connector 'AssemblyOrderCommand Stream Intake' is from outlet AssemblyContext.AssemblyOrderCommandStreamOut to inlet AssemblyContext.AssemblyOrder.AssemblyOrderCommands  connector 'AssemblyOrderResult Stream Egress' is from outlet AssemblyContext.AssemblyOrderRepository.AssemblyOrderRepositoryResponses to inlet AssemblyContext.AssemblyOrderResultStreamIn  adaptor FromInventoryService from context InventoryService is { 
     handler FromInventoryServiceHandler is {
       on event InventoryService.ComponentShortage is {
         do "the model receives component shortage"
@@ -104,17 +97,11 @@ context AssemblyContext as router is {
   }
   adaptor FromQualityService from context QualityService is { 
     handler FromQualityServiceHandler is {
-      on result QualityService.DefectCodeList is {
-        do "the model receives defect code list"
-      }
       on event QualityService.DefectLogged is {
         do "the model receives defect logged"
       }
       on event QualityService.FailureLogged is {
         do "the model receives failure logged"
-      }
-      on result QualityService.InspectionPlan is {
-        do "the model receives inspection plan"
       }
       on other is {
         error "Unexpected message for adaptor FromQualityService"
@@ -132,7 +119,7 @@ context AssemblyContext as router is {
     }
   }
   adaptor ToQualityService to context QualityService as flow is { 
-    inlet OutgoingQualityCommands is type QualityService.QualityCommand    outlet TranslatedQualityCommands is type QualityService.QualityCommand
+    outlet TranslatedQualityCommands is type QualityService.QualityCommand
     handler ToQualityServiceHandler is {
       on recordDefect: command QualityService.RecordDefect is {
         send recordDefect to outlet TranslatedQualityCommands
@@ -140,11 +127,13 @@ context AssemblyContext as router is {
       on recordFailure: command QualityService.RecordFailure is {
         send recordFailure to outlet TranslatedQualityCommands
       }
-      on query QualityService.GetDefectCodes is {
-        do "the model sends get defect codes"
+      on defectRecorded: event AssemblyOrder.DefectRecorded is {
+        let askAnswer: type QualityService.DefectCodeList = ask query QualityService.GetDefectCodes of context QualityService
+        do "a recorded defect needing the code list to be classified against"
       }
-      on query QualityService.GetInspectionPlan is {
-        do "the model sends get inspection plan"
+      on assemblyStarted: event AssemblyOrder.AssemblyStarted is {
+        let askAnswer: type QualityService.InspectionPlan = ask query QualityService.GetInspectionPlan of context QualityService
+        do "an assembly starting needing the plan by which it will be inspected"
       }
       on other is {
         error "Unexpected message for adaptor ToQualityService"
@@ -166,9 +155,6 @@ context AssemblyContext as router is {
       on event WorkOrderService.AssemblyReported is {
         do "the model receives assembly reported"
       }
-      on result WorkOrderService.WorkOrderDetails is {
-        do "the model receives work order details"
-      }
       on other is {
         error "Unexpected message for adaptor FromWorkOrderService"
       }
@@ -185,13 +171,14 @@ context AssemblyContext as router is {
     }
   }
   adaptor ToWorkOrderService to context WorkOrderService as flow is { 
-    inlet OutgoingWorkOrderCommands is type WorkOrderService.WorkOrderServiceCommand    outlet TranslatedWorkOrderCommands is type WorkOrderService.WorkOrderServiceCommand
+    outlet TranslatedWorkOrderCommands is type WorkOrderService.WorkOrderServiceRequest
     handler ToWorkOrderServiceHandler is {
       on reportAssemblyComplete: command WorkOrderService.ReportAssemblyComplete is {
         send reportAssemblyComplete to outlet TranslatedWorkOrderCommands
       }
-      on query WorkOrderService.GetWorkOrderDetails is {
-        do "the model sends get work order details"
+      on assemblyOrderCreated: event AssemblyOrder.AssemblyOrderCreated is {
+        let askAnswer: type WorkOrderService.WorkOrderDetails = ask query WorkOrderService.GetWorkOrderDetails of context WorkOrderService
+        do "a new assembly order needing the parent work order it belongs to"
       }
       on reportAssemblyFailure: command WorkOrderService.ReportAssemblyFailure is {
         send reportAssemblyFailure to outlet TranslatedWorkOrderCommands
@@ -815,10 +802,10 @@ context AssemblyContext as router is {
   connector 'AssemblyLineAnalytics Feed' is from outlet AssemblyContext.AssemblyOrderEventSplit.AssemblyOrderEventSplitToAssemblyLineAnalytics to inlet AssemblyContext.AssemblyLineAnalytics.AssemblyLineAnalyticsFromAssemblyOrder with {
     briefly "AssemblyOrder events feeding the AssemblyLineAnalytics projection"
   }
-  connector 'QualityCommand Stream' is from outlet AssemblyContext.AssemblyOrder.AssemblyOrderToQuality to inlet AssemblyContext.ToQualityService.OutgoingQualityCommands with {
+  connector 'QualityCommand Stream' is from outlet AssemblyContext.AssemblyOrder.AssemblyOrderToQuality to inlet AssemblyContext.ToQualityService with {
     briefly "Quality commands from the assembly order to its adaptor"
   }
-  connector 'ReportAssemblyComplete Stream' is from outlet AssemblyContext.AssemblyOrder.AssemblyOrderToWorkOrder to inlet AssemblyContext.ToWorkOrderService.OutgoingWorkOrderCommands with {
+  connector 'ReportAssemblyComplete Stream' is from outlet AssemblyContext.AssemblyOrder.AssemblyOrderToWorkOrder to inlet AssemblyContext.ToWorkOrderService with {
     briefly "Assembly completion reports from the assembly order to its adaptor"
   }
   connector 'AssemblyLineAnalytics Storage' is from outlet AssemblyContext.AssemblyLineAnalytics.AssemblyLineAnalyticsToRepository to inlet AssemblyContext.AssemblyOrderRepository.AssemblyOrderRepositoryFromAssemblyLineAnalytics with {

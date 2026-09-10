@@ -893,68 +893,86 @@ separated before any of it starts rather than discovered one model at a time.
 
 ---
 
-## 35. Outbound queries: the `ask` recipe, proven on one site
+## 35. Outbound queries — CLOSED 2026-09-10 at ZERO
 
 **Reid ruled the `ask` form, 2026-09-09**, and the full round trip for all 363
-outbound query placeholders. The recipe below is validated end to end on
-`production-management` / `CrewManagement.GetAvailableCrew` at 0 findings.
+outbound query placeholders. All 363 are now real asks: `grep 'do "the model
+sends'` is **0**, `sbt ac` counts **363 `ask` statements, 0 unchannelled**, and
+`collect-warnings.py` sweeps the corpus at 0 (canaried with an injected unused
+type each batch).
 
-**`ask` needs a CHANNEL.** riddlc does not check that (see CLAUDE.md and
-`../riddl/task/2026-09-09-ask-is-not-checked-for-a-channel.md`) so the wiring
-is ours to get right — a clean validate proves nothing here.
+**`ask` needs a CHANNEL** — Reid, 2026-09-09: it is `send` plus generator-side
+reply handling, so the target must be wired exactly as a `send`'s would be.
+riddlc DOES check this, **except for an `ask` issued from an adaptor**, which is
+where all 363 of these live; `scripts/check-ask-channels.py` (`sbt ac`) is the
+guard for that one shape. See
+`../riddl/task/2026-09-09-ask-is-not-checked-for-a-channel.md`.
 
-### The six edits, per site
+### The recipe, by shape
 
-1. external ctx: `query Q is {` -> `query Q replies result R is {`
-2. external ctx: request inlet retyped to an alternation `<Ctx>Request`
-   carrying the existing command(s) **and** Q
-3. external ctx: boundary handler gains
-   `on query Q is { let ans: type R = prompt("…"); reply ans }`
-4. near adaptor: **outlet retyped to the same alternation** — widening only
-   the inlet gives `stream-connector-type-mismatch`, the channel-retyping trap
-5. near adaptor: the placeholder query clause becomes an event-driven `ask`,
-   on the event that creates the NEED TO KNOW (shape batch 1's rule)
-6. inbound adaptor: the **paired `on result` placeholder is DELETED** — the
-   `ask` binds the answer, so a separate inbound clause would say it arrives
-   twice
+Two shapes, and the second is most of the work. 222 sites were **wired** — the
+external context already had an inlet and a boundary handler — and needed six
+edits: `replies result R` on the query; the request inlet widened to a
+`<Ctx>Request` alternation carrying the existing command(s) and Q; an
+`on query Q is { let askAnswer: type R = prompt(...); reply askAnswer }` clause
+on the boundary handler; **the near adaptor's outlet retyped to the same
+alternation** (widening one end only is `stream-connector-type-mismatch`); the
+placeholder clause replaced by an event-driven `ask`; and the paired inbound
+`on result` placeholder deleted.
 
-### Why step 6 is safe
+141 sites were **unwired** — no inlet, no handler, no connector — so the channel
+had to be BUILT: `as sink` on the external context, its first inlet, a
+`<Ctx>Boundary` handler, then `as flow` and an `outlet To<Ctx>Out` on the
+adaptor and a domain-level `persistent connector '<Ctx>Request Stream'`. That is
+the shape the corpus's already-wired outbound adaptors carry, so these now match
+their neighbours. `scripts/`-adjacent appliers: the session's `askwire3.py`
+(wired) and `askbuild.py` (unwired).
+
+### Why deleting the inbound half is safe
 
 **361 of the 363 outbound queries pair 1:1 with an inbound `on result`
-placeholder** in the same external context — they were generated together as
-the two halves of one round trip. The `ask` subsumes both at model level; the
-reply mechanism (reply actor, future, correlation id) is a generator lowering,
-per CM §40.4 and Reid.
+placeholder** in the same external context — generated together as the two
+halves of one round trip. The `ask` subsumes both at model level; the reply
+mechanism (reply actor, future, correlation id) is a generator lowering, per
+CM §40.4 and Reid. An adaptor left with nothing but that deleted clause is
+pruned, since the ask took its job.
 
-### Batch 1 — the alternation shape: 74 sites, DONE 2026-09-10
+### Four traps, each paid for
 
-362 -> 288 placeholders, 75 asks, all channelled, sweep 0.
+**The applier's first version put 59 asks in the WRONG PROCESSOR.** It searched
+the adaptor's FILE for an existing `on <event>` clause to append to and found
+one in a **projector**, in 26 models. Every edit is now confined to the span
+riddlc reports for the adaptor, and the model is re-dumped per site.
 
-**The applier's first version put 59 asks in the WRONG PROCESSOR** and it is
-worth knowing why. It searched the adaptor's FILE for an existing
-`on <event>` clause to append to, and found one in a **projector** — so the
-ask landed there, in 26 models, which riddlc caught as
-`msg-ask-target-unreachable` + `msg-ask-reply-unreachable`. That is BACKLOG
-#33's own trap ("scope an already-handled search to the target's own block")
-in a new guise: the earlier version found clauses in other ADAPTORS, this one
-in other PROCESSOR KINDS. **Every edit is now confined to the span riddlc
-reports for the adaptor, and the model is re-dumped per site** so line shifts
-cannot mislead it.
+**Merging into an existing clause corrupted four models** — duplicated header,
+orphaned body. The applier now REFUSES a site whose adaptor already has a clause
+on the chosen event, and the event is picked by hand instead. It compares the
+event's LAST segment, because an adaptor may spell it `on event X` where the
+dump says `Entity.X`; matching the qualified form alone let one through as
+`handler-clause-shadowed`.
 
-Two smaller lessons: a clause binding taken from the event name can shadow a
-definition (`bundlesCreated`), so the applier suffixes it when the dump shows a
-name clash; and deleting the paired inbound clause can strand the adaptor whose
-only job was catching that reply, which then draws
-`adaptor-direction-advisory` — the ask took its job, so the adaptor goes too.
+**Pick the driving event off the adaptor's EXISTING clauses, not the model's
+event list.** The adaptor-wiring campaign already spent an event on most of
+these adaptors, so a plausible choice collides about a third of the time.
+Listing each outbound adaptor's clauses first took one chunk from 6 of 12 models
+applied to 24 of 24 — and the prose reads better, because being forced off the
+obvious event makes you say why the query is actually needed.
 
-### Remaining
+**Deleting an adaptor by LINE RANGE destroys whatever shares its first line.**
+prettify jams declarations together, so an adaptor's opening line routinely also
+carries two connectors; a line-wise prune took them with it and three models
+came back with `msg-tell-target-unreachable` in places nothing had been edited.
+`riddlc dump --json` gives every span a byte `offset` — cut with that, never
+with line numbers.
 
-**288 sites.** 222 in wired adaptors, 141 unwired (those also need the
-connector built). 242 pair with exactly one result and are unambiguous; 119
-have 2-4 candidate results and need the pairing chosen; 2 have none.
+### What is left
 
-Do NOT mechanically name-match query to result — the paired `on result`
-placeholder names it, which is evidence rather than a guess.
+**The 1006 inbound `on result` / `on event` placeholders**, the other half of
+`task/2026-09-05-do-prose-must-be-an-instruction.md`. Reid deferred these until
+the outbound half was done. They are a different question: an inbound clause
+that is not a reply to one of our asks is a genuine notification from the
+external system, and what the model should DO with it has to be decided per
+case, not by recipe.
 
 ## 34. Delete Course's roster; decide what `LearnerEnrolled.enrollmentId` is
 

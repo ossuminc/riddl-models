@@ -800,6 +800,40 @@ boundary surface for that ordered pair and direction.** This REVERSES the older
 adaptor's outlet is implied and the `tell` publishes on it, so no port need be
 declared and no ownership rule is engaged.
 
+### An `ask`'s answer comes back on the adaptor's IMPLIED inlet
+
+**So the asking adaptor must NOT declare an inlet of its own.** Declaring one
+overrides the implied inlet away (A103: a declared port overrides that side),
+and the answer then has nowhere to arrive, which riddlc reports as
+
+```
+[error] [msg-ask-reply-unreachable]
+the answer from Context 'X' cannot reach Adaptor 'ToX': no connector carries
+it back, so the reply is not modelled
+```
+
+The message names the missing connector, not the declared inlet that caused it,
+so it reads as "add a connector" when the fix is "remove the inlet". Filed as
+`../riddl/task/2026-09-10-ask-reply-unreachable-should-name-the-declared-inlet.md`.
+
+Measured 2026-09-10 by canary, which is the only reason this is stated as fact:
+`utilities/water/water-utility`'s `ToSCADASystem` asks and validates clean with
+one declared **outlet** and no inlet; adding a single declared inlet to it —
+changing nothing else — turned that same ask into `msg-ask-reply-unreachable`.
+Removing it restored the model.
+
+Three corollaries, all checked:
+
+- **An OCCUPIED implied inlet still carries the answer.** A connector landing on
+  it is fine; it is the *declaration* of a rival inlet that removes it.
+- **So an asking adaptor takes exactly ONE inbound connector**, on the implied
+  inlet. Two inbound legs are unmodellable, since the second would need a
+  declared inlet — and an adaptor cannot be `as merge` either.
+- **A declared OUTLET is harmless**, which is what the corpus's outbound
+  adaptors already carry: `outlet To<Ctx>Out is ...` plus `as flow`, with a
+  domain-level `persistent connector '<Ctx>Request Stream'` into the external
+  context's inlet. That is the shape to build when wiring a new one.
+
 ### The context IS the port at its own boundary
 
 **A cross-context connector must terminate on the CONTEXT'S OWN portlet** — an
