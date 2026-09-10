@@ -438,13 +438,49 @@ things make it real, and all four are needed:
 repository fed by the same event type collides on the type alone — the
 same reason the convention names the two projector legs for the projector.
 
-**An adaptor cannot sit in a sink's upstream path.** `Adaptor` is not a
-`Streamlet` and the sink-upstream BFS is typed over `Streamlet`, so
-inserting one severs the sink's route back to a source. This directly
-contradicts riddlc's own "Consider an adaptor between external context X
-and Y" advisory, which is therefore only followable when the path is
-`entity → adaptor → external context` with no internal sink. See
-BACKLOG #1; do not "fix" the seven reactive-bbq sites.
+**An adaptor DOES sit in a stream path — the old claim here was wrong, and it
+was wrong in a way that nearly cost 152 sites.** This used to say `Adaptor` is
+not a `Streamlet` so the walk is typed over `Streamlet` and an adaptor severs
+the path. The first half is true of the AST — `Adaptor` and `Streamlet` are
+siblings, both `Processor` — and the conclusion does not follow, because the
+streaming graph is typed over **`Processor`**, not `Streamlet`.
+`StreamingValidation.addProcessor` says so in terms: *"EVERY processor kind
+participates, not just Streamlet ... an Adaptor, Entity, Projector, Repository
+or Context that declares ports is a genuine node in a stream path."*
+`addStreamlet` is `@deprecated` for exactly this reason.
+
+**What actually ends a chain is a DECLARED inlet**, and that is the real trap:
+
+```scala
+protected def isStreamTail(proc: Processor[?]): Boolean =
+  if proc.inlets.isEmpty then false          // ValidationPass.scala:8414
+```
+
+`proc.inlets` is the **declared** ports. A103's *implied* inlet does not appear
+there, so **an adaptor that declares no inlet can never be a stream tail**, and
+a source feeding it reports `stream-source-reaches-no-sink` no matter how the
+rest is wired. The fix is one line — `inlet <Adaptor>In is type <T>` plus the
+`as flow` a declared port requires — not a rework of the topology.
+
+Measured 2026-09-10 on `commerce/e-commerce/shopping-cart`: an external
+publisher wired to a port-less `FromCustomerService` gives
+`stream-source-reaches-no-sink`; routing it past the adaptor to the context
+instead gives `[style] [stream-consider-adaptor]`, so the two findings read as
+each other's fix and look like a compiler contradiction. They are not. Declaring
+the adaptor's inlet and keeping the adaptor validates at **0**.
+
+Reid's ruling that forced the re-check, 2026-09-10: *"Since when is an adaptor
+not a streamlet? EVERY PROCESSOR IS A STREAMLET! Adaptors should not sever the
+path or else there could be no context-to-context paths!"* He was right, the
+code already agreed with him, and this file had been asserting the opposite
+since before the unified processor model. **BACKLOG #1's seven reactive-bbq
+sites rest on the same stale premise and should be re-measured, not trusted.**
+
+Note the asymmetry with the `ask` rule below: an inbound adaptor **must**
+declare an inlet to be a chain tail, while an **asking** adaptor must **not**,
+because a declared inlet overrides away the implied inlet its reply arrives on.
+Both follow from declared-overrides-implied; they pull in opposite directions,
+so decide per adaptor by what it does, never by habit.
 
 **`yield` vs `reply`** — a command yields an **event**, a query replies a
 **result**. Since riddlc **rc.10-45** these are distinct statements and the
