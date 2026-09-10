@@ -548,7 +548,7 @@ CLI/library disagreement noted under "The gates" — it is real, and the
 library is the stricter of the two. **Do not conclude a model is clean from
 the CLI alone.**
 
-**`ask` needs a CHANNEL, and riddlc does not check that it has one.**
+**`ask` needs a CHANNEL, BOTH WAYS, and since 2.1.1-33 riddlc enforces it.**
 `ask query X of <processor>` is a **value**, not a statement —
 `let answer: type R = ask query Ext.GetThing of context Ext` — and the query it
 names must declare `replies result R`.
@@ -559,27 +559,47 @@ names must declare `replies result R`.
 > a lowering with no model-level representation. **There is no communication
 > without wiring, even inside one process.** (Reid, 2026-09-09.)
 
-**riddlc DOES check an ask's reachability — except when the asker is an
-ADAPTOR.** `msg-ask-target-unreachable` and `msg-ask-reply-unreachable` both
-exist and fire (59 times across 26 models when asks were misplaced into
-projectors, 2026-09-10). But from an adaptor with no connector, riddlc is
-silent, while `tell` from that same adaptor errors. A103's implied ports may
-be why; the `tell`/`ask` asymmetry is filed upstream as a question, not an
-assertion.
+Reid ruled the reply leg in on the same terms: *"the reply path must be wired
+in the model just like the query path … the communication must be POSSIBLE in
+the model."* **The MECHANISM is the generator's, the PATH is the model's** —
+CM §40.7.
 
-**So a clean validate on an `ask` is not evidence the model is connected**, and
-that silence taught this repository the wrong rule once already — a session
-concluded "wiring is irrelevant to ask" from 0 findings and nearly applied it
-to 363 sites. Filed upstream as
-`../riddl/task/2026-09-09-ask-is-not-checked-for-a-channel.md`.
+| rule | fires when |
+|---|---|
+| `msg-ask-target-unreachable` | no connector path from the asker to the asked processor |
+| `msg-ask-reply-unreachable` | no connector path back from the asked processor to the asker |
 
-**`sbt ac` (`askCheck`, in `checkAll`) covers the one shape riddlc does not**
-— an ask from an adaptor. For every `ask` it verifies the target declares an
-inlet admitting the query and that a connector reaches it from the asker.
-Canaried both ways. It also refuses a run that finds no `ask` at all.
-**It is WEAKER than riddlc everywhere else**: it does not check the reply leg,
-and it was silent on 59 real errors riddlc caught — so it supplements the
-sweep, it does not replace it.
+Both **Errors**, both exempting a `???` body, a predefined processor, a
+processor asking itself, and a side that declares no inlets.
+
+**These fire from an ADAPTOR too, which corrects what this file said on
+2026-09-10.** The earlier text claimed riddlc was silent when the asker was an
+adaptor, and built `sbt ac` for that gap; measured at `2.1.1-33-dd3c2d80`
+the gap is closed. Canary: deleting `'SCADASystemRequest Stream'` from
+`utilities/water/water-utility`, whose `ToSCADASystem` asks
+`GetSensorReadings`, gives `[error] [msg-ask-target-unreachable]` with no help
+from us, and the reply-leg canary under A103 above produced
+`msg-ask-reply-unreachable` from that same adaptor. The claim of silence dated
+from the build before the rules landed and was never re-checked —
+**re-measure a "riddlc does not check X" claim against the CURRENT binary
+before relying on it**, because a stale gap is an invitation to build a guard
+nobody needs.
+
+**`sbt ac` (`askCheck`, in `checkAll`) is now REDUNDANT and recommended for
+retirement** — see
+`task/2026-09-10-ask-channel-checks-landed-59-findings.md`. It asks a
+narrower, type-level question (does the target declare an admitting inlet for
+the query) where riddlc asks about connector reachability, and it never looked
+at the reply leg at all: it was silent on 59 real errors riddlc caught. It
+still reports a useful denominator — `363 ask statements, 0 unchannelled` — so
+it has not been removed; retiring it is Reid's call.
+
+**What survives from the original finding** is the lesson, not the gap: a
+session concluded *"wiring is irrelevant to ask"* from 0 findings and nearly
+applied it to 363 sites. **A clean validate proves a model is not rejected; it
+proves nothing about what a construct MEANS.** Filed upstream as
+`../riddl/task/2026-09-09-ask-is-not-checked-for-a-channel.md`, which riddl
+answered by landing both rules.
 
 **`correlation`** lives **only in a projector** and joins events arriving
 apart in time:
@@ -1429,7 +1449,7 @@ the same riddlc the rest of the build uses. Both `riddlcValidate` and
 | `collect-warnings.py` | the models at **every severity** — see below |
 | `sbt pc` | every model is in **prettify canonical form** |
 | `sbt uc` | **no model gained a command that nothing drives** — see below |
-| `sbt ac` | **every `ask` has a channel** — riddlc checks neither end |
+| `sbt ac` | **every `ask` has a channel** — now REDUNDANT with riddlc, see above |
 
 #### `sbt uc` — the only check that sees an UNSENT command
 
