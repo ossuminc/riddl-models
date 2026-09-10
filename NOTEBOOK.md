@@ -102,12 +102,19 @@ Three things a fresh session must not relearn the hard way:
 
 ### In flight
 
-**The 1006 inbound `on result` / `on event` placeholders** — the other half of
-`task/2026-09-05-do-prose-must-be-an-instruction.md`, deferred by Reid until
-the outbound half was done. They are NOT the same job: an inbound clause that
-is not a reply to one of our asks is a real notification from the external
-system, and what the model should do about it is a per-case decision, not a
-recipe. Expect to take rulings to Reid in clusters, as BACKLOG #33 did.
+**1006 inbound `do "the model receives ..."` placeholders across 178 models** —
+the other half of `task/2026-09-05-do-prose-must-be-an-instruction.md`, deferred
+by Reid until the outbound half was done.
+
+**999 are `on event`; only 7 are `on result`** (measured 2026-09-10). So this is
+not the inbound half of 1006 round trips — those are gone, deleted as each `ask`
+took its reply's place, which is what took this population from 1361 to 1006.
+What remains is unsolicited notification from outside, and what the model should
+DO with each one — yield a fact of its own, tell a local command, update a
+projection, or deliberately nothing — is a per-case decision. Expect rulings in
+clusters as BACKLOG #33 needed, not a recipe applied 1006 times. The 7 `on
+result` are a separate small job: a result nothing asked for is either a query
+we never modelled sending, or a clause that should go.
 
 Otherwise: BACKLOG #33 and #35 are closed; #34 (Course's roster), #23 and #24
 remain accepted and unimplemented, and #1 (reactive-bbq as reference model) is
