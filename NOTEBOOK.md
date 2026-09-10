@@ -75,8 +75,8 @@ would pick a `become` target. Told them in
 ### The outbound-query campaign is CLOSED AT ZERO, 2026-09-10
 
 **All 363 `do "the model sends <Query> to <Ctx>"` placeholders are real
-`ask query Q of context Ctx` round trips.** `sbt ac` reports 363 asks, 0
-unchannelled. BACKLOG #35 carries the recipe, both shapes, and the four traps.
+`ask query Q of context Ctx` round trips**, each with a channel riddlc itself
+enforces. BACKLOG #35 carries the recipe, both shapes, and the four traps.
 
 Three things a fresh session must not relearn the hard way:
 
@@ -92,6 +92,13 @@ Three things a fresh session must not relearn the hard way:
 - **Pick an adaptor's driving event from its OWN existing clauses.** The
   wiring campaign already spent an event on most outbound adaptors; listing
   them first took one chunk from 6 of 12 models applied to 24 of 24.
+- **`sbt ac` is GONE and must not be rebuilt.** It guarded an `ask` without a
+  channel for the eleven hours before riddlc's own two rules landed, then became
+  a weaker duplicate of them — narrower question, blind to the reply leg, silent
+  on 59 errors riddlc caught. Reid retired it 2026-09-10. `checkAll` is
+  `riddlcValidate; unsentCheck; checkTests`. The general lesson is in CLAUDE.md:
+  **a "riddlc does not check X" note is a measurement with an expiry date**, and
+  a stale one invites building a guard nobody needs.
 
 ### In flight
 

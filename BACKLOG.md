@@ -897,16 +897,16 @@ separated before any of it starts rather than discovered one model at a time.
 
 **Reid ruled the `ask` form, 2026-09-09**, and the full round trip for all 363
 outbound query placeholders. All 363 are now real asks: `grep 'do "the model
-sends'` is **0**, `sbt ac` counts **363 `ask` statements, 0 unchannelled**, and
-`collect-warnings.py` sweeps the corpus at 0 (canaried with an injected unused
-type each batch).
+sends'` is **0** and `collect-warnings.py` sweeps the corpus at 0 (canaried with
+an injected unused type each batch).
 
 **`ask` needs a CHANNEL** — Reid, 2026-09-09: it is `send` plus generator-side
 reply handling, so the target must be wired exactly as a `send`'s would be.
-riddlc DOES check this, **except for an `ask` issued from an adaptor**, which is
-where all 363 of these live; `scripts/check-ask-channels.py` (`sbt ac`) is the
-guard for that one shape. See
-`../riddl/task/2026-09-09-ask-is-not-checked-for-a-channel.md`.
+**riddlc enforces both legs as of `2.1.1-33-dd3c2d80`**
+(`msg-ask-target-unreachable`, `msg-ask-reply-unreachable`), from adaptors
+included — verified by canary, see CLAUDE.md. A home-grown guard built while
+that gap was open (`sbt ac`) was retired the same day; the count it used to
+report, 363 asks with a channel each, is now just riddlc's green.
 
 ### The recipe, by shape
 

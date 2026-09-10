@@ -585,14 +585,14 @@ from the build before the rules landed and was never re-checked —
 before relying on it**, because a stale gap is an invitation to build a guard
 nobody needs.
 
-**`sbt ac` (`askCheck`, in `checkAll`) is now REDUNDANT and recommended for
-retirement** — see
-`task/2026-09-10-ask-channel-checks-landed-59-findings.md`. It asks a
-narrower, type-level question (does the target declare an admitting inlet for
-the query) where riddlc asks about connector reachability, and it never looked
-at the reply leg at all: it was silent on 59 real errors riddlc caught. It
-still reports a useful denominator — `363 ask statements, 0 unchannelled` — so
-it has not been removed; retiring it is Reid's call.
+**There is no `sbt ac` — it was RETIRED 2026-09-10, and do not rebuild it.**
+`askCheck` and `scripts/check-ask-channels.py` existed for eleven hours to
+cover the gap above. They asked a narrower, type-level question (does the
+target declare an admitting inlet for the query) where riddlc asks about
+connector reachability, never looked at the reply leg at all, and were silent
+on 59 real errors riddlc caught. Reid's call, on the reasoning that a weaker
+duplicate reports one fault twice and gives a green light on a leg it cannot
+see. `checkAll` is now `riddlcValidate; unsentCheck; checkTests`.
 
 **What survives from the original finding** is the lesson, not the gap: a
 session concluded *"wiring is irrelevant to ask"* from 0 findings and nearly
@@ -1449,7 +1449,6 @@ the same riddlc the rest of the build uses. Both `riddlcValidate` and
 | `collect-warnings.py` | the models at **every severity** — see below |
 | `sbt pc` | every model is in **prettify canonical form** |
 | `sbt uc` | **no model gained a command that nothing drives** — see below |
-| `sbt ac` | **every `ask` has a channel** — now REDUNDANT with riddlc, see above |
 
 #### `sbt uc` — the only check that sees an UNSENT command
 
