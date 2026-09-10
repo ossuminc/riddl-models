@@ -559,11 +559,13 @@ names must declare `replies result R`.
 > a lowering with no model-level representation. **There is no communication
 > without wiring, even inside one process.** (Reid, 2026-09-09.)
 
-**riddlc enforces only `msg-ask-not-handled`** — the target context must
-declare `on query X`. It does **not** check for an admitting portlet or for
-reachability, though it checks BOTH for `tell`
-(`adaptor-target-no-admitting-inlet`, `msg-tell-target-unreachable`). Measured
-on the same unwired adaptor: `tell` errors, `ask` reports nothing at all.
+**riddlc DOES check an ask's reachability — except when the asker is an
+ADAPTOR.** `msg-ask-target-unreachable` and `msg-ask-reply-unreachable` both
+exist and fire (59 times across 26 models when asks were misplaced into
+projectors, 2026-09-10). But from an adaptor with no connector, riddlc is
+silent, while `tell` from that same adaptor errors. A103's implied ports may
+be why; the `tell`/`ask` asymmetry is filed upstream as a question, not an
+assertion.
 
 **So a clean validate on an `ask` is not evidence the model is connected**, and
 that silence taught this repository the wrong rule once already — a session
@@ -571,11 +573,13 @@ concluded "wiring is irrelevant to ask" from 0 findings and nearly applied it
 to 363 sites. Filed upstream as
 `../riddl/task/2026-09-09-ask-is-not-checked-for-a-channel.md`.
 
-**`sbt ac` (`askCheck`, in `checkAll`) stands in for the missing checks** until
-they land: for every `ask` it verifies the target declares an inlet admitting
-the query, and that a connector reaches it from the asker. Canaried both ways
-— removing the alternation member and deleting the connector each fail it. It
-also refuses a run that finds no `ask` at all, for the usual reason.
+**`sbt ac` (`askCheck`, in `checkAll`) covers the one shape riddlc does not**
+— an ask from an adaptor. For every `ask` it verifies the target declares an
+inlet admitting the query and that a connector reaches it from the asker.
+Canaried both ways. It also refuses a run that finds no `ask` at all.
+**It is WEAKER than riddlc everywhere else**: it does not check the reply leg,
+and it was silent on 59 real errors riddlc caught — so it supplements the
+sweep, it does not replace it.
 
 **`correlation`** lives **only in a projector** and joins events arriving
 apart in time:
