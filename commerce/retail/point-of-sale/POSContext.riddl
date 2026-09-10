@@ -1,5 +1,17 @@
 // Point of Sale - POS Context
 context POSContext as router is {
+  inlet POSContextFromPaymentGateway is command Transaction.ProcessPayment with {
+    briefly "What FromPaymentGateway makes of that service's news"
+  }
+  connector 'FromPaymentGateway Intake' is from outlet POSContext.FromPaymentGateway.FromPaymentGatewayToPOSContext to inlet POSContext.POSContextFromPaymentGateway with {
+    briefly "What FromPaymentGateway makes of that news, on its way in"
+  }
+  inlet POSContextFromPricingService is command Transaction.ApplyDiscount with {
+    briefly "What FromPricingService makes of that service's news"
+  }
+  connector 'FromPricingService Intake' is from outlet POSContext.FromPricingService.FromPricingServiceToPOSContext to inlet POSContext.POSContextFromPricingService with {
+    briefly "What FromPricingService makes of that news, on its way in"
+  }
   inlet TransactionCommandStreamIn is type TransactionCommand  outlet TransactionCommandStreamOut is type TransactionCommand
   inlet TransactionResultStreamIn is result Transaction.TransactionResult  outlet TransactionResultStreamOut is result Transaction.TransactionResult
   handler POSContextBoundary is {
@@ -44,10 +56,10 @@ context POSContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'TransactionCommand Stream Intake' is from outlet POSContext.TransactionCommandStreamOut to inlet POSContext.Transaction.TransactionCommands  connector 'TransactionResult Stream Egress' is from outlet POSContext.TransactionRepository.TransactionRepositoryResponses to inlet POSContext.TransactionResultStreamIn  adaptor FromInventoryService from context InventoryService is { 
-    handler FromInventoryServiceHandler is {
-      on event InventoryService.StockDeducted is {
-        do "the model receives stock deducted"
+  connector 'TransactionCommand Stream Intake' is from outlet POSContext.TransactionCommandStreamOut to inlet POSContext.Transaction.TransactionCommands  connector 'TransactionResult Stream Egress' is from outlet POSContext.TransactionRepository.TransactionRepositoryResponses to inlet POSContext.TransactionResultStreamIn  adaptor FromInventoryService from context InventoryService as flow is { 
+    inlet FromInventoryServiceIn is event InventoryService.StockDeducted    handler FromInventoryServiceHandler is {
+      on stockDeducted: event InventoryService.StockDeducted is {
+        do "the sale is already recorded; stock agreeing is confirmation, not a change"
       }
       on other is {
         error "Unexpected message for adaptor FromInventoryService"
@@ -64,13 +76,15 @@ context POSContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor FromPaymentGateway from context PaymentGateway is { 
+  adaptor FromPaymentGateway from context PaymentGateway as flow is { 
+    inlet FromPaymentGatewayIn is type PaymentGateway.PaymentGatewayEvent    outlet FromPaymentGatewayToPOSContext is command Transaction.ProcessPayment
     handler FromPaymentGatewayHandler is {
-      on event PaymentGateway.PaymentAuthorized is {
-        do "the model receives payment authorized"
+      on paymentAuthorized: event PaymentGateway.PaymentAuthorized is {
+        let item0: type Transaction.ProcessPayment = prompt("translate the paymentAuthorized event into a ProcessPayment, an authorised card is what lets the transaction record a payment against itself")
+        send item0 to outlet POSContext.FromPaymentGateway.FromPaymentGatewayToPOSContext
       }
-      on event PaymentGateway.PaymentDeclined is {
-        do "the model receives payment declined"
+      on paymentDeclined: event PaymentGateway.PaymentDeclined is {
+        do "a declined tender leaves the sale open for another; the cashier decides what happens next"
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentGateway"
@@ -117,13 +131,15 @@ context POSContext as router is {
       |The model's side of the PaymentGateway conversation.
     }
   }
-  adaptor FromPricingService from context PricingService is { 
+  adaptor FromPricingService from context PricingService as flow is { 
+    inlet FromPricingServiceIn is type PricingService.PricingServiceEvent    outlet FromPricingServiceToPOSContext is command Transaction.ApplyDiscount
     handler FromPricingServiceHandler is {
-      on event PricingService.PriceRetrieved is {
-        do "the model receives price retrieved"
+      on priceRetrieved: event PricingService.PriceRetrieved is {
+        do "a retrieved price is used as the line is added; on its own it changes nothing"
       }
-      on event PricingService.PromotionApplied is {
-        do "the model receives promotion applied"
+      on promotionApplied: event PricingService.PromotionApplied is {
+        let item0: type Transaction.ApplyDiscount = prompt("translate the promotionApplied event into a ApplyDiscount, a promotion the pricing service grants must appear as a discount on the sale or the totals disagree")
+        send item0 to outlet POSContext.FromPricingService.FromPricingServiceToPOSContext
       }
       on other is {
         error "Unexpected message for adaptor FromPricingService"
@@ -140,10 +156,10 @@ context POSContext as router is {
       |The model's side of the PricingService conversation.
     }
   }
-  adaptor FromReceiptService from context ReceiptService is { 
-    handler FromReceiptServiceHandler is {
-      on event ReceiptService.ReceiptGenerated is {
-        do "the model receives receipt generated"
+  adaptor FromReceiptService from context ReceiptService as flow is { 
+    inlet FromReceiptServiceIn is event ReceiptService.ReceiptGenerated    handler FromReceiptServiceHandler is {
+      on receiptGenerated: event ReceiptService.ReceiptGenerated is {
+        do "the receipt exists; the sale was already complete when it was asked for"
       }
       on other is {
         error "Unexpected message for adaptor FromReceiptService"

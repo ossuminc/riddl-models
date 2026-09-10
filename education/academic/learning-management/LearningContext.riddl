@@ -1,5 +1,11 @@
 // Learning Management - Learning Context
 context LearningContext as router is {
+  inlet LearningContextFromContentDeliveryService is command Course.RecordProgress with {
+    briefly "What FromContentDeliveryService makes of that service's news"
+  }
+  connector 'FromContentDeliveryService Intake' is from outlet LearningContext.FromContentDeliveryService.FromContentDeliveryServiceToLearningContext to inlet LearningContext.LearningContextFromContentDeliveryService with {
+    briefly "What FromContentDeliveryService makes of that news, on its way in"
+  }
   inlet CourseCommandStreamIn is type CourseCommand  outlet CourseCommandStreamOut is type CourseCommand
   inlet LearnerEnrollmentCommandStreamIn is type LearnerEnrollment.LearnerEnrollmentCommand  outlet LearnerEnrollmentCommandStreamOut is type LearnerEnrollment.LearnerEnrollmentCommand
   inlet CourseResultStreamIn is result Course.CourseResult  outlet CourseResultStreamOut is result Course.CourseResult
@@ -57,10 +63,10 @@ context LearningContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'LearnerEnrollmentCommand Stream Intake' is from outlet LearningContext.LearnerEnrollmentCommandStreamOut to inlet LearningContext.LearnerEnrollment.LearnerEnrollmentCommands  connector 'CourseCommand Stream Intake' is from outlet LearningContext.CourseCommandStreamOut to inlet LearningContext.Course.CourseCommands  connector 'CourseResult Stream Egress' is from outlet LearningContext.CourseRepository.CourseRepositoryResponses to inlet LearningContext.CourseResultStreamIn  adaptor FromCertificationService from context CertificationService is { 
-    handler FromCertificationServiceHandler is {
-      on event CertificationService.CertificateIssued is {
-        do "the model receives certificate issued"
+  connector 'LearnerEnrollmentCommand Stream Intake' is from outlet LearningContext.LearnerEnrollmentCommandStreamOut to inlet LearningContext.LearnerEnrollment.LearnerEnrollmentCommands  connector 'CourseCommand Stream Intake' is from outlet LearningContext.CourseCommandStreamOut to inlet LearningContext.Course.CourseCommands  connector 'CourseResult Stream Egress' is from outlet LearningContext.CourseRepository.CourseRepositoryResponses to inlet LearningContext.CourseResultStreamIn  adaptor FromCertificationService from context CertificationService as flow is { 
+    inlet FromCertificationServiceIn is event CertificationService.CertificateIssued    handler FromCertificationServiceHandler is {
+      on certificateIssued: event CertificationService.CertificateIssued is {
+        do "the certificate is issued; the course was completed before it was asked for"
       }
       on other is {
         error "Unexpected message for adaptor FromCertificationService"
@@ -99,10 +105,12 @@ context LearningContext as router is {
       |The model's side of the CertificationService conversation.
     }
   }
-  adaptor FromContentDeliveryService from context ContentDeliveryService is { 
+  adaptor FromContentDeliveryService from context ContentDeliveryService as flow is { 
+    inlet FromContentDeliveryServiceIn is event ContentDeliveryService.ContentStreamed    outlet FromContentDeliveryServiceToLearningContext is command Course.RecordProgress
     handler FromContentDeliveryServiceHandler is {
-      on event ContentDeliveryService.ContentStreamed is {
-        do "the model receives content streamed"
+      on contentStreamed: event ContentDeliveryService.ContentStreamed is {
+        let item0: type Course.RecordProgress = prompt("translate the contentStreamed event into a RecordProgress, content actually watched is what progress is measured from")
+        send item0 to outlet LearningContext.FromContentDeliveryService.FromContentDeliveryServiceToLearningContext
       }
       on other is {
         error "Unexpected message for adaptor FromContentDeliveryService"
@@ -141,13 +149,13 @@ context LearningContext as router is {
       |The model's side of the ContentDeliveryService conversation.
     }
   }
-  adaptor FromIdentityService from context IdentityService is { 
-    handler FromIdentityServiceHandler is {
-      on event IdentityService.LearnerAuthenticated is {
-        do "the model receives learner authenticated"
+  adaptor FromIdentityService from context IdentityService as flow is { 
+    inlet FromIdentityServiceIn is type IdentityService.IdentityServiceEvent    handler FromIdentityServiceHandler is {
+      on learnerAuthenticated: event IdentityService.LearnerAuthenticated is {
+        do "authentication says who is here; it changes nothing about the course until they act"
       }
-      on event IdentityService.SessionExpired is {
-        do "the model receives session expired"
+      on sessionExpired: event IdentityService.SessionExpired is {
+        do "an expired session ends a sitting, not an enrolment; progress already recorded stands"
       }
       on other is {
         error "Unexpected message for adaptor FromIdentityService"

@@ -1,5 +1,22 @@
 // Order Orchestration - Orchestration Context
 context OrchestrationContext as router is {
+  inlet OrchestrationContextFromInventoryService is command MarketplaceOrder.CancelSubOrder with {
+    briefly "What FromInventoryService makes of that service's news"
+  }
+  connector 'FromInventoryService Intake' is from outlet OrchestrationContext.FromInventoryService.FromInventoryServiceToOrchestrationContext to inlet OrchestrationContext.OrchestrationContextFromInventoryService with {
+    briefly "What FromInventoryService makes of that news, on its way in"
+  }
+  type FromVendorServiceCommand is one of {
+    MarketplaceOrder.AcknowledgeSubOrder or MarketplaceOrder.ShipSubOrder
+  } with {
+    briefly "What FromVendorService turns that service's news into"
+  }
+  inlet OrchestrationContextFromVendorService is type OrchestrationContext.FromVendorServiceCommand with {
+    briefly "What FromVendorService makes of that service's news"
+  }
+  connector 'FromVendorService Intake' is from outlet OrchestrationContext.FromVendorService.FromVendorServiceToOrchestrationContext to inlet OrchestrationContext.OrchestrationContextFromVendorService with {
+    briefly "What FromVendorService makes of that news, on its way in"
+  }
   inlet MarketplaceOrderCommandStreaIn is type MarketplaceOrderCommand  outlet MarketplaceOrderCommandStreaOut is type MarketplaceOrderCommand
   inlet MarketplaceOrderResultStreamIn is result MarketplaceOrder.MarketplaceOrderResult  outlet MarketplaceOrderResultStreamOut is result MarketplaceOrder.MarketplaceOrderResult
   handler OrchestrationContextBoundary is {
@@ -35,13 +52,15 @@ context OrchestrationContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'MarketplaceOrderCommand Stream Intake' is from outlet OrchestrationContext.MarketplaceOrderCommandStreaOut to inlet OrchestrationContext.MarketplaceOrder.MarketplaceOrderCommands  connector 'MarketplaceOrderResult Stream Egress' is from outlet OrchestrationContext.OrderRepository.OrderRepositoryResponses to inlet OrchestrationContext.MarketplaceOrderResultStreamIn  adaptor FromInventoryService from context InventoryService is { 
+  connector 'MarketplaceOrderCommand Stream Intake' is from outlet OrchestrationContext.MarketplaceOrderCommandStreaOut to inlet OrchestrationContext.MarketplaceOrder.MarketplaceOrderCommands  connector 'MarketplaceOrderResult Stream Egress' is from outlet OrchestrationContext.OrderRepository.OrderRepositoryResponses to inlet OrchestrationContext.MarketplaceOrderResultStreamIn  adaptor FromInventoryService from context InventoryService as flow is { 
+    inlet FromInventoryServiceIn is type InventoryService.InventoryServiceEvent    outlet FromInventoryServiceToOrchestrationContext is command MarketplaceOrder.CancelSubOrder
     handler FromInventoryServiceHandler is {
-      on event InventoryService.StockReserved is {
-        do "the model receives stock reserved"
+      on stockReserved: event InventoryService.StockReserved is {
+        do "stock is held for the order; it is the vendors' acknowledgements that move it forward"
       }
-      on event InventoryService.StockUnavailable is {
-        do "the model receives stock unavailable"
+      on stockUnavailable: event InventoryService.StockUnavailable is {
+        let item0: type MarketplaceOrder.CancelSubOrder = prompt("translate the stockUnavailable event into a CancelSubOrder, a line with no stock behind it cannot be fulfilled, so it is cancelled rather than left pending")
+        send item0 to outlet OrchestrationContext.FromInventoryService.FromInventoryServiceToOrchestrationContext
       }
       on other is {
         error "Unexpected message for adaptor FromInventoryService"
@@ -80,13 +99,13 @@ context OrchestrationContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor FromPaymentService from context PaymentService is { 
-    handler FromPaymentServiceHandler is {
-      on event PaymentService.PaymentCaptured is {
-        do "the model receives payment captured"
+  adaptor FromPaymentService from context PaymentService as flow is { 
+    inlet FromPaymentServiceIn is type PaymentService.PaymentServiceEvent    handler FromPaymentServiceHandler is {
+      on paymentCaptured: event PaymentService.PaymentCaptured is {
+        do "the money is taken; shipment is driven by the vendors, not by the payment"
       }
-      on event PaymentService.PaymentRefunded is {
-        do "the model receives payment refunded"
+      on paymentRefunded: event PaymentService.PaymentRefunded is {
+        do "the refund completes a cancellation already recorded, so nothing further is required here"
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentService"
@@ -103,13 +122,16 @@ context OrchestrationContext as router is {
       |The model's side of the PaymentService conversation.
     }
   }
-  adaptor FromVendorService from context VendorService is { 
+  adaptor FromVendorService from context VendorService as flow is { 
+    inlet FromVendorServiceIn is type VendorService.VendorServiceEvent    outlet FromVendorServiceToOrchestrationContext is type OrchestrationContext.FromVendorServiceCommand
     handler FromVendorServiceHandler is {
-      on event VendorService.VendorConfirmed is {
-        do "the model receives vendor confirmed"
+      on vendorConfirmed: event VendorService.VendorConfirmed is {
+        let item0: type MarketplaceOrder.AcknowledgeSubOrder = prompt("translate the vendorConfirmed event into a AcknowledgeSubOrder, a vendor accepting the work is what turns a routed sub-order into an acknowledged one")
+        send item0 to outlet OrchestrationContext.FromVendorService.FromVendorServiceToOrchestrationContext
       }
-      on event VendorService.VendorShipped is {
-        do "the model receives vendor shipped"
+      on vendorShipped: event VendorService.VendorShipped is {
+        let item0: type MarketplaceOrder.ShipSubOrder = prompt("translate the vendorShipped event into a ShipSubOrder, the vendor shipping is the event the order's own shipment record exists to capture")
+        send item0 to outlet OrchestrationContext.FromVendorService.FromVendorServiceToOrchestrationContext
       }
       on other is {
         error "Unexpected message for adaptor FromVendorService"

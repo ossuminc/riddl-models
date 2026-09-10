@@ -1,5 +1,11 @@
 // Inventory Management - Inventory Context
 context InventoryContext as router is {
+  inlet InventoryContextFromWarehouseService is command StockItem.TransferStock with {
+    briefly "What FromWarehouseService makes of that service's news"
+  }
+  connector 'FromWarehouseService Intake' is from outlet InventoryContext.FromWarehouseService.FromWarehouseServiceToInventoryContext to inlet InventoryContext.InventoryContextFromWarehouseService with {
+    briefly "What FromWarehouseService makes of that news, on its way in"
+  }
   inlet StockItemCommandStreamIn is type StockItemCommand  outlet StockItemCommandStreamOut is type StockItemCommand
   inlet StockItemResultStreamIn is result StockItem.StockItemResult  outlet StockItemResultStreamOut is result StockItem.StockItemResult
   handler InventoryContextBoundary is {
@@ -44,10 +50,10 @@ context InventoryContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'StockItemCommand Stream Intake' is from outlet InventoryContext.StockItemCommandStreamOut to inlet InventoryContext.StockItem.StockItemCommands  connector 'StockItemResult Stream Egress' is from outlet InventoryContext.InventoryRepository.InventoryRepositoryResponses to inlet InventoryContext.StockItemResultStreamIn  adaptor FromPurchasingService from context PurchasingService is { 
-    handler FromPurchasingServiceHandler is {
-      on event PurchasingService.PurchaseOrderCreated is {
-        do "the model receives purchase order created"
+  connector 'StockItemCommand Stream Intake' is from outlet InventoryContext.StockItemCommandStreamOut to inlet InventoryContext.StockItem.StockItemCommands  connector 'StockItemResult Stream Egress' is from outlet InventoryContext.InventoryRepository.InventoryRepositoryResponses to inlet InventoryContext.StockItemResultStreamIn  adaptor FromPurchasingService from context PurchasingService as flow is { 
+    inlet FromPurchasingServiceIn is event PurchasingService.PurchaseOrderCreated    handler FromPurchasingServiceHandler is {
+      on purchaseOrderCreated: event PurchasingService.PurchaseOrderCreated is {
+        do "purchasing has the order; stock arrives through ReceiveStock, not through this confirmation"
       }
       on other is {
         error "Unexpected message for adaptor FromPurchasingService"
@@ -64,13 +70,15 @@ context InventoryContext as router is {
       |The model's side of the PurchasingService conversation.
     }
   }
-  adaptor FromWarehouseService from context WarehouseService is { 
+  adaptor FromWarehouseService from context WarehouseService as flow is { 
+    inlet FromWarehouseServiceIn is type WarehouseService.WarehouseServiceEvent    outlet FromWarehouseServiceToInventoryContext is command StockItem.TransferStock
     handler FromWarehouseServiceHandler is {
-      on event WarehouseService.LocationCreated is {
-        do "the model receives location created"
+      on locationCreated: event WarehouseService.LocationCreated is {
+        do "a new location is somewhere stock can later be put; nothing changes until stock moves there"
       }
-      on event WarehouseService.LocationDeactivated is {
-        do "the model receives location deactivated"
+      on locationDeactivated: event WarehouseService.LocationDeactivated is {
+        let item0: type StockItem.TransferStock = prompt("translate the locationDeactivated event into a TransferStock, stock cannot remain at a location that no longer exists, so it is moved off")
+        send item0 to outlet InventoryContext.FromWarehouseService.FromWarehouseServiceToInventoryContext
       }
       on other is {
         error "Unexpected message for adaptor FromWarehouseService"

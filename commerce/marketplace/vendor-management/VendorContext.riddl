@@ -1,5 +1,11 @@
 // Vendor Management - Vendor Context
 context VendorContext as router is {
+  inlet VendorContextFromComplianceService is command Vendor.RejectVendor with {
+    briefly "What FromComplianceService makes of that service's news"
+  }
+  connector 'FromComplianceService Intake' is from outlet VendorContext.FromComplianceService.FromComplianceServiceToVendorContext to inlet VendorContext.VendorContextFromComplianceService with {
+    briefly "What FromComplianceService makes of that news, on its way in"
+  }
   inlet VendorCommandStreamIn is type VendorCommand  outlet VendorCommandStreamOut is type VendorCommand
   inlet VendorSaleCommandsIn is command Vendor.RecordSaleFulfilled with {
     briefly "Fulfilment commands from the order adaptor"
@@ -57,13 +63,15 @@ context VendorContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'VendorCommand Stream Intake' is from outlet VendorContext.VendorCommandStreamOut to inlet VendorContext.Vendor.VendorCommands  connector 'VendorResult Stream Egress' is from outlet VendorContext.VendorRepository.VendorRepositoryResponses to inlet VendorContext.VendorResultStreamIn  adaptor FromComplianceService from context ComplianceService is { 
+  connector 'VendorCommand Stream Intake' is from outlet VendorContext.VendorCommandStreamOut to inlet VendorContext.Vendor.VendorCommands  connector 'VendorResult Stream Egress' is from outlet VendorContext.VendorRepository.VendorRepositoryResponses to inlet VendorContext.VendorResultStreamIn  adaptor FromComplianceService from context ComplianceService as flow is { 
+    inlet FromComplianceServiceIn is type ComplianceService.ComplianceServiceEvent    outlet FromComplianceServiceToVendorContext is command Vendor.RejectVendor
     handler FromComplianceServiceHandler is {
-      on event ComplianceService.ComplianceCheckFailed is {
-        do "the model receives compliance check failed"
+      on complianceCheckFailed: event ComplianceService.ComplianceCheckFailed is {
+        let item0: type Vendor.RejectVendor = prompt("translate the complianceCheckFailed event into a RejectVendor, a vendor that fails compliance cannot be onboarded, so the application is refused")
+        send item0 to outlet VendorContext.FromComplianceService.FromComplianceServiceToVendorContext
       }
-      on event ComplianceService.TaxIdVerified is {
-        do "the model receives tax id verified"
+      on taxIdVerified: event ComplianceService.TaxIdVerified is {
+        do "the tax identity checks out; approval stays a decision someone makes rather than an automatic consequence"
       }
       on other is {
         error "Unexpected message for adaptor FromComplianceService"
@@ -102,10 +110,10 @@ context VendorContext as router is {
       |The model's side of the ComplianceService conversation.
     }
   }
-  adaptor FromPaymentService from context PaymentService is { 
-    handler FromPaymentServiceHandler is {
-      on event PaymentService.PayoutProcessed is {
-        do "the model receives payout processed"
+  adaptor FromPaymentService from context PaymentService as flow is { 
+    inlet FromPaymentServiceIn is event PaymentService.PayoutProcessed    handler FromPaymentServiceHandler is {
+      on payoutProcessed: event PaymentService.PayoutProcessed is {
+        do "the payout has left; the vendor's balance was reduced when it was ordered"
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentService"

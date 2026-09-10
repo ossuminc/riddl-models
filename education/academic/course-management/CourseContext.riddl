@@ -1,5 +1,11 @@
 // Course Management - Course Context
 context CourseContext as router is {
+  inlet CourseContextFromStudentInformationService is command Course.DropStudent with {
+    briefly "What FromStudentInformationService makes of that service's news"
+  }
+  connector 'FromStudentInformationService Intake' is from outlet CourseContext.FromStudentInformationService.FromStudentInformationServiceToCourseContext to inlet CourseContext.CourseContextFromStudentInformationService with {
+    briefly "What FromStudentInformationService makes of that news, on its way in"
+  }
   inlet CourseCommandStreamIn is type CourseCommand  outlet CourseCommandStreamOut is type CourseCommand
   inlet CourseResultStreamIn is result Course.CourseResult  outlet CourseResultStreamOut is result Course.CourseResult
   handler CourseContextBoundary is {
@@ -47,13 +53,13 @@ context CourseContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'CourseCommand Stream Intake' is from outlet CourseContext.CourseCommandStreamOut to inlet CourseContext.Course.CourseCommands  connector 'CourseResult Stream Egress' is from outlet CourseContext.CourseRepository.CourseRepositoryResponses to inlet CourseContext.CourseResultStreamIn  adaptor FromFacultyService from context FacultyService is { 
-    handler FromFacultyServiceHandler is {
-      on event FacultyService.InstructorAssigned is {
-        do "the model receives instructor assigned"
+  connector 'CourseCommand Stream Intake' is from outlet CourseContext.CourseCommandStreamOut to inlet CourseContext.Course.CourseCommands  connector 'CourseResult Stream Egress' is from outlet CourseContext.CourseRepository.CourseRepositoryResponses to inlet CourseContext.CourseResultStreamIn  adaptor FromFacultyService from context FacultyService as flow is { 
+    inlet FromFacultyServiceIn is type FacultyService.FacultyServiceEvent    handler FromFacultyServiceHandler is {
+      on instructorAssigned: event FacultyService.InstructorAssigned is {
+        do "who teaches is decided in the faculty system; the section carries that assignment when it is next scheduled or updated"
       }
-      on event FacultyService.InstructorAvailabilityUpdated is {
-        do "the model receives instructor availability updated"
+      on instructorAvailabilityUpdated: event FacultyService.InstructorAvailabilityUpdated is {
+        do "availability shapes future scheduling; a section already scheduled does not move because of it"
       }
       on other is {
         error "Unexpected message for adaptor FromFacultyService"
@@ -100,10 +106,10 @@ context CourseContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromRoomSchedulingService from context RoomSchedulingService is { 
-    handler FromRoomSchedulingServiceHandler is {
-      on event RoomSchedulingService.RoomReserved is {
-        do "the model receives room reserved"
+  adaptor FromRoomSchedulingService from context RoomSchedulingService as flow is { 
+    inlet FromRoomSchedulingServiceIn is event RoomSchedulingService.RoomReserved    handler FromRoomSchedulingServiceHandler is {
+      on roomReserved: event RoomSchedulingService.RoomReserved is {
+        do "the room is held; the section was scheduled before the room was asked for"
       }
       on other is {
         error "Unexpected message for adaptor FromRoomSchedulingService"
@@ -142,13 +148,15 @@ context CourseContext as router is {
       |The model's side of the RoomSchedulingService conversation.
     }
   }
-  adaptor FromStudentInformationService from context StudentInformationService is { 
+  adaptor FromStudentInformationService from context StudentInformationService as flow is { 
+    inlet FromStudentInformationServiceIn is type StudentInformationService.StudentInformationServiceEvent    outlet FromStudentInformationServiceToCourseContext is command Course.DropStudent
     handler FromStudentInformationServiceHandler is {
-      on event StudentInformationService.StudentRegistered is {
-        do "the model receives student registered"
+      on studentRegistered: event StudentInformationService.StudentRegistered is {
+        do "registration makes a student eligible to enrol; enrolling in a section is a separate act"
       }
-      on event StudentInformationService.StudentStatusChanged is {
-        do "the model receives student status changed"
+      on studentStatusChanged: event StudentInformationService.StudentStatusChanged is {
+        let item0: type Course.DropStudent = prompt("translate the studentStatusChanged event into a DropStudent, a student who is no longer active cannot hold a seat in a section")
+        send item0 to outlet CourseContext.FromStudentInformationService.FromStudentInformationServiceToCourseContext
       }
       on other is {
         error "Unexpected message for adaptor FromStudentInformationService"

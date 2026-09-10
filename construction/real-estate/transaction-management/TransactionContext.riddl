@@ -1,5 +1,28 @@
 // Transaction Management - Transaction Context
 context TransactionContext as router is {
+  type FromEscrowServiceCommand is one of {
+    Transaction.CompleteClosing or Transaction.EnterEscrow
+  } with {
+    briefly "What FromEscrowService turns that service's news into"
+  }
+  inlet TransactionContextFromEscrowService is type TransactionContext.FromEscrowServiceCommand with {
+    briefly "What FromEscrowService makes of that service's news"
+  }
+  connector 'FromEscrowService Intake' is from outlet TransactionContext.FromEscrowService.FromEscrowServiceToTransactionContext to inlet TransactionContext.TransactionContextFromEscrowService with {
+    briefly "What FromEscrowService makes of that news, on its way in"
+  }
+  inlet TransactionContextFromLenderService is command Transaction.SatisfyContingency with {
+    briefly "What FromLenderService makes of that service's news"
+  }
+  connector 'FromLenderService Intake' is from outlet TransactionContext.FromLenderService.FromLenderServiceToTransactionContext to inlet TransactionContext.TransactionContextFromLenderService with {
+    briefly "What FromLenderService makes of that news, on its way in"
+  }
+  inlet TransactionContextFromTitleService is command Transaction.SatisfyContingency with {
+    briefly "What FromTitleService makes of that service's news"
+  }
+  connector 'FromTitleService Intake' is from outlet TransactionContext.FromTitleService.FromTitleServiceToTransactionContext to inlet TransactionContext.TransactionContextFromTitleService with {
+    briefly "What FromTitleService makes of that news, on its way in"
+  }
   inlet TransactionCommandStreamIn is type TransactionCommand  outlet TransactionCommandStreamOut is type TransactionCommand
   inlet TransactionResultStreamIn is result Transaction.TransactionResult  outlet TransactionResultStreamOut is result Transaction.TransactionResult
   handler TransactionContextBoundary is {
@@ -50,10 +73,10 @@ context TransactionContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'TransactionCommand Stream Intake' is from outlet TransactionContext.TransactionCommandStreamOut to inlet TransactionContext.Transaction.TransactionCommands  connector 'TransactionResult Stream Egress' is from outlet TransactionContext.TransactionRepository.TransactionRepositoryResponses to inlet TransactionContext.TransactionResultStreamIn  adaptor FromDocumentService from context DocumentService is { 
-    handler FromDocumentServiceHandler is {
-      on event DocumentService.DocumentStored is {
-        do "the model receives document stored"
+  connector 'TransactionCommand Stream Intake' is from outlet TransactionContext.TransactionCommandStreamOut to inlet TransactionContext.Transaction.TransactionCommands  connector 'TransactionResult Stream Egress' is from outlet TransactionContext.TransactionRepository.TransactionRepositoryResponses to inlet TransactionContext.TransactionResultStreamIn  adaptor FromDocumentService from context DocumentService as flow is { 
+    inlet FromDocumentServiceIn is event DocumentService.DocumentStored    handler FromDocumentServiceHandler is {
+      on documentStored: event DocumentService.DocumentStored is {
+        do "the document is safe; the transaction already recorded what it was for"
       }
       on other is {
         error "Unexpected message for adaptor FromDocumentService"
@@ -92,13 +115,16 @@ context TransactionContext as router is {
       |The model's side of the DocumentService conversation.
     }
   }
-  adaptor FromEscrowService from context EscrowService is { 
+  adaptor FromEscrowService from context EscrowService as flow is { 
+    inlet FromEscrowServiceIn is type EscrowService.EscrowServiceEvent    outlet FromEscrowServiceToTransactionContext is type TransactionContext.FromEscrowServiceCommand
     handler FromEscrowServiceHandler is {
-      on event EscrowService.EscrowOpened is {
-        do "the model receives escrow opened"
+      on escrowOpened: event EscrowService.EscrowOpened is {
+        let item0: type Transaction.EnterEscrow = prompt("translate the escrowOpened event into a EnterEscrow, escrow actually opening is what moves the transaction into escrow")
+        send item0 to outlet TransactionContext.FromEscrowService.FromEscrowServiceToTransactionContext
       }
-      on event EscrowService.FundsDisbursed is {
-        do "the model receives funds disbursed"
+      on fundsDisbursed: event EscrowService.FundsDisbursed is {
+        let item0: type Transaction.CompleteClosing = prompt("translate the fundsDisbursed event into a CompleteClosing, funds reaching the parties is the last act of closing, so the closing is completed")
+        send item0 to outlet TransactionContext.FromEscrowService.FromEscrowServiceToTransactionContext
       }
       on other is {
         error "Unexpected message for adaptor FromEscrowService"
@@ -141,13 +167,16 @@ context TransactionContext as router is {
       |The model's side of the EscrowService conversation.
     }
   }
-  adaptor FromLenderService from context LenderService is { 
+  adaptor FromLenderService from context LenderService as flow is { 
+    inlet FromLenderServiceIn is type LenderService.LenderServiceEvent    outlet FromLenderServiceToTransactionContext is command Transaction.SatisfyContingency
     handler FromLenderServiceHandler is {
-      on event LenderService.AppraisalCompleted is {
-        do "the model receives appraisal completed"
+      on appraisalCompleted: event LenderService.AppraisalCompleted is {
+        let item0: type Transaction.SatisfyContingency = prompt("translate the appraisalCompleted event into a SatisfyContingency, an appraisal coming back is what satisfies the appraisal contingency")
+        send item0 to outlet TransactionContext.FromLenderService.FromLenderServiceToTransactionContext
       }
-      on event LenderService.LoanApproved is {
-        do "the model receives loan approved"
+      on loanApproved: event LenderService.LoanApproved is {
+        let item0: type Transaction.SatisfyContingency = prompt("translate the loanApproved event into a SatisfyContingency, loan approval is what satisfies the financing contingency the offer was made subject to")
+        send item0 to outlet TransactionContext.FromLenderService.FromLenderServiceToTransactionContext
       }
       on other is {
         error "Unexpected message for adaptor FromLenderService"
@@ -206,10 +235,12 @@ context TransactionContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromTitleService from context TitleService is { 
+  adaptor FromTitleService from context TitleService as flow is { 
+    inlet FromTitleServiceIn is event TitleService.TitleSearchCompleted    outlet FromTitleServiceToTransactionContext is command Transaction.SatisfyContingency
     handler FromTitleServiceHandler is {
-      on event TitleService.TitleSearchCompleted is {
-        do "the model receives title search completed"
+      on titleSearchCompleted: event TitleService.TitleSearchCompleted is {
+        let item0: type Transaction.SatisfyContingency = prompt("translate the titleSearchCompleted event into a SatisfyContingency, a clear title search is what satisfies the title contingency")
+        send item0 to outlet TransactionContext.FromTitleService.FromTitleServiceToTransactionContext
       }
       on other is {
         error "Unexpected message for adaptor FromTitleService"

@@ -1,5 +1,11 @@
 // Bid Management - Bid Context
 context BidContext as router is {
+  inlet BidContextFromProjectService is command Bid.WithdrawBid with {
+    briefly "What FromProjectService makes of that service's news"
+  }
+  connector 'FromProjectService Intake' is from outlet BidContext.FromProjectService.FromProjectServiceToBidContext to inlet BidContext.BidContextFromProjectService with {
+    briefly "What FromProjectService makes of that news, on its way in"
+  }
   inlet BidCommandStreamIn is type BidCommand  outlet BidCommandStreamOut is type BidCommand
   inlet BidResultStreamIn is result Bid.BidResult  outlet BidResultStreamOut is result Bid.BidResult
   handler BidContextBoundary is {
@@ -44,10 +50,10 @@ context BidContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'BidCommand Stream Intake' is from outlet BidContext.BidCommandStreamOut to inlet BidContext.Bid.BidCommands  connector 'BidResult Stream Egress' is from outlet BidContext.BidRepository.BidRepositoryResponses to inlet BidContext.BidResultStreamIn  adaptor FromContractService from context ContractService is { 
-    handler FromContractServiceHandler is {
-      on event ContractService.ContractGenerated is {
-        do "the model receives contract generated"
+  connector 'BidCommand Stream Intake' is from outlet BidContext.BidCommandStreamOut to inlet BidContext.Bid.BidCommands  connector 'BidResult Stream Egress' is from outlet BidContext.BidRepository.BidRepositoryResponses to inlet BidContext.BidResultStreamIn  adaptor FromContractService from context ContractService as flow is { 
+    inlet FromContractServiceIn is event ContractService.ContractGenerated    handler FromContractServiceHandler is {
+      on contractGenerated: event ContractService.ContractGenerated is {
+        do "the contract exists; the award it records was already made here"
       }
       on other is {
         error "Unexpected message for adaptor FromContractService"
@@ -86,10 +92,10 @@ context BidContext as router is {
       |The model's side of the ContractService conversation.
     }
   }
-  adaptor FromContractorService from context ContractorService is { 
-    handler FromContractorServiceHandler is {
-      on event ContractorService.ContractorQualified is {
-        do "the model receives contractor qualified"
+  adaptor FromContractorService from context ContractorService as flow is { 
+    inlet FromContractorServiceIn is event ContractorService.ContractorQualified    handler FromContractorServiceHandler is {
+      on contractorQualified: event ContractorService.ContractorQualified is {
+        do "qualification decides who may be invited; a bid already in flight is unaffected"
       }
       on other is {
         error "Unexpected message for adaptor FromContractorService"
@@ -153,13 +159,15 @@ context BidContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromProjectService from context ProjectService is { 
+  adaptor FromProjectService from context ProjectService as flow is { 
+    inlet FromProjectServiceIn is type ProjectService.ProjectServiceEvent    outlet FromProjectServiceToBidContext is command Bid.WithdrawBid
     handler FromProjectServiceHandler is {
-      on event ProjectService.RFPCancelled is {
-        do "the model receives rfp cancelled"
+      on rFPCancelled: event ProjectService.RFPCancelled is {
+        let item0: type Bid.WithdrawBid = prompt("translate the rFPCancelled event into a WithdrawBid, an RFP that no longer exists cannot be won, so the bid is withdrawn rather than left open")
+        send item0 to outlet BidContext.FromProjectService.FromProjectServiceToBidContext
       }
-      on event ProjectService.RFPClosed is {
-        do "the model receives rfp closed"
+      on rFPClosed: event ProjectService.RFPClosed is {
+        do "the RFP is closed to new proposals; the bids already submitted proceed to review"
       }
       on other is {
         error "Unexpected message for adaptor FromProjectService"

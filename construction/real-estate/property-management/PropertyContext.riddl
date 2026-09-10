@@ -1,5 +1,11 @@
 // Property Management - Property Context
 context PropertyContext as router is {
+  inlet PropertyContextFromPaymentProcessingService is command Property.RecordPayment with {
+    briefly "What FromPaymentProcessingService makes of that service's news"
+  }
+  connector 'FromPaymentProcessingService Intake' is from outlet PropertyContext.FromPaymentProcessingService.FromPaymentProcessingServiceToPropertyContext to inlet PropertyContext.PropertyContextFromPaymentProcessingService with {
+    briefly "What FromPaymentProcessingService makes of that news, on its way in"
+  }
   inlet PropertyCommandStreamIn is type PropertyCommand  outlet PropertyCommandStreamOut is type PropertyCommand
   inlet PropertyResultStreamIn is result Property.PropertyResult  outlet PropertyResultStreamOut is result Property.PropertyResult
   handler PropertyContextBoundary is {
@@ -44,10 +50,10 @@ context PropertyContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'PropertyCommand Stream Intake' is from outlet PropertyContext.PropertyCommandStreamOut to inlet PropertyContext.Property.PropertyCommands  connector 'PropertyResult Stream Egress' is from outlet PropertyContext.PropertyRepository.PropertyRepositoryResponses to inlet PropertyContext.PropertyResultStreamIn  adaptor FromMaintenanceDispatchService from context MaintenanceDispatchService is { 
-    handler FromMaintenanceDispatchServiceHandler is {
-      on event MaintenanceDispatchService.TechnicianDispatched is {
-        do "the model receives technician dispatched"
+  connector 'PropertyCommand Stream Intake' is from outlet PropertyContext.PropertyCommandStreamOut to inlet PropertyContext.Property.PropertyCommands  connector 'PropertyResult Stream Egress' is from outlet PropertyContext.PropertyRepository.PropertyRepositoryResponses to inlet PropertyContext.PropertyResultStreamIn  adaptor FromMaintenanceDispatchService from context MaintenanceDispatchService as flow is { 
+    inlet FromMaintenanceDispatchServiceIn is event MaintenanceDispatchService.TechnicianDispatched    handler FromMaintenanceDispatchServiceHandler is {
+      on technicianDispatched: event MaintenanceDispatchService.TechnicianDispatched is {
+        do "a technician is on the way; the request closes when the work is done, not when someone sets out"
       }
       on other is {
         error "Unexpected message for adaptor FromMaintenanceDispatchService"
@@ -120,10 +126,12 @@ context PropertyContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromPaymentProcessingService from context PaymentProcessingService is { 
+  adaptor FromPaymentProcessingService from context PaymentProcessingService as flow is { 
+    inlet FromPaymentProcessingServiceIn is event PaymentProcessingService.RentPaymentProcessed    outlet FromPaymentProcessingServiceToPropertyContext is command Property.RecordPayment
     handler FromPaymentProcessingServiceHandler is {
-      on event PaymentProcessingService.RentPaymentProcessed is {
-        do "the model receives rent payment processed"
+      on rentPaymentProcessed: event PaymentProcessingService.RentPaymentProcessed is {
+        let item0: type Property.RecordPayment = prompt("translate the rentPaymentProcessed event into a RecordPayment, rent that has actually cleared is what the lease's payment record must show")
+        send item0 to outlet PropertyContext.FromPaymentProcessingService.FromPaymentProcessingServiceToPropertyContext
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentProcessingService"
@@ -162,10 +170,10 @@ context PropertyContext as router is {
       |The model's side of the PaymentProcessingService conversation.
     }
   }
-  adaptor FromTenantScreeningService from context TenantScreeningService is { 
-    handler FromTenantScreeningServiceHandler is {
-      on event TenantScreeningService.ScreeningCompleted is {
-        do "the model receives screening completed"
+  adaptor FromTenantScreeningService from context TenantScreeningService as flow is { 
+    inlet FromTenantScreeningServiceIn is event TenantScreeningService.ScreeningCompleted    handler FromTenantScreeningServiceHandler is {
+      on screeningCompleted: event TenantScreeningService.ScreeningCompleted is {
+        do "the screening is back; approving the lease stays a decision someone makes on it"
       }
       on other is {
         error "Unexpected message for adaptor FromTenantScreeningService"
