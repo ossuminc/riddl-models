@@ -41,6 +41,11 @@ lazy val unsentCheck = taskKey[Unit](
     "nothing drives"
 )
 
+lazy val askCheck = taskKey[Unit](
+  "GUARD: every `ask` must have a channel -- riddlc checks neither the " +
+    "admitting portlet nor reachability, though it checks both for `tell`"
+)
+
 lazy val checkTests = taskKey[Unit](
   "Run every test and FAIL the build if any of them failed"
 )
@@ -186,6 +191,35 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       }
     },
 
+    // `ask` is `send` plus a declared correlation, so its request travels a
+    // connector -- but riddlc enforces only msg-ask-not-handled and checks
+    // neither the admitting portlet nor reachability. A clean validate is not
+    // evidence an `ask` is connected, and that silence taught this repository
+    // the wrong rule once already. This stands in until the checks land
+    // upstream (../riddl/task/2026-09-09-ask-is-not-checked-for-a-channel.md).
+    //
+    // Def.uncached for the same reason verifyTemplates needs it.
+    askCheck := Def.uncached {
+      val log = streams.value.log
+      val base = baseDirectory.value
+      val riddlc = riddlcBinary.value
+      val script = base / "scripts" / "check-ask-channels.py"
+      if (!script.exists()) sys.error(s"check-ask-channels.py not found at $script")
+      log.info("Checking every `ask` has a channel to travel")
+      val forward = ProcessLogger(l => log.info(l), l => log.error(l))
+      val code = Process(
+        Seq("python3", script.getAbsolutePath),
+        base,
+        "RIDDLC" -> riddlc.getAbsolutePath
+      ) ! forward
+      if (code != 0) {
+        sys.error(
+          "unchannelled `ask` -- see above. An ask needs an inlet admitting " +
+            "the query and a connector reaching it; riddlc will not tell you."
+        )
+      }
+    },
+
     // patterns/ is excluded from riddlcValidate, so bolt the check onto it:
     // `sbt v` now means the whole repository, not just the 187 gated models.
     riddlcValidate := riddlcValidate.dependsOn(verifyTemplates, prettifyCheck).value,
@@ -225,10 +259,11 @@ addCommandAlias("r", "riddlcPrettify")
 addCommandAlias("vt", "verifyTemplates")
 addCommandAlias("pc", "prettifyCheck")
 addCommandAlias("uc", "unsentCheck")
+addCommandAlias("ac", "askCheck")
 
 // The whole-repository gate: patterns, the corpus through the CLI, and the
 // corpus again through the library API. `checkTests` rather than `Test/test`
 // because the latter skips tests sbt believes are unchanged, and rather than a
 // bare `Test/executeTests` because that yields its outcome as a value and so
 // exits 0 on a red suite.
-addCommandAlias("checkAll", "; riddlcValidate; unsentCheck; checkTests")
+addCommandAlias("checkAll", "; riddlcValidate; unsentCheck; askCheck; checkTests")

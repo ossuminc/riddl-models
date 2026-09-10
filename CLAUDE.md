@@ -569,8 +569,13 @@ on the same unwired adaptor: `tell` errors, `ask` reports nothing at all.
 that silence taught this repository the wrong rule once already — a session
 concluded "wiring is irrelevant to ask" from 0 findings and nearly applied it
 to 363 sites. Filed upstream as
-`../riddl/task/2026-09-09-ask-is-not-checked-for-a-channel.md`. **Wire the
-target yourself; do not wait for the validator to ask.**
+`../riddl/task/2026-09-09-ask-is-not-checked-for-a-channel.md`.
+
+**`sbt ac` (`askCheck`, in `checkAll`) stands in for the missing checks** until
+they land: for every `ask` it verifies the target declares an inlet admitting
+the query, and that a connector reaches it from the asker. Canaried both ways
+— removing the alternation member and deleting the connector each fail it. It
+also refuses a run that finds no `ask` at all, for the usual reason.
 
 **`correlation`** lives **only in a projector** and joins events arriving
 apart in time:
@@ -1386,6 +1391,7 @@ the same riddlc the rest of the build uses. Both `riddlcValidate` and
 | `collect-warnings.py` | the models at **every severity** — see below |
 | `sbt pc` | every model is in **prettify canonical form** |
 | `sbt uc` | **no model gained a command that nothing drives** — see below |
+| `sbt ac` | **every `ask` has a channel** — riddlc checks neither end |
 
 #### `sbt uc` — the only check that sees an UNSENT command
 
