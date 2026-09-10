@@ -974,6 +974,76 @@ that is not a reply to one of our asks is a genuine notification from the
 external system, and what the model should DO with it has to be decided per
 case, not by recipe.
 
+## 36. Inbound events — Reid's family rulings, 2026-09-10
+
+**The other half of `task/2026-09-05-do-prose-must-be-an-instruction.md`.** 1006
+inbound `do "the model receives ..."` placeholders; 157 done, 842 remaining at the
+time of the ruling. All were inert: no outlet on the external context, no
+connector, nothing emitting the event, so the clause could not fire.
+
+### The channel (recipe, committed 3a6e425f)
+
+Per external context: an outlet (an event alternation where it speaks more than
+one) and a re-ascription for the new arity; `as flow` and a **declared inlet** on
+the From adaptor; a domain-level `persistent connector '<Ctx>Event Stream'`.
+A clause that TELLS additionally needs a declared outlet on the adaptor, an inlet
+on our context, and an intra-context `'From<Ctx> Intake'` connector.
+
+**The declared inlet is not optional and not cosmetic.** `isStreamTail` opens
+`if proc.inlets.isEmpty then false` over DECLARED ports, so an adaptor relying on
+A103's implied inlet can never end a chain and its upstream source reports
+`stream-source-reaches-no-sink`. This is the OPPOSITE of an asking adaptor, which
+must declare no inlet. See CLAUDE.md § A103.
+
+**Emission** hangs off OUR handler for the command we send or query we ask. For a
+context that declares only events there is NO modelled emission: Reid's ruling is
+that the real system fires them and the model does not describe how a foreign or
+legacy system generates anything. Where one command of ours can produce two
+outcomes (`ReserveStock` -> `StockReserved` | `StockUnavailable`) only the normal
+outcome carries the emission; asserting both would say the command always
+produces both.
+
+### What the clause DOES — ruled per FAMILY, not per site
+
+Reid could not spot-check batch by batch, so the remaining sites were
+characterised into families and one ruling taken per family. **Apply these; do
+not re-litigate them per site.**
+
+| family | n | ruling |
+|---|---:|---|
+| **A receipt-confirmed** (`Stored`, `Sent`, `Posted`, `Retrieved`) | 87 | **prose**, all. The external system confirms receipt; nothing new exists. 84 of 87 are acks of our own request. |
+| **B record-changed** (`Created`, `Updated`, `Deactivated`) | 81 | **ack -> prose** (we asked for the change); **news/asked -> tell** (they own the fact and our copy is wrong until it follows) |
+| **C+G check returned clean** (`Verified`, `Accepted`, `...CheckCompleted`) | 136 | **tell only where passing mechanically unblocks** a step we already have a command for; **prose where a person still decides**. "Clears the way" and "informs a judgement" look identical in the event name and are not alike. |
+| **D refused or failed** (`Failed`, `Rejected`, `Unavailable`) | 55 | **tell a compensating command where one EXISTS** (`CancelSubOrder`, `RejectVendor`, `PlaceHold`); **prose otherwise**. Never invent one. |
+| **E+F booked or paid** (`Reserved`, `Allocated`, `Processed`, `Disbursed`) | 162 | **tell when we hold a record whose whole job is that fact** (`RecordPayment`, `AssignServer`, `AllocateInventory`) -- otherwise our record is intent that never got confirmed; **prose where we asked and already recorded everything there is to record** |
+| **H measured or told** (`Reported`, `Alert`, `Calculated`) | 127 | **prose**, except an event naming a substantive thing coming into existence (`CardIssued`, `BenefitIssued`, `ProtectiveOrderIssued`), which **tells** |
+| **Z tail** (207 distinct act-words) | 194 | **per-site**, judged against whichever of A-G it most resembles. This is where the real domain content sits -- `OrderRouted` in a trading model is not telemetry. |
+
+**The discriminator under all of it**, and it is not the one I expected: *did the
+external system DO something that changes a fact we hold, or merely confirm
+receipt of what we asked?* Ownership decides, not direction of travel.
+
+Reid also approved three tells flagged as debatable, so the consequential reading
+of an ambiguous event name stands rather than a stricter one:
+`LocationDeactivated -> TransferStock` (right consequence, model cannot know
+where), `AidStatusChanged -> PlaceHold` and `AdmissionDecisionMade ->
+RegisterStudent` (both read a change/decision as going one way when the name does
+not say).
+
+### Tooling
+
+`scratchpad/inbuild2.py` applies it -- ONE dump per pass, every edit in
+DESCENDING span order, because per-context re-dumps raced with edits in the same
+file and silently lost two adaptor inlets out of four. `scratchpad/indig.py LO HI`
+digests models by index. 2 of 597 From adaptors already declare ports
+(shopping-cart `InventoryService`, `PricingService`); the applier REFUSES those
+rather than merge, and they need hand treatment.
+
+### Also outstanding
+
+**7 `on result` placeholders** -- a result nothing asked for, which is either a
+query we never modelled sending or a clause that should go.
+
 ## 34. Delete Course's roster; decide what `LearnerEnrolled.enrollmentId` is
 
 Left deliberately when #32 closed (commit a9bdd684). **This is queued work,
