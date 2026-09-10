@@ -4,7 +4,7 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch `main`. Pin `2.1.1-26-4d17b1ef`, UNPUBLISHED, `riddlcPath` override
+**Branch `main`. Pin `2.1.1-33-dd3c2d80`, UNPUBLISHED, `riddlcPath` override
 ON** (`build.sbt:28`); `../bin/riddlc` IS the build's binary on this pin.
 Take the override off at the first published tag carrying A103.
 
@@ -72,11 +72,39 @@ handler*, not *the first handler that declares a message clause* — the latter
 would pick a `become` target. Told them in
 `../riddl-generator/task/2026-09-09-initial-handler-ruled-reading-1.md`.
 
+### The outbound-query campaign is CLOSED AT ZERO, 2026-09-10
+
+**All 363 `do "the model sends <Query> to <Ctx>"` placeholders are real
+`ask query Q of context Ctx` round trips.** `sbt ac` reports 363 asks, 0
+unchannelled. BACKLOG #35 carries the recipe, both shapes, and the four traps.
+
+Three things a fresh session must not relearn the hard way:
+
+- **An `ask`'s answer comes back on the asking adaptor's IMPLIED inlet, so that
+  adaptor must declare no inlet.** `msg-ask-reply-unreachable` says "no
+  connector carries it back", which sends you to add a connector that cannot
+  exist. Now in CLAUDE.md under A103, with the canary that proved it, and filed
+  upstream as
+  `../riddl/task/2026-09-10-ask-reply-unreachable-should-name-the-declared-inlet.md`.
+- **Never delete a definition by LINE RANGE.** prettify jams declarations
+  together, so an adaptor's opening line routinely carries two connectors.
+  `riddlc dump --json` gives every span a byte `offset` — cut with that.
+- **Pick an adaptor's driving event from its OWN existing clauses.** The
+  wiring campaign already spent an event on most outbound adaptors; listing
+  them first took one chunk from 6 of 12 models applied to 24 of 24.
+
 ### In flight
 
-Nothing. BACKLOG #33 is closed; #34 (Course's roster), #23 and #24 remain
-accepted and unimplemented, and #1 (reactive-bbq as reference model) is its
-own campaign.
+**The 1006 inbound `on result` / `on event` placeholders** — the other half of
+`task/2026-09-05-do-prose-must-be-an-instruction.md`, deferred by Reid until
+the outbound half was done. They are NOT the same job: an inbound clause that
+is not a reply to one of our asks is a real notification from the external
+system, and what the model should do about it is a per-case decision, not a
+recipe. Expect to take rulings to Reid in clusters, as BACKLOG #33 did.
+
+Otherwise: BACKLOG #33 and #35 are closed; #34 (Course's roster), #23 and #24
+remain accepted and unimplemented, and #1 (reactive-bbq as reference model) is
+its own campaign.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
