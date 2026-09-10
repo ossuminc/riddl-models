@@ -926,9 +926,30 @@ the two halves of one round trip. The `ask` subsumes both at model level; the
 reply mechanism (reply actor, future, correlation id) is a generator lowering,
 per CM §40.4 and Reid.
 
+### Batch 1 — the alternation shape: 74 sites, DONE 2026-09-10
+
+362 -> 288 placeholders, 75 asks, all channelled, sweep 0.
+
+**The applier's first version put 59 asks in the WRONG PROCESSOR** and it is
+worth knowing why. It searched the adaptor's FILE for an existing
+`on <event>` clause to append to, and found one in a **projector** — so the
+ask landed there, in 26 models, which riddlc caught as
+`msg-ask-target-unreachable` + `msg-ask-reply-unreachable`. That is BACKLOG
+#33's own trap ("scope an already-handled search to the target's own block")
+in a new guise: the earlier version found clauses in other ADAPTORS, this one
+in other PROCESSOR KINDS. **Every edit is now confined to the span riddlc
+reports for the adaptor, and the model is re-dumped per site** so line shifts
+cannot mislead it.
+
+Two smaller lessons: a clause binding taken from the event name can shadow a
+definition (`bundlesCreated`), so the applier suffixes it when the dump shows a
+name clash; and deleting the paired inbound clause can strand the adaptor whose
+only job was catching that reply, which then draws
+`adaptor-direction-advisory` — the ask took its job, so the adaptor goes too.
+
 ### Remaining
 
-**362 sites.** 222 in wired adaptors, 141 unwired (those also need the
+**288 sites.** 222 in wired adaptors, 141 unwired (those also need the
 connector built). 242 pair with exactly one result and are unambiguous; 119
 have 2-4 candidate results and need the pairing chosen; 2 have none.
 

@@ -70,9 +70,6 @@ context ApparelContext as router is {
   }
   connector 'CutOrderCommand Stream Intake' is from outlet ApparelContext.CutOrderCommandStreamOut to inlet ApparelContext.CutOrder.CutOrderCommands  connector 'CutOrderResult Stream Egress' is from outlet ApparelContext.CutOrderRepository.CutOrderRepositoryResponses to inlet ApparelContext.CutOrderResultStreamIn  adaptor FromFabricInventory from context FabricInventory is { 
     handler FromFabricInventoryHandler is {
-      on result FabricInventory.AvailableFabricRolls is {
-        do "the model receives available fabric rolls"
-      }
       on event FabricInventory.FabricConsumed is {
         do "the model receives fabric consumed"
       }
@@ -98,6 +95,8 @@ context ApparelContext as router is {
     outlet ToFabricInventoryOut is type FabricInventory.FabricInventoryCommand
     handler ToFabricInventoryHandler is {
       on cutOrderCreated: event CutOrder.CutOrderCreated is {
+        let askAnswer: type FabricInventory.AvailableFabricRolls = ask query FabricInventory.GetAvailableFabric of context FabricInventory
+        do "a cut order needing fabric that exists before it is planned"
         let claim: type FabricInventory.ReserveFabric = prompt("translate the cutOrderCreated event into a ReserveFabric claiming the cloth this cut order commits to")
         send claim to outlet ApparelContext.ToFabricInventory.ToFabricInventoryOut
       }
@@ -105,11 +104,9 @@ context ApparelContext as router is {
         let consumption: type FabricInventory.ConsumeFabric = prompt("translate the fabricCut event into a ConsumeFabric, cutting being where the cloth is irreversibly used")
         send consumption to outlet ApparelContext.ToFabricInventory.ToFabricInventoryOut
       }
-      on query FabricInventory.GetAvailableFabric is {
-        do "the model sends get available fabric"
-      }
-      on query FabricInventory.GetFabricRoll is {
-        do "the model sends get fabric roll"
+      on markerGenerated: event CutOrder.MarkerGenerated is {
+        let askAnswer: type FabricInventory.AvailableFabricRolls = ask query FabricInventory.GetFabricRoll of context FabricInventory
+        do "the marker needing the roll's actual width and length"
       }
       on other is {
         error "Unexpected message for adaptor ToFabricInventory"
@@ -185,9 +182,6 @@ context ApparelContext as router is {
       on event OrderManagement.ReadyToShipNotified is {
         do "the model receives ready to ship notified"
       }
-      on result OrderManagement.SalesOrderInfo is {
-        do "the model receives sales order info"
-      }
       on other is {
         error "Unexpected message for adaptor FromOrderManagement"
       }
@@ -206,8 +200,9 @@ context ApparelContext as router is {
   adaptor ToOrderManagement to context OrderManagement as flow is { 
     outlet ToOrderManagementOut is type OrderManagement.OrderManagementCommand
     handler ToOrderManagementHandler is {
-      on query OrderManagement.GetSalesOrder is {
-        do "the model sends get sales order"
+      on cutOrderCreated: event CutOrder.CutOrderCreated is {
+        let askAnswer: type OrderManagement.SalesOrderInfo = ask query OrderManagement.GetSalesOrder of context OrderManagement
+        do "and the sales order it is cut against"
       }
       on sewingCompleted: event CutOrder.SewingCompleted is {
         let item0: type OrderManagement.UpdateProductionStatus = prompt("translate the sewingCompleted event into a UpdateProductionStatus, sewing being the milestone the buyer watches")
@@ -290,14 +285,8 @@ context ApparelContext as router is {
   }
   adaptor FromTrimInventory from context TrimInventory is { 
     handler FromTrimInventoryHandler is {
-      on result TrimInventory.TrimAvailabilityResult is {
-        do "the model receives trim availability result"
-      }
       on event TrimInventory.TrimConsumed is {
         do "the model receives trim consumed"
-      }
-      on result TrimInventory.TrimItemInfo is {
-        do "the model receives trim item info"
       }
       on event TrimInventory.TrimReserved is {
         do "the model receives trim reserved"
@@ -328,11 +317,13 @@ context ApparelContext as router is {
         let consumption: type TrimInventory.ConsumeTrim = prompt("translate the trimmingCompleted event into a ConsumeTrim, the trims having now been attached")
         send consumption to outlet ApparelContext.ToTrimInventory.ToTrimInventoryOut
       }
-      on query TrimInventory.GetTrimAvailability is {
-        do "the model sends get trim availability"
+      on bundlesCreatedAsk: event CutOrder.BundlesCreated is {
+        let askAnswer: type TrimInventory.TrimAvailabilityResult = ask query TrimInventory.GetTrimAvailability of context TrimInventory
+        do "bundles being unsewable without their trims"
       }
-      on query TrimInventory.GetTrimItem is {
-        do "the model sends get trim item"
+      on bundleAssigned: event CutOrder.BundleAssigned is {
+        let askAnswer: type TrimInventory.TrimItemInfo = ask query TrimInventory.GetTrimItem of context TrimInventory
+        do "and each assignment needing the trim's own specification"
       }
       on other is {
         error "Unexpected message for adaptor ToTrimInventory"
