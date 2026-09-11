@@ -59,3 +59,12 @@ python3 scripts/inbound-events/families.py       # group into BACKLOG #36's fami
 
 `characterise.py` writes `remaining.json`, which `families.py` reads. Both take
 their paths from a scratchpad constant — retarget it before use.
+
+## Two more scripts, added at the close (2026-09-11)
+
+- `drivers.py <model> ...` — for every external command a model sends, which
+  local clause sends it. This is what decides circularity; the digest only
+  says which command causes an event, not from where.
+- `../check-unhandled-external-commands.py` — census of external-context
+  commands with no handler clause, a class riddlc does not check (filed
+  upstream 2026-09-11). Found 4 in 782 during this campaign; now 0.

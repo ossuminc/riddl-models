@@ -6,75 +6,126 @@ Development journal for active work on the riddl-models repository.
 
 **Pin `2.1.1-33-dd3c2d80`, UNPUBLISHED, `riddlcPath` override ON**
 (`build.sbt:28,94`). `../bin/riddlc` IS the build's binary on this pin — verified
-2026-09-11 with `riddlc info`, not recalled. Take the override off at the first
-PUBLISHED tag carrying A103, in the same edit as the pin.
+2026-09-11 with `riddlc info`, not recalled. riddl `main` is now at `2.1.1-40`,
+seven commits past the pin; one of them changes a rule (`1037313f6`, a handler
+may declare at most one of each SPECIAL on-clause) and the corpus has NOT been
+validated against it. No published tag carries A103 yet, so the override stays
+until one does — take it off in the same edit as the pin.
 
-**Verified green 2026-09-11, by running them:** prettify / validate / bastify
-189/189, `sbt uc` 0 unsent (baseline empty, legitimately), `checkTests` 2 suites
-passed, and `collect-warnings.py` **0 findings at every severity** — canaried by
-injecting an unused type and confirming the sweep named it. A zero from a harness
-nobody has proven can see is worth nothing here.
+**Verified green 2026-09-11, by running them at the close:** prettify /
+validate / bastify 189/189, `sbt uc` 0 unsent (baseline empty, legitimately),
+`checkTests` 2 suites passed, `collect-warnings.py` **0 findings at every
+severity** — canaried by injecting an unused type and confirming the sweep
+named it — `verify-bast-roundtrip.sh` 189/189 at 0 discrepancies, and
+`scripts/check-unhandled-external-commands.py` 0 of 782.
 
-### In flight — the inbound-event campaign, 578 of 1006 left
+### Nothing is in flight
 
-The only work in progress. **BACKLOG #36 is the specification**: Reid ruled the
-decision per FAMILY (eight of them, with counts and examples) precisely so batches
-need no spot-checking. **Apply that table; do not re-derive it per site.**
+**The inbound-event campaign (BACKLOG #36) is CLOSED at zero**, 1006 -> 0, as
+of 1cf1d7a2. So are adaptor wiring (#33) and outbound queries (#35). The task
+that drove all three, `2026-09-05-do-prose-must-be-an-instruction.md`, is in
+`task/done/` with its Results. **Do not reopen any of the three.** `task/` is
+empty of `.md` files.
 
-- **Tooling is TRACKED** in `scripts/inbound-events/` (`apply.py`, `digest.py`,
-  `characterise.py`, `families.py` + a README carrying the traps). Smoke-tested
-  from that location this session. Do not rebuild it in a scratchpad.
-- Two side conditions learned in bulk, not in the table: **"mechanically
-  unblocks" means IS THE FINAL GATE** (several checks feeding one decision must
-  not each tell it), and **a tell is circular** when the command that caused the
-  external act is also the one that would record it.
-- Left deliberately: **2 From adaptors in shopping-cart** (`InventoryService`,
-  `PricingService`) already declare ports, so the applier refuses them — hand
-  work. And **7 `on result` placeholders**, a result nothing asked for.
+**Do not start the implied-ports migration.** Reid ruled "abolish" then PAUSED;
+nothing is implemented in riddl. BACKLOG #37 has the measurements.
 
-### Do not start the implied-ports migration
+### Open, in rough order
 
-Reid ruled "abolish" then PAUSED; **nothing is implemented in riddl**. BACKLOG #37
-has the measurements and the sequencing request (deprecation before error).
-Migrating now would migrate to a rule that does not exist.
+- **BACKLOG #37** — paused on riddl; re-measure before touching.
+- **BACKLOG #1 / #23 / #24 / #30 / #34** — older, unchanged this session.
+- Upstream: `../riddl/task/2026-09-11-external-context-unhandled-command.md`
+  asks for a completeness rule; until it lands the tracked census script is
+  the only check for that class. Not wired into any gate — decide whether it
+  should be (it costs a `dump` per model, like `uc`).
 
-### Traps that already bit someone
+### Traps that already bit someone, still live
 
+- **A cause clause may be QUALIFIED.** When an external context's command
+  shares a name with one of ours, its handler says
+  `on command <Ctx>.<Cmd>`, and `apply.py`'s bare-name lookup finds no clause
+  and reverts the model cleanly. Retry with the qualified cause. Hit four
+  times in seven batches; every time the revert was correct.
 - **`dump --json` resolves a clause's message ROOT-qualified; a type's
-  alternation text is CONTEXT-qualified.** Comparing them as sets matches nothing
-  and condemns every case — reported 607 where the truth was 211. Normalise to
-  `Owner.Message`. Surfaced only because the number disagreed with a hand-read
-  case. (BACKLOG #37.)
+  alternation text is CONTEXT-qualified.** Normalise to `Owner.Message`
+  before comparing (BACKLOG #37).
 - **Never delete a definition by LINE RANGE.** prettify jams declarations
-  together, so an adaptor's opening line routinely carries two connectors; a
-  line-wise prune took them with it and three models broke where nothing was
-  edited. Spans carry a byte `offset` — cut with that.
-- **Edit in ONE ordered pass per model, descending by span.** Re-dumping per
-  external context raced with edits in the same file and silently lost two adaptor
-  inlets out of four; the model stayed valid, so only a later error revealed it.
-- **Declared-overrides-implied pulls both ways.** An INBOUND adaptor must declare
-  an inlet to end a chain; an ASKING adaptor must NOT, or its reply has nowhere to
-  land. CLAUDE.md § A103 carries both with the canaries that proved them.
-- **`sbt ac` no longer exists** — retired 2026-09-10 once riddlc covered it. Do
-  not rebuild it; CLAUDE.md says why.
+  together. Spans carry a byte `offset` — cut with that. The three adaptors
+  pruned in 1cf1d7a2 were cut by span from `dump`, and the prune still took
+  the NEXT adaptor's leading indentation, which prettify restored; a line-wise
+  cut would have taken the adaptor.
+- **Declared-overrides-implied pulls both ways.** An INBOUND adaptor must
+  declare an inlet to end a chain; an ASKING adaptor must NOT, or its reply has
+  nowhere to land. CLAUDE.md § A103.
+- **`sbt v` is the lenient gate.** The close's last five findings (two
+  shadowing `let`s, three emptied adaptors) were invisible to it and visible
+  only to `collect-warnings.py`. Run both, every time.
 
 ### Certainty
 
-Verified this session: every number above, the gates, the sweep, the pin, the
-578/7 split, and BACKLOG #37's table. Assumed: that the remaining 578 behave like
-the 428 done — they have so far, across 8 batches and one revert (a typo, caught
-by the per-model validate).
+Verified this session: every number above, the gates, the sweep, the
+round-trip, the census, the pin. Assumed: nothing that matters to the next
+session — the campaigns are closed, not paused.
 
 ### Pointers
 
-Open work: **BACKLOG.md** (#36 in flight, #37 paused, #1/#23/#24/#30/#34 older).
-Durable language facts: **CLAUDE.md**. `task/` holds one file,
-`2026-09-05-do-prose-must-be-an-instruction.md`, **in progress** — its outbound
-half is complete and recorded in its Results; its inbound half is #36.
+Open work: **BACKLOG.md**. Durable language facts: **CLAUDE.md**. This
+session's lessons: § 2026-09-11 below.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
 ---
+
+## 2026-09-11 — the inbound campaign, 578 -> 0 in seven batches
+
+Seven batches, 26 sites to 114 each, every one through `apply.py` with the
+family table as the spec; then the nine the applier could not take, by hand.
+The per-batch reasoning is in the commit messages (212380c4 .. 1cf1d7a2), which
+is where it belongs; what follows is what generalised.
+
+**The driver map decides more than the family table does.** Two events with
+the same name got opposite answers in the same batch — PaymentSucceeded tells
+ProcessPayment in airline-reservations and is prose in tour-operations —
+because in tour the payment request is sent FROM the command a tell would
+address. "A tell is circular when the command that caused the external act is
+the one that would record it" needed a script to apply at scale
+(`scripts/inbound-events/drivers.py`: for every external command, which local
+clause sends it). Reading the name would have got half of these wrong.
+
+**The event's FIELDS say whether a translation exists.** HistoricalDemandFetched
+carries `HistoricalData+` and GenerateStatisticalForecast takes exactly that:
+tell. PositionsReceived carries a `positionCount` and a date, not positions, so
+UpdateHolding cannot be built from it honestly: prose. MLForecastGenerated
+carries a type no command takes: prose. The rulings say "tell where a record's
+whole job is that fact"; the fields say whether the fact actually arrived.
+
+**A status ENUMERATION decides whether a status tells.** CharterCommenced
+would tell SetVesselStatus if VesselStatus had an employment value; it has
+InService / AtSea / InPort, so the charter is prose. Checked against the type.
+
+**Sector sets the tell ratio, and it is not noise.** SaaS operations: 9 tells
+in 84 — registries, portals and gateways echo what we told them, and health
+scores are composites nobody upstream is the final gate to. Logistics: 26 in
+86 — the carrier's booking IS the booking, the tracker's milestone IS the
+milestone, AIS IS where the vessel is. When the outside world is the record,
+its reports tell; when it is a mirror or an input, they do not.
+
+**The seven `on result` orphans were results of COMMANDS.** No query replied
+any of them. A command cannot reply, so each was a lookup mis-modelled as a
+command (five: became queries + asks under #35's recipe) or an act with an
+outcome mis-modelled as a reply (two: became events under #36's recipe).
+"A result nothing asked for" was the right description and the wrong diagnosis
+— nothing asked because nothing COULD ask a command.
+
+**riddlc has no rule for a context receiving a command it cannot handle.**
+Found because `apply.py` refused to hang an emission off a clause that did not
+exist: case-management's BillingSystem listed RecordPayment in its alternation,
+received it, and had no clause for it. A census over `dump --json` found four
+such commands in 782 external contexts, including a context with an inlet and
+NO handler at all, all at 0 findings. Fixed (2269866b, 0fb5feda), the census
+tracked as `scripts/check-unhandled-external-commands.py`, and filed upstream.
+Same family as the unsent-command gap `sbt uc` closed: a bulk-generated corpus
+survives exactly the defects nothing is red about.
 
 ## Session detail, to 2026-09-08 (was HANDOFF)
 

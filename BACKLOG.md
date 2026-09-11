@@ -974,16 +974,24 @@ that is not a reply to one of our asks is a genuine notification from the
 external system, and what the model should DO with it has to be decided per
 case, not by recipe.
 
-## 36. Inbound events — Reid's family rulings, 2026-09-10
+## 36. Inbound events — CLOSED 2026-09-11 at ZERO
 
 **The other half of `task/2026-09-05-do-prose-must-be-an-instruction.md`.** 1006
 inbound `do "the model receives ..."` placeholders, all inert: no outlet on the
 external context, no connector, nothing emitting the event, so the clause could
 not fire.
 
-**Progress: 428 done, 578 remaining** (verified 2026-09-11 by
-`grep -rn 'do "the model receives'`). The outbound half is CLOSED at zero (#35).
-Commits: 3a6e425f recipe, then 25573cd5, e2c7f6c6, 72d8e72a, 32a074ef.
+**1006 -> 0**, verified 2026-09-11 by `grep -rn 'do "the model receives'`
+and every gate (below). 428 in the first session (3a6e425f recipe, then
+25573cd5, e2c7f6c6, 72d8e72a, 32a074ef); the remaining 578 in seven batches
+on 2026-09-11 (212380c4, 52165b1d, 0fb5feda, 6adc94d5, cbbcd8cc, 1e1cb1cd,
+1cf1d7a2). The family table below is kept as the record of the rulings;
+lessons are in NOTEBOOK.md § 2026-09-11.
+
+**Verified at close:** prettify / validate / bastify 189/189; `sbt uc` 0;
+`checkTests` passed; `collect-warnings.py` 0 at every severity, canaried;
+`verify-bast-roundtrip.sh` 189/189, 0 discrepancies;
+`scripts/check-unhandled-external-commands.py` 0 of 782.
 
 ### The channel (recipe, committed 3a6e425f)
 
@@ -1044,10 +1052,15 @@ table above), and a README carrying the traps. 2 of 597 From adaptors already
 declare ports (shopping-cart `InventoryService`, `PricingService`); `apply.py`
 REFUSES those rather than merge, and they need hand treatment.
 
-### Also outstanding
+### The 7 `on result` orphans — resolved in 1cf1d7a2
 
-**7 `on result` placeholders** -- a result nothing asked for, which is either a
-query we never modelled sending or a clause that should go.
+None was the reply of any query: each was the "answer" to a COMMAND we sent,
+which a command cannot give. Five were lookups and became queries with
+`replies result`, asked with `ask` under #35's recipe (the From-adaptor pruned
+where the orphan was all it had); two were acts with an outcome and became
+events under this campaign's recipe. shopping-cart's two refused adaptors were
+wired by hand with the same recipe, their placeholder handlers folded into the
+real handlers beside them.
 
 ## 37. Abolish implied adaptor ports — RULED, PAUSED, blocked on riddl
 
