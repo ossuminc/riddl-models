@@ -4,67 +4,93 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.1.1-45-a6a9588c`, UNPUBLISHED, `riddlcPath` override ON** (f37a9447).
-`../bin/riddlc` IS the build's binary on this pin — verified with `riddlc info`.
-This is riddl `main` with **[1.25]**: nothing is implied for any processor.
-[1.25] is riddl's BACKLOG number, not a CM rule; it abolishes A103's AR3 and
-keeps the rest. No published tag carries it; take the override off at the first
+**Pin `2.1.1-47-d63cc2c3`, UNPUBLISHED, `riddlcPath` override ON** (5d74e82a).
+`../bin/riddlc` IS the build's binary — verified with `riddlc info`. **The staged
+binary moved under this session once already** (-45 -> -47 at 16:20 with no
+announcement); check `riddlc info` against `build.sbt` before believing any
+number. No published tag carries [1.25]; take the override off at the first
 that does.
 
-**Errors are at ZERO** (bd4a19b0): 26 `ref-wrong-kind` endpoints repointed, 11
-two-hop relays cut, 388 mismatched ascriptions DELETED (Reid: not `as sink`),
-patterns' two examples fixed and re-bastified. Verified by running: prettify /
-validate / bastify 189/189, verifyTemplates 2+7, `sbt uc` 0, round-trip 189/189
-at 0, sweep canaried.
+**Errors 0. Missing 749 + 104 -> 1 + 0** (the [1.25] drain, BACKLOG #38, commits
+001d98bf .. f70a38a2). Verified by running at the close: prettify / validate /
+bastify 189/189, `uc` 0, round-trip 189/189 at 0, sweep canaried on -47.
 
-**The corpus is NOT at zero and will not be until BACKLOG #38 drains it:** 749
-`stream-processor-no-inlet`, 104 `-no-outlet`, 389 style, 1 stub. reactive-bbq's
-R10 test (zero warnings) is RED on its 36 Missing warnings; `RiddlValidationTest`
-passes 189/189. `checkTests` therefore fails, legitimately, until the drain.
+**What is red, and why it stays red until someone rules:** 409
+`stream-ports-without-shape` (inbound adaptors with no transmission; Reid ruled
+no `as sink`), 4 `stream-inlet-not-received` (error-sink contexts, filed
+upstream), 1 Missing (NightlyCloseOut, a clock-driven void, BACKLOG #30).
+`checkTests` fails on reactive-bbq's R10 alone. Sweep by rule is the census;
+`sbt v` is green and says nothing about any of this.
 
-### In flight — BACKLOG #38, the [1.25] drain
+### In flight — nothing is being edited; three things await Reid
 
-Task file `task/2026-09-11-implied-ports-abolished-26-endpoints-388-ascriptions.md`
-is OPEN with Results: criterion 1 (riddl CI) met, criterion 2 (drain) is #38.
-Order: (1) the 20 reactive-bbq `source` streamlets that receive, (2) the 102
-yielding external contexts with no outlet, (3) the ~434 non-asking adaptors'
-inlets by script, (4) the 298 ASKING adaptors — **BLOCKED on riddl**:
-`../riddl/task/2026-09-11-ask-reply-cannot-arrive-at-the-asking-adaptor.md`.
-**Do not declare an inlet on an asking adaptor until that lands.** Reid ruled the
-shape (result inlet on the asker, result outlet on the answerer, a connector, and
-a `tell` forwarding the translated answer); riddlc's boundary rule refuses it today.
+1. **#38 item 4b** — the translation each asking clause performs with its answer.
+   368 asks, census in `scripts/inbound-events/ask-census.tsv`, grouped by kind of
+   answer. Needs family rulings like #36's; then it is a script.
+2. **The 409 style nudges** — zero standard vs the `as sink` ruling.
+3. **Two rule conflicts filed with riddl** (error-sink contexts; the ask-reply one
+   was answered same day by 8d2cc13e5). The scheduled-void one is #30's.
+
+`task/` holds the [1.25] task file, OPEN with Results; criterion 2 is met to the
+rules' limit, 4b is the remainder.
 
 ### Traps, still live
 
-- **A declared inlet on an asking adaptor flips it from "abstains" to
-  `msg-ask-reply-unreachable`.** Canaried on water-utility. That is the whole
-  reason (4) is blocked.
-- **Repointing an endpoint exposes the relay behind it** — cut the relay, never
-  keep both (cardinality).
-- **`git checkout <file>` reverts EVERY uncommitted edit to it.** Commit at each
-  green step; the scripted edits replayed, a hand edit would not have.
-- **`verify-templates.py` needs an ABSOLUTE `RIDDLC`** (`cwd=` the example dir).
-- **`hospitality/food-service/reactive-bbq/1/` is riddl-generator's fill-debug
-  output**, 426 untracked files; `git add -A` stages them. Not ours.
-- **A cause clause may be QUALIFIED**; `dump --json` resolves ROOT-qualified;
-  never delete by LINE RANGE; `sbt v` is the lenient gate — all still true.
+- **A yield answers the SENDER.** The outlet gets nothing unless a `send` says so;
+  write both, the yield is required by `msg-yield-undeclared`.
+- **A script that matches nothing reports success.** 001d98bf's message claimed a
+  conversion that had not happened. Grep the tree after a bulk edit, not the log.
+- **The dump lists some adaptors twice; a definition's span includes its `with`
+  block; two adaptors may want the same new split clause; widening an alternation
+  reaches every consumer typed with it.** All in BACKLOG #38 with the fix.
+- **`git checkout <file>` reverts every uncommitted edit to it.**
+- **`hospitality/food-service/reactive-bbq/1/`** is riddl-generator debug output,
+  untracked, not ours.
 
 ### Certainty
 
-Verified this session: every number above, the canaries (sweep; asking-adaptor
-inlet; explicit reply leg; adaptor split), the pin. Assumed: that the 434
-non-asking adaptors drain by the inbound recipe — untested at scale.
+Verified: every count above, by sweep and by gate. Assumed: nothing that matters
+to the next session.
 
 ### Pointers
 
-Open work: **BACKLOG.md** (#38 in flight; #1/#23/#24/#30/#34 older). Durable
-language facts: **CLAUDE.md** — its A103 section still describes implied ports
-and needs a [1.25] rewrite (not done this session). Upstream tasks filed today:
-ask-reply (above) and `2026-09-11-external-context-unhandled-command.md`.
+Open work: **BACKLOG.md** #38 (4b), #30, #1/#23/#24/#34. Durable language facts:
+**CLAUDE.md** — its A103 section still describes implied ports and the recipe
+still says `as flow` on an inbound adaptor; **both need a [1.25] rewrite**, not
+done this session. Lessons: § 2026-09-11 (later) and § 2026-09-11 (evening).
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
 ---
+
+## 2026-09-11 (evening) — the drain, 853 Missing -> 1
+
+Seven scripts and fourteen commits between 16:30 and the close. What generalised:
+
+**Under A103 nothing had ever fed an adaptor.** The implied inlet let the whole
+corpus assume a context routes its entity's events to its adaptors. It never
+modelled that. [1.25] turned the assumption into 749 warnings, and every one of
+them wanted the same thing: a leg from the split that already fans the entity's
+events out. 669 of 731 were exactly that shape, and a script did them in one
+pass. The remaining 62 were the interesting ones: entities with no split,
+events the entity raised but never published, hand-written adaptors with real
+clauses and no channel, and reactive-bbq's cross-subdomain streams.
+
+**The answering side of an ask is a Missing outlet, and item 2 was mostly item
+4.** 85 of the 102 "yielding contexts" transmitted RESULTS — they were the far
+end of the 363 asks, and their outlet is the reply leg riddl admitted at 16:20.
+Reading the census before scripting saved a wrong recipe.
+
+**The reference model keeps its own rules.** reactive-bbq's R2 (every
+definition described) caught 41 brief-only definitions the drain added; its R10
+(zero warnings) is now red on exactly the two findings no model edit can clear.
+A reference model should be the one that is held to the strictest bar and
+finds the rule gaps first, and it did.
+
+**Rule gaps found by trying both ways.** The error-sink context and the
+clock-driven void are each red with a handler and red without one. Both filed
+or cited with the reproduction. A riddlc ruling that is satisfiable by no shape
+is a bug in the ruling, not in the model.
 
 ## 2026-09-11 (later) — [1.25] lands; errors to zero; the ask-reply contradiction
 

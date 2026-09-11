@@ -1073,68 +1073,56 @@ every rule abstains on the side it cannot read. riddl commit 2c2b8d5b2, pinned
 here as `2.1.1-45-a6a9588c` (f37a9447). The measurements this item carried are
 now history; the work it created is **#38**.
 
-## 38. The [1.25] drain — 749 Missing inlets, 104 Missing outlets, 389 style
+## 38. The [1.25] drain — DONE to the rules' limit 2026-09-11; 4b open
 
-**Errors are at ZERO** as of bd4a19b0 (26 endpoints, 11 relays, 388 ascriptions —
-see the commit). What remains gates nothing in riddl's CI but is the corpus's
-completeness under the new rule, and reactive-bbq's R10 test (zero warnings) is
-RED until its 36 are drained.
+**Missing 749 + 104 -> 1 + 0** on `2.1.1-47-d63cc2c3` (001d98bf .. f70a38a2). Errors 0.
+Task file `task/2026-09-11-implied-ports-abolished-26-endpoints-388-ascriptions.md`
+has the per-item Results.
 
-Task file: `task/2026-09-11-implied-ports-abolished-26-endpoints-388-ascriptions.md`
-(open; criterion 1 met, criterion 2 is this item).
+### Open
 
-### In order
+1. **4b — what each asking clause DOES with its answer.** 368 asks, 298 adaptors,
+   119 models, every one `let askAnswer = ask ...; do "<the need>"`. The channel is
+   built (result inlet on the asker, result outlet on the answerer, connector);
+   the translation — `tell command <local>(… from askAnswer …) to context <ours>`
+   on an outlet back — is a per-site judgement. **Census:
+   `scripts/inbound-events/ask-census.tsv`**, grouped: 185 details/info lookups,
+   51 availability, 39 status, 30 price, 29 check/verify, 23 schedule/route, 11
+   other. Wants family rulings as #36 had; then a script.
+2. **409 `stream-ports-without-shape`** on inbound adaptors with an inlet and no
+   transmission. Reid ruled `as sink` is a lie for them; riddlc nudges anyway. Either
+   the zero standard admits this class, or riddl's nudge exempts an adaptor whose
+   declared arity is sink and whose handler transmits nothing. Reid's call; not
+   filed.
+3. **NightlyCloseOut** (reactive-bbq): clock-driven void, red both with and without
+   its `on other` under -47. Belongs to **#30** (temporal semantics), which now has a
+   concrete rule conflict to cite.
+4. **Error-sink contexts** (4): filed as
+   `../riddl/task/2026-09-11-error-sink-context-cannot-be-complete.md`.
+5. **reactive-bbq R10** (zero warnings) stays red on 3 + 4; `checkTests` fails on
+   that one case. Everything else in the suite passes.
 
-1. **The 21 `streamlet … as source` that `on event` + `send`** — RULED by Reid
-   2026-09-11: a source has no inlet, so nothing can deliver those events; each
-   is a flow in disguise. Declare the inlet (the entity's event alternation),
-   ascribe by the resulting arity, and connect it from what actually emits the
-   events. 20 in reactive-bbq; the pattern example is DONE in bd4a19b0 (it became
-   the fan-out split entity -> {projection, publication}, which is what the
-   topology needed once the source had to be fed).
-2. **The 102 `external context`s that `yield` with no outlet** — RULED: declare
-   `outlet <Ctx>EventsOut is type <Ctx>Event`, the shape the inbound campaign
-   already gives the contexts it reached. Characterise first: which handler
-   yields, and whether anything downstream can receive it.
-3. **The ~434 NON-asking adaptors' Missing inlets** — by script: the inlet's type
-   is the alternation of the events the handler names, ascription by arity, and
-   the connector from the emitting outlet. `apply.py` in `scripts/inbound-events/`
-   already writes exactly this for From adaptors.
-4. **The 298 ASKING adaptors — BLOCKED on riddl.** A declared inlet on an asker
-   engages `msg-ask-reply-unreachable`; the reply leg Reid ruled for (result
-   outlet on the answering context, result inlet on the asker, a connector) draws
-   `stream-boundary-inlet`; a second `to` adaptor is `adaptor-duplicate`. Filed as
-   `../riddl/task/2026-09-11-ask-reply-cannot-arrive-at-the-asking-adaptor.md`.
-   **Do not declare an inlet on an asking adaptor until it lands.** Once it does,
-   this is a #35-sized campaign: per ask, the result inlet, the connector back,
-   and a `tell command <local>(… from askAnswer …) to context <ours>` that
-   forwards the translated answer (Reid: the adaptor is a translator; the
-   originator's id is in the handled message, there is no `self.sender`).
-   assembly-operations' ToWorkOrderService ask is `???` meanwhile (bd4a19b0).
+### Tooling, all tracked in `scripts/inbound-events/`
 
-### Measured
-
-- Sweep after bd4a19b0: 749 no-inlet (of which 298 askers), 104 no-outlet, 389
-  `stream-ports-without-shape` (the deleted ascriptions; each flips to `flow` on
-  its own when the outlet is authored), 1 `handler-clause-no-statements` (the
-  stub). Canaried.
-- 26 endpoints reproduced exactly on 6d9e7ce8 before any edit; riddl's other
-  counts differed only by the two `patterns/` examples.
+`drain-inlets.py` (the split leg, per owner entity, with the reply leg for askers,
+new split clauses shared between adaptors, alternation membership for events the
+entity never published), `drain-external.py` (hand-written From-adaptors' channel),
+`insert-split.py` (the standard EventSplit where an entity fed a projection
+directly), `cross-stream.py` (a cross-context stream through the source context's
+boundary relay), and `apply.py` now reverts on errors only and ascribes by arity.
 
 ### Traps, paid for this time
 
-- **Repointing an endpoint exposes the relay behind it.** Every adaptor portlet
-  the 26 named already had a connector from the context's own relay portlet;
-  the fix is to cut the relay, never to keep both.
-- **A `git checkout <file>` mid-task reverts EVERY uncommitted edit to it**, not
-  the last one. The scripted edits were idempotent and were replayed; a hand
-  edit would have been lost. Commit at each green step.
-- **`verify-templates.py` needs an ABSOLUTE `RIDDLC`** — it runs the examples
-  with `cwd=<example dir>`, so `../bin/riddlc` is `FileNotFoundError`. Same
-  family as the round-trip script's trap in CLAUDE.md.
-- **riddl-generator writes `RIDDLG_FILL_DEBUG` markers INTO this repo**
-  (`hospitality/food-service/reactive-bbq/1/fill-*.txt`, 426 files, untracked).
-  `git add -A` stages them. Not ours; not gitignored yet.
+- **A yield answers the SENDER; only a send reaches the outlet.** Converting the
+  yield breaks `msg-yield-undeclared`; the shape is both. A script's regex that
+  matched nothing reported success (001d98bf's message was wrong; 3ec25f3c fixed it).
+- **The dump lists some adaptors twice** — dedupe by path or every leg doubles.
+- **Two adaptors wanting the same missing split clause** must share one.
+- **Widening an alternation reaches every consumer typed with it**; a projector then
+  needs a clause (or `on other`) for the new member.
+- **A `with` block is inside the definition's span for connectors and contexts**;
+  "insert after the span" lands inside the next definition. Insert BEFORE.
+- **`git checkout <file>` mid-task**: still the trap it was this morning.
 
 ## 34. Delete Course's roster; decide what `LearnerEnrolled.enrollmentId` is
 
