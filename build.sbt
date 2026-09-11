@@ -15,7 +15,7 @@ enablePlugins(RiddlSbtPlugin)
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
 // same build, so one value pins both. This is an UNPUBLISHED snapshot of riddl
-// `main` -- 45 commits past 2.1.1, commit a6a9588c -- so `riddlcPath` below
+// `main` -- 47 commits past 2.1.1, commit d63cc2c3 -- so `riddlcPath` below
 // names a staged binary and the libraries resolve from ~/.ivy2/local via
 // `sbt publishLocal` in the riddl checkout. GitHub Packages stops at 2.1.1.
 //
@@ -24,10 +24,12 @@ enablePlugins(RiddlSbtPlugin)
 // implied for any processor** (2c2b8d5b2, 2026-09-11) reversed A103's implied
 // ports: a port the handlers need and the definition does not declare is a
 // Missing warning, a connector endpoint naming an adaptor is ref-wrong-kind,
-// and an ascription is checked against the DECLARED arity. The corpus is being
+// and an ascription is checked against the DECLARED arity. -47 adds: the
+// adaptor is the boundary for its pair in BOTH directions (an asking adaptor
+// owns the reply leg), and `on other { error }` RECEIVES. The corpus is being
 // adapted to it. Move to the first PUBLISHED tag carrying [1.25] and take the
 // riddlcPath override off in the same edit.
-lazy val riddlVersion = "2.1.1-45-a6a9588c"
+lazy val riddlVersion = "2.1.1-47-d63cc2c3"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
