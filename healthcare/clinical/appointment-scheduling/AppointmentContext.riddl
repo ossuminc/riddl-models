@@ -1,5 +1,11 @@
 // Appointment Scheduling - Appointment Context
 context AppointmentContext as router is {
+  inlet AppointmentContextFromToProviderScheduleService is command Appointment.RescheduleAppointment with {
+    briefly "What ToProviderScheduleService makes of the answers it gets"
+  }
+  connector 'ToProviderScheduleService Intake' is from outlet AppointmentContext.ToProviderScheduleService.ToProviderScheduleServiceToAppointmentContext to inlet AppointmentContext.AppointmentContextFromToProviderScheduleService with {
+    briefly "Answers translated by ToProviderScheduleService, on their way in"
+  }
   inlet AppointmentContextFromWaitlistService is command Appointment.ScheduleAppointment with {
     briefly "What FromWaitlistService makes of that service's news"
   }
@@ -123,7 +129,8 @@ context AppointmentContext as router is {
       |The model's side of the ProviderScheduleService conversation.
     }
   }
-  adaptor ToProviderScheduleService to context ProviderScheduleService as merge is { 
+  adaptor ToProviderScheduleService to context ProviderScheduleService as router is { 
+    outlet ToProviderScheduleServiceToAppointmentContext is command Appointment.RescheduleAppointment
     inlet ToProviderScheduleServiceIn is type AppointmentEvent    inlet ToProviderScheduleServiceReplies is result ProviderScheduleService.AvailabilityResult    outlet ToProviderScheduleServiceOut is type ProviderScheduleService.ProviderScheduleServiceRequest
     handler ToProviderScheduleServiceHandler is {
       on appointmentConfirmed: event Appointment.AppointmentConfirmed is {
@@ -133,6 +140,9 @@ context AppointmentContext as router is {
       on appointmentRescheduled: event Appointment.AppointmentRescheduled is {
         let askAnswer: type ProviderScheduleService.AvailabilityResult = ask query ProviderScheduleService.GetAvailability of context ProviderScheduleService
         do "rescheduling needing to know when the provider is next free"
+        when prompt("the requested time is not free in askAnswer.schedules") then
+          send command Appointment.RescheduleAppointment(appointmentId = appointmentRescheduled.appointmentId, newTime = prompt("the provider's next free time in askAnswer.schedules"), rescheduleReason = prompt("the requested time was not free"), rescheduledBy = prompt("the provider schedule service")) to outlet AppointmentContext.ToProviderScheduleService.ToProviderScheduleServiceToAppointmentContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToProviderScheduleService"

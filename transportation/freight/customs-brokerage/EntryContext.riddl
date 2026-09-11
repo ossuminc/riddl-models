@@ -1,5 +1,39 @@
 // Customs Brokerage - Entry Context
 context EntryContext as router is {
+  inlet EntryContextFromToCBPAceService is command Entry.RecordCBPResponse with {
+    briefly "What ToCBPAceService makes of the answers it gets"
+  }
+  connector 'ToCBPAceService Intake' is from outlet EntryContext.ToCBPAceService.ToCBPAceServiceToEntryContext to inlet EntryContext.EntryContextFromToCBPAceService with {
+    briefly "Answers translated by ToCBPAceService, on their way in"
+  }
+  inlet EntryContextFromToDocumentManagementService is command Entry.RespondToInquiry with {
+    briefly "What ToDocumentManagementService makes of the answers it gets"
+  }
+  connector 'ToDocumentManagementService Intake' is from outlet EntryContext.ToDocumentManagementService.ToDocumentManagementServiceToEntryContext to inlet EntryContext.EntryContextFromToDocumentManagementService with {
+    briefly "Answers translated by ToDocumentManagementService, on their way in"
+  }
+  type ToHTSClassificationServiceCommand is one of {
+    Entry.FileProtest or Entry.UpdateEntry
+  } with {
+    briefly "What ToHTSClassificationService turns its answers into"
+  }
+  inlet EntryContextFromToHTSClassificationService is type ToHTSClassificationServiceCommand with {
+    briefly "What ToHTSClassificationService makes of the answers it gets"
+  }
+  connector 'ToHTSClassificationService Intake' is from outlet EntryContext.ToHTSClassificationService.ToHTSClassificationServiceToEntryContext to inlet EntryContext.EntryContextFromToHTSClassificationService with {
+    briefly "Answers translated by ToHTSClassificationService, on their way in"
+  }
+  type ToTradeAgreementServiceCommand is one of {
+    Entry.AttachDocument or Entry.UpdateEntry
+  } with {
+    briefly "What ToTradeAgreementService turns its answers into"
+  }
+  inlet EntryContextFromToTradeAgreementService is type ToTradeAgreementServiceCommand with {
+    briefly "What ToTradeAgreementService makes of the answers it gets"
+  }
+  connector 'ToTradeAgreementService Intake' is from outlet EntryContext.ToTradeAgreementService.ToTradeAgreementServiceToEntryContext to inlet EntryContext.EntryContextFromToTradeAgreementService with {
+    briefly "Answers translated by ToTradeAgreementService, on their way in"
+  }
   type FromCBPAceServiceCommand is one of {
     Entry.RecordCBPResponse or Entry.RecordRelease
   } with {
@@ -107,7 +141,8 @@ context EntryContext as router is {
       |The model's side of the CBPAceService conversation.
     }
   }
-  adaptor ToCBPAceService to context CBPAceService as merge is { 
+  adaptor ToCBPAceService to context CBPAceService as router is { 
+    outlet ToCBPAceServiceToEntryContext is command Entry.RecordCBPResponse
     inlet ToCBPAceServiceIn is type EntryEvent    inlet ToCBPAceServiceReplies is result CBPAceService.EntryStatusResult    outlet ToCBPAceServiceOut is type CBPAceService.CBPAceServiceCommand
     handler ToCBPAceServiceHandler is {
       on entrySubmitted: event Entry.EntrySubmitted is {
@@ -117,6 +152,9 @@ context EntryContext as router is {
       on releaseRequested: event Entry.ReleaseRequested is {
         let askAnswer: type CBPAceService.EntryStatusResult = ask query CBPAceService.GetEntryStatus of context CBPAceService
         do "release being pursued only against a known entry status"
+        when prompt("askAnswer.status has moved since the last response recorded") then
+          send command Entry.RecordCBPResponse(entryId = releaseRequested.entryId, response = prompt("a response carrying askAnswer.status and askAnswer.messages")) to outlet EntryContext.ToCBPAceService.ToCBPAceServiceToEntryContext
+        end
         let item0: type CBPAceService.QueryEntryStatus = prompt("translate the releaseRequested event into a QueryEntryStatus, release being pursued only against a known entry status")
         send item0 to outlet EntryContext.ToCBPAceService.ToCBPAceServiceOut
       }
@@ -155,7 +193,8 @@ context EntryContext as router is {
       |The model's side of the DocumentManagementService conversation.
     }
   }
-  adaptor ToDocumentManagementService to context DocumentManagementService as merge is { 
+  adaptor ToDocumentManagementService to context DocumentManagementService as router is { 
+    outlet ToDocumentManagementServiceToEntryContext is command Entry.RespondToInquiry
     inlet ToDocumentManagementServiceIn is type EntryEvent    inlet ToDocumentManagementServiceReplies is result DocumentManagementService.DocumentResult    outlet ToDocumentManagementServiceOut is type DocumentManagementService.DocumentManagementServiceRequest
     handler ToDocumentManagementServiceHandler is {
       on documentAttached: event DocumentAttached is {
@@ -165,6 +204,9 @@ context EntryContext as router is {
       on inquiryResponseSubmitted: event Entry.InquiryResponseSubmitted is {
         let askAnswer: type DocumentManagementService.DocumentResult = ask query DocumentManagementService.GetDocument of context DocumentManagementService
         do "an inquiry response needing the document CBP asked about"
+        when prompt("the response went without its supporting document") then
+          send command Entry.RespondToInquiry(entryId = inquiryResponseSubmitted.entryId, inquiryResponse = prompt("the response with the document attached"), supportingDocs = prompt("askAnswer.fileName")) to outlet EntryContext.ToDocumentManagementService.ToDocumentManagementServiceToEntryContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToDocumentManagementService"
@@ -235,16 +277,21 @@ context EntryContext as router is {
       |The model's side of the DutyPaymentService conversation.
     }
   }
-  adaptor ToHTSClassificationService to context HTSClassificationService as merge is { 
+  adaptor ToHTSClassificationService to context HTSClassificationService as router is { 
+    outlet ToHTSClassificationServiceToEntryContext is type ToHTSClassificationServiceCommand
     inlet ToHTSClassificationServiceIn is type EntryEvent    inlet ToHTSClassificationServiceReplies is type HTSClassificationService.HTSClassificationServiceReply    outlet ToHTSClassificationServiceOut is type HTSClassificationService.HTSClassificationServiceRequest
     handler ToHTSClassificationServiceHandler is {
       on entryCreated: event Entry.EntryCreated is {
         let askAnswer: type HTSClassificationService.ClassificationResult = ask query HTSClassificationService.ClassifyProduct of context HTSClassificationService
         do "a new entry needing each product's tariff classification"
+        send command Entry.UpdateEntry(entryId = entryCreated.entryId, lineItems = prompt("the line items classified at askAnswer.htsCode with duty askAnswer.dutyRate")) to outlet EntryContext.ToHTSClassificationService.ToHTSClassificationServiceToEntryContext
       }
       on protestFiled: event Entry.ProtestFiled is {
         let askAnswer: type HTSClassificationService.RulingResult = ask query HTSClassificationService.GetRuling of context HTSClassificationService
         do "a protest needing the binding ruling it will argue from"
+        when prompt("askAnswer.rulingNumber is present and the protest did not cite it") then
+          send command Entry.FileProtest(entryId = protestFiled.entryId, protestReason = prompt("the protest argued from ruling askAnswer.rulingNumber"), requestedRelief = prompt("reclassification to askAnswer.htsCode")) to outlet EntryContext.ToHTSClassificationService.ToHTSClassificationServiceToEntryContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToHTSClassificationService"
@@ -309,16 +356,23 @@ context EntryContext as router is {
       |The model's side of the PGAPartnerService conversation.
     }
   }
-  adaptor ToTradeAgreementService to context TradeAgreementService as merge is { 
+  adaptor ToTradeAgreementService to context TradeAgreementService as router is { 
+    outlet ToTradeAgreementServiceToEntryContext is type ToTradeAgreementServiceCommand
     inlet ToTradeAgreementServiceIn is type EntryEvent    inlet ToTradeAgreementServiceReplies is type TradeAgreementService.TradeAgreementServiceReply    outlet ToTradeAgreementServiceOut is type TradeAgreementService.TradeAgreementServiceRequest
     handler ToTradeAgreementServiceHandler is {
       on entryCreated: event Entry.EntryCreated is {
         let askAnswer: type TradeAgreementService.EligibilityResult = ask query TradeAgreementService.CheckEligibility of context TradeAgreementService
         do "a new entry needing to know which agreement it can claim"
+        when prompt("askAnswer.eligible") then
+          send command Entry.UpdateEntry(entryId = entryCreated.entryId, lineItems = prompt("the line items claiming askAnswer.preferentialRate under the agreement")) to outlet EntryContext.ToTradeAgreementService.ToTradeAgreementServiceToEntryContext
+        end
       }
       on documentAttached: event Entry.DocumentAttached is {
         let askAnswer: type TradeAgreementService.CertificateRequirementsResult = ask query TradeAgreementService.GetCertificateRequirements of context TradeAgreementService
         do "an attached document needing the certificate rules it must satisfy"
+        when prompt("the attached document lacks a field in askAnswer.requiredFields") then
+          send command Entry.AttachDocument(entryId = documentAttached.entryId, document = prompt("the certificate reissued in askAnswer.certificateFormat with askAnswer.requiredFields")) to outlet EntryContext.ToTradeAgreementService.ToTradeAgreementServiceToEntryContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToTradeAgreementService"

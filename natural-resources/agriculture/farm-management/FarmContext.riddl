@@ -1,5 +1,22 @@
 // Farm Management - Farm Context
 context FarmContext as router is {
+  inlet FarmContextFromToMarketPricing is command FarmField.PlanHarvest with {
+    briefly "What ToMarketPricing makes of the answers it gets"
+  }
+  connector 'ToMarketPricing Intake' is from outlet FarmContext.ToMarketPricing.ToMarketPricingToFarmContext to inlet FarmContext.FarmContextFromToMarketPricing with {
+    briefly "Answers translated by ToMarketPricing, on their way in"
+  }
+  type ToWeatherServiceCommand is one of {
+    FarmField.CompleteIrrigation or FarmField.RecordSoilReading
+  } with {
+    briefly "What ToWeatherService turns its answers into"
+  }
+  inlet FarmContextFromToWeatherService is type ToWeatherServiceCommand with {
+    briefly "What ToWeatherService makes of the answers it gets"
+  }
+  connector 'ToWeatherService Intake' is from outlet FarmContext.ToWeatherService.ToWeatherServiceToFarmContext to inlet FarmContext.FarmContextFromToWeatherService with {
+    briefly "Answers translated by ToWeatherService, on their way in"
+  }
   inlet FarmFieldCommandStreamIn is type FarmFieldCommand  outlet FarmFieldCommandStreamOut is type FarmFieldCommand
   inlet FarmFieldResultStreamIn is result FarmField.FarmFieldResult  outlet FarmFieldResultStreamOut is result FarmField.FarmFieldResult
   handler FarmContextBoundary is {
@@ -50,7 +67,8 @@ context FarmContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'FarmFieldCommand Stream Intake' is from outlet FarmContext.FarmFieldCommandStreamOut to inlet FarmContext.FarmField.FarmFieldCommands  connector 'FarmFieldResult Stream Egress' is from outlet FarmContext.FarmRepository.FarmRepositoryResponses to inlet FarmContext.FarmFieldResultStreamIn  adaptor ToMarketPricing to context MarketPricing as merge is { 
+  connector 'FarmFieldCommand Stream Intake' is from outlet FarmContext.FarmFieldCommandStreamOut to inlet FarmContext.FarmField.FarmFieldCommands  connector 'FarmFieldResult Stream Egress' is from outlet FarmContext.FarmRepository.FarmRepositoryResponses to inlet FarmContext.FarmFieldResultStreamIn  adaptor ToMarketPricing to context MarketPricing as router is { 
+    outlet ToMarketPricingToFarmContext is command FarmField.PlanHarvest
     inlet ToMarketPricingIn is type FarmFieldEvent    inlet ToMarketPricingReplies is type MarketPricing.MarketPricingReply    outlet ToMarketPricingOut is type MarketPricing.MarketPricingRequest
     handler ToMarketPricingHandler is {
       on harvestRecorded: event FarmField.HarvestRecorded is {
@@ -60,6 +78,9 @@ context FarmContext as router is {
       on harvestPlanned: event FarmField.HarvestPlanned is {
         let askAnswer: type MarketPricing.PriceForecast = ask query MarketPricing.GetPriceForecast of context MarketPricing
         do "a planned harvest needing where prices are heading"
+        when prompt("askAnswer.forecastPricePerKg favours a different date") then
+          send command FarmField.PlanHarvest(fieldId = harvestPlanned.fieldId, plannedDate = prompt("a date nearer askAnswer.forecastDate"), estimatedYieldKg = harvestPlanned.estimatedYieldKg) to outlet FarmContext.ToMarketPricing.ToMarketPricingToFarmContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToMarketPricing"
@@ -76,16 +97,23 @@ context FarmContext as router is {
       |The model's side of the MarketPricing conversation.
     }
   }
-  adaptor ToWeatherService to context WeatherService as merge is { 
+  adaptor ToWeatherService to context WeatherService as router is { 
+    outlet ToWeatherServiceToFarmContext is type ToWeatherServiceCommand
     inlet ToWeatherServiceIn is type FarmFieldEvent    inlet ToWeatherServiceReplies is type WeatherService.WeatherServiceReply    outlet ToWeatherServiceOut is type WeatherService.WeatherServiceRequest
     handler ToWeatherServiceHandler is {
       on irrigationScheduled: event FarmField.IrrigationScheduled is {
         let askAnswer: type WeatherService.WeatherForecast = ask query WeatherService.GetForecast of context WeatherService
         do "scheduled irrigation needing the forecast that may make it pointless"
+        when prompt("askAnswer.precipitationMm makes the irrigation pointless") then
+          send command FarmField.CompleteIrrigation(fieldId = irrigationScheduled.fieldId, completedAt = prompt("now"), actualVolumeLiters = prompt("zero: rain made it pointless")) to outlet FarmContext.ToWeatherService.ToWeatherServiceToFarmContext
+        end
       }
       on soilReadingRecorded: event FarmField.SoilReadingRecorded is {
         let askAnswer: type WeatherService.HistoricalWeather = ask query WeatherService.GetHistoricalWeather of context WeatherService
         do "a soil reading needing the rain that came before it"
+        when prompt("the reading did not note the rain") then
+          send command FarmField.RecordSoilReading(fieldId = soilReadingRecorded.fieldId, reading = prompt("the reading annotated with askAnswer.totalPrecipitationMm")) to outlet FarmContext.ToWeatherService.ToWeatherServiceToFarmContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToWeatherService"

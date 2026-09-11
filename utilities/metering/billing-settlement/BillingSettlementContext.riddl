@@ -1,5 +1,17 @@
 // Billing Settlement - Billing Settlement Context
 context BillingSettlementContext as router is {
+  inlet BillingSettlementContextFromToEnergySupplierGateway is command BillingAccount.GenerateBill with {
+    briefly "What ToEnergySupplierGateway makes of the answers it gets"
+  }
+  connector 'ToEnergySupplierGateway Intake' is from outlet BillingSettlementContext.ToEnergySupplierGateway.ToEnergySupplierGatewayToBillingSettlementContext to inlet BillingSettlementContext.BillingSettlementContextFromToEnergySupplierGateway with {
+    briefly "Answers translated by ToEnergySupplierGateway, on their way in"
+  }
+  inlet BillingSettlementContextFromToMeterDataSystem is command BillingAccount.SubmitMeterReading with {
+    briefly "What ToMeterDataSystem makes of the answers it gets"
+  }
+  connector 'ToMeterDataSystem Intake' is from outlet BillingSettlementContext.ToMeterDataSystem.ToMeterDataSystemToBillingSettlementContext to inlet BillingSettlementContext.BillingSettlementContextFromToMeterDataSystem with {
+    briefly "Answers translated by ToMeterDataSystem, on their way in"
+  }
   inlet BillingSettlementContextFromMeterDataSystem is command BillingAccount.CalculateUsage with {
     briefly "What FromMeterDataSystem makes of that service's news"
   }
@@ -73,7 +85,8 @@ context BillingSettlementContext as router is {
       |The model's side of the EnergySupplierGateway conversation.
     }
   }
-  adaptor ToEnergySupplierGateway to context EnergySupplierGateway as merge is { 
+  adaptor ToEnergySupplierGateway to context EnergySupplierGateway as router is { 
+    outlet ToEnergySupplierGatewayToBillingSettlementContext is command BillingAccount.GenerateBill
     inlet ToEnergySupplierGatewayIn is type BillingAccountEvent    inlet ToEnergySupplierGatewayReplies is result EnergySupplierGateway.SupplierRates    outlet ToEnergySupplierGatewayOut is type EnergySupplierGateway.EnergySupplierGatewayRequest
     handler ToEnergySupplierGatewayHandler is {
       on settlementInitiated: event BillingAccount.SettlementInitiated is {
@@ -83,6 +96,7 @@ context BillingSettlementContext as router is {
       on usageCalculated: event BillingAccount.UsageCalculated is {
         let askAnswer: type EnergySupplierGateway.SupplierRates = ask query EnergySupplierGateway.GetSupplierRates of context EnergySupplierGateway
         do "calculated usage needing the supplier's rates to turn into money"
+        send command BillingAccount.GenerateBill(accountId = usageCalculated.accountId, usage = usageCalculated.usage, rateSchedule = prompt("the schedule at askAnswer.wholesaleRate")) to outlet BillingSettlementContext.ToEnergySupplierGateway.ToEnergySupplierGatewayToBillingSettlementContext
       }
       on other is {
         error "Unexpected message for adaptor ToEnergySupplierGateway"
@@ -121,12 +135,16 @@ context BillingSettlementContext as router is {
       |The model's side of the MeterDataSystem conversation.
     }
   }
-  adaptor ToMeterDataSystem to context MeterDataSystem as merge is { 
+  adaptor ToMeterDataSystem to context MeterDataSystem as router is { 
+    outlet ToMeterDataSystemToBillingSettlementContext is command BillingAccount.SubmitMeterReading
     inlet ToMeterDataSystemIn is type BillingAccountEvent    inlet ToMeterDataSystemReplies is result MeterDataSystem.MeterReadings    outlet ToMeterDataSystemOut is type MeterDataSystem.MeterDataSystemRequest
     handler ToMeterDataSystemHandler is {
       on billDisputed: event BillingAccount.BillDisputed is {
         let askAnswer: type MeterDataSystem.MeterReadings = ask query MeterDataSystem.GetMeterReadings of context MeterDataSystem
         do "a disputed bill needing the readings it was built from"
+        when prompt("askAnswer.hasGaps") then
+          send command BillingAccount.SubmitMeterReading(accountId = billDisputed.accountId, reading = prompt("the reading in askAnswer.readings the bill missed")) to outlet BillingSettlementContext.ToMeterDataSystem.ToMeterDataSystemToBillingSettlementContext
+        end
       }
       on meterReadingSubmitted: event BillingAccount.MeterReadingSubmitted is {
         let item0: type MeterDataSystem.ValidateMeterData = prompt("translate the meterReadingSubmitted event into a ValidateMeterData, a submitted reading being unbillable until it is trusted")

@@ -1,5 +1,23 @@
 // Car Rental - Rental Context
 context RentalContext as router is {
+  inlet RentalContextFromToInsuranceProviderService is command Rental.SelectInsurance with {
+    briefly "What ToInsuranceProviderService makes of the answers it gets"
+  }
+  connector 'ToInsuranceProviderService Intake' is from outlet RentalContext.ToInsuranceProviderService.ToInsuranceProviderServiceToRentalContext to inlet RentalContext.RentalContextFromToInsuranceProviderService with {
+    briefly "Answers translated by ToInsuranceProviderService, on their way in"
+  }
+  inlet RentalContextFromToPricingService is command Rental.ProcessFinalCharges with {
+    briefly "What ToPricingService makes of the answers it gets"
+  }
+  connector 'ToPricingService Intake' is from outlet RentalContext.ToPricingService.ToPricingServiceToRentalContext to inlet RentalContext.RentalContextFromToPricingService with {
+    briefly "Answers translated by ToPricingService, on their way in"
+  }
+  inlet RentalContextFromToVehicleAvailabilityService is command Rental.CreateRental with {
+    briefly "What ToVehicleAvailabilityService makes of the answers it gets"
+  }
+  connector 'ToVehicleAvailabilityService Intake' is from outlet RentalContext.ToVehicleAvailabilityService.ToVehicleAvailabilityServiceToRentalContext to inlet RentalContext.RentalContextFromToVehicleAvailabilityService with {
+    briefly "Answers translated by ToVehicleAvailabilityService, on their way in"
+  }
   inlet RentalContextFromDriverVerificationService is command Rental.CancelRental with {
     briefly "What FromDriverVerificationService makes of that service's news"
   }
@@ -183,12 +201,14 @@ context RentalContext as router is {
       |The model's side of the InsuranceProviderService conversation.
     }
   }
-  adaptor ToInsuranceProviderService to context InsuranceProviderService as merge is { 
+  adaptor ToInsuranceProviderService to context InsuranceProviderService as router is { 
+    outlet ToInsuranceProviderServiceToRentalContext is command Rental.SelectInsurance
     inlet ToInsuranceProviderServiceIn is type RentalEvent    inlet ToInsuranceProviderServiceReplies is result InsuranceProviderService.InsuranceOptions    outlet ToInsuranceProviderServiceOut is type InsuranceProviderService.InsuranceProviderServiceRequest
     handler ToInsuranceProviderServiceHandler is {
       on rentalCreated: event Rental.RentalCreated is {
         let askAnswer: type InsuranceProviderService.InsuranceOptions = ask query InsuranceProviderService.GetInsuranceOptions of context InsuranceProviderService
         do "a rental needing the cover it can be sold with"
+        send command Rental.SelectInsurance(rentalId = rentalCreated.rentalId, insurance = prompt("the first of askAnswer.options the customer takes")) to outlet RentalContext.ToInsuranceProviderService.ToInsuranceProviderServiceToRentalContext
       }
       on insuranceSelected: event Rental.InsuranceSelected is {
         let item0: type InsuranceProviderService.ActivateCoverage = prompt("translate the insuranceSelected event into a ActivateCoverage, selection being what must be made real before the keys are handed over")
@@ -305,12 +325,14 @@ context RentalContext as router is {
       |The model's side of the PaymentProcessingService conversation.
     }
   }
-  adaptor ToPricingService to context PricingService as merge is { 
+  adaptor ToPricingService to context PricingService as router is { 
+    outlet ToPricingServiceToRentalContext is command Rental.ProcessFinalCharges
     inlet ToPricingServiceIn is type RentalEvent    inlet ToPricingServiceReplies is result PricingService.RentalPrice    outlet ToPricingServiceOut is query PricingService.CalculateRentalPrice
     handler ToPricingServiceHandler is {
       on rentalCreated: event Rental.RentalCreated is {
         let askAnswer: type PricingService.RentalPrice = ask query PricingService.CalculateRentalPrice of context PricingService
         do "a new rental needing a price for the car, the days and the extras"
+        send command Rental.ProcessFinalCharges(rentalId = rentalCreated.rentalId, charges = askAnswer.charges) to outlet RentalContext.ToPricingService.ToPricingServiceToRentalContext
       }
       on other is {
         error "Unexpected message for adaptor ToPricingService"
@@ -350,12 +372,16 @@ context RentalContext as router is {
       |The model's side of the VehicleAvailabilityService conversation.
     }
   }
-  adaptor ToVehicleAvailabilityService to context VehicleAvailabilityService as merge is { 
+  adaptor ToVehicleAvailabilityService to context VehicleAvailabilityService as router is { 
+    outlet ToVehicleAvailabilityServiceToRentalContext is command Rental.CreateRental
     inlet ToVehicleAvailabilityServiceIn is type RentalEvent    inlet ToVehicleAvailabilityServiceReplies is result VehicleAvailabilityService.AvailableVehicles    outlet ToVehicleAvailabilityServiceOut is type VehicleAvailabilityService.VehicleAvailabilityServiceCommand
     handler ToVehicleAvailabilityServiceHandler is {
       on rentalCreated: event Rental.RentalCreated is {
         let askAnswer: type VehicleAvailabilityService.AvailableVehicles = ask query VehicleAvailabilityService.SearchAvailableVehicles of context VehicleAvailabilityService
         do "a rental needing a vehicle free at that branch and those dates"
+        when prompt("rentalCreated.vehicle is not among askAnswer.vehicles") then
+          send command Rental.CreateRental(rentalId = rentalCreated.rentalId, customer = rentalCreated.customer, vehicle = prompt("the first of askAnswer.vehicles"), period = rentalCreated.period) to outlet RentalContext.ToVehicleAvailabilityService.ToVehicleAvailabilityServiceToRentalContext
+        end
         let item0: type VehicleAvailabilityService.ReserveVehicle = prompt("translate the rentalCreated event into a ReserveVehicle, the rental being what claims the vehicle")
         send item0 to outlet RentalContext.ToVehicleAvailabilityService.ToVehicleAvailabilityServiceOut
       }

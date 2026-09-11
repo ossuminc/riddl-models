@@ -1,5 +1,33 @@
 // Ride Sharing - Ride Context
 context RideContext as router is {
+  inlet RideContextFromToDriverMatchingService is command Ride.AssignDriver with {
+    briefly "What ToDriverMatchingService makes of the answers it gets"
+  }
+  connector 'ToDriverMatchingService Intake' is from outlet RideContext.ToDriverMatchingService.ToDriverMatchingServiceToRideContext to inlet RideContext.RideContextFromToDriverMatchingService with {
+    briefly "Answers translated by ToDriverMatchingService, on their way in"
+  }
+  type ToFareCalculationServiceCommand is one of {
+    Ride.ProcessPayment or Ride.RequestRide
+  } with {
+    briefly "What ToFareCalculationService turns its answers into"
+  }
+  inlet RideContextFromToFareCalculationService is type ToFareCalculationServiceCommand with {
+    briefly "What ToFareCalculationService makes of the answers it gets"
+  }
+  connector 'ToFareCalculationService Intake' is from outlet RideContext.ToFareCalculationService.ToFareCalculationServiceToRideContext to inlet RideContext.RideContextFromToFareCalculationService with {
+    briefly "Answers translated by ToFareCalculationService, on their way in"
+  }
+  type ToRoutingServiceCommand is one of {
+    Ride.DriverEnRoute or Ride.UpdateLocation
+  } with {
+    briefly "What ToRoutingService turns its answers into"
+  }
+  inlet RideContextFromToRoutingService is type ToRoutingServiceCommand with {
+    briefly "What ToRoutingService makes of the answers it gets"
+  }
+  connector 'ToRoutingService Intake' is from outlet RideContext.ToRoutingService.ToRoutingServiceToRideContext to inlet RideContext.RideContextFromToRoutingService with {
+    briefly "Answers translated by ToRoutingService, on their way in"
+  }
   inlet RideContextFromDriverMatchingService is command Ride.DriverEnRoute with {
     briefly "What FromDriverMatchingService makes of that service's news"
   }
@@ -84,12 +112,16 @@ context RideContext as router is {
       |The model's side of the DriverMatchingService conversation.
     }
   }
-  adaptor ToDriverMatchingService to context DriverMatchingService as merge is { 
+  adaptor ToDriverMatchingService to context DriverMatchingService as router is { 
+    outlet ToDriverMatchingServiceToRideContext is command Ride.AssignDriver
     inlet ToDriverMatchingServiceIn is type RideEvent    inlet ToDriverMatchingServiceReplies is result DriverMatchingService.AvailableDrivers    outlet ToDriverMatchingServiceOut is type DriverMatchingService.DriverMatchingServiceCommand
     handler ToDriverMatchingServiceHandler is {
       on rideRequested: event Ride.RideRequested is {
         let askAnswer: type DriverMatchingService.AvailableDrivers = ask query DriverMatchingService.GetAvailableDrivers of context DriverMatchingService
         do "a request being unmatchable without drivers near enough to take it"
+        when prompt("askAnswer.drivers is not empty") then
+          send command Ride.AssignDriver(rideId = rideRequested.rideId, driver = prompt("the first of askAnswer.drivers"), etaMinutes = prompt("the matching entry of askAnswer.driverEtaMinutes")) to outlet RideContext.ToDriverMatchingService.ToDriverMatchingServiceToRideContext
+        end
         let item0: type DriverMatchingService.FindAvailableDrivers = prompt("translate the rideRequested event into a FindAvailableDrivers, a request being what creates the need for a driver")
         send item0 to outlet RideContext.ToDriverMatchingService.ToDriverMatchingServiceOut
       }
@@ -112,18 +144,23 @@ context RideContext as router is {
       |The model's side of the DriverMatchingService conversation.
     }
   }
-  adaptor ToFareCalculationService to context FareCalculationService as merge is { 
+  adaptor ToFareCalculationService to context FareCalculationService as router is { 
+    outlet ToFareCalculationServiceToRideContext is type ToFareCalculationServiceCommand
     inlet ToFareCalculationServiceIn is type RideEvent    inlet ToFareCalculationServiceReplies is type FareCalculationService.FareCalculationServiceReply    outlet ToFareCalculationServiceOut is type FareCalculationService.FareCalculationServiceCommand
     handler ToFareCalculationServiceHandler is {
       on rideRequested: event Ride.RideRequested is {
         let askAnswer: type FareCalculationService.FareCalculation = ask query FareCalculationService.GetFareCalculation of context FareCalculationService
         do "and a rider being owed a price before they commit"
+        when prompt("rideRequested.fareEstimate differs from askAnswer.fareEstimate") then
+          send command Ride.RequestRide(rideId = rideRequested.rideId, rider = rideRequested.rider, pickup = rideRequested.pickup, dropoff = rideRequested.dropoff, vehicleType = rideRequested.vehicleType, fareEstimate = askAnswer.fareEstimate) to outlet RideContext.ToFareCalculationService.ToFareCalculationServiceToRideContext
+        end
         let item0: type FareCalculationService.CalculateFare = prompt("translate the rideRequested event into a CalculateFare, a rider being owed a price before they commit")
         send item0 to outlet RideContext.ToFareCalculationService.ToFareCalculationServiceOut
       }
       on tripCompleted: event Ride.TripCompleted is {
         let askAnswer: type FareCalculationService.FinalFare = ask query FareCalculationService.GetFinalFare of context FareCalculationService
         do "the trip actually taken is what is finally charged, and the fare is what the ride charges"
+        send command Ride.ProcessPayment(rideId = tripCompleted.rideId, payment = prompt("a payment for askAnswer.fare")) to outlet RideContext.ToFareCalculationService.ToFareCalculationServiceToRideContext
       }
       on other is {
         error "Unexpected message for adaptor ToFareCalculationService"
@@ -234,16 +271,21 @@ context RideContext as router is {
       |The model's side of the PaymentService conversation.
     }
   }
-  adaptor ToRoutingService to context RoutingService as merge is { 
+  adaptor ToRoutingService to context RoutingService as router is { 
+    outlet ToRoutingServiceToRideContext is type ToRoutingServiceCommand
     inlet ToRoutingServiceIn is type RideEvent    inlet ToRoutingServiceReplies is type RoutingService.RoutingServiceReply    outlet ToRoutingServiceOut is type RoutingService.RoutingServiceRequest
     handler ToRoutingServiceHandler is {
       on driverIsEnRoute: event Ride.DriverIsEnRoute is {
         let askAnswer: type RoutingService.ETAResult = ask query RoutingService.GetETA of context RoutingService
         do "a driver en route needing an arrival time to show the rider"
+        when prompt("the rider has not yet been shown askAnswer.etaMinutes") then
+          send command Ride.DriverEnRoute(rideId = driverIsEnRoute.rideId, driverLocation = driverIsEnRoute.driverLocation) to outlet RideContext.ToRoutingService.ToRoutingServiceToRideContext
+        end
       }
       on tripStarted: event Ride.TripStarted is {
         let askAnswer: type RoutingService.RouteResult = ask query RoutingService.GetRoute of context RoutingService
         do "a trip starting needing the path to the destination"
+        send command Ride.UpdateLocation(rideId = tripStarted.rideId, location = prompt("the first of askAnswer.waypoints")) to outlet RideContext.ToRoutingService.ToRoutingServiceToRideContext
       }
       on other is {
         error "Unexpected message for adaptor ToRoutingService"

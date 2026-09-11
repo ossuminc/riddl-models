@@ -1,5 +1,23 @@
 // Grid Operations - Grid Context
 context GridContext as router is {
+  inlet GridContextFromToEnergyMarketSystem is command GridSection.RecordLoad with {
+    briefly "What ToEnergyMarketSystem makes of the answers it gets"
+  }
+  connector 'ToEnergyMarketSystem Intake' is from outlet GridContext.ToEnergyMarketSystem.ToEnergyMarketSystemToGridContext to inlet GridContext.GridContextFromToEnergyMarketSystem with {
+    briefly "Answers translated by ToEnergyMarketSystem, on their way in"
+  }
+  inlet GridContextFromToOutageManagementSystem is command GridSection.UpdateOutageStatus with {
+    briefly "What ToOutageManagementSystem makes of the answers it gets"
+  }
+  connector 'ToOutageManagementSystem Intake' is from outlet GridContext.ToOutageManagementSystem.ToOutageManagementSystemToGridContext to inlet GridContext.GridContextFromToOutageManagementSystem with {
+    briefly "Answers translated by ToOutageManagementSystem, on their way in"
+  }
+  inlet GridContextFromToSCADASystem is command GridSection.RecordLoad with {
+    briefly "What ToSCADASystem makes of the answers it gets"
+  }
+  connector 'ToSCADASystem Intake' is from outlet GridContext.ToSCADASystem.ToSCADASystemToGridContext to inlet GridContext.GridContextFromToSCADASystem with {
+    briefly "Answers translated by ToSCADASystem, on their way in"
+  }
   inlet GridSectionCommandStreamIn is type GridSectionCommand  outlet GridSectionCommandStreamOut is type GridSectionCommand
   inlet GridSectionResultStreamIn is result GridSection.GridSectionResult  outlet GridSectionResultStreamOut is result GridSection.GridSectionResult
   handler GridContextBoundary is {
@@ -64,12 +82,14 @@ context GridContext as router is {
       |The model's side of the EnergyMarketSystem conversation.
     }
   }
-  adaptor ToEnergyMarketSystem to context EnergyMarketSystem as merge is { 
+  adaptor ToEnergyMarketSystem to context EnergyMarketSystem as router is { 
+    outlet ToEnergyMarketSystemToGridContext is command GridSection.RecordLoad
     inlet ToEnergyMarketSystemIn is type GridSectionEvent    inlet ToEnergyMarketSystemReplies is result EnergyMarketSystem.MarketPrices    outlet ToEnergyMarketSystemOut is type EnergyMarketSystem.EnergyMarketSystemRequest
     handler ToEnergyMarketSystemHandler is {
       on switchingExecuted: event GridSection.SwitchingExecuted is {
         let askAnswer: type EnergyMarketSystem.MarketPrices = ask query EnergyMarketSystem.GetMarketPrices of context EnergyMarketSystem
         do "a switching action needing the price of the energy it moves"
+        send command GridSection.RecordLoad(sectionId = switchingExecuted.sectionId, load = prompt("the load priced at askAnswer.lmpPrice")) to outlet GridContext.ToEnergyMarketSystem.ToEnergyMarketSystemToGridContext
       }
       on loadRecorded: event GridSection.LoadRecorded is {
         let item0: type EnergyMarketSystem.SubmitGenerationBid = prompt("translate the loadRecorded event into a SubmitGenerationBid, recorded load being what a generation bid is sized against")
@@ -110,12 +130,16 @@ context GridContext as router is {
       |The model's side of the OutageManagementSystem conversation.
     }
   }
-  adaptor ToOutageManagementSystem to context OutageManagementSystem as merge is { 
+  adaptor ToOutageManagementSystem to context OutageManagementSystem as router is { 
+    outlet ToOutageManagementSystemToGridContext is command GridSection.UpdateOutageStatus
     inlet ToOutageManagementSystemIn is type GridSectionEvent    inlet ToOutageManagementSystemReplies is result OutageManagementSystem.OutageStatusInfo    outlet ToOutageManagementSystemOut is type OutageManagementSystem.OutageManagementSystemRequest
     handler ToOutageManagementSystemHandler is {
       on serviceRestored: event GridSection.ServiceRestored is {
         let askAnswer: type OutageManagementSystem.OutageStatusInfo = ask query OutageManagementSystem.GetOutageStatus of context OutageManagementSystem
         do "a restoration needing the outage system's own account of what is still dark"
+        when prompt("askAnswer.status is not restored") then
+          send command GridSection.UpdateOutageStatus(sectionId = serviceRestored.sectionId, outageId = serviceRestored.outageId, status = prompt("askAnswer.status"), notes = prompt("askAnswer.crewsAssigned crews still assigned, ETR askAnswer.etr")) to outlet GridContext.ToOutageManagementSystem.ToOutageManagementSystemToGridContext
+        end
       }
       on outageReported: event GridSection.OutageReported is {
         let item0: type OutageManagementSystem.CreateOutageTicket = prompt("translate the outageReported event into a CreateOutageTicket, the report being what a ticket tracks")
@@ -156,12 +180,16 @@ context GridContext as router is {
       |The model's side of the SCADASystem conversation.
     }
   }
-  adaptor ToSCADASystem to context SCADASystem as merge is { 
+  adaptor ToSCADASystem to context SCADASystem as router is { 
+    outlet ToSCADASystemToGridContext is command GridSection.RecordLoad
     inlet ToSCADASystemIn is type GridSectionEvent    inlet ToSCADASystemReplies is result SCADASystem.RealTimeData    outlet ToSCADASystemOut is type SCADASystem.SCADASystemRequest
     handler ToSCADASystemHandler is {
       on switchingExecuted: event GridSection.SwitchingExecuted is {
         let askAnswer: type SCADASystem.RealTimeData = ask query SCADASystem.GetRealTimeData of context SCADASystem
         do "switching needing live telemetry to confirm the network followed"
+        when prompt("askAnswer.switchStatus contradicts the switching order") then
+          send command GridSection.RecordLoad(sectionId = switchingExecuted.sectionId, load = askAnswer.load) to outlet GridContext.ToSCADASystem.ToSCADASystemToGridContext
+        end
       }
       on outageReported: event GridSection.OutageReported is {
         let item0: type SCADASystem.SendControlCommand = prompt("translate the outageReported event into a SendControlCommand, an outage needing the section isolated rather than merely logged")

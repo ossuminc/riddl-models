@@ -1,5 +1,44 @@
 // Apparel Manufacturing - Apparel Context
 context ApparelContext as router is {
+  type ToFabricInventoryCommand is one of {
+    CutOrder.CutFabric or CutOrder.GenerateMarker
+  } with {
+    briefly "What ToFabricInventory turns its answers into"
+  }
+  inlet ApparelContextFromToFabricInventory is type ToFabricInventoryCommand with {
+    briefly "What ToFabricInventory makes of the answers it gets"
+  }
+  connector 'ToFabricInventory Intake' is from outlet ApparelContext.ToFabricInventory.ToFabricInventoryToApparelContext to inlet ApparelContext.ApparelContextFromToFabricInventory with {
+    briefly "Answers translated by ToFabricInventory, on their way in"
+  }
+  inlet ApparelContextFromToMachineMaintenance is command CutOrder.RecordMachineBreakdown with {
+    briefly "What ToMachineMaintenance makes of the answers it gets"
+  }
+  connector 'ToMachineMaintenance Intake' is from outlet ApparelContext.ToMachineMaintenance.ToMachineMaintenanceToApparelContext to inlet ApparelContext.ApparelContextFromToMachineMaintenance with {
+    briefly "Answers translated by ToMachineMaintenance, on their way in"
+  }
+  type ToStyleMasterCommand is one of {
+    CutOrder.AssignBundle or CutOrder.CancelCutOrder or CutOrder.RecordQualityCheck
+  } with {
+    briefly "What ToStyleMaster turns its answers into"
+  }
+  inlet ApparelContextFromToStyleMaster is type ToStyleMasterCommand with {
+    briefly "What ToStyleMaster makes of the answers it gets"
+  }
+  connector 'ToStyleMaster Intake' is from outlet ApparelContext.ToStyleMaster.ToStyleMasterToApparelContext to inlet ApparelContext.ApparelContextFromToStyleMaster with {
+    briefly "Answers translated by ToStyleMaster, on their way in"
+  }
+  type ToTrimInventoryCommand is one of {
+    CutOrder.CancelCutOrder or CutOrder.RecordQualityCheck
+  } with {
+    briefly "What ToTrimInventory turns its answers into"
+  }
+  inlet ApparelContextFromToTrimInventory is type ToTrimInventoryCommand with {
+    briefly "What ToTrimInventory makes of the answers it gets"
+  }
+  connector 'ToTrimInventory Intake' is from outlet ApparelContext.ToTrimInventory.ToTrimInventoryToApparelContext to inlet ApparelContext.ApparelContextFromToTrimInventory with {
+    briefly "Answers translated by ToTrimInventory, on their way in"
+  }
   connector 'QualityMetricsProjector Storage' is from outlet ApparelContext.QualityMetricsProjector.QualityMetricsProjectorToRepository to inlet ApparelContext.CutOrderRepository.CutOrderRepositoryFromQualityMetricsProjector with {
     briefly "QualityMetricsProjector messages on their way to CutOrderRepository"
     described as {
@@ -91,12 +130,16 @@ context ApparelContext as router is {
       |The model's side of the FabricInventory conversation.
     }
   }
-  adaptor ToFabricInventory to context FabricInventory as merge is { 
+  adaptor ToFabricInventory to context FabricInventory as router is { 
+    outlet ToFabricInventoryToApparelContext is type ToFabricInventoryCommand
     inlet ToFabricInventoryIn is type CutOrderEvent    inlet ToFabricInventoryReplies is result FabricInventory.AvailableFabricRolls    outlet ToFabricInventoryOut is type FabricInventory.FabricInventoryCommand
     handler ToFabricInventoryHandler is {
       on cutOrderCreated: event CutOrder.CutOrderCreated is {
         let askAnswer: type FabricInventory.AvailableFabricRolls = ask query FabricInventory.GetAvailableFabric of context FabricInventory
         do "a cut order needing fabric that exists before it is planned"
+        when prompt("askAnswer.totalLength covers the order") then
+          send command CutOrder.GenerateMarker(cutOrderId = cutOrderCreated.cutOrderId, marker = prompt("a marker laid on the rolls in askAnswer.rolls"), generatedBy = prompt("the planner")) to outlet ApparelContext.ToFabricInventory.ToFabricInventoryToApparelContext
+        end
         let claim: type FabricInventory.ReserveFabric = prompt("translate the cutOrderCreated event into a ReserveFabric claiming the cloth this cut order commits to")
         send claim to outlet ApparelContext.ToFabricInventory.ToFabricInventoryOut
       }
@@ -107,6 +150,7 @@ context ApparelContext as router is {
       on markerGenerated: event CutOrder.MarkerGenerated is {
         let askAnswer: type FabricInventory.AvailableFabricRolls = ask query FabricInventory.GetFabricRoll of context FabricInventory
         do "the marker needing the roll's actual width and length"
+        send command CutOrder.CutFabric(cutOrderId = markerGenerated.cutOrderId, cutBy = prompt("the cutter"), layersSpread = prompt("the layers the marker plans"), fabricRollIds = prompt("the rolls in askAnswer.rolls"), wastePercent = prompt("the marker's waste")) to outlet ApparelContext.ToFabricInventory.ToFabricInventoryToApparelContext
       }
       on other is {
         error "Unexpected message for adaptor ToFabricInventory"
@@ -143,12 +187,16 @@ context ApparelContext as router is {
       |The model's side of the MachineMaintenance conversation.
     }
   }
-  adaptor ToMachineMaintenance to context MachineMaintenance as merge is { 
+  adaptor ToMachineMaintenance to context MachineMaintenance as router is { 
+    outlet ToMachineMaintenanceToApparelContext is command CutOrder.RecordMachineBreakdown
     inlet ToMachineMaintenanceIn is type CutOrderEvent    inlet ToMachineMaintenanceReplies is result MachineMaintenance.MachineStatusResult    outlet ToMachineMaintenanceOut is type MachineMaintenance.MachineMaintenanceRequest
     handler ToMachineMaintenanceHandler is {
       on sewingCompleted: event CutOrder.SewingCompleted is {
         let askAnswer: type MachineMaintenance.MachineStatusResult = ask query MachineMaintenance.GetMachineStatus of context MachineMaintenance
         do "a completed sewing run being when the line's condition is worth checking"
+        when prompt("askAnswer.machineStatus is down") then
+          send command CutOrder.RecordMachineBreakdown(cutOrderId = sewingCompleted.cutOrderId, brokenMachineId = askAnswer.machineId, breakdownReportedBy = sewingCompleted.operatorId, breakdownDescription = prompt("askAnswer.machineStatus after the run")) to outlet ApparelContext.ToMachineMaintenance.ToMachineMaintenanceToApparelContext
+        end
       }
       on machineBreakdownRecorded: event CutOrder.MachineBreakdownRecorded is {
         let item0: type MachineMaintenance.ReportMachineBreakdown = prompt("translate the machineBreakdownRecorded event into a ReportMachineBreakdown, a machine failing on the floor being what maintenance is called for")
@@ -229,20 +277,26 @@ context ApparelContext as router is {
       |The model's side of the OrderManagement conversation.
     }
   }
-  adaptor ToStyleMaster to context StyleMaster as merge is { 
+  adaptor ToStyleMaster to context StyleMaster as router is { 
+    outlet ToStyleMasterToApparelContext is type ToStyleMasterCommand
     inlet ToStyleMasterIn is type CutOrderEvent    inlet ToStyleMasterReplies is type StyleMaster.StyleMasterReply    outlet ToStyleMasterOut is type StyleMaster.StyleMasterRequest
     handler ToStyleMasterHandler is {
       on bundlesCreatedAsk: event CutOrder.BundlesCreated is {
         let askAnswer: type StyleMaster.OperationSequenceResult = ask query StyleMaster.GetOperationSequence of context StyleMaster
         do "bundles needing the operation sequence they will move through"
+        send command CutOrder.AssignBundle(cutOrderId = bundlesCreatedAsk.cutOrderId, bundleId = prompt("the first bundle"), operatorId = prompt("the operator for the first of askAnswer.operations"), assignedBy = prompt("the line supervisor")) to outlet ApparelContext.ToStyleMaster.ToStyleMasterToApparelContext
       }
       on cutOrderCreated: event CutOrder.CutOrderCreated is {
         let askAnswer: type StyleMaster.StyleSpecResult = ask query StyleMaster.GetStyleSpec of context StyleMaster
         do "a new cut order needing the style it is cutting to"
+        when prompt("not askAnswer.active") then
+          send command CutOrder.CancelCutOrder(cutOrderId = cutOrderCreated.cutOrderId, reason = prompt("the style is not active"), cancelledBy = prompt("the style master")) to outlet ApparelContext.ToStyleMaster.ToStyleMasterToApparelContext
+        end
       }
       on trimmingCompleted: event CutOrder.TrimmingCompleted is {
         let askAnswer: type StyleMaster.TrimRequirementsResult = ask query StyleMaster.GetTrimRequirements of context StyleMaster
         do "finished trimming needing the requirements to be checked against"
+        send command CutOrder.RecordQualityCheck(cutOrderId = trimmingCompleted.cutOrderId, inspection = prompt("an inspection of the trims against askAnswer.trims")) to outlet ApparelContext.ToStyleMaster.ToStyleMasterToApparelContext
       }
       on other is {
         error "Unexpected message for adaptor ToStyleMaster"
@@ -282,7 +336,8 @@ context ApparelContext as router is {
       |The model's side of the TrimInventory conversation.
     }
   }
-  adaptor ToTrimInventory to context TrimInventory as merge is { 
+  adaptor ToTrimInventory to context TrimInventory as router is { 
+    outlet ToTrimInventoryToApparelContext is type ToTrimInventoryCommand
     inlet ToTrimInventoryIn is type CutOrderEvent    inlet ToTrimInventoryReplies is type TrimInventory.TrimInventoryReply    outlet ToTrimInventoryOut is type TrimInventory.TrimInventoryCommand
     handler ToTrimInventoryHandler is {
       on cutOrderCreated: event CutOrder.CutOrderCreated is {
@@ -296,10 +351,14 @@ context ApparelContext as router is {
       on bundlesCreatedAsk: event CutOrder.BundlesCreated is {
         let askAnswer: type TrimInventory.TrimAvailabilityResult = ask query TrimInventory.GetTrimAvailability of context TrimInventory
         do "bundles being unsewable without their trims"
+        when prompt("not askAnswer.allAvailable") then
+          send command CutOrder.CancelCutOrder(cutOrderId = bundlesCreatedAsk.cutOrderId, reason = prompt("trims short: askAnswer.shortages"), cancelledBy = prompt("trim inventory")) to outlet ApparelContext.ToTrimInventory.ToTrimInventoryToApparelContext
+        end
       }
       on bundleAssigned: event CutOrder.BundleAssigned is {
         let askAnswer: type TrimInventory.TrimItemInfo = ask query TrimInventory.GetTrimItem of context TrimInventory
         do "and each assignment needing the trim's own specification"
+        send command CutOrder.RecordQualityCheck(cutOrderId = bundleAssigned.cutOrderId, inspection = prompt("the trim askAnswer.trimCode checked at assignment")) to outlet ApparelContext.ToTrimInventory.ToTrimInventoryToApparelContext
       }
       on other is {
         error "Unexpected message for adaptor ToTrimInventory"

@@ -1,5 +1,23 @@
 // Timber Management - Timber Context
 context TimberContext as router is {
+  inlet TimberContextFromToLoggingContractor is command Stand.BeginHarvest with {
+    briefly "What ToLoggingContractor makes of the answers it gets"
+  }
+  connector 'ToLoggingContractor Intake' is from outlet TimberContext.ToLoggingContractor.ToLoggingContractorToTimberContext to inlet TimberContext.TimberContextFromToLoggingContractor with {
+    briefly "Answers translated by ToLoggingContractor, on their way in"
+  }
+  inlet TimberContextFromToNurserySupplier is command Stand.PlanRegeneration with {
+    briefly "What ToNurserySupplier makes of the answers it gets"
+  }
+  connector 'ToNurserySupplier Intake' is from outlet TimberContext.ToNurserySupplier.ToNurserySupplierToTimberContext to inlet TimberContext.TimberContextFromToNurserySupplier with {
+    briefly "Answers translated by ToNurserySupplier, on their way in"
+  }
+  inlet TimberContextFromToTimberBuyer is command Stand.RecordTimberSale with {
+    briefly "What ToTimberBuyer makes of the answers it gets"
+  }
+  connector 'ToTimberBuyer Intake' is from outlet TimberContext.ToTimberBuyer.ToTimberBuyerToTimberContext to inlet TimberContext.TimberContextFromToTimberBuyer with {
+    briefly "Answers translated by ToTimberBuyer, on their way in"
+  }
   inlet StandCommandStreamIn is type StandCommand  outlet StandCommandStreamOut is type StandCommand
   inlet StandResultStreamIn is result Stand.StandResult  outlet StandResultStreamOut is result Stand.StandResult
   handler TimberContextBoundary is {
@@ -91,12 +109,16 @@ context TimberContext as router is {
       |The model's side of the ForestryRegulator conversation.
     }
   }
-  adaptor ToLoggingContractor to context LoggingContractor as merge is { 
+  adaptor ToLoggingContractor to context LoggingContractor as router is { 
+    outlet ToLoggingContractorToTimberContext is command Stand.BeginHarvest
     inlet ToLoggingContractorIn is type StandEvent    inlet ToLoggingContractorReplies is result LoggingContractor.CrewAvailability    outlet ToLoggingContractorOut is type LoggingContractor.LoggingContractorRequest
     handler ToLoggingContractorHandler is {
       on timberSaleRecorded: event Stand.TimberSaleRecorded is {
         let askAnswer: type LoggingContractor.CrewAvailability = ask query LoggingContractor.GetCrewAvailability of context LoggingContractor
         do "a sale committing volume that needs crews able to cut it"
+        when prompt("askAnswer.availableCrews is greater than zero") then
+          send command Stand.BeginHarvest(standId = timberSaleRecorded.standId, startDate = askAnswer.earliestStart, contractor = prompt("the contractor with a crew free")) to outlet TimberContext.ToLoggingContractor.ToLoggingContractorToTimberContext
+        end
       }
       on harvestPlanned: event Stand.HarvestPlanned is {
         let item0: type LoggingContractor.AssignCrew = prompt("translate the harvestPlanned event into a AssignCrew, a planned harvest being what needs a crew")
@@ -117,12 +139,14 @@ context TimberContext as router is {
       |The model's side of the LoggingContractor conversation.
     }
   }
-  adaptor ToNurserySupplier to context NurserySupplier as merge is { 
+  adaptor ToNurserySupplier to context NurserySupplier as router is { 
+    outlet ToNurserySupplierToTimberContext is command Stand.PlanRegeneration
     inlet ToNurserySupplierIn is type StandEvent    inlet ToNurserySupplierReplies is result NurserySupplier.SeedlingAvailability    outlet ToNurserySupplierOut is type NurserySupplier.NurserySupplierRequest
     handler ToNurserySupplierHandler is {
       on harvestCompleted: event Stand.HarvestCompleted is {
         let askAnswer: type NurserySupplier.SeedlingAvailability = ask query NurserySupplier.GetSeedlingAvailability of context NurserySupplier
         do "a finished harvest needing seedlings for the ground it opened up"
+        send command Stand.PlanRegeneration(standId = harvestCompleted.standId, plan = prompt("a plan for askAnswer.available seedlings of askAnswer.species delivered askAnswer.deliveryDate")) to outlet TimberContext.ToNurserySupplier.ToNurserySupplierToTimberContext
       }
       on regenerationPlanned: event Stand.RegenerationPlanned is {
         let item0: type NurserySupplier.OrderSeedlings = prompt("translate the regenerationPlanned event into a OrderSeedlings, the regeneration plan naming what must be planted")
@@ -143,12 +167,16 @@ context TimberContext as router is {
       |The model's side of the NurserySupplier conversation.
     }
   }
-  adaptor ToTimberBuyer to context TimberBuyer as merge is { 
+  adaptor ToTimberBuyer to context TimberBuyer as router is { 
+    outlet ToTimberBuyerToTimberContext is command Stand.RecordTimberSale
     inlet ToTimberBuyerIn is type StandEvent    inlet ToTimberBuyerReplies is result TimberBuyer.TimberPrices    outlet ToTimberBuyerOut is type TimberBuyer.TimberBuyerRequest
     handler ToTimberBuyerHandler is {
       on cruiseRecorded: event Stand.CruiseRecorded is {
         let askAnswer: type TimberBuyer.TimberPrices = ask query TimberBuyer.GetCurrentPrices of context TimberBuyer
         do "a cruise putting a volume on the stand that needs a price to be worth anything"
+        when prompt("the cruise volume is worth selling at askAnswer's prices") then
+          send command Stand.RecordTimberSale(standId = cruiseRecorded.standId, saleInfo = prompt("the sale valued at askAnswer's sawlog, pulpwood and veneer prices")) to outlet TimberContext.ToTimberBuyer.ToTimberBuyerToTimberContext
+        end
       }
       on harvestPlanned: event Stand.HarvestPlanned is {
         let item0: type TimberBuyer.SubmitBid = prompt("translate the harvestPlanned event into a SubmitBid, a planned harvest being what is offered for sale")

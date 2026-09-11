@@ -1,5 +1,17 @@
 // Usage Rating - Rating Context
 context RatingContext as router is {
+  inlet RatingContextFromToBillingSystem is command UsageRecord.ApplyRatePlan with {
+    briefly "What ToBillingSystem makes of the answers it gets"
+  }
+  connector 'ToBillingSystem Intake' is from outlet RatingContext.ToBillingSystem.ToBillingSystemToRatingContext to inlet RatingContext.RatingContextFromToBillingSystem with {
+    briefly "Answers translated by ToBillingSystem, on their way in"
+  }
+  inlet RatingContextFromToNetworkMediationSystem is command UsageRecord.DisputeUsageRecord with {
+    briefly "What ToNetworkMediationSystem makes of the answers it gets"
+  }
+  connector 'ToNetworkMediationSystem Intake' is from outlet RatingContext.ToNetworkMediationSystem.ToNetworkMediationSystemToRatingContext to inlet RatingContext.RatingContextFromToNetworkMediationSystem with {
+    briefly "Answers translated by ToNetworkMediationSystem, on their way in"
+  }
   inlet RatingContextFromBillingSystem is command UsageRecord.SubmitToBilling with {
     briefly "What FromBillingSystem makes of that service's news"
   }
@@ -66,12 +78,14 @@ context RatingContext as router is {
       |The model's side of the BillingSystem conversation.
     }
   }
-  adaptor ToBillingSystem to context BillingSystem as merge is { 
+  adaptor ToBillingSystem to context BillingSystem as router is { 
+    outlet ToBillingSystemToRatingContext is command UsageRecord.ApplyRatePlan
     inlet ToBillingSystemIn is type UsageRecordEvent    inlet ToBillingSystemReplies is result BillingSystem.AccountRatePlan    outlet ToBillingSystemOut is type BillingSystem.BillingSystemRequest
     handler ToBillingSystemHandler is {
       on usageRecordValidated: event UsageRecord.UsageRecordValidated is {
         let askAnswer: type BillingSystem.AccountRatePlan = ask query BillingSystem.GetAccountRatePlan of context BillingSystem
         do "a validated record needing the plan its charges will be figured from"
+        send command UsageRecord.ApplyRatePlan(usageRecordId = usageRecordValidated.usageRecordId, ratePlan = askAnswer.ratePlan) to outlet RatingContext.ToBillingSystem.ToBillingSystemToRatingContext
       }
       on chargesCalculated: event UsageRecord.ChargesCalculated is {
         let item0: type BillingSystem.SubmitRatedUsage = prompt("translate the chargesCalculated event into a SubmitRatedUsage, calculated charges being what billing needs")
@@ -112,12 +126,16 @@ context RatingContext as router is {
       |The model's side of the NetworkMediationSystem conversation.
     }
   }
-  adaptor ToNetworkMediationSystem to context NetworkMediationSystem as merge is { 
+  adaptor ToNetworkMediationSystem to context NetworkMediationSystem as router is { 
+    outlet ToNetworkMediationSystemToRatingContext is command UsageRecord.DisputeUsageRecord
     inlet ToNetworkMediationSystemIn is type UsageRecordEvent    inlet ToNetworkMediationSystemReplies is result NetworkMediationSystem.MediationStatus    outlet ToNetworkMediationSystemOut is type NetworkMediationSystem.NetworkMediationSystemRequest
     handler ToNetworkMediationSystemHandler is {
       on usageRecordRejected: event UsageRecord.UsageRecordRejected is {
         let askAnswer: type NetworkMediationSystem.MediationStatus = ask query NetworkMediationSystem.GetMediationStatus of context NetworkMediationSystem
         do "a rejected record needing mediation's account of what it sent"
+        when prompt("askAnswer.mediationStatus contradicts the rejection") then
+          send command UsageRecord.DisputeUsageRecord(usageRecordId = usageRecordRejected.usageRecordId, reason = prompt("mediation says askAnswer.mediationStatus, which contradicts the rejection")) to outlet RatingContext.ToNetworkMediationSystem.ToNetworkMediationSystemToRatingContext
+        end
       }
       on usageRecordValidated: event UsageRecord.UsageRecordValidated is {
         let item0: type NetworkMediationSystem.SendCallDetailRecord = prompt("translate the usageRecordValidated event into a SendCallDetailRecord, a validated record being what is fit to pass on")

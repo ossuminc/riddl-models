@@ -1,5 +1,29 @@
 // Infrastructure as Code - Stack Context
 context StackContext as router is {
+  inlet StackContextFromToCloudProviderService is command Stack.ReconcileDrift with {
+    briefly "What ToCloudProviderService makes of the answers it gets"
+  }
+  connector 'ToCloudProviderService Intake' is from outlet StackContext.ToCloudProviderService.ToCloudProviderServiceToStackContext to inlet StackContext.StackContextFromToCloudProviderService with {
+    briefly "Answers translated by ToCloudProviderService, on their way in"
+  }
+  inlet StackContextFromToModuleRegistryService is command Stack.UpdateVariables with {
+    briefly "What ToModuleRegistryService makes of the answers it gets"
+  }
+  connector 'ToModuleRegistryService Intake' is from outlet StackContext.ToModuleRegistryService.ToModuleRegistryServiceToStackContext to inlet StackContext.StackContextFromToModuleRegistryService with {
+    briefly "Answers translated by ToModuleRegistryService, on their way in"
+  }
+  inlet StackContextFromToSecretManagerService is command Stack.ApplyStack with {
+    briefly "What ToSecretManagerService makes of the answers it gets"
+  }
+  connector 'ToSecretManagerService Intake' is from outlet StackContext.ToSecretManagerService.ToSecretManagerServiceToStackContext to inlet StackContext.StackContextFromToSecretManagerService with {
+    briefly "Answers translated by ToSecretManagerService, on their way in"
+  }
+  inlet StackContextFromToStateBackendService is command Stack.PlanStack with {
+    briefly "What ToStateBackendService makes of the answers it gets"
+  }
+  connector 'ToStateBackendService Intake' is from outlet StackContext.ToStateBackendService.ToStateBackendServiceToStackContext to inlet StackContext.StackContextFromToStateBackendService with {
+    briefly "Answers translated by ToStateBackendService, on their way in"
+  }
   inlet StackCommandStreamIn is type StackCommand  outlet StackCommandStreamOut is type StackCommand
   inlet StackResultStreamIn is result Stack.StackResult  outlet StackResultStreamOut is result Stack.StackResult
   handler StackContextBoundary is {
@@ -73,12 +97,16 @@ context StackContext as router is {
       |The model's side of the CloudProviderService conversation.
     }
   }
-  adaptor ToCloudProviderService to context CloudProviderService as merge is { 
+  adaptor ToCloudProviderService to context CloudProviderService as router is { 
+    outlet ToCloudProviderServiceToStackContext is command Stack.ReconcileDrift
     inlet ToCloudProviderServiceIn is type StackEvent    inlet ToCloudProviderServiceReplies is result CloudProviderService.ResourceCurrentState    outlet ToCloudProviderServiceOut is type CloudProviderService.CloudProviderServiceCommand
     handler ToCloudProviderServiceHandler is {
       on driftDetected: event Stack.DriftDetected is {
         let askAnswer: type CloudProviderService.ResourceCurrentState = ask query CloudProviderService.GetResourceState of context CloudProviderService
         do "drift being the claim that reality and the plan differ, which only the provider can settle"
+        when prompt("askAnswer.properties differ from the plan") then
+          send command Stack.ReconcileDrift(stackId = driftDetected.stackId, runId = prompt("a new run")) to outlet StackContext.ToCloudProviderService.ToCloudProviderServiceToStackContext
+        end
       }
       on stackApplyStarted: event Stack.StackApplyStarted is {
         let item0: type CloudProviderService.ProvisionResource = prompt("translate the stackApplyStarted event into a ProvisionResource, the apply being when the plan stops being hypothetical")
@@ -107,7 +135,8 @@ context StackContext as router is {
       |The model's side of the CloudProviderService conversation.
     }
   }
-  adaptor ToModuleRegistryService to context ModuleRegistryService as merge is { 
+  adaptor ToModuleRegistryService to context ModuleRegistryService as router is { 
+    outlet ToModuleRegistryServiceToStackContext is command Stack.UpdateVariables
     inlet ToModuleRegistryServiceIn is type StackEvent    inlet ToModuleRegistryServiceReplies is type ModuleRegistryService.ModuleRegistryServiceReply    outlet ToModuleRegistryServiceOut is type ModuleRegistryService.ModuleRegistryServiceRequest
     handler ToModuleRegistryServiceHandler is {
       on stackCreated: event Stack.StackCreated is {
@@ -117,6 +146,9 @@ context StackContext as router is {
       on planGenerated: event Stack.PlanGenerated is {
         let askAnswer: type ModuleRegistryService.ModuleVersionList = ask query ModuleRegistryService.ListModuleVersions of context ModuleRegistryService
         do "a plan needing to know which module versions it could pin"
+        when prompt("the plan pins an older version than askAnswer.latestVersion") then
+          send command Stack.UpdateVariables(stackId = planGenerated.stackId, updatedVariables = prompt("the module pinned to askAnswer.latestVersion")) to outlet StackContext.ToModuleRegistryService.ToModuleRegistryServiceToStackContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToModuleRegistryService"
@@ -195,12 +227,16 @@ context StackContext as router is {
       |The model's side of the SecretManagerService conversation.
     }
   }
-  adaptor ToSecretManagerService to context SecretManagerService as merge is { 
+  adaptor ToSecretManagerService to context SecretManagerService as router is { 
+    outlet ToSecretManagerServiceToStackContext is command Stack.ApplyStack
     inlet ToSecretManagerServiceIn is type StackEvent    inlet ToSecretManagerServiceReplies is result SecretManagerService.SecretValue    outlet ToSecretManagerServiceOut is type SecretManagerService.SecretManagerServiceRequest
     handler ToSecretManagerServiceHandler is {
       on stackApplyStarted: event Stack.StackApplyStarted is {
         let askAnswer: type SecretManagerService.SecretValue = ask query SecretManagerService.GetSecret of context SecretManagerService
         do "an apply needing the credentials it will authenticate with"
+        when prompt("the apply has not yet authenticated with askAnswer.value") then
+          send command Stack.ApplyStack(stackId = stackApplyStarted.stackId, runId = stackApplyStarted.runId, autoApprove = prompt("false")) to outlet StackContext.ToSecretManagerService.ToSecretManagerServiceToStackContext
+        end
       }
       on variablesUpdated: event Stack.VariablesUpdated is {
         let item0: type SecretManagerService.RotateSecret = prompt("translate the variablesUpdated event into a RotateSecret, a changed variable set being when a secret may have been exposed")
@@ -247,12 +283,16 @@ context StackContext as router is {
       |The model's side of the StateBackendService conversation.
     }
   }
-  adaptor ToStateBackendService to context StateBackendService as merge is { 
+  adaptor ToStateBackendService to context StateBackendService as router is { 
+    outlet ToStateBackendServiceToStackContext is command Stack.PlanStack
     inlet ToStateBackendServiceIn is type StackEvent    inlet ToStateBackendServiceReplies is result StateBackendService.StateData    outlet ToStateBackendServiceOut is type StateBackendService.StateBackendServiceCommand
     handler ToStateBackendServiceHandler is {
       on stackApplyStarted: event Stack.StackApplyStarted is {
         let askAnswer: type StateBackendService.StateData = ask query StateBackendService.LoadState of context StateBackendService
         do "an apply needing the state it is diffing against"
+        when prompt("askAnswer.stateVersion is newer than the plan's") then
+          send command Stack.PlanStack(stackId = stackApplyStarted.stackId, runId = stackApplyStarted.runId) to outlet StackContext.ToStateBackendService.ToStateBackendServiceToStackContext
+        end
       }
       on stackLocked: event Stack.StackLocked is {
         let item0: type StateBackendService.LockState = prompt("translate the stackLocked event into a LockState, the lock being the thing itself")

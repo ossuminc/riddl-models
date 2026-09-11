@@ -1,5 +1,17 @@
 // Mineral Tracking - MineralTracking Context
 context MineralTrackingContext as router is {
+  inlet MineralTrackingContextFromToAssayLaboratory is command MineralBatch.ReconcileGrade with {
+    briefly "What ToAssayLaboratory makes of the answers it gets"
+  }
+  connector 'ToAssayLaboratory Intake' is from outlet MineralTrackingContext.ToAssayLaboratory.ToAssayLaboratoryToMineralTrackingContext to inlet MineralTrackingContext.MineralTrackingContextFromToAssayLaboratory with {
+    briefly "Answers translated by ToAssayLaboratory, on their way in"
+  }
+  inlet MineralTrackingContextFromToSmelterSystem is command MineralBatch.ConfirmDelivery with {
+    briefly "What ToSmelterSystem makes of the answers it gets"
+  }
+  connector 'ToSmelterSystem Intake' is from outlet MineralTrackingContext.ToSmelterSystem.ToSmelterSystemToMineralTrackingContext to inlet MineralTrackingContext.MineralTrackingContextFromToSmelterSystem with {
+    briefly "Answers translated by ToSmelterSystem, on their way in"
+  }
   inlet MineralTrackingContextFromAssayLaboratory is command MineralBatch.RecordAssayResult with {
     briefly "What FromAssayLaboratory makes of that service's news"
   }
@@ -78,12 +90,16 @@ context MineralTrackingContext as router is {
       |The model's side of the AssayLaboratory conversation.
     }
   }
-  adaptor ToAssayLaboratory to context AssayLaboratory as merge is { 
+  adaptor ToAssayLaboratory to context AssayLaboratory as router is { 
+    outlet ToAssayLaboratoryToMineralTrackingContext is command MineralBatch.ReconcileGrade
     inlet ToAssayLaboratoryIn is type MineralBatchEvent    inlet ToAssayLaboratoryReplies is result AssayLaboratory.AssayHistory    outlet ToAssayLaboratoryOut is type AssayLaboratory.AssayLaboratoryRequest
     handler ToAssayLaboratoryHandler is {
       on gradeReconciled: event MineralBatch.GradeReconciled is {
         let askAnswer: type AssayLaboratory.AssayHistory = ask query AssayLaboratory.GetAssayHistory of context AssayLaboratory
         do "reconciling grade needing every assay the lab has run on the batch"
+        when prompt("the reconciliation missed an assay in askAnswer.results") then
+          send command MineralBatch.ReconcileGrade(batchId = gradeReconciled.batchId, reconciliation = prompt("the reconciliation over every assay in askAnswer.results")) to outlet MineralTrackingContext.ToAssayLaboratory.ToAssayLaboratoryToMineralTrackingContext
+        end
       }
       on extractionRecorded: event MineralBatch.ExtractionRecorded is {
         let item0: type AssayLaboratory.SubmitSample = prompt("translate the extractionRecorded event into a SubmitSample, extraction producing the material to assay")
@@ -126,12 +142,16 @@ context MineralTrackingContext as router is {
       |The model's side of the SmelterSystem conversation.
     }
   }
-  adaptor ToSmelterSystem to context SmelterSystem as merge is { 
+  adaptor ToSmelterSystem to context SmelterSystem as router is { 
+    outlet ToSmelterSystemToMineralTrackingContext is command MineralBatch.ConfirmDelivery
     inlet ToSmelterSystemIn is type MineralBatchEvent    inlet ToSmelterSystemReplies is result SmelterSystem.DeliveryStatus    outlet ToSmelterSystemOut is type SmelterSystem.SmelterSystemRequest
     handler ToSmelterSystemHandler is {
       on shippedToSmelter: event MineralBatch.ShippedToSmelter is {
         let askAnswer: type SmelterSystem.DeliveryStatus = ask query SmelterSystem.GetDeliveryStatus of context SmelterSystem
         do "a shipment needing the smelter's own view of whether it arrived"
+        when prompt("askAnswer.deliveryStatus is delivered") then
+          send command MineralBatch.ConfirmDelivery(batchId = shippedToSmelter.batchId, shipmentId = askAnswer.shipmentId, deliveredAt = askAnswer.lastUpdated, receivedTonnage = prompt("the tonnage shipped")) to outlet MineralTrackingContext.ToSmelterSystem.ToSmelterSystemToMineralTrackingContext
+        end
       }
       on gradeReconciled: event MineralBatch.GradeReconciled is {
         let item0: type SmelterSystem.ScheduleDelivery = prompt("translate the gradeReconciled event into a ScheduleDelivery, a reconciled grade being what a smelter accepts against")

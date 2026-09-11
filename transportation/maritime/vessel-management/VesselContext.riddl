@@ -1,5 +1,41 @@
 // Vessel Management - Vessel Context
 context VesselContext as router is {
+  inlet VesselContextFromToAISService is command Vessel.UpdatePosition with {
+    briefly "What ToAISService makes of the answers it gets"
+  }
+  connector 'ToAISService Intake' is from outlet VesselContext.ToAISService.ToAISServiceToVesselContext to inlet VesselContext.VesselContextFromToAISService with {
+    briefly "Answers translated by ToAISService, on their way in"
+  }
+  inlet VesselContextFromToBunkerSupplierService is command Vessel.SubmitBunkerReport with {
+    briefly "What ToBunkerSupplierService makes of the answers it gets"
+  }
+  connector 'ToBunkerSupplierService Intake' is from outlet VesselContext.ToBunkerSupplierService.ToBunkerSupplierServiceToVesselContext to inlet VesselContext.VesselContextFromToBunkerSupplierService with {
+    briefly "Answers translated by ToBunkerSupplierService, on their way in"
+  }
+  inlet VesselContextFromToCharterPartyService is command Voyage.UpdateVoyage with {
+    briefly "What ToCharterPartyService makes of the answers it gets"
+  }
+  connector 'ToCharterPartyService Intake' is from outlet VesselContext.ToCharterPartyService.ToCharterPartyServiceToVesselContext to inlet VesselContext.VesselContextFromToCharterPartyService with {
+    briefly "Answers translated by ToCharterPartyService, on their way in"
+  }
+  inlet VesselContextFromToClassificationSocietyService is command Vessel.AddCertificate with {
+    briefly "What ToClassificationSocietyService makes of the answers it gets"
+  }
+  connector 'ToClassificationSocietyService Intake' is from outlet VesselContext.ToClassificationSocietyService.ToClassificationSocietyServiceToVesselContext to inlet VesselContext.VesselContextFromToClassificationSocietyService with {
+    briefly "Answers translated by ToClassificationSocietyService, on their way in"
+  }
+  inlet VesselContextFromToCrewManagementService is command Vessel.AddCrewMember with {
+    briefly "What ToCrewManagementService makes of the answers it gets"
+  }
+  connector 'ToCrewManagementService Intake' is from outlet VesselContext.ToCrewManagementService.ToCrewManagementServiceToVesselContext to inlet VesselContext.VesselContextFromToCrewManagementService with {
+    briefly "Answers translated by ToCrewManagementService, on their way in"
+  }
+  inlet VesselContextFromToWeatherService is command Voyage.UpdateVoyage with {
+    briefly "What ToWeatherService makes of the answers it gets"
+  }
+  connector 'ToWeatherService Intake' is from outlet VesselContext.ToWeatherService.ToWeatherServiceToVesselContext to inlet VesselContext.VesselContextFromToWeatherService with {
+    briefly "Answers translated by ToWeatherService, on their way in"
+  }
   inlet VesselContextFromAISService is command Vessel.UpdatePosition with {
     briefly "What FromAISService makes of that service's news"
   }
@@ -112,12 +148,16 @@ context VesselContext as router is {
       |The model's side of the AISService conversation.
     }
   }
-  adaptor ToAISService to context AISService as merge is { 
+  adaptor ToAISService to context AISService as router is { 
+    outlet ToAISServiceToVesselContext is command Vessel.UpdatePosition
     inlet ToAISServiceIn is type VesselEvent    inlet ToAISServiceReplies is result AISService.VesselAISResult    outlet ToAISServiceOut is query AISService.GetVesselAIS
     handler ToAISServiceHandler is {
       on positionUpdated: event Vessel.PositionUpdated is {
         let askAnswer: type AISService.VesselAISResult = ask query AISService.GetVesselAIS of context AISService
         do "a position report needing AIS to confirm it"
+        when prompt("askAnswer.position disagrees with the reported position") then
+          send command Vessel.UpdatePosition(vesselId = positionUpdated.vesselId, position = prompt("the AIS position in askAnswer, which is the confirmed one")) to outlet VesselContext.ToAISService.ToAISServiceToVesselContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToAISService"
@@ -157,12 +197,16 @@ context VesselContext as router is {
       |The model's side of the BunkerSupplierService conversation.
     }
   }
-  adaptor ToBunkerSupplierService to context BunkerSupplierService as merge is { 
+  adaptor ToBunkerSupplierService to context BunkerSupplierService as router is { 
+    outlet ToBunkerSupplierServiceToVesselContext is command Vessel.SubmitBunkerReport
     inlet ToBunkerSupplierServiceIn is type VesselEvent    inlet ToBunkerSupplierServiceReplies is result BunkerSupplierService.BunkerAvailabilityResult    outlet ToBunkerSupplierServiceOut is type BunkerSupplierService.BunkerSupplierServiceRequest
     handler ToBunkerSupplierServiceHandler is {
       on portArrivalRecorded: event Voyage.PortArrivalRecorded is {
         let askAnswer: type BunkerSupplierService.BunkerAvailabilityResult = ask query BunkerSupplierService.GetBunkerAvailability of context BunkerSupplierService
         do "an arrival needing to know what fuel the port can supply"
+        when prompt("askAnswer.available and the vessel needs fuel") then
+          send command Vessel.SubmitBunkerReport(vesselId = portArrivalRecorded.vesselId, report = prompt("a bunker report requesting fuel at askAnswer.pricePerTon for askAnswer.earliestDelivery")) to outlet VesselContext.ToBunkerSupplierService.ToBunkerSupplierServiceToVesselContext
+        end
       }
       on bunkerReportSubmitted: event Vessel.BunkerReportSubmitted is {
         let item0: type BunkerSupplierService.OrderBunkers = prompt("translate the bunkerReportSubmitted event into a OrderBunkers, the report being what says how much fuel is left")
@@ -206,12 +250,14 @@ context VesselContext as router is {
       |The model's side of the CharterPartyService conversation.
     }
   }
-  adaptor ToCharterPartyService to context CharterPartyService as merge is { 
+  adaptor ToCharterPartyService to context CharterPartyService as router is { 
+    outlet ToCharterPartyServiceToVesselContext is command Voyage.UpdateVoyage
     inlet ToCharterPartyServiceIn is type VesselEvent    inlet ToCharterPartyServiceReplies is result CharterPartyService.CharterPartyResult    outlet ToCharterPartyServiceOut is query CharterPartyService.GetCharterParty
     handler ToCharterPartyServiceHandler is {
       on voyageCreated: event Voyage.VoyageCreated is {
         let askAnswer: type CharterPartyService.CharterPartyResult = ask query CharterPartyService.GetCharterParty of context CharterPartyService
         do "a new voyage needing the charter that governs it"
+        send command Voyage.UpdateVoyage(voyageId = voyageCreated.voyageId, details = prompt("the voyage's details with askAnswer's charter terms and hire rate")) to outlet VesselContext.ToCharterPartyService.ToCharterPartyServiceToVesselContext
       }
       on other is {
         error "Unexpected message for adaptor ToCharterPartyService"
@@ -256,12 +302,16 @@ context VesselContext as router is {
       |The model's side of the ClassificationSocietyService conversation.
     }
   }
-  adaptor ToClassificationSocietyService to context ClassificationSocietyService as merge is { 
+  adaptor ToClassificationSocietyService to context ClassificationSocietyService as router is { 
+    outlet ToClassificationSocietyServiceToVesselContext is command Vessel.AddCertificate
     inlet ToClassificationSocietyServiceIn is type VesselEvent    inlet ToClassificationSocietyServiceReplies is result ClassificationSocietyService.CertificateStatusResult    outlet ToClassificationSocietyServiceOut is query ClassificationSocietyService.GetCertificateStatus
     handler ToClassificationSocietyServiceHandler is {
       on certificateRenewed: event Vessel.CertificateRenewed is {
         let askAnswer: type ClassificationSocietyService.CertificateStatusResult = ask query ClassificationSocietyService.GetCertificateStatus of context ClassificationSocietyService
         do "a renewed certificate needing the society to have actually issued it"
+        when prompt("askAnswer.certificates carries the renewal the vessel lacks") then
+          send command Vessel.AddCertificate(vesselId = certificateRenewed.vesselId, certificate = prompt("the certificate in askAnswer.certificates the society actually issued")) to outlet VesselContext.ToClassificationSocietyService.ToClassificationSocietyServiceToVesselContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToClassificationSocietyService"
@@ -303,7 +353,8 @@ context VesselContext as router is {
       |The model's side of the CrewManagementService conversation.
     }
   }
-  adaptor ToCrewManagementService to context CrewManagementService as merge is { 
+  adaptor ToCrewManagementService to context CrewManagementService as router is { 
+    outlet ToCrewManagementServiceToVesselContext is command Vessel.AddCrewMember
     inlet ToCrewManagementServiceIn is type VesselEvent    inlet ToCrewManagementServiceReplies is result CrewManagementService.AvailableCrewResult    outlet ToCrewManagementServiceOut is type CrewManagementService.CrewManagementServiceRequest
     handler ToCrewManagementServiceHandler is {
       on crewMemberRemoved: event Vessel.CrewMemberRemoved is {
@@ -313,6 +364,9 @@ context VesselContext as router is {
       on voyageCreated: event Voyage.VoyageCreated is {
         let askAnswer: type CrewManagementService.AvailableCrewResult = ask query CrewManagementService.GetAvailableCrew of context CrewManagementService
         do "a new voyage needing crew able to sail it"
+        when prompt("askAnswer.availableCrew is not empty") then
+          send command Vessel.AddCrewMember(vesselId = voyageCreated.vesselId, crew = prompt("the first of askAnswer.availableCrew the voyage needs")) to outlet VesselContext.ToCrewManagementService.ToCrewManagementServiceToVesselContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToCrewManagementService"
@@ -349,16 +403,23 @@ context VesselContext as router is {
       |The model's side of the WeatherService conversation.
     }
   }
-  adaptor ToWeatherService to context WeatherService as merge is { 
+  adaptor ToWeatherService to context WeatherService as router is { 
+    outlet ToWeatherServiceToVesselContext is command Voyage.UpdateVoyage
     inlet ToWeatherServiceIn is type VesselEvent    inlet ToWeatherServiceReplies is result WeatherService.RouteWeatherResult    outlet ToWeatherServiceOut is type WeatherService.WeatherServiceRequest
     handler ToWeatherServiceHandler is {
       on voyageCreated: event Voyage.VoyageCreated is {
         let askAnswer: type WeatherService.RouteWeatherResult = ask query WeatherService.GetRouteWeather of context WeatherService
         do "a new voyage needing the weather along the track it will sail"
+        when prompt("askAnswer.warnings is not empty") then
+          send command Voyage.UpdateVoyage(voyageId = voyageCreated.voyageId, details = prompt("the voyage routed around askAnswer.warnings")) to outlet VesselContext.ToWeatherService.ToWeatherServiceToVesselContext
+        end
       }
       on portDepartureRecorded: event Voyage.PortDepartureRecorded is {
         let askAnswer: type WeatherService.RouteWeatherResult = ask query WeatherService.GetWeatherForecast of context WeatherService
         do "a departure needing the forecast for the first days out"
+        when prompt("askAnswer.warnings is not empty") then
+          send command Voyage.UpdateVoyage(voyageId = portDepartureRecorded.voyageId, details = prompt("the voyage's first days replanned against askAnswer.forecasts")) to outlet VesselContext.ToWeatherService.ToWeatherServiceToVesselContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToWeatherService"

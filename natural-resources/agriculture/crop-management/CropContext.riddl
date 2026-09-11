@@ -1,5 +1,16 @@
 // Crop Management - Crop Context
 context CropContext as router is {
+  type ToWeatherServiceCommand is one of {
+    Field.RecordIrrigation or Field.RecordScouting
+  } with {
+    briefly "What ToWeatherService turns its answers into"
+  }
+  inlet CropContextFromToWeatherService is type ToWeatherServiceCommand with {
+    briefly "What ToWeatherService makes of the answers it gets"
+  }
+  connector 'ToWeatherService Intake' is from outlet CropContext.ToWeatherService.ToWeatherServiceToCropContext to inlet CropContext.CropContextFromToWeatherService with {
+    briefly "Answers translated by ToWeatherService, on their way in"
+  }
   inlet FieldCommandStreamIn is type FieldCommand  outlet FieldCommandStreamOut is type FieldCommand
   inlet FieldResultStreamIn is result Field.FieldResult  outlet FieldResultStreamOut is result Field.FieldResult
   handler CropContextBoundary is {
@@ -133,16 +144,23 @@ context CropContext as router is {
       |The model's side of the SoilTesting conversation.
     }
   }
-  adaptor ToWeatherService to context WeatherService as merge is { 
+  adaptor ToWeatherService to context WeatherService as router is { 
+    outlet ToWeatherServiceToCropContext is type ToWeatherServiceCommand
     inlet ToWeatherServiceIn is type FieldEvent    inlet ToWeatherServiceReplies is type WeatherService.WeatherServiceReply    outlet ToWeatherServiceOut is type WeatherService.WeatherServiceRequest
     handler ToWeatherServiceHandler is {
       on cropPlanted: event Field.CropPlanted is {
         let askAnswer: type WeatherService.WeatherForecast = ask query WeatherService.GetForecast of context WeatherService
         do "a planted crop needing the forecast for the days that decide it"
+        when prompt("askAnswer.forecasts shows no rain in the days that decide the crop") then
+          send command Field.RecordIrrigation(fieldId = cropPlanted.fieldId, irrigationDate = prompt("the first dry day in askAnswer.forecasts"), acreInches = prompt("what the crop needs"), method = prompt("the field's method")) to outlet CropContext.ToWeatherService.ToWeatherServiceToCropContext
+        end
       }
       on scoutingRecorded: event Field.ScoutingRecorded is {
         let askAnswer: type WeatherService.HistoricalWeather = ask query WeatherService.GetHistoricalWeather of context WeatherService
         do "a scouting record needing the weather that explains what was seen"
+        when prompt("the report did not note the weather") then
+          send command Field.RecordScouting(fieldId = scoutingRecorded.fieldId, report = prompt("the report annotated with the weather in askAnswer.data")) to outlet CropContext.ToWeatherService.ToWeatherServiceToCropContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToWeatherService"

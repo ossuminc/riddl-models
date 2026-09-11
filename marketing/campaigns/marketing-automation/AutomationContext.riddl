@@ -1,5 +1,17 @@
 // Marketing Automation - Automation Context
 context AutomationContext as router is {
+  inlet AutomationContextFromToCRMSystem is command AutomationWorkflow.EnrollLead with {
+    briefly "What ToCRMSystem makes of the answers it gets"
+  }
+  connector 'ToCRMSystem Intake' is from outlet AutomationContext.ToCRMSystem.ToCRMSystemToAutomationContext to inlet AutomationContext.AutomationContextFromToCRMSystem with {
+    briefly "Answers translated by ToCRMSystem, on their way in"
+  }
+  inlet AutomationContextFromToEmailDelivery is command AutomationWorkflow.RemoveLead with {
+    briefly "What ToEmailDelivery makes of the answers it gets"
+  }
+  connector 'ToEmailDelivery Intake' is from outlet AutomationContext.ToEmailDelivery.ToEmailDeliveryToAutomationContext to inlet AutomationContext.AutomationContextFromToEmailDelivery with {
+    briefly "Answers translated by ToEmailDelivery, on their way in"
+  }
   inlet AutomationContextFromEmailDelivery is command AutomationWorkflow.AdvanceLeadStep with {
     briefly "What FromEmailDelivery makes of that service's news"
   }
@@ -76,7 +88,8 @@ context AutomationContext as router is {
       |The model's side of the CRMSystem conversation.
     }
   }
-  adaptor ToCRMSystem to context CRMSystem as merge is { 
+  adaptor ToCRMSystem to context CRMSystem as router is { 
+    outlet ToCRMSystemToAutomationContext is command AutomationWorkflow.EnrollLead
     inlet ToCRMSystemIn is type AutomationWorkflowEvent    inlet ToCRMSystemReplies is type CRMSystem.CRMSystemReply    outlet ToCRMSystemOut is type CRMSystem.CRMSystemRequest
     handler ToCRMSystemHandler is {
       on leadEnrolled: event AutomationWorkflow.LeadEnrolled is {
@@ -86,6 +99,9 @@ context AutomationContext as router is {
       on workflowActivated: event AutomationWorkflow.WorkflowActivated is {
         let askAnswer: type CRMSystem.SegmentMembers = ask query CRMSystem.GetSegmentMembers of context CRMSystem
         do "an activated workflow needing the roster of the segment it targets"
+        when prompt("askAnswer.totalCount is greater than zero") then
+          send command AutomationWorkflow.EnrollLead(workflowId = workflowActivated.workflowId, leadId = prompt("the first of askAnswer.leadIds"), enrolledAt = prompt("now")) to outlet AutomationContext.ToCRMSystem.ToCRMSystemToAutomationContext
+        end
       }
       on leadStepAdvanced: event AutomationWorkflow.LeadStepAdvanced is {
         let item0: type CRMSystem.UpdateLeadScore = prompt("translate the leadStepAdvanced event into a UpdateLeadScore, advancing a step being what changes the score the CRM holds")
@@ -134,12 +150,16 @@ context AutomationContext as router is {
       |The model's side of the EmailDelivery conversation.
     }
   }
-  adaptor ToEmailDelivery to context EmailDelivery as merge is { 
+  adaptor ToEmailDelivery to context EmailDelivery as router is { 
+    outlet ToEmailDeliveryToAutomationContext is command AutomationWorkflow.RemoveLead
     inlet ToEmailDeliveryIn is type AutomationWorkflowEvent    inlet ToEmailDeliveryReplies is result EmailDelivery.DeliveryStatus    outlet ToEmailDeliveryOut is type EmailDelivery.EmailDeliveryRequest
     handler ToEmailDeliveryHandler is {
       on workflowCompleted: event AutomationWorkflow.WorkflowCompleted is {
         let askAnswer: type EmailDelivery.DeliveryStatus = ask query EmailDelivery.GetDeliveryStatus of context EmailDelivery
         do "a completed workflow needing to know which of its mails actually arrived"
+        when prompt("not askAnswer.delivered") then
+          send command AutomationWorkflow.RemoveLead(workflowId = workflowCompleted.workflowId, leadId = askAnswer.recipientId, reason = prompt("mail never delivered")) to outlet AutomationContext.ToEmailDelivery.ToEmailDeliveryToAutomationContext
+        end
       }
       on leadStepAdvanced: event LeadStepAdvanced is {
         let notice: type EmailDelivery.SendEmail = prompt("translate the leadStepAdvanced event into a SendEmail handing the delivery service the message this workflow step sends, addressed to the lead who reached it")

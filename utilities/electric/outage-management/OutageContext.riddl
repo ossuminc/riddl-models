@@ -1,5 +1,17 @@
 // Outage Management - Outage Context
 context OutageContext as router is {
+  inlet OutageContextFromToCrewDispatchSystem is command OutageEvent.DispatchCrew with {
+    briefly "What ToCrewDispatchSystem makes of the answers it gets"
+  }
+  connector 'ToCrewDispatchSystem Intake' is from outlet OutageContext.ToCrewDispatchSystem.ToCrewDispatchSystemToOutageContext to inlet OutageContext.OutageContextFromToCrewDispatchSystem with {
+    briefly "Answers translated by ToCrewDispatchSystem, on their way in"
+  }
+  inlet OutageContextFromToSCADASystem is command OutageEvent.ConfirmOutage with {
+    briefly "What ToSCADASystem makes of the answers it gets"
+  }
+  connector 'ToSCADASystem Intake' is from outlet OutageContext.ToSCADASystem.ToSCADASystemToOutageContext to inlet OutageContext.OutageContextFromToSCADASystem with {
+    briefly "Answers translated by ToSCADASystem, on their way in"
+  }
   inlet OutageContextFromCrewDispatchSystem is command OutageEvent.DispatchCrew with {
     briefly "What FromCrewDispatchSystem makes of that service's news"
   }
@@ -84,12 +96,16 @@ context OutageContext as router is {
       |The model's side of the CrewDispatchSystem conversation.
     }
   }
-  adaptor ToCrewDispatchSystem to context CrewDispatchSystem as merge is { 
+  adaptor ToCrewDispatchSystem to context CrewDispatchSystem as router is { 
+    outlet ToCrewDispatchSystemToOutageContext is command OutageEvent.DispatchCrew
     inlet ToCrewDispatchSystemIn is type OutageEventEvent    inlet ToCrewDispatchSystemReplies is result CrewDispatchSystem.AvailableCrews    outlet ToCrewDispatchSystemOut is type CrewDispatchSystem.CrewDispatchSystemCommand
     handler ToCrewDispatchSystemHandler is {
       on outageConfirmed: event OutageEvent.OutageConfirmed is {
         let askAnswer: type CrewDispatchSystem.AvailableCrews = ask query CrewDispatchSystem.GetAvailableCrews of context CrewDispatchSystem
         do "a confirmed outage needing a crew who can be sent"
+        when prompt("askAnswer.crews is not empty") then
+          send command OutageEvent.DispatchCrew(outageId = outageConfirmed.outageId, assignment = prompt("the first of askAnswer.crews, arriving in askAnswer.estimatedArrival")) to outlet OutageContext.ToCrewDispatchSystem.ToCrewDispatchSystemToOutageContext
+        end
         let notice: type CrewDispatchSystem.AssignCrew = prompt("translate the outageConfirmed event into an AssignCrew sending a gang to a fault now known to be real")
         send notice to outlet OutageContext.ToCrewDispatchSystem.ToCrewDispatchSystemOut
       }
@@ -137,12 +153,16 @@ context OutageContext as router is {
       |The model's side of the SCADASystem conversation.
     }
   }
-  adaptor ToSCADASystem to context SCADASystem as merge is { 
+  adaptor ToSCADASystem to context SCADASystem as router is { 
+    outlet ToSCADASystemToOutageContext is command OutageEvent.ConfirmOutage
     inlet ToSCADASystemIn is type OutageEventEvent    inlet ToSCADASystemReplies is result SCADASystem.FeederStatus    outlet ToSCADASystemOut is type SCADASystem.SCADASystemRequest
     handler ToSCADASystemHandler is {
       on outageReported: event OutageEvent.OutageReported is {
         let askAnswer: type SCADASystem.FeederStatus = ask query SCADASystem.GetFeederStatus of context SCADASystem
         do "a reported outage needing the feeder's own state before a crew is sent"
+        when prompt("askAnswer.feederStatus confirms the outage") then
+          send command OutageEvent.ConfirmOutage(outageId = outageReported.outageId, confirmedBy = prompt("SCADA"), cause = prompt("feeder askAnswer.feederStatus at askAnswer.voltage volts")) to outlet OutageContext.ToSCADASystem.ToSCADASystemToOutageContext
+        end
       }
       on outageConfirmed: event OutageEvent.OutageConfirmed is {
         let item0: type SCADASystem.IsolateFeeder = prompt("translate the outageConfirmed event into a IsolateFeeder, a confirmed outage needing the feeder isolated before crews approach")

@@ -1,5 +1,23 @@
 // Deal Flow - Deal Context
 context DealContext as router is {
+  inlet DealContextFromToCompanyResearchService is command Deal.AddNote with {
+    briefly "What ToCompanyResearchService makes of the answers it gets"
+  }
+  connector 'ToCompanyResearchService Intake' is from outlet DealContext.ToCompanyResearchService.ToCompanyResearchServiceToDealContext to inlet DealContext.DealContextFromToCompanyResearchService with {
+    briefly "Answers translated by ToCompanyResearchService, on their way in"
+  }
+  inlet DealContextFromToDocumentManagementService is command Deal.AddNote with {
+    briefly "What ToDocumentManagementService makes of the answers it gets"
+  }
+  connector 'ToDocumentManagementService Intake' is from outlet DealContext.ToDocumentManagementService.ToDocumentManagementServiceToDealContext to inlet DealContext.DealContextFromToDocumentManagementService with {
+    briefly "Answers translated by ToDocumentManagementService, on their way in"
+  }
+  inlet DealContextFromToMarketDataService is command Deal.UpdateMetrics with {
+    briefly "What ToMarketDataService makes of the answers it gets"
+  }
+  connector 'ToMarketDataService Intake' is from outlet DealContext.ToMarketDataService.ToMarketDataServiceToDealContext to inlet DealContext.DealContextFromToMarketDataService with {
+    briefly "Answers translated by ToMarketDataService, on their way in"
+  }
   inlet DealContextFromLegalDocumentService is command Deal.RecordTermSheetResponse with {
     briefly "What FromLegalDocumentService makes of that service's news"
   }
@@ -109,16 +127,19 @@ context DealContext as router is {
       |The model's side of the CalendarService conversation.
     }
   }
-  adaptor ToCompanyResearchService to context CompanyResearchService as merge is { 
+  adaptor ToCompanyResearchService to context CompanyResearchService as router is { 
+    outlet ToCompanyResearchServiceToDealContext is command Deal.AddNote
     inlet ToCompanyResearchServiceIn is type DealEvent    inlet ToCompanyResearchServiceReplies is type CompanyResearchService.CompanyResearchServiceReply    outlet ToCompanyResearchServiceOut is type CompanyResearchService.CompanyResearchServiceRequest
     handler ToCompanyResearchServiceHandler is {
       on dealCreated: event Deal.DealCreated is {
         let askAnswer: type CompanyResearchService.CompanyResearch = ask query CompanyResearchService.GetCompanyInfo of context CompanyResearchService
         do "a new deal needing what is publicly known about the company"
+        send command Deal.AddNote(dealId = dealCreated.dealId, content = prompt("what askAnswer says of the company: funding, competitors, news"), author = prompt("the company research service")) to outlet DealContext.ToCompanyResearchService.ToCompanyResearchServiceToDealContext
       }
       on meetingRecorded: event Deal.MeetingRecorded is {
         let askAnswer: type CompanyResearchService.FounderBackground = ask query CompanyResearchService.GetFounderBackground of context CompanyResearchService
         do "a meeting needing the founder's history before the room forms a view"
+        send command Deal.AddNote(dealId = meetingRecorded.dealId, content = prompt("the founder's history in askAnswer"), author = prompt("the company research service")) to outlet DealContext.ToCompanyResearchService.ToCompanyResearchServiceToDealContext
       }
       on other is {
         error "Unexpected message for adaptor ToCompanyResearchService"
@@ -204,7 +225,8 @@ context DealContext as router is {
       |The model's side of the DocumentManagementService conversation.
     }
   }
-  adaptor ToDocumentManagementService to context DocumentManagementService as merge is { 
+  adaptor ToDocumentManagementService to context DocumentManagementService as router is { 
+    outlet ToDocumentManagementServiceToDealContext is command Deal.AddNote
     inlet ToDocumentManagementServiceIn is type DealEvent    inlet ToDocumentManagementServiceReplies is result DocumentManagementService.DealDocuments    outlet ToDocumentManagementServiceOut is type DocumentManagementService.DocumentManagementServiceRequest
     handler ToDocumentManagementServiceHandler is {
       on noteAdded: event NoteAdded is {
@@ -214,6 +236,7 @@ context DealContext as router is {
       on dealCreated: event Deal.DealCreated is {
         let askAnswer: type DocumentManagementService.DealDocuments = ask query DocumentManagementService.GetDealDocuments of context DocumentManagementService
         do "a new deal needing whatever is already filed on the company"
+        send command Deal.AddNote(dealId = dealCreated.dealId, content = prompt("the documents in askAnswer.documents already filed"), author = prompt("the document management service")) to outlet DealContext.ToDocumentManagementService.ToDocumentManagementServiceToDealContext
       }
       on other is {
         error "Unexpected message for adaptor ToDocumentManagementService"
@@ -284,16 +307,19 @@ context DealContext as router is {
       |The model's side of the LegalDocumentService conversation.
     }
   }
-  adaptor ToMarketDataService to context MarketDataService as merge is { 
+  adaptor ToMarketDataService to context MarketDataService as router is { 
+    outlet ToMarketDataServiceToDealContext is command Deal.UpdateMetrics
     inlet ToMarketDataServiceIn is type DealEvent    inlet ToMarketDataServiceReplies is type MarketDataService.MarketDataServiceReply    outlet ToMarketDataServiceOut is type MarketDataService.MarketDataServiceRequest
     handler ToMarketDataServiceHandler is {
       on termsProposed: event Deal.TermsProposed is {
         let askAnswer: type MarketDataService.ComparableDeals = ask query MarketDataService.GetComparableDeals of context MarketDataService
         do "proposed terms needing comparable deals to be sane against"
+        send command Deal.UpdateMetrics(dealId = termsProposed.dealId, metrics = prompt("the metrics with askAnswer.averageValuation and askAnswer.averageRaise as comparables")) to outlet DealContext.ToMarketDataService.ToMarketDataServiceToDealContext
       }
       on thesisWritten: event Deal.ThesisWritten is {
         let askAnswer: type MarketDataService.SectorAnalysis = ask query MarketDataService.GetSectorData of context MarketDataService
         do "a written thesis needing the sector's own numbers behind it"
+        send command Deal.UpdateMetrics(dealId = thesisWritten.dealId, metrics = prompt("the metrics with askAnswer.totalMarketSize and askAnswer.growthRate behind the thesis")) to outlet DealContext.ToMarketDataService.ToMarketDataServiceToDealContext
       }
       on other is {
         error "Unexpected message for adaptor ToMarketDataService"

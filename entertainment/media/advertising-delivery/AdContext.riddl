@@ -1,5 +1,11 @@
 // Advertising Delivery - Ad Context
 context AdContext as router is {
+  inlet AdContextFromToAdDecisionService is command AdImpression.RecordImpression with {
+    briefly "What ToAdDecisionService makes of the answers it gets"
+  }
+  connector 'ToAdDecisionService Intake' is from outlet AdContext.ToAdDecisionService.ToAdDecisionServiceToAdContext to inlet AdContext.AdContextFromToAdDecisionService with {
+    briefly "Answers translated by ToAdDecisionService, on their way in"
+  }
   inlet AdImpressionCommandStreamIn is type AdImpressionCommand  outlet AdImpressionCommandStreamOut is type AdImpressionCommand
   inlet AdImpressionResultStreamIn is result AdImpression.AdImpressionResult  outlet AdImpressionResultStreamOut is result AdImpression.AdImpressionResult
   handler AdContextBoundary is {
@@ -41,12 +47,16 @@ context AdContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'AdImpressionCommand Stream Intake' is from outlet AdContext.AdImpressionCommandStreamOut to inlet AdContext.AdImpression.AdImpressionCommands  connector 'AdImpressionResult Stream Egress' is from outlet AdContext.AdRepository.AdRepositoryResponses to inlet AdContext.AdImpressionResultStreamIn  adaptor ToAdDecisionService to context AdDecisionService as merge is { 
+  connector 'AdImpressionCommand Stream Intake' is from outlet AdContext.AdImpressionCommandStreamOut to inlet AdContext.AdImpression.AdImpressionCommands  connector 'AdImpressionResult Stream Egress' is from outlet AdContext.AdRepository.AdRepositoryResponses to inlet AdContext.AdImpressionResultStreamIn  adaptor ToAdDecisionService to context AdDecisionService as router is { 
+    outlet ToAdDecisionServiceToAdContext is command AdImpression.RecordImpression
     inlet ToAdDecisionServiceIn is type AdImpressionEvent    inlet ToAdDecisionServiceReplies is result AdDecisionService.AdDecision    outlet ToAdDecisionServiceOut is query AdDecisionService.RequestAd
     handler ToAdDecisionServiceHandler is {
       on impressionOpportunityOpened: event AdImpression.ImpressionOpportunityOpened is {
         let askAnswer: type AdDecisionService.AdDecision = ask query AdDecisionService.RequestAd of context AdDecisionService
         do "an opportunity opening needing an ad chosen to fill it"
+        when prompt("not askAnswer.noFill") then
+          send command AdImpression.RecordImpression(impressionId = impressionOpportunityOpened.impressionId, adUnit = askAnswer.selectedAdUnit, placement = impressionOpportunityOpened.placement, viewer = impressionOpportunityOpened.viewer) to outlet AdContext.ToAdDecisionService.ToAdDecisionServiceToAdContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToAdDecisionService"

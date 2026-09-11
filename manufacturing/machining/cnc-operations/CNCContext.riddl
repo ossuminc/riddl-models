@@ -1,5 +1,28 @@
 // CNC Operations - CNC Context
 context CNCContext as router is {
+  inlet CNCContextFromToMaintenanceService is command CNCMachine.PauseCycle with {
+    briefly "What ToMaintenanceService makes of the answers it gets"
+  }
+  connector 'ToMaintenanceService Intake' is from outlet CNCContext.ToMaintenanceService.ToMaintenanceServiceToCNCContext to inlet CNCContext.CNCContextFromToMaintenanceService with {
+    briefly "Answers translated by ToMaintenanceService, on their way in"
+  }
+  inlet CNCContextFromToQualityService is command CNCMachine.UpdateMetrics with {
+    briefly "What ToQualityService makes of the answers it gets"
+  }
+  connector 'ToQualityService Intake' is from outlet CNCContext.ToQualityService.ToQualityServiceToCNCContext to inlet CNCContext.CNCContextFromToQualityService with {
+    briefly "Answers translated by ToQualityService, on their way in"
+  }
+  type ToToolManagementServiceCommand is one of {
+    CNCMachine.ReportAlarm or CNCMachine.SetupMachine
+  } with {
+    briefly "What ToToolManagementService turns its answers into"
+  }
+  inlet CNCContextFromToToolManagementService is type ToToolManagementServiceCommand with {
+    briefly "What ToToolManagementService makes of the answers it gets"
+  }
+  connector 'ToToolManagementService Intake' is from outlet CNCContext.ToToolManagementService.ToToolManagementServiceToCNCContext to inlet CNCContext.CNCContextFromToToolManagementService with {
+    briefly "Answers translated by ToToolManagementService, on their way in"
+  }
   inlet CNCContextFromQualityService is command CNCMachine.PauseCycle with {
     briefly "What FromQualityService makes of that service's news"
   }
@@ -97,12 +120,16 @@ context CNCContext as router is {
       |The model's side of the MaintenanceService conversation.
     }
   }
-  adaptor ToMaintenanceService to context MaintenanceService as merge is { 
+  adaptor ToMaintenanceService to context MaintenanceService as router is { 
+    outlet ToMaintenanceServiceToCNCContext is command CNCMachine.PauseCycle
     inlet ToMaintenanceServiceIn is type CNCMachineEvent    inlet ToMaintenanceServiceReplies is result MaintenanceService.PMSchedule    outlet ToMaintenanceServiceOut is type MaintenanceService.MaintenanceServiceCommand
     handler ToMaintenanceServiceHandler is {
       on cycleCompleted: event CNCMachine.CycleCompleted is {
         let askAnswer: type MaintenanceService.PMSchedule = ask query MaintenanceService.GetPMSchedule of context MaintenanceService
         do "each cycle bringing the machine nearer its service interval"
+        when prompt("askAnswer.overdue") then
+          send command CNCMachine.PauseCycle(machineId = cycleCompleted.machineId, reason = prompt("preventive maintenance overdue per askAnswer"), pausedBy = prompt("the maintenance service")) to outlet CNCContext.ToMaintenanceService.ToMaintenanceServiceToCNCContext
+        end
         let item0: type MaintenanceService.SchedulePM = prompt("translate the cycleCompleted event into a SchedulePM, each cycle bringing the machine closer to its service interval")
         send item0 to outlet CNCContext.ToMaintenanceService.ToMaintenanceServiceOut
       }
@@ -159,12 +186,14 @@ context CNCContext as router is {
       |The model's side of the QualityService conversation.
     }
   }
-  adaptor ToQualityService to context QualityService as merge is { 
+  adaptor ToQualityService to context QualityService as router is { 
+    outlet ToQualityServiceToCNCContext is command CNCMachine.UpdateMetrics
     inlet ToQualityServiceIn is type CNCMachineEvent    inlet ToQualityServiceReplies is result QualityService.SPCLimits    outlet ToQualityServiceOut is type QualityService.QualityServiceCommand
     handler ToQualityServiceHandler is {
       on machineSetup: event CNCMachine.MachineSetup is {
         let askAnswer: type QualityService.SPCLimits = ask query QualityService.GetSPCLimits of context QualityService
         do "setup being when the limits a run is judged against must be loaded"
+        send command CNCMachine.UpdateMetrics(machineId = machineSetup.machineId, metrics = prompt("the run's metrics with askAnswer's control limits loaded")) to outlet CNCContext.ToQualityService.ToQualityServiceToCNCContext
         let item0: type QualityService.RequestFirstArticle = prompt("translate the machineSetup event into a RequestFirstArticle, setup being what must be proved before a run")
         send item0 to outlet CNCContext.ToQualityService.ToQualityServiceOut
       }
@@ -215,16 +244,23 @@ context CNCContext as router is {
       |The model's side of the ToolManagementService conversation.
     }
   }
-  adaptor ToToolManagementService to context ToolManagementService as merge is { 
+  adaptor ToToolManagementService to context ToolManagementService as router is { 
+    outlet ToToolManagementServiceToCNCContext is type ToToolManagementServiceCommand
     inlet ToToolManagementServiceIn is type CNCMachineEvent    inlet ToToolManagementServiceReplies is type ToolManagementService.ToolManagementServiceReply    outlet ToToolManagementServiceOut is type ToolManagementService.ToolManagementServiceRequest
     handler ToToolManagementServiceHandler is {
       on programLoaded: event CNCMachine.ProgramLoaded is {
         let askAnswer: type ToolManagementService.ToolLifeStatus = ask query ToolManagementService.GetToolLife of context ToolManagementService
         do "a loaded program needing the tools it calls for to have life left"
+        when prompt("askAnswer.lifeRemaining is too little for the program") then
+          send command CNCMachine.ReportAlarm(machineId = programLoaded.machineId, alarm = prompt("a tool-life alarm for askAnswer.toolId with askAnswer.lifeRemaining left")) to outlet CNCContext.ToToolManagementService.ToToolManagementServiceToCNCContext
+        end
       }
       on machineSetup: event CNCMachine.MachineSetup is {
         let askAnswer: type ToolManagementService.ToolOffsets = ask query ToolManagementService.GetToolOffsets of context ToolManagementService
         do "setup needing the offsets the tools actually carry"
+        when prompt("the setup's offsets differ from askAnswer") then
+          send command CNCMachine.SetupMachine(machineId = machineSetup.machineId, tools = prompt("the tools with the offsets in askAnswer applied"), fixtures = machineSetup.fixtures, setupBy = machineSetup.setupBy) to outlet CNCContext.ToToolManagementService.ToToolManagementServiceToCNCContext
+        end
       }
       on cycleCompleted: event CNCMachine.CycleCompleted is {
         let item0: type ToolManagementService.UpdateToolLife = prompt("translate the cycleCompleted event into a UpdateToolLife, each cycle consuming tool life")

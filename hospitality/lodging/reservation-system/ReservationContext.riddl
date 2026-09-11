@@ -1,5 +1,17 @@
 // Reservation System - Reservation Context
 context ReservationContext as router is {
+  inlet ReservationContextFromToLoyaltyProgramService is command Reservation.ModifyReservation with {
+    briefly "What ToLoyaltyProgramService makes of the answers it gets"
+  }
+  connector 'ToLoyaltyProgramService Intake' is from outlet ReservationContext.ToLoyaltyProgramService.ToLoyaltyProgramServiceToReservationContext to inlet ReservationContext.ReservationContextFromToLoyaltyProgramService with {
+    briefly "Answers translated by ToLoyaltyProgramService, on their way in"
+  }
+  inlet ReservationContextFromToRoomManagementService is command Reservation.AssignRoom with {
+    briefly "What ToRoomManagementService makes of the answers it gets"
+  }
+  connector 'ToRoomManagementService Intake' is from outlet ReservationContext.ToRoomManagementService.ToRoomManagementServiceToReservationContext to inlet ReservationContext.ReservationContextFromToRoomManagementService with {
+    briefly "Answers translated by ToRoomManagementService, on their way in"
+  }
   inlet ReservationContextFromPaymentProcessingService is command Reservation.RecordPayment with {
     briefly "What FromPaymentProcessingService makes of that service's news"
   }
@@ -221,12 +233,14 @@ context ReservationContext as router is {
       |The model's side of the LoyaltyProgramService conversation.
     }
   }
-  adaptor ToLoyaltyProgramService to context LoyaltyProgramService as merge is { 
+  adaptor ToLoyaltyProgramService to context LoyaltyProgramService as router is { 
+    outlet ToLoyaltyProgramServiceToReservationContext is command Reservation.ModifyReservation
     inlet ToLoyaltyProgramServiceIn is type ReservationEvent    inlet ToLoyaltyProgramServiceReplies is result LoyaltyProgramService.MemberTierResult    outlet ToLoyaltyProgramServiceOut is type LoyaltyProgramService.LoyaltyProgramServiceRequest
     handler ToLoyaltyProgramServiceHandler is {
       on reservationCreated: event Reservation.ReservationCreated is {
         let askAnswer: type LoyaltyProgramService.MemberTierResult = ask query LoyaltyProgramService.GetMemberTier of context LoyaltyProgramService
         do "the guest's tier deciding the rate and the room"
+        send command Reservation.ModifyReservation(reservationId = reservationCreated.reservationId, newStay = prompt("the stay as booked"), newRate = prompt("the rate askAnswer.tier entitles the guest to")) to outlet ReservationContext.ToLoyaltyProgramService.ToLoyaltyProgramServiceToReservationContext
       }
       on guestCheckedOut: event Reservation.GuestCheckedOut is {
         let item0: type LoyaltyProgramService.AwardPoints = prompt("translate the guestCheckedOut event into a AwardPoints, the stay being consumed and its spend final at checkout")
@@ -328,12 +342,16 @@ context ReservationContext as router is {
       |The model's side of the RoomManagementService conversation.
     }
   }
-  adaptor ToRoomManagementService to context RoomManagementService as merge is { 
+  adaptor ToRoomManagementService to context RoomManagementService as router is { 
+    outlet ToRoomManagementServiceToReservationContext is command Reservation.AssignRoom
     inlet ToRoomManagementServiceIn is type ReservationEvent    inlet ToRoomManagementServiceReplies is result RoomManagementService.AvailableRoomsResult    outlet ToRoomManagementServiceOut is type RoomManagementService.RoomManagementServiceCommand
     handler ToRoomManagementServiceHandler is {
       on reservationCreated: event Reservation.ReservationCreated is {
         let askAnswer: type RoomManagementService.AvailableRoomsResult = ask query RoomManagementService.GetAvailableRooms of context RoomManagementService
         do "a reservation needing a room that is free for its dates"
+        when prompt("askAnswer.totalAvailable is greater than zero") then
+          send command Reservation.AssignRoom(reservationId = reservationCreated.reservationId, room = prompt("the first of askAnswer.rooms")) to outlet ReservationContext.ToRoomManagementService.ToRoomManagementServiceToReservationContext
+        end
       }
       on roomAssigned: event Reservation.RoomAssigned is {
         let item0: type RoomManagementService.ReserveRoom = prompt("translate the roomAssigned event into a ReserveRoom, assignment being what claims a particular room")

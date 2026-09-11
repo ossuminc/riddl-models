@@ -1,5 +1,11 @@
 // Inventory Control - Inventory Control Context
 context InventoryControlContext as router is {
+  inlet InventoryControlContextFromToPurchasingSystem is command InventoryItem.TriggerReplenishment with {
+    briefly "What ToPurchasingSystem makes of the answers it gets"
+  }
+  connector 'ToPurchasingSystem Intake' is from outlet InventoryControlContext.ToPurchasingSystem.ToPurchasingSystemToInventoryControlContext to inlet InventoryControlContext.InventoryControlContextFromToPurchasingSystem with {
+    briefly "Answers translated by ToPurchasingSystem, on their way in"
+  }
   inlet InventoryItemCommandStreamIn is type InventoryItemCommand  outlet InventoryItemCommandStreamOut is type InventoryItemCommand
   inlet StockItemResultStreamIn is result InventoryItem.InventoryItemResult  outlet StockItemResultStreamOut is result InventoryItem.InventoryItemResult
   handler InventoryControlContextBoundary is {
@@ -110,12 +116,16 @@ context InventoryControlContext as router is {
       |The model's side of the PurchasingSystem conversation.
     }
   }
-  adaptor ToPurchasingSystem to context PurchasingSystem as merge is { 
+  adaptor ToPurchasingSystem to context PurchasingSystem as router is { 
+    outlet ToPurchasingSystemToInventoryControlContext is command InventoryItem.TriggerReplenishment
     inlet ToPurchasingSystemIn is type InventoryItemEvent    inlet ToPurchasingSystemReplies is result PurchasingSystem.PurchaseOrderStatus    outlet ToPurchasingSystemOut is type PurchasingSystem.PurchasingSystemRequest
     handler ToPurchasingSystemHandler is {
       on cycleCountRecorded: event InventoryItem.CycleCountRecorded is {
         let askAnswer: type PurchasingSystem.PurchaseOrderStatus = ask query PurchasingSystem.GetPurchaseOrderStatus of context PurchasingSystem
         do "a count that disagrees needing to know what is still on order"
+        when prompt("askAnswer.orderStatus shows nothing on order") then
+          send command InventoryItem.TriggerReplenishment(itemId = cycleCountRecorded.itemId, quantity = prompt("the shortfall the count found"), priority = prompt("normal")) to outlet InventoryControlContext.ToPurchasingSystem.ToPurchasingSystemToInventoryControlContext
+        end
       }
       on replenishmentTriggered: event InventoryItem.ReplenishmentTriggered is {
         let item0: type PurchasingSystem.CreatePurchaseOrder = prompt("translate the replenishmentTriggered event into a CreatePurchaseOrder, replenishment being what a purchase order fulfils")

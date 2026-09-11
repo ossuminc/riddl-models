@@ -1,5 +1,23 @@
 // Portfolio Management - Portfolio Context
 context PortfolioContext as router is {
+  inlet PortfolioContextFromToFundAdministrationService is command PortfolioCompany.UpdateCompanyInfo with {
+    briefly "What ToFundAdministrationService makes of the answers it gets"
+  }
+  connector 'ToFundAdministrationService Intake' is from outlet PortfolioContext.ToFundAdministrationService.ToFundAdministrationServiceToPortfolioContext to inlet PortfolioContext.PortfolioContextFromToFundAdministrationService with {
+    briefly "Answers translated by ToFundAdministrationService, on their way in"
+  }
+  inlet PortfolioContextFromToLegalDocumentService is command PortfolioCompany.UpdateCompanyInfo with {
+    briefly "What ToLegalDocumentService makes of the answers it gets"
+  }
+  connector 'ToLegalDocumentService Intake' is from outlet PortfolioContext.ToLegalDocumentService.ToLegalDocumentServiceToPortfolioContext to inlet PortfolioContext.PortfolioContextFromToLegalDocumentService with {
+    briefly "Answers translated by ToLegalDocumentService, on their way in"
+  }
+  inlet PortfolioContextFromToMarketDataService is command PortfolioCompany.UpdateValuation with {
+    briefly "What ToMarketDataService makes of the answers it gets"
+  }
+  connector 'ToMarketDataService Intake' is from outlet PortfolioContext.ToMarketDataService.ToMarketDataServiceToPortfolioContext to inlet PortfolioContext.PortfolioContextFromToMarketDataService with {
+    briefly "Answers translated by ToMarketDataService, on their way in"
+  }
   inlet PortfolioCompanyCommandStreaIn is type PortfolioCompanyCommand  outlet PortfolioCompanyCommandStreaOut is type PortfolioCompanyCommand
   inlet PortfolioCompanyResultStreamIn is result PortfolioCompany.PortfolioCompanyResult  outlet PortfolioCompanyResultStreamOut is result PortfolioCompany.PortfolioCompanyResult
   handler PortfolioContextBoundary is {
@@ -67,12 +85,14 @@ context PortfolioContext as router is {
       |The model's side of the FundAdministrationService conversation.
     }
   }
-  adaptor ToFundAdministrationService to context FundAdministrationService as merge is { 
+  adaptor ToFundAdministrationService to context FundAdministrationService as router is { 
+    outlet ToFundAdministrationServiceToPortfolioContext is command PortfolioCompany.UpdateCompanyInfo
     inlet ToFundAdministrationServiceIn is type PortfolioCompanyEvent    inlet ToFundAdministrationServiceReplies is result FundAdministrationService.FundDetails    outlet ToFundAdministrationServiceOut is type FundAdministrationService.FundAdministrationServiceCommand
     handler ToFundAdministrationServiceHandler is {
       on companyAcquired: event PortfolioCompany.CompanyAcquired is {
         let askAnswer: type FundAdministrationService.FundDetails = ask query FundAdministrationService.GetFundDetails of context FundAdministrationService
         do "an acquisition needing the fund's terms to book it against"
+        send command PortfolioCompany.UpdateCompanyInfo(companyId = companyAcquired.companyId, company = prompt("the company with askAnswer.fundId and askAnswer.fundName as the fund it is booked against")) to outlet PortfolioContext.ToFundAdministrationService.ToFundAdministrationServiceToPortfolioContext
       }
       on followOnMade: event PortfolioCompany.FollowOnMade is {
         let item0: type FundAdministrationService.RecordCapitalCall = prompt("translate the followOnMade event into a RecordCapitalCall, a follow-on being what draws the capital")
@@ -166,7 +186,8 @@ context PortfolioContext as router is {
       |The model's side of the LegalDocumentService conversation.
     }
   }
-  adaptor ToLegalDocumentService to context LegalDocumentService as merge is { 
+  adaptor ToLegalDocumentService to context LegalDocumentService as router is { 
+    outlet ToLegalDocumentServiceToPortfolioContext is command PortfolioCompany.UpdateCompanyInfo
     inlet ToLegalDocumentServiceIn is type PortfolioCompanyEvent    inlet ToLegalDocumentServiceReplies is result LegalDocumentService.DocumentList    outlet ToLegalDocumentServiceOut is type LegalDocumentService.LegalDocumentServiceRequest
     handler ToLegalDocumentServiceHandler is {
       on companyAcquired: event CompanyAcquired is {
@@ -176,6 +197,7 @@ context PortfolioContext as router is {
       on boardMemberAppointed: event PortfolioCompany.BoardMemberAppointed is {
         let askAnswer: type LegalDocumentService.DocumentList = ask query LegalDocumentService.GetDocuments of context LegalDocumentService
         do "an appointment needing the constitutional papers it is made under"
+        send command PortfolioCompany.UpdateCompanyInfo(companyId = boardMemberAppointed.companyId, company = prompt("the company with askAnswer.documents recorded as its constitutional papers")) to outlet PortfolioContext.ToLegalDocumentService.ToLegalDocumentServiceToPortfolioContext
       }
       on other is {
         error "Unexpected message for adaptor ToLegalDocumentService"
@@ -192,16 +214,23 @@ context PortfolioContext as router is {
       |The model's side of the LegalDocumentService conversation.
     }
   }
-  adaptor ToMarketDataService to context MarketDataService as merge is { 
+  adaptor ToMarketDataService to context MarketDataService as router is { 
+    outlet ToMarketDataServiceToPortfolioContext is command PortfolioCompany.UpdateValuation
     inlet ToMarketDataServiceIn is type PortfolioCompanyEvent    inlet ToMarketDataServiceReplies is type MarketDataService.MarketDataServiceReply    outlet ToMarketDataServiceOut is type MarketDataService.MarketDataServiceRequest
     handler ToMarketDataServiceHandler is {
       on valuationUpdated: event PortfolioCompany.ValuationUpdated is {
         let askAnswer: type MarketDataService.ComparableSet = ask query MarketDataService.GetComparableValuations of context MarketDataService
         do "an updated valuation needing comparable companies to stand on"
+        when prompt("the updated valuation is outside askAnswer.lowMultiple to askAnswer.highMultiple") then
+          send command PortfolioCompany.UpdateValuation(companyId = valuationUpdated.companyId, valuation = prompt("the valuation restated against askAnswer.medianMultiple for askAnswer.industry")) to outlet PortfolioContext.ToMarketDataService.ToMarketDataServiceToPortfolioContext
+        end
       }
       on investmentExited: event PortfolioCompany.InvestmentExited is {
         let askAnswer: type MarketDataService.PrecedentTransaction = ask query MarketDataService.GetPrecedentTransactions of context MarketDataService
         do "an exit needing precedent deals to judge the price against"
+        when prompt("the exit price differs from what askAnswer implies") then
+          send command PortfolioCompany.UpdateValuation(companyId = investmentExited.companyId, valuation = prompt("the exit valued against askAnswer.evRevenueMultiple")) to outlet PortfolioContext.ToMarketDataService.ToMarketDataServiceToPortfolioContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToMarketDataService"

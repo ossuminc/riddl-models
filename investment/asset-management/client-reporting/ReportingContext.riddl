@@ -1,5 +1,33 @@
 // Client Reporting - Reporting Context
 context ReportingContext as router is {
+  inlet ReportingContextFromToComplianceRegistry is command ClientReport.ComposeReport with {
+    briefly "What ToComplianceRegistry makes of the answers it gets"
+  }
+  connector 'ToComplianceRegistry Intake' is from outlet ReportingContext.ToComplianceRegistry.ToComplianceRegistryToReportingContext to inlet ReportingContext.ReportingContextFromToComplianceRegistry with {
+    briefly "Answers translated by ToComplianceRegistry, on their way in"
+  }
+  type ToMarketDataProviderCommand is one of {
+    ClientReport.AttachPortfolioData or ClientReport.CalculatePerformance
+  } with {
+    briefly "What ToMarketDataProvider turns its answers into"
+  }
+  inlet ReportingContextFromToMarketDataProvider is type ToMarketDataProviderCommand with {
+    briefly "What ToMarketDataProvider makes of the answers it gets"
+  }
+  connector 'ToMarketDataProvider Intake' is from outlet ReportingContext.ToMarketDataProvider.ToMarketDataProviderToReportingContext to inlet ReportingContext.ReportingContextFromToMarketDataProvider with {
+    briefly "Answers translated by ToMarketDataProvider, on their way in"
+  }
+  type ToPortfolioSystemCommand is one of {
+    ClientReport.AttachPortfolioData or ClientReport.DistributeReport
+  } with {
+    briefly "What ToPortfolioSystem turns its answers into"
+  }
+  inlet ReportingContextFromToPortfolioSystem is type ToPortfolioSystemCommand with {
+    briefly "What ToPortfolioSystem makes of the answers it gets"
+  }
+  connector 'ToPortfolioSystem Intake' is from outlet ReportingContext.ToPortfolioSystem.ToPortfolioSystemToReportingContext to inlet ReportingContext.ReportingContextFromToPortfolioSystem with {
+    briefly "Answers translated by ToPortfolioSystem, on their way in"
+  }
   inlet ClientReportCommandStreamIn is type ClientReportCommand  outlet ClientReportCommandStreamOut is type ClientReportCommand
   inlet ClientReportResultStreamIn is result ClientReport.ClientReportResult  outlet ClientReportResultStreamOut is result ClientReport.ClientReportResult
   handler ReportingContextBoundary is {
@@ -61,12 +89,14 @@ context ReportingContext as router is {
       |The model's side of the ComplianceRegistry conversation.
     }
   }
-  adaptor ToComplianceRegistry to context ComplianceRegistry as merge is { 
+  adaptor ToComplianceRegistry to context ComplianceRegistry as router is { 
+    outlet ToComplianceRegistryToReportingContext is command ClientReport.ComposeReport
     inlet ToComplianceRegistryIn is type ClientReportEvent    inlet ToComplianceRegistryReplies is result ComplianceRegistry.RequiredDisclosures    outlet ToComplianceRegistryOut is type ComplianceRegistry.ComplianceRegistryRequest
     handler ToComplianceRegistryHandler is {
       on reportGenerated: event ClientReport.ReportGenerated is {
         let askAnswer: type ComplianceRegistry.RequiredDisclosures = ask query ComplianceRegistry.GetRequiredDisclosures of context ComplianceRegistry
         do "a report needing the disclosures it is obliged to carry"
+        send command ClientReport.ComposeReport(reportId = reportGenerated.reportId, disclosures = prompt("askAnswer.disclosures"), commentary = prompt("the commentary for the period")) to outlet ReportingContext.ToComplianceRegistry.ToComplianceRegistryToReportingContext
       }
       on reportDistributed: event ClientReport.ReportDistributed is {
         let item0: type ComplianceRegistry.LogReportDistribution = prompt("translate the reportDistributed event into a LogReportDistribution, the distribution being the reportable fact")
@@ -87,16 +117,19 @@ context ReportingContext as router is {
       |The model's side of the ComplianceRegistry conversation.
     }
   }
-  adaptor ToMarketDataProvider to context MarketDataProvider as merge is { 
+  adaptor ToMarketDataProvider to context MarketDataProvider as router is { 
+    outlet ToMarketDataProviderToReportingContext is type ToMarketDataProviderCommand
     inlet ToMarketDataProviderIn is type ClientReportEvent    inlet ToMarketDataProviderReplies is type MarketDataProvider.MarketDataProviderReply    outlet ToMarketDataProviderOut is type MarketDataProvider.MarketDataProviderRequest
     handler ToMarketDataProviderHandler is {
       on performanceCalculated: event ClientReport.PerformanceCalculated is {
         let askAnswer: type MarketDataProvider.BenchmarkReturns = ask query MarketDataProvider.GetBenchmarkReturns of context MarketDataProvider
         do "calculated performance needing a benchmark to be judged against"
+        send command ClientReport.CalculatePerformance(reportId = performanceCalculated.reportId, performance = prompt("the performance restated against askAnswer.totalReturn for the benchmark")) to outlet ReportingContext.ToMarketDataProvider.ToMarketDataProviderToReportingContext
       }
       on portfolioDataAttached: event ClientReport.PortfolioDataAttached is {
         let askAnswer: type MarketDataProvider.SecurityPrices = ask query MarketDataProvider.GetSecurityPrices of context MarketDataProvider
         do "attached holdings needing prices to be valued at"
+        send command ClientReport.AttachPortfolioData(reportId = portfolioDataAttached.reportId, holdings = prompt("the holdings priced at askAnswer.pricedAt"), transactions = prompt("the period's transactions")) to outlet ReportingContext.ToMarketDataProvider.ToMarketDataProviderToReportingContext
       }
       on other is {
         error "Unexpected message for adaptor ToMarketDataProvider"
@@ -113,20 +146,24 @@ context ReportingContext as router is {
       |The model's side of the MarketDataProvider conversation.
     }
   }
-  adaptor ToPortfolioSystem to context PortfolioSystem as merge is { 
+  adaptor ToPortfolioSystem to context PortfolioSystem as router is { 
+    outlet ToPortfolioSystemToReportingContext is type ToPortfolioSystemCommand
     inlet ToPortfolioSystemIn is type ClientReportEvent    inlet ToPortfolioSystemReplies is type PortfolioSystem.PortfolioSystemReply    outlet ToPortfolioSystemOut is type PortfolioSystem.PortfolioSystemRequest
     handler ToPortfolioSystemHandler is {
       on reportComposed: event ClientReport.ReportComposed is {
         let askAnswer: type PortfolioSystem.AccountInfo = ask query PortfolioSystem.GetAccountInfo of context PortfolioSystem
         do "a composed report needing the account it is addressed to"
+        send command ClientReport.DistributeReport(reportId = reportComposed.reportId, deliveryMethod = prompt("the delivery method on file for askAnswer.accountId")) to outlet ReportingContext.ToPortfolioSystem.ToPortfolioSystemToReportingContext
       }
       on reportGenerated: event ClientReport.ReportGenerated is {
         let askAnswer: type PortfolioSystem.PortfolioHoldings = ask query PortfolioSystem.GetPortfolioHoldings of context PortfolioSystem
         do "a generated report needing the holdings it is about"
+        send command ClientReport.AttachPortfolioData(reportId = reportGenerated.reportId, holdings = prompt("askAnswer.holdings"), transactions = prompt("the period's transactions")) to outlet ReportingContext.ToPortfolioSystem.ToPortfolioSystemToReportingContext
       }
       on reportApproved: event ClientReport.ReportApproved is {
         let askAnswer: type PortfolioSystem.TransactionHistory = ask query PortfolioSystem.GetTransactionHistory of context PortfolioSystem
         do "an approved report needing the transactions behind its figures"
+        send command ClientReport.AttachPortfolioData(reportId = reportApproved.reportId, holdings = prompt("the holdings already attached"), transactions = prompt("the transactions askAnswer.summary covers")) to outlet ReportingContext.ToPortfolioSystem.ToPortfolioSystemToReportingContext
       }
       on other is {
         error "Unexpected message for adaptor ToPortfolioSystem"

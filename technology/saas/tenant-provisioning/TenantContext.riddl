@@ -1,5 +1,11 @@
 // Tenant Provisioning - Tenant Context
 context TenantContext as router is {
+  inlet TenantContextFromToMonitoringService is command Tenant.ScaleResource with {
+    briefly "What ToMonitoringService makes of the answers it gets"
+  }
+  connector 'ToMonitoringService Intake' is from outlet TenantContext.ToMonitoringService.ToMonitoringServiceToTenantContext to inlet TenantContext.TenantContextFromToMonitoringService with {
+    briefly "Answers translated by ToMonitoringService, on their way in"
+  }
   inlet TenantContextFromInfrastructureOrchestrator is command Tenant.ProvisionResource with {
     briefly "What FromInfrastructureOrchestrator makes of that service's news"
   }
@@ -255,12 +261,16 @@ context TenantContext as router is {
       |The model's side of the MonitoringService conversation.
     }
   }
-  adaptor ToMonitoringService to context MonitoringService as merge is { 
+  adaptor ToMonitoringService to context MonitoringService as router is { 
+    outlet ToMonitoringServiceToTenantContext is command Tenant.ScaleResource
     inlet ToMonitoringServiceIn is type TenantEvent    inlet ToMonitoringServiceReplies is result MonitoringService.TenantMetrics    outlet ToMonitoringServiceOut is type MonitoringService.MonitoringServiceRequest
     handler ToMonitoringServiceHandler is {
       on resourceScaled: event Tenant.ResourceScaled is {
         let askAnswer: type MonitoringService.TenantMetrics = ask query MonitoringService.GetTenantMetrics of context MonitoringService
         do "a scaling decision needing what the tenant is actually consuming"
+        when prompt("askAnswer's utilization contradicts the scaling decision") then
+          send command Tenant.ScaleResource(tenantId = resourceScaled.tenantId, resourceId = resourceScaled.resourceId, scalingPolicy = prompt("the policy corrected to askAnswer's actual utilization")) to outlet TenantContext.ToMonitoringService.ToMonitoringServiceToTenantContext
+        end
       }
       on resourceProvisioned: event Tenant.ResourceProvisioned is {
         let item0: type MonitoringService.SetupTenantMonitoring = prompt("translate the resourceProvisioned event into a SetupTenantMonitoring, resources existing being when there is something to watch")

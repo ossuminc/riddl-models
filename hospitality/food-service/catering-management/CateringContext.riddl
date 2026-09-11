@@ -1,5 +1,29 @@
 // Catering Management - Catering Context
 context CateringContext as router is {
+  inlet CateringContextFromToInventoryService is command CateringOrder.RemoveMenuItem with {
+    briefly "What ToInventoryService makes of the answers it gets"
+  }
+  connector 'ToInventoryService Intake' is from outlet CateringContext.ToInventoryService.ToInventoryServiceToCateringContext to inlet CateringContext.CateringContextFromToInventoryService with {
+    briefly "Answers translated by ToInventoryService, on their way in"
+  }
+  inlet CateringContextFromToMenuCatalogService is command CateringOrder.AddMenuItem with {
+    briefly "What ToMenuCatalogService makes of the answers it gets"
+  }
+  connector 'ToMenuCatalogService Intake' is from outlet CateringContext.ToMenuCatalogService.ToMenuCatalogServiceToCateringContext to inlet CateringContext.CateringContextFromToMenuCatalogService with {
+    briefly "Answers translated by ToMenuCatalogService, on their way in"
+  }
+  inlet CateringContextFromToPricingService is command CateringOrder.RecordPayment with {
+    briefly "What ToPricingService makes of the answers it gets"
+  }
+  connector 'ToPricingService Intake' is from outlet CateringContext.ToPricingService.ToPricingServiceToCateringContext to inlet CateringContext.CateringContextFromToPricingService with {
+    briefly "Answers translated by ToPricingService, on their way in"
+  }
+  inlet CateringContextFromToStaffSchedulingService is command CateringOrder.AssignStaff with {
+    briefly "What ToStaffSchedulingService makes of the answers it gets"
+  }
+  connector 'ToStaffSchedulingService Intake' is from outlet CateringContext.ToStaffSchedulingService.ToStaffSchedulingServiceToCateringContext to inlet CateringContext.CateringContextFromToStaffSchedulingService with {
+    briefly "Answers translated by ToStaffSchedulingService, on their way in"
+  }
   inlet CateringContextFromPaymentProcessingService is command CateringOrder.RecordPayment with {
     briefly "What FromPaymentProcessingService makes of that service's news"
   }
@@ -137,7 +161,8 @@ context CateringContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor ToInventoryService to context InventoryService as merge is { 
+  adaptor ToInventoryService to context InventoryService as router is { 
+    outlet ToInventoryServiceToCateringContext is command CateringOrder.RemoveMenuItem
     inlet ToInventoryServiceIn is type CateringOrderEvent    inlet ToInventoryServiceReplies is result InventoryService.IngredientAvailability    outlet ToInventoryServiceOut is type InventoryService.InventoryServiceRequest
     handler ToInventoryServiceHandler is {
       on orderConfirmed: event CateringOrder.OrderConfirmed is {
@@ -147,6 +172,9 @@ context CateringContext as router is {
       on menuItemAdded: event CateringOrder.MenuItemAdded is {
         let askAnswer: type InventoryService.IngredientAvailability = ask query InventoryService.CheckIngredientAvailability of context InventoryService
         do "each item added needing its ingredients to exist"
+        when prompt("not askAnswer.available") then
+          send command CateringOrder.RemoveMenuItem(orderId = menuItemAdded.orderId, itemId = prompt("the item just added")) to outlet CateringContext.ToInventoryService.ToInventoryServiceToCateringContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToInventoryService"
@@ -163,7 +191,8 @@ context CateringContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor ToMenuCatalogService to context MenuCatalogService as merge is { 
+  adaptor ToMenuCatalogService to context MenuCatalogService as router is { 
+    outlet ToMenuCatalogServiceToCateringContext is command CateringOrder.AddMenuItem
     inlet ToMenuCatalogServiceIn is type CateringOrderEvent    inlet ToMenuCatalogServiceReplies is type MenuCatalogService.MenuCatalogServiceReply    outlet ToMenuCatalogServiceOut is type MenuCatalogService.MenuCatalogServiceRequest
     handler ToMenuCatalogServiceHandler is {
       on menuItemAdded: event CateringOrder.MenuItemAdded is {
@@ -173,6 +202,7 @@ context CateringContext as router is {
       on orderCreated: event CateringOrder.OrderCreated is {
         let askAnswer: type MenuCatalogService.MenuCatalog = ask query MenuCatalogService.GetMenuItems of context MenuCatalogService
         do "a new order needing the menu it can be built from"
+        send command CateringOrder.AddMenuItem(orderId = orderCreated.orderId, item = prompt("the first of askAnswer.items the customer asked for"), quantity = prompt("its quantity"), specialRequests = prompt("none")) to outlet CateringContext.ToMenuCatalogService.ToMenuCatalogServiceToCateringContext
       }
       on other is {
         error "Unexpected message for adaptor ToMenuCatalogService"
@@ -283,12 +313,14 @@ context CateringContext as router is {
       |The model's side of the PaymentProcessingService conversation.
     }
   }
-  adaptor ToPricingService to context PricingService as merge is { 
+  adaptor ToPricingService to context PricingService as router is { 
+    outlet ToPricingServiceToCateringContext is command CateringOrder.RecordPayment
     inlet ToPricingServiceIn is type CateringOrderEvent    inlet ToPricingServiceReplies is result PricingService.OrderPricing    outlet ToPricingServiceOut is query PricingService.CalculateOrderTotal
     handler ToPricingServiceHandler is {
       on orderConfirmed: event CateringOrder.OrderConfirmed is {
         let askAnswer: type PricingService.OrderPricing = ask query PricingService.CalculateOrderTotal of context PricingService
         do "a confirmed order needing its total before payment is taken"
+        send command CateringOrder.RecordPayment(orderId = orderConfirmed.orderId, amount = askAnswer.depositRequired, paymentMethod = prompt("the method in orderConfirmed.payment"), reference = prompt("the deposit reference")) to outlet CateringContext.ToPricingService.ToPricingServiceToCateringContext
       }
       on other is {
         error "Unexpected message for adaptor ToPricingService"
@@ -327,12 +359,14 @@ context CateringContext as router is {
       |The model's side of the StaffSchedulingService conversation.
     }
   }
-  adaptor ToStaffSchedulingService to context StaffSchedulingService as merge is { 
+  adaptor ToStaffSchedulingService to context StaffSchedulingService as router is { 
+    outlet ToStaffSchedulingServiceToCateringContext is command CateringOrder.AssignStaff
     inlet ToStaffSchedulingServiceIn is type CateringOrderEvent    inlet ToStaffSchedulingServiceReplies is result StaffSchedulingService.AvailableStaff    outlet ToStaffSchedulingServiceOut is type StaffSchedulingService.StaffSchedulingServiceRequest
     handler ToStaffSchedulingServiceHandler is {
       on orderConfirmed: event CateringOrder.OrderConfirmed is {
         let askAnswer: type StaffSchedulingService.AvailableStaff = ask query StaffSchedulingService.GetAvailableStaff of context StaffSchedulingService
         do "a confirmed order needing people free to work it"
+        send command CateringOrder.AssignStaff(orderId = orderConfirmed.orderId, staffId = prompt("the first of askAnswer.staff"), role = prompt("their role")) to outlet CateringContext.ToStaffSchedulingService.ToStaffSchedulingServiceToCateringContext
         let request: type StaffSchedulingService.ScheduleStaff = prompt("translate the orderConfirmed event into a ScheduleStaff committing the people the confirmed event will need")
         send request to outlet CateringContext.ToStaffSchedulingService.ToStaffSchedulingServiceOut
       }

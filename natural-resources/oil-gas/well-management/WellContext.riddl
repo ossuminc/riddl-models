@@ -1,5 +1,17 @@
 // Well Management - Well Context
 context WellContext as router is {
+  inlet WellContextFromToLandManagement is command Well.SubmitForPermit with {
+    briefly "What ToLandManagement makes of the answers it gets"
+  }
+  connector 'ToLandManagement Intake' is from outlet WellContext.ToLandManagement.ToLandManagementToWellContext to inlet WellContext.WellContextFromToLandManagement with {
+    briefly "Answers translated by ToLandManagement, on their way in"
+  }
+  inlet WellContextFromToSCADA is command Well.RecordProduction with {
+    briefly "What ToSCADA makes of the answers it gets"
+  }
+  connector 'ToSCADA Intake' is from outlet WellContext.ToSCADA.ToSCADAToWellContext to inlet WellContext.WellContextFromToSCADA with {
+    briefly "Answers translated by ToSCADA, on their way in"
+  }
   inlet WellContextFromRegulatorySystem is command Well.ApprovePermit with {
     briefly "What FromRegulatorySystem makes of that service's news"
   }
@@ -59,12 +71,16 @@ context WellContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'WellCommand Stream Intake' is from outlet WellContext.WellCommandStreamOut to inlet WellContext.Well.WellCommands  connector 'WellResult Stream Egress' is from outlet WellContext.WellRepository.WellRepositoryResponses to inlet WellContext.WellResultStreamIn  adaptor ToLandManagement to context LandManagement as merge is { 
+  connector 'WellCommand Stream Intake' is from outlet WellContext.WellCommandStreamOut to inlet WellContext.Well.WellCommands  connector 'WellResult Stream Egress' is from outlet WellContext.WellRepository.WellRepositoryResponses to inlet WellContext.WellResultStreamIn  adaptor ToLandManagement to context LandManagement as router is { 
+    outlet ToLandManagementToWellContext is command Well.SubmitForPermit
     inlet ToLandManagementIn is type WellEvent    inlet ToLandManagementReplies is result LandManagement.LeaseInfo    outlet ToLandManagementOut is query LandManagement.GetLeaseInfo
     handler ToLandManagementHandler is {
       on wellPlanned: event Well.WellPlanned is {
         let askAnswer: type LandManagement.LeaseInfo = ask query LandManagement.GetLeaseInfo of context LandManagement
         do "a planned well needing the lease that permits it"
+        when prompt("askAnswer.expirationDate has not passed") then
+          send command Well.SubmitForPermit(wellId = wellPlanned.wellId, regulatoryAgency = prompt("the agency for askAnswer.leaseName"), submittedAt = prompt("now")) to outlet WellContext.ToLandManagement.ToLandManagementToWellContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToLandManagement"
@@ -169,12 +185,16 @@ context WellContext as router is {
       |The model's side of the RegulatorySystem conversation.
     }
   }
-  adaptor ToSCADA to context SCADA as merge is { 
+  adaptor ToSCADA to context SCADA as router is { 
+    outlet ToSCADAToWellContext is command Well.RecordProduction
     inlet ToSCADAIn is type WellEvent    inlet ToSCADAReplies is result SCADA.WellTelemetry    outlet ToSCADAOut is query SCADA.GetWellTelemetry
     handler ToSCADAHandler is {
       on productionRecorded: event Well.ProductionRecorded is {
         let askAnswer: type SCADA.WellTelemetry = ask query SCADA.GetWellTelemetry of context SCADA
         do "recorded production needing the instrument readings behind the number"
+        when prompt("the recorded production disagrees with askAnswer.flowRate") then
+          send command Well.RecordProduction(wellId = productionRecorded.wellId, production = prompt("the production reconciled to askAnswer.flowRate")) to outlet WellContext.ToSCADA.ToSCADAToWellContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToSCADA"

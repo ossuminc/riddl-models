@@ -1,5 +1,34 @@
 // Bill of Materials Management - BOM Context
 context BOMContext as router is {
+  type ToCostingServiceCommand is one of {
+    BillOfMaterials.CalculateCost or BillOfMaterials.UpdateItem
+  } with {
+    briefly "What ToCostingService turns its answers into"
+  }
+  inlet BOMContextFromToCostingService is type ToCostingServiceCommand with {
+    briefly "What ToCostingService makes of the answers it gets"
+  }
+  connector 'ToCostingService Intake' is from outlet BOMContext.ToCostingService.ToCostingServiceToBOMContext to inlet BOMContext.BOMContextFromToCostingService with {
+    briefly "Answers translated by ToCostingService, on their way in"
+  }
+  inlet BOMContextFromToEngineeringChangeService is command BillOfMaterials.ReviseBOM with {
+    briefly "What ToEngineeringChangeService makes of the answers it gets"
+  }
+  connector 'ToEngineeringChangeService Intake' is from outlet BOMContext.ToEngineeringChangeService.ToEngineeringChangeServiceToBOMContext to inlet BOMContext.BOMContextFromToEngineeringChangeService with {
+    briefly "Answers translated by ToEngineeringChangeService, on their way in"
+  }
+  inlet BOMContextFromToInventoryService is command BillOfMaterials.UpdateItem with {
+    briefly "What ToInventoryService makes of the answers it gets"
+  }
+  connector 'ToInventoryService Intake' is from outlet BOMContext.ToInventoryService.ToInventoryServiceToBOMContext to inlet BOMContext.BOMContextFromToInventoryService with {
+    briefly "Answers translated by ToInventoryService, on their way in"
+  }
+  inlet BOMContextFromToProductDataService is command BillOfMaterials.UpdateItem with {
+    briefly "What ToProductDataService makes of the answers it gets"
+  }
+  connector 'ToProductDataService Intake' is from outlet BOMContext.ToProductDataService.ToProductDataServiceToBOMContext to inlet BOMContext.BOMContextFromToProductDataService with {
+    briefly "Answers translated by ToProductDataService, on their way in"
+  }
   inlet BOMContextFromEngineeringChangeService is command BillOfMaterials.ReleaseBOM with {
     briefly "What FromEngineeringChangeService makes of that service's news"
   }
@@ -76,16 +105,19 @@ context BOMContext as router is {
       |The model's side of the CostingService conversation.
     }
   }
-  adaptor ToCostingService to context CostingService as merge is { 
+  adaptor ToCostingService to context CostingService as router is { 
+    outlet ToCostingServiceToBOMContext is type ToCostingServiceCommand
     inlet ToCostingServiceIn is type BillOfMaterialsEvent    inlet ToCostingServiceReplies is type CostingService.CostingServiceReply    outlet ToCostingServiceOut is type CostingService.CostingServiceRequest
     handler ToCostingServiceHandler is {
       on bOMReleased: event BillOfMaterials.BOMReleased is {
         let askAnswer: type CostingService.BOMCostRollup = ask query CostingService.GetBOMRollupCost of context CostingService
         do "a released bill needing its rolled-up cost"
+        send command BillOfMaterials.CalculateCost(bomId = bOMReleased.bomId, costDate = bOMReleased.effectiveDate, includeSubassemblies = prompt("true")) to outlet BOMContext.ToCostingService.ToCostingServiceToBOMContext
       }
       on itemAdded: event BillOfMaterials.ItemAdded is {
         let askAnswer: type CostingService.StandardCost = ask query CostingService.GetStandardCost of context CostingService
         do "each item needing the standard it is costed at"
+        send command BillOfMaterials.UpdateItem(bomId = itemAdded.bomId, itemId = prompt("the item just added"), updatedItem = prompt("the item costed at askAnswer.totalCost")) to outlet BOMContext.ToCostingService.ToCostingServiceToBOMContext
       }
       on costCalculated: event BillOfMaterials.CostCalculated is {
         let item0: type CostingService.UpdateStandardCost = prompt("translate the costCalculated event into a UpdateStandardCost, a recalculated cost being what makes the standard stale")
@@ -134,12 +166,16 @@ context BOMContext as router is {
       |The model's side of the EngineeringChangeService conversation.
     }
   }
-  adaptor ToEngineeringChangeService to context EngineeringChangeService as merge is { 
+  adaptor ToEngineeringChangeService to context EngineeringChangeService as router is { 
+    outlet ToEngineeringChangeServiceToBOMContext is command BillOfMaterials.ReviseBOM
     inlet ToEngineeringChangeServiceIn is type BillOfMaterialsEvent    inlet ToEngineeringChangeServiceReplies is result EngineeringChangeService.EngineeringChange    outlet ToEngineeringChangeServiceOut is type EngineeringChangeService.EngineeringChangeServiceRequest
     handler ToEngineeringChangeServiceHandler is {
       on itemUpdated: event BillOfMaterials.ItemUpdated is {
         let askAnswer: type EngineeringChangeService.EngineeringChange = ask query EngineeringChangeService.GetEngineeringChange of context EngineeringChangeService
         do "a changed item needing the engineering change that authorised it"
+        when prompt("the item change is not yet on a revision carrying askAnswer.ecoNumber") then
+          send command BillOfMaterials.ReviseBOM(bomId = itemUpdated.bomId, newRevision = prompt("the next revision"), changeNumber = askAnswer.ecoNumber, changeDescription = askAnswer.title, revisedBy = prompt("engineering change control")) to outlet BOMContext.ToEngineeringChangeService.ToEngineeringChangeServiceToBOMContext
+        end
       }
       on bOMRevised: event BillOfMaterials.BOMRevised is {
         let item0: type EngineeringChangeService.RequestBOMChange = prompt("translate the bOMRevised event into a RequestBOMChange, a revision being the change engineering must approve")
@@ -160,12 +196,16 @@ context BOMContext as router is {
       |The model's side of the EngineeringChangeService conversation.
     }
   }
-  adaptor ToInventoryService to context InventoryService as merge is { 
+  adaptor ToInventoryService to context InventoryService as router is { 
+    outlet ToInventoryServiceToBOMContext is command BillOfMaterials.UpdateItem
     inlet ToInventoryServiceIn is type BillOfMaterialsEvent    inlet ToInventoryServiceReplies is type InventoryService.InventoryServiceReply    outlet ToInventoryServiceOut is type InventoryService.InventoryServiceRequest
     handler ToInventoryServiceHandler is {
       on itemAdded: event BillOfMaterials.ItemAdded is {
         let askAnswer: type InventoryService.ComponentAvailability = ask query InventoryService.GetComponentAvailability of context InventoryService
         do "an added item needing to know whether the component is on hand"
+        when prompt("not askAnswer.isAvailable") then
+          send command BillOfMaterials.UpdateItem(bomId = itemAdded.bomId, itemId = prompt("the item just added"), updatedItem = prompt("the item flagged short: askAnswer.onOrderQuantity on order, next receipt askAnswer.nextReceiptDate")) to outlet BOMContext.ToInventoryService.ToInventoryServiceToBOMContext
+        end
       }
       on bOMReleased: event BillOfMaterials.BOMReleased is {
         let askAnswer: type InventoryService.BOMAvailabilityCheck = ask query InventoryService.GetMultipleComponentAvailability of context InventoryService
@@ -186,12 +226,16 @@ context BOMContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor ToProductDataService to context ProductDataService as merge is { 
+  adaptor ToProductDataService to context ProductDataService as router is { 
+    outlet ToProductDataServiceToBOMContext is command BillOfMaterials.UpdateItem
     inlet ToProductDataServiceIn is type BillOfMaterialsEvent    inlet ToProductDataServiceReplies is type ProductDataService.ProductDataServiceReply    outlet ToProductDataServiceOut is type ProductDataService.ProductDataServiceRequest
     handler ToProductDataServiceHandler is {
       on itemUpdated: event BillOfMaterials.ItemUpdated is {
         let askAnswer: type ProductDataService.ComponentInfo = ask query ProductDataService.GetComponentInfo of context ProductDataService
         do "an updated item needing the component master to agree"
+        when prompt("the updated item disagrees with askAnswer") then
+          send command BillOfMaterials.UpdateItem(bomId = itemUpdated.bomId, itemId = itemUpdated.itemId, updatedItem = prompt("the item corrected to the component master in askAnswer")) to outlet BOMContext.ToProductDataService.ToProductDataServiceToBOMContext
+        end
       }
       on bOMCreated: event BillOfMaterials.BOMCreated is {
         let askAnswer: type ProductDataService.ProductInfo = ask query ProductDataService.GetProductInfo of context ProductDataService

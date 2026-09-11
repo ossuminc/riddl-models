@@ -1,5 +1,17 @@
 // Licensing - License Context
 context LicenseContext as router is {
+  inlet LicenseContextFromToContinuingEducationService is command License.VerifyCredentials with {
+    briefly "What ToContinuingEducationService makes of the answers it gets"
+  }
+  connector 'ToContinuingEducationService Intake' is from outlet LicenseContext.ToContinuingEducationService.ToContinuingEducationServiceToLicenseContext to inlet LicenseContext.LicenseContextFromToContinuingEducationService with {
+    briefly "Answers translated by ToContinuingEducationService, on their way in"
+  }
+  inlet LicenseContextFromToExamAdministrationService is command License.RequestAdditionalInfo with {
+    briefly "What ToExamAdministrationService makes of the answers it gets"
+  }
+  connector 'ToExamAdministrationService Intake' is from outlet LicenseContext.ToExamAdministrationService.ToExamAdministrationServiceToLicenseContext to inlet LicenseContext.LicenseContextFromToExamAdministrationService with {
+    briefly "Answers translated by ToExamAdministrationService, on their way in"
+  }
   inlet LicenseContextFromExamAdministrationService is command License.RecordExamResult with {
     briefly "What FromExamAdministrationService makes of that service's news"
   }
@@ -137,12 +149,14 @@ context LicenseContext as router is {
       |The model's side of the ContinuingEducationService conversation.
     }
   }
-  adaptor ToContinuingEducationService to context ContinuingEducationService as merge is { 
+  adaptor ToContinuingEducationService to context ContinuingEducationService as router is { 
+    outlet ToContinuingEducationServiceToLicenseContext is command License.VerifyCredentials
     inlet ToContinuingEducationServiceIn is type LicenseEvent    inlet ToContinuingEducationServiceReplies is result ContinuingEducationService.CECreditsResult    outlet ToContinuingEducationServiceOut is query ContinuingEducationService.GetCECredits
     handler ToContinuingEducationServiceHandler is {
       on applicationSubmitted: event License.ApplicationSubmitted is {
         let askAnswer: type ContinuingEducationService.CECreditsResult = ask query ContinuingEducationService.GetCECredits of context ContinuingEducationService
         do "an application needing the education credits claimed on it to be real"
+        send command License.VerifyCredentials(licenseId = applicationSubmitted.licenseId, credentialType = prompt("continuing education"), verified = prompt("whether askAnswer.totalCredits meets askAnswer.requiredCredits"), verificationNotes = prompt("the credits by category askAnswer lists")) to outlet LicenseContext.ToContinuingEducationService.ToContinuingEducationServiceToLicenseContext
       }
       on other is {
         error "Unexpected message for adaptor ToContinuingEducationService"
@@ -236,12 +250,16 @@ context LicenseContext as router is {
       |The model's side of the ExamAdministrationService conversation.
     }
   }
-  adaptor ToExamAdministrationService to context ExamAdministrationService as merge is { 
+  adaptor ToExamAdministrationService to context ExamAdministrationService as router is { 
+    outlet ToExamAdministrationServiceToLicenseContext is command License.RequestAdditionalInfo
     inlet ToExamAdministrationServiceIn is type LicenseEvent    inlet ToExamAdministrationServiceReplies is result ExamAdministrationService.AvailableDatesResult    outlet ToExamAdministrationServiceOut is type ExamAdministrationService.ExamAdministrationServiceRequest
     handler ToExamAdministrationServiceHandler is {
       on examResultRecorded: event License.ExamResultRecorded is {
         let askAnswer: type ExamAdministrationService.AvailableDatesResult = ask query ExamAdministrationService.GetAvailableExamDates of context ExamAdministrationService
         do "a recorded result being when a resit date may be needed"
+        when prompt("examResultRecorded.examScore is a fail") then
+          send command License.RequestAdditionalInfo(licenseId = examResultRecorded.licenseId, infoNeeded = prompt("a resit booking on one of askAnswer.dates"), deadline = prompt("the last of askAnswer.dates")) to outlet LicenseContext.ToExamAdministrationService.ToExamAdministrationServiceToLicenseContext
+        end
       }
       on credentialsVerified: event License.CredentialsVerified is {
         let item0: type ExamAdministrationService.ScheduleExam = prompt("translate the credentialsVerified event into a ScheduleExam, an applicant sitting the exam only once their credentials clear")

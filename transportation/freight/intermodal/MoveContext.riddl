@@ -1,5 +1,17 @@
 // Intermodal - Move Context
 context MoveContext as router is {
+  inlet MoveContextFromToChassisPoolService is command Move.ScheduleDestinationDray with {
+    briefly "What ToChassisPoolService makes of the answers it gets"
+  }
+  connector 'ToChassisPoolService Intake' is from outlet MoveContext.ToChassisPoolService.ToChassisPoolServiceToMoveContext to inlet MoveContext.MoveContextFromToChassisPoolService with {
+    briefly "Answers translated by ToChassisPoolService, on their way in"
+  }
+  inlet MoveContextFromToRailCarrierService is command Move.AssignToTrain with {
+    briefly "What ToRailCarrierService makes of the answers it gets"
+  }
+  connector 'ToRailCarrierService Intake' is from outlet MoveContext.ToRailCarrierService.ToRailCarrierServiceToMoveContext to inlet MoveContext.MoveContextFromToRailCarrierService with {
+    briefly "Answers translated by ToRailCarrierService, on their way in"
+  }
   type FromRailCarrierServiceCommand is one of {
     Move.AssignToTrain or Move.RecordTrainArrival or Move.RecordTrainDeparture
   } with {
@@ -95,12 +107,16 @@ context MoveContext as router is {
       |The model's side of the ChassisPoolService conversation.
     }
   }
-  adaptor ToChassisPoolService to context ChassisPoolService as merge is { 
+  adaptor ToChassisPoolService to context ChassisPoolService as router is { 
+    outlet ToChassisPoolServiceToMoveContext is command Move.ScheduleDestinationDray
     inlet ToChassisPoolServiceIn is type MoveEvent    inlet ToChassisPoolServiceReplies is result ChassisPoolService.ChassisAvailabilityResult    outlet ToChassisPoolServiceOut is type ChassisPoolService.ChassisPoolServiceRequest
     handler ToChassisPoolServiceHandler is {
       on destinationDrayScheduled: event Move.DestinationDrayScheduled is {
         let askAnswer: type ChassisPoolService.ChassisAvailabilityResult = ask query ChassisPoolService.GetChassisAvailability of context ChassisPoolService
         do "a destination dray needing a chassis at the far terminal"
+        when prompt("askAnswer.available is zero") then
+          send command Move.ScheduleDestinationDray(moveId = destinationDrayScheduled.moveId, carrier = destinationDrayScheduled.carrier, scheduledDate = prompt("a date when askAnswer.poolName has a chassis"), appointmentTime = prompt("the pool's next slot")) to outlet MoveContext.ToChassisPoolService.ToChassisPoolServiceToMoveContext
+        end
       }
       on originDrayScheduled: event Move.OriginDrayScheduled is {
         let item0: type ChassisPoolService.ReserveChassis = prompt("translate the originDrayScheduled event into a ReserveChassis, a road leg being what needs a chassis under the box")
@@ -225,12 +241,16 @@ context MoveContext as router is {
       |The model's side of the RailCarrierService conversation.
     }
   }
-  adaptor ToRailCarrierService to context RailCarrierService as merge is { 
+  adaptor ToRailCarrierService to context RailCarrierService as router is { 
+    outlet ToRailCarrierServiceToMoveContext is command Move.AssignToTrain
     inlet ToRailCarrierServiceIn is type MoveEvent    inlet ToRailCarrierServiceReplies is result RailCarrierService.AvailabilityResult    outlet ToRailCarrierServiceOut is type RailCarrierService.RailCarrierServiceRequest
     handler ToRailCarrierServiceHandler is {
       on terminalIngateRecorded: event Move.TerminalIngateRecorded is {
         let askAnswer: type RailCarrierService.AvailabilityResult = ask query RailCarrierService.GetAvailability of context RailCarrierService
         do "a box through the gate needing a train with room for it"
+        when prompt("askAnswer.spaceAvailable") then
+          send command Move.AssignToTrain(moveId = terminalIngateRecorded.moveId, trainId = prompt("the first train in askAnswer.trainSchedule with space"), trainSymbol = prompt("its symbol"), carNumber = prompt("the car"), carPosition = prompt("the position")) to outlet MoveContext.ToRailCarrierService.ToRailCarrierServiceToMoveContext
+        end
       }
       on moveCreated: event Move.MoveCreated is {
         let item0: type RailCarrierService.BookRail = prompt("translate the moveCreated event into a BookRail, the move being what the rail leg is booked for")

@@ -1,5 +1,33 @@
 // Records Management - Report Context
 context ReportContext as router is {
+  type ToDMVServiceCommand is one of {
+    Report.AddInvolvedParty or Report.UpdateInvolvedParty
+  } with {
+    briefly "What ToDMVService turns its answers into"
+  }
+  inlet ReportContextFromToDMVService is type ToDMVServiceCommand with {
+    briefly "What ToDMVService makes of the answers it gets"
+  }
+  connector 'ToDMVService Intake' is from outlet ReportContext.ToDMVService.ToDMVServiceToReportContext to inlet ReportContext.ReportContextFromToDMVService with {
+    briefly "Answers translated by ToDMVService, on their way in"
+  }
+  inlet ReportContextFromToJailService is command Report.AddOffense with {
+    briefly "What ToJailService makes of the answers it gets"
+  }
+  connector 'ToJailService Intake' is from outlet ReportContext.ToJailService.ToJailServiceToReportContext to inlet ReportContext.ReportContextFromToJailService with {
+    briefly "Answers translated by ToJailService, on their way in"
+  }
+  type ToNCICServiceCommand is one of {
+    Report.AddOffense or Report.LinkToCase or Report.UpdateInvolvedParty
+  } with {
+    briefly "What ToNCICService turns its answers into"
+  }
+  inlet ReportContextFromToNCICService is type ToNCICServiceCommand with {
+    briefly "What ToNCICService makes of the answers it gets"
+  }
+  connector 'ToNCICService Intake' is from outlet ReportContext.ToNCICService.ToNCICServiceToReportContext to inlet ReportContext.ReportContextFromToNCICService with {
+    briefly "Answers translated by ToNCICService, on their way in"
+  }
   inlet ReportContextFromEvidenceLabService is command Report.AddEvidence with {
     briefly "What FromEvidenceLabService makes of that service's news"
   }
@@ -115,16 +143,19 @@ context ReportContext as router is {
       |The model's side of the CourtService conversation.
     }
   }
-  adaptor ToDMVService to context DMVService as merge is { 
+  adaptor ToDMVService to context DMVService as router is { 
+    outlet ToDMVServiceToReportContext is type ToDMVServiceCommand
     inlet ToDMVServiceIn is type ReportEvent    inlet ToDMVServiceReplies is type DMVService.DMVServiceReply    outlet ToDMVServiceOut is type DMVService.DMVServiceRequest
     handler ToDMVServiceHandler is {
       on involvedPartyAdded: event Report.InvolvedPartyAdded is {
         let askAnswer: type DMVService.DriverInfoResult = ask query DMVService.GetDriverInfo of context DMVService
         do "a party added to a report needing their licence record"
+        send command Report.UpdateInvolvedParty(reportId = involvedPartyAdded.reportId, personId = prompt("the person just added"), party = prompt("the party with the licence record askAnswer carries")) to outlet ReportContext.ToDMVService.ToDMVServiceToReportContext
       }
       on vehicleAdded: event Report.VehicleAdded is {
         let askAnswer: type DMVService.VehicleRegistrationResult = ask query DMVService.GetVehicleRegistration of context DMVService
         do "a vehicle added to a report needing its registered keeper"
+        send command Report.AddInvolvedParty(reportId = vehicleAdded.reportId, party = prompt("askAnswer.owner, the registered keeper, as an involved party")) to outlet ReportContext.ToDMVService.ToDMVServiceToReportContext
       }
       on other is {
         error "Unexpected message for adaptor ToDMVService"
@@ -208,12 +239,14 @@ context ReportContext as router is {
       |The model's side of the JailService conversation.
     }
   }
-  adaptor ToJailService to context JailService as merge is { 
+  adaptor ToJailService to context JailService as router is { 
+    outlet ToJailServiceToReportContext is command Report.AddOffense
     inlet ToJailServiceIn is type ReportEvent    inlet ToJailServiceReplies is result JailService.InmateStatusResult    outlet ToJailServiceOut is query JailService.GetInmateStatus
     handler ToJailServiceHandler is {
       on arrestRecorded: event Report.ArrestRecorded is {
         let askAnswer: type JailService.InmateStatusResult = ask query JailService.GetInmateStatus of context JailService
         do "a recorded arrest needing to know whether the person is still held"
+        send command Report.AddOffense(reportId = arrestRecorded.reportId, offense = prompt("the charges in askAnswer.charges as offenses on the report")) to outlet ReportContext.ToJailService.ToJailServiceToReportContext
       }
       on other is {
         error "Unexpected message for adaptor ToJailService"
@@ -230,20 +263,28 @@ context ReportContext as router is {
       |The model's side of the JailService conversation.
     }
   }
-  adaptor ToNCICService to context NCICService as merge is { 
+  adaptor ToNCICService to context NCICService as router is { 
+    outlet ToNCICServiceToReportContext is type ToNCICServiceCommand
     inlet ToNCICServiceIn is type ReportEvent    inlet ToNCICServiceReplies is type NCICService.NCICServiceReply    outlet ToNCICServiceOut is type NCICService.NCICServiceRequest
     handler ToNCICServiceHandler is {
       on involvedPartyAdded: event Report.InvolvedPartyAdded is {
         let askAnswer: type NCICService.PersonCheckResult = ask query NCICService.RunPersonCheck of context NCICService
         do "a party added to a report needing a wants-and-warrants check"
+        send command Report.UpdateInvolvedParty(reportId = involvedPartyAdded.reportId, personId = prompt("the person just added"), party = prompt("the party with the warrants and alerts askAnswer carries")) to outlet ReportContext.ToNCICService.ToNCICServiceToReportContext
       }
       on propertyAdded: event Report.PropertyAdded is {
         let askAnswer: type NCICService.PropertyCheckResult = ask query NCICService.RunPropertyCheck of context NCICService
         do "property added to a report needing to be checked as stolen"
+        when prompt("askAnswer.isStolen") then
+          send command Report.LinkToCase(reportId = propertyAdded.reportId, caseId = prompt("the case askAnswer.caseNumber names")) to outlet ReportContext.ToNCICService.ToNCICServiceToReportContext
+        end
       }
       on vehicleAdded: event Report.VehicleAdded is {
         let askAnswer: type NCICService.VehicleCheckResult = ask query NCICService.RunVehicleCheck of context NCICService
         do "a vehicle added to a report needing to be checked as stolen"
+        when prompt("askAnswer.isStolen or askAnswer.isWanted") then
+          send command Report.AddOffense(reportId = vehicleAdded.reportId, offense = prompt("the stolen or wanted vehicle offense askAnswer establishes")) to outlet ReportContext.ToNCICService.ToNCICServiceToReportContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToNCICService"

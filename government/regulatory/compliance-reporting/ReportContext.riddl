@@ -1,5 +1,17 @@
 // Compliance Reporting - Report Context
 context ReportContext as router is {
+  inlet ReportContextFromToDocumentManagementService is command Report.UpdateSection with {
+    briefly "What ToDocumentManagementService makes of the answers it gets"
+  }
+  connector 'ToDocumentManagementService Intake' is from outlet ReportContext.ToDocumentManagementService.ToDocumentManagementServiceToReportContext to inlet ReportContext.ReportContextFromToDocumentManagementService with {
+    briefly "Answers translated by ToDocumentManagementService, on their way in"
+  }
+  inlet ReportContextFromToRegulatoryPortalService is command Report.RecordAcknowledgment with {
+    briefly "What ToRegulatoryPortalService makes of the answers it gets"
+  }
+  connector 'ToRegulatoryPortalService Intake' is from outlet ReportContext.ToRegulatoryPortalService.ToRegulatoryPortalServiceToReportContext to inlet ReportContext.ReportContextFromToRegulatoryPortalService with {
+    briefly "Answers translated by ToRegulatoryPortalService, on their way in"
+  }
   inlet ReportContextFromAuditManagementService is command Report.RecordFinding with {
     briefly "What FromAuditManagementService makes of that service's news"
   }
@@ -186,7 +198,8 @@ context ReportContext as router is {
       |The model's side of the DocumentManagementService conversation.
     }
   }
-  adaptor ToDocumentManagementService to context DocumentManagementService as merge is { 
+  adaptor ToDocumentManagementService to context DocumentManagementService as router is { 
+    outlet ToDocumentManagementServiceToReportContext is command Report.UpdateSection
     inlet ToDocumentManagementServiceIn is type ReportEvent    inlet ToDocumentManagementServiceReplies is result DocumentManagementService.DocumentContent    outlet ToDocumentManagementServiceOut is type DocumentManagementService.DocumentManagementServiceRequest
     handler ToDocumentManagementServiceHandler is {
       on reportApproved: event ReportApproved is {
@@ -196,6 +209,7 @@ context ReportContext as router is {
       on sectionAdded: event Report.SectionAdded is {
         let askAnswer: type DocumentManagementService.DocumentContent = ask query DocumentManagementService.GetDocument of context DocumentManagementService
         do "a section needing the document it cites"
+        send command Report.UpdateSection(reportId = sectionAdded.reportId, section = prompt("the section with askAnswer.content cited in it")) to outlet ReportContext.ToDocumentManagementService.ToDocumentManagementServiceToReportContext
       }
       on other is {
         error "Unexpected message for adaptor ToDocumentManagementService"
@@ -309,12 +323,14 @@ context ReportContext as router is {
       |The model's side of the RegulatoryPortalService conversation.
     }
   }
-  adaptor ToRegulatoryPortalService to context RegulatoryPortalService as merge is { 
+  adaptor ToRegulatoryPortalService to context RegulatoryPortalService as router is { 
+    outlet ToRegulatoryPortalServiceToReportContext is command Report.RecordAcknowledgment
     inlet ToRegulatoryPortalServiceIn is type ReportEvent    inlet ToRegulatoryPortalServiceReplies is result RegulatoryPortalService.FilingStatus    outlet ToRegulatoryPortalServiceOut is type RegulatoryPortalService.RegulatoryPortalServiceRequest
     handler ToRegulatoryPortalServiceHandler is {
       on reportSubmitted: event Report.ReportSubmitted is {
         let askAnswer: type RegulatoryPortalService.FilingStatus = ask query RegulatoryPortalService.GetFilingStatus of context RegulatoryPortalService
         do "submission being when the portal's own view starts to matter"
+        send command Report.RecordAcknowledgment(reportId = reportSubmitted.reportId, receipt = prompt("a receipt from askAnswer.filingId and askAnswer.status")) to outlet ReportContext.ToRegulatoryPortalService.ToRegulatoryPortalServiceToReportContext
         let item0: type RegulatoryPortalService.SubmitFiling = prompt("translate the reportSubmitted event into a SubmitFiling, the submission being the filing itself")
         send item0 to outlet ReportContext.ToRegulatoryPortalService.ToRegulatoryPortalServiceOut
       }

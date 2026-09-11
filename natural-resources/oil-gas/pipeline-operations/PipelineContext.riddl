@@ -1,5 +1,17 @@
 // Pipeline Operations - Pipeline Context
 context PipelineContext as router is {
+  inlet PipelineContextFromToRegulatoryPortal is command PipelineSegment.ScheduleMaintenance with {
+    briefly "What ToRegulatoryPortal makes of the answers it gets"
+  }
+  connector 'ToRegulatoryPortal Intake' is from outlet PipelineContext.ToRegulatoryPortal.ToRegulatoryPortalToPipelineContext to inlet PipelineContext.PipelineContextFromToRegulatoryPortal with {
+    briefly "Answers translated by ToRegulatoryPortal, on their way in"
+  }
+  inlet PipelineContextFromToSCADASystem is command PipelineSegment.ReportLeakIndicator with {
+    briefly "What ToSCADASystem makes of the answers it gets"
+  }
+  connector 'ToSCADASystem Intake' is from outlet PipelineContext.ToSCADASystem.ToSCADASystemToPipelineContext to inlet PipelineContext.PipelineContextFromToSCADASystem with {
+    briefly "Answers translated by ToSCADASystem, on their way in"
+  }
   inlet PipelineSegmentCommandStreamIn is type PipelineSegmentCommand  outlet PipelineSegmentCommandStreamOut is type PipelineSegmentCommand
   inlet PipelineResultStreamIn is result PipelineSegment.PipelineSegmentResult  outlet PipelineResultStreamOut is result PipelineSegment.PipelineSegmentResult
   handler PipelineContextBoundary is {
@@ -67,7 +79,8 @@ context PipelineContext as router is {
       |The model's side of the RegulatoryPortal conversation.
     }
   }
-  adaptor ToRegulatoryPortal to context RegulatoryPortal as merge is { 
+  adaptor ToRegulatoryPortal to context RegulatoryPortal as router is { 
+    outlet ToRegulatoryPortalToPipelineContext is command PipelineSegment.ScheduleMaintenance
     inlet ToRegulatoryPortalIn is type PipelineSegmentEvent    inlet ToRegulatoryPortalReplies is result RegulatoryPortal.ComplianceStatus    outlet ToRegulatoryPortalOut is type RegulatoryPortal.RegulatoryPortalRequest
     handler ToRegulatoryPortalHandler is {
       on inspectionRecorded: event InspectionRecorded is {
@@ -77,6 +90,9 @@ context PipelineContext as router is {
       on complianceReportFiled: event PipelineSegment.ComplianceReportFiled is {
         let askAnswer: type RegulatoryPortal.ComplianceStatus = ask query RegulatoryPortal.GetComplianceStatus of context RegulatoryPortal
         do "a filed report needing the regulator's standing on the segment"
+        when prompt("not askAnswer.isCompliant") then
+          send command PipelineSegment.ScheduleMaintenance(segmentId = complianceReportFiled.segmentId, maintenance = prompt("maintenance clearing askAnswer.outstandingItems before askAnswer.nextFilingDue")) to outlet PipelineContext.ToRegulatoryPortal.ToRegulatoryPortalToPipelineContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToRegulatoryPortal"
@@ -113,12 +129,16 @@ context PipelineContext as router is {
       |The model's side of the SCADASystem conversation.
     }
   }
-  adaptor ToSCADASystem to context SCADASystem as merge is { 
+  adaptor ToSCADASystem to context SCADASystem as router is { 
+    outlet ToSCADASystemToPipelineContext is command PipelineSegment.ReportLeakIndicator
     inlet ToSCADASystemIn is type PipelineSegmentEvent    inlet ToSCADASystemReplies is result SCADASystem.LiveReadings    outlet ToSCADASystemOut is type SCADASystem.SCADASystemRequest
     handler ToSCADASystemHandler is {
       on flowReadingRecorded: event PipelineSegment.FlowReadingRecorded is {
         let askAnswer: type SCADASystem.LiveReadings = ask query SCADASystem.GetLiveReadings of context SCADASystem
         do "a recorded flow needing the live instrument picture around it"
+        when prompt("askAnswer.readings disagree with the recorded flow") then
+          send command PipelineSegment.ReportLeakIndicator(segmentId = flowReadingRecorded.segmentId, indicator = prompt("the divergence between the recorded flow and askAnswer.readings")) to outlet PipelineContext.ToSCADASystem.ToSCADASystemToPipelineContext
+        end
       }
       on leakIndicatorReported: event PipelineSegment.LeakIndicatorReported is {
         let item0: type SCADASystem.SendControlSignal = prompt("translate the leakIndicatorReported event into a SendControlSignal, a leak indication being what must be acted on rather than noted")

@@ -1,5 +1,28 @@
 // Batch Processing - BatchContext
 context BatchContext as router is {
+  inlet BatchContextFromToInventoryService is command Batch.RecordParameter with {
+    briefly "What ToInventoryService makes of the answers it gets"
+  }
+  connector 'ToInventoryService Intake' is from outlet BatchContext.ToInventoryService.ToInventoryServiceToBatchContext to inlet BatchContext.BatchContextFromToInventoryService with {
+    briefly "Answers translated by ToInventoryService, on their way in"
+  }
+  inlet BatchContextFromToLaboratoryService is command Batch.HoldBatch with {
+    briefly "What ToLaboratoryService makes of the answers it gets"
+  }
+  connector 'ToLaboratoryService Intake' is from outlet BatchContext.ToLaboratoryService.ToLaboratoryServiceToBatchContext to inlet BatchContext.BatchContextFromToLaboratoryService with {
+    briefly "Answers translated by ToLaboratoryService, on their way in"
+  }
+  type ToRecipeManagementCommand is one of {
+    Batch.RecordParameter or Batch.StartProcessing
+  } with {
+    briefly "What ToRecipeManagement turns its answers into"
+  }
+  inlet BatchContextFromToRecipeManagement is type ToRecipeManagementCommand with {
+    briefly "What ToRecipeManagement makes of the answers it gets"
+  }
+  connector 'ToRecipeManagement Intake' is from outlet BatchContext.ToRecipeManagement.ToRecipeManagementToBatchContext to inlet BatchContext.BatchContextFromToRecipeManagement with {
+    briefly "Answers translated by ToRecipeManagement, on their way in"
+  }
   connector 'EquipmentUtilization Storage 2' is from outlet BatchContext.EquipmentUtilization.EquipmentUtilizationToGenealogyRepository2 to inlet BatchContext.GenealogyRepository.GenealogyRepositoryFromEquipmentUtilization with {
     briefly "EquipmentUtilization messages on their way to GenealogyRepository"
     described as {
@@ -100,7 +123,8 @@ context BatchContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor ToInventoryService to context InventoryService as merge is { 
+  adaptor ToInventoryService to context InventoryService as router is { 
+    outlet ToInventoryServiceToBatchContext is command Batch.RecordParameter
     inlet ToInventoryServiceIn is type BatchEvent    inlet ToInventoryServiceReplies is result InventoryService.MaterialLotDetails    outlet ToInventoryServiceOut is type InventoryService.InventoryServiceCommand
     handler ToInventoryServiceHandler is {
       on batchCreated: event Batch.BatchCreated is {
@@ -110,6 +134,7 @@ context BatchContext as router is {
       on ingredientCharged: event Batch.IngredientCharged is {
         let askAnswer: type InventoryService.MaterialLotDetails = ask query InventoryService.GetMaterialLot of context InventoryService
         do "charging an ingredient needing the lot it came from"
+        send command Batch.RecordParameter(batchId = ingredientCharged.batchId, parameter = prompt("the lot askAnswer.lotNumber and its expiry askAnswer.expirationDate for the ingredient charged")) to outlet BatchContext.ToInventoryService.ToInventoryServiceToBatchContext
         let consumption: type InventoryService.ConsumeMaterial = prompt("translate the ingredientCharged event into a ConsumeMaterial, charging being where the material actually enters the vessel")
         send consumption to outlet BatchContext.ToInventoryService.ToInventoryServiceOut
       }
@@ -164,12 +189,16 @@ context BatchContext as router is {
       |The model's side of the LaboratoryService conversation.
     }
   }
-  adaptor ToLaboratoryService to context LaboratoryService as merge is { 
+  adaptor ToLaboratoryService to context LaboratoryService as router is { 
+    outlet ToLaboratoryServiceToBatchContext is command Batch.HoldBatch
     inlet ToLaboratoryServiceIn is type BatchEvent    inlet ToLaboratoryServiceReplies is result LaboratoryService.CertificateOfAnalysis    outlet ToLaboratoryServiceOut is type LaboratoryService.LaboratoryServiceCommand
     handler ToLaboratoryServiceHandler is {
       on batchCompleted: event Batch.BatchCompleted is {
         let askAnswer: type LaboratoryService.CertificateOfAnalysis = ask query LaboratoryService.GetCertificateOfAnalysis of context LaboratoryService
         do "a finished batch needing the analysis that releases it"
+        when prompt("askAnswer.overallStatus is not a pass") then
+          send command Batch.HoldBatch(batchId = batchCompleted.batchId, hold = prompt("a hold pending the certificate: askAnswer.overallStatus")) to outlet BatchContext.ToLaboratoryService.ToLaboratoryServiceToBatchContext
+        end
         let item0: type LaboratoryService.RequestSample = prompt("translate the batchCompleted event into a RequestSample, a completed batch being what there is to assay")
         send item0 to outlet BatchContext.ToLaboratoryService.ToLaboratoryServiceOut
       }
@@ -216,16 +245,19 @@ context BatchContext as router is {
       |The model's side of the RecipeManagement conversation.
     }
   }
-  adaptor ToRecipeManagement to context RecipeManagement as merge is { 
+  adaptor ToRecipeManagement to context RecipeManagement as router is { 
+    outlet ToRecipeManagementToBatchContext is type ToRecipeManagementCommand
     inlet ToRecipeManagementIn is type BatchEvent    inlet ToRecipeManagementReplies is type RecipeManagement.RecipeManagementReply    outlet ToRecipeManagementOut is type RecipeManagement.RecipeManagementRequest
     handler ToRecipeManagementHandler is {
       on batchCreated: event Batch.BatchCreated is {
         let askAnswer: type RecipeManagement.RecipeDetails = ask query RecipeManagement.GetRecipe of context RecipeManagement
         do "a new batch needing the recipe it will be made to"
+        send command Batch.StartProcessing(batchId = batchCreated.batchId, startedBy = batchCreated.createdBy, initialPhase = prompt("the first of askAnswer.phases")) to outlet BatchContext.ToRecipeManagement.ToRecipeManagementToBatchContext
       }
       on batchRejected: event Batch.BatchRejected is {
         let askAnswer: type RecipeManagement.RecipeVersionList = ask query RecipeManagement.GetRecipeVersions of context RecipeManagement
         do "a rejected batch needing to know which recipe version made it"
+        send command Batch.RecordParameter(batchId = batchRejected.batchId, parameter = prompt("the recipe version among askAnswer.versions that made the batch")) to outlet BatchContext.ToRecipeManagement.ToRecipeManagementToBatchContext
       }
       on other is {
         error "Unexpected message for adaptor ToRecipeManagement"

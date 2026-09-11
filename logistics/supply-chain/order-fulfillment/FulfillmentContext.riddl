@@ -1,5 +1,17 @@
 // Order Fulfillment - Fulfillment Context
 context FulfillmentContext as router is {
+  inlet FulfillmentContextFromToInventoryManagement is command FulfillmentOrder.PlaceOnHold with {
+    briefly "What ToInventoryManagement makes of the answers it gets"
+  }
+  connector 'ToInventoryManagement Intake' is from outlet FulfillmentContext.ToInventoryManagement.ToInventoryManagementToFulfillmentContext to inlet FulfillmentContext.FulfillmentContextFromToInventoryManagement with {
+    briefly "Answers translated by ToInventoryManagement, on their way in"
+  }
+  inlet FulfillmentContextFromToShippingCarrier is command FulfillmentOrder.ShipOrder with {
+    briefly "What ToShippingCarrier makes of the answers it gets"
+  }
+  connector 'ToShippingCarrier Intake' is from outlet FulfillmentContext.ToShippingCarrier.ToShippingCarrierToFulfillmentContext to inlet FulfillmentContext.FulfillmentContextFromToShippingCarrier with {
+    briefly "Answers translated by ToShippingCarrier, on their way in"
+  }
   inlet FulfillmentContextFromInventoryManagement is command FulfillmentOrder.AllocateInventory with {
     briefly "What FromInventoryManagement makes of that service's news"
   }
@@ -121,12 +133,16 @@ context FulfillmentContext as router is {
       |The model's side of the InventoryManagement conversation.
     }
   }
-  adaptor ToInventoryManagement to context InventoryManagement as merge is { 
+  adaptor ToInventoryManagement to context InventoryManagement as router is { 
+    outlet ToInventoryManagementToFulfillmentContext is command FulfillmentOrder.PlaceOnHold
     inlet ToInventoryManagementIn is type FulfillmentOrderEvent    inlet ToInventoryManagementReplies is result InventoryManagement.InventoryAvailability    outlet ToInventoryManagementOut is type InventoryManagement.InventoryManagementRequest
     handler ToInventoryManagementHandler is {
       on pickTasksAssigned: event FulfillmentOrder.PickTasksAssigned is {
         let askAnswer: type InventoryManagement.InventoryAvailability = ask query InventoryManagement.CheckAvailability of context InventoryManagement
         do "assigning picks needing the stock to actually be on the shelf"
+        when prompt("askAnswer.available is less than the picks assigned") then
+          send command FulfillmentOrder.PlaceOnHold(orderId = pickTasksAssigned.orderId, reason = prompt("stock short on the shelf: askAnswer.available against the picks")) to outlet FulfillmentContext.ToInventoryManagement.ToInventoryManagementToFulfillmentContext
+        end
       }
       on orderCreated: event FulfillmentOrder.OrderCreated is {
         let item0: type InventoryManagement.ReserveInventory = prompt("translate the orderCreated event into a ReserveInventory, the order being what creates the claim on stock")
@@ -217,12 +233,14 @@ context FulfillmentContext as router is {
       |The model's side of the ShippingCarrier conversation.
     }
   }
-  adaptor ToShippingCarrier to context ShippingCarrier as merge is { 
+  adaptor ToShippingCarrier to context ShippingCarrier as router is { 
+    outlet ToShippingCarrierToFulfillmentContext is command FulfillmentOrder.ShipOrder
     inlet ToShippingCarrierIn is type FulfillmentOrderEvent    inlet ToShippingCarrierReplies is result ShippingCarrier.ShippingRates    outlet ToShippingCarrierOut is type ShippingCarrier.ShippingCarrierRequest
     handler ToShippingCarrierHandler is {
       on pickingCompleted: event FulfillmentOrder.PickingCompleted is {
         let askAnswer: type ShippingCarrier.ShippingRates = ask query ShippingCarrier.GetShippingRates of context ShippingCarrier
         do "picking finishing being when the parcel's size and weight are settled"
+        send command FulfillmentOrder.ShipOrder(orderId = pickingCompleted.orderId, shipment = prompt("a shipment on the cheapest of askAnswer.rates")) to outlet FulfillmentContext.ToShippingCarrier.ToShippingCarrierToFulfillmentContext
       }
       on orderPacked: event FulfillmentOrder.OrderPacked is {
         let item0: type ShippingCarrier.CreateShipment = prompt("translate the orderPacked event into a CreateShipment, a packed order being what there is to hand over")

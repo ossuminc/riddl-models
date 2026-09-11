@@ -1,5 +1,22 @@
 // Fabric Production - Fabric Context
 context FabricContext as router is {
+  type ToDyeChemicalInventoryCommand is one of {
+    FabricLot.RecordWeavingDefect or FabricLot.StartDyeing
+  } with {
+    briefly "What ToDyeChemicalInventory turns its answers into"
+  }
+  inlet FabricContextFromToDyeChemicalInventory is type ToDyeChemicalInventoryCommand with {
+    briefly "What ToDyeChemicalInventory makes of the answers it gets"
+  }
+  connector 'ToDyeChemicalInventory Intake' is from outlet FabricContext.ToDyeChemicalInventory.ToDyeChemicalInventoryToFabricContext to inlet FabricContext.FabricContextFromToDyeChemicalInventory with {
+    briefly "Answers translated by ToDyeChemicalInventory, on their way in"
+  }
+  inlet FabricContextFromToYarnInventory is command FabricLot.StartWarping with {
+    briefly "What ToYarnInventory makes of the answers it gets"
+  }
+  connector 'ToYarnInventory Intake' is from outlet FabricContext.ToYarnInventory.ToYarnInventoryToFabricContext to inlet FabricContext.FabricContextFromToYarnInventory with {
+    briefly "Answers translated by ToYarnInventory, on their way in"
+  }
   connector 'GradingYieldAnalytics Storage' is from outlet FabricContext.GradingYieldAnalytics.GradingYieldAnalyticsToRepository to inlet FabricContext.FabricLotRepository.FabricLotRepositoryFromGradingYieldAnalytics with {
     briefly "GradingYieldAnalytics messages on their way to FabricLotRepository"
     described as {
@@ -142,7 +159,8 @@ context FabricContext as router is {
       |The model's side of the DyeChemicalInventory conversation.
     }
   }
-  adaptor ToDyeChemicalInventory to context DyeChemicalInventory as merge is { 
+  adaptor ToDyeChemicalInventory to context DyeChemicalInventory as router is { 
+    outlet ToDyeChemicalInventoryToFabricContext is type ToDyeChemicalInventoryCommand
     inlet ToDyeChemicalInventoryIn is type FabricLotEvent    inlet ToDyeChemicalInventoryReplies is type DyeChemicalInventory.DyeChemicalInventoryReply    outlet ToDyeChemicalInventoryOut is type DyeChemicalInventory.DyeChemicalInventoryCommand
     handler ToDyeChemicalInventoryHandler is {
       on fabricLotCreated: event FabricLot.FabricLotCreated is {
@@ -152,12 +170,18 @@ context FabricContext as router is {
       on dyeingStarted: event FabricLot.DyeingStarted is {
         let askAnswer: type DyeChemicalInventory.DyeInfo = ask query DyeChemicalInventory.GetDyeInfo of context DyeChemicalInventory
         do "dyeing needing the dye's own recipe"
+        when prompt("dyeingStarted.dyeFormula differs from askAnswer.standardFormula") then
+          send command FabricLot.StartDyeing(fabricLotId = dyeingStarted.fabricLotId, dyeFormula = prompt("askAnswer.standardFormula for askAnswer.colorCode"), technicianId = dyeingStarted.technicianId) to outlet FabricContext.ToDyeChemicalInventory.ToDyeChemicalInventoryToFabricContext
+        end
         let issue: type DyeChemicalInventory.IssueDyeChemicals = prompt("translate the dyeingStarted event into an IssueDyeChemicals, dyeing being where the chemicals are drawn and consumed")
         send issue to outlet FabricContext.ToDyeChemicalInventory.ToDyeChemicalInventoryOut
       }
       on finishingApplied: event FabricLot.FinishingApplied is {
         let askAnswer: type DyeChemicalInventory.ChemicalInfo = ask query DyeChemicalInventory.GetChemicalInfo of context DyeChemicalInventory
         do "a finish needing the chemistry it is applied with"
+        when prompt("askAnswer.safetyClass demands a note on the lot") then
+          send command FabricLot.RecordWeavingDefect(fabricLotId = finishingApplied.fabricLotId, defect = prompt("a hazard note for askAnswer.chemicalName at safety class askAnswer.safetyClass")) to outlet FabricContext.ToDyeChemicalInventory.ToDyeChemicalInventoryToFabricContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToDyeChemicalInventory"
@@ -200,7 +224,8 @@ context FabricContext as router is {
       |The model's side of the YarnInventory conversation.
     }
   }
-  adaptor ToYarnInventory to context YarnInventory as merge is { 
+  adaptor ToYarnInventory to context YarnInventory as router is { 
+    outlet ToYarnInventoryToFabricContext is command FabricLot.StartWarping
     inlet ToYarnInventoryIn is type FabricLotEvent    inlet ToYarnInventoryReplies is result YarnInventory.YarnLotInfo    outlet ToYarnInventoryOut is type YarnInventory.YarnInventoryCommand
     handler ToYarnInventoryHandler is {
       on fabricLotCreated: event FabricLot.FabricLotCreated is {
@@ -210,6 +235,9 @@ context FabricContext as router is {
       on warpingStarted: event FabricLot.WarpingStarted is {
         let askAnswer: type YarnInventory.YarnLotInfo = ask query YarnInventory.GetYarnLotInfo of context YarnInventory
         do "warping needing the yarn lot's count and strength"
+        when prompt("askAnswer.availablePounds is short of what the beam needs") then
+          send command FabricLot.StartWarping(fabricLotId = warpingStarted.fabricLotId, beamId = warpingStarted.beamId, yarnLots = warpingStarted.yarnLots, operatorId = warpingStarted.operatorId) to outlet FabricContext.ToYarnInventory.ToYarnInventoryToFabricContext
+        end
         let issue: type YarnInventory.IssueYarn = prompt("translate the warpingStarted event into an IssueYarn, warping being where the yarn goes onto the beam and leaves stock")
         send issue to outlet FabricContext.ToYarnInventory.ToYarnInventoryOut
       }

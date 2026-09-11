@@ -1,5 +1,23 @@
 // Airline Reservations - Reservation Context
 context ReservationContext as router is {
+  inlet ReservationContextFromToFlightSearchService is command Reservation.ChangeFlightSegment with {
+    briefly "What ToFlightSearchService makes of the answers it gets"
+  }
+  connector 'ToFlightSearchService Intake' is from outlet ReservationContext.ToFlightSearchService.ToFlightSearchServiceToReservationContext to inlet ReservationContext.ReservationContextFromToFlightSearchService with {
+    briefly "Answers translated by ToFlightSearchService, on their way in"
+  }
+  inlet ReservationContextFromToPricingService is command Reservation.ProcessPayment with {
+    briefly "What ToPricingService makes of the answers it gets"
+  }
+  connector 'ToPricingService Intake' is from outlet ReservationContext.ToPricingService.ToPricingServiceToReservationContext to inlet ReservationContext.ReservationContextFromToPricingService with {
+    briefly "Answers translated by ToPricingService, on their way in"
+  }
+  inlet ReservationContextFromToSeatInventoryService is command Reservation.SelectSeat with {
+    briefly "What ToSeatInventoryService makes of the answers it gets"
+  }
+  connector 'ToSeatInventoryService Intake' is from outlet ReservationContext.ToSeatInventoryService.ToSeatInventoryServiceToReservationContext to inlet ReservationContext.ReservationContextFromToSeatInventoryService with {
+    briefly "Answers translated by ToSeatInventoryService, on their way in"
+  }
   inlet ReservationContextFromBoardingService is command Reservation.BoardFlight with {
     briefly "What FromBoardingService makes of that service's news"
   }
@@ -180,16 +198,23 @@ context ReservationContext as router is {
       |The model's side of the CheckInService conversation.
     }
   }
-  adaptor ToFlightSearchService to context FlightSearchService as merge is { 
+  adaptor ToFlightSearchService to context FlightSearchService as router is { 
+    outlet ToFlightSearchServiceToReservationContext is command Reservation.ChangeFlightSegment
     inlet ToFlightSearchServiceIn is type ReservationEvent    inlet ToFlightSearchServiceReplies is type FlightSearchService.FlightSearchServiceReply    outlet ToFlightSearchServiceOut is type FlightSearchService.FlightSearchServiceRequest
     handler ToFlightSearchServiceHandler is {
       on flightSegmentChanged: event Reservation.FlightSegmentChanged is {
         let askAnswer: type FlightSearchService.FlightDetails = ask query FlightSearchService.GetFlightDetails of context FlightSearchService
         do "a changed segment needing the new flight's times and aircraft"
+        when prompt("askAnswer.flight differs from what the segment holds") then
+          send command Reservation.ChangeFlightSegment(reservationId = flightSegmentChanged.reservationId, segmentNumber = flightSegmentChanged.segmentNumber, newFlight = prompt("askAnswer.flight with its times and aircraft filled in")) to outlet ReservationContext.ToFlightSearchService.ToFlightSearchServiceToReservationContext
+        end
       }
       on reservationCreated: event Reservation.ReservationCreated is {
         let askAnswer: type FlightSearchService.FlightSearchResults = ask query FlightSearchService.SearchFlights of context FlightSearchService
         do "a new reservation needing flights that fit the journey"
+        when prompt("the journey's segments are not yet flights") then
+          send command Reservation.ChangeFlightSegment(reservationId = reservationCreated.reservationId, segmentNumber = prompt("the first segment"), newFlight = prompt("the first of askAnswer.outboundFlights that fits")) to outlet ReservationContext.ToFlightSearchService.ToFlightSearchServiceToReservationContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToFlightSearchService"
@@ -303,12 +328,14 @@ context ReservationContext as router is {
       |The model's side of the PaymentProcessingService conversation.
     }
   }
-  adaptor ToPricingService to context PricingService as merge is { 
+  adaptor ToPricingService to context PricingService as router is { 
+    outlet ToPricingServiceToReservationContext is command Reservation.ProcessPayment
     inlet ToPricingServiceIn is type ReservationEvent    inlet ToPricingServiceReplies is result PricingService.FareCalculation    outlet ToPricingServiceOut is query PricingService.CalculateFare
     handler ToPricingServiceHandler is {
       on seatSelected: event Reservation.SeatSelected is {
         let askAnswer: type PricingService.FareCalculation = ask query PricingService.CalculateFare of context PricingService
         do "a chosen seat needing the fare that goes with it"
+        send command Reservation.ProcessPayment(reservationId = seatSelected.reservationId, paymentMethod = prompt("the passenger's method"), paymentToken = prompt("a token for askAnswer.pricing")) to outlet ReservationContext.ToPricingService.ToPricingServiceToReservationContext
       }
       on other is {
         error "Unexpected message for adaptor ToPricingService"
@@ -348,7 +375,8 @@ context ReservationContext as router is {
       |The model's side of the SeatInventoryService conversation.
     }
   }
-  adaptor ToSeatInventoryService to context SeatInventoryService as merge is { 
+  adaptor ToSeatInventoryService to context SeatInventoryService as router is { 
+    outlet ToSeatInventoryServiceToReservationContext is command Reservation.SelectSeat
     inlet ToSeatInventoryServiceIn is type ReservationEvent    inlet ToSeatInventoryServiceReplies is result SeatInventoryService.AvailableSeats    outlet ToSeatInventoryServiceOut is type SeatInventoryService.SeatInventoryServiceCommand
     handler ToSeatInventoryServiceHandler is {
       on seatSelected: event Reservation.SeatSelected is {
@@ -362,6 +390,7 @@ context ReservationContext as router is {
       on reservationCreated: event Reservation.ReservationCreated is {
         let askAnswer: type SeatInventoryService.AvailableSeats = ask query SeatInventoryService.GetAvailableSeats of context SeatInventoryService
         do "a booking needing the seat map before a seat can be chosen"
+        send command Reservation.SelectSeat(reservationId = reservationCreated.reservationId, segmentNumber = prompt("the first segment"), seat = prompt("the first of askAnswer.seats the passenger accepts")) to outlet ReservationContext.ToSeatInventoryService.ToSeatInventoryServiceToReservationContext
       }
       on other is {
         error "Unexpected message for adaptor ToSeatInventoryService"

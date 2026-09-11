@@ -1,5 +1,17 @@
 // Fund Administration - Fund Admin Context
 context FundAdminContext as router is {
+  inlet FundAdminContextFromToCustodianSystem is command FundAccount.RecordTransaction with {
+    briefly "What ToCustodianSystem makes of the answers it gets"
+  }
+  connector 'ToCustodianSystem Intake' is from outlet FundAdminContext.ToCustodianSystem.ToCustodianSystemToFundAdminContext to inlet FundAdminContext.FundAdminContextFromToCustodianSystem with {
+    briefly "Answers translated by ToCustodianSystem, on their way in"
+  }
+  inlet FundAdminContextFromToRegulatoryFiling is command FundAccount.GenerateLpReport with {
+    briefly "What ToRegulatoryFiling makes of the answers it gets"
+  }
+  connector 'ToRegulatoryFiling Intake' is from outlet FundAdminContext.ToRegulatoryFiling.ToRegulatoryFilingToFundAdminContext to inlet FundAdminContext.FundAdminContextFromToRegulatoryFiling with {
+    briefly "Answers translated by ToRegulatoryFiling, on their way in"
+  }
   inlet FundAccountCommandStreamIn is type FundAccountCommand  outlet FundAccountCommandStreamOut is type FundAccountCommand
   inlet FundAccountResultStreamIn is result FundAccount.FundAccountResult  outlet FundAccountResultStreamOut is result FundAccount.FundAccountResult
   handler FundAdminContextBoundary is {
@@ -64,12 +76,16 @@ context FundAdminContext as router is {
       |The model's side of the CustodianSystem conversation.
     }
   }
-  adaptor ToCustodianSystem to context CustodianSystem as merge is { 
+  adaptor ToCustodianSystem to context CustodianSystem as router is { 
+    outlet ToCustodianSystemToFundAdminContext is command FundAccount.RecordTransaction
     inlet ToCustodianSystemIn is type FundAccountEvent    inlet ToCustodianSystemReplies is result CustodianSystem.AccountBalance    outlet ToCustodianSystemOut is type CustodianSystem.CustodianSystemRequest
     handler ToCustodianSystemHandler is {
       on callPaymentReceived: event FundAccount.CallPaymentReceived is {
         let askAnswer: type CustodianSystem.AccountBalance = ask query CustodianSystem.GetAccountBalance of context CustodianSystem
         do "a receipt needing the custodian's own balance to reconcile to"
+        when prompt("askAnswer.balance disagrees with the book") then
+          send command FundAccount.RecordTransaction(accountId = callPaymentReceived.accountId, transaction = prompt("a reconciling entry for the difference between askAnswer.balance and the book")) to outlet FundAdminContext.ToCustodianSystem.ToCustodianSystemToFundAdminContext
+        end
       }
       on distributionProcessed: event FundAccount.DistributionProcessed is {
         let item0: type CustodianSystem.TransferFunds = prompt("translate the distributionProcessed event into a TransferFunds, the distribution being what the custodian must actually move")
@@ -116,12 +132,16 @@ context FundAdminContext as router is {
       |The model's side of the RegulatoryFiling conversation.
     }
   }
-  adaptor ToRegulatoryFiling to context RegulatoryFiling as merge is { 
+  adaptor ToRegulatoryFiling to context RegulatoryFiling as router is { 
+    outlet ToRegulatoryFilingToFundAdminContext is command FundAccount.GenerateLpReport
     inlet ToRegulatoryFilingIn is type FundAccountEvent    inlet ToRegulatoryFilingReplies is result RegulatoryFiling.FilingStatus    outlet ToRegulatoryFilingOut is type RegulatoryFiling.RegulatoryFilingRequest
     handler ToRegulatoryFilingHandler is {
       on lpReportGenerated: event FundAccount.LpReportGenerated is {
         let askAnswer: type RegulatoryFiling.FilingStatus = ask query RegulatoryFiling.GetFilingStatus of context RegulatoryFiling
         do "a generated report needing to know what has already been filed"
+        when prompt("askAnswer.filingStatus shows the period already filed") then
+          send command FundAccount.GenerateLpReport(accountId = lpReportGenerated.accountId, reportPeriod = lpReportGenerated.reportPeriod) to outlet FundAdminContext.ToRegulatoryFiling.ToRegulatoryFilingToFundAdminContext
+        end
       }
       on navCalculated: event FundAccount.NavCalculated is {
         let item0: type RegulatoryFiling.SubmitFiling = prompt("translate the navCalculated event into a SubmitFiling, the NAV being the fund's reportable fact")

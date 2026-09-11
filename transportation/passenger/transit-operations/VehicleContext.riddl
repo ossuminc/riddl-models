@@ -1,5 +1,28 @@
 // Transit Operations - Vehicle Context
 context VehicleContext as router is {
+  inlet VehicleContextFromToCADService is command Vehicle.AssignTrip with {
+    briefly "What ToCADService makes of the answers it gets"
+  }
+  connector 'ToCADService Intake' is from outlet VehicleContext.ToCADService.ToCADServiceToVehicleContext to inlet VehicleContext.VehicleContextFromToCADService with {
+    briefly "Answers translated by ToCADService, on their way in"
+  }
+  inlet VehicleContextFromToMaintenanceService is command Vehicle.PullFromService with {
+    briefly "What ToMaintenanceService makes of the answers it gets"
+  }
+  connector 'ToMaintenanceService Intake' is from outlet VehicleContext.ToMaintenanceService.ToMaintenanceServiceToVehicleContext to inlet VehicleContext.VehicleContextFromToMaintenanceService with {
+    briefly "Answers translated by ToMaintenanceService, on their way in"
+  }
+  type ToScheduleServiceCommand is one of {
+    Vehicle.AssignTrip or Vehicle.RecordStopEvent
+  } with {
+    briefly "What ToScheduleService turns its answers into"
+  }
+  inlet VehicleContextFromToScheduleService is type ToScheduleServiceCommand with {
+    briefly "What ToScheduleService makes of the answers it gets"
+  }
+  connector 'ToScheduleService Intake' is from outlet VehicleContext.ToScheduleService.ToScheduleServiceToVehicleContext to inlet VehicleContext.VehicleContextFromToScheduleService with {
+    briefly "Answers translated by ToScheduleService, on their way in"
+  }
   inlet VehicleCommandStreamIn is type VehicleCommand  outlet VehicleCommandStreamOut is type VehicleCommand
   inlet VehicleResultStreamIn is result Vehicle.VehicleResult  outlet VehicleResultStreamOut is result Vehicle.VehicleResult
   handler VehicleContextBoundary is {
@@ -76,12 +99,16 @@ context VehicleContext as router is {
       |The model's side of the CADService conversation.
     }
   }
-  adaptor ToCADService to context CADService as merge is { 
+  adaptor ToCADService to context CADService as router is { 
+    outlet ToCADServiceToVehicleContext is command Vehicle.AssignTrip
     inlet ToCADServiceIn is type VehicleEvent    inlet ToCADServiceReplies is result CADService.ActiveVehiclesResult    outlet ToCADServiceOut is type CADService.CADServiceCommand
     handler ToCADServiceHandler is {
       on tripAssigned: event Vehicle.TripAssigned is {
         let askAnswer: type CADService.ActiveVehiclesResult = ask query CADService.GetActiveVehicles of context CADService
         do "assigning a trip needing to know which vehicles are actually running"
+        when prompt("the vehicle is not among askAnswer.vehicles running") then
+          send command Vehicle.AssignTrip(vehicleId = tripAssigned.vehicleId, trip = tripAssigned.trip) to outlet VehicleContext.ToCADService.ToCADServiceToVehicleContext
+        end
         let item0: type CADService.DispatchVehicle = prompt("translate the tripAssigned event into a DispatchVehicle, an assigned trip being what puts a bus on the road")
         send item0 to outlet VehicleContext.ToCADService.ToCADServiceOut
       }
@@ -214,12 +241,16 @@ context VehicleContext as router is {
       |The model's side of the MaintenanceService conversation.
     }
   }
-  adaptor ToMaintenanceService to context MaintenanceService as merge is { 
+  adaptor ToMaintenanceService to context MaintenanceService as router is { 
+    outlet ToMaintenanceServiceToVehicleContext is command Vehicle.PullFromService
     inlet ToMaintenanceServiceIn is type VehicleEvent    inlet ToMaintenanceServiceReplies is result MaintenanceService.MaintenanceStatusResult    outlet ToMaintenanceServiceOut is type MaintenanceService.MaintenanceServiceRequest
     handler ToMaintenanceServiceHandler is {
       on tripAssigned: event Vehicle.TripAssigned is {
         let askAnswer: type MaintenanceService.MaintenanceStatusResult = ask query MaintenanceService.GetVehicleMaintenanceStatus of context MaintenanceService
         do "a trip assignment needing the vehicle to be fit to run it"
+        when prompt("askAnswer.openWorkOrders is greater than zero or askAnswer.safetyInspectionDue has passed") then
+          send command Vehicle.PullFromService(vehicleId = tripAssigned.vehicleId, reason = prompt("askAnswer.openWorkOrders open work orders or inspection due askAnswer.safetyInspectionDue")) to outlet VehicleContext.ToMaintenanceService.ToMaintenanceServiceToVehicleContext
+        end
       }
       on vehiclePulledFromService: event Vehicle.VehiclePulledFromService is {
         let item0: type MaintenanceService.CreateDefectReport = prompt("translate the vehiclePulledFromService event into a CreateDefectReport, a vehicle pulled from service being what a defect report explains")
@@ -309,16 +340,23 @@ context VehicleContext as router is {
       |The model's side of the ScheduleService conversation.
     }
   }
-  adaptor ToScheduleService to context ScheduleService as merge is { 
+  adaptor ToScheduleService to context ScheduleService as router is { 
+    outlet ToScheduleServiceToVehicleContext is type ToScheduleServiceCommand
     inlet ToScheduleServiceIn is type VehicleEvent    inlet ToScheduleServiceReplies is type ScheduleService.ScheduleServiceReply    outlet ToScheduleServiceOut is type ScheduleService.ScheduleServiceRequest
     handler ToScheduleServiceHandler is {
       on stopEventRecorded: event Vehicle.StopEventRecorded is {
         let askAnswer: type ScheduleService.StopTimesResult = ask query ScheduleService.GetStopTimes of context ScheduleService
         do "a stop event needing the scheduled time to measure lateness against"
+        when prompt("the stop event carried no scheduled time") then
+          send command Vehicle.RecordStopEvent(vehicleId = stopEventRecorded.vehicleId, stopEvent = prompt("the stop event with its lateness against askAnswer.stops")) to outlet VehicleContext.ToScheduleService.ToScheduleServiceToVehicleContext
+        end
       }
       on tripAssigned: event Vehicle.TripAssigned is {
         let askAnswer: type ScheduleService.ScheduleResult = ask query ScheduleService.GetTodaySchedule of context ScheduleService
         do "an assigned trip needing today's schedule it must run to"
+        when prompt("tripAssigned.trip is not in askAnswer.trips") then
+          send command Vehicle.AssignTrip(vehicleId = tripAssigned.vehicleId, trip = prompt("the trip in askAnswer.trips this assignment corresponds to")) to outlet VehicleContext.ToScheduleService.ToScheduleServiceToVehicleContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToScheduleService"

@@ -1,5 +1,28 @@
 // Venue Management - Venue Context
 context VenueContext as router is {
+  inlet VenueContextFromToCateringService is command Booking.SetCatering with {
+    briefly "What ToCateringService makes of the answers it gets"
+  }
+  connector 'ToCateringService Intake' is from outlet VenueContext.ToCateringService.ToCateringServiceToVenueContext to inlet VenueContext.VenueContextFromToCateringService with {
+    briefly "Answers translated by ToCateringService, on their way in"
+  }
+  inlet VenueContextFromToResourceInventoryService is command Booking.AddResource with {
+    briefly "What ToResourceInventoryService makes of the answers it gets"
+  }
+  connector 'ToResourceInventoryService Intake' is from outlet VenueContext.ToResourceInventoryService.ToResourceInventoryServiceToVenueContext to inlet VenueContext.VenueContextFromToResourceInventoryService with {
+    briefly "Answers translated by ToResourceInventoryService, on their way in"
+  }
+  type ToSpaceAvailabilityServiceCommand is one of {
+    Booking.CancelBooking or Booking.ChangeBookingPeriod
+  } with {
+    briefly "What ToSpaceAvailabilityService turns its answers into"
+  }
+  inlet VenueContextFromToSpaceAvailabilityService is type ToSpaceAvailabilityServiceCommand with {
+    briefly "What ToSpaceAvailabilityService makes of the answers it gets"
+  }
+  connector 'ToSpaceAvailabilityService Intake' is from outlet VenueContext.ToSpaceAvailabilityService.ToSpaceAvailabilityServiceToVenueContext to inlet VenueContext.VenueContextFromToSpaceAvailabilityService with {
+    briefly "Answers translated by ToSpaceAvailabilityService, on their way in"
+  }
   inlet VenueContextFromCateringService is command Booking.SetCatering with {
     briefly "What FromCateringService makes of that service's news"
   }
@@ -96,12 +119,14 @@ context VenueContext as router is {
       |The model's side of the CateringService conversation.
     }
   }
-  adaptor ToCateringService to context CateringService as merge is { 
+  adaptor ToCateringService to context CateringService as router is { 
+    outlet ToCateringServiceToVenueContext is command Booking.SetCatering
     inlet ToCateringServiceIn is type BookingEvent    inlet ToCateringServiceReplies is result CateringService.CateringPackages    outlet ToCateringServiceOut is type CateringService.CateringServiceCommand
     handler ToCateringServiceHandler is {
       on cateringSet: event Booking.CateringSet is {
         let askAnswer: type CateringService.CateringPackages = ask query CateringService.GetCateringPackages of context CateringService
         do "choosing catering needing what the caterer actually offers"
+        send command Booking.SetCatering(bookingId = cateringSet.bookingId, catering = prompt("the package in askAnswer.packages that matches what was chosen")) to outlet VenueContext.ToCateringService.ToCateringServiceToVenueContext
         let item0: type CateringService.BookCatering = prompt("translate the cateringSet event into a BookCatering, the catering choice being what commits the kitchen")
         send item0 to outlet VenueContext.ToCateringService.ToCateringServiceOut
       }
@@ -304,7 +329,8 @@ context VenueContext as router is {
       |The model's side of the ResourceInventoryService conversation.
     }
   }
-  adaptor ToResourceInventoryService to context ResourceInventoryService as merge is { 
+  adaptor ToResourceInventoryService to context ResourceInventoryService as router is { 
+    outlet ToResourceInventoryServiceToVenueContext is command Booking.AddResource
     inlet ToResourceInventoryServiceIn is type BookingEvent    inlet ToResourceInventoryServiceReplies is result ResourceInventoryService.AvailableResources    outlet ToResourceInventoryServiceOut is type ResourceInventoryService.ResourceInventoryServiceCommand
     handler ToResourceInventoryServiceHandler is {
       on bookingConfirmed: event Booking.BookingConfirmed is {
@@ -318,6 +344,7 @@ context VenueContext as router is {
       on bookingCreated: event Booking.BookingCreated is {
         let askAnswer: type ResourceInventoryService.AvailableResources = ask query ResourceInventoryService.GetAvailableResources of context ResourceInventoryService
         do "a booking needing to know what the venue can supply"
+        send command Booking.AddResource(bookingId = bookingCreated.bookingId, resource = prompt("the first of askAnswer.resources the event needs")) to outlet VenueContext.ToResourceInventoryService.ToResourceInventoryServiceToVenueContext
       }
       on other is {
         error "Unexpected message for adaptor ToResourceInventoryService"
@@ -359,14 +386,21 @@ context VenueContext as router is {
       |The model's side of the SpaceAvailabilityService conversation.
     }
   }
-  adaptor ToSpaceAvailabilityService to context SpaceAvailabilityService as merge is { 
+  adaptor ToSpaceAvailabilityService to context SpaceAvailabilityService as router is { 
+    outlet ToSpaceAvailabilityServiceToVenueContext is type ToSpaceAvailabilityServiceCommand
     inlet ToSpaceAvailabilityServiceIn is type BookingEvent    inlet ToSpaceAvailabilityServiceReplies is type SpaceAvailabilityService.SpaceAvailabilityServiceReply    outlet ToSpaceAvailabilityServiceOut is type SpaceAvailabilityService.SpaceAvailabilityServiceCommand
     handler ToSpaceAvailabilityServiceHandler is {
       on bookingCreated: event Booking.BookingCreated is {
         let askAnswer: type SpaceAvailabilityService.AvailableSpaces = ask query SpaceAvailabilityService.SearchAvailableSpaces of context SpaceAvailabilityService
         do "and what else is free if it is not"
+        when prompt("the requested space was not free") then
+          send command Booking.ChangeBookingPeriod(bookingId = bookingCreated.bookingId, newPeriod = prompt("a period in which one of askAnswer.spaces is free")) to outlet VenueContext.ToSpaceAvailabilityService.ToSpaceAvailabilityServiceToVenueContext
+        end
         let askAnswer: type SpaceAvailabilityService.SpaceAvailability = ask query SpaceAvailabilityService.CheckSpaceAvailability of context SpaceAvailabilityService
         do "and whether the space it wants is free"
+        when prompt("not askAnswer.available") then
+          send command Booking.CancelBooking(bookingId = bookingCreated.bookingId, reason = prompt("the space is taken by askAnswer.conflictingBookings"), cancelledBy = prompt("the space availability service")) to outlet VenueContext.ToSpaceAvailabilityService.ToSpaceAvailabilityServiceToVenueContext
+        end
         let item0: type SpaceAvailabilityService.ReserveSpace = prompt("translate the bookingCreated event into a ReserveSpace, the booking being what claims the room")
         send item0 to outlet VenueContext.ToSpaceAvailabilityService.ToSpaceAvailabilityServiceOut
       }

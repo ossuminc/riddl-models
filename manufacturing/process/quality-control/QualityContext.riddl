@@ -1,5 +1,33 @@
 // Quality Control - Quality Context
 context QualityContext as router is {
+  inlet QualityContextFromToCAPAService is command Inspection.InitiateNCR with {
+    briefly "What ToCAPAService makes of the answers it gets"
+  }
+  connector 'ToCAPAService Intake' is from outlet QualityContext.ToCAPAService.ToCAPAServiceToQualityContext to inlet QualityContext.QualityContextFromToCAPAService with {
+    briefly "Answers translated by ToCAPAService, on their way in"
+  }
+  type ToLaboratoryInformationSystemCommand is one of {
+    Inspection.CollectSample or Inspection.RecordTestResult
+  } with {
+    briefly "What ToLaboratoryInformationSystem turns its answers into"
+  }
+  inlet QualityContextFromToLaboratoryInformationSystem is type ToLaboratoryInformationSystemCommand with {
+    briefly "What ToLaboratoryInformationSystem makes of the answers it gets"
+  }
+  connector 'ToLaboratoryInformationSystem Intake' is from outlet QualityContext.ToLaboratoryInformationSystem.ToLaboratoryInformationSystemToQualityContext to inlet QualityContext.QualityContextFromToLaboratoryInformationSystem with {
+    briefly "Answers translated by ToLaboratoryInformationSystem, on their way in"
+  }
+  type ToProductionServiceCommand is one of {
+    Inspection.CollectSample or Inspection.RejectInspection
+  } with {
+    briefly "What ToProductionService turns its answers into"
+  }
+  inlet QualityContextFromToProductionService is type ToProductionServiceCommand with {
+    briefly "What ToProductionService makes of the answers it gets"
+  }
+  connector 'ToProductionService Intake' is from outlet QualityContext.ToProductionService.ToProductionServiceToQualityContext to inlet QualityContext.QualityContextFromToProductionService with {
+    briefly "Answers translated by ToProductionService, on their way in"
+  }
   inlet QualityContextFromLaboratoryInformationSystem is command Inspection.RecordTestResult with {
     briefly "What FromLaboratoryInformationSystem makes of that service's news"
   }
@@ -82,16 +110,23 @@ context QualityContext as router is {
       |The model's side of the CAPAService conversation.
     }
   }
-  adaptor ToCAPAService to context CAPAService as merge is { 
+  adaptor ToCAPAService to context CAPAService as router is { 
+    outlet ToCAPAServiceToQualityContext is command Inspection.InitiateNCR
     inlet ToCAPAServiceIn is type InspectionEvent    inlet ToCAPAServiceReplies is result CAPAService.OpenCAPAs    outlet ToCAPAServiceOut is type CAPAService.CAPAServiceCommand
     handler ToCAPAServiceHandler is {
       on inspectionCreated: event Inspection.InspectionCreated is {
         let askAnswer: type CAPAService.OpenCAPAs = ask query CAPAService.GetOpenCAPAsForProduct of context CAPAService
         do "and an inspection needing the product's open actions before it starts"
+        when prompt("askAnswer.totalCount is greater than zero") then
+          send command Inspection.InitiateNCR(inspectionId = inspectionCreated.inspectionId, nonConformance = prompt("a non-conformance carrying the open actions in askAnswer.capas forward"), initiatedBy = inspectionCreated.requestedBy) to outlet QualityContext.ToCAPAService.ToCAPAServiceToQualityContext
+        end
       }
       on nCRInitiated: event Inspection.NCRInitiated is {
         let askAnswer: type CAPAService.OpenCAPAs = ask query CAPAService.GetCAPAStatus of context CAPAService
         do "a non-conformance needing to know what corrective action is already open"
+        when prompt("askAnswer.totalCount is greater than zero and the NCR names no CAPA") then
+          send command Inspection.InitiateNCR(inspectionId = nCRInitiated.inspectionId, nonConformance = prompt("the non-conformance linked to the open action in askAnswer.capas"), initiatedBy = prompt("the CAPA service")) to outlet QualityContext.ToCAPAService.ToCAPAServiceToQualityContext
+        end
         let item0: type CAPAService.CreateCAPA = prompt("translate the nCRInitiated event into a CreateCAPA, a non-conformance being what corrective action answers")
         send item0 to outlet QualityContext.ToCAPAService.ToCAPAServiceOut
         let item1: type CAPAService.LinkNCRToCAPA = prompt("translate the nCRInitiated event into a LinkNCRToCAPA, and what it must be traceable to")
@@ -137,16 +172,23 @@ context QualityContext as router is {
       |The model's side of the LaboratoryInformationSystem conversation.
     }
   }
-  adaptor ToLaboratoryInformationSystem to context LaboratoryInformationSystem as merge is { 
+  adaptor ToLaboratoryInformationSystem to context LaboratoryInformationSystem as router is { 
+    outlet ToLaboratoryInformationSystemToQualityContext is type ToLaboratoryInformationSystemCommand
     inlet ToLaboratoryInformationSystemIn is type InspectionEvent    inlet ToLaboratoryInformationSystemReplies is type LaboratoryInformationSystem.LaboratoryInformationSystemReply    outlet ToLaboratoryInformationSystemOut is type LaboratoryInformationSystem.LaboratoryInformationSystemRequest
     handler ToLaboratoryInformationSystemHandler is {
       on inspectionCreated: event Inspection.InspectionCreated is {
         let askAnswer: type LaboratoryInformationSystem.LabCapacity = ask query LaboratoryInformationSystem.GetLabCapacity of context LaboratoryInformationSystem
         do "an inspection being unschedulable without knowing the lab can take it"
+        when prompt("askAnswer.availableSlots is greater than zero") then
+          send command Inspection.CollectSample(inspectionId = inspectionCreated.inspectionId, sample = prompt("a sample scheduled for askAnswer.nextAvailable")) to outlet QualityContext.ToLaboratoryInformationSystem.ToLaboratoryInformationSystemToQualityContext
+        end
       }
       on testResultRecorded: event Inspection.TestResultRecorded is {
         let askAnswer: type LaboratoryInformationSystem.TestMethodDetails = ask query LaboratoryInformationSystem.GetTestMethodDetails of context LaboratoryInformationSystem
         do "a result meaning nothing without the method that produced it"
+        when prompt("the result named no method") then
+          send command Inspection.RecordTestResult(inspectionId = testResultRecorded.inspectionId, result = prompt("the result annotated with askAnswer.methodName and askAnswer.standardReference")) to outlet QualityContext.ToLaboratoryInformationSystem.ToLaboratoryInformationSystemToQualityContext
+        end
       }
       on sampleCollected: event Inspection.SampleCollected is {
         let item0: type LaboratoryInformationSystem.SubmitSampleForTesting = prompt("translate the sampleCollected event into a SubmitSampleForTesting, a collected sample being what the laboratory receives")
@@ -190,16 +232,23 @@ context QualityContext as router is {
       |The model's side of the ProductionService conversation.
     }
   }
-  adaptor ToProductionService to context ProductionService as merge is { 
+  adaptor ToProductionService to context ProductionService as router is { 
+    outlet ToProductionServiceToQualityContext is type ToProductionServiceCommand
     inlet ToProductionServiceIn is type InspectionEvent    inlet ToProductionServiceReplies is type ProductionService.ProductionServiceReply    outlet ToProductionServiceOut is type ProductionService.ProductionServiceCommand
     handler ToProductionServiceHandler is {
       on sampleCollected: event Inspection.SampleCollected is {
         let askAnswer: type ProductionService.LotDetails = ask query ProductionService.GetLotDetails of context ProductionService
         do "a sample being meaningless without the lot it came from"
+        when prompt("the sample lacked its lot") then
+          send command Inspection.CollectSample(inspectionId = sampleCollected.inspectionId, sample = prompt("the sample labelled with askAnswer.lotNumber and askAnswer.productCode")) to outlet QualityContext.ToProductionService.ToProductionServiceToQualityContext
+        end
       }
       on inspectionRejected: event Inspection.InspectionRejected is {
         let askAnswer: type ProductionService.RelatedLots = ask query ProductionService.GetRelatedLots of context ProductionService
         do "a rejection needing the lots that share its cause"
+        when prompt("askAnswer.lots names lots not yet rejected") then
+          send command Inspection.RejectInspection(inspectionId = inspectionRejected.inspectionId, rejectedBy = inspectionRejected.rejectedBy, reason = prompt("shares the cause with askAnswer.lots")) to outlet QualityContext.ToProductionService.ToProductionServiceToQualityContext
+        end
         let item0: type ProductionService.PlaceLotOnQualityHold = prompt("translate the inspectionRejected event into a PlaceLotOnQualityHold, a failed inspection being what stops the lot moving")
         send item0 to outlet QualityContext.ToProductionService.ToProductionServiceOut
       }

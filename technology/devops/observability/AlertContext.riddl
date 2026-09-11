@@ -1,5 +1,29 @@
 // Observability - Alert Context
 context AlertContext as router is {
+  inlet AlertContextFromToDashboardService is command Alert.AddComment with {
+    briefly "What ToDashboardService makes of the answers it gets"
+  }
+  connector 'ToDashboardService Intake' is from outlet AlertContext.ToDashboardService.ToDashboardServiceToAlertContext to inlet AlertContext.AlertContextFromToDashboardService with {
+    briefly "Answers translated by ToDashboardService, on their way in"
+  }
+  inlet AlertContextFromToDistributedTracingService is command Alert.AddComment with {
+    briefly "What ToDistributedTracingService makes of the answers it gets"
+  }
+  connector 'ToDistributedTracingService Intake' is from outlet AlertContext.ToDistributedTracingService.ToDistributedTracingServiceToAlertContext to inlet AlertContext.AlertContextFromToDistributedTracingService with {
+    briefly "Answers translated by ToDistributedTracingService, on their way in"
+  }
+  inlet AlertContextFromToLogAggregationService is command Alert.AddComment with {
+    briefly "What ToLogAggregationService makes of the answers it gets"
+  }
+  connector 'ToLogAggregationService Intake' is from outlet AlertContext.ToLogAggregationService.ToLogAggregationServiceToAlertContext to inlet AlertContext.AlertContextFromToLogAggregationService with {
+    briefly "Answers translated by ToLogAggregationService, on their way in"
+  }
+  inlet AlertContextFromToMetricsCollectionService is command Alert.ExpireAlert with {
+    briefly "What ToMetricsCollectionService makes of the answers it gets"
+  }
+  connector 'ToMetricsCollectionService Intake' is from outlet AlertContext.ToMetricsCollectionService.ToMetricsCollectionServiceToAlertContext to inlet AlertContext.AlertContextFromToMetricsCollectionService with {
+    briefly "Answers translated by ToMetricsCollectionService, on their way in"
+  }
   inlet AlertCommandStreamIn is type AlertCommand  outlet AlertCommandStreamOut is type AlertCommand
   inlet AlertResultStreamIn is result Alert.AlertResult  outlet AlertResultStreamOut is result Alert.AlertResult
   handler AlertContextBoundary is {
@@ -58,12 +82,14 @@ context AlertContext as router is {
       |The model's side of the DashboardService conversation.
     }
   }
-  adaptor ToDashboardService to context DashboardService as merge is { 
+  adaptor ToDashboardService to context DashboardService as router is { 
+    outlet ToDashboardServiceToAlertContext is command Alert.AddComment
     inlet ToDashboardServiceIn is type AlertEvent    inlet ToDashboardServiceReplies is result DashboardService.DashboardConfig    outlet ToDashboardServiceOut is type DashboardService.DashboardServiceRequest
     handler ToDashboardServiceHandler is {
       on alertCreated: event Alert.AlertCreated is {
         let askAnswer: type DashboardService.DashboardConfig = ask query DashboardService.GetDashboard of context DashboardService
         do "a new alert needing the dashboard a responder will be sent to"
+        send command Alert.AddComment(alertId = alertCreated.alertId, author = prompt("the dashboard service"), comment = prompt("the dashboard askAnswer.name for the responder")) to outlet AlertContext.ToDashboardService.ToDashboardServiceToAlertContext
       }
       on alertEscalated: event Alert.AlertEscalated is {
         let item0: type DashboardService.CreateDashboard = prompt("translate the alertEscalated event into a CreateDashboard, escalation being when an alert needs somewhere to be watched")
@@ -104,16 +130,19 @@ context AlertContext as router is {
       |The model's side of the DistributedTracingService conversation.
     }
   }
-  adaptor ToDistributedTracingService to context DistributedTracingService as merge is { 
+  adaptor ToDistributedTracingService to context DistributedTracingService as router is { 
+    outlet ToDistributedTracingServiceToAlertContext is command Alert.AddComment
     inlet ToDistributedTracingServiceIn is type AlertEvent    inlet ToDistributedTracingServiceReplies is result DistributedTracingService.TraceSearchResult    outlet ToDistributedTracingServiceOut is type DistributedTracingService.DistributedTracingServiceRequest
     handler ToDistributedTracingServiceHandler is {
       on alertAcknowledged: event Alert.AlertAcknowledged is {
         let askAnswer: type DistributedTracingService.TraceSearchResult = ask query DistributedTracingService.GetTrace of context DistributedTracingService
         do "an acknowledged alert needing the one trace that shows the failure"
+        send command Alert.AddComment(alertId = alertAcknowledged.alertId, author = alertAcknowledged.acknowledgedBy, comment = prompt("the trace in askAnswer.traces that shows the failure")) to outlet AlertContext.ToDistributedTracingService.ToDistributedTracingServiceToAlertContext
       }
       on alertEscalated: event Alert.AlertEscalated is {
         let askAnswer: type DistributedTracingService.TraceSearchResult = ask query DistributedTracingService.SearchTraces of context DistributedTracingService
         do "an escalation needing the traces around the window that went wrong"
+        send command Alert.AddComment(alertId = alertEscalated.alertId, author = prompt("the tracing service"), comment = prompt("the traces around the window in askAnswer")) to outlet AlertContext.ToDistributedTracingService.ToDistributedTracingServiceToAlertContext
       }
       on alertCreated: event Alert.AlertCreated is {
         let item0: type DistributedTracingService.IngestSpans = prompt("translate the alertCreated event into a IngestSpans, an alert being when traces are worth pulling in")
@@ -154,12 +183,14 @@ context AlertContext as router is {
       |The model's side of the LogAggregationService conversation.
     }
   }
-  adaptor ToLogAggregationService to context LogAggregationService as merge is { 
+  adaptor ToLogAggregationService to context LogAggregationService as router is { 
+    outlet ToLogAggregationServiceToAlertContext is command Alert.AddComment
     inlet ToLogAggregationServiceIn is type AlertEvent    inlet ToLogAggregationServiceReplies is result LogAggregationService.LogSearchResult    outlet ToLogAggregationServiceOut is type LogAggregationService.LogAggregationServiceRequest
     handler ToLogAggregationServiceHandler is {
       on alertAcknowledged: event Alert.AlertAcknowledged is {
         let askAnswer: type LogAggregationService.LogSearchResult = ask query LogAggregationService.SearchLogs of context LogAggregationService
         do "an acknowledged alert needing the logs from the window it covers"
+        send command Alert.AddComment(alertId = alertAcknowledged.alertId, author = alertAcknowledged.acknowledgedBy, comment = prompt("the log entries in askAnswer for the window")) to outlet AlertContext.ToLogAggregationService.ToLogAggregationServiceToAlertContext
       }
       on alertCreated: event Alert.AlertCreated is {
         let item0: type LogAggregationService.IngestLogs = prompt("translate the alertCreated event into a IngestLogs, and when logs are")
@@ -200,12 +231,16 @@ context AlertContext as router is {
       |The model's side of the MetricsCollectionService conversation.
     }
   }
-  adaptor ToMetricsCollectionService to context MetricsCollectionService as merge is { 
+  adaptor ToMetricsCollectionService to context MetricsCollectionService as router is { 
+    outlet ToMetricsCollectionServiceToAlertContext is command Alert.ExpireAlert
     inlet ToMetricsCollectionServiceIn is type AlertEvent    inlet ToMetricsCollectionServiceReplies is result MetricsCollectionService.MetricQueryResult    outlet ToMetricsCollectionServiceOut is type MetricsCollectionService.MetricsCollectionServiceRequest
     handler ToMetricsCollectionServiceHandler is {
       on alertResolved: event Alert.AlertResolved is {
         let askAnswer: type MetricsCollectionService.MetricQueryResult = ask query MetricsCollectionService.QueryMetrics of context MetricsCollectionService
         do "a resolved alert needing the metrics that show it really recovered"
+        when prompt("askAnswer.dataPoints show recovery held") then
+          send command Alert.ExpireAlert(alertId = alertResolved.alertId) to outlet AlertContext.ToMetricsCollectionService.ToMetricsCollectionServiceToAlertContext
+        end
       }
       on alertCreated: event Alert.AlertCreated is {
         let item0: type MetricsCollectionService.IngestMetrics = prompt("translate the alertCreated event into a IngestMetrics, and when metrics are")

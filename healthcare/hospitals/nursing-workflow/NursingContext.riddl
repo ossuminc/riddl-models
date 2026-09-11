@@ -1,6 +1,29 @@
 // NursingContext - Bounded Context for Nursing Workflow
 // Contains repository and projectors for nursing operations
 context NursingContext as router is {
+  inlet NursingContextFromToADTService is command NurseShift.AssignPatients with {
+    briefly "What ToADTService makes of the answers it gets"
+  }
+  connector 'ToADTService Intake' is from outlet NursingContext.ToADTService.ToADTServiceToNursingContext to inlet NursingContext.NursingContextFromToADTService with {
+    briefly "Answers translated by ToADTService, on their way in"
+  }
+  type ToMedicationAdministrationCommand is one of {
+    NurseShift.CreateTask or NurseShift.HoldTask
+  } with {
+    briefly "What ToMedicationAdministration turns its answers into"
+  }
+  inlet NursingContextFromToMedicationAdministration is type ToMedicationAdministrationCommand with {
+    briefly "What ToMedicationAdministration makes of the answers it gets"
+  }
+  connector 'ToMedicationAdministration Intake' is from outlet NursingContext.ToMedicationAdministration.ToMedicationAdministrationToNursingContext to inlet NursingContext.NursingContextFromToMedicationAdministration with {
+    briefly "Answers translated by ToMedicationAdministration, on their way in"
+  }
+  inlet NursingContextFromToOrderManagement is command NurseShift.CreateTask with {
+    briefly "What ToOrderManagement makes of the answers it gets"
+  }
+  connector 'ToOrderManagement Intake' is from outlet NursingContext.ToOrderManagement.ToOrderManagementToNursingContext to inlet NursingContext.NursingContextFromToOrderManagement with {
+    briefly "Answers translated by ToOrderManagement, on their way in"
+  }
   inlet NursingContextFromADTService is command NurseShift.AssignPatients with {
     briefly "What FromADTService makes of that service's news"
   }
@@ -109,7 +132,8 @@ context NursingContext as router is {
       |The model's side of the ADTService conversation.
     }
   }
-  adaptor ToADTService to context ADTService as merge is { 
+  adaptor ToADTService to context ADTService as router is { 
+    outlet ToADTServiceToNursingContext is command NurseShift.AssignPatients
     inlet ToADTServiceIn is type NurseShiftEvent    inlet ToADTServiceReplies is result ADTService.CensusList    outlet ToADTServiceOut is type ADTService.ADTServiceRequest
     handler ToADTServiceHandler is {
       on patientsAssigned: event NurseShift.PatientsAssigned is {
@@ -119,6 +143,7 @@ context NursingContext as router is {
       on shiftStarted: event NurseShift.ShiftStarted is {
         let askAnswer: type ADTService.CensusList = ask query ADTService.GetUnitCensus of context ADTService
         do "a shift starting needing the unit's census for the round"
+        send command NurseShift.AssignPatients(shiftId = shiftStarted.shiftId, nurseId = shiftStarted.nurseId, patientIds = prompt("the patients in askAnswer.patients"), assignedBy = prompt("the charge nurse"), acuityScore = prompt("their combined acuity")) to outlet NursingContext.ToADTService.ToADTServiceToNursingContext
       }
       on other is {
         error "Unexpected message for adaptor ToADTService"
@@ -163,7 +188,8 @@ context NursingContext as router is {
       |The model's side of the MedicationAdministration conversation.
     }
   }
-  adaptor ToMedicationAdministration to context MedicationAdministration as merge is { 
+  adaptor ToMedicationAdministration to context MedicationAdministration as router is { 
+    outlet ToMedicationAdministrationToNursingContext is type ToMedicationAdministrationCommand
     inlet ToMedicationAdministrationIn is type NurseShiftEvent    inlet ToMedicationAdministrationReplies is type MedicationAdministration.MedicationAdministrationReply    outlet ToMedicationAdministrationOut is type MedicationAdministration.MedicationAdministrationCommand
     handler ToMedicationAdministrationHandler is {
       on taskHeld: event NurseShift.TaskHeld is {
@@ -173,10 +199,14 @@ context NursingContext as router is {
       on shiftStarted: event NurseShift.ShiftStarted is {
         let askAnswer: type MedicationAdministration.DueMedicationList = ask query MedicationAdministration.GetDueMedications of context MedicationAdministration
         do "a nurse taking the floor needing to know what is due"
+        send command NurseShift.CreateTask(shiftId = shiftStarted.shiftId, taskId = prompt("a new task id"), patientId = prompt("the patient of the first medication in askAnswer.medications"), taskType = prompt("medication"), description = prompt("that medication"), priority = prompt("its priority"), dueTime = prompt("when it is due")) to outlet NursingContext.ToMedicationAdministration.ToMedicationAdministrationToNursingContext
       }
       on taskCreated: event NurseShift.TaskCreated is {
         let askAnswer: type MedicationAdministration.AdministrationHistory = ask query MedicationAdministration.GetMedicationHistory of context MedicationAdministration
         do "a task needing what was already given before it is given again"
+        when prompt("askAnswer.records shows the same medication already given") then
+          send command NurseShift.HoldTask(shiftId = taskCreated.shiftId, taskId = taskCreated.taskId, holdReason = prompt("already administered per askAnswer.records")) to outlet NursingContext.ToMedicationAdministration.ToMedicationAdministrationToNursingContext
+        end
       }
       on taskCompleted: event NurseShift.TaskCompleted is {
         let item0: type MedicationAdministration.DocumentAdministration = prompt("translate the taskCompleted event into a DocumentAdministration, a completed task being the administration itself")
@@ -226,16 +256,19 @@ context NursingContext as router is {
       |The model's side of the OrderManagement conversation.
     }
   }
-  adaptor ToOrderManagement to context OrderManagement as merge is { 
+  adaptor ToOrderManagement to context OrderManagement as router is { 
+    outlet ToOrderManagementToNursingContext is command NurseShift.CreateTask
     inlet ToOrderManagementIn is type NurseShiftEvent    inlet ToOrderManagementReplies is result OrderManagement.OrderList    outlet ToOrderManagementOut is type OrderManagement.OrderManagementCommand
     handler ToOrderManagementHandler is {
       on patientsAssigned: event NurseShift.PatientsAssigned is {
         let askAnswer: type OrderManagement.OrderList = ask query OrderManagement.GetActiveOrders of context OrderManagement
         do "assignment being when the nurse inherits the orders standing against their patients"
+        send command NurseShift.CreateTask(shiftId = patientsAssigned.shiftId, taskId = prompt("a new task id"), patientId = prompt("the patient of the first of askAnswer.orders"), taskType = prompt("its order type"), description = prompt("that order"), priority = prompt("its priority"), dueTime = prompt("when it is due")) to outlet NursingContext.ToOrderManagement.ToOrderManagementToNursingContext
       }
       on shiftStarted: event NurseShift.ShiftStarted is {
         let askAnswer: type OrderManagement.OrderList = ask query OrderManagement.GetOrdersByUnit of context OrderManagement
         do "and the unit's whole order load being what the shift is planned against"
+        send command NurseShift.CreateTask(shiftId = shiftStarted.shiftId, taskId = prompt("a new task id"), patientId = prompt("the patient of the first of askAnswer.orders"), taskType = prompt("its order type"), description = prompt("that order"), priority = prompt("its priority"), dueTime = prompt("when it is due")) to outlet NursingContext.ToOrderManagement.ToOrderManagementToNursingContext
       }
       on taskCreated: event NurseShift.TaskCreated is {
         let item0: type OrderManagement.AcknowledgeOrder = prompt("translate the taskCreated event into a AcknowledgeOrder, a task being how an order reaches the nurse")

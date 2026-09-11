@@ -1,5 +1,17 @@
 // Equipment Inventory - Inventory Context
 context InventoryContext as router is {
+  inlet InventoryContextFromToNetworkManagementSystem is command EquipmentItem.InstallEquipment with {
+    briefly "What ToNetworkManagementSystem makes of the answers it gets"
+  }
+  connector 'ToNetworkManagementSystem Intake' is from outlet InventoryContext.ToNetworkManagementSystem.ToNetworkManagementSystemToInventoryContext to inlet InventoryContext.InventoryContextFromToNetworkManagementSystem with {
+    briefly "Answers translated by ToNetworkManagementSystem, on their way in"
+  }
+  inlet InventoryContextFromToProcurementSystem is command EquipmentItem.RegisterEquipment with {
+    briefly "What ToProcurementSystem makes of the answers it gets"
+  }
+  connector 'ToProcurementSystem Intake' is from outlet InventoryContext.ToProcurementSystem.ToProcurementSystemToInventoryContext to inlet InventoryContext.InventoryContextFromToProcurementSystem with {
+    briefly "Answers translated by ToProcurementSystem, on their way in"
+  }
   inlet EquipmentItemCommandStreamIn is type EquipmentItemCommand  outlet EquipmentItemCommandStreamOut is type EquipmentItemCommand
   inlet StockItemResultStreamIn is result EquipmentItem.EquipmentItemResult  outlet StockItemResultStreamOut is result EquipmentItem.EquipmentItemResult
   handler InventoryContextBoundary is {
@@ -61,12 +73,16 @@ context InventoryContext as router is {
       |The model's side of the NetworkManagementSystem conversation.
     }
   }
-  adaptor ToNetworkManagementSystem to context NetworkManagementSystem as merge is { 
+  adaptor ToNetworkManagementSystem to context NetworkManagementSystem as router is { 
+    outlet ToNetworkManagementSystemToInventoryContext is command EquipmentItem.InstallEquipment
     inlet ToNetworkManagementSystemIn is type EquipmentItemEvent    inlet ToNetworkManagementSystemReplies is result NetworkManagementSystem.NetworkTopology    outlet ToNetworkManagementSystemOut is type NetworkManagementSystem.NetworkManagementSystemRequest
     handler ToNetworkManagementSystemHandler is {
       on equipmentAllocated: event EquipmentItem.EquipmentAllocated is {
         let askAnswer: type NetworkManagementSystem.NetworkTopology = ask query NetworkManagementSystem.GetNetworkTopology of context NetworkManagementSystem
         do "an allocation needing to know where in the network the item is going"
+        when prompt("askAnswer.elements has room for the item") then
+          send command EquipmentItem.InstallEquipment(itemId = equipmentAllocated.itemId, installedBy = prompt("the field team"), installedAt = prompt("when the site is ready"), updatedIpAddress = prompt("an address on the site's network per askAnswer"), hostname = prompt("a hostname per askAnswer.elements")) to outlet InventoryContext.ToNetworkManagementSystem.ToNetworkManagementSystemToInventoryContext
+        end
       }
       on equipmentInstalled: event EquipmentItem.EquipmentInstalled is {
         let item0: type NetworkManagementSystem.RegisterNetworkElement = prompt("translate the equipmentInstalled event into a RegisterNetworkElement, installation being when the element becomes part of the network")
@@ -107,12 +123,16 @@ context InventoryContext as router is {
       |The model's side of the ProcurementSystem conversation.
     }
   }
-  adaptor ToProcurementSystem to context ProcurementSystem as merge is { 
+  adaptor ToProcurementSystem to context ProcurementSystem as router is { 
+    outlet ToProcurementSystemToInventoryContext is command EquipmentItem.RegisterEquipment
     inlet ToProcurementSystemIn is type EquipmentItemEvent    inlet ToProcurementSystemReplies is result ProcurementSystem.VendorCatalog    outlet ToProcurementSystemOut is type ProcurementSystem.ProcurementSystemRequest
     handler ToProcurementSystemHandler is {
       on equipmentReceived: event EquipmentItem.EquipmentReceived is {
         let askAnswer: type ProcurementSystem.VendorCatalog = ask query ProcurementSystem.GetVendorCatalog of context ProcurementSystem
         do "a received item needing the catalogue entry to check it against"
+        when prompt("the received item disagrees with its catalogue entry") then
+          send command EquipmentItem.RegisterEquipment(itemId = equipmentReceived.itemId, details = prompt("the details corrected to the catalogue entry in askAnswer.items"), vendorId = askAnswer.vendorId, purchaseOrderId = prompt("the order it came on")) to outlet InventoryContext.ToProcurementSystem.ToProcurementSystemToInventoryContext
+        end
       }
       on equipmentDecommissioned: event EquipmentItem.EquipmentDecommissioned is {
         let item0: type ProcurementSystem.SubmitPurchaseOrder = prompt("translate the equipmentDecommissioned event into a SubmitPurchaseOrder, decommissioning creating the need to replace")

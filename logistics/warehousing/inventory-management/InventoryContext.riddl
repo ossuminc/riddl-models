@@ -1,5 +1,23 @@
 // Inventory Management - Inventory Context
 context InventoryContext as router is {
+  inlet InventoryContextFromToBarcodeService is command Inventory.ReceiveStock with {
+    briefly "What ToBarcodeService makes of the answers it gets"
+  }
+  connector 'ToBarcodeService Intake' is from outlet InventoryContext.ToBarcodeService.ToBarcodeServiceToInventoryContext to inlet InventoryContext.InventoryContextFromToBarcodeService with {
+    briefly "Answers translated by ToBarcodeService, on their way in"
+  }
+  inlet InventoryContextFromToProcurementService is command Inventory.RequestReplenishment with {
+    briefly "What ToProcurementService makes of the answers it gets"
+  }
+  connector 'ToProcurementService Intake' is from outlet InventoryContext.ToProcurementService.ToProcurementServiceToInventoryContext to inlet InventoryContext.InventoryContextFromToProcurementService with {
+    briefly "Answers translated by ToProcurementService, on their way in"
+  }
+  inlet InventoryContextFromToWarehouseManagementService is command Inventory.TransferStock with {
+    briefly "What ToWarehouseManagementService makes of the answers it gets"
+  }
+  connector 'ToWarehouseManagementService Intake' is from outlet InventoryContext.ToWarehouseManagementService.ToWarehouseManagementServiceToInventoryContext to inlet InventoryContext.InventoryContextFromToWarehouseManagementService with {
+    briefly "Answers translated by ToWarehouseManagementService, on their way in"
+  }
   inlet InventoryContextFromQualityControlService is command Inventory.RecordInspection with {
     briefly "What FromQualityControlService makes of that service's news"
   }
@@ -76,12 +94,16 @@ context InventoryContext as router is {
       |The model's side of the BarcodeService conversation.
     }
   }
-  adaptor ToBarcodeService to context BarcodeService as merge is { 
+  adaptor ToBarcodeService to context BarcodeService as router is { 
+    outlet ToBarcodeServiceToInventoryContext is command Inventory.ReceiveStock
     inlet ToBarcodeServiceIn is type InventoryEvent    inlet ToBarcodeServiceReplies is result BarcodeService.BarcodeData    outlet ToBarcodeServiceOut is type BarcodeService.BarcodeServiceCommand
     handler ToBarcodeServiceHandler is {
       on stockReceived: event Inventory.StockReceived is {
         let askAnswer: type BarcodeService.BarcodeData = ask query BarcodeService.GetBarcode of context BarcodeService
         do "receipt being when goods must be identified to be put away"
+        when prompt("the receipt lacked a barcode") then
+          send command Inventory.ReceiveStock(inventoryId = stockReceived.inventoryId, receipt = prompt("the receipt with askAnswer.barcode identifying the goods")) to outlet InventoryContext.ToBarcodeService.ToBarcodeServiceToInventoryContext
+        end
         let item0: type BarcodeService.ScanBarcode = prompt("translate the stockReceived event into a ScanBarcode, receipt being when goods must be identified")
         send item0 to outlet InventoryContext.ToBarcodeService.ToBarcodeServiceOut
         let item1: type BarcodeService.GenerateLabel = prompt("translate the stockReceived event into a GenerateLabel, and when they must be labelled to be found again")
@@ -171,12 +193,16 @@ context InventoryContext as router is {
       |The model's side of the ProcurementService conversation.
     }
   }
-  adaptor ToProcurementService to context ProcurementService as merge is { 
+  adaptor ToProcurementService to context ProcurementService as router is { 
+    outlet ToProcurementServiceToInventoryContext is command Inventory.RequestReplenishment
     inlet ToProcurementServiceIn is type InventoryEvent    inlet ToProcurementServiceReplies is result ProcurementService.PurchaseOrderStatus    outlet ToProcurementServiceOut is type ProcurementService.ProcurementServiceRequest
     handler ToProcurementServiceHandler is {
       on cycleCountRecorded: event Inventory.CycleCountRecorded is {
         let askAnswer: type ProcurementService.PurchaseOrderStatus = ask query ProcurementService.GetPurchaseOrderStatus of context ProcurementService
         do "a count that disagrees needing to know what is still on order"
+        when prompt("the count found a shortfall larger than askAnswer.expectedQuantity") then
+          send command Inventory.RequestReplenishment(inventoryId = cycleCountRecorded.inventoryId, request = prompt("a request for the shortfall, less askAnswer.expectedQuantity still on order")) to outlet InventoryContext.ToProcurementService.ToProcurementServiceToInventoryContext
+        end
       }
       on replenishmentRequested: event Inventory.ReplenishmentRequested is {
         let item0: type ProcurementService.CreatePurchaseOrder = prompt("translate the replenishmentRequested event into a CreatePurchaseOrder, the request being what procurement acts on")
@@ -297,16 +323,21 @@ context InventoryContext as router is {
       |The model's side of the ShippingService conversation.
     }
   }
-  adaptor ToWarehouseManagementService to context WarehouseManagementService as merge is { 
+  adaptor ToWarehouseManagementService to context WarehouseManagementService as router is { 
+    outlet ToWarehouseManagementServiceToInventoryContext is command Inventory.TransferStock
     inlet ToWarehouseManagementServiceIn is type InventoryEvent    inlet ToWarehouseManagementServiceReplies is type WarehouseManagementService.WarehouseManagementServiceReply    outlet ToWarehouseManagementServiceOut is type WarehouseManagementService.WarehouseManagementServiceRequest
     handler ToWarehouseManagementServiceHandler is {
       on stockReceived: event Inventory.StockReceived is {
         let slotting: type WarehouseManagementService.SlottingRecommendation = ask query WarehouseManagementService.GetSlottingRecommendation of context WarehouseManagementService
         do "arriving goods need a location decided for them, and the recommendation is where they are put away"
+        send command Inventory.TransferStock(inventoryId = stockReceived.inventoryId, toLocation = slotting.recommendedLocation, quantity = prompt("the quantity received"), performedBy = prompt("the put-away team")) to outlet InventoryContext.ToWarehouseManagementService.ToWarehouseManagementServiceToInventoryContext
       }
       on stockTransferred: event Inventory.StockTransferred is {
         let askAnswer: type WarehouseManagementService.LocationCapacity = ask query WarehouseManagementService.GetLocationCapacity of context WarehouseManagementService
         do "a transfer needing room at the place it is going to"
+        when prompt("askAnswer.availableCapacity is less than stockTransferred.quantity") then
+          send command Inventory.TransferStock(inventoryId = stockTransferred.inventoryId, toLocation = prompt("a location with room"), quantity = stockTransferred.quantity, performedBy = prompt("the warehouse")) to outlet InventoryContext.ToWarehouseManagementService.ToWarehouseManagementServiceToInventoryContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToWarehouseManagementService"

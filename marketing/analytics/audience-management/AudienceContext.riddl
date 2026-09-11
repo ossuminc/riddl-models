@@ -1,5 +1,17 @@
 // Audience Management - Audience Context
 context AudienceContext as router is {
+  inlet AudienceContextFromToAdPlatform is command AudienceSegment.PauseSegment with {
+    briefly "What ToAdPlatform makes of the answers it gets"
+  }
+  connector 'ToAdPlatform Intake' is from outlet AudienceContext.ToAdPlatform.ToAdPlatformToAudienceContext to inlet AudienceContext.AudienceContextFromToAdPlatform with {
+    briefly "Answers translated by ToAdPlatform, on their way in"
+  }
+  inlet AudienceContextFromToDataManagementPlatform is command AudienceSegment.FailSegmentBuild with {
+    briefly "What ToDataManagementPlatform makes of the answers it gets"
+  }
+  connector 'ToDataManagementPlatform Intake' is from outlet AudienceContext.ToDataManagementPlatform.ToDataManagementPlatformToAudienceContext to inlet AudienceContext.AudienceContextFromToDataManagementPlatform with {
+    briefly "Answers translated by ToDataManagementPlatform, on their way in"
+  }
   inlet AudienceSegmentCommandStreamIn is type AudienceSegmentCommand  outlet AudienceSegmentCommandStreamOut is type AudienceSegmentCommand
   inlet AudienceSegmentResultStreamIn is result AudienceSegment.AudienceSegmentResult  outlet AudienceSegmentResultStreamOut is result AudienceSegment.AudienceSegmentResult
   handler AudienceContextBoundary is {
@@ -67,12 +79,16 @@ context AudienceContext as router is {
       |The model's side of the AdPlatform conversation.
     }
   }
-  adaptor ToAdPlatform to context AdPlatform as merge is { 
+  adaptor ToAdPlatform to context AdPlatform as router is { 
+    outlet ToAdPlatformToAudienceContext is command AudienceSegment.PauseSegment
     inlet ToAdPlatformIn is type AudienceSegmentEvent    inlet ToAdPlatformReplies is result AdPlatform.ChannelReach    outlet ToAdPlatformOut is type AdPlatform.AdPlatformCommand
     handler ToAdPlatformHandler is {
       on segmentActivated: event AudienceSegment.SegmentActivated is {
         let askAnswer: type AdPlatform.ChannelReach = ask query AdPlatform.GetChannelReach of context AdPlatform
         do "activation being when the segment's reach decides where to spend"
+        when prompt("askAnswer.estimatedReach is too small to spend on") then
+          send command AudienceSegment.PauseSegment(segmentId = segmentActivated.segmentId, reason = prompt("reach askAnswer.estimatedReach at match rate askAnswer.matchRate is too small to spend on")) to outlet AudienceContext.ToAdPlatform.ToAdPlatformToAudienceContext
+        end
         let item0: type AdPlatform.PushAudience = prompt("translate the segmentActivated event into a PushAudience, activation being when a segment is meant to be targetable")
         send item0 to outlet AudienceContext.ToAdPlatform.ToAdPlatformOut
       }
@@ -115,12 +131,16 @@ context AudienceContext as router is {
       |The model's side of the DataManagementPlatform conversation.
     }
   }
-  adaptor ToDataManagementPlatform to context DataManagementPlatform as merge is { 
+  adaptor ToDataManagementPlatform to context DataManagementPlatform as router is { 
+    outlet ToDataManagementPlatformToAudienceContext is command AudienceSegment.FailSegmentBuild
     inlet ToDataManagementPlatformIn is type AudienceSegmentEvent    inlet ToDataManagementPlatformReplies is result DataManagementPlatform.CustomerProfiles    outlet ToDataManagementPlatformOut is type DataManagementPlatform.DataManagementPlatformRequest
     handler ToDataManagementPlatformHandler is {
       on segmentBuildStarted: event AudienceSegment.SegmentBuildStarted is {
         let askAnswer: type DataManagementPlatform.CustomerProfiles = ask query DataManagementPlatform.GetCustomerProfiles of context DataManagementPlatform
         do "a build needing the profiles it selects over"
+        when prompt("askAnswer.totalMatches is zero") then
+          send command AudienceSegment.FailSegmentBuild(segmentId = segmentBuildStarted.segmentId, reason = prompt("no profiles matched: askAnswer.totalMatches")) to outlet AudienceContext.ToDataManagementPlatform.ToDataManagementPlatformToAudienceContext
+        end
       }
       on segmentBuildCompleted: event AudienceSegment.SegmentBuildCompleted is {
         let item0: type DataManagementPlatform.SyncAudienceData = prompt("translate the segmentBuildCompleted event into a SyncAudienceData, a rebuilt segment making the platform's copy wrong")

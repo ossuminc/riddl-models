@@ -1,5 +1,17 @@
 // Subscriber Management - Subscriber Context
 context SubscriberContext as router is {
+  inlet SubscriberContextFromToBillingSystem is command Subscriber.SuspendService with {
+    briefly "What ToBillingSystem makes of the answers it gets"
+  }
+  connector 'ToBillingSystem Intake' is from outlet SubscriberContext.ToBillingSystem.ToBillingSystemToSubscriberContext to inlet SubscriberContext.SubscriberContextFromToBillingSystem with {
+    briefly "Answers translated by ToBillingSystem, on their way in"
+  }
+  inlet SubscriberContextFromToCRMSystem is command Subscriber.CreateSupportTicket with {
+    briefly "What ToCRMSystem makes of the answers it gets"
+  }
+  connector 'ToCRMSystem Intake' is from outlet SubscriberContext.ToCRMSystem.ToCRMSystemToSubscriberContext to inlet SubscriberContext.SubscriberContextFromToCRMSystem with {
+    briefly "Answers translated by ToCRMSystem, on their way in"
+  }
   inlet SubscriberContextFromNetworkProvisioning is command Subscriber.ActivateService with {
     briefly "What FromNetworkProvisioning makes of that service's news"
   }
@@ -76,7 +88,8 @@ context SubscriberContext as router is {
       |The model's side of the BillingSystem conversation.
     }
   }
-  adaptor ToBillingSystem to context BillingSystem as merge is { 
+  adaptor ToBillingSystem to context BillingSystem as router is { 
+    outlet ToBillingSystemToSubscriberContext is command Subscriber.SuspendService
     inlet ToBillingSystemIn is type SubscriberEvent    inlet ToBillingSystemReplies is result BillingSystem.AccountBalance    outlet ToBillingSystemOut is type BillingSystem.BillingSystemCommand
     handler ToBillingSystemHandler is {
       on subscriberCreated: event Subscriber.SubscriberCreated is {
@@ -94,6 +107,9 @@ context SubscriberContext as router is {
       on supportTicketCreated: event Subscriber.SupportTicketCreated is {
         let askAnswer: type BillingSystem.AccountBalance = ask query BillingSystem.GetAccountBalance of context BillingSystem
         do "an agent needing what the subscriber owes before they talk"
+        when prompt("askAnswer.pastDueAmount is greater than zero") then
+          send command Subscriber.SuspendService(subscriberId = supportTicketCreated.subscriberId, reason = prompt("past due askAnswer.pastDueAmount"), suspendedAt = prompt("now")) to outlet SubscriberContext.ToBillingSystem.ToBillingSystemToSubscriberContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToBillingSystem"
@@ -110,7 +126,8 @@ context SubscriberContext as router is {
       |The model's side of the BillingSystem conversation.
     }
   }
-  adaptor ToCRMSystem to context CRMSystem as merge is { 
+  adaptor ToCRMSystem to context CRMSystem as router is { 
+    outlet ToCRMSystemToSubscriberContext is command Subscriber.CreateSupportTicket
     inlet ToCRMSystemIn is type SubscriberEvent    inlet ToCRMSystemReplies is result CRMSystem.CustomerHistory    outlet ToCRMSystemOut is type CRMSystem.CRMSystemCommand
     handler ToCRMSystemHandler is {
       on subscriberCreated: event Subscriber.SubscriberCreated is {
@@ -120,6 +137,9 @@ context SubscriberContext as router is {
       on supportTicketCreated: event Subscriber.SupportTicketCreated is {
         let askAnswer: type CRMSystem.CustomerHistory = ask query CRMSystem.GetCustomerHistory of context CRMSystem
         do "and what has happened to them before"
+        when prompt("the ticket lacked the customer's history") then
+          send command Subscriber.CreateSupportTicket(subscriberId = supportTicketCreated.subscriberId, ticket = prompt("the ticket annotated with askAnswer.totalInteractions prior contacts and satisfaction askAnswer.satisfactionScore")) to outlet SubscriberContext.ToCRMSystem.ToCRMSystemToSubscriberContext
+        end
         let item0: type CRMSystem.LogInteraction = prompt("translate the supportTicketCreated event into a LogInteraction, a support contact being the interaction the CRM must reflect")
         send item0 to outlet SubscriberContext.ToCRMSystem.ToCRMSystemOut
       }

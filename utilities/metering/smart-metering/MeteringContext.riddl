@@ -1,5 +1,17 @@
 // Smart Metering - Metering Context
 context MeteringContext as router is {
+  inlet MeteringContextFromToHeadEndSystem is command Meter.UpdateCommunication with {
+    briefly "What ToHeadEndSystem makes of the answers it gets"
+  }
+  connector 'ToHeadEndSystem Intake' is from outlet MeteringContext.ToHeadEndSystem.ToHeadEndSystemToMeteringContext to inlet MeteringContext.MeteringContextFromToHeadEndSystem with {
+    briefly "Answers translated by ToHeadEndSystem, on their way in"
+  }
+  inlet MeteringContextFromToMeterDataManagement is command Meter.RecordReading with {
+    briefly "What ToMeterDataManagement makes of the answers it gets"
+  }
+  connector 'ToMeterDataManagement Intake' is from outlet MeteringContext.ToMeterDataManagement.ToMeterDataManagementToMeteringContext to inlet MeteringContext.MeteringContextFromToMeterDataManagement with {
+    briefly "Answers translated by ToMeterDataManagement, on their way in"
+  }
   inlet MeteringContextFromHeadEndSystem is command Meter.RecordReading with {
     briefly "What FromHeadEndSystem makes of that service's news"
   }
@@ -120,12 +132,16 @@ context MeteringContext as router is {
       |The model's side of the HeadEndSystem conversation.
     }
   }
-  adaptor ToHeadEndSystem to context HeadEndSystem as merge is { 
+  adaptor ToHeadEndSystem to context HeadEndSystem as router is { 
+    outlet ToHeadEndSystemToMeteringContext is command Meter.UpdateCommunication
     inlet ToHeadEndSystemIn is type MeterEvent    inlet ToHeadEndSystemReplies is result HeadEndSystem.MeterStatusResult    outlet ToHeadEndSystemOut is type HeadEndSystem.HeadEndSystemCommand
     handler ToHeadEndSystemHandler is {
       on alertRaised: event Meter.AlertRaised is {
         let askAnswer: type HeadEndSystem.MeterStatusResult = ask query HeadEndSystem.GetMeterStatus of context HeadEndSystem
         do "an alert needing the head-end's own view of the meter"
+        when prompt("not askAnswer.online") then
+          send command Meter.UpdateCommunication(meterId = alertRaised.meterId, communicationStatus = prompt("offline since askAnswer.lastContact, signal askAnswer.signalStrength")) to outlet MeteringContext.ToHeadEndSystem.ToHeadEndSystemToMeteringContext
+        end
       }
       on meterActivated: event Meter.MeterActivated is {
         let item0: type HeadEndSystem.PollMeter = prompt("translate the meterActivated event into a PollMeter, activation being when a meter starts having readings to fetch")
@@ -154,12 +170,16 @@ context MeteringContext as router is {
       |The model's side of the HeadEndSystem conversation.
     }
   }
-  adaptor ToMeterDataManagement to context MeterDataManagement as merge is { 
+  adaptor ToMeterDataManagement to context MeterDataManagement as router is { 
+    outlet ToMeterDataManagementToMeteringContext is command Meter.RecordReading
     inlet ToMeterDataManagementIn is type MeterEvent    inlet ToMeterDataManagementReplies is result MeterDataManagement.ValidationResult    outlet ToMeterDataManagementOut is type MeterDataManagement.MeterDataManagementCommand
     handler ToMeterDataManagementHandler is {
       on readingRecorded: event Meter.ReadingRecorded is {
         let askAnswer: type MeterDataManagement.ValidationResult = ask query MeterDataManagement.GetValidation of context MeterDataManagement
         do "a reading being unbillable until it is validated"
+        when prompt("not askAnswer.valid and askAnswer.estimatedValue is present") then
+          send command Meter.RecordReading(meterId = readingRecorded.meterId, reading = prompt("the reading replaced by askAnswer.estimatedValue")) to outlet MeteringContext.ToMeterDataManagement.ToMeterDataManagementToMeteringContext
+        end
         let item0: type MeterDataManagement.ValidateReading = prompt("translate the readingRecorded event into a ValidateReading, a reading being unusable until it is checked")
         send item0 to outlet MeteringContext.ToMeterDataManagement.ToMeterDataManagementOut
       }

@@ -1,5 +1,23 @@
 // Permit Management - Permit Context
 context PermitContext as router is {
+  inlet PermitContextFromToContractorLicensingService is command Permit.RequestCorrections with {
+    briefly "What ToContractorLicensingService makes of the answers it gets"
+  }
+  connector 'ToContractorLicensingService Intake' is from outlet PermitContext.ToContractorLicensingService.ToContractorLicensingServiceToPermitContext to inlet PermitContext.PermitContextFromToContractorLicensingService with {
+    briefly "Answers translated by ToContractorLicensingService, on their way in"
+  }
+  inlet PermitContextFromToFeeCalculationService is command Permit.CalculateFees with {
+    briefly "What ToFeeCalculationService makes of the answers it gets"
+  }
+  connector 'ToFeeCalculationService Intake' is from outlet PermitContext.ToFeeCalculationService.ToFeeCalculationServiceToPermitContext to inlet PermitContext.PermitContextFromToFeeCalculationService with {
+    briefly "Answers translated by ToFeeCalculationService, on their way in"
+  }
+  inlet PermitContextFromToInspectionSchedulingService is command Permit.ScheduleInspection with {
+    briefly "What ToInspectionSchedulingService makes of the answers it gets"
+  }
+  connector 'ToInspectionSchedulingService Intake' is from outlet PermitContext.ToInspectionSchedulingService.ToInspectionSchedulingServiceToPermitContext to inlet PermitContext.PermitContextFromToInspectionSchedulingService with {
+    briefly "Answers translated by ToInspectionSchedulingService, on their way in"
+  }
   inlet PermitContextFromInspectionSchedulingService is command Permit.ScheduleInspection with {
     briefly "What FromInspectionSchedulingService makes of that service's news"
   }
@@ -74,12 +92,16 @@ context PermitContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'PermitCommand Stream Intake' is from outlet PermitContext.PermitCommandStreamOut to inlet PermitContext.Permit.PermitCommands  connector 'PermitQueryResult Stream Egress' is from outlet PermitContext.PermitRepository.PermitRepositoryResponses to inlet PermitContext.PermitQueryResultStreamIn  adaptor ToContractorLicensingService to context ContractorLicensingService as merge is { 
+  connector 'PermitCommand Stream Intake' is from outlet PermitContext.PermitCommandStreamOut to inlet PermitContext.Permit.PermitCommands  connector 'PermitQueryResult Stream Egress' is from outlet PermitContext.PermitRepository.PermitRepositoryResponses to inlet PermitContext.PermitQueryResultStreamIn  adaptor ToContractorLicensingService to context ContractorLicensingService as router is { 
+    outlet ToContractorLicensingServiceToPermitContext is command Permit.RequestCorrections
     inlet ToContractorLicensingServiceIn is type PermitEvent    inlet ToContractorLicensingServiceReplies is result ContractorLicensingService.LicenseVerificationResult    outlet ToContractorLicensingServiceOut is query ContractorLicensingService.VerifyLicense
     handler ToContractorLicensingServiceHandler is {
       on applicationSubmitted: event Permit.ApplicationSubmitted is {
         let askAnswer: type ContractorLicensingService.LicenseVerificationResult = ask query ContractorLicensingService.VerifyLicense of context ContractorLicensingService
         do "an application needing the contractor's licence to be current"
+        when prompt("not askAnswer.isValid") then
+          send command Permit.RequestCorrections(permitId = applicationSubmitted.permitId, corrections = prompt("the licence askAnswer shows lapsed or invalid"), requestedBy = prompt("the contractor licensing service")) to outlet PermitContext.ToContractorLicensingService.ToContractorLicensingServiceToPermitContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToContractorLicensingService"
@@ -142,12 +164,14 @@ context PermitContext as router is {
       |The model's side of the DocumentStorageService conversation.
     }
   }
-  adaptor ToFeeCalculationService to context FeeCalculationService as merge is { 
+  adaptor ToFeeCalculationService to context FeeCalculationService as router is { 
+    outlet ToFeeCalculationServiceToPermitContext is command Permit.CalculateFees
     inlet ToFeeCalculationServiceIn is type PermitEvent    inlet ToFeeCalculationServiceReplies is result FeeCalculationService.PermitFeesResult    outlet ToFeeCalculationServiceOut is query FeeCalculationService.CalculatePermitFees
     handler ToFeeCalculationServiceHandler is {
       on applicationSubmitted: event Permit.ApplicationSubmitted is {
         let askAnswer: type FeeCalculationService.PermitFeesResult = ask query FeeCalculationService.CalculatePermitFees of context FeeCalculationService
         do "an application needing its fees worked out from the schedule"
+        send command Permit.CalculateFees(permitId = applicationSubmitted.permitId, fees = prompt("the fee schedule askAnswer.feeLineItems gives, totalling askAnswer.totalAmount")) to outlet PermitContext.ToFeeCalculationService.ToFeeCalculationServiceToPermitContext
       }
       on other is {
         error "Unexpected message for adaptor ToFeeCalculationService"
@@ -212,7 +236,8 @@ context PermitContext as router is {
       |The model's side of the InspectionSchedulingService conversation.
     }
   }
-  adaptor ToInspectionSchedulingService to context InspectionSchedulingService as merge is { 
+  adaptor ToInspectionSchedulingService to context InspectionSchedulingService as router is { 
+    outlet ToInspectionSchedulingServiceToPermitContext is command Permit.ScheduleInspection
     inlet ToInspectionSchedulingServiceIn is type PermitEvent    inlet ToInspectionSchedulingServiceReplies is result InspectionSchedulingService.AvailableSlotsResult    outlet ToInspectionSchedulingServiceOut is type InspectionSchedulingService.InspectionSchedulingServiceRequest
     handler ToInspectionSchedulingServiceHandler is {
       on permitIssued: event Permit.PermitIssued is {
@@ -222,6 +247,7 @@ context PermitContext as router is {
       on inspectorAssigned: event Permit.InspectorAssigned is {
         let askAnswer: type InspectionSchedulingService.AvailableSlotsResult = ask query InspectionSchedulingService.GetAvailableSlots of context InspectionSchedulingService
         do "an assigned inspector needing a slot to be booked into"
+        send command Permit.ScheduleInspection(permitId = inspectorAssigned.permitId, inspectionType = prompt("the inspection the inspector was assigned for"), requestedDate = prompt("the earliest of askAnswer.slots")) to outlet PermitContext.ToInspectionSchedulingService.ToInspectionSchedulingServiceToPermitContext
       }
       on other is {
         error "Unexpected message for adaptor ToInspectionSchedulingService"

@@ -1,5 +1,23 @@
 // Client Accounting - Engagement Context
 context EngagementContext as router is {
+  inlet EngagementContextFromToBankFeedService is command Engagement.ReconcileAccount with {
+    briefly "What ToBankFeedService makes of the answers it gets"
+  }
+  connector 'ToBankFeedService Intake' is from outlet EngagementContext.ToBankFeedService.ToBankFeedServiceToEngagementContext to inlet EngagementContext.EngagementContextFromToBankFeedService with {
+    briefly "Answers translated by ToBankFeedService, on their way in"
+  }
+  inlet EngagementContextFromToDocumentStorageService is command Engagement.ReviewFinancials with {
+    briefly "What ToDocumentStorageService makes of the answers it gets"
+  }
+  connector 'ToDocumentStorageService Intake' is from outlet EngagementContext.ToDocumentStorageService.ToDocumentStorageServiceToEngagementContext to inlet EngagementContext.EngagementContextFromToDocumentStorageService with {
+    briefly "Answers translated by ToDocumentStorageService, on their way in"
+  }
+  inlet EngagementContextFromToTaxService is command Engagement.PostJournalEntry with {
+    briefly "What ToTaxService makes of the answers it gets"
+  }
+  connector 'ToTaxService Intake' is from outlet EngagementContext.ToTaxService.ToTaxServiceToEngagementContext to inlet EngagementContext.EngagementContextFromToTaxService with {
+    briefly "Answers translated by ToTaxService, on their way in"
+  }
   inlet EngagementContextFromPaymentProcessingService is command Engagement.RecordPayment with {
     briefly "What FromPaymentProcessingService makes of that service's news"
   }
@@ -59,12 +77,16 @@ context EngagementContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'EngagementCommand Stream Intake' is from outlet EngagementContext.EngagementCommandStreamOut to inlet EngagementContext.Engagement.EngagementCommands  connector 'EngagementQueryResult Stream Egress' is from outlet EngagementContext.EngagementRepository.EngagementRepositoryResponses to inlet EngagementContext.EngagementQueryResultStreamIn  adaptor ToBankFeedService to context BankFeedService as merge is { 
+  connector 'EngagementCommand Stream Intake' is from outlet EngagementContext.EngagementCommandStreamOut to inlet EngagementContext.Engagement.EngagementCommands  connector 'EngagementQueryResult Stream Egress' is from outlet EngagementContext.EngagementRepository.EngagementRepositoryResponses to inlet EngagementContext.EngagementQueryResultStreamIn  adaptor ToBankFeedService to context BankFeedService as router is { 
+    outlet ToBankFeedServiceToEngagementContext is command Engagement.ReconcileAccount
     inlet ToBankFeedServiceIn is type EngagementEvent    inlet ToBankFeedServiceReplies is result BankFeedService.BankTransactionsResult    outlet ToBankFeedServiceOut is query BankFeedService.GetTransactions
     handler ToBankFeedServiceHandler is {
       on accountReconciled: event Engagement.AccountReconciled is {
         let askAnswer: type BankFeedService.BankTransactionsResult = ask query BankFeedService.GetTransactions of context BankFeedService
         do "a reconciliation needing the bank's own transaction list"
+        when prompt("the reconciliation disagrees with askAnswer.balance") then
+          send command Engagement.ReconcileAccount(engagementId = accountReconciled.engagementId, reconciliation = prompt("the reconciliation redone against askAnswer.transactions and askAnswer.balance")) to outlet EngagementContext.ToBankFeedService.ToBankFeedServiceToEngagementContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToBankFeedService"
@@ -146,7 +168,8 @@ context EngagementContext as router is {
       |The model's side of the DocumentStorageService conversation.
     }
   }
-  adaptor ToDocumentStorageService to context DocumentStorageService as merge is { 
+  adaptor ToDocumentStorageService to context DocumentStorageService as router is { 
+    outlet ToDocumentStorageServiceToEngagementContext is command Engagement.ReviewFinancials
     inlet ToDocumentStorageServiceIn is type EngagementEvent    inlet ToDocumentStorageServiceReplies is result DocumentStorageService.DocumentResult    outlet ToDocumentStorageServiceOut is type DocumentStorageService.DocumentStorageServiceRequest
     handler ToDocumentStorageServiceHandler is {
       on financialsGenerated: event FinancialsGenerated is {
@@ -156,6 +179,9 @@ context EngagementContext as router is {
       on financialsReviewed: event Engagement.FinancialsReviewed is {
         let askAnswer: type DocumentStorageService.DocumentResult = ask query DocumentStorageService.RetrieveDocument of context DocumentStorageService
         do "a review needing the source documents behind the numbers"
+        when prompt("the review was made without its source documents") then
+          send command Engagement.ReviewFinancials(engagementId = financialsReviewed.engagementId, statementType = financialsReviewed.statementType, reviewedBy = prompt("the reviewer"), approved = prompt("whether the sources at askAnswer.downloadUrl support the numbers"), comments = prompt("what the sources showed")) to outlet EngagementContext.ToDocumentStorageService.ToDocumentStorageServiceToEngagementContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToDocumentStorageService"
@@ -236,12 +262,14 @@ context EngagementContext as router is {
       |The model's side of the TaxService conversation.
     }
   }
-  adaptor ToTaxService to context TaxService as merge is { 
+  adaptor ToTaxService to context TaxService as router is { 
+    outlet ToTaxServiceToEngagementContext is command Engagement.PostJournalEntry
     inlet ToTaxServiceIn is type EngagementEvent    inlet ToTaxServiceReplies is result TaxService.TaxRatesResult    outlet ToTaxServiceOut is type TaxService.TaxServiceRequest
     handler ToTaxServiceHandler is {
       on invoiceGenerated: event Engagement.InvoiceGenerated is {
         let askAnswer: type TaxService.TaxRatesResult = ask query TaxService.GetTaxRates of context TaxService
         do "an invoice needing the rates that apply where the client sits"
+        send command Engagement.PostJournalEntry(engagementId = invoiceGenerated.engagementId, entry = prompt("the tax entry for the invoice at askAnswer.rates")) to outlet EngagementContext.ToTaxService.ToTaxServiceToEngagementContext
       }
       on financialsGenerated: event Engagement.FinancialsGenerated is {
         let item0: type TaxService.CalculateTaxLiability = prompt("translate the financialsGenerated event into a CalculateTaxLiability, generated financials being what fixes the base to compute on")

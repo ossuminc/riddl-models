@@ -1,5 +1,17 @@
 // Log Tracking - Log Tracking Context
 context LogTrackingContext as router is {
+  inlet LogTrackingContextFromToRegulatorySystem is command TimberLog.QuarantineLog with {
+    briefly "What ToRegulatorySystem makes of the answers it gets"
+  }
+  connector 'ToRegulatorySystem Intake' is from outlet LogTrackingContext.ToRegulatorySystem.ToRegulatorySystemToLogTrackingContext to inlet LogTrackingContext.LogTrackingContextFromToRegulatorySystem with {
+    briefly "Answers translated by ToRegulatorySystem, on their way in"
+  }
+  inlet LogTrackingContextFromToSawmillSystem is command TimberLog.LoadForTransport with {
+    briefly "What ToSawmillSystem makes of the answers it gets"
+  }
+  connector 'ToSawmillSystem Intake' is from outlet LogTrackingContext.ToSawmillSystem.ToSawmillSystemToLogTrackingContext to inlet LogTrackingContext.LogTrackingContextFromToSawmillSystem with {
+    briefly "Answers translated by ToSawmillSystem, on their way in"
+  }
   inlet LogTrackingContextFromSawmillSystem is command TimberLog.RecordDelivery with {
     briefly "What FromSawmillSystem makes of that service's news"
   }
@@ -67,12 +79,16 @@ context LogTrackingContext as router is {
       |The model's side of the RegulatorySystem conversation.
     }
   }
-  adaptor ToRegulatorySystem to context RegulatorySystem as merge is { 
+  adaptor ToRegulatorySystem to context RegulatorySystem as router is { 
+    outlet ToRegulatorySystemToLogTrackingContext is command TimberLog.QuarantineLog
     inlet ToRegulatorySystemIn is type TimberLogEvent    inlet ToRegulatorySystemReplies is result RegulatorySystem.PermitVerification    outlet ToRegulatorySystemOut is type RegulatorySystem.RegulatorySystemRequest
     handler ToRegulatorySystemHandler is {
       on logRegistered: event TimberLog.LogRegistered is {
         let askAnswer: type RegulatorySystem.PermitVerification = ask query RegulatorySystem.VerifyPermit of context RegulatorySystem
         do "registration needing the cutting permit to be real before the log moves"
+        when prompt("not askAnswer.isValid") then
+          send command TimberLog.QuarantineLog(logId = logRegistered.logId, reason = prompt("permit askAnswer.harvestPermit invalid or expired"), quarantinedBy = prompt("the regulatory system")) to outlet LogTrackingContext.ToRegulatorySystem.ToRegulatorySystemToLogTrackingContext
+        end
       }
       on logScaled: event TimberLog.LogScaled is {
         let item0: type RegulatorySystem.SubmitHarvestReport = prompt("translate the logScaled event into a SubmitHarvestReport, scaling being what fixes the volume a harvest report reports")
@@ -115,12 +131,16 @@ context LogTrackingContext as router is {
       |The model's side of the SawmillSystem conversation.
     }
   }
-  adaptor ToSawmillSystem to context SawmillSystem as merge is { 
+  adaptor ToSawmillSystem to context SawmillSystem as router is { 
+    outlet ToSawmillSystemToLogTrackingContext is command TimberLog.LoadForTransport
     inlet ToSawmillSystemIn is type TimberLogEvent    inlet ToSawmillSystemReplies is result SawmillSystem.MillCapacity    outlet ToSawmillSystemOut is type SawmillSystem.SawmillSystemRequest
     handler ToSawmillSystemHandler is {
       on logScaled: event TimberLog.LogScaled is {
         let askAnswer: type SawmillSystem.MillCapacity = ask query SawmillSystem.GetMillCapacity of context SawmillSystem
         do "a scaled log needing a mill with room for the volume it turned out to be"
+        when prompt("askAnswer.availableSlots is greater than zero") then
+          send command TimberLog.LoadForTransport(logId = logScaled.logId, transport = prompt("transport to askAnswer.sawmillId at askAnswer.nextAvailable")) to outlet LogTrackingContext.ToSawmillSystem.ToSawmillSystemToLogTrackingContext
+        end
       }
       on logLoaded: event TimberLog.LogLoaded is {
         let item0: type SawmillSystem.NotifyIncomingLoad = prompt("translate the logLoaded event into a NotifyIncomingLoad, loading being when the mill can expect it")

@@ -1,5 +1,22 @@
 // Order Fulfillment - Fulfillment Context
 context FulfillmentContext as router is {
+  type ToCarrierSystemCommand is one of {
+    FulfillmentOrder.SelectCarrier or FulfillmentOrder.UpdateShipmentStatus
+  } with {
+    briefly "What ToCarrierSystem turns its answers into"
+  }
+  inlet FulfillmentContextFromToCarrierSystem is type ToCarrierSystemCommand with {
+    briefly "What ToCarrierSystem makes of the answers it gets"
+  }
+  connector 'ToCarrierSystem Intake' is from outlet FulfillmentContext.ToCarrierSystem.ToCarrierSystemToFulfillmentContext to inlet FulfillmentContext.FulfillmentContextFromToCarrierSystem with {
+    briefly "Answers translated by ToCarrierSystem, on their way in"
+  }
+  inlet FulfillmentContextFromToWarehouseSystem is command FulfillmentOrder.CancelFulfillment with {
+    briefly "What ToWarehouseSystem makes of the answers it gets"
+  }
+  connector 'ToWarehouseSystem Intake' is from outlet FulfillmentContext.ToWarehouseSystem.ToWarehouseSystemToFulfillmentContext to inlet FulfillmentContext.FulfillmentContextFromToWarehouseSystem with {
+    briefly "Answers translated by ToWarehouseSystem, on their way in"
+  }
   inlet FulfillmentContextFromCarrierSystem is command FulfillmentOrder.CreateShippingLabel with {
     briefly "What FromCarrierSystem makes of that service's news"
   }
@@ -84,16 +101,19 @@ context FulfillmentContext as router is {
       |The model's side of the CarrierSystem conversation.
     }
   }
-  adaptor ToCarrierSystem to context CarrierSystem as merge is { 
+  adaptor ToCarrierSystem to context CarrierSystem as router is { 
+    outlet ToCarrierSystemToFulfillmentContext is type ToCarrierSystemCommand
     inlet ToCarrierSystemIn is type FulfillmentOrderEvent    inlet ToCarrierSystemReplies is type CarrierSystem.CarrierSystemReply    outlet ToCarrierSystemOut is type CarrierSystem.CarrierSystemCommand
     handler ToCarrierSystemHandler is {
       on orderShipped: event FulfillmentOrder.OrderShipped is {
         let askAnswer: type CarrierSystem.TrackingStatus = ask query CarrierSystem.GetTrackingStatus of context CarrierSystem
         do "dispatch being when the carrier starts having a status worth asking for"
+        send command FulfillmentOrder.UpdateShipmentStatus(orderId = orderShipped.orderId, currentLocation = askAnswer.currentLocation, statusUpdate = askAnswer.shipmentStatus, updatedAt = prompt("now")) to outlet FulfillmentContext.ToCarrierSystem.ToCarrierSystemToFulfillmentContext
       }
       on orderPacked: event FulfillmentOrder.OrderPacked is {
         let rates: type CarrierSystem.ShipmentRates = ask query CarrierSystem.GetShipmentRates of context CarrierSystem
         do "a packed order has the weight and size a rate needs, and the rates are what the carrier is selected from"
+        send command FulfillmentOrder.SelectCarrier(orderId = orderPacked.orderId, carrier = prompt("the cheapest of askAnswer.options that meets the service level")) to outlet FulfillmentContext.ToCarrierSystem.ToCarrierSystemToFulfillmentContext
       }
       on carrierSelected: event FulfillmentOrder.CarrierSelected is {
         let item0: type CarrierSystem.BookShipment = prompt("translate the carrierSelected event into a BookShipment, selection being what commits the booking")
@@ -139,12 +159,16 @@ context FulfillmentContext as router is {
       |The model's side of the WarehouseSystem conversation.
     }
   }
-  adaptor ToWarehouseSystem to context WarehouseSystem as merge is { 
+  adaptor ToWarehouseSystem to context WarehouseSystem as router is { 
+    outlet ToWarehouseSystemToFulfillmentContext is command FulfillmentOrder.CancelFulfillment
     inlet ToWarehouseSystemIn is type FulfillmentOrderEvent    inlet ToWarehouseSystemReplies is result WarehouseSystem.InventoryAvailability    outlet ToWarehouseSystemOut is type WarehouseSystem.WarehouseSystemCommand
     handler ToWarehouseSystemHandler is {
       on fulfillmentOrderCreated: event FulfillmentOrder.FulfillmentOrderCreated is {
         let askAnswer: type WarehouseSystem.InventoryAvailability = ask query WarehouseSystem.CheckInventoryAvailability of context WarehouseSystem
         do "an order being unfulfillable without stock"
+        when prompt("not askAnswer.available") then
+          send command FulfillmentOrder.CancelFulfillment(orderId = fulfillmentOrderCreated.orderId, reason = prompt("stock unavailable: askAnswer.unavailableItems")) to outlet FulfillmentContext.ToWarehouseSystem.ToWarehouseSystemToFulfillmentContext
+        end
         let claim: type WarehouseSystem.ReserveInventory = prompt("translate the fulfillmentOrderCreated event into a ReserveInventory claiming the goods this order will ship")
         send claim to outlet FulfillmentContext.ToWarehouseSystem.ToWarehouseSystemOut
       }

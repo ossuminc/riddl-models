@@ -1,5 +1,11 @@
 // Event Ticketing - Ticketing Context
 context TicketingContext as router is {
+  inlet TicketingContextFromToVenueSystem is command Ticket.CancelTicket with {
+    briefly "What ToVenueSystem makes of the answers it gets"
+  }
+  connector 'ToVenueSystem Intake' is from outlet TicketingContext.ToVenueSystem.ToVenueSystemToTicketingContext to inlet TicketingContext.TicketingContextFromToVenueSystem with {
+    briefly "Answers translated by ToVenueSystem, on their way in"
+  }
   type FromPaymentGatewayCommand is one of {
     Ticket.PurchaseTicket or Ticket.RefundTicket
   } with {
@@ -143,12 +149,16 @@ context TicketingContext as router is {
       |The model's side of the VenueSystem conversation.
     }
   }
-  adaptor ToVenueSystem to context VenueSystem as merge is { 
+  adaptor ToVenueSystem to context VenueSystem as router is { 
+    outlet ToVenueSystemToTicketingContext is command Ticket.CancelTicket
     inlet ToVenueSystemIn is type TicketEvent    inlet ToVenueSystemReplies is result VenueSystem.SeatAvailability    outlet ToVenueSystemOut is type VenueSystem.VenueSystemCommand
     handler ToVenueSystemHandler is {
       on ticketCreated: event Ticket.TicketCreated is {
         let askAnswer: type VenueSystem.SeatAvailability = ask query VenueSystem.GetSeatAvailability of context VenueSystem
         do "a ticket existing being when the seat it names must be known to be free"
+        when prompt("ticketCreated.seatInfo is not among askAnswer.availableSeats") then
+          send command Ticket.CancelTicket(ticketId = ticketCreated.ticketId, cancellationReason = prompt("the seat is not among askAnswer.availableSeats")) to outlet TicketingContext.ToVenueSystem.ToVenueSystemToTicketingContext
+        end
       }
       on ticketReserved: event Ticket.TicketReserved is {
         let item0: type VenueSystem.ReserveSeat = prompt("translate the ticketReserved event into a ReserveSeat, a reservation being what claims the seat")

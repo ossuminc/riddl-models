@@ -1,5 +1,41 @@
 // Property Management - Room Context
 context RoomContext as router is {
+  inlet RoomContextFromToHousekeepingManagementService is command Room.AssignHousekeeper with {
+    briefly "What ToHousekeepingManagementService makes of the answers it gets"
+  }
+  connector 'ToHousekeepingManagementService Intake' is from outlet RoomContext.ToHousekeepingManagementService.ToHousekeepingManagementServiceToRoomContext to inlet RoomContext.RoomContextFromToHousekeepingManagementService with {
+    briefly "Answers translated by ToHousekeepingManagementService, on their way in"
+  }
+  inlet RoomContextFromToInventoryService is command WorkOrder.ResumeWork with {
+    briefly "What ToInventoryService makes of the answers it gets"
+  }
+  connector 'ToInventoryService Intake' is from outlet RoomContext.ToInventoryService.ToInventoryServiceToRoomContext to inlet RoomContext.RoomContextFromToInventoryService with {
+    briefly "Answers translated by ToInventoryService, on their way in"
+  }
+  inlet RoomContextFromToMaintenanceManagementService is command Room.ReportMaintenance with {
+    briefly "What ToMaintenanceManagementService makes of the answers it gets"
+  }
+  connector 'ToMaintenanceManagementService Intake' is from outlet RoomContext.ToMaintenanceManagementService.ToMaintenanceManagementServiceToRoomContext to inlet RoomContext.RoomContextFromToMaintenanceManagementService with {
+    briefly "Answers translated by ToMaintenanceManagementService, on their way in"
+  }
+  inlet RoomContextFromToQualityManagementService is command Room.UpdateRoomStatus with {
+    briefly "What ToQualityManagementService makes of the answers it gets"
+  }
+  connector 'ToQualityManagementService Intake' is from outlet RoomContext.ToQualityManagementService.ToQualityManagementServiceToRoomContext to inlet RoomContext.RoomContextFromToQualityManagementService with {
+    briefly "Answers translated by ToQualityManagementService, on their way in"
+  }
+  inlet RoomContextFromToReservationService is command Room.BlockRoom with {
+    briefly "What ToReservationService makes of the answers it gets"
+  }
+  connector 'ToReservationService Intake' is from outlet RoomContext.ToReservationService.ToReservationServiceToRoomContext to inlet RoomContext.RoomContextFromToReservationService with {
+    briefly "Answers translated by ToReservationService, on their way in"
+  }
+  inlet RoomContextFromToStaffSchedulingService is command WorkOrder.AssignWorkOrder with {
+    briefly "What ToStaffSchedulingService makes of the answers it gets"
+  }
+  connector 'ToStaffSchedulingService Intake' is from outlet RoomContext.ToStaffSchedulingService.ToStaffSchedulingServiceToRoomContext to inlet RoomContext.RoomContextFromToStaffSchedulingService with {
+    briefly "Answers translated by ToStaffSchedulingService, on their way in"
+  }
   inlet RoomContextFromHousekeepingManagementService is command Room.AssignHousekeeper with {
     briefly "What FromHousekeepingManagementService makes of that service's news"
   }
@@ -173,12 +209,14 @@ context RoomContext as router is {
       |The model's side of the HousekeepingManagementService conversation.
     }
   }
-  adaptor ToHousekeepingManagementService to context HousekeepingManagementService as merge is { 
+  adaptor ToHousekeepingManagementService to context HousekeepingManagementService as router is { 
+    outlet ToHousekeepingManagementServiceToRoomContext is command Room.AssignHousekeeper
     inlet ToHousekeepingManagementServiceIn is type RoomEvent    inlet ToHousekeepingManagementServiceReplies is result HousekeepingManagementService.HousekeepingQueueResult    outlet ToHousekeepingManagementServiceOut is type HousekeepingManagementService.HousekeepingManagementServiceRequest
     handler ToHousekeepingManagementServiceHandler is {
       on roomStatusChanged: event Room.RoomStatusChanged is {
         let askAnswer: type HousekeepingManagementService.HousekeepingQueueResult = ask query HousekeepingManagementService.GetHousekeepingQueue of context HousekeepingManagementService
         do "a status change reordering the round that must be walked"
+        send command Room.AssignHousekeeper(roomId = roomStatusChanged.roomId, assignment = prompt("an assignment at the position askAnswer.priorityOrder gives this room")) to outlet RoomContext.ToHousekeepingManagementService.ToHousekeepingManagementServiceToRoomContext
       }
       on housekeeperAssigned: event Room.HousekeeperAssigned is {
         let item0: type HousekeepingManagementService.OptimizeAssignments = prompt("translate the housekeeperAssigned event into a OptimizeAssignments, each assignment changing the round that must be walked")
@@ -219,12 +257,16 @@ context RoomContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor ToInventoryService to context InventoryService as merge is { 
+  adaptor ToInventoryService to context InventoryService as router is { 
+    outlet ToInventoryServiceToRoomContext is command WorkOrder.ResumeWork
     inlet ToInventoryServiceIn is type WorkOrderEvent    inlet ToInventoryServiceReplies is result InventoryService.InventoryLevelsResult    outlet ToInventoryServiceOut is type InventoryService.InventoryServiceRequest
     handler ToInventoryServiceHandler is {
       on partsAwaited: event WorkOrder.PartsAwaited is {
         let askAnswer: type InventoryService.InventoryLevelsResult = ask query InventoryService.GetInventoryLevels of context InventoryService
         do "waiting on parts needing to know what is actually in stock"
+        when prompt("askAnswer.inventoryItems holds the parts awaited") then
+          send command WorkOrder.ResumeWork(workOrderId = partsAwaited.workOrderId, roomId = prompt("the room the work order is for")) to outlet RoomContext.ToInventoryService.ToInventoryServiceToRoomContext
+        end
         let replenishment: type InventoryService.OrderSupplies = prompt("translate the partsAwaited event into an OrderSupplies bringing in what the job is waiting on, which is precisely when stock has proved short")
         send replenishment to outlet RoomContext.ToInventoryService.ToInventoryServiceOut
       }
@@ -268,12 +310,16 @@ context RoomContext as router is {
       |The model's side of the MaintenanceManagementService conversation.
     }
   }
-  adaptor ToMaintenanceManagementService to context MaintenanceManagementService as merge is { 
+  adaptor ToMaintenanceManagementService to context MaintenanceManagementService as router is { 
+    outlet ToMaintenanceManagementServiceToRoomContext is command Room.ReportMaintenance
     inlet ToMaintenanceManagementServiceFromRoomIn is type RoomEvent    inlet ToMaintenanceManagementServiceFromWorkOrderIn is type WorkOrderEvent    inlet ToMaintenanceManagementServiceReplies is result MaintenanceManagementService.OpenWorkOrdersResult    outlet ToMaintenanceManagementServiceOut is type MaintenanceManagementService.MaintenanceManagementServiceCommand
     handler ToMaintenanceManagementServiceHandler is {
       on maintenanceReported: event Room.MaintenanceReported is {
         let askAnswer: type MaintenanceManagementService.OpenWorkOrdersResult = ask query MaintenanceManagementService.GetOpenWorkOrders of context MaintenanceManagementService
         do "a new fault needing the work already outstanding on that room"
+        when prompt("askAnswer.workOrders is empty") then
+          send command Room.ReportMaintenance(roomId = maintenanceReported.roomId, request = prompt("the request merged with the open work in askAnswer.workOrders on this room")) to outlet RoomContext.ToMaintenanceManagementService.ToMaintenanceManagementServiceToRoomContext
+        end
         let item0: type MaintenanceManagementService.CreateWorkOrder = prompt("translate the maintenanceReported event into a CreateWorkOrder, a reported fault being what a work order records")
         send item0 to outlet RoomContext.ToMaintenanceManagementService.ToMaintenanceManagementServiceOut
       }
@@ -316,12 +362,14 @@ context RoomContext as router is {
       |The model's side of the QualityManagementService conversation.
     }
   }
-  adaptor ToQualityManagementService to context QualityManagementService as merge is { 
+  adaptor ToQualityManagementService to context QualityManagementService as router is { 
+    outlet ToQualityManagementServiceToRoomContext is command Room.UpdateRoomStatus
     inlet ToQualityManagementServiceIn is type RoomEvent    inlet ToQualityManagementServiceReplies is result QualityManagementService.QualityMetricsResult    outlet ToQualityManagementServiceOut is type QualityManagementService.QualityManagementServiceRequest
     handler ToQualityManagementServiceHandler is {
       on roomInspected: event Room.RoomInspected is {
         let askAnswer: type QualityManagementService.QualityMetricsResult = ask query QualityManagementService.GetQualityMetrics of context QualityManagementService
         do "an inspection being judged against the standard it is held to"
+        send command Room.UpdateRoomStatus(roomId = roomInspected.roomId, newStatus = prompt("the status the inspection earns against askAnswer.inspectionPassRate"), statusChangeReason = prompt("inspection judged against the quality standard")) to outlet RoomContext.ToQualityManagementService.ToQualityManagementServiceToRoomContext
         let item0: type QualityManagementService.RecordQualityIssue = prompt("translate the roomInspected event into a RecordQualityIssue, inspection being what judges the room")
         send item0 to outlet RoomContext.ToQualityManagementService.ToQualityManagementServiceOut
       }
@@ -365,12 +413,16 @@ context RoomContext as router is {
       |The model's side of the ReservationService conversation.
     }
   }
-  adaptor ToReservationService to context ReservationService as merge is { 
+  adaptor ToReservationService to context ReservationService as router is { 
+    outlet ToReservationServiceToRoomContext is command Room.BlockRoom
     inlet ToReservationServiceIn is type RoomEvent    inlet ToReservationServiceReplies is result ReservationService.RoomReservationsResult    outlet ToReservationServiceOut is query ReservationService.GetRoomReservations
     handler ToReservationServiceHandler is {
       on roomBlocked: event Room.RoomBlocked is {
         let askAnswer: type ReservationService.RoomReservationsResult = ask query ReservationService.GetRoomReservations of context ReservationService
         do "a blocked room needing the reservations that must be moved"
+        when prompt("askAnswer.reservations is not empty") then
+          send command Room.BlockRoom(roomId = roomBlocked.roomId, blocking = prompt("the blocking extended to cover askAnswer.reservations that must be moved")) to outlet RoomContext.ToReservationService.ToReservationServiceToRoomContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToReservationService"
@@ -410,12 +462,16 @@ context RoomContext as router is {
       |The model's side of the StaffSchedulingService conversation.
     }
   }
-  adaptor ToStaffSchedulingService to context StaffSchedulingService as merge is { 
+  adaptor ToStaffSchedulingService to context StaffSchedulingService as router is { 
+    outlet ToStaffSchedulingServiceToRoomContext is command WorkOrder.AssignWorkOrder
     inlet ToStaffSchedulingServiceIn is type WorkOrderEvent    inlet ToStaffSchedulingServiceReplies is result StaffSchedulingService.ScheduledStaffResult    outlet ToStaffSchedulingServiceOut is query StaffSchedulingService.GetScheduledStaff
     handler ToStaffSchedulingServiceHandler is {
       on workOrderOpened: event WorkOrder.WorkOrderOpened is {
         let askAnswer: type StaffSchedulingService.ScheduledStaffResult = ask query StaffSchedulingService.GetScheduledStaff of context StaffSchedulingService
         do "an opened work order needing someone on shift to take it"
+        when prompt("askAnswer.staff is not empty") then
+          send command WorkOrder.AssignWorkOrder(workOrderId = workOrderOpened.workOrderId, roomId = prompt("the room the work order is for")) to outlet RoomContext.ToStaffSchedulingService.ToStaffSchedulingServiceToRoomContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToStaffSchedulingService"

@@ -1,5 +1,11 @@
 // Livestock Management - Livestock Context
 context LivestockContext as router is {
+  inlet LivestockContextFromToVeterinarySystem is command LivestockAnimal.UpdateHealthStatus with {
+    briefly "What ToVeterinarySystem makes of the answers it gets"
+  }
+  connector 'ToVeterinarySystem Intake' is from outlet LivestockContext.ToVeterinarySystem.ToVeterinarySystemToLivestockContext to inlet LivestockContext.LivestockContextFromToVeterinarySystem with {
+    briefly "Answers translated by ToVeterinarySystem, on their way in"
+  }
   inlet LivestockAnimalCommandStreamIn is type LivestockAnimalCommand  outlet LivestockAnimalCommandStreamOut is type LivestockAnimalCommand
   inlet LivestockAnimalResultStreamIn is result LivestockAnimal.LivestockAnimalResult  outlet LivestockAnimalResultStreamOut is result LivestockAnimal.LivestockAnimalResult
   handler LivestockContextBoundary is {
@@ -110,12 +116,16 @@ context LivestockContext as router is {
       |The model's side of the VeterinarySystem conversation.
     }
   }
-  adaptor ToVeterinarySystem to context VeterinarySystem as merge is { 
+  adaptor ToVeterinarySystem to context VeterinarySystem as router is { 
+    outlet ToVeterinarySystemToLivestockContext is command LivestockAnimal.UpdateHealthStatus
     inlet ToVeterinarySystemIn is type LivestockAnimalEvent    inlet ToVeterinarySystemReplies is result VeterinarySystem.VaccinationHistory    outlet ToVeterinarySystemOut is type VeterinarySystem.VeterinarySystemRequest
     handler ToVeterinarySystemHandler is {
       on vetVisitRecorded: event LivestockAnimal.VetVisitRecorded is {
         let askAnswer: type VeterinarySystem.VaccinationHistory = ask query VeterinarySystem.GetVaccinationHistory of context VeterinarySystem
         do "a vet visit needing what the animal has already been given"
+        when prompt("askAnswer.vaccinations is complete") then
+          send command LivestockAnimal.UpdateHealthStatus(animalId = vetVisitRecorded.animalId, newStatus = prompt("vaccinations current"), reason = prompt("askAnswer.vaccinations checked at the visit")) to outlet LivestockContext.ToVeterinarySystem.ToVeterinarySystemToLivestockContext
+        end
       }
       on healthStatusUpdated: event LivestockAnimal.HealthStatusUpdated is {
         let item0: type VeterinarySystem.RequestVetInspection = prompt("translate the healthStatusUpdated event into a RequestVetInspection, a change in health being what warrants a visit")

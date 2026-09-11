@@ -1,5 +1,16 @@
 // Restaurant Operations - Order Context
 context OrderContext as router is {
+  type ToMenuServiceCommand is one of {
+    TableOrder.AddItem or TableOrder.VoidItem
+  } with {
+    briefly "What ToMenuService turns its answers into"
+  }
+  inlet OrderContextFromToMenuService is type ToMenuServiceCommand with {
+    briefly "What ToMenuService makes of the answers it gets"
+  }
+  connector 'ToMenuService Intake' is from outlet OrderContext.ToMenuService.ToMenuServiceToOrderContext to inlet OrderContext.OrderContextFromToMenuService with {
+    briefly "Answers translated by ToMenuService, on their way in"
+  }
   inlet OrderContextFromKitchenDisplayService is command TableOrder.MarkItemReady with {
     briefly "What FromKitchenDisplayService makes of that service's news"
   }
@@ -142,16 +153,21 @@ context OrderContext as router is {
       |The model's side of the MenuService conversation.
     }
   }
-  adaptor ToMenuService to context MenuService as merge is { 
+  adaptor ToMenuService to context MenuService as router is { 
+    outlet ToMenuServiceToOrderContext is type ToMenuServiceCommand
     inlet ToMenuServiceIn is type TableOrderEvent    inlet ToMenuServiceReplies is type MenuService.MenuServiceReply    outlet ToMenuServiceOut is type MenuService.MenuServiceRequest
     handler ToMenuServiceHandler is {
       on itemAdded: event TableOrder.ItemAdded is {
         let askAnswer: type MenuService.ItemDetails = ask query MenuService.GetItemDetails of context MenuService
         do "an item added needing its price and its recipe"
+        when prompt("not askAnswer.available") then
+          send command TableOrder.VoidItem(orderId = itemAdded.orderId, lineNumber = prompt("the line just added"), reason = prompt("item unavailable per askAnswer"), authorizedBy = prompt("the menu service")) to outlet OrderContext.ToMenuService.ToMenuServiceToOrderContext
+        end
       }
       on orderCreated: event TableOrder.OrderCreated is {
         let askAnswer: type MenuService.MenuItems = ask query MenuService.GetMenuItems of context MenuService
         do "an order starting needing the menu it is chosen from"
+        send command TableOrder.AddItem(orderId = orderCreated.orderId, menuItem = prompt("the first of askAnswer.menuItems the guests chose"), quantity = prompt("its quantity"), modifications = prompt("none"), seatNumber = prompt("the seat")) to outlet OrderContext.ToMenuService.ToMenuServiceToOrderContext
       }
       on orderSubmitted: event TableOrder.OrderSubmitted is {
         let item0: type MenuService.UpdateAvailability = prompt("translate the orderSubmitted event into a UpdateAvailability, each submitted order consuming what the menu still offers")

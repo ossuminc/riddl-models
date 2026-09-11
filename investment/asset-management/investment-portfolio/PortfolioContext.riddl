@@ -1,5 +1,16 @@
 // Investment Portfolio - Portfolio Context
 context PortfolioContext as router is {
+  type ToMarketDataFeedCommand is one of {
+    Portfolio.AnalyzeRisk or Portfolio.CompareBenchmark
+  } with {
+    briefly "What ToMarketDataFeed turns its answers into"
+  }
+  inlet PortfolioContextFromToMarketDataFeed is type ToMarketDataFeedCommand with {
+    briefly "What ToMarketDataFeed makes of the answers it gets"
+  }
+  connector 'ToMarketDataFeed Intake' is from outlet PortfolioContext.ToMarketDataFeed.ToMarketDataFeedToPortfolioContext to inlet PortfolioContext.PortfolioContextFromToMarketDataFeed with {
+    briefly "Answers translated by ToMarketDataFeed, on their way in"
+  }
   inlet PortfolioContextFromTradingSystem is command Portfolio.RecordTradeFill with {
     briefly "What FromTradingSystem makes of that service's news"
   }
@@ -70,16 +81,21 @@ context PortfolioContext as router is {
       |The model's side of the MarketDataFeed conversation.
     }
   }
-  adaptor ToMarketDataFeed to context MarketDataFeed as merge is { 
+  adaptor ToMarketDataFeed to context MarketDataFeed as router is { 
+    outlet ToMarketDataFeedToPortfolioContext is type ToMarketDataFeedCommand
     inlet ToMarketDataFeedIn is type PortfolioEvent    inlet ToMarketDataFeedReplies is type MarketDataFeed.MarketDataFeedReply    outlet ToMarketDataFeedOut is type MarketDataFeed.MarketDataFeedRequest
     handler ToMarketDataFeedHandler is {
       on benchmarkCompared: event Portfolio.BenchmarkCompared is {
         let askAnswer: type MarketDataFeed.BenchmarkReturn = ask query MarketDataFeed.GetBenchmarkReturn of context MarketDataFeed
         do "a benchmark comparison needing the benchmark's own return"
+        when prompt("the comparison was made without the benchmark's own return") then
+          send command Portfolio.CompareBenchmark(portfolioId = benchmarkCompared.portfolioId, periodStartDate = askAnswer.periodStart, periodEndDate = askAnswer.periodEnd) to outlet PortfolioContext.ToMarketDataFeed.ToMarketDataFeedToPortfolioContext
+        end
       }
       on tradeFilled: event Portfolio.TradeFilled is {
         let askAnswer: type MarketDataFeed.SecurityPrice = ask query MarketDataFeed.GetSecurityPrice of context MarketDataFeed
         do "a filled trade needing the market price to mark it at"
+        send command Portfolio.AnalyzeRisk(portfolioId = tradeFilled.portfolioId, asOfDate = prompt("the date of askAnswer.asOfTime")) to outlet PortfolioContext.ToMarketDataFeed.ToMarketDataFeedToPortfolioContext
       }
       on other is {
         error "Unexpected message for adaptor ToMarketDataFeed"

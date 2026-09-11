@@ -1,5 +1,39 @@
 // Emergency Dispatch - Incident Context
 context IncidentContext as router is {
+  inlet IncidentContextFromToAVLService is command Incident.DispatchUnit with {
+    briefly "What ToAVLService makes of the answers it gets"
+  }
+  connector 'ToAVLService Intake' is from outlet IncidentContext.ToAVLService.ToAVLServiceToIncidentContext to inlet IncidentContext.IncidentContextFromToAVLService with {
+    briefly "Answers translated by ToAVLService, on their way in"
+  }
+  inlet IncidentContextFromToE911Service is command Incident.AddNote with {
+    briefly "What ToE911Service makes of the answers it gets"
+  }
+  connector 'ToE911Service Intake' is from outlet IncidentContext.ToE911Service.ToE911ServiceToIncidentContext to inlet IncidentContext.IncidentContextFromToE911Service with {
+    briefly "Answers translated by ToE911Service, on their way in"
+  }
+  type ToGISServiceCommand is one of {
+    Incident.AddNote or Incident.UpdateIncidentDetails
+  } with {
+    briefly "What ToGISService turns its answers into"
+  }
+  inlet IncidentContextFromToGISService is type ToGISServiceCommand with {
+    briefly "What ToGISService makes of the answers it gets"
+  }
+  connector 'ToGISService Intake' is from outlet IncidentContext.ToGISService.ToGISServiceToIncidentContext to inlet IncidentContext.IncidentContextFromToGISService with {
+    briefly "Answers translated by ToGISService, on their way in"
+  }
+  type ToRMSServiceCommand is one of {
+    Incident.AddNote or Incident.LinkIncidents
+  } with {
+    briefly "What ToRMSService turns its answers into"
+  }
+  inlet IncidentContextFromToRMSService is type ToRMSServiceCommand with {
+    briefly "What ToRMSService makes of the answers it gets"
+  }
+  connector 'ToRMSService Intake' is from outlet IncidentContext.ToRMSService.ToRMSServiceToIncidentContext to inlet IncidentContext.IncidentContextFromToRMSService with {
+    briefly "Answers translated by ToRMSService, on their way in"
+  }
   inlet IncidentContextFromE911Service is command Incident.CreateIncident with {
     briefly "What FromE911Service makes of that service's news"
   }
@@ -103,12 +137,14 @@ context IncidentContext as router is {
       |The model's side of the AVLService conversation.
     }
   }
-  adaptor ToAVLService to context AVLService as merge is { 
+  adaptor ToAVLService to context AVLService as router is { 
+    outlet ToAVLServiceToIncidentContext is command Incident.DispatchUnit
     inlet ToAVLServiceIn is type IncidentEvent    inlet ToAVLServiceReplies is type AVLService.AVLServiceReply    outlet ToAVLServiceOut is type AVLService.AVLServiceRequest
     handler ToAVLServiceHandler is {
       on incidentCreated: event Incident.IncidentCreated is {
         let askAnswer: type AVLService.NearestUnitsResult = ask query AVLService.FindNearestUnits of context AVLService
         do "a new incident needing the closest units to it"
+        send command Incident.DispatchUnit(incidentId = incidentCreated.incidentId, unitId = prompt("the nearest of askAnswer.units"), dispatchedBy = prompt("the dispatcher, on the AVL's recommendation")) to outlet IncidentContext.ToAVLService.ToAVLServiceToIncidentContext
       }
       on unitEnRoute: event Incident.UnitEnRoute is {
         let askAnswer: type AVLService.UnitLocationResult = ask query AVLService.GetUnitLocation of context AVLService
@@ -157,12 +193,14 @@ context IncidentContext as router is {
       |The model's side of the E911Service conversation.
     }
   }
-  adaptor ToE911Service to context E911Service as merge is { 
+  adaptor ToE911Service to context E911Service as router is { 
+    outlet ToE911ServiceToIncidentContext is command Incident.AddNote
     inlet ToE911ServiceIn is type IncidentEvent    inlet ToE911ServiceReplies is result E911Service.CallRecordingResult    outlet ToE911ServiceOut is query E911Service.GetCallRecording
     handler ToE911ServiceHandler is {
       on incidentDetailsUpdated: event Incident.IncidentDetailsUpdated is {
         let askAnswer: type E911Service.CallRecordingResult = ask query E911Service.GetCallRecording of context E911Service
         do "details being corrected needing the original call heard again"
+        send command Incident.AddNote(incidentId = incidentDetailsUpdated.incidentId, note = prompt("a note linking the call recording at askAnswer.recordingUrl")) to outlet IncidentContext.ToE911Service.ToE911ServiceToIncidentContext
       }
       on other is {
         error "Unexpected message for adaptor ToE911Service"
@@ -179,24 +217,29 @@ context IncidentContext as router is {
       |The model's side of the E911Service conversation.
     }
   }
-  adaptor ToGISService to context GISService as merge is { 
+  adaptor ToGISService to context GISService as router is { 
+    outlet ToGISServiceToIncidentContext is type ToGISServiceCommand
     inlet ToGISServiceIn is type IncidentEvent    inlet ToGISServiceReplies is type GISService.GISServiceReply    outlet ToGISServiceOut is type GISService.GISServiceRequest
     handler ToGISServiceHandler is {
       on incidentCreated: event Incident.IncidentCreated is {
         let askAnswer: type GISService.AddressResult = ask query GISService.GetAddressFromCoordinates of context GISService
         do "an incident reported by position needing a street address"
+        send command Incident.UpdateIncidentDetails(incidentId = incidentCreated.incidentId, details = prompt("the details with askAnswer.address as the street address")) to outlet IncidentContext.ToGISService.ToGISServiceToIncidentContext
       }
       on incidentDetailsUpdated: event Incident.IncidentDetailsUpdated is {
         let askAnswer: type GISService.CoordinatesResult = ask query GISService.GetCoordinatesFromAddress of context GISService
         do "a corrected address needing coordinates to dispatch against"
+        send command Incident.UpdateIncidentDetails(incidentId = incidentDetailsUpdated.incidentId, details = prompt("the details with askAnswer.latitude and askAnswer.longitude as the position")) to outlet IncidentContext.ToGISService.ToGISServiceToIncidentContext
       }
       on priorityUpgraded: event Incident.PriorityUpgraded is {
         let askAnswer: type GISService.DispatchZoneResult = ask query GISService.GetDispatchZone of context GISService
         do "an upgraded priority needing the zone that decides who responds"
+        send command Incident.UpdateIncidentDetails(incidentId = priorityUpgraded.incidentId, details = prompt("the details with askAnswer.zoneId and askAnswer.jurisdiction as the dispatch zone")) to outlet IncidentContext.ToGISService.ToGISServiceToIncidentContext
       }
       on unitDispatched: event Incident.UnitDispatched is {
         let askAnswer: type GISService.HazardsResult = ask query GISService.GetHazards of context GISService
         do "a dispatched unit needing to know what is dangerous at the address"
+        send command Incident.AddNote(incidentId = unitDispatched.incidentId, note = prompt("a note listing the hazards in askAnswer.hazards for the responding unit")) to outlet IncidentContext.ToGISService.ToGISServiceToIncidentContext
       }
       on other is {
         error "Unexpected message for adaptor ToGISService"
@@ -264,16 +307,21 @@ context IncidentContext as router is {
       |The model's side of the MDTService conversation.
     }
   }
-  adaptor ToRMSService to context RMSService as merge is { 
+  adaptor ToRMSService to context RMSService as router is { 
+    outlet ToRMSServiceToIncidentContext is type ToRMSServiceCommand
     inlet ToRMSServiceIn is type IncidentEvent    inlet ToRMSServiceReplies is type RMSService.RMSServiceReply    outlet ToRMSServiceOut is type RMSService.RMSServiceRequest
     handler ToRMSServiceHandler is {
       on incidentCreated: event Incident.IncidentCreated is {
         let askAnswer: type RMSService.LocationHistoryResult = ask query RMSService.GetLocationHistory of context RMSService
         do "a new incident needing what has happened at this address before"
+        when prompt("askAnswer.totalCount is greater than zero") then
+          send command Incident.LinkIncidents(incidentId = incidentCreated.incidentId, linkedIncidentId = prompt("the most recent of askAnswer.previousIncidents"), linkType = prompt("prior incident at the same location")) to outlet IncidentContext.ToRMSService.ToRMSServiceToIncidentContext
+        end
       }
       on unitArrived: event Incident.UnitArrived is {
         let askAnswer: type RMSService.PersonWarningsResult = ask query RMSService.GetPersonWarnings of context RMSService
         do "a unit on scene needing warnings about who they will meet"
+        send command Incident.AddNote(incidentId = unitArrived.incidentId, note = prompt("a note carrying the warnings in askAnswer.warnings for the unit on scene")) to outlet IncidentContext.ToRMSService.ToRMSServiceToIncidentContext
       }
       on other is {
         error "Unexpected message for adaptor ToRMSService"

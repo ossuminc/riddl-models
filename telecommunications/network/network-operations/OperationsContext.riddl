@@ -1,5 +1,17 @@
 // Network Operations - Operations Context
 context OperationsContext as router is {
+  inlet OperationsContextFromToCapacityPlanningSystem is command NetworkIncident.AddTimelineEntry with {
+    briefly "What ToCapacityPlanningSystem makes of the answers it gets"
+  }
+  connector 'ToCapacityPlanningSystem Intake' is from outlet OperationsContext.ToCapacityPlanningSystem.ToCapacityPlanningSystemToOperationsContext to inlet OperationsContext.OperationsContextFromToCapacityPlanningSystem with {
+    briefly "Answers translated by ToCapacityPlanningSystem, on their way in"
+  }
+  inlet OperationsContextFromToNetworkMonitoringSystem is command NetworkIncident.StartInvestigation with {
+    briefly "What ToNetworkMonitoringSystem makes of the answers it gets"
+  }
+  connector 'ToNetworkMonitoringSystem Intake' is from outlet OperationsContext.ToNetworkMonitoringSystem.ToNetworkMonitoringSystemToOperationsContext to inlet OperationsContext.OperationsContextFromToNetworkMonitoringSystem with {
+    briefly "Answers translated by ToNetworkMonitoringSystem, on their way in"
+  }
   inlet OperationsContextFromCapacityPlanningSystem is command NetworkIncident.CreateIncident with {
     briefly "What FromCapacityPlanningSystem makes of that service's news"
   }
@@ -75,12 +87,14 @@ context OperationsContext as router is {
       |The model's side of the CapacityPlanningSystem conversation.
     }
   }
-  adaptor ToCapacityPlanningSystem to context CapacityPlanningSystem as merge is { 
+  adaptor ToCapacityPlanningSystem to context CapacityPlanningSystem as router is { 
+    outlet ToCapacityPlanningSystemToOperationsContext is command NetworkIncident.AddTimelineEntry
     inlet ToCapacityPlanningSystemIn is type NetworkIncidentEvent    inlet ToCapacityPlanningSystemReplies is result CapacityPlanningSystem.CapacityForecast    outlet ToCapacityPlanningSystemOut is query CapacityPlanningSystem.GetCapacityForecast
     handler ToCapacityPlanningSystemHandler is {
       on incidentEscalated: event NetworkIncident.IncidentEscalated is {
         let askAnswer: type CapacityPlanningSystem.CapacityForecast = ask query CapacityPlanningSystem.GetCapacityForecast of context CapacityPlanningSystem
         do "an escalation needing to know whether capacity was always going to run out"
+        send command NetworkIncident.AddTimelineEntry(incidentId = incidentEscalated.incidentId, entry = prompt("askAnswer.recommendation, with exhaustion askAnswer.exhaustionDate")) to outlet OperationsContext.ToCapacityPlanningSystem.ToCapacityPlanningSystemToOperationsContext
       }
       on other is {
         error "Unexpected message for adaptor ToCapacityPlanningSystem"
@@ -167,12 +181,14 @@ context OperationsContext as router is {
       |The model's side of the NetworkMonitoringSystem conversation.
     }
   }
-  adaptor ToNetworkMonitoringSystem to context NetworkMonitoringSystem as merge is { 
+  adaptor ToNetworkMonitoringSystem to context NetworkMonitoringSystem as router is { 
+    outlet ToNetworkMonitoringSystemToOperationsContext is command NetworkIncident.StartInvestigation
     inlet ToNetworkMonitoringSystemIn is type NetworkIncidentEvent    inlet ToNetworkMonitoringSystemReplies is result NetworkMonitoringSystem.ElementHealthStatus    outlet ToNetworkMonitoringSystemOut is query NetworkMonitoringSystem.GetElementHealth
     handler ToNetworkMonitoringSystemHandler is {
       on incidentCreated: event NetworkIncident.IncidentCreated is {
         let askAnswer: type NetworkMonitoringSystem.ElementHealthStatus = ask query NetworkMonitoringSystem.GetElementHealth of context NetworkMonitoringSystem
         do "a new incident needing the health of the element it names"
+        send command NetworkIncident.StartInvestigation(incidentId = incidentCreated.incidentId, assignedTo = prompt("the NOC engineer"), diagnostics = prompt("askAnswer.metrics at askAnswer.lastPolled")) to outlet OperationsContext.ToNetworkMonitoringSystem.ToNetworkMonitoringSystemToOperationsContext
       }
       on other is {
         error "Unexpected message for adaptor ToNetworkMonitoringSystem"

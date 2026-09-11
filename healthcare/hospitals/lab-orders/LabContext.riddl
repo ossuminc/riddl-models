@@ -1,5 +1,11 @@
 // Lab Orders - Lab Context
 context LabContext as router is {
+  inlet LabContextFromToEHRIntegration is command LabOrder.CancelOrder with {
+    briefly "What ToEHRIntegration makes of the answers it gets"
+  }
+  connector 'ToEHRIntegration Intake' is from outlet LabContext.ToEHRIntegration.ToEHRIntegrationToLabContext to inlet LabContext.LabContextFromToEHRIntegration with {
+    briefly "Answers translated by ToEHRIntegration, on their way in"
+  }
   inlet LabContextFromLaboratoryInstrumentInterface is command LabOrder.RecordResult with {
     briefly "What FromLaboratoryInstrumentInterface makes of that service's news"
   }
@@ -112,12 +118,16 @@ context LabContext as router is {
       |The model's side of the EHRIntegration conversation.
     }
   }
-  adaptor ToEHRIntegration to context EHRIntegration as merge is { 
+  adaptor ToEHRIntegration to context EHRIntegration as router is { 
+    outlet ToEHRIntegrationToLabContext is command LabOrder.CancelOrder
     inlet ToEHRIntegrationIn is type LabOrderEvent    inlet ToEHRIntegrationReplies is result EHRIntegration.PatientOrderHistory    outlet ToEHRIntegrationOut is type EHRIntegration.EHRIntegrationCommand
     handler ToEHRIntegrationHandler is {
       on labOrderPlaced: event LabOrder.LabOrderPlaced is {
         let askAnswer: type EHRIntegration.PatientOrderHistory = ask query EHRIntegration.GetPatientOrders of context EHRIntegration
         do "a new order needing the patient's existing ones to avoid duplicating a draw"
+        when prompt("askAnswer.orders already holds an open order for the same test") then
+          send command LabOrder.CancelOrder(orderId = labOrderPlaced.orderId, cancelledBy = prompt("the EHR, for duplication"), cancelledAt = prompt("now"), reason = prompt("an identical order is already open in askAnswer.orders")) to outlet LabContext.ToEHRIntegration.ToEHRIntegrationToLabContext
+        end
         let item0: type EHRIntegration.SubmitLabOrder = prompt("translate the labOrderPlaced event into a SubmitLabOrder, the order being what the record must show was asked")
         send item0 to outlet LabContext.ToEHRIntegration.ToEHRIntegrationOut
       }

@@ -1,5 +1,17 @@
 // Audit Management - Audit Context
 context AuditContext as router is {
+  inlet AuditContextFromToDocumentManagement is command AuditEngagement.SubmitWorkpaperForReview with {
+    briefly "What ToDocumentManagement makes of the answers it gets"
+  }
+  connector 'ToDocumentManagement Intake' is from outlet AuditContext.ToDocumentManagement.ToDocumentManagementToAuditContext to inlet AuditContext.AuditContextFromToDocumentManagement with {
+    briefly "Answers translated by ToDocumentManagement, on their way in"
+  }
+  inlet AuditContextFromToRegulatoryFiling is command AuditEngagement.RecordFinding with {
+    briefly "What ToRegulatoryFiling makes of the answers it gets"
+  }
+  connector 'ToRegulatoryFiling Intake' is from outlet AuditContext.ToRegulatoryFiling.ToRegulatoryFilingToAuditContext to inlet AuditContext.AuditContextFromToRegulatoryFiling with {
+    briefly "Answers translated by ToRegulatoryFiling, on their way in"
+  }
   inlet AuditEngagementCommandStreamIn is type AuditEngagementCommand  outlet AuditEngagementCommandStreamOut is type AuditEngagementCommand
   inlet AuditEngagementResultStreamIn is result AuditEngagement.AuditEngagementResult  outlet AuditEngagementResultStreamOut is result AuditEngagement.AuditEngagementResult
   handler AuditContextBoundary is {
@@ -76,7 +88,8 @@ context AuditContext as router is {
       |The model's side of the DocumentManagement conversation.
     }
   }
-  adaptor ToDocumentManagement to context DocumentManagement as merge is { 
+  adaptor ToDocumentManagement to context DocumentManagement as router is { 
+    outlet ToDocumentManagementToAuditContext is command AuditEngagement.SubmitWorkpaperForReview
     inlet ToDocumentManagementIn is type AuditEngagementEvent    inlet ToDocumentManagementReplies is result DocumentManagement.DocumentContent    outlet ToDocumentManagementOut is type DocumentManagement.DocumentManagementCommand
     handler ToDocumentManagementHandler is {
       on workpaperReviewCompleted: event WorkpaperReviewCompleted is {
@@ -90,6 +103,7 @@ context AuditContext as router is {
       on workpaperAdded: event AuditEngagement.WorkpaperAdded is {
         let askAnswer: type DocumentManagement.DocumentContent = ask query DocumentManagement.RetrieveDocument of context DocumentManagement
         do "a workpaper being unreviewable without the document behind it"
+        send command AuditEngagement.SubmitWorkpaperForReview(engagementId = workpaperAdded.engagementId, workpaperId = workpaperAdded.workpaperId, reviewerId = prompt("the reviewer, now that askAnswer.content is attached")) to outlet AuditContext.ToDocumentManagement.ToDocumentManagementToAuditContext
       }
       on other is {
         error "Unexpected message for adaptor ToDocumentManagement"
@@ -126,12 +140,16 @@ context AuditContext as router is {
       |The model's side of the RegulatoryFiling conversation.
     }
   }
-  adaptor ToRegulatoryFiling to context RegulatoryFiling as merge is { 
+  adaptor ToRegulatoryFiling to context RegulatoryFiling as router is { 
+    outlet ToRegulatoryFilingToAuditContext is command AuditEngagement.RecordFinding
     inlet ToRegulatoryFilingIn is type AuditEngagementEvent    inlet ToRegulatoryFilingReplies is result RegulatoryFiling.FilingStatus    outlet ToRegulatoryFilingOut is type RegulatoryFiling.RegulatoryFilingRequest
     handler ToRegulatoryFilingHandler is {
       on engagementClosed: event AuditEngagement.EngagementClosed is {
         let askAnswer: type RegulatoryFiling.FilingStatus = ask query RegulatoryFiling.GetFilingStatus of context RegulatoryFiling
         do "closing an engagement needing the filing it supports to have been accepted"
+        when prompt("askAnswer.acceptedDate is absent") then
+          send command AuditEngagement.RecordFinding(engagementId = engagementClosed.engagementId, finding = prompt("a finding that the filing askAnswer.filingId is not yet accepted")) to outlet AuditContext.ToRegulatoryFiling.ToRegulatoryFilingToAuditContext
+        end
       }
       on reportIssued: event AuditEngagement.ReportIssued is {
         let item0: type RegulatoryFiling.SubmitFiling = prompt("translate the reportIssued event into a SubmitFiling, the issued report being the reportable fact")

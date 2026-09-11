@@ -1,5 +1,22 @@
 // Fleet Management - Vehicle Context
 context VehicleContext as router is {
+  type ToDriverManagementServiceCommand is one of {
+    Vehicle.AssignDriver or Vehicle.UnassignDriver
+  } with {
+    briefly "What ToDriverManagementService turns its answers into"
+  }
+  inlet VehicleContextFromToDriverManagementService is type ToDriverManagementServiceCommand with {
+    briefly "What ToDriverManagementService makes of the answers it gets"
+  }
+  connector 'ToDriverManagementService Intake' is from outlet VehicleContext.ToDriverManagementService.ToDriverManagementServiceToVehicleContext to inlet VehicleContext.VehicleContextFromToDriverManagementService with {
+    briefly "Answers translated by ToDriverManagementService, on their way in"
+  }
+  inlet VehicleContextFromToMaintenanceServiceProvider is command Vehicle.ScheduleMaintenance with {
+    briefly "What ToMaintenanceServiceProvider makes of the answers it gets"
+  }
+  connector 'ToMaintenanceServiceProvider Intake' is from outlet VehicleContext.ToMaintenanceServiceProvider.ToMaintenanceServiceProviderToVehicleContext to inlet VehicleContext.VehicleContextFromToMaintenanceServiceProvider with {
+    briefly "Answers translated by ToMaintenanceServiceProvider, on their way in"
+  }
   inlet VehicleContextFromFuelCardService is command Vehicle.UpdateFuelLevel with {
     briefly "What FromFuelCardService makes of that service's news"
   }
@@ -125,16 +142,23 @@ context VehicleContext as router is {
       |The model's side of the DriverManagementService conversation.
     }
   }
-  adaptor ToDriverManagementService to context DriverManagementService as merge is { 
+  adaptor ToDriverManagementService to context DriverManagementService as router is { 
+    outlet ToDriverManagementServiceToVehicleContext is type ToDriverManagementServiceCommand
     inlet ToDriverManagementServiceIn is type VehicleEvent    inlet ToDriverManagementServiceReplies is type DriverManagementService.DriverManagementServiceReply    outlet ToDriverManagementServiceOut is type DriverManagementService.DriverManagementServiceRequest
     handler ToDriverManagementServiceHandler is {
       on driverUnassigned: event Vehicle.DriverUnassigned is {
         let askAnswer: type DriverManagementService.AvailableDrivers = ask query DriverManagementService.GetAvailableDrivers of context DriverManagementService
         do "a vehicle left without a driver needing to know who is free"
+        when prompt("askAnswer.drivers is not empty") then
+          send command Vehicle.AssignDriver(vehicleId = driverUnassigned.vehicleId, driver = prompt("the first of askAnswer.drivers")) to outlet VehicleContext.ToDriverManagementService.ToDriverManagementServiceToVehicleContext
+        end
       }
       on driverAssigned: event Vehicle.DriverAssigned is {
         let askAnswer: type DriverManagementService.DriverDetails = ask query DriverManagementService.GetDriverInfo of context DriverManagementService
         do "an assignment needing the licence and record of the person taking the wheel"
+        when prompt("askAnswer.safetyScore or askAnswer.hoursWorked disqualifies the driver") then
+          send command Vehicle.UnassignDriver(vehicleId = driverAssigned.vehicleId, updatedReason = prompt("safety score askAnswer.safetyScore or hours askAnswer.hoursWorked disqualify the driver")) to outlet VehicleContext.ToDriverManagementService.ToDriverManagementServiceToVehicleContext
+        end
       }
       on tripEnded: event Vehicle.TripEnded is {
         let item0: type DriverManagementService.LogDrivingHours = prompt("translate the tripEnded event into a LogDrivingHours, a finished trip being what hours are counted from")
@@ -327,12 +351,16 @@ context VehicleContext as router is {
       |The model's side of the MaintenanceServiceProvider conversation.
     }
   }
-  adaptor ToMaintenanceServiceProvider to context MaintenanceServiceProvider as merge is { 
+  adaptor ToMaintenanceServiceProvider to context MaintenanceServiceProvider as router is { 
+    outlet ToMaintenanceServiceProviderToVehicleContext is command Vehicle.ScheduleMaintenance
     inlet ToMaintenanceServiceProviderIn is type VehicleEvent    inlet ToMaintenanceServiceProviderReplies is result MaintenanceServiceProvider.AvailableSlots    outlet ToMaintenanceServiceProviderOut is type MaintenanceServiceProvider.MaintenanceServiceProviderRequest
     handler ToMaintenanceServiceProviderHandler is {
       on maintenanceReminderRaised: event Vehicle.MaintenanceReminderRaised is {
         let askAnswer: type MaintenanceServiceProvider.AvailableSlots = ask query MaintenanceServiceProvider.GetAvailableSlots of context MaintenanceServiceProvider
         do "a raised reminder needing a slot before it can be booked"
+        when prompt("askAnswer.slots is not empty") then
+          send command Vehicle.ScheduleMaintenance(vehicleId = maintenanceReminderRaised.vehicleId, maintenance = prompt("the reminded maintenance booked into the first of askAnswer.slots")) to outlet VehicleContext.ToMaintenanceServiceProvider.ToMaintenanceServiceProviderToVehicleContext
+        end
       }
       on maintenanceScheduled: event Vehicle.MaintenanceScheduled is {
         let item0: type MaintenanceServiceProvider.BookService = prompt("translate the maintenanceScheduled event into a BookService, the schedule being what must be booked with a garage")

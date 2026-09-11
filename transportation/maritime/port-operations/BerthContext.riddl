@@ -1,5 +1,29 @@
 // Port Operations - Berth Context
 context BerthContext as router is {
+  inlet BerthContextFromToPilotCoordinationService is command PortCall.AssignPilot with {
+    briefly "What ToPilotCoordinationService makes of the answers it gets"
+  }
+  connector 'ToPilotCoordinationService Intake' is from outlet BerthContext.ToPilotCoordinationService.ToPilotCoordinationServiceToBerthContext to inlet BerthContext.BerthContextFromToPilotCoordinationService with {
+    briefly "Answers translated by ToPilotCoordinationService, on their way in"
+  }
+  inlet BerthContextFromToTerminalOperatingSystem is command PortCall.CompleteCargoOperations with {
+    briefly "What ToTerminalOperatingSystem makes of the answers it gets"
+  }
+  connector 'ToTerminalOperatingSystem Intake' is from outlet BerthContext.ToTerminalOperatingSystem.ToTerminalOperatingSystemToBerthContext to inlet BerthContext.BerthContextFromToTerminalOperatingSystem with {
+    briefly "Answers translated by ToTerminalOperatingSystem, on their way in"
+  }
+  inlet BerthContextFromToTowageService is command PortCall.OrderTugs with {
+    briefly "What ToTowageService makes of the answers it gets"
+  }
+  connector 'ToTowageService Intake' is from outlet BerthContext.ToTowageService.ToTowageServiceToBerthContext to inlet BerthContext.BerthContextFromToTowageService with {
+    briefly "Answers translated by ToTowageService, on their way in"
+  }
+  inlet BerthContextFromToVesselTrafficService is command PortCall.ConfirmBerthAssignment with {
+    briefly "What ToVesselTrafficService makes of the answers it gets"
+  }
+  connector 'ToVesselTrafficService Intake' is from outlet BerthContext.ToVesselTrafficService.ToVesselTrafficServiceToBerthContext to inlet BerthContext.BerthContextFromToVesselTrafficService with {
+    briefly "Answers translated by ToVesselTrafficService, on their way in"
+  }
   inlet BerthContextFromPilotCoordinationService is command PortCall.AssignPilot with {
     briefly "What FromPilotCoordinationService makes of that service's news"
   }
@@ -151,12 +175,16 @@ context BerthContext as router is {
       |The model's side of the PilotCoordinationService conversation.
     }
   }
-  adaptor ToPilotCoordinationService to context PilotCoordinationService as merge is { 
+  adaptor ToPilotCoordinationService to context PilotCoordinationService as router is { 
+    outlet ToPilotCoordinationServiceToBerthContext is command PortCall.AssignPilot
     inlet ToPilotCoordinationServiceIn is type BerthEvent    inlet ToPilotCoordinationServiceReplies is result PilotCoordinationService.AvailablePilotsResult    outlet ToPilotCoordinationServiceOut is type PilotCoordinationService.PilotCoordinationServiceRequest
     handler ToPilotCoordinationServiceHandler is {
       on berthRequested: event PortCall.BerthRequested is {
         let askAnswer: type PilotCoordinationService.AvailablePilotsResult = ask query PilotCoordinationService.GetAvailablePilots of context PilotCoordinationService
         do "a berth request needing a pilot free for the window"
+        when prompt("askAnswer.pilots is not empty") then
+          send command PortCall.AssignPilot(berthId = berthRequested.berthId, portCallId = berthRequested.request.portCallId, pilotage = prompt("the first of askAnswer.pilots free for the window")) to outlet BerthContext.ToPilotCoordinationService.ToPilotCoordinationServiceToBerthContext
+        end
       }
       on berthAssignmentConfirmed: event PortCall.BerthAssignmentConfirmed is {
         let item0: type PilotCoordinationService.RequestPilot = prompt("translate the berthAssignmentConfirmed event into a RequestPilot, a confirmed berth being what a pilot brings the vessel to")
@@ -245,12 +273,16 @@ context BerthContext as router is {
       |The model's side of the TerminalOperatingSystem conversation.
     }
   }
-  adaptor ToTerminalOperatingSystem to context TerminalOperatingSystem as merge is { 
+  adaptor ToTerminalOperatingSystem to context TerminalOperatingSystem as router is { 
+    outlet ToTerminalOperatingSystemToBerthContext is command PortCall.CompleteCargoOperations
     inlet ToTerminalOperatingSystemIn is type BerthEvent    inlet ToTerminalOperatingSystemReplies is result TerminalOperatingSystem.YardCapacityResult    outlet ToTerminalOperatingSystemOut is type TerminalOperatingSystem.TerminalOperatingSystemRequest
     handler ToTerminalOperatingSystemHandler is {
       on cargoOperationsStarted: event PortCall.CargoOperationsStarted is {
         let askAnswer: type TerminalOperatingSystem.YardCapacityResult = ask query TerminalOperatingSystem.GetYardCapacity of context TerminalOperatingSystem
         do "cargo work starting needing somewhere in the yard for what comes off"
+        when prompt("askAnswer.availableCapacity is short of what comes off") then
+          send command PortCall.CompleteCargoOperations(berthId = cargoOperationsStarted.berthId, portCallId = cargoOperationsStarted.portCallId, completion = prompt("operations halted: only askAnswer.availableCapacity in the yard")) to outlet BerthContext.ToTerminalOperatingSystem.ToTerminalOperatingSystemToBerthContext
+        end
       }
       on mooringCompleted: event PortCall.MooringCompleted is {
         let item0: type TerminalOperatingSystem.ScheduleCargoOperation = prompt("translate the mooringCompleted event into a ScheduleCargoOperation, mooring being when work on the hatches can be planned")
@@ -299,12 +331,16 @@ context BerthContext as router is {
       |The model's side of the TowageService conversation.
     }
   }
-  adaptor ToTowageService to context TowageService as merge is { 
+  adaptor ToTowageService to context TowageService as router is { 
+    outlet ToTowageServiceToBerthContext is command PortCall.OrderTugs
     inlet ToTowageServiceIn is type BerthEvent    inlet ToTowageServiceReplies is result TowageService.AvailableTugsResult    outlet ToTowageServiceOut is type TowageService.TowageServiceRequest
     handler ToTowageServiceHandler is {
       on vesselArrived: event PortCall.VesselArrived is {
         let askAnswer: type TowageService.AvailableTugsResult = ask query TowageService.GetAvailableTugs of context TowageService
         do "an arriving vessel needing tugs free to bring it in"
+        when prompt("askAnswer.availableTugs is not empty") then
+          send command PortCall.OrderTugs(berthId = vesselArrived.berthId, portCallId = vesselArrived.portCallId, tugs = prompt("the tugs in askAnswer.availableTugs the vessel needs")) to outlet BerthContext.ToTowageService.ToTowageServiceToBerthContext
+        end
       }
       on berthAssignmentConfirmed: event PortCall.BerthAssignmentConfirmed is {
         let item0: type TowageService.OrderTugs = prompt("translate the berthAssignmentConfirmed event into a OrderTugs, the same confirmation being when tugs must be ordered")
@@ -348,12 +384,14 @@ context BerthContext as router is {
       |The model's side of the VesselTrafficService conversation.
     }
   }
-  adaptor ToVesselTrafficService to context VesselTrafficService as merge is { 
+  adaptor ToVesselTrafficService to context VesselTrafficService as router is { 
+    outlet ToVesselTrafficServiceToBerthContext is command PortCall.ConfirmBerthAssignment
     inlet ToVesselTrafficServiceIn is type BerthEvent    inlet ToVesselTrafficServiceReplies is result VesselTrafficService.VesselPositionResult    outlet ToVesselTrafficServiceOut is query VesselTrafficService.GetVesselPosition
     handler ToVesselTrafficServiceHandler is {
       on berthRequested: event PortCall.BerthRequested is {
         let askAnswer: type VesselTrafficService.VesselPositionResult = ask query VesselTrafficService.GetVesselPosition of context VesselTrafficService
         do "a berth request needing to know where the vessel actually is"
+        send command PortCall.ConfirmBerthAssignment(berthId = berthRequested.berthId, portCallId = berthRequested.request.portCallId, assignment = prompt("the berth assignment timed from askAnswer.position and askAnswer.speed")) to outlet BerthContext.ToVesselTrafficService.ToVesselTrafficServiceToBerthContext
       }
       on other is {
         error "Unexpected message for adaptor ToVesselTrafficService"

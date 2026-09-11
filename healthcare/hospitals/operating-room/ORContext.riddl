@@ -1,5 +1,23 @@
 // Operating Room Management - OR Context
 context ORContext as router is {
+  inlet ORContextFromToAnesthesiaService is command SurgicalCase.ConfirmCase with {
+    briefly "What ToAnesthesiaService makes of the answers it gets"
+  }
+  connector 'ToAnesthesiaService Intake' is from outlet ORContext.ToAnesthesiaService.ToAnesthesiaServiceToORContext to inlet ORContext.ORContextFromToAnesthesiaService with {
+    briefly "Answers translated by ToAnesthesiaService, on their way in"
+  }
+  inlet ORContextFromToPreOpService is command SurgicalCase.CancelCase with {
+    briefly "What ToPreOpService makes of the answers it gets"
+  }
+  connector 'ToPreOpService Intake' is from outlet ORContext.ToPreOpService.ToPreOpServiceToORContext to inlet ORContext.ORContextFromToPreOpService with {
+    briefly "Answers translated by ToPreOpService, on their way in"
+  }
+  inlet ORContextFromToSterileSupplyService is command SurgicalCase.CancelCase with {
+    briefly "What ToSterileSupplyService makes of the answers it gets"
+  }
+  connector 'ToSterileSupplyService Intake' is from outlet ORContext.ToSterileSupplyService.ToSterileSupplyServiceToORContext to inlet ORContext.ORContextFromToSterileSupplyService with {
+    briefly "Answers translated by ToSterileSupplyService, on their way in"
+  }
   type FromAnesthesiaServiceCommand is one of {
     SurgicalCase.ConfirmCase or SurgicalCase.MoveToRecovery
   } with {
@@ -146,12 +164,16 @@ context ORContext as router is {
       |The model's side of the AnesthesiaService conversation.
     }
   }
-  adaptor ToAnesthesiaService to context AnesthesiaService as merge is { 
+  adaptor ToAnesthesiaService to context AnesthesiaService as router is { 
+    outlet ToAnesthesiaServiceToORContext is command SurgicalCase.ConfirmCase
     inlet ToAnesthesiaServiceIn is type SurgicalCaseEvent    inlet ToAnesthesiaServiceReplies is result AnesthesiaService.AnesthesiologistSchedule    outlet ToAnesthesiaServiceOut is type AnesthesiaService.AnesthesiaServiceCommand
     handler ToAnesthesiaServiceHandler is {
       on caseScheduled: event SurgicalCase.CaseScheduled is {
         let askAnswer: type AnesthesiaService.AnesthesiologistSchedule = ask query AnesthesiaService.GetAnesthesiologistSchedule of context AnesthesiaService
         do "a scheduled case needing an anaesthetist who is free for it"
+        when prompt("askAnswer.availableSlots covers the scheduled start") then
+          send command SurgicalCase.ConfirmCase(caseId = caseScheduled.caseId, anesthesiologistId = askAnswer.anesthesiologistId, surgicalTeam = prompt("the team assigned to the case"), preferenceCard = prompt("the surgeon's preference card")) to outlet ORContext.ToAnesthesiaService.ToAnesthesiaServiceToORContext
+        end
         let item0: type AnesthesiaService.RequestAnesthesiaCoverage = prompt("translate the caseScheduled event into a RequestAnesthesiaCoverage, a scheduled case needing an anaesthetist before it can proceed")
         send item0 to outlet ORContext.ToAnesthesiaService.ToAnesthesiaServiceOut
       }
@@ -204,12 +226,16 @@ context ORContext as router is {
       |The model's side of the PreOpService conversation.
     }
   }
-  adaptor ToPreOpService to context PreOpService as merge is { 
+  adaptor ToPreOpService to context PreOpService as router is { 
+    outlet ToPreOpServiceToORContext is command SurgicalCase.CancelCase
     inlet ToPreOpServiceIn is type SurgicalCaseEvent    inlet ToPreOpServiceReplies is result PreOpService.PatientClearances    outlet ToPreOpServiceOut is type PreOpService.PreOpServiceCommand
     handler ToPreOpServiceHandler is {
       on caseScheduled: event SurgicalCase.CaseScheduled is {
         let askAnswer: type PreOpService.PatientClearances = ask query PreOpService.GetPatientClearances of context PreOpService
         do "and a patient who has been cleared for it"
+        when prompt("not askAnswer.medicalClearance or not askAnswer.anesthesiaClearance") then
+          send command SurgicalCase.CancelCase(caseId = caseScheduled.caseId, cancellationReason = prompt("clearance not obtained"), cancellationDetails = askAnswer.clearanceNotes, cancelledBy = prompt("the pre-op service"), cancelledAt = prompt("now"), rescheduleRequested = prompt("true")) to outlet ORContext.ToPreOpService.ToPreOpServiceToORContext
+        end
         let item0: type PreOpService.RequestMedicalClearance = prompt("translate the caseScheduled event into a RequestMedicalClearance, a case being unable to proceed on an uncleared patient")
         send item0 to outlet ORContext.ToPreOpService.ToPreOpServiceOut
       }
@@ -255,7 +281,8 @@ context ORContext as router is {
       |The model's side of the SterileSupplyService conversation.
     }
   }
-  adaptor ToSterileSupplyService to context SterileSupplyService as merge is { 
+  adaptor ToSterileSupplyService to context SterileSupplyService as router is { 
+    outlet ToSterileSupplyServiceToORContext is command SurgicalCase.CancelCase
     inlet ToSterileSupplyServiceIn is type SurgicalCaseEvent    inlet ToSterileSupplyServiceReplies is result SterileSupplyService.InstrumentSetAvailability    outlet ToSterileSupplyServiceOut is type SterileSupplyService.SterileSupplyServiceCommand
     handler ToSterileSupplyServiceHandler is {
       on caseConfirmed: event SurgicalCase.CaseConfirmed is {
@@ -271,6 +298,9 @@ context ORContext as router is {
       on caseScheduled: event SurgicalCase.CaseScheduled is {
         let askAnswer: type SterileSupplyService.InstrumentSetAvailability = ask query SterileSupplyService.GetInstrumentSetAvailability of context SterileSupplyService
         do "and the instrument sets the procedure needs"
+        when prompt("askAnswer.unavailable is not empty and askAnswer.alternates is empty") then
+          send command SurgicalCase.CancelCase(caseId = caseScheduled.caseId, cancellationReason = prompt("instrument sets unavailable"), cancellationDetails = prompt("the sets in askAnswer.unavailable"), cancelledBy = prompt("sterile supply"), cancelledAt = prompt("now"), rescheduleRequested = prompt("true")) to outlet ORContext.ToSterileSupplyService.ToSterileSupplyServiceToORContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToSterileSupplyService"

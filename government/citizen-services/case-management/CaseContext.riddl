@@ -1,5 +1,17 @@
 // Case Management - Case Context
 context CaseContext as router is {
+  inlet CaseContextFromToBenefitsIntegrationService is command Case.DetermineEligibility with {
+    briefly "What ToBenefitsIntegrationService makes of the answers it gets"
+  }
+  connector 'ToBenefitsIntegrationService Intake' is from outlet CaseContext.ToBenefitsIntegrationService.ToBenefitsIntegrationServiceToCaseContext to inlet CaseContext.CaseContextFromToBenefitsIntegrationService with {
+    briefly "Answers translated by ToBenefitsIntegrationService, on their way in"
+  }
+  inlet CaseContextFromToIncomeVerificationService is command Case.RecordIncome with {
+    briefly "What ToIncomeVerificationService makes of the answers it gets"
+  }
+  connector 'ToIncomeVerificationService Intake' is from outlet CaseContext.ToIncomeVerificationService.ToIncomeVerificationServiceToCaseContext to inlet CaseContext.CaseContextFromToIncomeVerificationService with {
+    briefly "Answers translated by ToIncomeVerificationService, on their way in"
+  }
   inlet CaseContextFromBenefitsIntegrationService is command Case.DetermineEligibility with {
     briefly "What FromBenefitsIntegrationService makes of that service's news"
   }
@@ -162,12 +174,14 @@ context CaseContext as router is {
       |The model's side of the BenefitsIntegrationService conversation.
     }
   }
-  adaptor ToBenefitsIntegrationService to context BenefitsIntegrationService as merge is { 
+  adaptor ToBenefitsIntegrationService to context BenefitsIntegrationService as router is { 
+    outlet ToBenefitsIntegrationServiceToCaseContext is command Case.DetermineEligibility
     inlet ToBenefitsIntegrationServiceIn is type CaseEvent    inlet ToBenefitsIntegrationServiceReplies is result BenefitsIntegrationService.CurrentBenefitsResult    outlet ToBenefitsIntegrationServiceOut is query BenefitsIntegrationService.GetCurrentBenefits
     handler ToBenefitsIntegrationServiceHandler is {
       on servicesRequested: event Case.ServicesRequested is {
         let askAnswer: type BenefitsIntegrationService.CurrentBenefitsResult = ask query BenefitsIntegrationService.GetCurrentBenefits of context BenefitsIntegrationService
         do "a request for services needing what the household already receives"
+        send command Case.DetermineEligibility(caseId = servicesRequested.caseId, programId = prompt("the program the request names"), determinedBy = prompt("the benefits integration service"), result = prompt("the determination given what askAnswer.benefits already provides")) to outlet CaseContext.ToBenefitsIntegrationService.ToBenefitsIntegrationServiceToCaseContext
       }
       on other is {
         error "Unexpected message for adaptor ToBenefitsIntegrationService"
@@ -294,7 +308,8 @@ context CaseContext as router is {
       |The model's side of the IncomeVerificationService conversation.
     }
   }
-  adaptor ToIncomeVerificationService to context IncomeVerificationService as merge is { 
+  adaptor ToIncomeVerificationService to context IncomeVerificationService as router is { 
+    outlet ToIncomeVerificationServiceToCaseContext is command Case.RecordIncome
     inlet ToIncomeVerificationServiceIn is type CaseEvent    inlet ToIncomeVerificationServiceReplies is result IncomeVerificationService.WageHistoryResult    outlet ToIncomeVerificationServiceOut is type IncomeVerificationService.IncomeVerificationServiceRequest
     handler ToIncomeVerificationServiceHandler is {
       on incomeRecorded: event IncomeRecorded is {
@@ -304,6 +319,7 @@ context CaseContext as router is {
       on eligibilityDetermined: event Case.EligibilityDetermined is {
         let askAnswer: type IncomeVerificationService.WageHistoryResult = ask query IncomeVerificationService.GetWageHistory of context IncomeVerificationService
         do "a determination resting on income the wage record must corroborate"
+        send command Case.RecordIncome(caseId = eligibilityDetermined.caseId, income = prompt("the income askAnswer.quarterlyWages corroborate")) to outlet CaseContext.ToIncomeVerificationService.ToIncomeVerificationServiceToCaseContext
       }
       on other is {
         error "Unexpected message for adaptor ToIncomeVerificationService"

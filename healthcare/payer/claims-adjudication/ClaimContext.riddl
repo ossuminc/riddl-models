@@ -1,5 +1,29 @@
 // Claims Adjudication - Claim Context
 context ClaimContext as router is {
+  inlet ClaimContextFromToAuthorizationService is command Claim.PendClaim with {
+    briefly "What ToAuthorizationService makes of the answers it gets"
+  }
+  connector 'ToAuthorizationService Intake' is from outlet ClaimContext.ToAuthorizationService.ToAuthorizationServiceToClaimContext to inlet ClaimContext.ClaimContextFromToAuthorizationService with {
+    briefly "Answers translated by ToAuthorizationService, on their way in"
+  }
+  inlet ClaimContextFromToBenefitsService is command Claim.PendClaim with {
+    briefly "What ToBenefitsService makes of the answers it gets"
+  }
+  connector 'ToBenefitsService Intake' is from outlet ClaimContext.ToBenefitsService.ToBenefitsServiceToClaimContext to inlet ClaimContext.ClaimContextFromToBenefitsService with {
+    briefly "Answers translated by ToBenefitsService, on their way in"
+  }
+  inlet ClaimContextFromToEligibilityService is command Claim.DenyClaim with {
+    briefly "What ToEligibilityService makes of the answers it gets"
+  }
+  connector 'ToEligibilityService Intake' is from outlet ClaimContext.ToEligibilityService.ToEligibilityServiceToClaimContext to inlet ClaimContext.ClaimContextFromToEligibilityService with {
+    briefly "Answers translated by ToEligibilityService, on their way in"
+  }
+  inlet ClaimContextFromToProviderContractService is command Claim.ApproveClaim with {
+    briefly "What ToProviderContractService makes of the answers it gets"
+  }
+  connector 'ToProviderContractService Intake' is from outlet ClaimContext.ToProviderContractService.ToProviderContractServiceToClaimContext to inlet ClaimContext.ClaimContextFromToProviderContractService with {
+    briefly "Answers translated by ToProviderContractService, on their way in"
+  }
   inlet ClaimCommandStreamIn is type ClaimCommand  outlet ClaimCommandStreamOut is type ClaimCommand
   inlet ClaimResultStreamIn is result Claim.ClaimResult  outlet ClaimResultStreamOut is result Claim.ClaimResult
   handler ClaimContextBoundary is {
@@ -47,12 +71,16 @@ context ClaimContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'ClaimCommand Stream Intake' is from outlet ClaimContext.ClaimCommandStreamOut to inlet ClaimContext.Claim.ClaimCommands  connector 'ClaimResult Stream Egress' is from outlet ClaimContext.ClaimRepository.ClaimRepositoryResponses to inlet ClaimContext.ClaimResultStreamIn  adaptor ToAuthorizationService to context AuthorizationService as merge is { 
+  connector 'ClaimCommand Stream Intake' is from outlet ClaimContext.ClaimCommandStreamOut to inlet ClaimContext.Claim.ClaimCommands  connector 'ClaimResult Stream Egress' is from outlet ClaimContext.ClaimRepository.ClaimRepositoryResponses to inlet ClaimContext.ClaimResultStreamIn  adaptor ToAuthorizationService to context AuthorizationService as router is { 
+    outlet ToAuthorizationServiceToClaimContext is command Claim.PendClaim
     inlet ToAuthorizationServiceIn is type ClaimEvent    inlet ToAuthorizationServiceReplies is result AuthorizationService.AuthorizationResult    outlet ToAuthorizationServiceOut is query AuthorizationService.CheckAuthorization
     handler ToAuthorizationServiceHandler is {
       on claimSubmitted: event Claim.ClaimSubmitted is {
         let askAnswer: type AuthorizationService.AuthorizationResult = ask query AuthorizationService.CheckAuthorization of context AuthorizationService
         do "a submitted claim needing the prior authorisation it relies on"
+        when prompt("not askAnswer.authorized") then
+          send command Claim.PendClaim(claimId = claimSubmitted.claimId, reason = prompt("no prior authorization"), notes = prompt("what askAnswer says about the authorization")) to outlet ClaimContext.ToAuthorizationService.ToAuthorizationServiceToClaimContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToAuthorizationService"
@@ -69,12 +97,16 @@ context ClaimContext as router is {
       |The model's side of the AuthorizationService conversation.
     }
   }
-  adaptor ToBenefitsService to context BenefitsService as merge is { 
+  adaptor ToBenefitsService to context BenefitsService as router is { 
+    outlet ToBenefitsServiceToClaimContext is command Claim.PendClaim
     inlet ToBenefitsServiceIn is type ClaimEvent    inlet ToBenefitsServiceReplies is result BenefitsService.BenefitInfo    outlet ToBenefitsServiceOut is query BenefitsService.GetBenefits
     handler ToBenefitsServiceHandler is {
       on claimSubmitted: event Claim.ClaimSubmitted is {
         let askAnswer: type BenefitsService.BenefitInfo = ask query BenefitsService.GetBenefits of context BenefitsService
         do "a submitted claim needing the member's benefit design to price it"
+        when prompt("not askAnswer.covered") then
+          send command Claim.PendClaim(claimId = claimSubmitted.claimId, reason = prompt("service not covered by the member's benefits"), notes = prompt("what askAnswer says about coverage, copay and coinsurance")) to outlet ClaimContext.ToBenefitsService.ToBenefitsServiceToClaimContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToBenefitsService"
@@ -91,12 +123,16 @@ context ClaimContext as router is {
       |The model's side of the BenefitsService conversation.
     }
   }
-  adaptor ToEligibilityService to context EligibilityService as merge is { 
+  adaptor ToEligibilityService to context EligibilityService as router is { 
+    outlet ToEligibilityServiceToClaimContext is command Claim.DenyClaim
     inlet ToEligibilityServiceIn is type ClaimEvent    inlet ToEligibilityServiceReplies is result EligibilityService.EligibilityResult    outlet ToEligibilityServiceOut is query EligibilityService.CheckEligibility
     handler ToEligibilityServiceHandler is {
       on claimSubmitted: event Claim.ClaimSubmitted is {
         let askAnswer: type EligibilityService.EligibilityResult = ask query EligibilityService.CheckEligibility of context EligibilityService
         do "a submitted claim needing the member to have been covered on the date of service"
+        when prompt("not askAnswer.eligible") then
+          send command Claim.DenyClaim(claimId = claimSubmitted.claimId, denialReason = prompt("member not eligible on the date of service"), explanation = prompt("the eligibility window askAnswer gives")) to outlet ClaimContext.ToEligibilityService.ToEligibilityServiceToClaimContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToEligibilityService"
@@ -193,12 +229,14 @@ context ClaimContext as router is {
       |The model's side of the PaymentService conversation.
     }
   }
-  adaptor ToProviderContractService to context ProviderContractService as merge is { 
+  adaptor ToProviderContractService to context ProviderContractService as router is { 
+    outlet ToProviderContractServiceToClaimContext is command Claim.ApproveClaim
     inlet ToProviderContractServiceIn is type ClaimEvent    inlet ToProviderContractServiceReplies is result ProviderContractService.ContractRates    outlet ToProviderContractServiceOut is query ProviderContractService.GetContractRates
     handler ToProviderContractServiceHandler is {
       on claimAdjudicated: event Claim.ClaimAdjudicated is {
         let askAnswer: type ProviderContractService.ContractRates = ask query ProviderContractService.GetContractRates of context ProviderContractService
         do "an adjudicated claim needing the contracted rate it pays at"
+        send command Claim.ApproveClaim(claimId = claimAdjudicated.claimId, payment = prompt("a payment at askAnswer.allowedAmount, in or out of network per askAnswer.isInNetwork")) to outlet ClaimContext.ToProviderContractService.ToProviderContractServiceToClaimContext
       }
       on other is {
         error "Unexpected message for adaptor ToProviderContractService"

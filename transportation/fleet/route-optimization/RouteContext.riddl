@@ -1,5 +1,33 @@
 // Route Optimization - Route Context
 context RouteContext as router is {
+  type ToGeocodingServiceCommand is one of {
+    Route.AddStop or Route.ArriveAtStop
+  } with {
+    briefly "What ToGeocodingService turns its answers into"
+  }
+  inlet RouteContextFromToGeocodingService is type ToGeocodingServiceCommand with {
+    briefly "What ToGeocodingService makes of the answers it gets"
+  }
+  connector 'ToGeocodingService Intake' is from outlet RouteContext.ToGeocodingService.ToGeocodingServiceToRouteContext to inlet RouteContext.RouteContextFromToGeocodingService with {
+    briefly "Answers translated by ToGeocodingService, on their way in"
+  }
+  type ToRoutingEngineServiceCommand is one of {
+    Route.OptimizeRoute or Route.ReorderStops
+  } with {
+    briefly "What ToRoutingEngineService turns its answers into"
+  }
+  inlet RouteContextFromToRoutingEngineService is type ToRoutingEngineServiceCommand with {
+    briefly "What ToRoutingEngineService makes of the answers it gets"
+  }
+  connector 'ToRoutingEngineService Intake' is from outlet RouteContext.ToRoutingEngineService.ToRoutingEngineServiceToRouteContext to inlet RouteContext.RouteContextFromToRoutingEngineService with {
+    briefly "Answers translated by ToRoutingEngineService, on their way in"
+  }
+  inlet RouteContextFromToTrafficService is command Route.ReorderStops with {
+    briefly "What ToTrafficService makes of the answers it gets"
+  }
+  connector 'ToTrafficService Intake' is from outlet RouteContext.ToTrafficService.ToTrafficServiceToRouteContext to inlet RouteContext.RouteContextFromToTrafficService with {
+    briefly "Answers translated by ToTrafficService, on their way in"
+  }
   inlet RouteContextFromOptimizationEngineService is command Route.ReorderStops with {
     briefly "What FromOptimizationEngineService makes of that service's news"
   }
@@ -173,16 +201,23 @@ context RouteContext as router is {
       |The model's side of the DriverMobileAppService conversation.
     }
   }
-  adaptor ToGeocodingService to context GeocodingService as merge is { 
+  adaptor ToGeocodingService to context GeocodingService as router is { 
+    outlet ToGeocodingServiceToRouteContext is type ToGeocodingServiceCommand
     inlet ToGeocodingServiceIn is type RouteEvent    inlet ToGeocodingServiceReplies is type GeocodingService.GeocodingServiceReply    outlet ToGeocodingServiceOut is type GeocodingService.GeocodingServiceRequest
     handler ToGeocodingServiceHandler is {
       on stopAdded: event Route.StopAdded is {
         let askAnswer: type GeocodingService.GeocodedLocation = ask query GeocodingService.GeocodeAddress of context GeocodingService
         do "an added stop needing its address turned into coordinates"
+        when prompt("stopAdded.stop carried no coordinates") then
+          send command Route.AddStop(routeId = stopAdded.routeId, stop = prompt("the stop with askAnswer.location as its coordinates")) to outlet RouteContext.ToGeocodingService.ToGeocodingServiceToRouteContext
+        end
       }
       on arrivedAtStop: event Route.ArrivedAtStop is {
         let askAnswer: type GeocodingService.AddressResult = ask query GeocodingService.ReverseGeocode of context GeocodingService
         do "an arrival needing the position turned back into an address"
+        when prompt("the arrival carried no address") then
+          send command Route.ArriveAtStop(routeId = arrivedAtStop.routeId, stopId = arrivedAtStop.stopId, arrivedAt = arrivedAtStop.arrivedAt, currentLocation = prompt("the position, with askAnswer.address as its street address")) to outlet RouteContext.ToGeocodingService.ToGeocodingServiceToRouteContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToGeocodingService"
@@ -247,16 +282,23 @@ context RouteContext as router is {
       |The model's side of the OptimizationEngineService conversation.
     }
   }
-  adaptor ToRoutingEngineService to context RoutingEngineService as merge is { 
+  adaptor ToRoutingEngineService to context RoutingEngineService as router is { 
+    outlet ToRoutingEngineServiceToRouteContext is type ToRoutingEngineServiceCommand
     inlet ToRoutingEngineServiceIn is type RouteEvent    inlet ToRoutingEngineServiceReplies is type RoutingEngineService.RoutingEngineServiceReply    outlet ToRoutingEngineServiceOut is type RoutingEngineService.RoutingEngineServiceRequest
     handler ToRoutingEngineServiceHandler is {
       on routeOptimized: event Route.RouteOptimized is {
         let askAnswer: type RoutingEngineService.DrivingRoute = ask query RoutingEngineService.CalculateRoute of context RoutingEngineService
         do "an optimised route needing the driving path that realises it"
+        when prompt("askAnswer.distance disagrees with the optimisation's estimate") then
+          send command Route.OptimizeRoute(routeId = routeOptimized.routeId, strategy = prompt("the strategy re-run over askAnswer.segments totalling askAnswer.distance")) to outlet RouteContext.ToRoutingEngineService.ToRoutingEngineServiceToRouteContext
+        end
       }
       on stopsReordered: event Route.StopsReordered is {
         let askAnswer: type RoutingEngineService.DistanceMatrix = ask query RoutingEngineService.GetDistanceMatrix of context RoutingEngineService
         do "reordered stops needing the distances between every pair"
+        when prompt("askAnswer.distances show a shorter sequence than the one chosen") then
+          send command Route.ReorderStops(routeId = stopsReordered.routeId, newSequence = prompt("the sequence re-cut on askAnswer.distances and askAnswer.durations")) to outlet RouteContext.ToRoutingEngineService.ToRoutingEngineServiceToRouteContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToRoutingEngineService"
@@ -293,12 +335,16 @@ context RouteContext as router is {
       |The model's side of the TrafficService conversation.
     }
   }
-  adaptor ToTrafficService to context TrafficService as merge is { 
+  adaptor ToTrafficService to context TrafficService as router is { 
+    outlet ToTrafficServiceToRouteContext is command Route.ReorderStops
     inlet ToTrafficServiceIn is type RouteEvent    inlet ToTrafficServiceReplies is result TrafficService.TrafficConditions    outlet ToTrafficServiceOut is query TrafficService.GetTrafficConditions
     handler ToTrafficServiceHandler is {
       on routeStarted: event Route.RouteStarted is {
         let askAnswer: type TrafficService.TrafficConditions = ask query TrafficService.GetTrafficConditions of context TrafficService
         do "a route starting needing the traffic it will actually meet"
+        when prompt("askAnswer.delayMinutes is worth re-routing for") then
+          send command Route.ReorderStops(routeId = routeStarted.routeId, newSequence = prompt("the stops re-sequenced around askAnswer.incidents")) to outlet RouteContext.ToTrafficService.ToTrafficServiceToRouteContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToTrafficService"

@@ -1,5 +1,22 @@
 // Revenue Assurance - Revenue Assurance Context
 context RevenueAssuranceContext as router is {
+  inlet RevenueAssuranceContextFromToBillingSystem is command AuditCase.ReconcileRecords with {
+    briefly "What ToBillingSystem makes of the answers it gets"
+  }
+  connector 'ToBillingSystem Intake' is from outlet RevenueAssuranceContext.ToBillingSystem.ToBillingSystemToRevenueAssuranceContext to inlet RevenueAssuranceContext.RevenueAssuranceContextFromToBillingSystem with {
+    briefly "Answers translated by ToBillingSystem, on their way in"
+  }
+  type ToNetworkUsageSystemCommand is one of {
+    AuditCase.EscalateCase or AuditCase.ReconcileRecords
+  } with {
+    briefly "What ToNetworkUsageSystem turns its answers into"
+  }
+  inlet RevenueAssuranceContextFromToNetworkUsageSystem is type ToNetworkUsageSystemCommand with {
+    briefly "What ToNetworkUsageSystem makes of the answers it gets"
+  }
+  connector 'ToNetworkUsageSystem Intake' is from outlet RevenueAssuranceContext.ToNetworkUsageSystem.ToNetworkUsageSystemToRevenueAssuranceContext to inlet RevenueAssuranceContext.RevenueAssuranceContextFromToNetworkUsageSystem with {
+    briefly "Answers translated by ToNetworkUsageSystem, on their way in"
+  }
   inlet AuditCaseCommandStreamIn is type AuditCaseCommand  outlet AuditCaseCommandStreamOut is type AuditCaseCommand
   inlet AuditCaseResultStreamIn is result AuditCase.AuditCaseResult  outlet AuditCaseResultStreamOut is result AuditCase.AuditCaseResult
   handler RevenueAssuranceContextBoundary is {
@@ -58,7 +75,8 @@ context RevenueAssuranceContext as router is {
       |The model's side of the BillingSystem conversation.
     }
   }
-  adaptor ToBillingSystem to context BillingSystem as merge is { 
+  adaptor ToBillingSystem to context BillingSystem as router is { 
+    outlet ToBillingSystemToRevenueAssuranceContext is command AuditCase.ReconcileRecords
     inlet ToBillingSystemIn is type AuditCaseEvent    inlet ToBillingSystemReplies is result BillingSystem.BillingRecordsResult    outlet ToBillingSystemOut is type BillingSystem.BillingSystemRequest
     handler ToBillingSystemHandler is {
       on caseResolved: event AuditCase.CaseResolved is {
@@ -68,6 +86,7 @@ context RevenueAssuranceContext as router is {
       on auditCaseOpened: event AuditCase.AuditCaseOpened is {
         let askAnswer: type BillingSystem.BillingRecordsResult = ask query BillingSystem.GetBillingRecords of context BillingSystem
         do "an opened case needing the billing records it will be reconciled against"
+        send command AuditCase.ReconcileRecords(caseId = auditCaseOpened.caseId, billingRecords = askAnswer.billingRecords, usageRecords = prompt("the usage records still to be fetched")) to outlet RevenueAssuranceContext.ToBillingSystem.ToBillingSystemToRevenueAssuranceContext
       }
       on other is {
         error "Unexpected message for adaptor ToBillingSystem"
@@ -84,16 +103,23 @@ context RevenueAssuranceContext as router is {
       |The model's side of the BillingSystem conversation.
     }
   }
-  adaptor ToNetworkUsageSystem to context NetworkUsageSystem as merge is { 
+  adaptor ToNetworkUsageSystem to context NetworkUsageSystem as router is { 
+    outlet ToNetworkUsageSystemToRevenueAssuranceContext is type ToNetworkUsageSystemCommand
     inlet ToNetworkUsageSystemIn is type AuditCaseEvent    inlet ToNetworkUsageSystemReplies is type NetworkUsageSystem.NetworkUsageSystemReply    outlet ToNetworkUsageSystemOut is type NetworkUsageSystem.NetworkUsageSystemRequest
     handler ToNetworkUsageSystemHandler is {
       on discrepancyRecorded: event AuditCase.DiscrepancyRecorded is {
         let askAnswer: type NetworkUsageSystem.UnbilledServicesResult = ask query NetworkUsageSystem.GetUnbilledServices of context NetworkUsageSystem
         do "a recorded discrepancy needing the services the network carried but billing never saw"
+        when prompt("askAnswer.totalCount is greater than zero") then
+          send command AuditCase.EscalateCase(caseId = discrepancyRecorded.caseId, escalatedTo = prompt("revenue assurance lead"), reason = prompt("askAnswer.totalCount services carried but never billed")) to outlet RevenueAssuranceContext.ToNetworkUsageSystem.ToNetworkUsageSystemToRevenueAssuranceContext
+        end
       }
       on recordsReconciled: event AuditCase.RecordsReconciled is {
         let askAnswer: type NetworkUsageSystem.UsageRecordsResult = ask query NetworkUsageSystem.GetUsageRecords of context NetworkUsageSystem
         do "a reconciliation needing the network's own usage records"
+        when prompt("the reconciliation was made without askAnswer.usageRecords") then
+          send command AuditCase.ReconcileRecords(caseId = recordsReconciled.caseId, billingRecords = prompt("the billing records already held"), usageRecords = askAnswer.usageRecords) to outlet RevenueAssuranceContext.ToNetworkUsageSystem.ToNetworkUsageSystemToRevenueAssuranceContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToNetworkUsageSystem"

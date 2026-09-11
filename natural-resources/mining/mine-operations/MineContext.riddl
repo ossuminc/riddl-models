@@ -1,5 +1,17 @@
 // Mine Operations - Mine Context
 context MineContext as router is {
+  inlet MineContextFromToEquipmentManagementService is command ExtractionZone.RecordSafetyIncident with {
+    briefly "What ToEquipmentManagementService makes of the answers it gets"
+  }
+  connector 'ToEquipmentManagementService Intake' is from outlet MineContext.ToEquipmentManagementService.ToEquipmentManagementServiceToMineContext to inlet MineContext.MineContextFromToEquipmentManagementService with {
+    briefly "Answers translated by ToEquipmentManagementService, on their way in"
+  }
+  inlet MineContextFromToGeologicalSurveyService is command ExtractionZone.SurveyZone with {
+    briefly "What ToGeologicalSurveyService makes of the answers it gets"
+  }
+  connector 'ToGeologicalSurveyService Intake' is from outlet MineContext.ToGeologicalSurveyService.ToGeologicalSurveyServiceToMineContext to inlet MineContext.MineContextFromToGeologicalSurveyService with {
+    briefly "Answers translated by ToGeologicalSurveyService, on their way in"
+  }
   inlet ExtractionZoneCommandStreamIn is type ExtractionZoneCommand  outlet ExtractionZoneCommandStreamOut is type ExtractionZoneCommand
   inlet ExtractionZoneResultStreamIn is result ExtractionZone.ExtractionZoneResult  outlet ExtractionZoneResultStreamOut is result ExtractionZone.ExtractionZoneResult
   handler MineContextBoundary is {
@@ -110,12 +122,16 @@ context MineContext as router is {
       |The model's side of the EquipmentManagementService conversation.
     }
   }
-  adaptor ToEquipmentManagementService to context EquipmentManagementService as merge is { 
+  adaptor ToEquipmentManagementService to context EquipmentManagementService as router is { 
+    outlet ToEquipmentManagementServiceToMineContext is command ExtractionZone.RecordSafetyIncident
     inlet ToEquipmentManagementServiceIn is type ExtractionZoneEvent    inlet ToEquipmentManagementServiceReplies is result EquipmentManagementService.EquipmentStatus    outlet ToEquipmentManagementServiceOut is type EquipmentManagementService.EquipmentManagementServiceRequest
     handler ToEquipmentManagementServiceHandler is {
       on drillingStarted: event ExtractionZone.DrillingStarted is {
         let askAnswer: type EquipmentManagementService.EquipmentStatus = ask query EquipmentManagementService.GetEquipmentStatus of context EquipmentManagementService
         do "drilling needing the rigs it depends on to be fit"
+        when prompt("askAnswer.equipmentStatus is not fit") then
+          send command ExtractionZone.RecordSafetyIncident(zoneId = drillingStarted.zoneId, incident = prompt("an incident for rig askAnswer.equipmentId not fit to run")) to outlet MineContext.ToEquipmentManagementService.ToEquipmentManagementServiceToMineContext
+        end
       }
       on zoneSurveyed: event ExtractionZone.ZoneSurveyed is {
         let item0: type EquipmentManagementService.DispatchEquipment = prompt("translate the zoneSurveyed event into a DispatchEquipment, the survey being what says which machines the zone needs")
@@ -136,12 +152,16 @@ context MineContext as router is {
       |The model's side of the EquipmentManagementService conversation.
     }
   }
-  adaptor ToGeologicalSurveyService to context GeologicalSurveyService as merge is { 
+  adaptor ToGeologicalSurveyService to context GeologicalSurveyService as router is { 
+    outlet ToGeologicalSurveyServiceToMineContext is command ExtractionZone.SurveyZone
     inlet ToGeologicalSurveyServiceIn is type ExtractionZoneEvent    inlet ToGeologicalSurveyServiceReplies is result GeologicalSurveyService.OreBodyModel    outlet ToGeologicalSurveyServiceOut is query GeologicalSurveyService.GetOreBodyModel
     handler ToGeologicalSurveyServiceHandler is {
       on zoneSurveyed: event ExtractionZone.ZoneSurveyed is {
         let askAnswer: type GeologicalSurveyService.OreBodyModel = ask query GeologicalSurveyService.GetOreBodyModel of context GeologicalSurveyService
         do "a surveyed zone needing the geologist's model to compare against"
+        when prompt("the survey disagrees with askAnswer beyond its confidence") then
+          send command ExtractionZone.SurveyZone(zoneId = zoneSurveyed.zoneId, oreBlocks = prompt("the survey blocks reconciled to askAnswer.estimatedTonnage at askAnswer.averageGrade")) to outlet MineContext.ToGeologicalSurveyService.ToGeologicalSurveyServiceToMineContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToGeologicalSurveyService"

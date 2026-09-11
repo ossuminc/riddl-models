@@ -1,5 +1,22 @@
 // Policy Management - Policy Context
 context PolicyContext as router is {
+  type ToRatingEngineServiceCommand is one of {
+    Policy.BindPolicy or Policy.ProcessRenewal
+  } with {
+    briefly "What ToRatingEngineService turns its answers into"
+  }
+  inlet PolicyContextFromToRatingEngineService is type ToRatingEngineServiceCommand with {
+    briefly "What ToRatingEngineService makes of the answers it gets"
+  }
+  connector 'ToRatingEngineService Intake' is from outlet PolicyContext.ToRatingEngineService.ToRatingEngineServiceToPolicyContext to inlet PolicyContext.PolicyContextFromToRatingEngineService with {
+    briefly "Answers translated by ToRatingEngineService, on their way in"
+  }
+  inlet PolicyContextFromToUnderwritingService is command Policy.SuspendPolicy with {
+    briefly "What ToUnderwritingService makes of the answers it gets"
+  }
+  connector 'ToUnderwritingService Intake' is from outlet PolicyContext.ToUnderwritingService.ToUnderwritingServiceToPolicyContext to inlet PolicyContext.PolicyContextFromToUnderwritingService with {
+    briefly "Answers translated by ToUnderwritingService, on their way in"
+  }
   inlet PolicyCommandStreamIn is type PolicyCommand  outlet PolicyCommandStreamOut is type PolicyCommand
   inlet PolicyResultStreamIn is result Policy.PolicyResult  outlet PolicyResultStreamOut is result Policy.PolicyResult
   handler PolicyContextBoundary is {
@@ -188,7 +205,8 @@ context PolicyContext as router is {
       |The model's side of the DocumentGenerationService conversation.
     }
   }
-  adaptor ToRatingEngineService to context RatingEngineService as merge is { 
+  adaptor ToRatingEngineService to context RatingEngineService as router is { 
+    outlet ToRatingEngineServiceToPolicyContext is type ToRatingEngineServiceCommand
     inlet ToRatingEngineServiceIn is type PolicyEvent    inlet ToRatingEngineServiceReplies is type RatingEngineService.RatingEngineServiceReply    outlet ToRatingEngineServiceOut is type RatingEngineService.RatingEngineServiceCommand
     handler ToRatingEngineServiceHandler is {
       on endorsementAdded: event Policy.EndorsementAdded is {
@@ -198,10 +216,12 @@ context PolicyContext as router is {
       on renewalOffered: event Policy.RenewalOffered is {
         let askAnswer: type RatingEngineService.RenewalPremiumCalculation = ask query RatingEngineService.GetRenewalPremium of context RatingEngineService
         do "the price for the term now being offered is what the renewal offer carries"
+        send command Policy.ProcessRenewal(policyId = renewalOffered.policyId, renewal = prompt("the renewal priced at askAnswer.renewalPremium")) to outlet PolicyContext.ToRatingEngineService.ToRatingEngineServiceToPolicyContext
       }
       on policyIssued: event Policy.PolicyIssued is {
         let askAnswer: type RatingEngineService.PremiumCalculation = ask query RatingEngineService.GetPremiumCalculation of context RatingEngineService
         do "issuance needing the premium the policy is written at"
+        send command Policy.BindPolicy(policyId = policyIssued.policyId, paymentFrequency = prompt("the frequency askAnswer.premium is written at")) to outlet PolicyContext.ToRatingEngineService.ToRatingEngineServiceToPolicyContext
       }
       on other is {
         error "Unexpected message for adaptor ToRatingEngineService"
@@ -280,12 +300,16 @@ context PolicyContext as router is {
       |The model's side of the UnderwritingService conversation.
     }
   }
-  adaptor ToUnderwritingService to context UnderwritingService as merge is { 
+  adaptor ToUnderwritingService to context UnderwritingService as router is { 
+    outlet ToUnderwritingServiceToPolicyContext is command Policy.SuspendPolicy
     inlet ToUnderwritingServiceIn is type PolicyEvent    inlet ToUnderwritingServiceReplies is result UnderwritingService.RiskEvaluation    outlet ToUnderwritingServiceOut is type UnderwritingService.UnderwritingServiceCommand
     handler ToUnderwritingServiceHandler is {
       on endorsementAdded: event Policy.EndorsementAdded is {
         let askAnswer: type UnderwritingService.RiskEvaluation = ask query UnderwritingService.GetRiskEvaluation of context UnderwritingService
         do "an endorsement changing the risk that was priced"
+        when prompt("askAnswer.decision is a decline") then
+          send command Policy.SuspendPolicy(policyId = endorsementAdded.policyId, suspensionReason = prompt("underwriting declined the endorsed risk: askAnswer.decision with askAnswer.conditions")) to outlet PolicyContext.ToUnderwritingService.ToUnderwritingServiceToPolicyContext
+        end
         let item0: type UnderwritingService.EvaluateRisk = prompt("translate the endorsementAdded event into a EvaluateRisk, an endorsement changing the risk that was priced")
         send item0 to outlet PolicyContext.ToUnderwritingService.ToUnderwritingServiceOut
       }

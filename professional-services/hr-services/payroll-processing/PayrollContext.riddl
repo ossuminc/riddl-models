@@ -1,5 +1,28 @@
 // Payroll Processing - Payroll Context
 context PayrollContext as router is {
+  type ToHRISSystemCommand is one of {
+    PayrollRun.ApplyDeduction or PayrollRun.InitiatePayroll
+  } with {
+    briefly "What ToHRISSystem turns its answers into"
+  }
+  inlet PayrollContextFromToHRISSystem is type ToHRISSystemCommand with {
+    briefly "What ToHRISSystem makes of the answers it gets"
+  }
+  connector 'ToHRISSystem Intake' is from outlet PayrollContext.ToHRISSystem.ToHRISSystemToPayrollContext to inlet PayrollContext.PayrollContextFromToHRISSystem with {
+    briefly "Answers translated by ToHRISSystem, on their way in"
+  }
+  inlet PayrollContextFromToTaxService is command PayrollRun.CalculateTaxes with {
+    briefly "What ToTaxService makes of the answers it gets"
+  }
+  connector 'ToTaxService Intake' is from outlet PayrollContext.ToTaxService.ToTaxServiceToPayrollContext to inlet PayrollContext.PayrollContextFromToTaxService with {
+    briefly "Answers translated by ToTaxService, on their way in"
+  }
+  inlet PayrollContextFromToTimeTracking is command PayrollRun.AddTimeEntry with {
+    briefly "What ToTimeTracking makes of the answers it gets"
+  }
+  connector 'ToTimeTracking Intake' is from outlet PayrollContext.ToTimeTracking.ToTimeTrackingToPayrollContext to inlet PayrollContext.PayrollContextFromToTimeTracking with {
+    briefly "Answers translated by ToTimeTracking, on their way in"
+  }
   inlet PayrollContextFromBankingService is command PayrollRun.CompletePayroll with {
     briefly "What FromBankingService makes of that service's news"
   }
@@ -142,16 +165,23 @@ context PayrollContext as router is {
       |The model's side of the GeneralLedger conversation.
     }
   }
-  adaptor ToHRISSystem to context HRISSystem as merge is { 
+  adaptor ToHRISSystem to context HRISSystem as router is { 
+    outlet ToHRISSystemToPayrollContext is type ToHRISSystemCommand
     inlet ToHRISSystemIn is type PayrollRunEvent    inlet ToHRISSystemReplies is type HRISSystem.HRISSystemReply    outlet ToHRISSystemOut is type HRISSystem.HRISSystemRequest
     handler ToHRISSystemHandler is {
       on payrollInitiated: event PayrollRun.PayrollInitiated is {
         let askAnswer: type HRISSystem.EmployeeList = ask query HRISSystem.GetEmployeeList of context HRISSystem
         do "a payroll run needing everyone who should be paid in it"
+        when prompt("the run's roster differs from askAnswer.employees") then
+          send command PayrollRun.InitiatePayroll(runId = payrollInitiated.runId, payPeriod = payrollInitiated.payPeriod, employeeIds = askAnswer.employees) to outlet PayrollContext.ToHRISSystem.ToHRISSystemToPayrollContext
+        end
       }
       on payrollCalculated: event PayrollRun.PayrollCalculated is {
         let askAnswer: type HRISSystem.EmployeePayInfo = ask query HRISSystem.GetEmployeePayInfo of context HRISSystem
         do "a calculated payroll needing each person's rate and standing deductions"
+        when prompt("askAnswer.deductions holds a deduction the run lacks") then
+          send command PayrollRun.ApplyDeduction(runId = payrollCalculated.runId, employeeId = askAnswer.employeeId, deduction = prompt("the standing deduction in askAnswer.deductions")) to outlet PayrollContext.ToHRISSystem.ToHRISSystemToPayrollContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToHRISSystem"
@@ -168,12 +198,16 @@ context PayrollContext as router is {
       |The model's side of the HRISSystem conversation.
     }
   }
-  adaptor ToTaxService to context TaxService as merge is { 
+  adaptor ToTaxService to context TaxService as router is { 
+    outlet ToTaxServiceToPayrollContext is command PayrollRun.CalculateTaxes
     inlet ToTaxServiceIn is type PayrollRunEvent    inlet ToTaxServiceReplies is result TaxService.TaxCalculation    outlet ToTaxServiceOut is type TaxService.TaxServiceCommand
     handler ToTaxServiceHandler is {
       on payrollCalculated: event PayrollRun.PayrollCalculated is {
         let askAnswer: type TaxService.TaxCalculation = ask query TaxService.GetTaxCalculation of context TaxService
         do "gross pay being what withholding is computed from"
+        when prompt("askAnswer.taxAmount differs from what the run withheld") then
+          send command PayrollRun.CalculateTaxes(runId = payrollCalculated.runId) to outlet PayrollContext.ToTaxService.ToTaxServiceToPayrollContext
+        end
         let item0: type TaxService.CalculateFederalTax = prompt("translate the payrollCalculated event into a CalculateFederalTax, gross pay being what federal withholding is computed on")
         send item0 to outlet PayrollContext.ToTaxService.ToTaxServiceOut
         let item1: type TaxService.CalculateStateTax = prompt("translate the payrollCalculated event into a CalculateStateTax, and what state withholding is computed on")
@@ -194,12 +228,16 @@ context PayrollContext as router is {
       |The model's side of the TaxService conversation.
     }
   }
-  adaptor ToTimeTracking to context TimeTracking as merge is { 
+  adaptor ToTimeTracking to context TimeTracking as router is { 
+    outlet ToTimeTrackingToPayrollContext is command PayrollRun.AddTimeEntry
     inlet ToTimeTrackingIn is type PayrollRunEvent    inlet ToTimeTrackingReplies is result TimeTracking.TimeEntries    outlet ToTimeTrackingOut is query TimeTracking.GetTimeEntries
     handler ToTimeTrackingHandler is {
       on timeEntryAdded: event PayrollRun.TimeEntryAdded is {
         let askAnswer: type TimeTracking.TimeEntries = ask query TimeTracking.GetTimeEntries of context TimeTracking
         do "a time entry needing the tracked hours it should match"
+        when prompt("the entry disagrees with the tracked hours") then
+          send command PayrollRun.AddTimeEntry(runId = timeEntryAdded.runId, employeeId = askAnswer.employeeId, earningsEntry = prompt("the correction to match askAnswer.totalRegularHours and askAnswer.totalOvertimeHours")) to outlet PayrollContext.ToTimeTracking.ToTimeTrackingToPayrollContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToTimeTracking"

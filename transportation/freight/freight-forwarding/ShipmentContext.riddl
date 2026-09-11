@@ -1,5 +1,29 @@
 // Freight Forwarding - Shipment Context
 context ShipmentContext as router is {
+  inlet ShipmentContextFromToAirCarrierService is command Shipment.BookCarrier with {
+    briefly "What ToAirCarrierService makes of the answers it gets"
+  }
+  connector 'ToAirCarrierService Intake' is from outlet ShipmentContext.ToAirCarrierService.ToAirCarrierServiceToShipmentContext to inlet ShipmentContext.ShipmentContextFromToAirCarrierService with {
+    briefly "Answers translated by ToAirCarrierService, on their way in"
+  }
+  inlet ShipmentContextFromToContainerTrackingService is command Shipment.RecordMilestone with {
+    briefly "What ToContainerTrackingService makes of the answers it gets"
+  }
+  connector 'ToContainerTrackingService Intake' is from outlet ShipmentContext.ToContainerTrackingService.ToContainerTrackingServiceToShipmentContext to inlet ShipmentContext.ShipmentContextFromToContainerTrackingService with {
+    briefly "Answers translated by ToContainerTrackingService, on their way in"
+  }
+  inlet ShipmentContextFromToOceanCarrierService is command Shipment.BookCarrier with {
+    briefly "What ToOceanCarrierService makes of the answers it gets"
+  }
+  connector 'ToOceanCarrierService Intake' is from outlet ShipmentContext.ToOceanCarrierService.ToOceanCarrierServiceToShipmentContext to inlet ShipmentContext.ShipmentContextFromToOceanCarrierService with {
+    briefly "Answers translated by ToOceanCarrierService, on their way in"
+  }
+  inlet ShipmentContextFromToRatingService is command Shipment.AttachQuote with {
+    briefly "What ToRatingService makes of the answers it gets"
+  }
+  connector 'ToRatingService Intake' is from outlet ShipmentContext.ToRatingService.ToRatingServiceToShipmentContext to inlet ShipmentContext.ShipmentContextFromToRatingService with {
+    briefly "Answers translated by ToRatingService, on their way in"
+  }
   inlet ShipmentContextFromAirCarrierService is command Shipment.BookCarrier with {
     briefly "What FromAirCarrierService makes of that service's news"
   }
@@ -113,12 +137,16 @@ context ShipmentContext as router is {
       |The model's side of the AirCarrierService conversation.
     }
   }
-  adaptor ToAirCarrierService to context AirCarrierService as merge is { 
+  adaptor ToAirCarrierService to context AirCarrierService as router is { 
+    outlet ToAirCarrierServiceToShipmentContext is command Shipment.BookCarrier
     inlet ToAirCarrierServiceIn is type ShipmentEvent    inlet ToAirCarrierServiceReplies is result AirCarrierService.FlightResult    outlet ToAirCarrierServiceOut is type AirCarrierService.AirCarrierServiceRequest
     handler ToAirCarrierServiceHandler is {
       on pickupScheduled: event Shipment.PickupScheduled is {
         let askAnswer: type AirCarrierService.FlightResult = ask query AirCarrierService.GetFlights of context AirCarrierService
         do "a scheduled pickup needing flights that can take the freight onward"
+        when prompt("askAnswer.flights is not empty") then
+          send command Shipment.BookCarrier(shipmentId = pickupScheduled.shipmentId, booking = prompt("a booking on the first of askAnswer.flights that can take the freight")) to outlet ShipmentContext.ToAirCarrierService.ToAirCarrierServiceToShipmentContext
+        end
       }
       on quoteAttached: event Shipment.QuoteAttached is {
         let item0: type AirCarrierService.BookAirFreight = prompt("translate the quoteAttached event into a BookAirFreight, the quote being what a booking is placed against")
@@ -161,12 +189,16 @@ context ShipmentContext as router is {
       |The model's side of the ContainerTrackingService conversation.
     }
   }
-  adaptor ToContainerTrackingService to context ContainerTrackingService as merge is { 
+  adaptor ToContainerTrackingService to context ContainerTrackingService as router is { 
+    outlet ToContainerTrackingServiceToShipmentContext is command Shipment.RecordMilestone
     inlet ToContainerTrackingServiceIn is type ShipmentEvent    inlet ToContainerTrackingServiceReplies is result ContainerTrackingService.ContainerTrackingResult    outlet ToContainerTrackingServiceOut is query ContainerTrackingService.TrackContainer
     handler ToContainerTrackingServiceHandler is {
       on containerSealUpdated: event Shipment.ContainerSealUpdated is {
         let askAnswer: type ContainerTrackingService.ContainerTrackingResult = ask query ContainerTrackingService.TrackContainer of context ContainerTrackingService
         do "a resealed container needing the carrier's own track on it"
+        when prompt("askAnswer.lastEvent is not yet recorded") then
+          send command Shipment.RecordMilestone(shipmentId = containerSealUpdated.shipmentId, milestone = askAnswer.lastEvent) to outlet ShipmentContext.ToContainerTrackingService.ToContainerTrackingServiceToShipmentContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToContainerTrackingService"
@@ -260,12 +292,16 @@ context ShipmentContext as router is {
       |The model's side of the OceanCarrierService conversation.
     }
   }
-  adaptor ToOceanCarrierService to context OceanCarrierService as merge is { 
+  adaptor ToOceanCarrierService to context OceanCarrierService as router is { 
+    outlet ToOceanCarrierServiceToShipmentContext is command Shipment.BookCarrier
     inlet ToOceanCarrierServiceIn is type ShipmentEvent    inlet ToOceanCarrierServiceReplies is result OceanCarrierService.ScheduleResult    outlet ToOceanCarrierServiceOut is type OceanCarrierService.OceanCarrierServiceRequest
     handler ToOceanCarrierServiceHandler is {
       on shipmentCreated: event Shipment.ShipmentCreated is {
         let askAnswer: type OceanCarrierService.ScheduleResult = ask query OceanCarrierService.GetSchedules of context OceanCarrierService
         do "a new shipment needing sailings it could be booked onto"
+        when prompt("askAnswer.sailings is not empty") then
+          send command Shipment.BookCarrier(shipmentId = shipmentCreated.shipmentId, booking = prompt("a booking on the first of askAnswer.sailings that fits the route")) to outlet ShipmentContext.ToOceanCarrierService.ToOceanCarrierServiceToShipmentContext
+        end
       }
       on quoteAttached: event Shipment.QuoteAttached is {
         let item0: type OceanCarrierService.RequestBooking = prompt("translate the quoteAttached event into a RequestBooking, the same quote booking the sea leg")
@@ -308,12 +344,14 @@ context ShipmentContext as router is {
       |The model's side of the RatingService conversation.
     }
   }
-  adaptor ToRatingService to context RatingService as merge is { 
+  adaptor ToRatingService to context RatingService as router is { 
+    outlet ToRatingServiceToShipmentContext is command Shipment.AttachQuote
     inlet ToRatingServiceIn is type ShipmentEvent    inlet ToRatingServiceReplies is result RatingService.RatesResult    outlet ToRatingServiceOut is type RatingService.RatingServiceRequest
     handler ToRatingServiceHandler is {
       on containersAssigned: event Shipment.ContainersAssigned is {
         let askAnswer: type RatingService.RatesResult = ask query RatingService.GetRates of context RatingService
         do "assigned containers needing rates for the volume they come to"
+        send command Shipment.AttachQuote(shipmentId = containersAssigned.shipmentId, quote = prompt("the cheapest of askAnswer.quotes for the containers assigned")) to outlet ShipmentContext.ToRatingService.ToRatingServiceToShipmentContext
       }
       on shipmentCreated: event Shipment.ShipmentCreated is {
         let item0: type RatingService.RequestCustomQuote = prompt("translate the shipmentCreated event into a RequestCustomQuote, a shipment with no rate being what a quote is asked for")

@@ -1,5 +1,11 @@
 // Athlete Management - Athlete Context
 context AthleteContext as router is {
+  inlet AthleteContextFromToLeagueRegistry is command Athlete.SuspendAthlete with {
+    briefly "What ToLeagueRegistry makes of the answers it gets"
+  }
+  connector 'ToLeagueRegistry Intake' is from outlet AthleteContext.ToLeagueRegistry.ToLeagueRegistryToAthleteContext to inlet AthleteContext.AthleteContextFromToLeagueRegistry with {
+    briefly "Answers translated by ToLeagueRegistry, on their way in"
+  }
   inlet AthleteCommandStreamIn is type AthleteCommand  outlet AthleteCommandStreamOut is type AthleteCommand
   inlet AthleteResultStreamIn is result Athlete.AthleteResult  outlet AthleteResultStreamOut is result Athlete.AthleteResult
   handler AthleteContextBoundary is {
@@ -64,12 +70,16 @@ context AthleteContext as router is {
       |The model's side of the LeagueRegistry conversation.
     }
   }
-  adaptor ToLeagueRegistry to context LeagueRegistry as merge is { 
+  adaptor ToLeagueRegistry to context LeagueRegistry as router is { 
+    outlet ToLeagueRegistryToAthleteContext is command Athlete.SuspendAthlete
     inlet ToLeagueRegistryIn is type AthleteEvent    inlet ToLeagueRegistryReplies is result LeagueRegistry.LeagueEligibility    outlet ToLeagueRegistryOut is type LeagueRegistry.LeagueRegistryRequest
     handler ToLeagueRegistryHandler is {
       on contractSigned: event Athlete.ContractSigned is {
         let askAnswer: type LeagueRegistry.LeagueEligibility = ask query LeagueRegistry.GetLeagueEligibility of context LeagueRegistry
         do "a signing needing the league's word that the athlete may play"
+        when prompt("not askAnswer.eligible") then
+          send command Athlete.SuspendAthlete(athleteId = contractSigned.athleteId, reason = prompt("the league's restrictions in askAnswer"), suspendedUntil = prompt("until the league lifts them")) to outlet AthleteContext.ToLeagueRegistry.ToLeagueRegistryToAthleteContext
+        end
         let item0: type LeagueRegistry.RegisterWithLeague = prompt("translate the contractSigned event into a RegisterWithLeague, a signed contract being what makes an athlete eligible")
         send item0 to outlet AthleteContext.ToLeagueRegistry.ToLeagueRegistryOut
       }

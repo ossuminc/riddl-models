@@ -1,5 +1,17 @@
 // Marketing Attribution - Attribution Context
 context AttributionContext as router is {
+  inlet AttributionContextFromToCRMSystem is command ConversionPath.RecordTouchpoint with {
+    briefly "What ToCRMSystem makes of the answers it gets"
+  }
+  connector 'ToCRMSystem Intake' is from outlet AttributionContext.ToCRMSystem.ToCRMSystemToAttributionContext to inlet AttributionContext.AttributionContextFromToCRMSystem with {
+    briefly "Answers translated by ToCRMSystem, on their way in"
+  }
+  inlet AttributionContextFromToWebAnalytics is command ConversionPath.RecordTouchpoint with {
+    briefly "What ToWebAnalytics makes of the answers it gets"
+  }
+  connector 'ToWebAnalytics Intake' is from outlet AttributionContext.ToWebAnalytics.ToWebAnalyticsToAttributionContext to inlet AttributionContext.AttributionContextFromToWebAnalytics with {
+    briefly "Answers translated by ToWebAnalytics, on their way in"
+  }
   inlet ConversionPathCommandStreamIn is type ConversionPathCommand  outlet ConversionPathCommandStreamOut is type ConversionPathCommand
   inlet ConversionPathResultStreamIn is result ConversionPath.ConversionPathResult  outlet ConversionPathResultStreamOut is result ConversionPath.ConversionPathResult
   handler AttributionContextBoundary is {
@@ -55,12 +67,16 @@ context AttributionContext as router is {
       |The model's side of the CRMSystem conversation.
     }
   }
-  adaptor ToCRMSystem to context CRMSystem as merge is { 
+  adaptor ToCRMSystem to context CRMSystem as router is { 
+    outlet ToCRMSystemToAttributionContext is command ConversionPath.RecordTouchpoint
     inlet ToCRMSystemIn is type ConversionPathEvent    inlet ToCRMSystemReplies is result CRMSystem.CustomerJourneyData    outlet ToCRMSystemOut is type CRMSystem.CRMSystemRequest
     handler ToCRMSystemHandler is {
       on conversionRecorded: event ConversionPath.ConversionRecorded is {
         let askAnswer: type CRMSystem.CustomerJourneyData = ask query CRMSystem.GetCustomerJourney of context CRMSystem
         do "a conversion needing the journey the CRM already holds"
+        when prompt("askAnswer.interactions holds a touchpoint the path lacks") then
+          send command ConversionPath.RecordTouchpoint(conversionPathId = conversionRecorded.conversionPathId, touchpoint = prompt("the interaction in askAnswer.interactions the path lacks")) to outlet AttributionContext.ToCRMSystem.ToCRMSystemToAttributionContext
+        end
       }
       on attributionModelApplied: event ConversionPath.AttributionModelApplied is {
         let item0: type CRMSystem.UpdateCustomerAttribution = prompt("translate the attributionModelApplied event into a UpdateCustomerAttribution, attribution not being known until the model has run")
@@ -101,12 +117,16 @@ context AttributionContext as router is {
       |The model's side of the WebAnalytics conversation.
     }
   }
-  adaptor ToWebAnalytics to context WebAnalytics as merge is { 
+  adaptor ToWebAnalytics to context WebAnalytics as router is { 
+    outlet ToWebAnalyticsToAttributionContext is command ConversionPath.RecordTouchpoint
     inlet ToWebAnalyticsIn is type ConversionPathEvent    inlet ToWebAnalyticsReplies is result WebAnalytics.PageViewData    outlet ToWebAnalyticsOut is type WebAnalytics.WebAnalyticsRequest
     handler ToWebAnalyticsHandler is {
       on conversionPathCreated: event ConversionPath.ConversionPathCreated is {
         let askAnswer: type WebAnalytics.PageViewData = ask query WebAnalytics.GetPageViews of context WebAnalytics
         do "a new path needing the page views it is assembled from"
+        when prompt("askAnswer.sessionCount is greater than zero") then
+          send command ConversionPath.RecordTouchpoint(conversionPathId = conversionPathCreated.conversionPathId, touchpoint = prompt("the first of askAnswer.pageViews")) to outlet AttributionContext.ToWebAnalytics.ToWebAnalyticsToAttributionContext
+        end
       }
       on touchpointRecorded: event ConversionPath.TouchpointRecorded is {
         let item0: type WebAnalytics.TrackEvent = prompt("translate the touchpointRecorded event into a TrackEvent, a touchpoint being the event analytics counts")

@@ -1,5 +1,17 @@
 // Streaming Platform - Stream Context
 context StreamContext as router is {
+  inlet StreamContextFromToContinueWatchingService is command Stream.SeekPosition with {
+    briefly "What ToContinueWatchingService makes of the answers it gets"
+  }
+  connector 'ToContinueWatchingService Intake' is from outlet StreamContext.ToContinueWatchingService.ToContinueWatchingServiceToStreamContext to inlet StreamContext.StreamContextFromToContinueWatchingService with {
+    briefly "Answers translated by ToContinueWatchingService, on their way in"
+  }
+  inlet StreamContextFromToSubscriptionService is command Stream.EndStream with {
+    briefly "What ToSubscriptionService makes of the answers it gets"
+  }
+  connector 'ToSubscriptionService Intake' is from outlet StreamContext.ToSubscriptionService.ToSubscriptionServiceToStreamContext to inlet StreamContext.StreamContextFromToSubscriptionService with {
+    briefly "Answers translated by ToSubscriptionService, on their way in"
+  }
   inlet StreamContextFromDRMService is command Stream.StartStream with {
     briefly "What FromDRMService makes of that service's news"
   }
@@ -111,12 +123,14 @@ context StreamContext as router is {
       |The model's side of the CDNService conversation.
     }
   }
-  adaptor ToContinueWatchingService to context ContinueWatchingService as merge is { 
+  adaptor ToContinueWatchingService to context ContinueWatchingService as router is { 
+    outlet ToContinueWatchingServiceToStreamContext is command Stream.SeekPosition
     inlet ToContinueWatchingServiceIn is type StreamEvent    inlet ToContinueWatchingServiceReplies is result ContinueWatchingService.GetProgressResult    outlet ToContinueWatchingServiceOut is type ContinueWatchingService.ContinueWatchingServiceRequest
     handler ToContinueWatchingServiceHandler is {
       on streamStarted: event Stream.StreamStarted is {
         let askAnswer: type ContinueWatchingService.GetProgressResult = ask query ContinueWatchingService.GetProgress of context ContinueWatchingService
         do "playback needing to know where the viewer left off"
+        send command Stream.SeekPosition(streamId = streamStarted.streamId, position = prompt("the position askAnswer says the viewer left off at")) to outlet StreamContext.ToContinueWatchingService.ToContinueWatchingServiceToStreamContext
       }
       on streamPaused: event Stream.StreamPaused is {
         let item0: type ContinueWatchingService.SaveProgress = prompt("translate the streamPaused event into a SaveProgress, a pause being where a viewer will resume")
@@ -207,12 +221,16 @@ context StreamContext as router is {
       |The model's side of the RecommendationService conversation.
     }
   }
-  adaptor ToSubscriptionService to context SubscriptionService as merge is { 
+  adaptor ToSubscriptionService to context SubscriptionService as router is { 
+    outlet ToSubscriptionServiceToStreamContext is command Stream.EndStream
     inlet ToSubscriptionServiceIn is type StreamEvent    inlet ToSubscriptionServiceReplies is result SubscriptionService.EntitlementResult    outlet ToSubscriptionServiceOut is query SubscriptionService.CheckEntitlement
     handler ToSubscriptionServiceHandler is {
       on streamStarted: event Stream.StreamStarted is {
         let askAnswer: type SubscriptionService.EntitlementResult = ask query SubscriptionService.CheckEntitlement of context SubscriptionService
         do "a stream starting needing the viewer to be entitled to it"
+        when prompt("not askAnswer.entitled") then
+          send command Stream.EndStream(streamId = streamStarted.streamId, finalPosition = prompt("zero: nothing was watched"), reason = askAnswer.denialReason) to outlet StreamContext.ToSubscriptionService.ToSubscriptionServiceToStreamContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToSubscriptionService"

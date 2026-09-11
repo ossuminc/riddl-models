@@ -1,5 +1,34 @@
 // Event Registration - Registration Context
 context RegistrationContext as router is {
+  inlet RegistrationContextFromToDiscountService is command Registration.ApplyDiscountCode with {
+    briefly "What ToDiscountService makes of the answers it gets"
+  }
+  connector 'ToDiscountService Intake' is from outlet RegistrationContext.ToDiscountService.ToDiscountServiceToRegistrationContext to inlet RegistrationContext.RegistrationContextFromToDiscountService with {
+    briefly "Answers translated by ToDiscountService, on their way in"
+  }
+  type ToEventCatalogServiceCommand is one of {
+    Registration.TransferRegistration or Registration.UpdateAttendeeInfo
+  } with {
+    briefly "What ToEventCatalogService turns its answers into"
+  }
+  inlet RegistrationContextFromToEventCatalogService is type ToEventCatalogServiceCommand with {
+    briefly "What ToEventCatalogService makes of the answers it gets"
+  }
+  connector 'ToEventCatalogService Intake' is from outlet RegistrationContext.ToEventCatalogService.ToEventCatalogServiceToRegistrationContext to inlet RegistrationContext.RegistrationContextFromToEventCatalogService with {
+    briefly "Answers translated by ToEventCatalogService, on their way in"
+  }
+  inlet RegistrationContextFromToSessionCapacityService is command Registration.UnregisterFromSession with {
+    briefly "What ToSessionCapacityService makes of the answers it gets"
+  }
+  connector 'ToSessionCapacityService Intake' is from outlet RegistrationContext.ToSessionCapacityService.ToSessionCapacityServiceToRegistrationContext to inlet RegistrationContext.RegistrationContextFromToSessionCapacityService with {
+    briefly "Answers translated by ToSessionCapacityService, on their way in"
+  }
+  inlet RegistrationContextFromToTicketAvailabilityService is command Registration.AddToWaitlist with {
+    briefly "What ToTicketAvailabilityService makes of the answers it gets"
+  }
+  connector 'ToTicketAvailabilityService Intake' is from outlet RegistrationContext.ToTicketAvailabilityService.ToTicketAvailabilityServiceToRegistrationContext to inlet RegistrationContext.RegistrationContextFromToTicketAvailabilityService with {
+    briefly "Answers translated by ToTicketAvailabilityService, on their way in"
+  }
   inlet RegistrationContextFromPaymentProcessingService is command Registration.ConfirmRegistration with {
     briefly "What FromPaymentProcessingService makes of that service's news"
   }
@@ -133,12 +162,16 @@ context RegistrationContext as router is {
       |The model's side of the DiscountService conversation.
     }
   }
-  adaptor ToDiscountService to context DiscountService as merge is { 
+  adaptor ToDiscountService to context DiscountService as router is { 
+    outlet ToDiscountServiceToRegistrationContext is command Registration.ApplyDiscountCode
     inlet ToDiscountServiceIn is type RegistrationEvent    inlet ToDiscountServiceReplies is result DiscountService.DiscountValidation    outlet ToDiscountServiceOut is type DiscountService.DiscountServiceRequest
     handler ToDiscountServiceHandler is {
       on discountApplied: event Registration.DiscountApplied is {
         let askAnswer: type DiscountService.DiscountValidation = ask query DiscountService.ValidateDiscountCode of context DiscountService
         do "applying a code being when it must be proved good"
+        when prompt("not askAnswer.valid") then
+          send command Registration.ApplyDiscountCode(registrationId = discountApplied.registrationId, discountCode = prompt("no code: the one applied was invalid, so it is withdrawn")) to outlet RegistrationContext.ToDiscountService.ToDiscountServiceToRegistrationContext
+        end
         let item0: type DiscountService.RedeemDiscount = prompt("translate the discountApplied event into a RedeemDiscount, applying the discount being what spends the code")
         send item0 to outlet RegistrationContext.ToDiscountService.ToDiscountServiceOut
       }
@@ -189,16 +222,21 @@ context RegistrationContext as router is {
       |The model's side of the EmailService conversation.
     }
   }
-  adaptor ToEventCatalogService to context EventCatalogService as merge is { 
+  adaptor ToEventCatalogService to context EventCatalogService as router is { 
+    outlet ToEventCatalogServiceToRegistrationContext is type ToEventCatalogServiceCommand
     inlet ToEventCatalogServiceIn is type RegistrationEvent    inlet ToEventCatalogServiceReplies is type EventCatalogService.EventCatalogServiceReply    outlet ToEventCatalogServiceOut is type EventCatalogService.EventCatalogServiceRequest
     handler ToEventCatalogServiceHandler is {
       on registrationCreated: event Registration.RegistrationCreated is {
         let askAnswer: type EventCatalogService.EventDetails = ask query EventCatalogService.GetEventDetails of context EventCatalogService
         do "a new registration needing the event's date, place and capacity"
+        send command Registration.UpdateAttendeeInfo(registrationId = registrationCreated.registrationId, attendee = prompt("the attendee with the event's date and place from askAnswer.event on the registration")) to outlet RegistrationContext.ToEventCatalogService.ToEventCatalogServiceToRegistrationContext
       }
       on registrationTransferred: event Registration.RegistrationTransferred is {
         let askAnswer: type EventCatalogService.EventList = ask query EventCatalogService.GetEvents of context EventCatalogService
         do "a transfer needing the other events it could move to"
+        when prompt("the transfer needs a different event among askAnswer.events") then
+          send command Registration.TransferRegistration(registrationId = registrationTransferred.registrationId, newAttendee = registrationTransferred.newAttendee) to outlet RegistrationContext.ToEventCatalogService.ToEventCatalogServiceToRegistrationContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToEventCatalogService"
@@ -296,12 +334,16 @@ context RegistrationContext as router is {
       |The model's side of the SessionCapacityService conversation.
     }
   }
-  adaptor ToSessionCapacityService to context SessionCapacityService as merge is { 
+  adaptor ToSessionCapacityService to context SessionCapacityService as router is { 
+    outlet ToSessionCapacityServiceToRegistrationContext is command Registration.UnregisterFromSession
     inlet ToSessionCapacityServiceIn is type RegistrationEvent    inlet ToSessionCapacityServiceReplies is result SessionCapacityService.SessionCapacity    outlet ToSessionCapacityServiceOut is type SessionCapacityService.SessionCapacityServiceCommand
     handler ToSessionCapacityServiceHandler is {
       on sessionRegistered: event Registration.SessionRegistered is {
         let askAnswer: type SessionCapacityService.SessionCapacity = ask query SessionCapacityService.CheckSessionCapacity of context SessionCapacityService
         do "registering for a session being when its remaining capacity decides the answer"
+        when prompt("askAnswer.spotsRemaining is zero") then
+          send command Registration.UnregisterFromSession(registrationId = sessionRegistered.registrationId, sessionId = sessionRegistered.sessionId) to outlet RegistrationContext.ToSessionCapacityService.ToSessionCapacityServiceToRegistrationContext
+        end
         let item0: type SessionCapacityService.ReserveSessionSpot = prompt("translate the sessionRegistered event into a ReserveSessionSpot, registering for a session being what claims a seat in it")
         send item0 to outlet RegistrationContext.ToSessionCapacityService.ToSessionCapacityServiceOut
       }
@@ -347,12 +389,16 @@ context RegistrationContext as router is {
       |The model's side of the TicketAvailabilityService conversation.
     }
   }
-  adaptor ToTicketAvailabilityService to context TicketAvailabilityService as merge is { 
+  adaptor ToTicketAvailabilityService to context TicketAvailabilityService as router is { 
+    outlet ToTicketAvailabilityServiceToRegistrationContext is command Registration.AddToWaitlist
     inlet ToTicketAvailabilityServiceIn is type RegistrationEvent    inlet ToTicketAvailabilityServiceReplies is result TicketAvailabilityService.TicketAvailability    outlet ToTicketAvailabilityServiceOut is type TicketAvailabilityService.TicketAvailabilityServiceCommand
     handler ToTicketAvailabilityServiceHandler is {
       on registrationCreated: event Registration.RegistrationCreated is {
         let askAnswer: type TicketAvailabilityService.TicketAvailability = ask query TicketAvailabilityService.CheckAvailability of context TicketAvailabilityService
         do "a registration being unfulfillable if no ticket is left"
+        when prompt("not askAnswer.available and askAnswer.waitlistAvailable") then
+          send command Registration.AddToWaitlist(registrationId = registrationCreated.registrationId, position = prompt("the next waitlist position")) to outlet RegistrationContext.ToTicketAvailabilityService.ToTicketAvailabilityServiceToRegistrationContext
+        end
         let item0: type TicketAvailabilityService.ReserveTicket = prompt("translate the registrationCreated event into a ReserveTicket, the registration being what claims the ticket")
         send item0 to outlet RegistrationContext.ToTicketAvailabilityService.ToTicketAvailabilityServiceOut
       }

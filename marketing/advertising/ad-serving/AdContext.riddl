@@ -1,5 +1,23 @@
 // Ad Serving - Ad Context
 context AdContext as router is {
+  inlet AdContextFromToAdExchange is command Advertisement.UpdateBid with {
+    briefly "What ToAdExchange makes of the answers it gets"
+  }
+  connector 'ToAdExchange Intake' is from outlet AdContext.ToAdExchange.ToAdExchangeToAdContext to inlet AdContext.AdContextFromToAdExchange with {
+    briefly "Answers translated by ToAdExchange, on their way in"
+  }
+  inlet AdContextFromToAdVerification is command Advertisement.RecordImpression with {
+    briefly "What ToAdVerification makes of the answers it gets"
+  }
+  connector 'ToAdVerification Intake' is from outlet AdContext.ToAdVerification.ToAdVerificationToAdContext to inlet AdContext.AdContextFromToAdVerification with {
+    briefly "Answers translated by ToAdVerification, on their way in"
+  }
+  inlet AdContextFromToDataManagementPlatform is command Advertisement.UpdateTargeting with {
+    briefly "What ToDataManagementPlatform makes of the answers it gets"
+  }
+  connector 'ToDataManagementPlatform Intake' is from outlet AdContext.ToDataManagementPlatform.ToDataManagementPlatformToAdContext to inlet AdContext.AdContextFromToDataManagementPlatform with {
+    briefly "Answers translated by ToDataManagementPlatform, on their way in"
+  }
   inlet AdCommandStreamIn is type AdCommand  outlet AdCommandStreamOut is type AdCommand
   inlet AdImpressionResultStreamIn is result Advertisement.AdResult  outlet AdImpressionResultStreamOut is result Advertisement.AdResult
   handler AdContextBoundary is {
@@ -64,12 +82,16 @@ context AdContext as router is {
       |The model's side of the AdExchange conversation.
     }
   }
-  adaptor ToAdExchange to context AdExchange as merge is { 
+  adaptor ToAdExchange to context AdExchange as router is { 
+    outlet ToAdExchangeToAdContext is command Advertisement.UpdateBid
     inlet ToAdExchangeIn is type AdEvent    inlet ToAdExchangeReplies is result AdExchange.BidRequest    outlet ToAdExchangeOut is type AdExchange.AdExchangeRequest
     handler ToAdExchangeHandler is {
       on adActivated: event Advertisement.AdActivated is {
         let askAnswer: type AdExchange.BidRequest = ask query AdExchange.GetBidRequest of context AdExchange
         do "an active ad needing the requests it may bid on"
+        when prompt("the ad's bid is below askAnswer.requestFloorPrice") then
+          send command Advertisement.UpdateBid(adId = adActivated.adId, bidInfo = prompt("the bid raised to at least askAnswer.requestFloorPrice")) to outlet AdContext.ToAdExchange.ToAdExchangeToAdContext
+        end
       }
       on bidUpdated: event Advertisement.BidUpdated is {
         let item0: type AdExchange.SubmitBid = prompt("translate the bidUpdated event into a SubmitBid, a changed bid being what the exchange must be told")
@@ -90,7 +112,8 @@ context AdContext as router is {
       |The model's side of the AdExchange conversation.
     }
   }
-  adaptor ToAdVerification to context AdVerification as merge is { 
+  adaptor ToAdVerification to context AdVerification as router is { 
+    outlet ToAdVerificationToAdContext is command Advertisement.RecordImpression
     inlet ToAdVerificationIn is type AdEvent    inlet ToAdVerificationReplies is result AdVerification.VerificationResult    outlet ToAdVerificationOut is type AdVerification.AdVerificationRequest
     handler ToAdVerificationHandler is {
       on adCreated: event AdCreated is {
@@ -100,6 +123,9 @@ context AdContext as router is {
       on impressionRecorded: event Advertisement.ImpressionRecorded is {
         let askAnswer: type AdVerification.VerificationResult = ask query AdVerification.GetVerification of context AdVerification
         do "an impression being worth paying for only if independently verified"
+        when prompt("askAnswer.viewable and askAnswer.brandSafe and askAnswer.humanTraffic") then
+          send command Advertisement.RecordImpression(adId = impressionRecorded.adId, impression = prompt("the impression marked viewable, brand-safe and human per askAnswer")) to outlet AdContext.ToAdVerification.ToAdVerificationToAdContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToAdVerification"
@@ -162,12 +188,16 @@ context AdContext as router is {
       |The model's side of the CDN conversation.
     }
   }
-  adaptor ToDataManagementPlatform to context DataManagementPlatform as merge is { 
+  adaptor ToDataManagementPlatform to context DataManagementPlatform as router is { 
+    outlet ToDataManagementPlatformToAdContext is command Advertisement.UpdateTargeting
     inlet ToDataManagementPlatformIn is type AdEvent    inlet ToDataManagementPlatformReplies is result DataManagementPlatform.AudienceSegments    outlet ToDataManagementPlatformOut is type DataManagementPlatform.DataManagementPlatformRequest
     handler ToDataManagementPlatformHandler is {
       on targetingUpdated: event Advertisement.TargetingUpdated is {
         let askAnswer: type DataManagementPlatform.AudienceSegments = ask query DataManagementPlatform.GetAudienceSegments of context DataManagementPlatform
         do "changed targeting needing the segments it can actually address"
+        when prompt("the targeting names a segment not in askAnswer.segments") then
+          send command Advertisement.UpdateTargeting(adId = targetingUpdated.adId, targeting = prompt("the targeting narrowed to askAnswer.segments")) to outlet AdContext.ToDataManagementPlatform.ToDataManagementPlatformToAdContext
+        end
       }
       on clickRecorded: event Advertisement.ClickRecorded is {
         let item0: type DataManagementPlatform.SyncConversion = prompt("translate the clickRecorded event into a SyncConversion, a click being what a conversion is attributed from")

@@ -1,5 +1,17 @@
 // Supplier Management - Supplier Context
 context SupplierContext as router is {
+  inlet SupplierContextFromToComplianceRegistry is command Supplier.QualifySupplier with {
+    briefly "What ToComplianceRegistry makes of the answers it gets"
+  }
+  connector 'ToComplianceRegistry Intake' is from outlet SupplierContext.ToComplianceRegistry.ToComplianceRegistryToSupplierContext to inlet SupplierContext.SupplierContextFromToComplianceRegistry with {
+    briefly "Answers translated by ToComplianceRegistry, on their way in"
+  }
+  inlet SupplierContextFromToProcurementSystem is command Supplier.RecordPerformance with {
+    briefly "What ToProcurementSystem makes of the answers it gets"
+  }
+  connector 'ToProcurementSystem Intake' is from outlet SupplierContext.ToProcurementSystem.ToProcurementSystemToSupplierContext to inlet SupplierContext.SupplierContextFromToProcurementSystem with {
+    briefly "Answers translated by ToProcurementSystem, on their way in"
+  }
   inlet SupplierCommandStreamIn is type SupplierCommand  outlet SupplierCommandStreamOut is type SupplierCommand
   inlet SupplierResultStreamIn is result Supplier.SupplierResult  outlet SupplierResultStreamOut is result Supplier.SupplierResult
   handler SupplierContextBoundary is {
@@ -67,7 +79,8 @@ context SupplierContext as router is {
       |The model's side of the ComplianceRegistry conversation.
     }
   }
-  adaptor ToComplianceRegistry to context ComplianceRegistry as merge is { 
+  adaptor ToComplianceRegistry to context ComplianceRegistry as router is { 
+    outlet ToComplianceRegistryToSupplierContext is command Supplier.QualifySupplier
     inlet ToComplianceRegistryIn is type SupplierEvent    inlet ToComplianceRegistryReplies is result ComplianceRegistry.ComplianceResult    outlet ToComplianceRegistryOut is type ComplianceRegistry.ComplianceRegistryRequest
     handler ToComplianceRegistryHandler is {
       on certificationAdded: event CertificationAdded is {
@@ -77,6 +90,9 @@ context SupplierContext as router is {
       on supplierRegistered: event Supplier.SupplierRegistered is {
         let askAnswer: type ComplianceRegistry.ComplianceResult = ask query ComplianceRegistry.CheckCompliance of context ComplianceRegistry
         do "a new supplier being unqualified until it is checked"
+        when prompt("askAnswer.complianceStatus is compliant") then
+          send command Supplier.QualifySupplier(supplierId = supplierRegistered.supplierId, criteria = prompt("the compliance criteria askAnswer checked"), qualifiedBy = prompt("the compliance registry")) to outlet SupplierContext.ToComplianceRegistry.ToComplianceRegistryToSupplierContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToComplianceRegistry"
@@ -113,12 +129,16 @@ context SupplierContext as router is {
       |The model's side of the ProcurementSystem conversation.
     }
   }
-  adaptor ToProcurementSystem to context ProcurementSystem as merge is { 
+  adaptor ToProcurementSystem to context ProcurementSystem as router is { 
+    outlet ToProcurementSystemToSupplierContext is command Supplier.RecordPerformance
     inlet ToProcurementSystemIn is type SupplierEvent    inlet ToProcurementSystemReplies is result ProcurementSystem.SupplierSpend    outlet ToProcurementSystemOut is type ProcurementSystem.ProcurementSystemRequest
     handler ToProcurementSystemHandler is {
       on performanceRecorded: event Supplier.PerformanceRecorded is {
         let askAnswer: type ProcurementSystem.SupplierSpend = ask query ProcurementSystem.GetSupplierSpend of context ProcurementSystem
         do "performance being judged partly on what was spent"
+        when prompt("the recorded score did not weigh spend") then
+          send command Supplier.RecordPerformance(supplierId = performanceRecorded.supplierId, score = prompt("the score weighted by askAnswer.totalSpend over askAnswer.orderCount")) to outlet SupplierContext.ToProcurementSystem.ToProcurementSystemToSupplierContext
+        end
       }
       on contractAssigned: event Supplier.ContractAssigned is {
         let item0: type ProcurementSystem.CreatePurchaseOrder = prompt("translate the contractAssigned event into a CreatePurchaseOrder, a contract being what a purchase order draws against")

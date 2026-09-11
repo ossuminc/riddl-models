@@ -1,5 +1,17 @@
 // Ad Operations - AdOps Context
 context AdOpsContext as router is {
+  inlet AdOpsContextFromToAdExchange is command AdCampaign.RecordPerformance with {
+    briefly "What ToAdExchange makes of the answers it gets"
+  }
+  connector 'ToAdExchange Intake' is from outlet AdOpsContext.ToAdExchange.ToAdExchangeToAdOpsContext to inlet AdOpsContext.AdOpsContextFromToAdExchange with {
+    briefly "Answers translated by ToAdExchange, on their way in"
+  }
+  inlet AdOpsContextFromToCreativeAssetStore is command AdCampaign.AttachCreative with {
+    briefly "What ToCreativeAssetStore makes of the answers it gets"
+  }
+  connector 'ToCreativeAssetStore Intake' is from outlet AdOpsContext.ToCreativeAssetStore.ToCreativeAssetStoreToAdOpsContext to inlet AdOpsContext.AdOpsContextFromToCreativeAssetStore with {
+    briefly "Answers translated by ToCreativeAssetStore, on their way in"
+  }
   inlet AdCampaignCommandStreamIn is type AdCampaignCommand  outlet AdCampaignCommandStreamOut is type AdCampaignCommand
   inlet AdCampaignResultStreamIn is result AdCampaign.AdCampaignResult  outlet AdCampaignResultStreamOut is result AdCampaign.AdCampaignResult
   handler AdOpsContextBoundary is {
@@ -70,12 +82,14 @@ context AdOpsContext as router is {
       |The model's side of the AdExchange conversation.
     }
   }
-  adaptor ToAdExchange to context AdExchange as merge is { 
+  adaptor ToAdExchange to context AdExchange as router is { 
+    outlet ToAdExchangeToAdOpsContext is command AdCampaign.RecordPerformance
     inlet ToAdExchangeIn is type AdCampaignEvent    inlet ToAdExchangeReplies is result AdExchange.BidResults    outlet ToAdExchangeOut is type AdExchange.AdExchangeRequest
     handler ToAdExchangeHandler is {
       on performanceRecorded: event AdCampaign.PerformanceRecorded is {
         let askAnswer: type AdExchange.BidResults = ask query AdExchange.GetBidResults of context AdExchange
         do "recorded performance needing the exchange's own bid outcomes"
+        send command AdCampaign.RecordPerformance(campaignId = performanceRecorded.campaignId, metric = prompt("a metric carrying askAnswer.winRate, askAnswer.averageBid and askAnswer.impressionsWon")) to outlet AdOpsContext.ToAdExchange.ToAdExchangeToAdOpsContext
       }
       on campaignLaunched: event AdCampaign.CampaignLaunched is {
         let item0: type AdExchange.SubmitAdRequest = prompt("translate the campaignLaunched event into a SubmitAdRequest, launch being when a campaign starts asking for inventory")
@@ -116,12 +130,16 @@ context AdOpsContext as router is {
       |The model's side of the CreativeAssetStore conversation.
     }
   }
-  adaptor ToCreativeAssetStore to context CreativeAssetStore as merge is { 
+  adaptor ToCreativeAssetStore to context CreativeAssetStore as router is { 
+    outlet ToCreativeAssetStoreToAdOpsContext is command AdCampaign.AttachCreative
     inlet ToCreativeAssetStoreIn is type AdCampaignEvent    inlet ToCreativeAssetStoreReplies is result CreativeAssetStore.CreativeAssetResult    outlet ToCreativeAssetStoreOut is type CreativeAssetStore.CreativeAssetStoreRequest
     handler ToCreativeAssetStoreHandler is {
       on campaignSubmitted: event AdCampaign.CampaignSubmitted is {
         let askAnswer: type CreativeAssetStore.CreativeAssetResult = ask query CreativeAssetStore.GetCreativeAsset of context CreativeAssetStore
         do "submission needing the creative pulled back for review"
+        when prompt("askAnswer.assetStatus is not approved") then
+          send command AdCampaign.AttachCreative(campaignId = campaignSubmitted.campaignId, creative = prompt("the creative askAnswer describes, pulled back for review")) to outlet AdOpsContext.ToCreativeAssetStore.ToCreativeAssetStoreToAdOpsContext
+        end
       }
       on creativeAttached: event AdCampaign.CreativeAttached is {
         let item0: type CreativeAssetStore.UploadCreative = prompt("translate the creativeAttached event into a UploadCreative, an attached creative having to be somewhere servable")

@@ -1,5 +1,17 @@
 // Care Coordination - Care Plan Context
 context CarePlanContext as router is {
+  inlet CarePlanContextFromToPatientService is command CarePlan.AddGoal with {
+    briefly "What ToPatientService makes of the answers it gets"
+  }
+  connector 'ToPatientService Intake' is from outlet CarePlanContext.ToPatientService.ToPatientServiceToCarePlanContext to inlet CarePlanContext.CarePlanContextFromToPatientService with {
+    briefly "Answers translated by ToPatientService, on their way in"
+  }
+  inlet CarePlanContextFromToProviderDirectoryService is command CarePlan.AddCareTeamMember with {
+    briefly "What ToProviderDirectoryService makes of the answers it gets"
+  }
+  connector 'ToProviderDirectoryService Intake' is from outlet CarePlanContext.ToProviderDirectoryService.ToProviderDirectoryServiceToCarePlanContext to inlet CarePlanContext.CarePlanContextFromToProviderDirectoryService with {
+    briefly "Answers translated by ToProviderDirectoryService, on their way in"
+  }
   inlet CarePlanContextFromReferralManagementService is command CarePlan.UpdateReferralStatus with {
     briefly "What FromReferralManagementService makes of that service's news"
   }
@@ -136,12 +148,14 @@ context CarePlanContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor ToPatientService to context PatientService as merge is { 
+  adaptor ToPatientService to context PatientService as router is { 
+    outlet ToPatientServiceToCarePlanContext is command CarePlan.AddGoal
     inlet ToPatientServiceIn is type CarePlanEvent    inlet ToPatientServiceReplies is result PatientService.PatientConditions    outlet ToPatientServiceOut is query PatientService.GetPatientConditions
     handler ToPatientServiceHandler is {
       on carePlanCreated: event CarePlan.CarePlanCreated is {
         let askAnswer: type PatientService.PatientConditions = ask query PatientService.GetPatientConditions of context PatientService
         do "a new care plan needing the conditions it is meant to address"
+        send command CarePlan.AddGoal(carePlanId = carePlanCreated.carePlanId, goal = prompt("a goal for the first of askAnswer.conditions the plan does not yet address")) to outlet CarePlanContext.ToPatientService.ToPatientServiceToCarePlanContext
       }
       on other is {
         error "Unexpected message for adaptor ToPatientService"
@@ -158,12 +172,14 @@ context CarePlanContext as router is {
       |The model's side of the PatientService conversation.
     }
   }
-  adaptor ToProviderDirectoryService to context ProviderDirectoryService as merge is { 
+  adaptor ToProviderDirectoryService to context ProviderDirectoryService as router is { 
+    outlet ToProviderDirectoryServiceToCarePlanContext is command CarePlan.AddCareTeamMember
     inlet ToProviderDirectoryServiceIn is type CarePlanEvent    inlet ToProviderDirectoryServiceReplies is result ProviderDirectoryService.SpecialistList    outlet ToProviderDirectoryServiceOut is query ProviderDirectoryService.FindSpecialist
     handler ToProviderDirectoryServiceHandler is {
       on referralCreated: event CarePlan.ReferralCreated is {
         let askAnswer: type ProviderDirectoryService.SpecialistList = ask query ProviderDirectoryService.FindSpecialist of context ProviderDirectoryService
         do "a referral needing a specialist who takes this patient"
+        send command CarePlan.AddCareTeamMember(carePlanId = referralCreated.carePlanId, member = prompt("the first of askAnswer.providers, as the referred specialist")) to outlet CarePlanContext.ToProviderDirectoryService.ToProviderDirectoryServiceToCarePlanContext
       }
       on other is {
         error "Unexpected message for adaptor ToProviderDirectoryService"

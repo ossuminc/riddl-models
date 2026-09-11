@@ -1,5 +1,35 @@
 // Work Order Management - WorkOrder Context
 context WorkOrderContext as router is {
+  inlet WorkOrderContextFromToBillOfMaterialsService is command WorkOrder.IssueMaterials with {
+    briefly "What ToBillOfMaterialsService makes of the answers it gets"
+  }
+  connector 'ToBillOfMaterialsService Intake' is from outlet WorkOrderContext.ToBillOfMaterialsService.ToBillOfMaterialsServiceToWorkOrderContext to inlet WorkOrderContext.WorkOrderContextFromToBillOfMaterialsService with {
+    briefly "Answers translated by ToBillOfMaterialsService, on their way in"
+  }
+  inlet WorkOrderContextFromToEquipmentService is command WorkOrder.PlaceOnHold with {
+    briefly "What ToEquipmentService makes of the answers it gets"
+  }
+  connector 'ToEquipmentService Intake' is from outlet WorkOrderContext.ToEquipmentService.ToEquipmentServiceToWorkOrderContext to inlet WorkOrderContext.WorkOrderContextFromToEquipmentService with {
+    briefly "Answers translated by ToEquipmentService, on their way in"
+  }
+  inlet WorkOrderContextFromToQualityManagementService is command WorkOrder.RecordQuality with {
+    briefly "What ToQualityManagementService makes of the answers it gets"
+  }
+  connector 'ToQualityManagementService Intake' is from outlet WorkOrderContext.ToQualityManagementService.ToQualityManagementServiceToWorkOrderContext to inlet WorkOrderContext.WorkOrderContextFromToQualityManagementService with {
+    briefly "Answers translated by ToQualityManagementService, on their way in"
+  }
+  inlet WorkOrderContextFromToRoutingService is command WorkOrder.StartOperation with {
+    briefly "What ToRoutingService makes of the answers it gets"
+  }
+  connector 'ToRoutingService Intake' is from outlet WorkOrderContext.ToRoutingService.ToRoutingServiceToWorkOrderContext to inlet WorkOrderContext.WorkOrderContextFromToRoutingService with {
+    briefly "Answers translated by ToRoutingService, on their way in"
+  }
+  inlet WorkOrderContextFromToSchedulingService is command WorkOrder.ReleaseWorkOrder with {
+    briefly "What ToSchedulingService makes of the answers it gets"
+  }
+  connector 'ToSchedulingService Intake' is from outlet WorkOrderContext.ToSchedulingService.ToSchedulingServiceToWorkOrderContext to inlet WorkOrderContext.WorkOrderContextFromToSchedulingService with {
+    briefly "Answers translated by ToSchedulingService, on their way in"
+  }
   type FromInventoryServiceCommand is one of {
     WorkOrder.IssueMaterials or WorkOrder.PlaceOnHold
   } with {
@@ -64,12 +94,14 @@ context WorkOrderContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'WorkOrderCommand Stream Intake' is from outlet WorkOrderContext.WorkOrderCommandStreamOut to inlet WorkOrderContext.WorkOrder.WorkOrderCommands  connector 'WorkOrderResult Stream Egress' is from outlet WorkOrderContext.WorkOrderRepository.WorkOrderRepositoryResponses to inlet WorkOrderContext.WorkOrderResultStreamIn  adaptor ToBillOfMaterialsService to context BillOfMaterialsService as merge is { 
+  connector 'WorkOrderCommand Stream Intake' is from outlet WorkOrderContext.WorkOrderCommandStreamOut to inlet WorkOrderContext.WorkOrder.WorkOrderCommands  connector 'WorkOrderResult Stream Egress' is from outlet WorkOrderContext.WorkOrderRepository.WorkOrderRepositoryResponses to inlet WorkOrderContext.WorkOrderResultStreamIn  adaptor ToBillOfMaterialsService to context BillOfMaterialsService as router is { 
+    outlet ToBillOfMaterialsServiceToWorkOrderContext is command WorkOrder.IssueMaterials
     inlet ToBillOfMaterialsServiceIn is type WorkOrderEvent    inlet ToBillOfMaterialsServiceReplies is result BillOfMaterialsService.BillOfMaterials    outlet ToBillOfMaterialsServiceOut is query BillOfMaterialsService.GetBOM
     handler ToBillOfMaterialsServiceHandler is {
       on workOrderCreated: event WorkOrder.WorkOrderCreated is {
         let askAnswer: type BillOfMaterialsService.BillOfMaterials = ask query BillOfMaterialsService.GetBOM of context BillOfMaterialsService
         do "a new work order needing the parts list it will consume"
+        send command WorkOrder.IssueMaterials(workOrderId = workOrderCreated.workOrderId, materials = prompt("the materials askAnswer.materials requires for the quantity")) to outlet WorkOrderContext.ToBillOfMaterialsService.ToBillOfMaterialsServiceToWorkOrderContext
       }
       on other is {
         error "Unexpected message for adaptor ToBillOfMaterialsService"
@@ -106,12 +138,16 @@ context WorkOrderContext as router is {
       |The model's side of the EquipmentService conversation.
     }
   }
-  adaptor ToEquipmentService to context EquipmentService as merge is { 
+  adaptor ToEquipmentService to context EquipmentService as router is { 
+    outlet ToEquipmentServiceToWorkOrderContext is command WorkOrder.PlaceOnHold
     inlet ToEquipmentServiceIn is type WorkOrderEvent    inlet ToEquipmentServiceReplies is result EquipmentService.EquipmentStatus    outlet ToEquipmentServiceOut is type EquipmentService.EquipmentServiceRequest
     handler ToEquipmentServiceHandler is {
       on workOrderReleased: event WorkOrder.WorkOrderReleased is {
         let askAnswer: type EquipmentService.EquipmentStatus = ask query EquipmentService.GetEquipmentStatus of context EquipmentService
         do "release needing the machine to be fit to run"
+        when prompt("askAnswer.equipmentStatus is not ready to run") then
+          send command WorkOrder.PlaceOnHold(workOrderId = workOrderReleased.workOrderId, hold = prompt("a hold until the work centre is available at askAnswer.availableAt")) to outlet WorkOrderContext.ToEquipmentService.ToEquipmentServiceToWorkOrderContext
+        end
       }
       on workOrderOnHold: event WorkOrder.WorkOrderOnHold is {
         let item0: type EquipmentService.ReportEquipmentDowntime = prompt("translate the workOrderOnHold event into a ReportEquipmentDowntime, a held work order being where downtime shows")
@@ -214,12 +250,14 @@ context WorkOrderContext as router is {
       |The model's side of the QualityManagementService conversation.
     }
   }
-  adaptor ToQualityManagementService to context QualityManagementService as merge is { 
+  adaptor ToQualityManagementService to context QualityManagementService as router is { 
+    outlet ToQualityManagementServiceToWorkOrderContext is command WorkOrder.RecordQuality
     inlet ToQualityManagementServiceIn is type WorkOrderEvent    inlet ToQualityManagementServiceReplies is result QualityManagementService.InspectionPlan    outlet ToQualityManagementServiceOut is type QualityManagementService.QualityManagementServiceRequest
     handler ToQualityManagementServiceHandler is {
       on operationCompleted: event WorkOrder.OperationCompleted is {
         let askAnswer: type QualityManagementService.InspectionPlan = ask query QualityManagementService.GetInspectionPlan of context QualityManagementService
         do "a completed operation needing the plan it is inspected against"
+        send command WorkOrder.RecordQuality(workOrderId = operationCompleted.workOrderId, quality = prompt("a quality record for the operation inspected per askAnswer.checkpoints with sample size askAnswer.sampleSize")) to outlet WorkOrderContext.ToQualityManagementService.ToQualityManagementServiceToWorkOrderContext
       }
       on qualityRecorded: event WorkOrder.QualityRecorded is {
         let item0: type QualityManagementService.RecordNonConformance = prompt("translate the qualityRecorded event into a RecordNonConformance, a recorded quality result being where non-conformance appears")
@@ -240,12 +278,14 @@ context WorkOrderContext as router is {
       |The model's side of the QualityManagementService conversation.
     }
   }
-  adaptor ToRoutingService to context RoutingService as merge is { 
+  adaptor ToRoutingService to context RoutingService as router is { 
+    outlet ToRoutingServiceToWorkOrderContext is command WorkOrder.StartOperation
     inlet ToRoutingServiceIn is type WorkOrderEvent    inlet ToRoutingServiceReplies is result RoutingService.ManufacturingRouting    outlet ToRoutingServiceOut is query RoutingService.GetRouting
     handler ToRoutingServiceHandler is {
       on workOrderReleased: event WorkOrder.WorkOrderReleased is {
         let askAnswer: type RoutingService.ManufacturingRouting = ask query RoutingService.GetRouting of context RoutingService
         do "a released work order needing the sequence of operations to run"
+        send command WorkOrder.StartOperation(workOrderId = workOrderReleased.workOrderId, operationId = prompt("the first of askAnswer.operations"), operatorId = prompt("the operator at that centre")) to outlet WorkOrderContext.ToRoutingService.ToRoutingServiceToWorkOrderContext
       }
       on other is {
         error "Unexpected message for adaptor ToRoutingService"
@@ -282,7 +322,8 @@ context WorkOrderContext as router is {
       |The model's side of the SchedulingService conversation.
     }
   }
-  adaptor ToSchedulingService to context SchedulingService as merge is { 
+  adaptor ToSchedulingService to context SchedulingService as router is { 
+    outlet ToSchedulingServiceToWorkOrderContext is command WorkOrder.ReleaseWorkOrder
     inlet ToSchedulingServiceIn is type WorkOrderEvent    inlet ToSchedulingServiceReplies is result SchedulingService.WorkCenterLoad    outlet ToSchedulingServiceOut is type SchedulingService.SchedulingServiceRequest
     handler ToSchedulingServiceHandler is {
       on workOrderReleased: event WorkOrder.WorkOrderReleased is {
@@ -292,6 +333,9 @@ context WorkOrderContext as router is {
       on workOrderCreated: event WorkOrder.WorkOrderCreated is {
         let askAnswer: type SchedulingService.WorkCenterLoad = ask query SchedulingService.GetWorkCenterLoad of context SchedulingService
         do "a new order needing to know how loaded the centre already is"
+        when prompt("askAnswer.availableCapacity covers the order") then
+          send command WorkOrder.ReleaseWorkOrder(workOrderId = workOrderCreated.workOrderId, schedule = prompt("a schedule fitting askAnswer.availableCapacity at the centre")) to outlet WorkOrderContext.ToSchedulingService.ToSchedulingServiceToWorkOrderContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToSchedulingService"

@@ -1,5 +1,11 @@
 // Gas Distribution - Gas Context
 context GasContext as router is {
+  inlet GasContextFromToPipelineSCADA is command District.IsolateSection with {
+    briefly "What ToPipelineSCADA makes of the answers it gets"
+  }
+  connector 'ToPipelineSCADA Intake' is from outlet GasContext.ToPipelineSCADA.ToPipelineSCADAToGasContext to inlet GasContext.GasContextFromToPipelineSCADA with {
+    briefly "Answers translated by ToPipelineSCADA, on their way in"
+  }
   inlet DistrictCommandStreamIn is type DistrictCommand  outlet DistrictCommandStreamOut is type DistrictCommand
   inlet DistrictResultStreamIn is result District.DistrictResult  outlet DistrictResultStreamOut is result District.DistrictResult
   handler GasContextBoundary is {
@@ -131,12 +137,16 @@ context GasContext as router is {
       |The model's side of the PipelineSCADA conversation.
     }
   }
-  adaptor ToPipelineSCADA to context PipelineSCADA as merge is { 
+  adaptor ToPipelineSCADA to context PipelineSCADA as router is { 
+    outlet ToPipelineSCADAToGasContext is command District.IsolateSection
     inlet ToPipelineSCADAIn is type DistrictEvent    inlet ToPipelineSCADAReplies is result PipelineSCADA.RealtimePressure    outlet ToPipelineSCADAOut is type PipelineSCADA.PipelineSCADARequest
     handler ToPipelineSCADAHandler is {
       on leakReported: event District.LeakReported is {
         let askAnswer: type PipelineSCADA.RealtimePressure = ask query PipelineSCADA.GetRealtimePressure of context PipelineSCADA
         do "a reported leak needing live pressure to locate and size it"
+        when prompt("askAnswer shows a pressure drop that locates the leak") then
+          send command District.IsolateSection(districtId = leakReported.districtId, sectionId = prompt("the section askAnswer.stationId feeds"), reason = prompt("leak located by pressure drop from askAnswer.inletPressure to askAnswer.outletPressure"), isolatedAt = prompt("now")) to outlet GasContext.ToPipelineSCADA.ToPipelineSCADAToGasContext
+        end
       }
       on pressureReadingRecorded: event District.PressureReadingRecorded is {
         let item0: type PipelineSCADA.AdjustRegulator = prompt("translate the pressureReadingRecorded event into a AdjustRegulator, a pressure reading being what a regulator is trimmed against")

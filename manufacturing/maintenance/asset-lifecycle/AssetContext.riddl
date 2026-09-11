@@ -1,5 +1,33 @@
 // Asset Lifecycle Management - Asset Context
 context AssetContext as router is {
+  inlet AssetContextFromToFinancialSystem is command Asset.UpdateValuation with {
+    briefly "What ToFinancialSystem makes of the answers it gets"
+  }
+  connector 'ToFinancialSystem Intake' is from outlet AssetContext.ToFinancialSystem.ToFinancialSystemToAssetContext to inlet AssetContext.AssetContextFromToFinancialSystem with {
+    briefly "Answers translated by ToFinancialSystem, on their way in"
+  }
+  type ToMaintenanceSystemCommand is one of {
+    Asset.RecordMaintenance or Asset.ScheduleDepreciation
+  } with {
+    briefly "What ToMaintenanceSystem turns its answers into"
+  }
+  inlet AssetContextFromToMaintenanceSystem is type ToMaintenanceSystemCommand with {
+    briefly "What ToMaintenanceSystem makes of the answers it gets"
+  }
+  connector 'ToMaintenanceSystem Intake' is from outlet AssetContext.ToMaintenanceSystem.ToMaintenanceSystemToAssetContext to inlet AssetContext.AssetContextFromToMaintenanceSystem with {
+    briefly "Answers translated by ToMaintenanceSystem, on their way in"
+  }
+  type ToProcurementServiceCommand is one of {
+    Asset.RegisterAsset or Asset.TransferAsset
+  } with {
+    briefly "What ToProcurementService turns its answers into"
+  }
+  inlet AssetContextFromToProcurementService is type ToProcurementServiceCommand with {
+    briefly "What ToProcurementService makes of the answers it gets"
+  }
+  connector 'ToProcurementService Intake' is from outlet AssetContext.ToProcurementService.ToProcurementServiceToAssetContext to inlet AssetContext.AssetContextFromToProcurementService with {
+    briefly "Answers translated by ToProcurementService, on their way in"
+  }
   connector 'UtilizationProjector Storage' is from outlet AssetContext.UtilizationProjector.UtilizationProjectorToRepository to inlet AssetContext.AssetRepository.AssetRepositoryFromUtilizationProjector with {
     briefly "UtilizationProjector messages on their way to AssetRepository"
     described as {
@@ -79,12 +107,16 @@ context AssetContext as router is {
       |The model's side of the FinancialSystem conversation.
     }
   }
-  adaptor ToFinancialSystem to context FinancialSystem as merge is { 
+  adaptor ToFinancialSystem to context FinancialSystem as router is { 
+    outlet ToFinancialSystemToAssetContext is command Asset.UpdateValuation
     inlet ToFinancialSystemIn is type AssetEvent    inlet ToFinancialSystemReplies is result FinancialSystem.AssetFinancials    outlet ToFinancialSystemOut is type FinancialSystem.FinancialSystemCommand
     handler ToFinancialSystemHandler is {
       on valuationUpdated: event Asset.ValuationUpdated is {
         let askAnswer: type FinancialSystem.AssetFinancials = ask query FinancialSystem.GetAssetFinancials of context FinancialSystem
         do "a revaluation needing what the ledger currently carries"
+        when prompt("the valuation differs from askAnswer.currentBookValue") then
+          send command Asset.UpdateValuation(assetId = valuationUpdated.assetId, valuation = prompt("the valuation reconciled to askAnswer.currentBookValue")) to outlet AssetContext.ToFinancialSystem.ToFinancialSystemToAssetContext
+        end
       }
       on assetRegistered: event Asset.AssetRegistered is {
         let item0: type FinancialSystem.CreateFixedAssetRecord = prompt("translate the assetRegistered event into a CreateFixedAssetRecord, registration being when the asset enters the books at a fixed cost")
@@ -136,18 +168,23 @@ context AssetContext as router is {
       |The model's side of the MaintenanceSystem conversation.
     }
   }
-  adaptor ToMaintenanceSystem to context MaintenanceSystem as merge is { 
+  adaptor ToMaintenanceSystem to context MaintenanceSystem as router is { 
+    outlet ToMaintenanceSystemToAssetContext is type ToMaintenanceSystemCommand
     inlet ToMaintenanceSystemIn is type AssetEvent    inlet ToMaintenanceSystemReplies is type MaintenanceSystem.MaintenanceSystemReply    outlet ToMaintenanceSystemOut is type MaintenanceSystem.MaintenanceSystemCommand
     handler ToMaintenanceSystemHandler is {
       on assetInstalled: event Asset.AssetInstalled is {
         let askAnswer: type MaintenanceSystem.UpcomingMaintenanceResult = ask query MaintenanceSystem.GetUpcomingMaintenance of context MaintenanceSystem
         do "installation being when the service calendar starts"
+        send command Asset.ScheduleDepreciation(assetId = assetInstalled.assetId, schedule = prompt("a schedule starting when askAnswer.scheduledWork lets the asset enter service")) to outlet AssetContext.ToMaintenanceSystem.ToMaintenanceSystemToAssetContext
         let item0: type MaintenanceSystem.SchedulePreventiveMaintenance = prompt("translate the assetInstalled event into a SchedulePreventiveMaintenance, installation being when the service clock starts")
         send item0 to outlet AssetContext.ToMaintenanceSystem.ToMaintenanceSystemOut
       }
       on maintenanceRecorded: event Asset.MaintenanceRecorded is {
         let askAnswer: type MaintenanceSystem.MaintenanceHistoryResult = ask query MaintenanceSystem.GetMaintenanceHistory of context MaintenanceSystem
         do "a new record needing what came before it"
+        when prompt("the record omitted the running cost") then
+          send command Asset.RecordMaintenance(assetId = maintenanceRecorded.assetId, maintenance = prompt("the maintenance with askAnswer.totalCost and askAnswer.entryCount as its history")) to outlet AssetContext.ToMaintenanceSystem.ToMaintenanceSystemToAssetContext
+        end
         let item0: type MaintenanceSystem.ReportMaintenanceComplete = prompt("translate the maintenanceRecorded event into a ReportMaintenanceComplete, the record being what closes the job")
         send item0 to outlet AssetContext.ToMaintenanceSystem.ToMaintenanceSystemOut
       }
@@ -186,16 +223,23 @@ context AssetContext as router is {
       |The model's side of the ProcurementService conversation.
     }
   }
-  adaptor ToProcurementService to context ProcurementService as merge is { 
+  adaptor ToProcurementService to context ProcurementService as router is { 
+    outlet ToProcurementServiceToAssetContext is type ToProcurementServiceCommand
     inlet ToProcurementServiceIn is type AssetEvent    inlet ToProcurementServiceReplies is type ProcurementService.ProcurementServiceReply    outlet ToProcurementServiceOut is type ProcurementService.ProcurementServiceRequest
     handler ToProcurementServiceHandler is {
       on assetRegistered: event Asset.AssetRegistered is {
         let askAnswer: type ProcurementService.PurchaseOrderDetails = ask query ProcurementService.GetPurchaseOrder of context ProcurementService
         do "registration needing the order the asset arrived on"
+        when prompt("the registration's cost or vendor disagrees with askAnswer") then
+          send command Asset.RegisterAsset(assetId = assetRegistered.assetId, assetInfo = assetRegistered.assetInfo, financialInfo = prompt("the financial info with askAnswer.totalAmount as cost"), vendorId = askAnswer.vendorId, registeredBy = assetRegistered.registeredBy) to outlet AssetContext.ToProcurementService.ToProcurementServiceToAssetContext
+        end
       }
       on assetTransferred: event Asset.AssetTransferred is {
         let askAnswer: type ProcurementService.VendorInfo = ask query ProcurementService.GetVendorInfo of context ProcurementService
         do "a transfer needing to know who supplied it"
+        when prompt("askAnswer.warrantyTerms is present") then
+          send command Asset.TransferAsset(assetId = assetTransferred.assetId, transfer = prompt("the transfer with askAnswer.warrantyTerms carried to the new holder")) to outlet AssetContext.ToProcurementService.ToProcurementServiceToAssetContext
+        end
       }
       on assetDecommissioned: event Asset.AssetDecommissioned is {
         let item0: type ProcurementService.RequestQuote = prompt("translate the assetDecommissioned event into a RequestQuote, decommissioning creating the need to replace")

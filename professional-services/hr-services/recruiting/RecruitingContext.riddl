@@ -1,5 +1,17 @@
 // Recruiting - Recruiting Context
 context RecruitingContext as router is {
+  inlet RecruitingContextFromToBackgroundCheckService is command JobRequisition.RejectCandidate with {
+    briefly "What ToBackgroundCheckService makes of the answers it gets"
+  }
+  connector 'ToBackgroundCheckService Intake' is from outlet RecruitingContext.ToBackgroundCheckService.ToBackgroundCheckServiceToRecruitingContext to inlet RecruitingContext.RecruitingContextFromToBackgroundCheckService with {
+    briefly "Answers translated by ToBackgroundCheckService, on their way in"
+  }
+  inlet RecruitingContextFromToJobBoardIntegration is command JobRequisition.AddCandidate with {
+    briefly "What ToJobBoardIntegration makes of the answers it gets"
+  }
+  connector 'ToJobBoardIntegration Intake' is from outlet RecruitingContext.ToJobBoardIntegration.ToJobBoardIntegrationToRecruitingContext to inlet RecruitingContext.RecruitingContextFromToJobBoardIntegration with {
+    briefly "Answers translated by ToJobBoardIntegration, on their way in"
+  }
   inlet JobRequisitionCommandStreamIn is type JobRequisitionCommand  outlet JobRequisitionCommandStreamOut is type JobRequisitionCommand
   inlet JobRequisitionResultStreamIn is result JobRequisition.JobRequisitionResult  outlet JobRequisitionResultStreamOut is result JobRequisition.JobRequisitionResult
   handler RecruitingContextBoundary is {
@@ -73,7 +85,8 @@ context RecruitingContext as router is {
       |The model's side of the BackgroundCheckService conversation.
     }
   }
-  adaptor ToBackgroundCheckService to context BackgroundCheckService as merge is { 
+  adaptor ToBackgroundCheckService to context BackgroundCheckService as router is { 
+    outlet ToBackgroundCheckServiceToRecruitingContext is command JobRequisition.RejectCandidate
     inlet ToBackgroundCheckServiceIn is type JobRequisitionEvent    inlet ToBackgroundCheckServiceReplies is result BackgroundCheckService.CheckStatus    outlet ToBackgroundCheckServiceOut is type BackgroundCheckService.BackgroundCheckServiceRequest
     handler ToBackgroundCheckServiceHandler is {
       on candidateAdded: event CandidateAdded is {
@@ -83,6 +96,9 @@ context RecruitingContext as router is {
       on offerExtended: event JobRequisition.OfferExtended is {
         let askAnswer: type BackgroundCheckService.CheckStatus = ask query BackgroundCheckService.GetCheckStatus of context BackgroundCheckService
         do "an extended offer needing the check to have cleared before it can be honoured"
+        when prompt("askAnswer.checkStatus is a fail") then
+          send command JobRequisition.RejectCandidate(requisitionId = offerExtended.requisitionId, candidateId = askAnswer.candidateId, reason = prompt("background check askAnswer.checkStatus")) to outlet RecruitingContext.ToBackgroundCheckService.ToBackgroundCheckServiceToRecruitingContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToBackgroundCheckService"
@@ -122,12 +138,16 @@ context RecruitingContext as router is {
       |The model's side of the JobBoardIntegration conversation.
     }
   }
-  adaptor ToJobBoardIntegration to context JobBoardIntegration as merge is { 
+  adaptor ToJobBoardIntegration to context JobBoardIntegration as router is { 
+    outlet ToJobBoardIntegrationToRecruitingContext is command JobRequisition.AddCandidate
     inlet ToJobBoardIntegrationIn is type JobRequisitionEvent    inlet ToJobBoardIntegrationReplies is result JobBoardIntegration.BoardApplications    outlet ToJobBoardIntegrationOut is type JobBoardIntegration.JobBoardIntegrationCommand
     handler ToJobBoardIntegrationHandler is {
       on requisitionApproved: event JobRequisition.RequisitionApproved is {
         let askAnswer: type JobBoardIntegration.BoardApplications = ask query JobBoardIntegration.GetApplicationsFromBoard of context JobBoardIntegration
         do "approval being when the role is live and applications start arriving"
+        when prompt("askAnswer.applications is not empty") then
+          send command JobRequisition.AddCandidate(requisitionId = requisitionApproved.requisitionId, candidate = prompt("the first of askAnswer.applications")) to outlet RecruitingContext.ToJobBoardIntegration.ToJobBoardIntegrationToRecruitingContext
+        end
         let item0: type JobBoardIntegration.PostJobListing = prompt("translate the requisitionApproved event into a PostJobListing, approval being what makes a role real enough to advertise")
         send item0 to outlet RecruitingContext.ToJobBoardIntegration.ToJobBoardIntegrationOut
       }

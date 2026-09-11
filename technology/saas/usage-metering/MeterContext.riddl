@@ -1,5 +1,23 @@
 // Usage Metering - Meter Context
 context MeterContext as router is {
+  inlet MeterContextFromToBillingService is command Meter.GenerateBillingRecord with {
+    briefly "What ToBillingService makes of the answers it gets"
+  }
+  connector 'ToBillingService Intake' is from outlet MeterContext.ToBillingService.ToBillingServiceToMeterContext to inlet MeterContext.MeterContextFromToBillingService with {
+    briefly "Answers translated by ToBillingService, on their way in"
+  }
+  inlet MeterContextFromToEventIngestionService is command Meter.AdjustUsage with {
+    briefly "What ToEventIngestionService makes of the answers it gets"
+  }
+  connector 'ToEventIngestionService Intake' is from outlet MeterContext.ToEventIngestionService.ToEventIngestionServiceToMeterContext to inlet MeterContext.MeterContextFromToEventIngestionService with {
+    briefly "Answers translated by ToEventIngestionService, on their way in"
+  }
+  inlet MeterContextFromToSubscriptionService is command Meter.PauseMeter with {
+    briefly "What ToSubscriptionService makes of the answers it gets"
+  }
+  connector 'ToSubscriptionService Intake' is from outlet MeterContext.ToSubscriptionService.ToSubscriptionServiceToMeterContext to inlet MeterContext.MeterContextFromToSubscriptionService with {
+    briefly "Answers translated by ToSubscriptionService, on their way in"
+  }
   inlet MeterCommandStreamIn is type MeterCommand  outlet MeterCommandStreamOut is type MeterCommand
   inlet MeterQueryResultStreamIn is result Meter.MeterQueryResult  outlet MeterQueryResultStreamOut is result Meter.MeterQueryResult
   handler MeterContextBoundary is {
@@ -112,7 +130,8 @@ context MeterContext as router is {
       |The model's side of the BillingService conversation.
     }
   }
-  adaptor ToBillingService to context BillingService as merge is { 
+  adaptor ToBillingService to context BillingService as router is { 
+    outlet ToBillingServiceToMeterContext is command Meter.GenerateBillingRecord
     inlet ToBillingServiceIn is type MeterEvent    inlet ToBillingServiceReplies is result BillingService.InvoiceStatusResult    outlet ToBillingServiceOut is type BillingService.BillingServiceRequest
     handler ToBillingServiceHandler is {
       on billingRecordGenerated: event Meter.BillingRecordGenerated is {
@@ -122,6 +141,9 @@ context MeterContext as router is {
       on meterClosed: event Meter.MeterClosed is {
         let askAnswer: type BillingService.InvoiceStatusResult = ask query BillingService.GetInvoiceStatus of context BillingService
         do "closing a meter needing to know whether what it produced has been invoiced"
+        when prompt("askAnswer.paymentStatus shows the meter's output not yet invoiced") then
+          send command Meter.GenerateBillingRecord(meterId = meterClosed.meterId, billingPeriodStart = prompt("the period's start"), billingPeriodEnd = prompt("the period's end")) to outlet MeterContext.ToBillingService.ToBillingServiceToMeterContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToBillingService"
@@ -158,12 +180,16 @@ context MeterContext as router is {
       |The model's side of the EventIngestionService conversation.
     }
   }
-  adaptor ToEventIngestionService to context EventIngestionService as merge is { 
+  adaptor ToEventIngestionService to context EventIngestionService as router is { 
+    outlet ToEventIngestionServiceToMeterContext is command Meter.AdjustUsage
     inlet ToEventIngestionServiceIn is type MeterEvent    inlet ToEventIngestionServiceReplies is result EventIngestionService.IngestionStatsResult    outlet ToEventIngestionServiceOut is query EventIngestionService.GetIngestionStats
     handler ToEventIngestionServiceHandler is {
       on batchEventsRecorded: event Meter.BatchEventsRecorded is {
         let askAnswer: type EventIngestionService.IngestionStatsResult = ask query EventIngestionService.GetIngestionStats of context EventIngestionService
         do "a batch recorded needing ingestion's own count to reconcile against"
+        when prompt("askAnswer.successCount differs from batchEventsRecorded.eventCount") then
+          send command Meter.AdjustUsage(meterId = batchEventsRecorded.meterId, metricType = prompt("the batch's metric"), adjustment = prompt("the difference between the batch and askAnswer.successCount"), reason = prompt("reconciled to ingestion"), adjustedBy = prompt("the ingestion service")) to outlet MeterContext.ToEventIngestionService.ToEventIngestionServiceToMeterContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToEventIngestionService"
@@ -226,12 +252,16 @@ context MeterContext as router is {
       |The model's side of the SubscriptionService conversation.
     }
   }
-  adaptor ToSubscriptionService to context SubscriptionService as merge is { 
+  adaptor ToSubscriptionService to context SubscriptionService as router is { 
+    outlet ToSubscriptionServiceToMeterContext is command Meter.PauseMeter
     inlet ToSubscriptionServiceIn is type MeterEvent    inlet ToSubscriptionServiceReplies is result SubscriptionService.SubscriptionDetailsResult    outlet ToSubscriptionServiceOut is query SubscriptionService.GetSubscriptionDetails
     handler ToSubscriptionServiceHandler is {
       on meterCreated: event Meter.MeterCreated is {
         let askAnswer: type SubscriptionService.SubscriptionDetailsResult = ask query SubscriptionService.GetSubscriptionDetails of context SubscriptionService
         do "a new meter needing the subscription that decides what it may measure"
+        when prompt("askAnswer.subscriptionStatus is not active") then
+          send command Meter.PauseMeter(meterId = meterCreated.meterId, reason = prompt("subscription askAnswer.subscriptionStatus is not active")) to outlet MeterContext.ToSubscriptionService.ToSubscriptionServiceToMeterContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToSubscriptionService"

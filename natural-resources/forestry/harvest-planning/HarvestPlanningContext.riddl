@@ -1,5 +1,17 @@
 // Harvest Planning - Harvest Planning Context
 context HarvestPlanningContext as router is {
+  inlet HarvestPlanningContextFromToContractorRegistry is command HarvestBlock.AssignContractor with {
+    briefly "What ToContractorRegistry makes of the answers it gets"
+  }
+  connector 'ToContractorRegistry Intake' is from outlet HarvestPlanningContext.ToContractorRegistry.ToContractorRegistryToHarvestPlanningContext to inlet HarvestPlanningContext.HarvestPlanningContextFromToContractorRegistry with {
+    briefly "Answers translated by ToContractorRegistry, on their way in"
+  }
+  inlet HarvestPlanningContextFromToEnvironmentalAgency is command HarvestBlock.RejectBlock with {
+    briefly "What ToEnvironmentalAgency makes of the answers it gets"
+  }
+  connector 'ToEnvironmentalAgency Intake' is from outlet HarvestPlanningContext.ToEnvironmentalAgency.ToEnvironmentalAgencyToHarvestPlanningContext to inlet HarvestPlanningContext.HarvestPlanningContextFromToEnvironmentalAgency with {
+    briefly "Answers translated by ToEnvironmentalAgency, on their way in"
+  }
   inlet HarvestPlanningContextFromEnvironmentalAgency is command HarvestBlock.RecordReviewOutcome with {
     briefly "What FromEnvironmentalAgency makes of that service's news"
   }
@@ -73,12 +85,16 @@ context HarvestPlanningContext as router is {
       |The model's side of the ContractorRegistry conversation.
     }
   }
-  adaptor ToContractorRegistry to context ContractorRegistry as merge is { 
+  adaptor ToContractorRegistry to context ContractorRegistry as router is { 
+    outlet ToContractorRegistryToHarvestPlanningContext is command HarvestBlock.AssignContractor
     inlet ToContractorRegistryIn is type HarvestBlockEvent    inlet ToContractorRegistryReplies is result ContractorRegistry.AvailableContractors    outlet ToContractorRegistryOut is type ContractorRegistry.ContractorRegistryRequest
     handler ToContractorRegistryHandler is {
       on harvestScheduled: event HarvestBlock.HarvestScheduled is {
         let askAnswer: type ContractorRegistry.AvailableContractors = ask query ContractorRegistry.FindAvailableContractors of context ContractorRegistry
         do "a scheduled harvest needing crews free on those dates"
+        when prompt("askAnswer.hasAvailability") then
+          send command HarvestBlock.AssignContractor(blockId = harvestScheduled.blockId, contractorId = prompt("the first of askAnswer.contractors"), contractValue = prompt("the contract value")) to outlet HarvestPlanningContext.ToContractorRegistry.ToContractorRegistryToHarvestPlanningContext
+        end
       }
       on contractorAssigned: event HarvestBlock.ContractorAssigned is {
         let item0: type ContractorRegistry.RegisterContractorAssignment = prompt("translate the contractorAssigned event into a RegisterContractorAssignment, the assignment being the fact to register")
@@ -121,12 +137,16 @@ context HarvestPlanningContext as router is {
       |The model's side of the EnvironmentalAgency conversation.
     }
   }
-  adaptor ToEnvironmentalAgency to context EnvironmentalAgency as merge is { 
+  adaptor ToEnvironmentalAgency to context EnvironmentalAgency as router is { 
+    outlet ToEnvironmentalAgencyToHarvestPlanningContext is command HarvestBlock.RejectBlock
     inlet ToEnvironmentalAgencyIn is type HarvestBlockEvent    inlet ToEnvironmentalAgencyReplies is result EnvironmentalAgency.SpeciesAtRiskReport    outlet ToEnvironmentalAgencyOut is type EnvironmentalAgency.EnvironmentalAgencyRequest
     handler ToEnvironmentalAgencyHandler is {
       on blockDelineated: event HarvestBlock.BlockDelineated is {
         let askAnswer: type EnvironmentalAgency.SpeciesAtRiskReport = ask query EnvironmentalAgency.GetSpeciesAtRisk of context EnvironmentalAgency
         do "a newly drawn block needing to know what lives inside it"
+        when prompt("askAnswer.restrictions forbid harvest") then
+          send command HarvestBlock.RejectBlock(blockId = blockDelineated.blockId, reason = prompt("species at risk: askAnswer.speciesAtRisk under askAnswer.restrictions")) to outlet HarvestPlanningContext.ToEnvironmentalAgency.ToEnvironmentalAgencyToHarvestPlanningContext
+        end
       }
       on environmentalReviewSubmitted: event HarvestBlock.EnvironmentalReviewSubmitted is {
         let item0: type EnvironmentalAgency.RequestEnvironmentalReview = prompt("translate the environmentalReviewSubmitted event into a RequestEnvironmentalReview, the submission being the request itself")

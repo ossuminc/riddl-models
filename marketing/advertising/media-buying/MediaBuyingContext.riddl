@@ -1,5 +1,17 @@
 // Media Buying - Media Buying Context
 context MediaBuyingContext as router is {
+  inlet MediaBuyingContextFromToAnalyticsPlatform is command MediaOrder.RecordPerformance with {
+    briefly "What ToAnalyticsPlatform makes of the answers it gets"
+  }
+  connector 'ToAnalyticsPlatform Intake' is from outlet MediaBuyingContext.ToAnalyticsPlatform.ToAnalyticsPlatformToMediaBuyingContext to inlet MediaBuyingContext.MediaBuyingContextFromToAnalyticsPlatform with {
+    briefly "Answers translated by ToAnalyticsPlatform, on their way in"
+  }
+  inlet MediaBuyingContextFromToMediaVendor is command MediaOrder.NegotiateRate with {
+    briefly "What ToMediaVendor makes of the answers it gets"
+  }
+  connector 'ToMediaVendor Intake' is from outlet MediaBuyingContext.ToMediaVendor.ToMediaVendorToMediaBuyingContext to inlet MediaBuyingContext.MediaBuyingContextFromToMediaVendor with {
+    briefly "Answers translated by ToMediaVendor, on their way in"
+  }
   inlet MediaBuyingContextFromMediaVendor is command MediaOrder.BookInventory with {
     briefly "What FromMediaVendor makes of that service's news"
   }
@@ -70,12 +82,14 @@ context MediaBuyingContext as router is {
       |The model's side of the AnalyticsPlatform conversation.
     }
   }
-  adaptor ToAnalyticsPlatform to context AnalyticsPlatform as merge is { 
+  adaptor ToAnalyticsPlatform to context AnalyticsPlatform as router is { 
+    outlet ToAnalyticsPlatformToMediaBuyingContext is command MediaOrder.RecordPerformance
     inlet ToAnalyticsPlatformIn is type MediaOrderEvent    inlet ToAnalyticsPlatformReplies is result AnalyticsPlatform.CampaignROI    outlet ToAnalyticsPlatformOut is type AnalyticsPlatform.AnalyticsPlatformRequest
     handler ToAnalyticsPlatformHandler is {
       on orderCompleted: event MediaOrder.OrderCompleted is {
         let askAnswer: type AnalyticsPlatform.CampaignROI = ask query AnalyticsPlatform.GetCampaignROI of context AnalyticsPlatform
         do "a completed buy being when its return can finally be judged"
+        send command MediaOrder.RecordPerformance(orderId = orderCompleted.orderId, metrics = prompt("metrics carrying askAnswer.totalSpend, askAnswer.totalRevenue and askAnswer.returnOnAdSpend")) to outlet MediaBuyingContext.ToAnalyticsPlatform.ToAnalyticsPlatformToMediaBuyingContext
       }
       on performanceRecorded: event MediaOrder.PerformanceRecorded is {
         let item0: type AnalyticsPlatform.SendPerformanceData = prompt("translate the performanceRecorded event into a SendPerformanceData, recorded performance being what there is to analyse")
@@ -118,12 +132,16 @@ context MediaBuyingContext as router is {
       |The model's side of the MediaVendor conversation.
     }
   }
-  adaptor ToMediaVendor to context MediaVendor as merge is { 
+  adaptor ToMediaVendor to context MediaVendor as router is { 
+    outlet ToMediaVendorToMediaBuyingContext is command MediaOrder.NegotiateRate
     inlet ToMediaVendorIn is type MediaOrderEvent    inlet ToMediaVendorReplies is result MediaVendor.AvailableInventory    outlet ToMediaVendorOut is type MediaVendor.MediaVendorRequest
     handler ToMediaVendorHandler is {
       on mediaOrderCreated: event MediaOrder.MediaOrderCreated is {
         let askAnswer: type MediaVendor.AvailableInventory = ask query MediaVendor.GetAvailableInventory of context MediaVendor
         do "an order needing to know what the vendor has left to sell"
+        when prompt("askAnswer.hasCapacity") then
+          send command MediaOrder.NegotiateRate(orderId = mediaOrderCreated.orderId, placementId = prompt("the first of askAnswer.placements"), proposedRate = prompt("its rate"), notes = prompt("what the vendor has left")) to outlet MediaBuyingContext.ToMediaVendor.ToMediaVendorToMediaBuyingContext
+        end
       }
       on orderApproved: event MediaOrder.OrderApproved is {
         let item0: type MediaVendor.SubmitInsertionOrder = prompt("translate the orderApproved event into a SubmitInsertionOrder, approval being what authorises the buy")

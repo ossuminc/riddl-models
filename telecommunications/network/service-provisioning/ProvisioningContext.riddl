@@ -1,5 +1,17 @@
 // Service Provisioning - Provisioning Context
 context ProvisioningContext as router is {
+  inlet ProvisioningContextFromToNetworkElementManager is command ServiceOrder.FailOrder with {
+    briefly "What ToNetworkElementManager makes of the answers it gets"
+  }
+  connector 'ToNetworkElementManager Intake' is from outlet ProvisioningContext.ToNetworkElementManager.ToNetworkElementManagerToProvisioningContext to inlet ProvisioningContext.ProvisioningContextFromToNetworkElementManager with {
+    briefly "Answers translated by ToNetworkElementManager, on their way in"
+  }
+  inlet ProvisioningContextFromToNetworkInventorySystem is command ServiceOrder.DesignService with {
+    briefly "What ToNetworkInventorySystem makes of the answers it gets"
+  }
+  connector 'ToNetworkInventorySystem Intake' is from outlet ProvisioningContext.ToNetworkInventorySystem.ToNetworkInventorySystemToProvisioningContext to inlet ProvisioningContext.ProvisioningContextFromToNetworkInventorySystem with {
+    briefly "Answers translated by ToNetworkInventorySystem, on their way in"
+  }
   inlet ProvisioningContextFromNetworkElementManager is command ServiceOrder.RecordTaskCompletion with {
     briefly "What FromNetworkElementManager makes of that service's news"
   }
@@ -78,12 +90,16 @@ context ProvisioningContext as router is {
       |The model's side of the NetworkElementManager conversation.
     }
   }
-  adaptor ToNetworkElementManager to context NetworkElementManager as merge is { 
+  adaptor ToNetworkElementManager to context NetworkElementManager as router is { 
+    outlet ToNetworkElementManagerToProvisioningContext is command ServiceOrder.FailOrder
     inlet ToNetworkElementManagerIn is type ServiceOrderEvent    inlet ToNetworkElementManagerReplies is result NetworkElementManager.ElementStatus    outlet ToNetworkElementManagerOut is type NetworkElementManager.NetworkElementManagerRequest
     handler ToNetworkElementManagerHandler is {
       on serviceTested: event ServiceOrder.ServiceTested is {
         let askAnswer: type NetworkElementManager.ElementStatus = ask query NetworkElementManager.GetElementStatus of context NetworkElementManager
         do "a test needing the element's own account of whether it is up"
+        when prompt("askAnswer.elementStatus is down") then
+          send command ServiceOrder.FailOrder(orderId = serviceTested.orderId, reason = prompt("element askAnswer.elementStatus, last seen askAnswer.lastContact")) to outlet ProvisioningContext.ToNetworkElementManager.ToNetworkElementManagerToProvisioningContext
+        end
       }
       on provisioningStarted: event ServiceOrder.ProvisioningStarted is {
         let item0: type NetworkElementManager.ConfigureElement = prompt("translate the provisioningStarted event into a ConfigureElement, provisioning being when the element is actually touched")
@@ -124,7 +140,8 @@ context ProvisioningContext as router is {
       |The model's side of the NetworkInventorySystem conversation.
     }
   }
-  adaptor ToNetworkInventorySystem to context NetworkInventorySystem as merge is { 
+  adaptor ToNetworkInventorySystem to context NetworkInventorySystem as router is { 
+    outlet ToNetworkInventorySystemToProvisioningContext is command ServiceOrder.DesignService
     inlet ToNetworkInventorySystemIn is type ServiceOrderEvent    inlet ToNetworkInventorySystemReplies is result NetworkInventorySystem.AvailableResources    outlet ToNetworkInventorySystemOut is type NetworkInventorySystem.NetworkInventorySystemRequest
     handler ToNetworkInventorySystemHandler is {
       on serviceDesigned: event ServiceOrder.ServiceDesigned is {
@@ -134,6 +151,9 @@ context ProvisioningContext as router is {
       on orderValidated: event ServiceOrder.OrderValidated is {
         let askAnswer: type NetworkInventorySystem.AvailableResources = ask query NetworkInventorySystem.GetAvailableResources of context NetworkInventorySystem
         do "a validated order needing free capacity before it can be designed"
+        when prompt("askAnswer.hasCapacity") then
+          send command ServiceOrder.DesignService(orderId = orderValidated.orderId, resources = prompt("a design over askAnswer.resources")) to outlet ProvisioningContext.ToNetworkInventorySystem.ToNetworkInventorySystemToProvisioningContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToNetworkInventorySystem"

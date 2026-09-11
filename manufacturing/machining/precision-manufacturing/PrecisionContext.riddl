@@ -1,5 +1,33 @@
 // Precision Manufacturing - Precision Context
 context PrecisionContext as router is {
+  type ToCMMIntegrationCommand is one of {
+    PrecisionPart.RecordCMMResult or PrecisionPart.UpdateInspectionPlan
+  } with {
+    briefly "What ToCMMIntegration turns its answers into"
+  }
+  inlet PrecisionContextFromToCMMIntegration is type ToCMMIntegrationCommand with {
+    briefly "What ToCMMIntegration makes of the answers it gets"
+  }
+  connector 'ToCMMIntegration Intake' is from outlet PrecisionContext.ToCMMIntegration.ToCMMIntegrationToPrecisionContext to inlet PrecisionContext.PrecisionContextFromToCMMIntegration with {
+    briefly "Answers translated by ToCMMIntegration, on their way in"
+  }
+  inlet PrecisionContextFromToCertificationService is command PrecisionPart.UpdateInspectionPlan with {
+    briefly "What ToCertificationService makes of the answers it gets"
+  }
+  connector 'ToCertificationService Intake' is from outlet PrecisionContext.ToCertificationService.ToCertificationServiceToPrecisionContext to inlet PrecisionContext.PrecisionContextFromToCertificationService with {
+    briefly "Answers translated by ToCertificationService, on their way in"
+  }
+  type ToGageCalibrationServiceCommand is one of {
+    PrecisionPart.EvaluateTolerance or PrecisionPart.UpdateInspectionPlan
+  } with {
+    briefly "What ToGageCalibrationService turns its answers into"
+  }
+  inlet PrecisionContextFromToGageCalibrationService is type ToGageCalibrationServiceCommand with {
+    briefly "What ToGageCalibrationService makes of the answers it gets"
+  }
+  connector 'ToGageCalibrationService Intake' is from outlet PrecisionContext.ToGageCalibrationService.ToGageCalibrationServiceToPrecisionContext to inlet PrecisionContext.PrecisionContextFromToGageCalibrationService with {
+    briefly "Answers translated by ToGageCalibrationService, on their way in"
+  }
   inlet PrecisionContextFromCMMIntegration is command PrecisionPart.RecordCMMResult with {
     briefly "What FromCMMIntegration makes of that service's news"
   }
@@ -81,16 +109,23 @@ context PrecisionContext as router is {
       |The model's side of the CMMIntegration conversation.
     }
   }
-  adaptor ToCMMIntegration to context CMMIntegration as merge is { 
+  adaptor ToCMMIntegration to context CMMIntegration as router is { 
+    outlet ToCMMIntegrationToPrecisionContext is type ToCMMIntegrationCommand
     inlet ToCMMIntegrationIn is type PrecisionPartEvent    inlet ToCMMIntegrationReplies is type CMMIntegration.CMMIntegrationReply    outlet ToCMMIntegrationOut is type CMMIntegration.CMMIntegrationRequest
     handler ToCMMIntegrationHandler is {
       on inspectionPlanUpdated: event PrecisionPart.InspectionPlanUpdated is {
         let askAnswer: type CMMIntegration.CMMProgramList = ask query CMMIntegration.GetCMMPrograms of context CMMIntegration
         do "a changed plan needing the programs available to run it"
+        when prompt("the plan names no CMM program") then
+          send command PrecisionPart.UpdateInspectionPlan(partId = inspectionPlanUpdated.partId, inspectionPlan = prompt("the plan naming the program in askAnswer.programs that runs it"), reason = prompt("CMM program assigned")) to outlet PrecisionContext.ToCMMIntegration.ToCMMIntegrationToPrecisionContext
+        end
       }
       on cMMResultRecorded: event PrecisionPart.CMMResultRecorded is {
         let askAnswer: type CMMIntegration.CMMStatus = ask query CMMIntegration.GetCMMStatus of context CMMIntegration
         do "a result arriving being when the machine's own state matters"
+        when prompt("askAnswer.cmmStatus casts doubt on the result") then
+          send command PrecisionPart.RecordCMMResult(partId = cMMResultRecorded.partId, cmmResult = prompt("the result annotated with askAnswer.lastCalibration and askAnswer.cmmStatus")) to outlet PrecisionContext.ToCMMIntegration.ToCMMIntegrationToPrecisionContext
+        end
       }
       on inspectionPlanCreated: event PrecisionPart.InspectionPlanCreated is {
         let item0: type CMMIntegration.ExecuteCMMProgram = prompt("translate the inspectionPlanCreated event into a ExecuteCMMProgram, the plan being the program the machine runs")
@@ -137,14 +172,17 @@ context PrecisionContext as router is {
       |The model's side of the CertificationService conversation.
     }
   }
-  adaptor ToCertificationService to context CertificationService as merge is { 
+  adaptor ToCertificationService to context CertificationService as router is { 
+    outlet ToCertificationServiceToPrecisionContext is command PrecisionPart.UpdateInspectionPlan
     inlet ToCertificationServiceIn is type PrecisionPartEvent    inlet ToCertificationServiceReplies is type CertificationService.CertificationServiceReply    outlet ToCertificationServiceOut is type CertificationService.CertificationServiceCommand
     handler ToCertificationServiceHandler is {
       on inspectionPlanCreated: event PrecisionPart.InspectionPlanCreated is {
         let askAnswer: type CertificationService.ComplianceStandards = ask query CertificationService.GetComplianceStandards of context CertificationService
         do "and which standards it is written against"
+        send command PrecisionPart.UpdateInspectionPlan(partId = inspectionPlanCreated.partId, inspectionPlan = prompt("the plan written against askAnswer.standards"), reason = prompt("compliance standards applied")) to outlet PrecisionContext.ToCertificationService.ToCertificationServiceToPrecisionContext
         let askAnswer: type CertificationService.CertificateRequirements = ask query CertificationService.GetCertificateRequirements of context CertificationService
         do "the plan needing to know what the certificate will have to show"
+        send command PrecisionPart.UpdateInspectionPlan(partId = inspectionPlanCreated.partId, inspectionPlan = prompt("the plan extended with askAnswer.requiredMeasurements and askAnswer.requiredDocuments"), reason = prompt("certificate requirements applied")) to outlet PrecisionContext.ToCertificationService.ToCertificationServiceToPrecisionContext
       }
       on partCertified: event PrecisionPart.PartCertified is {
         let item0: type CertificationService.CreateCertificate = prompt("translate the partCertified event into a CreateCertificate, certification being what a certificate records")
@@ -199,18 +237,25 @@ context PrecisionContext as router is {
       |The model's side of the GageCalibrationService conversation.
     }
   }
-  adaptor ToGageCalibrationService to context GageCalibrationService as merge is { 
+  adaptor ToGageCalibrationService to context GageCalibrationService as router is { 
+    outlet ToGageCalibrationServiceToPrecisionContext is type ToGageCalibrationServiceCommand
     inlet ToGageCalibrationServiceIn is type PrecisionPartEvent    inlet ToGageCalibrationServiceReplies is type GageCalibrationService.GageCalibrationServiceReply    outlet ToGageCalibrationServiceOut is type GageCalibrationService.GageCalibrationServiceCommand
     handler ToGageCalibrationServiceHandler is {
       on inspectionPlanCreated: event PrecisionPart.InspectionPlanCreated is {
         let askAnswer: type GageCalibrationService.CalibrationsDueList = ask query GageCalibrationService.GetCalibrationsDue of context GageCalibrationService
         do "and whether the gauges it names are still in date"
+        when prompt("askAnswer.gages names a gauge the plan uses") then
+          send command PrecisionPart.UpdateInspectionPlan(partId = inspectionPlanCreated.partId, inspectionPlan = prompt("the plan with the gauges in askAnswer.gages replaced by ones in date"), reason = prompt("gauges due for calibration")) to outlet PrecisionContext.ToGageCalibrationService.ToGageCalibrationServiceToPrecisionContext
+        end
         let item0: type GageCalibrationService.ScheduleCalibration = prompt("translate the inspectionPlanCreated event into a ScheduleCalibration, a plan being worthless measured with gauges out of calibration")
         send item0 to outlet PrecisionContext.ToGageCalibrationService.ToGageCalibrationServiceOut
       }
       on measurementRecorded: event PrecisionPart.MeasurementRecorded is {
         let askAnswer: type GageCalibrationService.GageCalibrationStatus = ask query GageCalibrationService.GetGageCalibration of context GageCalibrationService
         do "each measurement being only as good as the gauge that took it"
+        when prompt("askAnswer.nextCalibrationDue has passed") then
+          send command PrecisionPart.EvaluateTolerance(partId = measurementRecorded.partId, featureId = prompt("the feature measured"), evaluatedBy = prompt("the gage calibration service")) to outlet PrecisionContext.ToGageCalibrationService.ToGageCalibrationServiceToPrecisionContext
+        end
         let item0: type GageCalibrationService.RecordCalibration = prompt("translate the measurementRecorded event into a RecordCalibration, each measurement being what a gauge's drift is judged from")
         send item0 to outlet PrecisionContext.ToGageCalibrationService.ToGageCalibrationServiceOut
       }

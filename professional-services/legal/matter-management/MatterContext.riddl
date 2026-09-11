@@ -1,5 +1,17 @@
 // Matter Management - Matter Context
 context MatterContext as router is {
+  inlet MatterContextFromToCourtFilingSystem is command LegalMatter.AddCourtDeadline with {
+    briefly "What ToCourtFilingSystem makes of the answers it gets"
+  }
+  connector 'ToCourtFilingSystem Intake' is from outlet MatterContext.ToCourtFilingSystem.ToCourtFilingSystemToMatterContext to inlet MatterContext.MatterContextFromToCourtFilingSystem with {
+    briefly "Answers translated by ToCourtFilingSystem, on their way in"
+  }
+  inlet MatterContextFromToTimekeepingSystem is command LegalMatter.RecordExpense with {
+    briefly "What ToTimekeepingSystem makes of the answers it gets"
+  }
+  connector 'ToTimekeepingSystem Intake' is from outlet MatterContext.ToTimekeepingSystem.ToTimekeepingSystemToMatterContext to inlet MatterContext.MatterContextFromToTimekeepingSystem with {
+    briefly "Answers translated by ToTimekeepingSystem, on their way in"
+  }
   inlet LegalMatterCommandStreamIn is type LegalMatterCommand  outlet LegalMatterCommandStreamOut is type LegalMatterCommand
   inlet LegalMatterResultStreamIn is result LegalMatter.LegalMatterResult  outlet LegalMatterResultStreamOut is result LegalMatter.LegalMatterResult
   handler MatterContextBoundary is {
@@ -76,12 +88,16 @@ context MatterContext as router is {
       |The model's side of the CourtFilingSystem conversation.
     }
   }
-  adaptor ToCourtFilingSystem to context CourtFilingSystem as merge is { 
+  adaptor ToCourtFilingSystem to context CourtFilingSystem as router is { 
+    outlet ToCourtFilingSystemToMatterContext is command LegalMatter.AddCourtDeadline
     inlet ToCourtFilingSystemIn is type LegalMatterEvent    inlet ToCourtFilingSystemReplies is result CourtFilingSystem.FilingDeadlines    outlet ToCourtFilingSystemOut is type CourtFilingSystem.CourtFilingSystemRequest
     handler ToCourtFilingSystemHandler is {
       on matterActivated: event LegalMatter.MatterActivated is {
         let askAnswer: type CourtFilingSystem.FilingDeadlines = ask query CourtFilingSystem.GetFilingDeadlines of context CourtFilingSystem
         do "an activated matter needing the court's dates before anything can be scheduled"
+        when prompt("askAnswer.deadlines is not empty") then
+          send command LegalMatter.AddCourtDeadline(matterId = matterActivated.matterId, deadline = prompt("the first of askAnswer.deadlines")) to outlet MatterContext.ToCourtFilingSystem.ToCourtFilingSystemToMatterContext
+        end
       }
       on documentAttached: event LegalMatter.DocumentAttached is {
         let item0: type CourtFilingSystem.SubmitFiling = prompt("translate the documentAttached event into a SubmitFiling, the attached document being what fixes the filing's content")
@@ -125,12 +141,16 @@ context MatterContext as router is {
       |The model's side of the TimekeepingSystem conversation.
     }
   }
-  adaptor ToTimekeepingSystem to context TimekeepingSystem as merge is { 
+  adaptor ToTimekeepingSystem to context TimekeepingSystem as router is { 
+    outlet ToTimekeepingSystemToMatterContext is command LegalMatter.RecordExpense
     inlet ToTimekeepingSystemIn is type LegalMatterEvent    inlet ToTimekeepingSystemReplies is result TimekeepingSystem.MatterBillingSummary    outlet ToTimekeepingSystemOut is type TimekeepingSystem.TimekeepingSystemCommand
     handler ToTimekeepingSystemHandler is {
       on matterClosed: event LegalMatter.MatterClosed is {
         let askAnswer: type TimekeepingSystem.MatterBillingSummary = ask query TimekeepingSystem.GetMatterBillingSummary of context TimekeepingSystem
         do "closing being when what the matter cost must be totalled"
+        when prompt("askAnswer.unbilledAmount is greater than zero") then
+          send command LegalMatter.RecordExpense(matterId = matterClosed.matterId, expenseEntry = prompt("the unbilled amount askAnswer.unbilledAmount as a closing expense")) to outlet MatterContext.ToTimekeepingSystem.ToTimekeepingSystemToMatterContext
+        end
       }
       on timeRecorded: event LegalMatter.TimeRecorded is {
         let item0: type TimekeepingSystem.SyncTimeEntry = prompt("translate the timeRecorded event into a SyncTimeEntry, recorded time being what timekeeping must hold")

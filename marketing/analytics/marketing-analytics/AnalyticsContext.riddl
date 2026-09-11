@@ -1,5 +1,38 @@
 // Marketing Analytics - Analytics Context
 context AnalyticsContext as router is {
+  type ToAdPlatformCommand is one of {
+    AnalyticsReport.AddCampaignPerformance or AnalyticsReport.AddChannelMetrics
+  } with {
+    briefly "What ToAdPlatform turns its answers into"
+  }
+  inlet AnalyticsContextFromToAdPlatform is type ToAdPlatformCommand with {
+    briefly "What ToAdPlatform makes of the answers it gets"
+  }
+  connector 'ToAdPlatform Intake' is from outlet AnalyticsContext.ToAdPlatform.ToAdPlatformToAnalyticsContext to inlet AnalyticsContext.AnalyticsContextFromToAdPlatform with {
+    briefly "Answers translated by ToAdPlatform, on their way in"
+  }
+  type ToCRMSystemCommand is one of {
+    AnalyticsReport.AddAttributionResults or AnalyticsReport.GenerateReport
+  } with {
+    briefly "What ToCRMSystem turns its answers into"
+  }
+  inlet AnalyticsContextFromToCRMSystem is type ToCRMSystemCommand with {
+    briefly "What ToCRMSystem makes of the answers it gets"
+  }
+  connector 'ToCRMSystem Intake' is from outlet AnalyticsContext.ToCRMSystem.ToCRMSystemToAnalyticsContext to inlet AnalyticsContext.AnalyticsContextFromToCRMSystem with {
+    briefly "Answers translated by ToCRMSystem, on their way in"
+  }
+  type ToWebAnalyticsCommand is one of {
+    AnalyticsReport.AddChannelMetrics or AnalyticsReport.CompleteReport
+  } with {
+    briefly "What ToWebAnalytics turns its answers into"
+  }
+  inlet AnalyticsContextFromToWebAnalytics is type ToWebAnalyticsCommand with {
+    briefly "What ToWebAnalytics makes of the answers it gets"
+  }
+  connector 'ToWebAnalytics Intake' is from outlet AnalyticsContext.ToWebAnalytics.ToWebAnalyticsToAnalyticsContext to inlet AnalyticsContext.AnalyticsContextFromToWebAnalytics with {
+    briefly "Answers translated by ToWebAnalytics, on their way in"
+  }
   inlet AnalyticsReportCommandStreamIn is type AnalyticsReportCommand  outlet AnalyticsReportCommandStreamOut is type AnalyticsReportCommand
   inlet AnalyticsReportResultStreamIn is result AnalyticsReport.AnalyticsReportResult  outlet AnalyticsReportResultStreamOut is result AnalyticsReport.AnalyticsReportResult
   handler AnalyticsContextBoundary is {
@@ -41,16 +74,21 @@ context AnalyticsContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'AnalyticsReportCommand Stream Intake' is from outlet AnalyticsContext.AnalyticsReportCommandStreamOut to inlet AnalyticsContext.AnalyticsReport.AnalyticsReportCommands  connector 'AnalyticsReportResult Stream Egress' is from outlet AnalyticsContext.AnalyticsRepository.AnalyticsRepositoryResponses to inlet AnalyticsContext.AnalyticsReportResultStreamIn  adaptor ToAdPlatform to context AdPlatform as merge is { 
+  connector 'AnalyticsReportCommand Stream Intake' is from outlet AnalyticsContext.AnalyticsReportCommandStreamOut to inlet AnalyticsContext.AnalyticsReport.AnalyticsReportCommands  connector 'AnalyticsReportResult Stream Egress' is from outlet AnalyticsContext.AnalyticsRepository.AnalyticsRepositoryResponses to inlet AnalyticsContext.AnalyticsReportResultStreamIn  adaptor ToAdPlatform to context AdPlatform as router is { 
+    outlet ToAdPlatformToAnalyticsContext is type ToAdPlatformCommand
     inlet ToAdPlatformIn is type AnalyticsReportEvent    inlet ToAdPlatformReplies is type AdPlatform.AdPlatformReply    outlet ToAdPlatformOut is type AdPlatform.AdPlatformRequest
     handler ToAdPlatformHandler is {
       on channelMetricsAdded: event AnalyticsReport.ChannelMetricsAdded is {
         let askAnswer: type AdPlatform.AudienceInsights = ask query AdPlatform.GetAudienceInsights of context AdPlatform
         do "channel metrics needing the audience behind them"
+        send command AnalyticsReport.AddChannelMetrics(reportId = channelMetricsAdded.reportId, metrics = prompt("the channel metrics with askAnswer's audience breakdown")) to outlet AnalyticsContext.ToAdPlatform.ToAdPlatformToAnalyticsContext
       }
       on campaignPerformanceAdded: event AnalyticsReport.CampaignPerformanceAdded is {
         let askAnswer: type AdPlatform.CampaignData = ask query AdPlatform.GetCampaignData of context AdPlatform
         do "campaign performance needing the platform's own spend and delivery"
+        when prompt("the performance added disagrees with askAnswer") then
+          send command AnalyticsReport.AddCampaignPerformance(reportId = campaignPerformanceAdded.reportId, performance = prompt("askAnswer's impressions, clicks, spend and conversions")) to outlet AnalyticsContext.ToAdPlatform.ToAdPlatformToAnalyticsContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToAdPlatform"
@@ -67,16 +105,19 @@ context AnalyticsContext as router is {
       |The model's side of the AdPlatform conversation.
     }
   }
-  adaptor ToCRMSystem to context CRMSystem as merge is { 
+  adaptor ToCRMSystem to context CRMSystem as router is { 
+    outlet ToCRMSystemToAnalyticsContext is type ToCRMSystemCommand
     inlet ToCRMSystemIn is type AnalyticsReportEvent    inlet ToCRMSystemReplies is type CRMSystem.CRMSystemReply    outlet ToCRMSystemOut is type CRMSystem.CRMSystemRequest
     handler ToCRMSystemHandler is {
       on attributionResultsAdded: event AnalyticsReport.AttributionResultsAdded is {
         let askAnswer: type CRMSystem.ConversionRecords = ask query CRMSystem.GetConversionData of context CRMSystem
         do "attribution needing the conversions it assigns credit for"
+        send command AnalyticsReport.AddAttributionResults(reportId = attributionResultsAdded.reportId, results = prompt("attribution over askAnswer.conversionPaths worth askAnswer.totalValue")) to outlet AnalyticsContext.ToCRMSystem.ToCRMSystemToAnalyticsContext
       }
       on reportCreated: event AnalyticsReport.ReportCreated is {
         let askAnswer: type CRMSystem.CustomerSegments = ask query CRMSystem.GetCustomerSegments of context CRMSystem
         do "a new report needing the segments it will break results down by"
+        send command AnalyticsReport.GenerateReport(reportId = reportCreated.reportId) to outlet AnalyticsContext.ToCRMSystem.ToCRMSystemToAnalyticsContext
       }
       on other is {
         error "Unexpected message for adaptor ToCRMSystem"
@@ -135,16 +176,21 @@ context AnalyticsContext as router is {
       |The model's side of the DataWarehouse conversation.
     }
   }
-  adaptor ToWebAnalytics to context WebAnalytics as merge is { 
+  adaptor ToWebAnalytics to context WebAnalytics as router is { 
+    outlet ToWebAnalyticsToAnalyticsContext is type ToWebAnalyticsCommand
     inlet ToWebAnalyticsIn is type AnalyticsReportEvent    inlet ToWebAnalyticsReplies is type WebAnalytics.WebAnalyticsReply    outlet ToWebAnalyticsOut is type WebAnalytics.WebAnalyticsRequest
     handler ToWebAnalyticsHandler is {
       on reportCompleted: event AnalyticsReport.ReportCompleted is {
         let askAnswer: type WebAnalytics.GoalCompletions = ask query WebAnalytics.GetGoalCompletions of context WebAnalytics
         do "a completed report needing goal completions to close the funnel"
+        when prompt("the summary omitted goal completions") then
+          send command AnalyticsReport.CompleteReport(reportId = reportCompleted.reportId, completedAt = prompt("now"), summary = prompt("the summary with askAnswer.completions and askAnswer.conversionRate closing the funnel")) to outlet AnalyticsContext.ToWebAnalytics.ToWebAnalyticsToAnalyticsContext
+        end
       }
       on reportGenerationStarted: event AnalyticsReport.ReportGenerationStarted is {
         let askAnswer: type WebAnalytics.TrafficData = ask query WebAnalytics.GetTrafficData of context WebAnalytics
         do "a report starting needing the traffic it is built on"
+        send command AnalyticsReport.AddChannelMetrics(reportId = reportGenerationStarted.reportId, metrics = prompt("askAnswer.channelBreakdown as channel metrics")) to outlet AnalyticsContext.ToWebAnalytics.ToWebAnalyticsToAnalyticsContext
       }
       on other is {
         error "Unexpected message for adaptor ToWebAnalytics"

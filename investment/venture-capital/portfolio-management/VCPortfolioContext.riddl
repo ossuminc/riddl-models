@@ -1,5 +1,22 @@
 // Portfolio Management - VC Portfolio Context
 context VCPortfolioContext as router is {
+  inlet VCPortfolioContextFromToLegalSystem is command PortfolioInvestment.AddMilestone with {
+    briefly "What ToLegalSystem makes of the answers it gets"
+  }
+  connector 'ToLegalSystem Intake' is from outlet VCPortfolioContext.ToLegalSystem.ToLegalSystemToVCPortfolioContext to inlet VCPortfolioContext.VCPortfolioContextFromToLegalSystem with {
+    briefly "Answers translated by ToLegalSystem, on their way in"
+  }
+  type ToMarketIntelligenceCommand is one of {
+    PortfolioInvestment.MarkDown or PortfolioInvestment.RecordMetric
+  } with {
+    briefly "What ToMarketIntelligence turns its answers into"
+  }
+  inlet VCPortfolioContextFromToMarketIntelligence is type ToMarketIntelligenceCommand with {
+    briefly "What ToMarketIntelligence makes of the answers it gets"
+  }
+  connector 'ToMarketIntelligence Intake' is from outlet VCPortfolioContext.ToMarketIntelligence.ToMarketIntelligenceToVCPortfolioContext to inlet VCPortfolioContext.VCPortfolioContextFromToMarketIntelligence with {
+    briefly "Answers translated by ToMarketIntelligence, on their way in"
+  }
   inlet PortfolioInvestmentCommandStIn is type PortfolioInvestmentCommand  outlet PortfolioInvestmentCommandStOut is type PortfolioInvestmentCommand
   inlet PortfolioCompanyResultStreamIn is result PortfolioInvestment.PortfolioInvestmentResult  outlet PortfolioCompanyResultStreamOut is result PortfolioInvestment.PortfolioInvestmentResult
   handler VCPortfolioContextBoundary is {
@@ -76,12 +93,16 @@ context VCPortfolioContext as router is {
       |The model's side of the LegalSystem conversation.
     }
   }
-  adaptor ToLegalSystem to context LegalSystem as merge is { 
+  adaptor ToLegalSystem to context LegalSystem as router is { 
+    outlet ToLegalSystemToVCPortfolioContext is command PortfolioInvestment.AddMilestone
     inlet ToLegalSystemIn is type PortfolioInvestmentEvent    inlet ToLegalSystemReplies is result LegalSystem.ComplianceStatus    outlet ToLegalSystemOut is type LegalSystem.LegalSystemRequest
     handler ToLegalSystemHandler is {
       on boardSeatAssigned: event PortfolioInvestment.BoardSeatAssigned is {
         let askAnswer: type LegalSystem.ComplianceStatus = ask query LegalSystem.GetComplianceStatus of context LegalSystem
         do "a board seat needing the company's standing behind it"
+        when prompt("not askAnswer.isCompliant") then
+          send command PortfolioInvestment.AddMilestone(investmentId = boardSeatAssigned.investmentId, milestone = prompt("a milestone to clear askAnswer.pendingFilings")) to outlet VCPortfolioContext.ToLegalSystem.ToLegalSystemToVCPortfolioContext
+        end
       }
       on investmentRecorded: event PortfolioInvestment.InvestmentRecorded is {
         let item0: type LegalSystem.FileRegulatoryReport = prompt("translate the investmentRecorded event into a FileRegulatoryReport, a new position being the reportable fact")
@@ -102,16 +123,21 @@ context VCPortfolioContext as router is {
       |The model's side of the LegalSystem conversation.
     }
   }
-  adaptor ToMarketIntelligence to context MarketIntelligence as merge is { 
+  adaptor ToMarketIntelligence to context MarketIntelligence as router is { 
+    outlet ToMarketIntelligenceToVCPortfolioContext is type ToMarketIntelligenceCommand
     inlet ToMarketIntelligenceIn is type PortfolioInvestmentEvent    inlet ToMarketIntelligenceReplies is type MarketIntelligence.MarketIntelligenceReply    outlet ToMarketIntelligenceOut is type MarketIntelligence.MarketIntelligenceRequest
     handler ToMarketIntelligenceHandler is {
       on investmentMarkedDown: event PortfolioInvestment.InvestmentMarkedDown is {
         let askAnswer: type MarketIntelligence.CompanyValuation = ask query MarketIntelligence.GetCompanyValuation of context MarketIntelligence
         do "a markdown needing an outside valuation to justify it"
+        when prompt("askAnswer.estimatedValuation differs from investmentMarkedDown.newValuation") then
+          send command PortfolioInvestment.MarkDown(investmentId = investmentMarkedDown.investmentId, newValuation = askAnswer.estimatedValuation, reason = prompt("market intelligence values it at askAnswer.estimatedValuation with askAnswer.confidenceLevel confidence")) to outlet VCPortfolioContext.ToMarketIntelligence.ToMarketIntelligenceToVCPortfolioContext
+        end
       }
       on metricRecorded: event PortfolioInvestment.MetricRecorded is {
         let askAnswer: type MarketIntelligence.MarketTrends = ask query MarketIntelligence.GetMarketTrends of context MarketIntelligence
         do "a recorded metric needing the trend it should be read against"
+        send command PortfolioInvestment.RecordMetric(investmentId = metricRecorded.investmentId, metric = prompt("the metric read against askAnswer.trendDirection in askAnswer.sector")) to outlet VCPortfolioContext.ToMarketIntelligence.ToMarketIntelligenceToVCPortfolioContext
       }
       on other is {
         error "Unexpected message for adaptor ToMarketIntelligence"

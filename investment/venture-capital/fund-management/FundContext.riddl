@@ -1,5 +1,17 @@
 // Fund Management - Fund Context
 context FundContext as router is {
+  inlet FundContextFromToBankingService is command Fund.IssueCapitalCall with {
+    briefly "What ToBankingService makes of the answers it gets"
+  }
+  connector 'ToBankingService Intake' is from outlet FundContext.ToBankingService.ToBankingServiceToFundContext to inlet FundContext.FundContextFromToBankingService with {
+    briefly "Answers translated by ToBankingService, on their way in"
+  }
+  inlet FundContextFromToFundAccounting is command Fund.UpdateNAV with {
+    briefly "What ToFundAccounting makes of the answers it gets"
+  }
+  connector 'ToFundAccounting Intake' is from outlet FundContext.ToFundAccounting.ToFundAccountingToFundContext to inlet FundContext.FundContextFromToFundAccounting with {
+    briefly "Answers translated by ToFundAccounting, on their way in"
+  }
   inlet FundCommandStreamIn is type FundCommand  outlet FundCommandStreamOut is type FundCommand
   inlet FundInfoResultStreamIn is result Fund.FundResult  outlet FundInfoResultStreamOut is result Fund.FundResult
   handler FundContextBoundary is {
@@ -70,12 +82,16 @@ context FundContext as router is {
       |The model's side of the BankingService conversation.
     }
   }
-  adaptor ToBankingService to context BankingService as merge is { 
+  adaptor ToBankingService to context BankingService as router is { 
+    outlet ToBankingServiceToFundContext is command Fund.IssueCapitalCall
     inlet ToBankingServiceIn is type FundEvent    inlet ToBankingServiceReplies is result BankingService.AccountBalance    outlet ToBankingServiceOut is type BankingService.BankingServiceRequest
     handler ToBankingServiceHandler is {
       on capitalCallIssued: event Fund.CapitalCallIssued is {
         let askAnswer: type BankingService.AccountBalance = ask query BankingService.GetAccountBalance of context BankingService
         do "a call needing the account it will be paid into"
+        when prompt("the call named no account to pay into") then
+          send command Fund.IssueCapitalCall(fundId = capitalCallIssued.fundId, call = prompt("the call with askAnswer.fundId's account as the one to pay into")) to outlet FundContext.ToBankingService.ToBankingServiceToFundContext
+        end
       }
       on distributionIssued: event Fund.DistributionIssued is {
         let item0: type BankingService.InitiateWireTransfer = prompt("translate the distributionIssued event into a InitiateWireTransfer, a distribution being what must actually leave the account")
@@ -142,7 +158,8 @@ context FundContext as router is {
       |The model's side of the ComplianceReporting conversation.
     }
   }
-  adaptor ToFundAccounting to context FundAccounting as merge is { 
+  adaptor ToFundAccounting to context FundAccounting as router is { 
+    outlet ToFundAccountingToFundContext is command Fund.UpdateNAV
     inlet ToFundAccountingIn is type FundEvent    inlet ToFundAccountingReplies is result FundAccounting.FundNAV    outlet ToFundAccountingOut is type FundAccounting.FundAccountingCommand
     handler ToFundAccountingHandler is {
       on callPaymentReceived: event Fund.CallPaymentReceived is {
@@ -152,6 +169,9 @@ context FundContext as router is {
       on nAVUpdated: event Fund.NAVUpdated is {
         let askAnswer: type FundAccounting.FundNAV = ask query FundAccounting.GetFundNAV of context FundAccounting
         do "the administrator's NAV being what the fund's own figure is reconciled to"
+        when prompt("askAnswer.nav differs from nAVUpdated.nav") then
+          send command Fund.UpdateNAV(fundId = nAVUpdated.fundId, valuationDate = askAnswer.asOfDate, nav = askAnswer.nav) to outlet FundContext.ToFundAccounting.ToFundAccountingToFundContext
+        end
         let item0: type FundAccounting.RecordValuation = prompt("translate the nAVUpdated event into a RecordValuation, the NAV being the valuation to record")
         send item0 to outlet FundContext.ToFundAccounting.ToFundAccountingOut
       }

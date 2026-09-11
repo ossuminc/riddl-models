@@ -1,5 +1,22 @@
 // Contract Lifecycle - Contract Context
 context ContractContext as router is {
+  type ToDocumentRepositoryCommand is one of {
+    Contract.AddReviewComment or Contract.SubmitRedline
+  } with {
+    briefly "What ToDocumentRepository turns its answers into"
+  }
+  inlet ContractContextFromToDocumentRepository is type ToDocumentRepositoryCommand with {
+    briefly "What ToDocumentRepository makes of the answers it gets"
+  }
+  connector 'ToDocumentRepository Intake' is from outlet ContractContext.ToDocumentRepository.ToDocumentRepositoryToContractContext to inlet ContractContext.ContractContextFromToDocumentRepository with {
+    briefly "Answers translated by ToDocumentRepository, on their way in"
+  }
+  inlet ContractContextFromToESignatureService is command Contract.ActivateContract with {
+    briefly "What ToESignatureService makes of the answers it gets"
+  }
+  connector 'ToESignatureService Intake' is from outlet ContractContext.ToESignatureService.ToESignatureServiceToContractContext to inlet ContractContext.ContractContextFromToESignatureService with {
+    briefly "Answers translated by ToESignatureService, on their way in"
+  }
   inlet ContractContextFromESignatureService is command Contract.RecordSignature with {
     briefly "What FromESignatureService makes of that service's news"
   }
@@ -91,7 +108,8 @@ context ContractContext as router is {
       |The model's side of the DocumentRepository conversation.
     }
   }
-  adaptor ToDocumentRepository to context DocumentRepository as merge is { 
+  adaptor ToDocumentRepository to context DocumentRepository as router is { 
+    outlet ToDocumentRepositoryToContractContext is type ToDocumentRepositoryCommand
     inlet ToDocumentRepositoryIn is type ContractEvent    inlet ToDocumentRepositoryReplies is type DocumentRepository.DocumentRepositoryReply    outlet ToDocumentRepositoryOut is type DocumentRepository.DocumentRepositoryRequest
     handler ToDocumentRepositoryHandler is {
       on contractCreated: event ContractCreated is {
@@ -101,10 +119,14 @@ context ContractContext as router is {
       on contractSubmittedForReview: event Contract.ContractSubmittedForReview is {
         let askAnswer: type DocumentRepository.DocumentContent = ask query DocumentRepository.GetDocument of context DocumentRepository
         do "a review needing the text of the document it is about"
+        send command Contract.AddReviewComment(contractId = contractSubmittedForReview.contractId, comment = prompt("a comment anchoring the review to askAnswer.documentName version askAnswer.version")) to outlet ContractContext.ToDocumentRepository.ToDocumentRepositoryToContractContext
       }
       on redlineSubmitted: event Contract.RedlineSubmitted is {
         let askAnswer: type DocumentRepository.VersionList = ask query DocumentRepository.ListVersions of context DocumentRepository
         do "a redline needing the version history it is marked against"
+        when prompt("the redline was marked against an older version than askAnswer.latestVersion") then
+          send command Contract.SubmitRedline(contractId = redlineSubmitted.contractId, changes = prompt("the changes marked against version askAnswer.latestVersion")) to outlet ContractContext.ToDocumentRepository.ToDocumentRepositoryToContractContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToDocumentRepository"
@@ -146,7 +168,8 @@ context ContractContext as router is {
       |The model's side of the ESignatureService conversation.
     }
   }
-  adaptor ToESignatureService to context ESignatureService as merge is { 
+  adaptor ToESignatureService to context ESignatureService as router is { 
+    outlet ToESignatureServiceToContractContext is command Contract.ActivateContract
     inlet ToESignatureServiceIn is type ContractEvent    inlet ToESignatureServiceReplies is result ESignatureService.EnvelopeStatus    outlet ToESignatureServiceOut is type ESignatureService.ESignatureServiceRequest
     handler ToESignatureServiceHandler is {
       on contractSentForSignature: event ContractSentForSignature is {
@@ -156,6 +179,9 @@ context ContractContext as router is {
       on signatureRecorded: event Contract.SignatureRecorded is {
         let askAnswer: type ESignatureService.EnvelopeStatus = ask query ESignatureService.GetEnvelopeStatus of context ESignatureService
         do "a recorded signature needing the envelope's own account of who has signed"
+        when prompt("askAnswer.pendingSignatories is empty") then
+          send command Contract.ActivateContract(contractId = signatureRecorded.contractId, activatedAt = prompt("now")) to outlet ContractContext.ToESignatureService.ToESignatureServiceToContractContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor ToESignatureService"
