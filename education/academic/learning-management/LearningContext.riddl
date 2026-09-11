@@ -172,8 +172,8 @@ context LearningContext as router is {
       |The model's side of the IdentityService conversation.
     }
   }
-  adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+  adaptor ToNotificationService to context NotificationService as merge is { 
+    inlet ToNotificationServiceFromCourseIn is type CourseEvent    inlet ToNotificationServiceFromLearnerEnrollmentIn is type LearnerEnrollmentEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on courseCompleted: event CourseCompleted is {
         let notice: type NotificationService.SendCourseCompletion = prompt("translate the courseCompleted event into a SendCourseCompletion telling the learner they have finished the course and what they are now entitled to")
@@ -649,6 +649,7 @@ context LearningContext as router is {
     }
   }
   streamlet CourseEventSplit as split is {
+    outlet CourseEventSplitToToNotificationService is type CourseEvent
     outlet CourseEventSplitToToContentDeliveryService is type CourseEvent
     outlet CourseEventSplitToToCertificationService is type CourseEvent
     inlet CourseEventSplitIn is type CourseEvent    outlet CourseEventSplitToLearningAnalytics is type CourseEvent
@@ -705,6 +706,7 @@ context LearningContext as router is {
       on courseCompleted: event Course.CourseCompleted is {
         send courseCompleted to outlet CourseEventSplitToLearningAnalytics
         send courseCompleted to outlet CourseEventSplitToToCertificationService
+        send courseCompleted to outlet CourseEventSplitToToNotificationService
         tell courseCompleted to entity LearningContext.Course
       }
       on other is {
@@ -728,10 +730,49 @@ context LearningContext as router is {
   connector 'ToCertificationService Feed' is from outlet LearningContext.CourseEventSplit.CourseEventSplitToToCertificationService to inlet LearningContext.ToCertificationService.ToCertificationServiceIn with {
     briefly "The Course events ToCertificationService translates, on their way to it"
   }
+  connector 'ToNotificationService Course Feed' is from outlet LearningContext.CourseEventSplit.CourseEventSplitToToNotificationService to inlet LearningContext.ToNotificationService.ToNotificationServiceFromCourseIn with {
+    briefly "The Course events ToNotificationService translates, on their way to it"
+  }
   connector 'CourseEvent Stream' is from outlet LearningContext.Course.CourseEvents2 to inlet LearningContext.CourseEventSplit.CourseEventSplitIn with {
     briefly "Course events, fanned out to storage and read models"
   }
-  connector 'LearningAnalytics From LearnerEnrollment Feed' is from outlet LearningContext.LearnerEnrollment.LearnerEnrollmentEvents to inlet LearningContext.LearningAnalytics.LearningAnalyticsFromLearnerEnrollment with {
+  streamlet LearnerEnrollmentEventSplit as split is {
+    outlet LearnerEnrollmentEventSplitToToNotificationService is type LearnerEnrollmentEvent
+    inlet LearnerEnrollmentEventSplitIn is type LearnerEnrollmentEvent    outlet LearnerEnrollmentEventSplitToLearningAnalytics is type LearnerEnrollmentEvent
+    handler LearnerEnrollmentEventSplitHandler is {
+      on learnerEnrollmentOpened: event LearnerEnrollment.LearnerEnrollmentOpened is {
+        send learnerEnrollmentOpened to outlet LearnerEnrollmentEventSplitToLearningAnalytics
+      }
+      on learnerActivityRecorded: event LearnerEnrollment.LearnerActivityRecorded is {
+        send learnerActivityRecorded to outlet LearnerEnrollmentEventSplitToLearningAnalytics
+      }
+      on learnerEnrollmentCompleted: event LearnerEnrollment.LearnerEnrollmentCompleted is {
+        send learnerEnrollmentCompleted to outlet LearnerEnrollmentEventSplitToLearningAnalytics
+      }
+      on learnerWentQuiet: event LearnerEnrollment.LearnerWentQuiet is {
+        send learnerWentQuiet to outlet LearnerEnrollmentEventSplitToLearningAnalytics
+        send learnerWentQuiet to outlet LearnerEnrollmentEventSplitToToNotificationService
+      }
+      on other is {
+        error "Unexpected message for split LearnerEnrollmentEventSplit"
+      }
+    } with {
+      briefly "LearnerEnrollment event fan-out"
+    }
+  } with {
+    briefly "LearnerEnrollment events, fanned out to their consumers"
+    described as {
+      |Every event LearnerEnrollment emits passes through here on its way to the read model
+      |and to the adaptors that translate it for other contexts.
+    }
+  }
+  connector 'ToNotificationService LearnerEnrollment Feed' is from outlet LearningContext.LearnerEnrollmentEventSplit.LearnerEnrollmentEventSplitToToNotificationService to inlet LearningContext.ToNotificationService.ToNotificationServiceFromLearnerEnrollmentIn with {
+    briefly "The LearnerEnrollment events ToNotificationService translates, on their way to it"
+  }
+  connector 'LearnerEnrollmentEvent Stream' is from outlet LearningContext.LearnerEnrollment.LearnerEnrollmentEvents to inlet LearningContext.LearnerEnrollmentEventSplit.LearnerEnrollmentEventSplitIn with {
+    briefly "Every LearnerEnrollment event, on its way to the fan-out"
+  }
+  connector 'LearningAnalytics From LearnerEnrollment Feed' is from outlet LearningContext.LearnerEnrollmentEventSplit.LearnerEnrollmentEventSplitToLearningAnalytics to inlet LearningContext.LearningAnalytics.LearningAnalyticsFromLearnerEnrollment with {
     briefly "One learner's enrollment events, on their way to the analytics projection"
   }
   connector 'LearningAnalytics Feed' is from outlet LearningContext.CourseEventSplit.CourseEventSplitToLearningAnalytics to inlet LearningContext.LearningAnalytics.LearningAnalyticsFromCourse with {

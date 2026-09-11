@@ -83,7 +83,59 @@ context ReservationContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'RoomEvent Feed' is from outlet ReservationContext.Room.RoomEvents to inlet ReservationContext.HotelAnalytics.HotelAnalyticsFromRoom with {
+  streamlet RoomEventSplit as split is {
+    outlet RoomEventSplitToToHousekeepingService is type RoomEvent
+    outlet RoomEventSplitToToChannelManagerService is type RoomEvent
+    inlet RoomEventSplitIn is type RoomEvent    outlet RoomEventSplitToHotelAnalytics is type RoomEvent
+    handler RoomEventSplitHandler is {
+      on roomRegistered: event Room.RoomRegistered is {
+        send roomRegistered to outlet RoomEventSplitToHotelAnalytics
+      }
+      on roomHeld: event Room.RoomHeld is {
+        send roomHeld to outlet RoomEventSplitToHotelAnalytics
+        send roomHeld to outlet RoomEventSplitToToChannelManagerService
+      }
+      on roomOccupied: event Room.RoomOccupied is {
+        send roomOccupied to outlet RoomEventSplitToHotelAnalytics
+      }
+      on roomVacated: event Room.RoomVacated is {
+        send roomVacated to outlet RoomEventSplitToHotelAnalytics
+        send roomVacated to outlet RoomEventSplitToToChannelManagerService
+      }
+      on turnoverCompleted: event Room.TurnoverCompleted is {
+        send turnoverCompleted to outlet RoomEventSplitToHotelAnalytics
+        send turnoverCompleted to outlet RoomEventSplitToToHousekeepingService
+      }
+      on sentToMaintenance: event Room.SentToMaintenance is {
+        send sentToMaintenance to outlet RoomEventSplitToHotelAnalytics
+        send sentToMaintenance to outlet RoomEventSplitToToHousekeepingService
+      }
+      on returnedFromMaintenance: event Room.ReturnedFromMaintenance is {
+        send returnedFromMaintenance to outlet RoomEventSplitToHotelAnalytics
+      }
+      on other is {
+        error "Unexpected message for split RoomEventSplit"
+      }
+    } with {
+      briefly "Room event fan-out"
+    }
+  } with {
+    briefly "Room events, fanned out to their consumers"
+    described as {
+      |Every event Room emits passes through here on its way to the read model
+      |and to the adaptors that translate it for other contexts.
+    }
+  }
+  connector 'ToHousekeepingService Room Feed' is from outlet ReservationContext.RoomEventSplit.RoomEventSplitToToHousekeepingService to inlet ReservationContext.ToHousekeepingService.ToHousekeepingServiceFromRoomIn with {
+    briefly "The Room events ToHousekeepingService translates, on their way to it"
+  }
+  connector 'ToChannelManagerService Feed' is from outlet ReservationContext.RoomEventSplit.RoomEventSplitToToChannelManagerService to inlet ReservationContext.ToChannelManagerService.ToChannelManagerServiceIn with {
+    briefly "The Room events ToChannelManagerService translates, on their way to it"
+  }
+  connector 'RoomEvent Stream' is from outlet ReservationContext.Room.RoomEvents to inlet ReservationContext.RoomEventSplit.RoomEventSplitIn with {
+    briefly "Every Room event, on its way to the fan-out"
+  }
+  connector 'RoomEvent Feed' is from outlet ReservationContext.RoomEventSplit.RoomEventSplitToHotelAnalytics to inlet ReservationContext.HotelAnalytics.HotelAnalyticsFromRoom with {
     briefly "Room events feeding the HotelAnalytics projection"
   }
   connector 'RoomCommand Stream Intake' is from outlet ReservationContext.RoomCommandStreamOut to inlet ReservationContext.Room.RoomCommands  connector 'ReservationCommand Stream Intake' is from outlet ReservationContext.ReservationCommandStreamOut to inlet ReservationContext.Reservation.ReservationCommands  connector 'ReservationBoardView Stream Egress' is from outlet ReservationContext.ReservationRepository.ReservationRepositoryResponses to inlet ReservationContext.ReservationBoardViewStreamIn  adaptor FromChannelManagerService from context ChannelManagerService is { 
@@ -110,7 +162,7 @@ context ReservationContext as router is {
     }
   }
   adaptor ToChannelManagerService to context ChannelManagerService as flow is { 
-    outlet ToChannelManagerServiceOut is command ChannelManagerService.SyncAvailability
+    inlet ToChannelManagerServiceIn is type RoomEvent    outlet ToChannelManagerServiceOut is command ChannelManagerService.SyncAvailability
     handler ToChannelManagerServiceHandler is {
       on roomHeld: event Room.RoomHeld is {
         let item0: type ChannelManagerService.SyncAvailability = prompt("translate the roomHeld event into a SyncAvailability, a held room no longer being sellable")
@@ -211,8 +263,8 @@ context ReservationContext as router is {
       |The model's side of the HousekeepingService conversation.
     }
   }
-  adaptor ToHousekeepingService to context HousekeepingService as flow is { 
-    outlet ToHousekeepingServiceOut is type HousekeepingService.HousekeepingServiceCommand
+  adaptor ToHousekeepingService to context HousekeepingService as merge is { 
+    inlet ToHousekeepingServiceFromReservationIn is type ReservationEvent    inlet ToHousekeepingServiceFromRoomIn is type RoomEvent    outlet ToHousekeepingServiceOut is type HousekeepingService.HousekeepingServiceCommand
     handler ToHousekeepingServiceHandler is {
       on guestCheckedIn: event Reservation.GuestCheckedIn is {
         let item0: type HousekeepingService.AssignRoom = prompt("translate the guestCheckedIn event into a AssignRoom, check-in being when a room is given to a guest")
@@ -849,6 +901,7 @@ context ReservationContext as router is {
     }
   }
   streamlet ReservationEventSplit as split is {
+    outlet ReservationEventSplitToToHousekeepingService is type ReservationEvent
     outlet ReservationEventSplitToToPaymentGatewayService is type ReservationEvent
     outlet ReservationEventSplitToToLoyaltyProgramService is type ReservationEvent
     outlet ReservationEventSplitToToGuestCommunicationService is type ReservationEvent
@@ -876,6 +929,7 @@ context ReservationContext as router is {
       }
       on guestCheckedIn: event Reservation.GuestCheckedIn is {
         send guestCheckedIn to outlet ReservationEventSplitToHotelAnalytics
+        send guestCheckedIn to outlet ReservationEventSplitToToHousekeepingService
         tell guestCheckedIn to entity ReservationContext.Reservation
       }
       on chargePosted: event Reservation.ChargePosted is {
@@ -920,6 +974,9 @@ context ReservationContext as router is {
   }
   connector 'ToGuestCommunicationService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToGuestCommunicationService to inlet ReservationContext.ToGuestCommunicationService.ToGuestCommunicationServiceIn with {
     briefly "The Reservation events ToGuestCommunicationService translates, on their way to it"
+  }
+  connector 'ToHousekeepingService Reservation Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToHousekeepingService to inlet ReservationContext.ToHousekeepingService.ToHousekeepingServiceFromReservationIn with {
+    briefly "The Reservation events ToHousekeepingService translates, on their way to it"
   }
   connector 'ReservationEvent Stream' is from outlet ReservationContext.Reservation.ReservationEvents2 to inlet ReservationContext.ReservationEventSplit.ReservationEventSplitIn with {
     briefly "Reservation events, fanned out to storage and read models"
