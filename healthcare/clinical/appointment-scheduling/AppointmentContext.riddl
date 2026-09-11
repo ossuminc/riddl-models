@@ -1,5 +1,11 @@
 // Appointment Scheduling - Appointment Context
 context AppointmentContext as router is {
+  inlet AppointmentContextFromToPatientService is command Appointment.RecordPatientContact with {
+    briefly "What ToPatientService makes of the answers it gets"
+  }
+  connector 'ToPatientService Intake' is from outlet AppointmentContext.ToPatientService.ToPatientServiceToAppointmentContext to inlet AppointmentContext.AppointmentContextFromToPatientService with {
+    briefly "Answers translated by ToPatientService, on their way in"
+  }
   inlet AppointmentContextFromToProviderScheduleService is command Appointment.RescheduleAppointment with {
     briefly "What ToProviderScheduleService makes of the answers it gets"
   }
@@ -15,6 +21,9 @@ context AppointmentContext as router is {
   inlet AppointmentCommandStreamIn is type AppointmentCommand  outlet AppointmentCommandStreamOut is type AppointmentCommand
   inlet AppointmentResultStreamIn is result Appointment.AppointmentResult  outlet AppointmentResultStreamOut is result Appointment.AppointmentResult
   handler AppointmentContextBoundary is {
+    on recordPatientContact: command Appointment.RecordPatientContact is {
+      send recordPatientContact to outlet AppointmentContext.AppointmentCommandStreamOut
+    }
     on scheduleAppointment: command Appointment.ScheduleAppointment is {
       send scheduleAppointment to outlet AppointmentContext.AppointmentCommandStreamOut
     }
@@ -87,12 +96,14 @@ context AppointmentContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor ToPatientService to context PatientService as merge is { 
+  adaptor ToPatientService to context PatientService as router is { 
+    outlet ToPatientServiceToAppointmentContext is command Appointment.RecordPatientContact
     inlet ToPatientServiceIn is type AppointmentEvent    inlet ToPatientServiceReplies is result PatientService.PatientInfo    outlet ToPatientServiceOut is query PatientService.GetPatientInfo
     handler ToPatientServiceHandler is {
       on appointmentScheduled: event Appointment.AppointmentScheduled is {
         let askAnswer: type PatientService.PatientInfo = ask query PatientService.GetPatientInfo of context PatientService
         do "a scheduled appointment needing the patient's record behind the name"
+        send command Appointment.RecordPatientContact(appointmentId = appointmentScheduled.appointmentId, firstName = prompt("the first name of this record patient contact"), lastName = prompt("the last name of this record patient contact"), phone = prompt("the phone of this record patient contact")) to outlet AppointmentContext.ToPatientService.ToPatientServiceToAppointmentContext
       }
       on other is {
         error "Unexpected message for adaptor ToPatientService"
@@ -562,6 +573,9 @@ context AppointmentContext as router is {
       on appointmentCanceled: event Appointment.AppointmentCanceled is {
         tell command AppointmentContext.AppointmentRepository.PersistAppointmentCanceled(appointmentId = appointmentCanceled.appointmentId) to repository AppointmentContext.AppointmentRepository
       }
+      on patientContactRecorded: event Appointment.PatientContactRecorded is {
+        do "a patient contact recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains scheduling analytics"
       described as {
@@ -576,7 +590,7 @@ context AppointmentContext as router is {
   }
   // Event union for streaming
   type AppointmentEvent is one of {
-    AppointmentContext.Appointment.AppointmentScheduled or AppointmentContext.Appointment.AppointmentConfirmed or AppointmentContext.Appointment.AppointmentRescheduled or AppointmentContext.Appointment.AppointmentCanceled or AppointmentContext.Appointment.PatientCheckedIn or AppointmentContext.Appointment.AppointmentStarted or AppointmentContext.Appointment.AppointmentCompleted or AppointmentContext.Appointment.PatientNoShow
+    AppointmentContext.Appointment.AppointmentScheduled or AppointmentContext.Appointment.AppointmentConfirmed or AppointmentContext.Appointment.AppointmentRescheduled or AppointmentContext.Appointment.AppointmentCanceled or AppointmentContext.Appointment.PatientCheckedIn or AppointmentContext.Appointment.AppointmentStarted or AppointmentContext.Appointment.AppointmentCompleted or AppointmentContext.Appointment.PatientNoShow or AppointmentContext.Appointment.PatientContactRecorded
   } with {
     briefly "Appointment events"
     described as {
@@ -634,6 +648,11 @@ context AppointmentContext as router is {
         send patientNoShow to outlet AppointmentEventSplitToSchedulingAnalytics
         send patientNoShow to outlet AppointmentEventSplitToToNotificationService
         tell patientNoShow to entity AppointmentContext.Appointment
+      }
+      on patientContactRecorded: event Appointment.PatientContactRecorded is {
+        send patientContactRecorded to outlet AppointmentEventSplitToSchedulingAnalytics
+        send patientContactRecorded to outlet AppointmentEventSplitToToNotificationService
+        tell patientContactRecorded to entity AppointmentContext.Appointment
       }
       on other is {
         error "Unexpected message for processor AppointmentEventSplit"

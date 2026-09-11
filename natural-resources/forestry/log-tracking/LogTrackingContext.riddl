@@ -1,5 +1,11 @@
 // Log Tracking - Log Tracking Context
 context LogTrackingContext as router is {
+  inlet LogTrackingContextFromToTransportSystem is command TimberLog.RecordTransportStatus with {
+    briefly "What ToTransportSystem makes of the answers it gets"
+  }
+  connector 'ToTransportSystem Intake' is from outlet LogTrackingContext.ToTransportSystem.ToTransportSystemToLogTrackingContext to inlet LogTrackingContext.LogTrackingContextFromToTransportSystem with {
+    briefly "Answers translated by ToTransportSystem, on their way in"
+  }
   inlet LogTrackingContextFromToRegulatorySystem is command TimberLog.QuarantineLog with {
     briefly "What ToRegulatorySystem makes of the answers it gets"
   }
@@ -21,6 +27,9 @@ context LogTrackingContext as router is {
   inlet TimberLogCommandStreamIn is type TimberLogCommand  outlet TimberLogCommandStreamOut is type TimberLogCommand
   inlet TimberLogResultStreamIn is result TimberLog.TimberLogResult  outlet TimberLogResultStreamOut is result TimberLog.TimberLogResult
   handler LogTrackingContextBoundary is {
+    on recordTransportStatus: command TimberLog.RecordTransportStatus is {
+      send recordTransportStatus to outlet LogTrackingContext.TimberLogCommandStreamOut
+    }
     on registerLog: command TimberLog.RegisterLog is {
       send registerLog to outlet LogTrackingContext.TimberLogCommandStreamOut
     }
@@ -181,12 +190,14 @@ context LogTrackingContext as router is {
       |The model's side of the TransportSystem conversation.
     }
   }
-  adaptor ToTransportSystem to context TransportSystem as merge is { 
+  adaptor ToTransportSystem to context TransportSystem as router is { 
+    outlet ToTransportSystemToLogTrackingContext is command TimberLog.RecordTransportStatus
     inlet ToTransportSystemIn is type TimberLogEvent    inlet ToTransportSystemReplies is result TransportSystem.TransportStatus    outlet ToTransportSystemOut is type TransportSystem.TransportSystemRequest
     handler ToTransportSystemHandler is {
       on logInTransit: event TimberLog.LogInTransit is {
         let askAnswer: type TransportSystem.TransportStatus = ask query TransportSystem.GetTransportStatus of context TransportSystem
         do "a log in transit needing the carrier's own account of where it is"
+        send command TimberLog.RecordTransportStatus(logId = logInTransit.logId, transportStatus = prompt("the transport status of this record transport status"), currentLocation = prompt("the current location of this record transport status")) to outlet LogTrackingContext.ToTransportSystem.ToTransportSystemToLogTrackingContext
       }
       on logScaled: event TimberLog.LogScaled is {
         let item0: type TransportSystem.DispatchTruck = prompt("translate the logScaled event into a DispatchTruck, scaling fixing the volume a truck is sent for")
@@ -522,6 +533,9 @@ context LogTrackingContext as router is {
         tell command LogTrackingContext.LogTrackingRepository.PersistLogScaled(logId = logScaled.logId) to repository LogTrackingContext.LogTrackingRepository
         do "Update volume and grade metrics"
       }
+      on transportStatusRecorded: event TimberLog.TransportStatusRecorded is {
+        do "a transport status recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains log tracking metrics"
       described as {
@@ -536,7 +550,7 @@ context LogTrackingContext as router is {
   }
   // ---- Event publication for TimberLog ----
   type TimberLogEvent is one of {
-    LogTrackingContext.TimberLog.LogRegistered or LogTrackingContext.TimberLog.LogScaled or LogTrackingContext.TimberLog.LogLoaded or LogTrackingContext.TimberLog.LogInTransit or LogTrackingContext.TimberLog.LogDelivered or LogTrackingContext.TimberLog.LogRejected or LogTrackingContext.TimberLog.LogQuarantined or LogTrackingContext.TimberLog.ComplianceDocumentAttached
+    LogTrackingContext.TimberLog.LogRegistered or LogTrackingContext.TimberLog.LogScaled or LogTrackingContext.TimberLog.LogLoaded or LogTrackingContext.TimberLog.LogInTransit or LogTrackingContext.TimberLog.LogDelivered or LogTrackingContext.TimberLog.LogRejected or LogTrackingContext.TimberLog.LogQuarantined or LogTrackingContext.TimberLog.ComplianceDocumentAttached or LogTrackingContext.TimberLog.TransportStatusRecorded
   } with {
     briefly "TimberLog event alternation"
     described as {
@@ -587,6 +601,10 @@ context LogTrackingContext as router is {
       on complianceDocumentAttached: event TimberLog.ComplianceDocumentAttached is {
         send complianceDocumentAttached to outlet TimberLogEventSplitToLogTrackingMetrics
         tell complianceDocumentAttached to entity LogTrackingContext.TimberLog
+      }
+      on transportStatusRecorded: event TimberLog.TransportStatusRecorded is {
+        send transportStatusRecorded to outlet TimberLogEventSplitToLogTrackingMetrics
+        tell transportStatusRecorded to entity LogTrackingContext.TimberLog
       }
       on other is {
         error "Unexpected message for processor TimberLogEventSplit"

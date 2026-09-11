@@ -1,5 +1,11 @@
 // Benefits Administration - Benefit Context
 context BenefitContext as router is {
+  inlet BenefitContextFromToEBTCardService is command Benefit.RecordCardBalance with {
+    briefly "What ToEBTCardService makes of the answers it gets"
+  }
+  connector 'ToEBTCardService Intake' is from outlet BenefitContext.ToEBTCardService.ToEBTCardServiceToBenefitContext to inlet BenefitContext.BenefitContextFromToEBTCardService with {
+    briefly "Answers translated by ToEBTCardService, on their way in"
+  }
   inlet BenefitContextFromToIncomeVerificationService is command Benefit.VerifyDocument with {
     briefly "What ToIncomeVerificationService makes of the answers it gets"
   }
@@ -9,6 +15,9 @@ context BenefitContext as router is {
   inlet BenefitCommandStreamIn is type BenefitCommand  outlet BenefitCommandStreamOut is type BenefitCommand
   inlet BenefitQueryResultStreamIn is result Benefit.BenefitQueryResult  outlet BenefitQueryResultStreamOut is result Benefit.BenefitQueryResult
   handler BenefitContextBoundary is {
+    on recordCardBalance: command Benefit.RecordCardBalance is {
+      send recordCardBalance to outlet BenefitContext.BenefitCommandStreamOut
+    }
     on submitApplication: command Benefit.SubmitApplication is {
       send submitApplication to outlet BenefitContext.BenefitCommandStreamOut
     }
@@ -91,12 +100,14 @@ context BenefitContext as router is {
       |The model's side of the EBTCardService conversation.
     }
   }
-  adaptor ToEBTCardService to context EBTCardService as merge is { 
+  adaptor ToEBTCardService to context EBTCardService as router is { 
+    outlet ToEBTCardServiceToBenefitContext is command Benefit.RecordCardBalance
     inlet ToEBTCardServiceIn is type BenefitEvent    inlet ToEBTCardServiceReplies is result EBTCardService.CardBalanceResult    outlet ToEBTCardServiceOut is type EBTCardService.EBTCardServiceCommand
     handler ToEBTCardServiceHandler is {
       on paymentIssued: event Benefit.PaymentIssued is {
         let askAnswer: type EBTCardService.CardBalanceResult = ask query EBTCardService.GetCardBalance of context EBTCardService
         do "the balance mattering once money has been loaded onto the card"
+        send command Benefit.RecordCardBalance(benefitId = paymentIssued.benefitId, balance = prompt("the balance of this record card balance")) to outlet BenefitContext.ToEBTCardService.ToEBTCardServiceToBenefitContext
       }
       on benefitApproved: event Benefit.BenefitApproved is {
         let item0: type EBTCardService.IssueCard = prompt("translate the benefitApproved event into a IssueCard, approval being when a recipient needs a way to spend")
@@ -925,6 +936,9 @@ context BenefitContext as router is {
       on benefitTerminated: event Benefit.BenefitTerminated is {
         tell command BenefitContext.BenefitRepository.PersistBenefitTerminated(benefitId = benefitTerminated.benefitId) to repository BenefitContext.BenefitRepository
       }
+      on cardBalanceRecorded: event Benefit.CardBalanceRecorded is {
+        do "a card balance recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Processes analytics events"
       described as {
@@ -939,7 +953,7 @@ context BenefitContext as router is {
   }
   // ---- Event publication for Benefit ----
   type BenefitEvent is one of {
-    BenefitContext.Benefit.ApplicationSubmitted or BenefitContext.Benefit.DocumentUploaded or BenefitContext.Benefit.DocumentVerified or BenefitContext.Benefit.EligibilityDetermined or BenefitContext.Benefit.BenefitApproved or BenefitContext.Benefit.BenefitDenied or BenefitContext.Benefit.PaymentIssued or BenefitContext.Benefit.BenefitSuspended or BenefitContext.Benefit.BenefitReinstated or BenefitContext.Benefit.AppealFiled or BenefitContext.Benefit.AppealResolved or BenefitContext.Benefit.RecertificationInitiated or BenefitContext.Benefit.RecertificationCompleted or BenefitContext.Benefit.HouseholdUpdated or BenefitContext.Benefit.BenefitTerminated
+    BenefitContext.Benefit.ApplicationSubmitted or BenefitContext.Benefit.DocumentUploaded or BenefitContext.Benefit.DocumentVerified or BenefitContext.Benefit.EligibilityDetermined or BenefitContext.Benefit.BenefitApproved or BenefitContext.Benefit.BenefitDenied or BenefitContext.Benefit.PaymentIssued or BenefitContext.Benefit.BenefitSuspended or BenefitContext.Benefit.BenefitReinstated or BenefitContext.Benefit.AppealFiled or BenefitContext.Benefit.AppealResolved or BenefitContext.Benefit.RecertificationInitiated or BenefitContext.Benefit.RecertificationCompleted or BenefitContext.Benefit.HouseholdUpdated or BenefitContext.Benefit.BenefitTerminated or BenefitContext.Benefit.CardBalanceRecorded
   } with {
     briefly "Benefit event alternation"
     described as {
@@ -1028,6 +1042,11 @@ context BenefitContext as router is {
         send benefitTerminated to outlet BenefitEventSplitToProgramAnalytics
         send benefitTerminated to outlet BenefitEventSplitToToNotificationService
         tell benefitTerminated to entity BenefitContext.Benefit
+      }
+      on cardBalanceRecorded: event Benefit.CardBalanceRecorded is {
+        send cardBalanceRecorded to outlet BenefitEventSplitToProgramAnalytics
+        send cardBalanceRecorded to outlet BenefitEventSplitToToNotificationService
+        tell cardBalanceRecorded to entity BenefitContext.Benefit
       }
       on other is {
         error "Unexpected message for processor BenefitEventSplit"

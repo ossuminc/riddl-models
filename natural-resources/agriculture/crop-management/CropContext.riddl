@@ -1,5 +1,17 @@
 // Crop Management - Crop Context
 context CropContext as router is {
+  inlet CropContextFromToEquipmentTracking is command Field.RecordEquipmentPosition with {
+    briefly "What ToEquipmentTracking makes of the answers it gets"
+  }
+  connector 'ToEquipmentTracking Intake' is from outlet CropContext.ToEquipmentTracking.ToEquipmentTrackingToCropContext to inlet CropContext.CropContextFromToEquipmentTracking with {
+    briefly "Answers translated by ToEquipmentTracking, on their way in"
+  }
+  inlet CropContextFromToMarketPrices is command Field.RecordHarvestValue with {
+    briefly "What ToMarketPrices makes of the answers it gets"
+  }
+  connector 'ToMarketPrices Intake' is from outlet CropContext.ToMarketPrices.ToMarketPricesToCropContext to inlet CropContext.CropContextFromToMarketPrices with {
+    briefly "Answers translated by ToMarketPrices, on their way in"
+  }
   type ToWeatherServiceCommand is one of {
     Field.RecordIrrigation or Field.RecordScouting
   } with {
@@ -14,6 +26,12 @@ context CropContext as router is {
   inlet FieldCommandStreamIn is type FieldCommand  outlet FieldCommandStreamOut is type FieldCommand
   inlet FieldResultStreamIn is result Field.FieldResult  outlet FieldResultStreamOut is result Field.FieldResult
   handler CropContextBoundary is {
+    on recordHarvestValue: command Field.RecordHarvestValue is {
+      send recordHarvestValue to outlet CropContext.FieldCommandStreamOut
+    }
+    on recordEquipmentPosition: command Field.RecordEquipmentPosition is {
+      send recordEquipmentPosition to outlet CropContext.FieldCommandStreamOut
+    }
     on registerField: command Field.RegisterField is {
       send registerField to outlet CropContext.FieldCommandStreamOut
     }
@@ -58,12 +76,14 @@ context CropContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'FieldCommand Stream Intake' is from outlet CropContext.FieldCommandStreamOut to inlet CropContext.Field.FieldCommands  connector 'FieldResult Stream Egress' is from outlet CropContext.CropRepository.CropRepositoryResponses to inlet CropContext.FieldResultStreamIn  adaptor ToEquipmentTracking to context EquipmentTracking as merge is { 
+  connector 'FieldCommand Stream Intake' is from outlet CropContext.FieldCommandStreamOut to inlet CropContext.Field.FieldCommands  connector 'FieldResult Stream Egress' is from outlet CropContext.CropRepository.CropRepositoryResponses to inlet CropContext.FieldResultStreamIn  adaptor ToEquipmentTracking to context EquipmentTracking as router is { 
+    outlet ToEquipmentTrackingToCropContext is command Field.RecordEquipmentPosition
     inlet ToEquipmentTrackingIn is type FieldEvent    inlet ToEquipmentTrackingReplies is result EquipmentTracking.EquipmentLocation    outlet ToEquipmentTrackingOut is query EquipmentTracking.GetEquipmentLocation
     handler ToEquipmentTrackingHandler is {
       on fieldPrepared: event Field.FieldPrepared is {
         let askAnswer: type EquipmentTracking.EquipmentLocation = ask query EquipmentTracking.GetEquipmentLocation of context EquipmentTracking
         do "a prepared field needing to know where the machinery is"
+        send command Field.RecordEquipmentPosition(fieldId = fieldPrepared.fieldId, equipmentId = prompt("the equipment id of this record equipment position"), latitude = prompt("the latitude of this record equipment position"), longitude = prompt("the longitude of this record equipment position")) to outlet CropContext.ToEquipmentTracking.ToEquipmentTrackingToCropContext
       }
       on other is {
         error "Unexpected message for adaptor ToEquipmentTracking"
@@ -80,12 +100,14 @@ context CropContext as router is {
       |The model's side of the EquipmentTracking conversation.
     }
   }
-  adaptor ToMarketPrices to context MarketPrices as merge is { 
+  adaptor ToMarketPrices to context MarketPrices as router is { 
+    outlet ToMarketPricesToCropContext is command Field.RecordHarvestValue
     inlet ToMarketPricesIn is type FieldEvent    inlet ToMarketPricesReplies is result MarketPrices.CropPriceInfo    outlet ToMarketPricesOut is query MarketPrices.GetCropPrices
     handler ToMarketPricesHandler is {
       on harvestCompleted: event Field.HarvestCompleted is {
         let askAnswer: type MarketPrices.CropPriceInfo = ask query MarketPrices.GetCropPrices of context MarketPrices
         do "a completed harvest needing the price it can be sold at"
+        send command Field.RecordHarvestValue(fieldId = harvestCompleted.fieldId, spotPrice = prompt("the spot price of this record harvest value"), priceUnit = prompt("the price unit of this record harvest value"), asOf = prompt("the as of of this record harvest value")) to outlet CropContext.ToMarketPrices.ToMarketPricesToCropContext
       }
       on other is {
         error "Unexpected message for adaptor ToMarketPrices"
@@ -543,6 +565,12 @@ context CropContext as router is {
         tell command CropContext.CropRepository.PersistHarvestCompleted(fieldId = harvestCompleted.fieldId) to repository CropContext.CropRepository
         do "Aggregate yields by crop and season"
       }
+      on equipmentPositionRecorded: event Field.EquipmentPositionRecorded is {
+        do "a equipment position recorded changes nothing this projector keeps"
+      }
+      on harvestValueRecorded: event Field.HarvestValueRecorded is {
+        do "a harvest value recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains yield analytics"
       described as {
@@ -557,7 +585,7 @@ context CropContext as router is {
   }
   // ---- Event publication for Field ----
   type FieldEvent is one of {
-    CropContext.Field.FieldRegistered or CropContext.Field.FieldPrepared or CropContext.Field.CropPlanted or CropContext.Field.ApplicationRecorded or CropContext.Field.ScoutingRecorded or CropContext.Field.IrrigationRecorded or CropContext.Field.HarvestStarted or CropContext.Field.HarvestRecorded or CropContext.Field.HarvestCompleted or CropContext.Field.FieldSetFallow
+    CropContext.Field.FieldRegistered or CropContext.Field.FieldPrepared or CropContext.Field.CropPlanted or CropContext.Field.ApplicationRecorded or CropContext.Field.ScoutingRecorded or CropContext.Field.IrrigationRecorded or CropContext.Field.HarvestStarted or CropContext.Field.HarvestRecorded or CropContext.Field.HarvestCompleted or CropContext.Field.FieldSetFallow or CropContext.Field.HarvestValueRecorded or CropContext.Field.EquipmentPositionRecorded
   } with {
     briefly "Field event alternation"
     described as {
@@ -616,6 +644,14 @@ context CropContext as router is {
       on fieldSetFallow: event Field.FieldSetFallow is {
         send fieldSetFallow to outlet FieldEventSplitToYieldAnalytics
         tell fieldSetFallow to entity CropContext.Field
+      }
+      on harvestValueRecorded: event Field.HarvestValueRecorded is {
+        send harvestValueRecorded to outlet FieldEventSplitToYieldAnalytics
+        tell harvestValueRecorded to entity CropContext.Field
+      }
+      on equipmentPositionRecorded: event Field.EquipmentPositionRecorded is {
+        send equipmentPositionRecorded to outlet FieldEventSplitToYieldAnalytics
+        tell equipmentPositionRecorded to entity CropContext.Field
       }
       on other is {
         error "Unexpected message for processor FieldEventSplit"

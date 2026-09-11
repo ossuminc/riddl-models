@@ -1,5 +1,11 @@
 // Intermodal - Move Context
 context MoveContext as router is {
+  inlet MoveContextFromToIntermodalRatingService is command Move.RecordRate with {
+    briefly "What ToIntermodalRatingService makes of the answers it gets"
+  }
+  connector 'ToIntermodalRatingService Intake' is from outlet MoveContext.ToIntermodalRatingService.ToIntermodalRatingServiceToMoveContext to inlet MoveContext.MoveContextFromToIntermodalRatingService with {
+    briefly "Answers translated by ToIntermodalRatingService, on their way in"
+  }
   inlet MoveContextFromToChassisPoolService is command Move.ScheduleDestinationDray with {
     briefly "What ToChassisPoolService makes of the answers it gets"
   }
@@ -37,6 +43,9 @@ context MoveContext as router is {
   inlet MoveCommandStreamIn is type MoveCommand  outlet MoveCommandStreamOut is type MoveCommand
   inlet MoveResultStreamIn is result Move.MoveResult  outlet MoveResultStreamOut is result Move.MoveResult
   handler MoveContextBoundary is {
+    on recordRate: command Move.RecordRate is {
+      send recordRate to outlet MoveContext.MoveCommandStreamOut
+    }
     on createMove: command Move.CreateMove is {
       send createMove to outlet MoveContext.MoveCommandStreamOut
     }
@@ -189,12 +198,14 @@ context MoveContext as router is {
       |The model's side of the DrayCarrierService conversation.
     }
   }
-  adaptor ToIntermodalRatingService to context IntermodalRatingService as merge is { 
+  adaptor ToIntermodalRatingService to context IntermodalRatingService as router is { 
+    outlet ToIntermodalRatingServiceToMoveContext is command Move.RecordRate
     inlet ToIntermodalRatingServiceIn is type MoveEvent    inlet ToIntermodalRatingServiceReplies is result IntermodalRatingService.RatesResult    outlet ToIntermodalRatingServiceOut is query IntermodalRatingService.GetRates
     handler ToIntermodalRatingServiceHandler is {
       on moveCreated: event Move.MoveCreated is {
         let askAnswer: type IntermodalRatingService.RatesResult = ask query IntermodalRatingService.GetRates of context IntermodalRatingService
         do "a new move needing a rate for the rail and dray legs together"
+        send command Move.RecordRate(moveId = moveCreated.moveId, charges = prompt("the charges of this record rate"), transitDays = prompt("the transit days of this record rate"), expirationDate = prompt("the expiration date of this record rate")) to outlet MoveContext.ToIntermodalRatingService.ToIntermodalRatingServiceToMoveContext
       }
       on other is {
         error "Unexpected message for adaptor ToIntermodalRatingService"
@@ -723,6 +734,9 @@ context MoveContext as router is {
         tell command MoveContext.MoveRepository.PersistExceptionRecorded(moveId = exceptionRecorded.moveId) to repository MoveContext.MoveRepository
         do "Update exception metrics"
       }
+      on rateRecorded: event Move.RateRecorded is {
+        do "a rate recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains intermodal analytics"
       described as {
@@ -737,7 +751,7 @@ context MoveContext as router is {
   }
   // ---- Event publication for Move ----
   type MoveEvent is one of {
-    MoveContext.Move.MoveCreated or MoveContext.Move.OriginDrayScheduled or MoveContext.Move.TerminalIngateRecorded or MoveContext.Move.AssignedToTrain or MoveContext.Move.TrainDepartureRecorded or MoveContext.Move.TrainArrivalRecorded or MoveContext.Move.TerminalOutgateRecorded or MoveContext.Move.DestinationDrayScheduled or MoveContext.Move.DeliveryRecorded or MoveContext.Move.ExceptionRecorded or MoveContext.Move.MoveCancelled
+    MoveContext.Move.MoveCreated or MoveContext.Move.OriginDrayScheduled or MoveContext.Move.TerminalIngateRecorded or MoveContext.Move.AssignedToTrain or MoveContext.Move.TrainDepartureRecorded or MoveContext.Move.TrainArrivalRecorded or MoveContext.Move.TerminalOutgateRecorded or MoveContext.Move.DestinationDrayScheduled or MoveContext.Move.DeliveryRecorded or MoveContext.Move.ExceptionRecorded or MoveContext.Move.MoveCancelled or MoveContext.Move.RateRecorded
   } with {
     briefly "Move event alternation"
     described as {
@@ -804,6 +818,10 @@ context MoveContext as router is {
       on moveCancelled: event Move.MoveCancelled is {
         send moveCancelled to outlet MoveEventSplitToIntermodalAnalytics
         tell moveCancelled to entity MoveContext.Move
+      }
+      on rateRecorded: event Move.RateRecorded is {
+        send rateRecorded to outlet MoveEventSplitToIntermodalAnalytics
+        tell rateRecorded to entity MoveContext.Move
       }
       on other is {
         error "Unexpected message for processor MoveEventSplit"

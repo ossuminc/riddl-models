@@ -1,5 +1,11 @@
 // Venue Management - Venue Context
 context VenueContext as router is {
+  inlet VenueContextFromToPricingService is command Booking.RecordPrice with {
+    briefly "What ToPricingService makes of the answers it gets"
+  }
+  connector 'ToPricingService Intake' is from outlet VenueContext.ToPricingService.ToPricingServiceToVenueContext to inlet VenueContext.VenueContextFromToPricingService with {
+    briefly "Answers translated by ToPricingService, on their way in"
+  }
   inlet VenueContextFromToCateringService is command Booking.SetCatering with {
     briefly "What ToCateringService makes of the answers it gets"
   }
@@ -44,6 +50,9 @@ context VenueContext as router is {
   inlet BookingCommandStreamIn is type BookingCommand  outlet BookingCommandStreamOut is type BookingCommand
   inlet BookingResultStreamIn is result Booking.BookingResult  outlet BookingResultStreamOut is result Booking.BookingResult
   handler VenueContextBoundary is {
+    on recordPrice: command Booking.RecordPrice is {
+      send recordPrice to outlet VenueContext.BookingCommandStreamOut
+    }
     on createBooking: command Booking.CreateBooking is {
       send createBooking to outlet VenueContext.BookingCommandStreamOut
     }
@@ -282,12 +291,14 @@ context VenueContext as router is {
       |The model's side of the PaymentProcessingService conversation.
     }
   }
-  adaptor ToPricingService to context PricingService as merge is { 
+  adaptor ToPricingService to context PricingService as router is { 
+    outlet ToPricingServiceToVenueContext is command Booking.RecordPrice
     inlet ToPricingServiceIn is type BookingEvent    inlet ToPricingServiceReplies is result PricingService.BookingPrice    outlet ToPricingServiceOut is query PricingService.CalculateBookingPrice
     handler ToPricingServiceHandler is {
       on bookingCreated: event Booking.BookingCreated is {
         let askAnswer: type PricingService.BookingPrice = ask query PricingService.CalculateBookingPrice of context PricingService
         do "a new booking needing a price for the space and the hours"
+        send command Booking.RecordPrice(bookingId = bookingCreated.bookingId, pricing = prompt("the pricing of this record price")) to outlet VenueContext.ToPricingService.ToPricingServiceToVenueContext
       }
       on other is {
         error "Unexpected message for adaptor ToPricingService"
@@ -842,6 +853,9 @@ context VenueContext as router is {
         tell command VenueContext.BookingRepository.PersistBookingCancelled(bookingId = bookingCancelled.bookingId) to repository VenueContext.BookingRepository
         do "Update cancellation metrics"
       }
+      on priceRecorded: event Booking.PriceRecorded is {
+        do "a price recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains venue analytics"
       described as {
@@ -856,7 +870,7 @@ context VenueContext as router is {
   }
   // ---- Event publication for Booking ----
   type BookingEvent is one of {
-    VenueContext.Booking.BookingCreated or VenueContext.Booking.ResourceAdded or VenueContext.Booking.ResourceRemoved or VenueContext.Booking.CateringSet or VenueContext.Booking.EventDetailsUpdated or VenueContext.Booking.BookingPeriodChanged or VenueContext.Booking.BookingConfirmed or VenueContext.Booking.DepositRecorded or VenueContext.Booking.FinalPaymentProcessed or VenueContext.Booking.EventStarted or VenueContext.Booking.EventCompleted or VenueContext.Booking.BookingCancelled
+    VenueContext.Booking.BookingCreated or VenueContext.Booking.ResourceAdded or VenueContext.Booking.ResourceRemoved or VenueContext.Booking.CateringSet or VenueContext.Booking.EventDetailsUpdated or VenueContext.Booking.BookingPeriodChanged or VenueContext.Booking.BookingConfirmed or VenueContext.Booking.DepositRecorded or VenueContext.Booking.FinalPaymentProcessed or VenueContext.Booking.EventStarted or VenueContext.Booking.EventCompleted or VenueContext.Booking.BookingCancelled or VenueContext.Booking.PriceRecorded
   } with {
     briefly "Booking event alternation"
     described as {
@@ -936,6 +950,14 @@ context VenueContext as router is {
         send bookingCancelled to outlet BookingEventSplitToToPaymentProcessingService
         send bookingCancelled to outlet BookingEventSplitToToCateringService
         tell bookingCancelled to entity VenueContext.Booking
+      }
+      on priceRecorded: event Booking.PriceRecorded is {
+        send priceRecorded to outlet BookingEventSplitToVenueAnalytics
+        send priceRecorded to outlet BookingEventSplitToToSpaceAvailabilityService
+        send priceRecorded to outlet BookingEventSplitToToResourceInventoryService
+        send priceRecorded to outlet BookingEventSplitToToPaymentProcessingService
+        send priceRecorded to outlet BookingEventSplitToToCateringService
+        tell priceRecorded to entity VenueContext.Booking
       }
       on other is {
         error "Unexpected message for processor BookingEventSplit"

@@ -1,5 +1,11 @@
 // Mine Operations - Mine Context
 context MineContext as router is {
+  inlet MineContextFromToEnvironmentalComplianceService is command ExtractionZone.RecordPermitRequirements with {
+    briefly "What ToEnvironmentalComplianceService makes of the answers it gets"
+  }
+  connector 'ToEnvironmentalComplianceService Intake' is from outlet MineContext.ToEnvironmentalComplianceService.ToEnvironmentalComplianceServiceToMineContext to inlet MineContext.MineContextFromToEnvironmentalComplianceService with {
+    briefly "Answers translated by ToEnvironmentalComplianceService, on their way in"
+  }
   inlet MineContextFromToEquipmentManagementService is command ExtractionZone.RecordSafetyIncident with {
     briefly "What ToEquipmentManagementService makes of the answers it gets"
   }
@@ -15,6 +21,9 @@ context MineContext as router is {
   inlet ExtractionZoneCommandStreamIn is type ExtractionZoneCommand  outlet ExtractionZoneCommandStreamOut is type ExtractionZoneCommand
   inlet ExtractionZoneResultStreamIn is result ExtractionZone.ExtractionZoneResult  outlet ExtractionZoneResultStreamOut is result ExtractionZone.ExtractionZoneResult
   handler MineContextBoundary is {
+    on recordPermitRequirements: command ExtractionZone.RecordPermitRequirements is {
+      send recordPermitRequirements to outlet MineContext.ExtractionZoneCommandStreamOut
+    }
     on createZone: command ExtractionZone.CreateZone is {
       send createZone to outlet MineContext.ExtractionZoneCommandStreamOut
     }
@@ -76,7 +85,8 @@ context MineContext as router is {
       |The model's side of the EnvironmentalComplianceService conversation.
     }
   }
-  adaptor ToEnvironmentalComplianceService to context EnvironmentalComplianceService as merge is { 
+  adaptor ToEnvironmentalComplianceService to context EnvironmentalComplianceService as router is { 
+    outlet ToEnvironmentalComplianceServiceToMineContext is command ExtractionZone.RecordPermitRequirements
     inlet ToEnvironmentalComplianceServiceIn is type ExtractionZoneEvent    inlet ToEnvironmentalComplianceServiceReplies is result EnvironmentalComplianceService.PermitRequirements    outlet ToEnvironmentalComplianceServiceOut is type EnvironmentalComplianceService.EnvironmentalComplianceServiceRequest
     handler ToEnvironmentalComplianceServiceHandler is {
       on environmentalRecorded: event EnvironmentalRecorded is {
@@ -86,6 +96,7 @@ context MineContext as router is {
       on zoneCreated: event ExtractionZone.ZoneCreated is {
         let askAnswer: type EnvironmentalComplianceService.PermitRequirements = ask query EnvironmentalComplianceService.GetPermitRequirements of context EnvironmentalComplianceService
         do "a new zone needing to know what it must be permitted for"
+        send command ExtractionZone.RecordPermitRequirements(zoneId = zoneCreated.zoneId, permitId = prompt("the permit id of this record permit requirements"), requirements = prompt("the requirements of this record permit requirements"), expirationDate = prompt("the expiration date of this record permit requirements")) to outlet MineContext.ToEnvironmentalComplianceService.ToEnvironmentalComplianceServiceToMineContext
       }
       on other is {
         error "Unexpected message for adaptor ToEnvironmentalComplianceService"
@@ -564,6 +575,9 @@ context MineContext as router is {
         tell command MineContext.MineRepository.PersistSafetyIncidentRecorded(zoneId = safetyIncidentRecorded.zoneId) to repository MineContext.MineRepository
         do "Update safety metrics"
       }
+      on permitRequirementsRecorded: event ExtractionZone.PermitRequirementsRecorded is {
+        do "a permit requirements recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains production analytics"
       described as {
@@ -578,7 +592,7 @@ context MineContext as router is {
   }
   // ---- Event publication for ExtractionZone ----
   type ExtractionZoneEvent is one of {
-    MineContext.ExtractionZone.ZoneCreated or MineContext.ExtractionZone.ZoneSurveyed or MineContext.ExtractionZone.DrillingStarted or MineContext.ExtractionZone.BlastingRecorded or MineContext.ExtractionZone.ProductionRecorded or MineContext.ExtractionZone.SafetyIncidentRecorded or MineContext.ExtractionZone.EnvironmentalRecorded or MineContext.ExtractionZone.ZoneExhausted or MineContext.ExtractionZone.ReclamationInitiated
+    MineContext.ExtractionZone.ZoneCreated or MineContext.ExtractionZone.ZoneSurveyed or MineContext.ExtractionZone.DrillingStarted or MineContext.ExtractionZone.BlastingRecorded or MineContext.ExtractionZone.ProductionRecorded or MineContext.ExtractionZone.SafetyIncidentRecorded or MineContext.ExtractionZone.EnvironmentalRecorded or MineContext.ExtractionZone.ZoneExhausted or MineContext.ExtractionZone.ReclamationInitiated or MineContext.ExtractionZone.PermitRequirementsRecorded
   } with {
     briefly "ExtractionZone event alternation"
     described as {
@@ -632,6 +646,10 @@ context MineContext as router is {
       on reclamationInitiated: event ExtractionZone.ReclamationInitiated is {
         send reclamationInitiated to outlet ExtractionZoneEventSplitToProductionAnalytics
         tell reclamationInitiated to entity MineContext.ExtractionZone
+      }
+      on permitRequirementsRecorded: event ExtractionZone.PermitRequirementsRecorded is {
+        send permitRequirementsRecorded to outlet ExtractionZoneEventSplitToProductionAnalytics
+        tell permitRequirementsRecorded to entity MineContext.ExtractionZone
       }
       on other is {
         error "Unexpected message for processor ExtractionZoneEventSplit"

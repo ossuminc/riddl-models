@@ -1,5 +1,11 @@
 // Policy Management - Policy Context
 context PolicyContext as router is {
+  inlet PolicyContextFromToAgencyManagementService is command Policy.RecordProducer with {
+    briefly "What ToAgencyManagementService makes of the answers it gets"
+  }
+  connector 'ToAgencyManagementService Intake' is from outlet PolicyContext.ToAgencyManagementService.ToAgencyManagementServiceToPolicyContext to inlet PolicyContext.PolicyContextFromToAgencyManagementService with {
+    briefly "Answers translated by ToAgencyManagementService, on their way in"
+  }
   type ToRatingEngineServiceCommand is one of {
     Policy.BindPolicy or Policy.ProcessRenewal
   } with {
@@ -20,6 +26,9 @@ context PolicyContext as router is {
   inlet PolicyCommandStreamIn is type PolicyCommand  outlet PolicyCommandStreamOut is type PolicyCommand
   inlet PolicyResultStreamIn is result Policy.PolicyResult  outlet PolicyResultStreamOut is result Policy.PolicyResult
   handler PolicyContextBoundary is {
+    on recordProducer: command Policy.RecordProducer is {
+      send recordProducer to outlet PolicyContext.PolicyCommandStreamOut
+    }
     on issuePolicy: command Policy.IssuePolicy is {
       send issuePolicy to outlet PolicyContext.PolicyCommandStreamOut
     }
@@ -81,12 +90,14 @@ context PolicyContext as router is {
       |The model's side of the AgencyManagementService conversation.
     }
   }
-  adaptor ToAgencyManagementService to context AgencyManagementService as merge is { 
+  adaptor ToAgencyManagementService to context AgencyManagementService as router is { 
+    outlet ToAgencyManagementServiceToPolicyContext is command Policy.RecordProducer
     inlet ToAgencyManagementServiceIn is type PolicyEvent    inlet ToAgencyManagementServiceReplies is result AgencyManagementService.AgentInfo    outlet ToAgencyManagementServiceOut is type AgencyManagementService.AgencyManagementServiceRequest
     handler ToAgencyManagementServiceHandler is {
       on policyIssued: event Policy.PolicyIssued is {
         let askAnswer: type AgencyManagementService.AgentInfo = ask query AgencyManagementService.GetAgentInfo of context AgencyManagementService
         do "issuance needing the producer the policy is credited to"
+        send command Policy.RecordProducer(policyId = policyIssued.policyId, agentId = prompt("the agent id of this record producer"), agencyName = prompt("the agency name of this record producer"), commissionRate = prompt("the commission rate of this record producer")) to outlet PolicyContext.ToAgencyManagementService.ToAgencyManagementServiceToPolicyContext
       }
       on policyBound: event Policy.PolicyBound is {
         let item0: type AgencyManagementService.RecordCommission = prompt("translate the policyBound event into a RecordCommission, binding being what earns the producer their commission")
@@ -668,6 +679,9 @@ context PolicyContext as router is {
       on policyCancelled: event Policy.PolicyCancelled is {
         tell command PolicyContext.PolicyRepository.PersistPolicyCancelled(policyId = policyCancelled.policyId) to repository PolicyContext.PolicyRepository
       }
+      on producerRecorded: event Policy.ProducerRecorded is {
+        do "a producer recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains policy analytics"
       described as {
@@ -736,6 +750,10 @@ context PolicyContext as router is {
       on policyNonRenewed: event Policy.PolicyNonRenewed is {
         send policyNonRenewed to outlet PolicyEventSplitToPolicyAnalytics
         tell policyNonRenewed to entity PolicyContext.Policy
+      }
+      on producerRecorded: event Policy.ProducerRecorded is {
+        send producerRecorded to outlet PolicyEventSplitToPolicyAnalytics
+        tell producerRecorded to entity PolicyContext.Policy
       }
       on other is {
         error "Unexpected message for processor PolicyEventSplit"

@@ -1,5 +1,11 @@
 // Licensing - License Context
 context LicenseContext as router is {
+  inlet LicenseContextFromToBackgroundCheckService is command License.RecordCheckStatus with {
+    briefly "What ToBackgroundCheckService makes of the answers it gets"
+  }
+  connector 'ToBackgroundCheckService Intake' is from outlet LicenseContext.ToBackgroundCheckService.ToBackgroundCheckServiceToLicenseContext to inlet LicenseContext.LicenseContextFromToBackgroundCheckService with {
+    briefly "Answers translated by ToBackgroundCheckService, on their way in"
+  }
   inlet LicenseContextFromToContinuingEducationService is command License.VerifyCredentials with {
     briefly "What ToContinuingEducationService makes of the answers it gets"
   }
@@ -27,6 +33,9 @@ context LicenseContext as router is {
   inlet LicenseCommandStreamIn is type LicenseCommand  outlet LicenseCommandStreamOut is type LicenseCommand
   inlet LicenseQueryResultStreamIn is result License.LicenseQueryResult  outlet LicenseQueryResultStreamOut is result License.LicenseQueryResult
   handler LicenseContextBoundary is {
+    on recordCheckStatus: command License.RecordCheckStatus is {
+      send recordCheckStatus to outlet LicenseContext.LicenseCommandStreamOut
+    }
     on submitApplication: command License.SubmitApplication is {
       send submitApplication to outlet LicenseContext.LicenseCommandStreamOut
     }
@@ -103,7 +112,8 @@ context LicenseContext as router is {
       |The model's side of the BackgroundCheckService conversation.
     }
   }
-  adaptor ToBackgroundCheckService to context BackgroundCheckService as merge is { 
+  adaptor ToBackgroundCheckService to context BackgroundCheckService as router is { 
+    outlet ToBackgroundCheckServiceToLicenseContext is command License.RecordCheckStatus
     inlet ToBackgroundCheckServiceIn is type LicenseEvent    inlet ToBackgroundCheckServiceReplies is result BackgroundCheckService.CheckStatusResult    outlet ToBackgroundCheckServiceOut is type BackgroundCheckService.BackgroundCheckServiceRequest
     handler ToBackgroundCheckServiceHandler is {
       on applicationSubmitted: event ApplicationSubmitted is {
@@ -113,6 +123,7 @@ context LicenseContext as router is {
       on credentialsVerified: event License.CredentialsVerified is {
         let askAnswer: type BackgroundCheckService.CheckStatusResult = ask query BackgroundCheckService.GetCheckStatus of context BackgroundCheckService
         do "credentials clearing being when the outstanding check becomes the last thing waited on"
+        send command License.RecordCheckStatus(licenseId = credentialsVerified.licenseId, checkStatus = prompt("the check status of this record check status"), estimatedCompletion = prompt("the estimated completion of this record check status")) to outlet LicenseContext.ToBackgroundCheckService.ToBackgroundCheckServiceToLicenseContext
       }
       on other is {
         error "Unexpected message for adaptor ToBackgroundCheckService"
@@ -1027,6 +1038,9 @@ context LicenseContext as router is {
       on paymentProcessed: event License.PaymentProcessed is {
         tell command LicenseContext.LicenseRepository.PersistPaymentProcessed(licenseId = paymentProcessed.licenseId) to repository LicenseContext.LicenseRepository
       }
+      on checkStatusRecorded: event License.CheckStatusRecorded is {
+        do "a check status recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Processes analytics events"
       described as {
@@ -1188,6 +1202,9 @@ context LicenseContext as router is {
       on disciplinaryActionRecorded: event License.DisciplinaryActionRecorded is {
         tell command LicenseContext.LicenseRepository.PersistDisciplinaryActionRecorded(licenseId = disciplinaryActionRecorded.licenseId) to repository LicenseContext.LicenseRepository
       }
+      on checkStatusRecorded: event License.CheckStatusRecorded is {
+        do "a check status recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Processes directory events"
       described as {
@@ -1202,7 +1219,7 @@ context LicenseContext as router is {
   }
   // ---- Event publication for License ----
   type LicenseEvent is one of {
-    LicenseContext.License.ApplicationSubmitted or LicenseContext.License.ApplicationUpdated or LicenseContext.License.AdditionalInfoRequested or LicenseContext.License.CredentialsVerified or LicenseContext.License.ExamResultRecorded or LicenseContext.License.ApplicationApproved or LicenseContext.License.ApplicationDenied or LicenseContext.License.PaymentProcessed or LicenseContext.License.LicenseRenewed or LicenseContext.License.ComplaintFiled or LicenseContext.License.DisciplinaryActionRecorded or LicenseContext.License.LicenseSuspended or LicenseContext.License.LicenseRevoked or LicenseContext.License.LicenseReinstated
+    LicenseContext.License.ApplicationSubmitted or LicenseContext.License.ApplicationUpdated or LicenseContext.License.AdditionalInfoRequested or LicenseContext.License.CredentialsVerified or LicenseContext.License.ExamResultRecorded or LicenseContext.License.ApplicationApproved or LicenseContext.License.ApplicationDenied or LicenseContext.License.PaymentProcessed or LicenseContext.License.LicenseRenewed or LicenseContext.License.ComplaintFiled or LicenseContext.License.DisciplinaryActionRecorded or LicenseContext.License.LicenseSuspended or LicenseContext.License.LicenseRevoked or LicenseContext.License.LicenseReinstated or LicenseContext.License.CheckStatusRecorded
   } with {
     briefly "License event alternation"
     described as {
@@ -1305,6 +1322,12 @@ context LicenseContext as router is {
         send licenseReinstated to outlet LicenseEventSplitToPublicLicenseDirectory
         send licenseReinstated to outlet LicenseEventSplitToToNotificationService
         tell licenseReinstated to entity LicenseContext.License
+      }
+      on checkStatusRecorded: event License.CheckStatusRecorded is {
+        send checkStatusRecorded to outlet LicenseEventSplitToLicenseAnalytics
+        send checkStatusRecorded to outlet LicenseEventSplitToPublicLicenseDirectory
+        send checkStatusRecorded to outlet LicenseEventSplitToToNotificationService
+        tell checkStatusRecorded to entity LicenseContext.License
       }
       on other is {
         error "Unexpected message for processor LicenseEventSplit"

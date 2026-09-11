@@ -1,7 +1,12 @@
 // NursingContext - Bounded Context for Nursing Workflow
 // Contains repository and projectors for nursing operations
 context NursingContext as router is {
-  inlet NursingContextFromToADTService is command NurseShift.AssignPatients with {
+  type ToADTServiceCommand is one of {
+    NurseShift.AssignPatients or NurseShift.RecordPatientLocations
+  } with {
+    briefly "What ToADTService turns its answers into"
+  }
+  inlet NursingContextFromToADTService is type ToADTServiceCommand with {
     briefly "What ToADTService makes of the answers it gets"
   }
   connector 'ToADTService Intake' is from outlet NursingContext.ToADTService.ToADTServiceToNursingContext to inlet NursingContext.NursingContextFromToADTService with {
@@ -62,6 +67,9 @@ context NursingContext as router is {
   inlet NurseShiftCommandStreamIn is type NurseShiftCommand  outlet NurseShiftCommandStreamOut is type NurseShiftCommand
   inlet NurseShiftResultStreamIn is result NurseShift.NurseShiftResult  outlet NurseShiftResultStreamOut is result NurseShift.NurseShiftResult
   handler NursingContextBoundary is {
+    on recordPatientLocations: command NurseShift.RecordPatientLocations is {
+      send recordPatientLocations to outlet NursingContext.NurseShiftCommandStreamOut
+    }
     on startShift: command NurseShift.StartShift is {
       send startShift to outlet NursingContext.NurseShiftCommandStreamOut
     }
@@ -133,12 +141,13 @@ context NursingContext as router is {
     }
   }
   adaptor ToADTService to context ADTService as router is { 
-    outlet ToADTServiceToNursingContext is command NurseShift.AssignPatients
+    outlet ToADTServiceToNursingContext is type ToADTServiceCommand
     inlet ToADTServiceIn is type NurseShiftEvent    inlet ToADTServiceReplies is result ADTService.CensusList    outlet ToADTServiceOut is type ADTService.ADTServiceRequest
     handler ToADTServiceHandler is {
       on patientsAssigned: event NurseShift.PatientsAssigned is {
         let askAnswer: type ADTService.CensusList = ask query ADTService.GetPatientLocation of context ADTService
         do "assigned patients needing to know which beds they are in"
+        send command NurseShift.RecordPatientLocations(shiftId = patientsAssigned.shiftId, patients = prompt("the patients of this record patient locations")) to outlet NursingContext.ToADTService.ToADTServiceToNursingContext
       }
       on shiftStarted: event NurseShift.ShiftStarted is {
         let askAnswer: type ADTService.CensusList = ask query ADTService.GetUnitCensus of context ADTService
@@ -896,6 +905,9 @@ context NursingContext as router is {
       on handoffCompleted: event HandoffCompleted is {
         tell command NursingContext.NursingRepository.PersistHandoffCompleted(shiftId = handoffCompleted.shiftId) to repository NursingContext.NursingRepository
       }
+      on patientLocationsRecorded: event NurseShift.PatientLocationsRecorded is {
+        do "a patient locations recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains nurse-patient ratio projections"
       described as {
@@ -1051,6 +1063,9 @@ context NursingContext as router is {
       on taskCreated: event TaskCreated is {
         tell command NursingContext.NursingRepository.PersistTaskCreated(shiftId = taskCreated.shiftId) to repository NursingContext.NursingRepository
       }
+      on patientLocationsRecorded: event NurseShift.PatientLocationsRecorded is {
+        do "a patient locations recorded changes nothing this projector keeps"
+      }
       on taskCompleted: event TaskCompleted is {
         tell command NursingContext.NursingRepository.PersistTaskCompleted(shiftId = taskCompleted.shiftId) to repository NursingContext.NursingRepository
       }
@@ -1185,6 +1200,9 @@ context NursingContext as router is {
       on handoffInitiated: event HandoffInitiated is {
         tell command NursingContext.NursingRepository.PersistHandoffInitiated(shiftId = handoffInitiated.shiftId) to repository NursingContext.NursingRepository
       }
+      on patientLocationsRecorded: event NurseShift.PatientLocationsRecorded is {
+        do "a patient locations recorded changes nothing this projector keeps"
+      }
       on handoffCompleted: event HandoffCompleted is {
         tell command NursingContext.NursingRepository.PersistHandoffCompleted(shiftId = handoffCompleted.shiftId) to repository NursingContext.NursingRepository
       }
@@ -1203,7 +1221,7 @@ context NursingContext as router is {
     }
   }
   type NurseShiftEvent is one of {
-    NursingContext.NurseShift.ShiftStarted or NursingContext.NurseShift.PatientsAssigned or NursingContext.NurseShift.TaskCreated or NursingContext.NurseShift.TaskCompleted or NursingContext.NurseShift.TaskHeld or NursingContext.NurseShift.AssessmentDocumented or NursingContext.NurseShift.VitalsRecorded or NursingContext.NurseShift.HandoffInitiated or NursingContext.NurseShift.HandoffCompleted
+    NursingContext.NurseShift.ShiftStarted or NursingContext.NurseShift.PatientsAssigned or NursingContext.NurseShift.TaskCreated or NursingContext.NurseShift.TaskCompleted or NursingContext.NurseShift.TaskHeld or NursingContext.NurseShift.AssessmentDocumented or NursingContext.NurseShift.VitalsRecorded or NursingContext.NurseShift.HandoffInitiated or NursingContext.NurseShift.HandoffCompleted or NursingContext.NurseShift.PatientLocationsRecorded
   } with {
     briefly "Nurse shift events"
     described as {
@@ -1277,6 +1295,9 @@ context NursingContext as router is {
       }
       on taskHeld: event NurseShift.TaskHeld is {
         send taskHeld to outlet NurseShiftEventSplitToToMedicationAdministration
+      }
+      on patientLocationsRecorded: event NurseShift.PatientLocationsRecorded is {
+        send patientLocationsRecorded to outlet NurseShiftEventSplitToToMedicationAdministration
       }
       on other is {
         error "Unexpected message for processor NurseShiftEventSplit"

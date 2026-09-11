@@ -1,5 +1,11 @@
 // Warehouse Context - Bounded context for warehouse operations
 context WarehouseContext as router is {
+  inlet WarehouseContextFromToProductCatalogContext is command Inventory.RecordProductDetails with {
+    briefly "What ToProductCatalogContext makes of the answers it gets"
+  }
+  connector 'ToProductCatalogContext Intake' is from outlet WarehouseContext.ToProductCatalogContext.ToProductCatalogContextToWarehouseContext to inlet WarehouseContext.WarehouseContextFromToProductCatalogContext with {
+    briefly "Answers translated by ToProductCatalogContext, on their way in"
+  }
   type FromOrderManagementContextCommand is one of {
     Inventory.ReleaseReservation or Inventory.ReserveInventory
   } with {
@@ -20,6 +26,9 @@ context WarehouseContext as router is {
   inlet InventoryCommandStreamIn is type InventoryCommand  outlet InventoryCommandStreamOut is type InventoryCommand
   inlet StockItemResultStreamIn is result Inventory.InventoryEntityResult  outlet StockItemResultStreamOut is result Inventory.InventoryEntityResult
   handler WarehouseContextBoundary is {
+    on recordProductDetails: command Inventory.RecordProductDetails is {
+      forward recordProductDetails to outlet WarehouseContext.InventoryCommandStreamOut
+    }
     on receiveInventory: command Inventory.ReceiveInventory is {
       forward receiveInventory to outlet WarehouseContext.InventoryCommandStreamOut
     }
@@ -113,12 +122,14 @@ context WarehouseContext as router is {
       |The model's side of the OrderManagementContext conversation.
     }
   }
-  adaptor ToProductCatalogContext to context ProductCatalogContext as merge is { 
+  adaptor ToProductCatalogContext to context ProductCatalogContext as router is { 
+    outlet ToProductCatalogContextToWarehouseContext is command Inventory.RecordProductDetails
     inlet ToProductCatalogContextIn is type InventoryEvent    inlet ToProductCatalogContextReplies is result ProductCatalogContext.ProductDetailsResult    outlet ToProductCatalogContextOut is query ProductCatalogContext.GetProductDetails
     handler ToProductCatalogContextHandler is {
       on inventoryReceived: event Inventory.InventoryReceived is {
         let askAnswer: type ProductCatalogContext.ProductDetailsResult = ask query ProductCatalogContext.GetProductDetails of context ProductCatalogContext
         do "received stock needing the catalogue's dimensions and handling rules"
+        send command Inventory.RecordProductDetails(inventoryId = inventoryReceived.inventoryId, productName = prompt("the product name of this record product details"), sku = prompt("the sku of this record product details"), weight = prompt("the weight of this record product details")) to outlet WarehouseContext.ToProductCatalogContext.ToProductCatalogContextToWarehouseContext
       }
       on other is {
         error "Unexpected message for adaptor ToProductCatalogContext"
@@ -704,6 +715,9 @@ context WarehouseContext as router is {
       on inventoryReleasedFromQuarantine: event Inventory.InventoryReleasedFromQuarantine is {
         tell command WarehouseContext.InventoryRepository.PersistInventoryReleasedFromQuarantine(inventoryId = inventoryReleasedFromQuarantine.inventoryId) to repository WarehouseContext.InventoryRepository
       }
+      on productDetailsRecorded: event Inventory.ProductDetailsRecorded is {
+        do "a product details recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Processes events into read-optimized projections"
       described as {
@@ -721,7 +735,7 @@ context WarehouseContext as router is {
     }
   }
   type InventoryEvent is one of {
-    WarehouseContext.Inventory.InventoryReceived or WarehouseContext.Inventory.InventoryShipped or WarehouseContext.Inventory.InventoryAdjusted or WarehouseContext.Inventory.InventoryQuarantined or WarehouseContext.Inventory.InventoryReleasedFromQuarantine or WarehouseContext.Inventory.InventoryReserved or WarehouseContext.Inventory.InventoryTransferred or WarehouseContext.Inventory.LocationUpdated or WarehouseContext.Inventory.ReservationReleased
+    WarehouseContext.Inventory.InventoryReceived or WarehouseContext.Inventory.InventoryShipped or WarehouseContext.Inventory.InventoryAdjusted or WarehouseContext.Inventory.InventoryQuarantined or WarehouseContext.Inventory.InventoryReleasedFromQuarantine or WarehouseContext.Inventory.InventoryReserved or WarehouseContext.Inventory.InventoryTransferred or WarehouseContext.Inventory.LocationUpdated or WarehouseContext.Inventory.ReservationReleased or WarehouseContext.Inventory.ProductDetailsRecorded
   } with {
     briefly "Inventory event union"
     described as {
@@ -770,6 +784,10 @@ context WarehouseContext as router is {
       on inventoryReleasedFromQuarantine: event Inventory.InventoryReleasedFromQuarantine is {
         send inventoryReleasedFromQuarantine to outlet InventoryEventSplitToInventoryProjector
         tell inventoryReleasedFromQuarantine to entity WarehouseContext.Inventory
+      }
+      on productDetailsRecorded: event Inventory.ProductDetailsRecorded is {
+        send productDetailsRecorded to outlet InventoryEventSplitToInventoryProjector
+        tell productDetailsRecorded to entity WarehouseContext.Inventory
       }
       on other is {
         error "Unexpected message for processor InventoryEventSplit"

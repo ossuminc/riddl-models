@@ -1,5 +1,11 @@
 // Livestock Management - Livestock Context
 context LivestockContext as router is {
+  inlet LivestockContextFromToMarketExchange is command LivestockAnimal.RecordSaleValuation with {
+    briefly "What ToMarketExchange makes of the answers it gets"
+  }
+  connector 'ToMarketExchange Intake' is from outlet LivestockContext.ToMarketExchange.ToMarketExchangeToLivestockContext to inlet LivestockContext.LivestockContextFromToMarketExchange with {
+    briefly "Answers translated by ToMarketExchange, on their way in"
+  }
   inlet LivestockContextFromToVeterinarySystem is command LivestockAnimal.UpdateHealthStatus with {
     briefly "What ToVeterinarySystem makes of the answers it gets"
   }
@@ -9,6 +15,9 @@ context LivestockContext as router is {
   inlet LivestockAnimalCommandStreamIn is type LivestockAnimalCommand  outlet LivestockAnimalCommandStreamOut is type LivestockAnimalCommand
   inlet LivestockAnimalResultStreamIn is result LivestockAnimal.LivestockAnimalResult  outlet LivestockAnimalResultStreamOut is result LivestockAnimal.LivestockAnimalResult
   handler LivestockContextBoundary is {
+    on recordSaleValuation: command LivestockAnimal.RecordSaleValuation is {
+      send recordSaleValuation to outlet LivestockContext.LivestockAnimalCommandStreamOut
+    }
     on registerAnimal: command LivestockAnimal.RegisterAnimal is {
       send registerAnimal to outlet LivestockContext.LivestockAnimalCommandStreamOut
     }
@@ -70,12 +79,14 @@ context LivestockContext as router is {
       |The model's side of the MarketExchange conversation.
     }
   }
-  adaptor ToMarketExchange to context MarketExchange as merge is { 
+  adaptor ToMarketExchange to context MarketExchange as router is { 
+    outlet ToMarketExchangeToLivestockContext is command LivestockAnimal.RecordSaleValuation
     inlet ToMarketExchangeIn is type LivestockAnimalEvent    inlet ToMarketExchangeReplies is result MarketExchange.MarketPrices    outlet ToMarketExchangeOut is type MarketExchange.MarketExchangeRequest
     handler ToMarketExchangeHandler is {
       on animalSold: event LivestockAnimal.AnimalSold is {
         let askAnswer: type MarketExchange.MarketPrices = ask query MarketExchange.GetMarketPrices of context MarketExchange
         do "a sale needing the day's price to value it against"
+        send command LivestockAnimal.RecordSaleValuation(animalId = animalSold.animalId, averagePrice = prompt("the average price of this record sale valuation"), pricePerKg = prompt("the price per kg of this record sale valuation")) to outlet LivestockContext.ToMarketExchange.ToMarketExchangeToLivestockContext
       }
       on weightRecorded: event LivestockAnimal.WeightRecorded is {
         let item0: type MarketExchange.ListAnimalForSale = prompt("translate the weightRecorded event into a ListAnimalForSale, weight being what makes an animal saleable and prices it")
@@ -483,6 +494,9 @@ context LivestockContext as router is {
         tell command LivestockContext.LivestockRepository.PersistDeathRecorded(animalId = deathRecorded.animalId) to repository LivestockContext.LivestockRepository
         do "Increment deceased and decrement active"
       }
+      on saleValuationRecorded: event LivestockAnimal.SaleValuationRecorded is {
+        do "a sale valuation recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains herd metrics"
       described as {
@@ -497,7 +511,7 @@ context LivestockContext as router is {
   }
   // ---- Event publication for LivestockAnimal ----
   type LivestockAnimalEvent is one of {
-    LivestockContext.LivestockAnimal.AnimalRegistered or LivestockContext.LivestockAnimal.WeightRecorded or LivestockContext.LivestockAnimal.VetVisitRecorded or LivestockContext.LivestockAnimal.HealthStatusUpdated or LivestockContext.LivestockAnimal.BreedingRecorded or LivestockContext.LivestockAnimal.FeedingRecorded or LivestockContext.LivestockAnimal.HerdTransferred or LivestockContext.LivestockAnimal.AnimalSold or LivestockContext.LivestockAnimal.DeathRecorded
+    LivestockContext.LivestockAnimal.AnimalRegistered or LivestockContext.LivestockAnimal.WeightRecorded or LivestockContext.LivestockAnimal.VetVisitRecorded or LivestockContext.LivestockAnimal.HealthStatusUpdated or LivestockContext.LivestockAnimal.BreedingRecorded or LivestockContext.LivestockAnimal.FeedingRecorded or LivestockContext.LivestockAnimal.HerdTransferred or LivestockContext.LivestockAnimal.AnimalSold or LivestockContext.LivestockAnimal.DeathRecorded or LivestockContext.LivestockAnimal.SaleValuationRecorded
   } with {
     briefly "LivestockAnimal event alternation"
     described as {
@@ -549,6 +563,10 @@ context LivestockContext as router is {
       on deathRecorded: event LivestockAnimal.DeathRecorded is {
         send deathRecorded to outlet LivestockAnimalEventSplitToHerdMetrics
         tell deathRecorded to entity LivestockContext.LivestockAnimal
+      }
+      on saleValuationRecorded: event LivestockAnimal.SaleValuationRecorded is {
+        send saleValuationRecorded to outlet LivestockAnimalEventSplitToHerdMetrics
+        tell saleValuationRecorded to entity LivestockContext.LivestockAnimal
       }
       on other is {
         error "Unexpected message for processor LivestockAnimalEventSplit"

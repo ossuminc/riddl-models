@@ -1,6 +1,11 @@
 // Farm Management - Farm Context
 context FarmContext as router is {
-  inlet FarmContextFromToMarketPricing is command FarmField.PlanHarvest with {
+  type ToMarketPricingCommand is one of {
+    FarmField.PlanHarvest or FarmField.RecordHarvestValue
+  } with {
+    briefly "What ToMarketPricing turns its answers into"
+  }
+  inlet FarmContextFromToMarketPricing is type ToMarketPricingCommand with {
     briefly "What ToMarketPricing makes of the answers it gets"
   }
   connector 'ToMarketPricing Intake' is from outlet FarmContext.ToMarketPricing.ToMarketPricingToFarmContext to inlet FarmContext.FarmContextFromToMarketPricing with {
@@ -20,6 +25,9 @@ context FarmContext as router is {
   inlet FarmFieldCommandStreamIn is type FarmFieldCommand  outlet FarmFieldCommandStreamOut is type FarmFieldCommand
   inlet FarmFieldResultStreamIn is result FarmField.FarmFieldResult  outlet FarmFieldResultStreamOut is result FarmField.FarmFieldResult
   handler FarmContextBoundary is {
+    on recordHarvestValue: command FarmField.RecordHarvestValue is {
+      send recordHarvestValue to outlet FarmContext.FarmFieldCommandStreamOut
+    }
     on createField: command FarmField.CreateField is {
       send createField to outlet FarmContext.FarmFieldCommandStreamOut
     }
@@ -68,12 +76,13 @@ context FarmContext as router is {
     }
   }
   connector 'FarmFieldCommand Stream Intake' is from outlet FarmContext.FarmFieldCommandStreamOut to inlet FarmContext.FarmField.FarmFieldCommands  connector 'FarmFieldResult Stream Egress' is from outlet FarmContext.FarmRepository.FarmRepositoryResponses to inlet FarmContext.FarmFieldResultStreamIn  adaptor ToMarketPricing to context MarketPricing as router is { 
-    outlet ToMarketPricingToFarmContext is command FarmField.PlanHarvest
+    outlet ToMarketPricingToFarmContext is type ToMarketPricingCommand
     inlet ToMarketPricingIn is type FarmFieldEvent    inlet ToMarketPricingReplies is type MarketPricing.MarketPricingReply    outlet ToMarketPricingOut is type MarketPricing.MarketPricingRequest
     handler ToMarketPricingHandler is {
       on harvestRecorded: event FarmField.HarvestRecorded is {
         let askAnswer: type MarketPricing.CropPrice = ask query MarketPricing.GetCropPrice of context MarketPricing
         do "a recorded harvest needing today's price to value it"
+        send command FarmField.RecordHarvestValue(fieldId = harvestRecorded.fieldId, pricePerKg = prompt("the price per kg of this record harvest value"), currency = prompt("the currency of this record harvest value"), asOfDate = prompt("the as of date of this record harvest value")) to outlet FarmContext.ToMarketPricing.ToMarketPricingToFarmContext
       }
       on harvestPlanned: event FarmField.HarvestPlanned is {
         let askAnswer: type MarketPricing.PriceForecast = ask query MarketPricing.GetPriceForecast of context MarketPricing
@@ -517,6 +526,9 @@ context FarmContext as router is {
         tell command FarmContext.FarmRepository.PersistFieldSetFallow(fieldId = fieldSetFallow.fieldId) to repository FarmContext.FarmRepository
         do "Increment fields fallow count"
       }
+      on harvestValueRecorded: event FarmField.HarvestValueRecorded is {
+        do "a harvest value recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains farm metrics"
       described as {
@@ -531,7 +543,7 @@ context FarmContext as router is {
   }
   // ---- Event publication for FarmField ----
   type FarmFieldEvent is one of {
-    FarmContext.FarmField.FieldCreated or FarmContext.FarmField.PlantingScheduled or FarmContext.FarmField.PlantingRecorded or FarmContext.FarmField.SoilReadingRecorded or FarmContext.FarmField.IrrigationScheduled or FarmContext.FarmField.IrrigationCompleted or FarmContext.FarmField.EquipmentAssigned or FarmContext.FarmField.EquipmentReleased or FarmContext.FarmField.HarvestPlanned or FarmContext.FarmField.HarvestRecorded or FarmContext.FarmField.FieldSetFallow
+    FarmContext.FarmField.FieldCreated or FarmContext.FarmField.PlantingScheduled or FarmContext.FarmField.PlantingRecorded or FarmContext.FarmField.SoilReadingRecorded or FarmContext.FarmField.IrrigationScheduled or FarmContext.FarmField.IrrigationCompleted or FarmContext.FarmField.EquipmentAssigned or FarmContext.FarmField.EquipmentReleased or FarmContext.FarmField.HarvestPlanned or FarmContext.FarmField.HarvestRecorded or FarmContext.FarmField.FieldSetFallow or FarmContext.FarmField.HarvestValueRecorded
   } with {
     briefly "FarmField event alternation"
     described as {
@@ -591,6 +603,10 @@ context FarmContext as router is {
       on fieldSetFallow: event FarmField.FieldSetFallow is {
         send fieldSetFallow to outlet FarmFieldEventSplitToFarmMetrics
         tell fieldSetFallow to entity FarmContext.FarmField
+      }
+      on harvestValueRecorded: event FarmField.HarvestValueRecorded is {
+        send harvestValueRecorded to outlet FarmFieldEventSplitToFarmMetrics
+        tell harvestValueRecorded to entity FarmContext.FarmField
       }
       on other is {
         error "Unexpected message for processor FarmFieldEventSplit"

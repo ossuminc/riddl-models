@@ -1,5 +1,11 @@
 // Fleet Management - Vehicle Context
 context VehicleContext as router is {
+  inlet VehicleContextFromToInsuranceService is command Vehicle.RecordInsuranceCover with {
+    briefly "What ToInsuranceService makes of the answers it gets"
+  }
+  connector 'ToInsuranceService Intake' is from outlet VehicleContext.ToInsuranceService.ToInsuranceServiceToVehicleContext to inlet VehicleContext.VehicleContextFromToInsuranceService with {
+    briefly "Answers translated by ToInsuranceService, on their way in"
+  }
   type ToDriverManagementServiceCommand is one of {
     Vehicle.AssignDriver or Vehicle.UnassignDriver
   } with {
@@ -38,6 +44,9 @@ context VehicleContext as router is {
   inlet VehicleCommandStreamIn is type VehicleCommand  outlet VehicleCommandStreamOut is type VehicleCommand
   inlet VehicleResultStreamIn is result Vehicle.VehicleResult  outlet VehicleResultStreamOut is result Vehicle.VehicleResult
   handler VehicleContextBoundary is {
+    on recordInsuranceCover: command Vehicle.RecordInsuranceCover is {
+      send recordInsuranceCover to outlet VehicleContext.VehicleCommandStreamOut
+    }
     on registerVehicle: command Vehicle.RegisterVehicle is {
       send registerVehicle to outlet VehicleContext.VehicleCommandStreamOut
     }
@@ -300,12 +309,14 @@ context VehicleContext as router is {
       |The model's side of the InsuranceService conversation.
     }
   }
-  adaptor ToInsuranceService to context InsuranceService as merge is { 
+  adaptor ToInsuranceService to context InsuranceService as router is { 
+    outlet ToInsuranceServiceToVehicleContext is command Vehicle.RecordInsuranceCover
     inlet ToInsuranceServiceIn is type VehicleEvent    inlet ToInsuranceServiceReplies is result InsuranceService.VehicleCoverage    outlet ToInsuranceServiceOut is type InsuranceService.InsuranceServiceRequest
     handler ToInsuranceServiceHandler is {
       on vehicleRegistered: event Vehicle.VehicleRegistered is {
         let askAnswer: type InsuranceService.VehicleCoverage = ask query InsuranceService.GetVehicleCoverage of context InsuranceService
         do "a newly registered vehicle needing the cover that applies to it"
+        send command Vehicle.RecordInsuranceCover(vehicleId = vehicleRegistered.vehicleId, policyNumber = prompt("the policy number of this record insurance cover"), coverageType = prompt("the coverage type of this record insurance cover"), expirationDate = prompt("the expiration date of this record insurance cover")) to outlet VehicleContext.ToInsuranceService.ToInsuranceServiceToVehicleContext
       }
       on alertRaised: event Vehicle.AlertRaised is {
         let item0: type InsuranceService.FileIncidentReport = prompt("translate the alertRaised event into a FileIncidentReport, a raised alert being what an insurer is told about")
@@ -847,6 +858,9 @@ context VehicleContext as router is {
       on maintenanceReminderRaised: event Vehicle.MaintenanceReminderRaised is {
         do "a maintenance reminder raised changes nothing this projection keeps"
       }
+      on insuranceCoverRecorded: event Vehicle.InsuranceCoverRecorded is {
+        do "a insurance cover recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains fleet analytics"
       described as {
@@ -861,7 +875,7 @@ context VehicleContext as router is {
   }
   // ---- Event publication for Vehicle ----
   type VehicleEvent is one of {
-    VehicleContext.Vehicle.VehicleRegistered or VehicleContext.Vehicle.LocationUpdated or VehicleContext.Vehicle.OdometerUpdated or VehicleContext.Vehicle.FuelLevelUpdated or VehicleContext.Vehicle.DriverAssigned or VehicleContext.Vehicle.DriverUnassigned or VehicleContext.Vehicle.TripStarted or VehicleContext.Vehicle.TripEnded or VehicleContext.Vehicle.MaintenanceScheduled or VehicleContext.Vehicle.MaintenanceStarted or VehicleContext.Vehicle.MaintenanceCompleted or VehicleContext.Vehicle.AlertRaised or VehicleContext.Vehicle.AlertAcknowledged or VehicleContext.Vehicle.VehicleDecommissioned or Vehicle.MaintenanceReminderRaised
+    VehicleContext.Vehicle.VehicleRegistered or VehicleContext.Vehicle.LocationUpdated or VehicleContext.Vehicle.OdometerUpdated or VehicleContext.Vehicle.FuelLevelUpdated or VehicleContext.Vehicle.DriverAssigned or VehicleContext.Vehicle.DriverUnassigned or VehicleContext.Vehicle.TripStarted or VehicleContext.Vehicle.TripEnded or VehicleContext.Vehicle.MaintenanceScheduled or VehicleContext.Vehicle.MaintenanceStarted or VehicleContext.Vehicle.MaintenanceCompleted or VehicleContext.Vehicle.AlertRaised or VehicleContext.Vehicle.AlertAcknowledged or VehicleContext.Vehicle.VehicleDecommissioned or Vehicle.MaintenanceReminderRaised or VehicleContext.Vehicle.InsuranceCoverRecorded
   } with {
     briefly "Vehicle event alternation"
     described as {
@@ -947,6 +961,10 @@ context VehicleContext as router is {
       on maintenanceReminderRaised: event Vehicle.MaintenanceReminderRaised is {
         send maintenanceReminderRaised to outlet VehicleEventSplitToToAlertNotificationService
         send maintenanceReminderRaised to outlet VehicleEventSplitToToMaintenanceServiceProvider
+      }
+      on insuranceCoverRecorded: event Vehicle.InsuranceCoverRecorded is {
+        send insuranceCoverRecorded to outlet VehicleEventSplitToToAlertNotificationService
+        send insuranceCoverRecorded to outlet VehicleEventSplitToToMaintenanceServiceProvider
       }
       on other is {
         error "Unexpected message for processor VehicleEventSplit"

@@ -1,5 +1,11 @@
 // Apparel Manufacturing - Apparel Context
 context ApparelContext as router is {
+  inlet ApparelContextFromToOrderManagement is command CutOrder.RecordSalesOrder with {
+    briefly "What ToOrderManagement makes of the answers it gets"
+  }
+  connector 'ToOrderManagement Intake' is from outlet ApparelContext.ToOrderManagement.ToOrderManagementToApparelContext to inlet ApparelContext.ApparelContextFromToOrderManagement with {
+    briefly "Answers translated by ToOrderManagement, on their way in"
+  }
   type ToFabricInventoryCommand is one of {
     CutOrder.CutFabric or CutOrder.GenerateMarker
   } with {
@@ -60,6 +66,9 @@ context ApparelContext as router is {
   inlet CutOrderCommandStreamIn is type CutOrderCommand  outlet CutOrderCommandStreamOut is type CutOrderCommand
   inlet CutOrderResultStreamIn is result CutOrder.CutOrderResult  outlet CutOrderResultStreamOut is result CutOrder.CutOrderResult
   handler ApparelContextBoundary is {
+    on recordSalesOrder: command CutOrder.RecordSalesOrder is {
+      send recordSalesOrder to outlet ApparelContext.CutOrderCommandStreamOut
+    }
     on createCutOrder: command CutOrder.CreateCutOrder is {
       send createCutOrder to outlet ApparelContext.CutOrderCommandStreamOut
     }
@@ -243,12 +252,14 @@ context ApparelContext as router is {
       |The model's side of the OrderManagement conversation.
     }
   }
-  adaptor ToOrderManagement to context OrderManagement as merge is { 
+  adaptor ToOrderManagement to context OrderManagement as router is { 
+    outlet ToOrderManagementToApparelContext is command CutOrder.RecordSalesOrder
     inlet ToOrderManagementIn is type CutOrderEvent    inlet ToOrderManagementReplies is result OrderManagement.SalesOrderInfo    outlet ToOrderManagementOut is type OrderManagement.OrderManagementCommand
     handler ToOrderManagementHandler is {
       on cutOrderCreated: event CutOrder.CutOrderCreated is {
         let askAnswer: type OrderManagement.SalesOrderInfo = ask query OrderManagement.GetSalesOrder of context OrderManagement
         do "and the sales order it is cut against"
+        send command CutOrder.RecordSalesOrder(cutOrderId = cutOrderCreated.cutOrderId, customerName = prompt("the customer name of this record sales order"), requestedShipDate = prompt("the requested ship date of this record sales order"), sizeBreakdown = prompt("the size breakdown of this record sales order")) to outlet ApparelContext.ToOrderManagement.ToOrderManagementToApparelContext
       }
       on sewingCompleted: event CutOrder.SewingCompleted is {
         let item0: type OrderManagement.UpdateProductionStatus = prompt("translate the sewingCompleted event into a UpdateProductionStatus, sewing being the milestone the buyer watches")
@@ -789,6 +800,9 @@ context ApparelContext as router is {
         tell command ApparelContext.CutOrderRepository.PersistTrimmingCompleted(cutOrderId = trimmingCompleted.cutOrderId) to repository ApparelContext.CutOrderRepository
         do "Update trim operation efficiency"
       }
+      on salesOrderRecorded: event CutOrder.SalesOrderRecorded is {
+        do "a sales order recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains SAM efficiency metrics"
       described as {
@@ -937,6 +951,9 @@ context ApparelContext as router is {
       on garmentsPacked: event CutOrder.GarmentsPacked is {
         tell command ApparelContext.CutOrderRepository.PersistGarmentsPacked(cutOrderId = garmentsPacked.cutOrderId) to repository ApparelContext.CutOrderRepository
         do "Update packed bundles and cycle time"
+      }
+      on salesOrderRecorded: event CutOrder.SalesOrderRecorded is {
+        do "a sales order recorded changes nothing this projector keeps"
       }
     } with {
       briefly "Maintains bundle throughput metrics"
@@ -1094,6 +1111,9 @@ context ApparelContext as router is {
       on trimmingCompleted: event CutOrder.TrimmingCompleted is {
         tell command ApparelContext.CutOrderRepository.PersistTrimmingCompleted(cutOrderId = trimmingCompleted.cutOrderId) to repository ApparelContext.CutOrderRepository
         do "Update operator trim metrics"
+      }
+      on salesOrderRecorded: event CutOrder.SalesOrderRecorded is {
+        do "a sales order recorded changes nothing this projector keeps"
       }
       on qualityCheckRecorded: event CutOrder.QualityCheckRecorded is {
         tell command ApparelContext.CutOrderRepository.PersistQualityCheckRecorded(cutOrderId = qualityCheckRecorded.cutOrderId) to repository ApparelContext.CutOrderRepository
@@ -1269,6 +1289,9 @@ context ApparelContext as router is {
         tell command ApparelContext.CutOrderRepository.PersistQualityCheckRecorded(cutOrderId = qualityCheckRecorded.cutOrderId) to repository ApparelContext.CutOrderRepository
         do "Update quality metrics and defect tracking"
       }
+      on salesOrderRecorded: event CutOrder.SalesOrderRecorded is {
+        do "a sales order recorded changes nothing this projector keeps"
+      }
       on sewingCompleted: event CutOrder.SewingCompleted is {
         tell command ApparelContext.CutOrderRepository.PersistSewingCompleted(cutOrderId = sewingCompleted.cutOrderId) to repository ApparelContext.CutOrderRepository
         do "Update defect counts from sewing"
@@ -1287,7 +1310,7 @@ context ApparelContext as router is {
   }
   // ---- Event publication for CutOrder ----
   type CutOrderEvent is one of {
-    ApparelContext.CutOrder.CutOrderCreated or ApparelContext.CutOrder.MarkerGenerated or ApparelContext.CutOrder.FabricCut or ApparelContext.CutOrder.BundlesCreated or ApparelContext.CutOrder.BundleAssigned or ApparelContext.CutOrder.SewingCompleted or ApparelContext.CutOrder.TrimmingCompleted or ApparelContext.CutOrder.QualityCheckRecorded or ApparelContext.CutOrder.MachineBreakdownRecorded or ApparelContext.CutOrder.GarmentsPacked or ApparelContext.CutOrder.CutOrderCancelled
+    ApparelContext.CutOrder.CutOrderCreated or ApparelContext.CutOrder.MarkerGenerated or ApparelContext.CutOrder.FabricCut or ApparelContext.CutOrder.BundlesCreated or ApparelContext.CutOrder.BundleAssigned or ApparelContext.CutOrder.SewingCompleted or ApparelContext.CutOrder.TrimmingCompleted or ApparelContext.CutOrder.QualityCheckRecorded or ApparelContext.CutOrder.MachineBreakdownRecorded or ApparelContext.CutOrder.GarmentsPacked or ApparelContext.CutOrder.CutOrderCancelled or ApparelContext.CutOrder.SalesOrderRecorded
   } with {
     briefly "CutOrder event alternation"
     described as {
@@ -1393,6 +1416,9 @@ context ApparelContext as router is {
       }
       on machineBreakdownRecorded: event CutOrder.MachineBreakdownRecorded is {
         send machineBreakdownRecorded to outlet CutOrderEventSplitToToMachineMaintenance
+      }
+      on salesOrderRecorded: event CutOrder.SalesOrderRecorded is {
+        send salesOrderRecorded to outlet CutOrderEventSplitToToMachineMaintenance
       }
       on other is {
         error "Unexpected message for processor CutOrderEventSplit"

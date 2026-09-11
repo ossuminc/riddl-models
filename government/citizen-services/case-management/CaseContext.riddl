@@ -1,5 +1,11 @@
 // Case Management - Case Context
 context CaseContext as router is {
+  inlet CaseContextFromToDocumentManagementService is command Case.AttachRetrievedDocument with {
+    briefly "What ToDocumentManagementService makes of the answers it gets"
+  }
+  connector 'ToDocumentManagementService Intake' is from outlet CaseContext.ToDocumentManagementService.ToDocumentManagementServiceToCaseContext to inlet CaseContext.CaseContextFromToDocumentManagementService with {
+    briefly "Answers translated by ToDocumentManagementService, on their way in"
+  }
   inlet CaseContextFromToBenefitsIntegrationService is command Case.DetermineEligibility with {
     briefly "What ToBenefitsIntegrationService makes of the answers it gets"
   }
@@ -33,6 +39,9 @@ context CaseContext as router is {
   inlet CaseCommandStreamIn is type CaseCommand  outlet CaseCommandStreamOut is type CaseCommand
   inlet CaseQueryResultStreamIn is result Case.CaseQueryResult  outlet CaseQueryResultStreamOut is result Case.CaseQueryResult
   handler CaseContextBoundary is {
+    on attachRetrievedDocument: command Case.AttachRetrievedDocument is {
+      send attachRetrievedDocument to outlet CaseContext.CaseCommandStreamOut
+    }
     on openCase: command Case.OpenCase is {
       send openCase to outlet CaseContext.CaseCommandStreamOut
     }
@@ -218,7 +227,8 @@ context CaseContext as router is {
       |The model's side of the DocumentManagementService conversation.
     }
   }
-  adaptor ToDocumentManagementService to context DocumentManagementService as merge is { 
+  adaptor ToDocumentManagementService to context DocumentManagementService as router is { 
+    outlet ToDocumentManagementServiceToCaseContext is command Case.AttachRetrievedDocument
     inlet ToDocumentManagementServiceIn is type CaseEvent    inlet ToDocumentManagementServiceReplies is result DocumentManagementService.DocumentResult    outlet ToDocumentManagementServiceOut is type DocumentManagementService.DocumentManagementServiceRequest
     handler ToDocumentManagementServiceHandler is {
       on documentUploaded: event DocumentUploaded is {
@@ -228,6 +238,7 @@ context CaseContext as router is {
       on servicesRequested: event Case.ServicesRequested is {
         let askAnswer: type DocumentManagementService.DocumentResult = ask query DocumentManagementService.RetrieveDocument of context DocumentManagementService
         do "a service request needing the documents already filed on the case"
+        send command Case.AttachRetrievedDocument(caseId = servicesRequested.caseId, documentId = prompt("the document id of this attach retrieved document"), fileName = prompt("the file name of this attach retrieved document"), documentUrl = prompt("the document url of this attach retrieved document")) to outlet CaseContext.ToDocumentManagementService.ToDocumentManagementServiceToCaseContext
       }
       on other is {
         error "Unexpected message for adaptor ToDocumentManagementService"
@@ -1212,6 +1223,9 @@ context CaseContext as router is {
       on caseClosed: event Case.CaseClosed is {
         tell command CaseContext.CaseRepository.PersistCaseClosed(caseId = caseClosed.caseId) to repository CaseContext.CaseRepository
       }
+      on retrievedDocumentAttached: event Case.RetrievedDocumentAttached is {
+        do "a retrieved document attached changes nothing this projector keeps"
+      }
     } with {
       briefly "Processes analytics events"
       described as {
@@ -1420,6 +1434,9 @@ context CaseContext as router is {
       on appealFiled: event Case.AppealFiled is {
         tell command CaseContext.CaseRepository.PersistAppealFiled(caseId = appealFiled.caseId) to repository CaseContext.CaseRepository
       }
+      on retrievedDocumentAttached: event Case.RetrievedDocumentAttached is {
+        do "a retrieved document attached changes nothing this projector keeps"
+      }
       on appealResolved: event Case.AppealResolved is {
         tell command CaseContext.CaseRepository.PersistAppealResolved(caseId = appealResolved.caseId) to repository CaseContext.CaseRepository
       }
@@ -1437,7 +1454,7 @@ context CaseContext as router is {
   }
   // ---- Event publication for Case ----
   type CaseEvent is one of {
-    CaseContext.Case.CaseOpened or CaseContext.Case.WorkerAssigned or CaseContext.Case.CitizenInfoUpdated or CaseContext.Case.HouseholdMemberAdded or CaseContext.Case.HouseholdMemberRemoved or CaseContext.Case.IncomeRecorded or CaseContext.Case.DocumentUploaded or CaseContext.Case.ServicesRequested or CaseContext.Case.EligibilityDetermined or CaseContext.Case.NoteAdded or CaseContext.Case.TaskCreated or CaseContext.Case.TaskCompleted or CaseContext.Case.ServicesApproved or CaseContext.Case.ServicesDenied or CaseContext.Case.AppealFiled or CaseContext.Case.AppealResolved or CaseContext.Case.CasePlacedOnHold or CaseContext.Case.CaseResumed or CaseContext.Case.CaseClosed or CaseContext.Case.CaseReopened
+    CaseContext.Case.CaseOpened or CaseContext.Case.WorkerAssigned or CaseContext.Case.CitizenInfoUpdated or CaseContext.Case.HouseholdMemberAdded or CaseContext.Case.HouseholdMemberRemoved or CaseContext.Case.IncomeRecorded or CaseContext.Case.DocumentUploaded or CaseContext.Case.ServicesRequested or CaseContext.Case.EligibilityDetermined or CaseContext.Case.NoteAdded or CaseContext.Case.TaskCreated or CaseContext.Case.TaskCompleted or CaseContext.Case.ServicesApproved or CaseContext.Case.ServicesDenied or CaseContext.Case.AppealFiled or CaseContext.Case.AppealResolved or CaseContext.Case.CasePlacedOnHold or CaseContext.Case.CaseResumed or CaseContext.Case.CaseClosed or CaseContext.Case.CaseReopened or CaseContext.Case.RetrievedDocumentAttached
   } with {
     briefly "Case event alternation"
     described as {
@@ -1568,6 +1585,11 @@ context CaseContext as router is {
         send caseReopened to outlet CaseEventSplitToWorkloadAnalytics
         send caseReopened to outlet CaseEventSplitToProgramStatistics
         tell caseReopened to entity CaseContext.Case
+      }
+      on retrievedDocumentAttached: event Case.RetrievedDocumentAttached is {
+        send retrievedDocumentAttached to outlet CaseEventSplitToWorkloadAnalytics
+        send retrievedDocumentAttached to outlet CaseEventSplitToProgramStatistics
+        tell retrievedDocumentAttached to entity CaseContext.Case
       }
       on other is {
         error "Unexpected message for processor CaseEventSplit"

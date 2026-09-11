@@ -1,5 +1,15 @@
 // Bill of Materials Management - BOM Context
 context BOMContext as router is {
+  type ToInventoryServiceCommand is one of {
+    BillOfMaterials.RecordBuildability or BillOfMaterials.UpdateItem
+  } with {
+    briefly "What ToInventoryService turns its answers into"
+  }
+  type ToProductDataServiceCommand is one of {
+    BillOfMaterials.RecordProductInfo or BillOfMaterials.UpdateItem
+  } with {
+    briefly "What ToProductDataService turns its answers into"
+  }
   type ToCostingServiceCommand is one of {
     BillOfMaterials.CalculateCost or BillOfMaterials.UpdateItem
   } with {
@@ -17,13 +27,13 @@ context BOMContext as router is {
   connector 'ToEngineeringChangeService Intake' is from outlet BOMContext.ToEngineeringChangeService.ToEngineeringChangeServiceToBOMContext to inlet BOMContext.BOMContextFromToEngineeringChangeService with {
     briefly "Answers translated by ToEngineeringChangeService, on their way in"
   }
-  inlet BOMContextFromToInventoryService is command BillOfMaterials.UpdateItem with {
+  inlet BOMContextFromToInventoryService is type ToInventoryServiceCommand with {
     briefly "What ToInventoryService makes of the answers it gets"
   }
   connector 'ToInventoryService Intake' is from outlet BOMContext.ToInventoryService.ToInventoryServiceToBOMContext to inlet BOMContext.BOMContextFromToInventoryService with {
     briefly "Answers translated by ToInventoryService, on their way in"
   }
-  inlet BOMContextFromToProductDataService is command BillOfMaterials.UpdateItem with {
+  inlet BOMContextFromToProductDataService is type ToProductDataServiceCommand with {
     briefly "What ToProductDataService makes of the answers it gets"
   }
   connector 'ToProductDataService Intake' is from outlet BOMContext.ToProductDataService.ToProductDataServiceToBOMContext to inlet BOMContext.BOMContextFromToProductDataService with {
@@ -44,6 +54,12 @@ context BOMContext as router is {
   inlet BillOfMaterialsCommandStreamIn is type BillOfMaterialsCommand  outlet BillOfMaterialsCommandStreamOut is type BillOfMaterialsCommand
   inlet BillOfMaterialsResultStreamIn is result BillOfMaterials.BillOfMaterialsResult  outlet BillOfMaterialsResultStreamOut is result BillOfMaterials.BillOfMaterialsResult
   handler BOMContextBoundary is {
+    on recordProductInfo: command BillOfMaterials.RecordProductInfo is {
+      send recordProductInfo to outlet BOMContext.BillOfMaterialsCommandStreamOut
+    }
+    on recordBuildability: command BillOfMaterials.RecordBuildability is {
+      send recordBuildability to outlet BOMContext.BillOfMaterialsCommandStreamOut
+    }
     on createBOM: command BillOfMaterials.CreateBOM is {
       send createBOM to outlet BOMContext.BillOfMaterialsCommandStreamOut
     }
@@ -197,7 +213,7 @@ context BOMContext as router is {
     }
   }
   adaptor ToInventoryService to context InventoryService as router is { 
-    outlet ToInventoryServiceToBOMContext is command BillOfMaterials.UpdateItem
+    outlet ToInventoryServiceToBOMContext is type ToInventoryServiceCommand
     inlet ToInventoryServiceIn is type BillOfMaterialsEvent    inlet ToInventoryServiceReplies is type InventoryService.InventoryServiceReply    outlet ToInventoryServiceOut is type InventoryService.InventoryServiceRequest
     handler ToInventoryServiceHandler is {
       on itemAdded: event BillOfMaterials.ItemAdded is {
@@ -210,6 +226,7 @@ context BOMContext as router is {
       on bOMReleased: event BillOfMaterials.BOMReleased is {
         let askAnswer: type InventoryService.BOMAvailabilityCheck = ask query InventoryService.GetMultipleComponentAvailability of context InventoryService
         do "a released BOM needing every component checked at once"
+        send command BillOfMaterials.RecordBuildability(bomId = bOMReleased.bomId, canBuild = prompt("the can build of this record buildability"), shortComponents = prompt("the short components of this record buildability"), earliestBuildDate = prompt("the earliest build date of this record buildability")) to outlet BOMContext.ToInventoryService.ToInventoryServiceToBOMContext
       }
       on other is {
         error "Unexpected message for adaptor ToInventoryService"
@@ -227,7 +244,7 @@ context BOMContext as router is {
     }
   }
   adaptor ToProductDataService to context ProductDataService as router is { 
-    outlet ToProductDataServiceToBOMContext is command BillOfMaterials.UpdateItem
+    outlet ToProductDataServiceToBOMContext is type ToProductDataServiceCommand
     inlet ToProductDataServiceIn is type BillOfMaterialsEvent    inlet ToProductDataServiceReplies is type ProductDataService.ProductDataServiceReply    outlet ToProductDataServiceOut is type ProductDataService.ProductDataServiceRequest
     handler ToProductDataServiceHandler is {
       on itemUpdated: event BillOfMaterials.ItemUpdated is {
@@ -240,6 +257,7 @@ context BOMContext as router is {
       on bOMCreated: event BillOfMaterials.BOMCreated is {
         let askAnswer: type ProductDataService.ProductInfo = ask query ProductDataService.GetProductInfo of context ProductDataService
         do "a new BOM needing the product it builds"
+        send command BillOfMaterials.RecordProductInfo(bomId = bOMCreated.bomId, productType = prompt("the product type of this record product info"), unitOfMeasure = prompt("the unit of measure of this record product info"), productStatus = prompt("the product status of this record product info")) to outlet BOMContext.ToProductDataService.ToProductDataServiceToBOMContext
       }
       on other is {
         error "Unexpected message for adaptor ToProductDataService"
@@ -703,6 +721,12 @@ context BOMContext as router is {
       on bOMObsoleted: event BillOfMaterials.BOMObsoleted is {
         tell command BOMContext.BOMRepository.PersistBOMObsoleted(bomId = bOMObsoleted.bomId) to repository BOMContext.BOMRepository
       }
+      on buildabilityRecorded: event BillOfMaterials.BuildabilityRecorded is {
+        do "a buildability recorded changes nothing this projector keeps"
+      }
+      on productInfoRecorded: event BillOfMaterials.ProductInfoRecorded is {
+        do "a product info recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains BOM analytics"
       described as {
@@ -813,6 +837,12 @@ context BOMContext as router is {
       on itemRemoved: event BillOfMaterials.ItemRemoved is {
         tell command BOMContext.BOMRepository.PersistItemRemoved(bomId = itemRemoved.bomId) to repository BOMContext.BOMRepository
       }
+      on buildabilityRecorded: event BillOfMaterials.BuildabilityRecorded is {
+        do "a buildability recorded changes nothing this projector keeps"
+      }
+      on productInfoRecorded: event BillOfMaterials.ProductInfoRecorded is {
+        do "a product info recorded changes nothing this projector keeps"
+      }
       on bOMObsoleted: event BillOfMaterials.BOMObsoleted is {
         tell command BOMContext.BOMRepository.PersistBOMObsoleted(bomId = bOMObsoleted.bomId) to repository BOMContext.BOMRepository
       }
@@ -829,7 +859,7 @@ context BOMContext as router is {
     }
   }
   type BillOfMaterialsEvent is one of {
-    BOMContext.BillOfMaterials.BOMCreated or BOMContext.BillOfMaterials.BOMReleased or BOMContext.BillOfMaterials.BOMObsoleted or BOMContext.BillOfMaterials.BOMRevised or BOMContext.BillOfMaterials.CostCalculated or BOMContext.BillOfMaterials.ItemAdded or BOMContext.BillOfMaterials.ItemRemoved or BOMContext.BillOfMaterials.ItemUpdated or BOMContext.BillOfMaterials.QuantityUpdated
+    BOMContext.BillOfMaterials.BOMCreated or BOMContext.BillOfMaterials.BOMReleased or BOMContext.BillOfMaterials.BOMObsoleted or BOMContext.BillOfMaterials.BOMRevised or BOMContext.BillOfMaterials.CostCalculated or BOMContext.BillOfMaterials.ItemAdded or BOMContext.BillOfMaterials.ItemRemoved or BOMContext.BillOfMaterials.ItemUpdated or BOMContext.BillOfMaterials.QuantityUpdated or BOMContext.BillOfMaterials.ProductInfoRecorded or BOMContext.BillOfMaterials.BuildabilityRecorded
   } with {
     briefly "BillOfMaterials event union"
     described as {
@@ -897,6 +927,18 @@ context BOMContext as router is {
         send costCalculated to outlet BillOfMaterialsEventSplitToWhereUsedProjector
         send costCalculated to outlet BillOfMaterialsEventSplitToToCostingService
         tell costCalculated to entity BOMContext.BillOfMaterials
+      }
+      on productInfoRecorded: event BillOfMaterials.ProductInfoRecorded is {
+        send productInfoRecorded to outlet BillOfMaterialsEventSplitToBOMAnalytics
+        send productInfoRecorded to outlet BillOfMaterialsEventSplitToWhereUsedProjector
+        send productInfoRecorded to outlet BillOfMaterialsEventSplitToToCostingService
+        tell productInfoRecorded to entity BOMContext.BillOfMaterials
+      }
+      on buildabilityRecorded: event BillOfMaterials.BuildabilityRecorded is {
+        send buildabilityRecorded to outlet BillOfMaterialsEventSplitToBOMAnalytics
+        send buildabilityRecorded to outlet BillOfMaterialsEventSplitToWhereUsedProjector
+        send buildabilityRecorded to outlet BillOfMaterialsEventSplitToToCostingService
+        tell buildabilityRecorded to entity BOMContext.BillOfMaterials
       }
       on other is {
         error "Unexpected message for processor BillOfMaterialsEventSplit"

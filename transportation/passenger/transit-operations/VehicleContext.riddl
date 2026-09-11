@@ -1,5 +1,11 @@
 // Transit Operations - Vehicle Context
 context VehicleContext as router is {
+  inlet VehicleContextFromToFareCollectionService is command Vehicle.RecordTripFares with {
+    briefly "What ToFareCollectionService makes of the answers it gets"
+  }
+  connector 'ToFareCollectionService Intake' is from outlet VehicleContext.ToFareCollectionService.ToFareCollectionServiceToVehicleContext to inlet VehicleContext.VehicleContextFromToFareCollectionService with {
+    briefly "Answers translated by ToFareCollectionService, on their way in"
+  }
   inlet VehicleContextFromToCADService is command Vehicle.AssignTrip with {
     briefly "What ToCADService makes of the answers it gets"
   }
@@ -26,6 +32,9 @@ context VehicleContext as router is {
   inlet VehicleCommandStreamIn is type VehicleCommand  outlet VehicleCommandStreamOut is type VehicleCommand
   inlet VehicleResultStreamIn is result Vehicle.VehicleResult  outlet VehicleResultStreamOut is result Vehicle.VehicleResult
   handler VehicleContextBoundary is {
+    on recordTripFares: command Vehicle.RecordTripFares is {
+      send recordTripFares to outlet VehicleContext.VehicleCommandStreamOut
+    }
     on registerVehicle: command Vehicle.RegisterVehicle is {
       send registerVehicle to outlet VehicleContext.VehicleCommandStreamOut
     }
@@ -196,12 +205,14 @@ context VehicleContext as router is {
       |The model's side of the FareCollectionService conversation.
     }
   }
-  adaptor ToFareCollectionService to context FareCollectionService as merge is { 
+  adaptor ToFareCollectionService to context FareCollectionService as router is { 
+    outlet ToFareCollectionServiceToVehicleContext is command Vehicle.RecordTripFares
     inlet ToFareCollectionServiceIn is type VehicleEvent    inlet ToFareCollectionServiceReplies is result FareCollectionService.VehicleFareTotalResult    outlet ToFareCollectionServiceOut is query FareCollectionService.GetVehicleFareTotal
     handler ToFareCollectionServiceHandler is {
       on tripCompleted: event Vehicle.TripCompleted is {
         let askAnswer: type FareCollectionService.VehicleFareTotalResult = ask query FareCollectionService.GetVehicleFareTotal of context FareCollectionService
         do "a completed trip needing the fares taken on it"
+        send command Vehicle.RecordTripFares(vehicleId = tripCompleted.vehicleId, tripId = tripCompleted.tripId, totalFares = prompt("the total fares of this record trip fares"), fareCount = prompt("the fare count of this record trip fares")) to outlet VehicleContext.ToFareCollectionService.ToFareCollectionServiceToVehicleContext
       }
       on other is {
         error "Unexpected message for adaptor ToFareCollectionService"
@@ -798,6 +809,9 @@ context VehicleContext as router is {
         tell command VehicleContext.VehicleRepository.PersistIncidentReported(vehicleId = incidentReported.vehicleId) to repository VehicleContext.VehicleRepository
         do "Update incident metrics"
       }
+      on tripFaresRecorded: event Vehicle.TripFaresRecorded is {
+        do "a trip fares recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains transit analytics"
       described as {
@@ -812,7 +826,7 @@ context VehicleContext as router is {
   }
   // ---- Event publication for Vehicle ----
   type VehicleEvent is one of {
-    VehicleContext.Vehicle.VehicleRegistered or VehicleContext.Vehicle.VehicleInfoUpdated or VehicleContext.Vehicle.OperatorAssigned or VehicleContext.Vehicle.TripAssigned or VehicleContext.Vehicle.LocationUpdated or VehicleContext.Vehicle.StopEventRecorded or VehicleContext.Vehicle.PassengerLoadUpdated or VehicleContext.Vehicle.IncidentReported or VehicleContext.Vehicle.TripCompleted or VehicleContext.Vehicle.VehicleStatusChanged or VehicleContext.Vehicle.VehiclePulledFromService or VehicleContext.Vehicle.VehicleReturnedToService
+    VehicleContext.Vehicle.VehicleRegistered or VehicleContext.Vehicle.VehicleInfoUpdated or VehicleContext.Vehicle.OperatorAssigned or VehicleContext.Vehicle.TripAssigned or VehicleContext.Vehicle.LocationUpdated or VehicleContext.Vehicle.StopEventRecorded or VehicleContext.Vehicle.PassengerLoadUpdated or VehicleContext.Vehicle.IncidentReported or VehicleContext.Vehicle.TripCompleted or VehicleContext.Vehicle.VehicleStatusChanged or VehicleContext.Vehicle.VehiclePulledFromService or VehicleContext.Vehicle.VehicleReturnedToService or VehicleContext.Vehicle.TripFaresRecorded
   } with {
     briefly "Vehicle event alternation"
     described as {
@@ -886,6 +900,10 @@ context VehicleContext as router is {
       on vehicleReturnedToService: event Vehicle.VehicleReturnedToService is {
         send vehicleReturnedToService to outlet VehicleEventSplitToTransitAnalytics
         tell vehicleReturnedToService to entity VehicleContext.Vehicle
+      }
+      on tripFaresRecorded: event Vehicle.TripFaresRecorded is {
+        send tripFaresRecorded to outlet VehicleEventSplitToTransitAnalytics
+        tell tripFaresRecorded to entity VehicleContext.Vehicle
       }
       on other is {
         error "Unexpected message for processor VehicleEventSplit"

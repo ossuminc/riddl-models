@@ -1,5 +1,11 @@
 // Athlete Management - Athlete Context
 context AthleteContext as router is {
+  inlet AthleteContextFromToMedicalSystem is command Athlete.RecordMedicalHistory with {
+    briefly "What ToMedicalSystem makes of the answers it gets"
+  }
+  connector 'ToMedicalSystem Intake' is from outlet AthleteContext.ToMedicalSystem.ToMedicalSystemToAthleteContext to inlet AthleteContext.AthleteContextFromToMedicalSystem with {
+    briefly "Answers translated by ToMedicalSystem, on their way in"
+  }
   inlet AthleteContextFromToLeagueRegistry is command Athlete.SuspendAthlete with {
     briefly "What ToLeagueRegistry makes of the answers it gets"
   }
@@ -9,6 +15,9 @@ context AthleteContext as router is {
   inlet AthleteCommandStreamIn is type AthleteCommand  outlet AthleteCommandStreamOut is type AthleteCommand
   inlet AthleteResultStreamIn is result Athlete.AthleteResult  outlet AthleteResultStreamOut is result Athlete.AthleteResult
   handler AthleteContextBoundary is {
+    on recordMedicalHistory: command Athlete.RecordMedicalHistory is {
+      send recordMedicalHistory to outlet AthleteContext.AthleteCommandStreamOut
+    }
     on registerAthlete: command Athlete.RegisterAthlete is {
       send registerAthlete to outlet AthleteContext.AthleteCommandStreamOut
     }
@@ -118,12 +127,14 @@ context AthleteContext as router is {
       |The model's side of the MedicalSystem conversation.
     }
   }
-  adaptor ToMedicalSystem to context MedicalSystem as merge is { 
+  adaptor ToMedicalSystem to context MedicalSystem as router is { 
+    outlet ToMedicalSystemToAthleteContext is command Athlete.RecordMedicalHistory
     inlet ToMedicalSystemIn is type AthleteEvent    inlet ToMedicalSystemReplies is result MedicalSystem.MedicalHistory    outlet ToMedicalSystemOut is type MedicalSystem.MedicalSystemRequest
     handler ToMedicalSystemHandler is {
       on injuryRecorded: event Athlete.InjuryRecorded is {
         let askAnswer: type MedicalSystem.MedicalHistory = ask query MedicalSystem.GetMedicalHistory of context MedicalSystem
         do "a new injury needing what came before it"
+        send command Athlete.RecordMedicalHistory(athleteId = injuryRecorded.athleteId, reports = prompt("the reports of this record medical history"), clearanceStatus = prompt("the clearance status of this record medical history")) to outlet AthleteContext.ToMedicalSystem.ToMedicalSystemToAthleteContext
         let item0: type MedicalSystem.SubmitMedicalReport = prompt("translate the injuryRecorded event into a SubmitMedicalReport, an injury being what a medical record must carry")
         send item0 to outlet AthleteContext.ToMedicalSystem.ToMedicalSystemOut
       }
@@ -456,6 +467,9 @@ context AthleteContext as router is {
       on athleteRetired: event Athlete.AthleteRetired is {
         tell command AthleteContext.AthleteRepository.PersistAthleteRetired(athleteId = athleteRetired.athleteId) to repository AthleteContext.AthleteRepository
       }
+      on medicalHistoryRecorded: event Athlete.MedicalHistoryRecorded is {
+        do "a medical history recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains athlete metrics"
       described as {
@@ -510,6 +524,10 @@ context AthleteContext as router is {
       on athleteRetired: event Athlete.AthleteRetired is {
         send athleteRetired to outlet AthleteEventSplitToAthleteMetrics
         tell athleteRetired to entity AthleteContext.Athlete
+      }
+      on medicalHistoryRecorded: event Athlete.MedicalHistoryRecorded is {
+        send medicalHistoryRecorded to outlet AthleteEventSplitToAthleteMetrics
+        tell medicalHistoryRecorded to entity AthleteContext.Athlete
       }
       on other is {
         error "Unexpected message for processor AthleteEventSplit"

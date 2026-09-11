@@ -1,5 +1,11 @@
 // Returns Processing - Returns Context
 context ReturnsContext as router is {
+  inlet ReturnsContextFromToShippingCarrier is command Return.RecordTrackingStatus with {
+    briefly "What ToShippingCarrier makes of the answers it gets"
+  }
+  connector 'ToShippingCarrier Intake' is from outlet ReturnsContext.ToShippingCarrier.ToShippingCarrierToReturnsContext to inlet ReturnsContext.ReturnsContextFromToShippingCarrier with {
+    briefly "Answers translated by ToShippingCarrier, on their way in"
+  }
   inlet ReturnsContextFromShippingCarrier is command Return.GenerateLabel with {
     briefly "What FromShippingCarrier makes of that service's news"
   }
@@ -15,6 +21,9 @@ context ReturnsContext as router is {
   inlet ReturnCommandStreamIn is type ReturnCommand  outlet ReturnCommandStreamOut is type ReturnCommand
   inlet ReturnResultStreamIn is result Return.ReturnResult  outlet ReturnResultStreamOut is result Return.ReturnResult
   handler ReturnsContextBoundary is {
+    on recordTrackingStatus: command Return.RecordTrackingStatus is {
+      send recordTrackingStatus to outlet ReturnsContext.ReturnCommandStreamOut
+    }
     on requestReturn: command Return.RequestReturn is {
       send requestReturn to outlet ReturnsContext.ReturnCommandStreamOut
     }
@@ -213,12 +222,14 @@ context ReturnsContext as router is {
       |The model's side of the ShippingCarrier conversation.
     }
   }
-  adaptor ToShippingCarrier to context ShippingCarrier as merge is { 
+  adaptor ToShippingCarrier to context ShippingCarrier as router is { 
+    outlet ToShippingCarrierToReturnsContext is command Return.RecordTrackingStatus
     inlet ToShippingCarrierIn is type ReturnEvent    inlet ToShippingCarrierReplies is result ShippingCarrier.TrackingStatus    outlet ToShippingCarrierOut is type ShippingCarrier.ShippingCarrierRequest
     handler ToShippingCarrierHandler is {
       on shipmentRecorded: event Return.ShipmentRecorded is {
         let askAnswer: type ShippingCarrier.TrackingStatus = ask query ShippingCarrier.GetTrackingStatus of context ShippingCarrier
         do "a recorded shipment being when the carrier has something to report"
+        send command Return.RecordTrackingStatus(returnId = shipmentRecorded.returnId, shipmentStatus = prompt("the shipment status of this record tracking status"), lastLocation = prompt("the last location of this record tracking status")) to outlet ReturnsContext.ToShippingCarrier.ToShippingCarrierToReturnsContext
       }
       on returnAuthorized: event Return.ReturnAuthorized is {
         let item0: type ShippingCarrier.CreateReturnLabel = prompt("translate the returnAuthorized event into a CreateReturnLabel, authorisation being what entitles the customer to ship back")
@@ -602,6 +613,9 @@ context ReturnsContext as router is {
       on returnRejected: event Return.ReturnRejected is {
         tell command ReturnsContext.ReturnsRepository.PersistReturnRejected(returnId = returnRejected.returnId) to repository ReturnsContext.ReturnsRepository
       }
+      on trackingStatusRecorded: event Return.TrackingStatusRecorded is {
+        do "a tracking status recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains returns analytics"
       described as {
@@ -615,7 +629,7 @@ context ReturnsContext as router is {
     }
   }
   type ReturnEvent is one of {
-    ReturnsContext.Return.ReturnRequested or ReturnsContext.Return.RefundProcessed or ReturnsContext.Return.ReturnRejected or ReturnsContext.Return.ItemDisposed or ReturnsContext.Return.ItemInspected or ReturnsContext.Return.LabelGenerated or ReturnsContext.Return.ReturnApproved or ReturnsContext.Return.ReturnAuthorized or ReturnsContext.Return.ReturnReceived or ReturnsContext.Return.ShipmentRecorded
+    ReturnsContext.Return.ReturnRequested or ReturnsContext.Return.RefundProcessed or ReturnsContext.Return.ReturnRejected or ReturnsContext.Return.ItemDisposed or ReturnsContext.Return.ItemInspected or ReturnsContext.Return.LabelGenerated or ReturnsContext.Return.ReturnApproved or ReturnsContext.Return.ReturnAuthorized or ReturnsContext.Return.ReturnReceived or ReturnsContext.Return.ShipmentRecorded or ReturnsContext.Return.TrackingStatusRecorded
   } with {
     briefly "Return event union"
     described as {
@@ -679,6 +693,11 @@ context ReturnsContext as router is {
         send itemDisposed to outlet ReturnEventSplitToReturnsAnalytics
         send itemDisposed to outlet ReturnEventSplitToToInventoryManagement
         tell itemDisposed to entity ReturnsContext.Return
+      }
+      on trackingStatusRecorded: event Return.TrackingStatusRecorded is {
+        send trackingStatusRecorded to outlet ReturnEventSplitToReturnsAnalytics
+        send trackingStatusRecorded to outlet ReturnEventSplitToToInventoryManagement
+        tell trackingStatusRecorded to entity ReturnsContext.Return
       }
       on other is {
         error "Unexpected message for processor ReturnEventSplit"

@@ -1,5 +1,17 @@
 // Streaming Platform - Stream Context
 context StreamContext as router is {
+  inlet StreamContextFromToCDNService is command Stream.RecordStreamUrl with {
+    briefly "What ToCDNService makes of the answers it gets"
+  }
+  connector 'ToCDNService Intake' is from outlet StreamContext.ToCDNService.ToCDNServiceToStreamContext to inlet StreamContext.StreamContextFromToCDNService with {
+    briefly "Answers translated by ToCDNService, on their way in"
+  }
+  inlet StreamContextFromToRecommendationService is command Stream.RecordRecommendations with {
+    briefly "What ToRecommendationService makes of the answers it gets"
+  }
+  connector 'ToRecommendationService Intake' is from outlet StreamContext.ToRecommendationService.ToRecommendationServiceToStreamContext to inlet StreamContext.StreamContextFromToRecommendationService with {
+    briefly "Answers translated by ToRecommendationService, on their way in"
+  }
   inlet StreamContextFromToContinueWatchingService is command Stream.SeekPosition with {
     briefly "What ToContinueWatchingService makes of the answers it gets"
   }
@@ -21,6 +33,12 @@ context StreamContext as router is {
   inlet StreamCommandStreamIn is type StreamCommand  outlet StreamCommandStreamOut is type StreamCommand
   inlet StreamResultStreamIn is result Stream.StreamResult  outlet StreamResultStreamOut is result Stream.StreamResult
   handler StreamContextBoundary is {
+    on recordRecommendations: command Stream.RecordRecommendations is {
+      send recordRecommendations to outlet StreamContext.StreamCommandStreamOut
+    }
+    on recordStreamUrl: command Stream.RecordStreamUrl is {
+      send recordStreamUrl to outlet StreamContext.StreamCommandStreamOut
+    }
     on startStream: command Stream.StartStream is {
       send startStream to outlet StreamContext.StreamCommandStreamOut
     }
@@ -101,12 +119,14 @@ context StreamContext as router is {
       |The model's side of the AnalyticsService conversation.
     }
   }
-  adaptor ToCDNService to context CDNService as merge is { 
+  adaptor ToCDNService to context CDNService as router is { 
+    outlet ToCDNServiceToStreamContext is command Stream.RecordStreamUrl
     inlet ToCDNServiceIn is type StreamEvent    inlet ToCDNServiceReplies is result CDNService.StreamUrlResult    outlet ToCDNServiceOut is query CDNService.GetStreamUrl
     handler ToCDNServiceHandler is {
       on streamStarted: event Stream.StreamStarted is {
         let askAnswer: type CDNService.StreamUrlResult = ask query CDNService.GetStreamUrl of context CDNService
         do "a stream starting needing an edge URL to play from"
+        send command Stream.RecordStreamUrl(streamId = streamStarted.streamId, streamUrl = prompt("the stream url of this record stream url"), expiresAt = prompt("the expires at of this record stream url")) to outlet StreamContext.ToCDNService.ToCDNServiceToStreamContext
       }
       on other is {
         error "Unexpected message for adaptor ToCDNService"
@@ -199,12 +219,14 @@ context StreamContext as router is {
       |The model's side of the DRMService conversation.
     }
   }
-  adaptor ToRecommendationService to context RecommendationService as merge is { 
+  adaptor ToRecommendationService to context RecommendationService as router is { 
+    outlet ToRecommendationServiceToStreamContext is command Stream.RecordRecommendations
     inlet ToRecommendationServiceIn is type StreamEvent    inlet ToRecommendationServiceReplies is result RecommendationService.RecommendationList    outlet ToRecommendationServiceOut is query RecommendationService.GetRecommendations
     handler ToRecommendationServiceHandler is {
       on streamEnded: event Stream.StreamEnded is {
         let askAnswer: type RecommendationService.RecommendationList = ask query RecommendationService.GetRecommendations of context RecommendationService
         do "a finished stream needing something to offer next"
+        send command Stream.RecordRecommendations(streamId = streamEnded.streamId, recommendations = prompt("the recommendations of this record recommendations")) to outlet StreamContext.ToRecommendationService.ToRecommendationServiceToStreamContext
       }
       on other is {
         error "Unexpected message for adaptor ToRecommendationService"
@@ -555,6 +577,12 @@ context StreamContext as router is {
       on streamEnded: event Stream.StreamEnded is {
         tell command StreamContext.StreamRepository.PersistStreamEnded(streamId = streamEnded.streamId) to repository StreamContext.StreamRepository
       }
+      on recommendationsRecorded: event Stream.RecommendationsRecorded is {
+        do "a recommendations recorded changes nothing this projector keeps"
+      }
+      on streamUrlRecorded: event Stream.StreamUrlRecorded is {
+        do "a stream url recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains stream analytics"
       described as {
@@ -615,6 +643,14 @@ context StreamContext as router is {
       on streamErrorOccurred: event Stream.StreamErrorOccurred is {
         send streamErrorOccurred to outlet StreamEventSplitToStreamAnalytics
         tell streamErrorOccurred to entity StreamContext.Stream
+      }
+      on recommendationsRecorded: event Stream.RecommendationsRecorded is {
+        send recommendationsRecorded to outlet StreamEventSplitToStreamAnalytics
+        tell recommendationsRecorded to entity StreamContext.Stream
+      }
+      on streamUrlRecorded: event Stream.StreamUrlRecorded is {
+        send streamUrlRecorded to outlet StreamEventSplitToStreamAnalytics
+        tell streamUrlRecorded to entity StreamContext.Stream
       }
       on other is {
         error "Unexpected message for processor StreamEventSplit"

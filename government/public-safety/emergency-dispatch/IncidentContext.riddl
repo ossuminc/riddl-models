@@ -1,6 +1,11 @@
 // Emergency Dispatch - Incident Context
 context IncidentContext as router is {
-  inlet IncidentContextFromToAVLService is command Incident.DispatchUnit with {
+  type ToAVLServiceCommand is one of {
+    Incident.DispatchUnit or Incident.RecordUnitLocation
+  } with {
+    briefly "What ToAVLService turns its answers into"
+  }
+  inlet IncidentContextFromToAVLService is type ToAVLServiceCommand with {
     briefly "What ToAVLService makes of the answers it gets"
   }
   connector 'ToAVLService Intake' is from outlet IncidentContext.ToAVLService.ToAVLServiceToIncidentContext to inlet IncidentContext.IncidentContextFromToAVLService with {
@@ -61,6 +66,9 @@ context IncidentContext as router is {
   inlet IncidentCommandStreamIn is type IncidentCommand  outlet IncidentCommandStreamOut is type IncidentCommand
   inlet IncidentQueryResultStreamIn is result Incident.IncidentQueryResult  outlet IncidentQueryResultStreamOut is result Incident.IncidentQueryResult
   handler IncidentContextBoundary is {
+    on recordUnitLocation: command Incident.RecordUnitLocation is {
+      send recordUnitLocation to outlet IncidentContext.IncidentCommandStreamOut
+    }
     on createIncident: command Incident.CreateIncident is {
       send createIncident to outlet IncidentContext.IncidentCommandStreamOut
     }
@@ -138,7 +146,7 @@ context IncidentContext as router is {
     }
   }
   adaptor ToAVLService to context AVLService as router is { 
-    outlet ToAVLServiceToIncidentContext is command Incident.DispatchUnit
+    outlet ToAVLServiceToIncidentContext is type ToAVLServiceCommand
     inlet ToAVLServiceIn is type IncidentEvent    inlet ToAVLServiceReplies is type AVLService.AVLServiceReply    outlet ToAVLServiceOut is type AVLService.AVLServiceRequest
     handler ToAVLServiceHandler is {
       on incidentCreated: event Incident.IncidentCreated is {
@@ -149,6 +157,7 @@ context IncidentContext as router is {
       on unitEnRoute: event Incident.UnitEnRoute is {
         let askAnswer: type AVLService.UnitLocationResult = ask query AVLService.GetUnitLocation of context AVLService
         do "a unit en route needing its position tracked"
+        send command Incident.RecordUnitLocation(incidentId = unitEnRoute.incidentId, unitId = unitEnRoute.unitId, gpsLocation = prompt("the gps location of this record unit location"), timestamp = prompt("the timestamp of this record unit location")) to outlet IncidentContext.ToAVLService.ToAVLServiceToIncidentContext
       }
       on other is {
         error "Unexpected message for adaptor ToAVLService"
@@ -1062,6 +1071,9 @@ context IncidentContext as router is {
       on incidentCancelled: event Incident.IncidentCancelled is {
         tell command IncidentContext.IncidentRepository.PersistIncidentCancelled(incidentId = incidentCancelled.incidentId) to repository IncidentContext.IncidentRepository
       }
+      on unitLocationRecorded: event Incident.UnitLocationRecorded is {
+        do "a unit location recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Processes board events"
       described as {
@@ -1256,6 +1268,9 @@ context IncidentContext as router is {
       on incidentClosed: event Incident.IncidentClosed is {
         tell command IncidentContext.IncidentRepository.PersistIncidentClosed(incidentId = incidentClosed.incidentId) to repository IncidentContext.IncidentRepository
       }
+      on unitLocationRecorded: event Incident.UnitLocationRecorded is {
+        do "a unit location recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Processes analytics events"
       described as {
@@ -1270,7 +1285,7 @@ context IncidentContext as router is {
   }
   // ---- Event publication for Incident ----
   type IncidentEvent is one of {
-    IncidentContext.Incident.IncidentCreated or IncidentContext.Incident.IncidentDetailsUpdated or IncidentContext.Incident.UnitDispatched or IncidentContext.Incident.UnitRecalled or IncidentContext.Incident.UnitEnRoute or IncidentContext.Incident.UnitArrived or IncidentContext.Incident.UnitCleared or IncidentContext.Incident.NoteAdded or IncidentContext.Incident.PriorityUpgraded or IncidentContext.Incident.PriorityDowngraded or IncidentContext.Incident.IncidentsLinked or IncidentContext.Incident.IncidentClosed or IncidentContext.Incident.IncidentCancelled or IncidentContext.Incident.IncidentReopened
+    IncidentContext.Incident.IncidentCreated or IncidentContext.Incident.IncidentDetailsUpdated or IncidentContext.Incident.UnitDispatched or IncidentContext.Incident.UnitRecalled or IncidentContext.Incident.UnitEnRoute or IncidentContext.Incident.UnitArrived or IncidentContext.Incident.UnitCleared or IncidentContext.Incident.NoteAdded or IncidentContext.Incident.PriorityUpgraded or IncidentContext.Incident.PriorityDowngraded or IncidentContext.Incident.IncidentsLinked or IncidentContext.Incident.IncidentClosed or IncidentContext.Incident.IncidentCancelled or IncidentContext.Incident.IncidentReopened or IncidentContext.Incident.UnitLocationRecorded
   } with {
     briefly "Incident event alternation"
     described as {
@@ -1369,6 +1384,11 @@ context IncidentContext as router is {
         send incidentReopened to outlet IncidentEventSplitToDispatchBoard
         send incidentReopened to outlet IncidentEventSplitToResponseTimeAnalytics
         tell incidentReopened to entity IncidentContext.Incident
+      }
+      on unitLocationRecorded: event Incident.UnitLocationRecorded is {
+        send unitLocationRecorded to outlet IncidentEventSplitToDispatchBoard
+        send unitLocationRecorded to outlet IncidentEventSplitToResponseTimeAnalytics
+        tell unitLocationRecorded to entity IncidentContext.Incident
       }
       on other is {
         error "Unexpected message for processor IncidentEventSplit"

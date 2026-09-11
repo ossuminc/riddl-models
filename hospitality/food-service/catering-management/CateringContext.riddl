@@ -1,12 +1,17 @@
 // Catering Management - Catering Context
 context CateringContext as router is {
+  type ToMenuCatalogServiceCommand is one of {
+    CateringOrder.AddMenuItem or CateringOrder.RecordItemDetails
+  } with {
+    briefly "What ToMenuCatalogService turns its answers into"
+  }
   inlet CateringContextFromToInventoryService is command CateringOrder.RemoveMenuItem with {
     briefly "What ToInventoryService makes of the answers it gets"
   }
   connector 'ToInventoryService Intake' is from outlet CateringContext.ToInventoryService.ToInventoryServiceToCateringContext to inlet CateringContext.CateringContextFromToInventoryService with {
     briefly "Answers translated by ToInventoryService, on their way in"
   }
-  inlet CateringContextFromToMenuCatalogService is command CateringOrder.AddMenuItem with {
+  inlet CateringContextFromToMenuCatalogService is type ToMenuCatalogServiceCommand with {
     briefly "What ToMenuCatalogService makes of the answers it gets"
   }
   connector 'ToMenuCatalogService Intake' is from outlet CateringContext.ToMenuCatalogService.ToMenuCatalogServiceToCateringContext to inlet CateringContext.CateringContextFromToMenuCatalogService with {
@@ -39,6 +44,9 @@ context CateringContext as router is {
   inlet CateringOrderCommandStreamIn is type CateringOrderCommand  outlet CateringOrderCommandStreamOut is type CateringOrderCommand
   inlet MarketplaceOrderResultStreamIn is result CateringOrder.CateringOrderResult  outlet MarketplaceOrderResultStreamOut is result CateringOrder.CateringOrderResult
   handler CateringContextBoundary is {
+    on recordItemDetails: command CateringOrder.RecordItemDetails is {
+      send recordItemDetails to outlet CateringContext.CateringOrderCommandStreamOut
+    }
     on createOrder: command CateringOrder.CreateOrder is {
       send createOrder to outlet CateringContext.CateringOrderCommandStreamOut
     }
@@ -192,12 +200,13 @@ context CateringContext as router is {
     }
   }
   adaptor ToMenuCatalogService to context MenuCatalogService as router is { 
-    outlet ToMenuCatalogServiceToCateringContext is command CateringOrder.AddMenuItem
+    outlet ToMenuCatalogServiceToCateringContext is type ToMenuCatalogServiceCommand
     inlet ToMenuCatalogServiceIn is type CateringOrderEvent    inlet ToMenuCatalogServiceReplies is type MenuCatalogService.MenuCatalogServiceReply    outlet ToMenuCatalogServiceOut is type MenuCatalogService.MenuCatalogServiceRequest
     handler ToMenuCatalogServiceHandler is {
       on menuItemAdded: event CateringOrder.MenuItemAdded is {
         let askAnswer: type MenuCatalogService.MenuItemDetails = ask query MenuCatalogService.GetMenuItemDetails of context MenuCatalogService
         do "an item added to an order needing its recipe and allergens"
+        send command CateringOrder.RecordItemDetails(orderId = menuItemAdded.orderId, ingredients = prompt("the ingredients of this record item details"), preparationTime = prompt("the preparation time of this record item details")) to outlet CateringContext.ToMenuCatalogService.ToMenuCatalogServiceToCateringContext
       }
       on orderCreated: event CateringOrder.OrderCreated is {
         let askAnswer: type MenuCatalogService.MenuCatalog = ask query MenuCatalogService.GetMenuItems of context MenuCatalogService
@@ -819,6 +828,9 @@ context CateringContext as router is {
         tell command CateringContext.OrderRepository.PersistOrderCancelled(orderId = orderCancelled.orderId) to repository CateringContext.OrderRepository
         do "Update cancellation metrics"
       }
+      on itemDetailsRecorded: event CateringOrder.ItemDetailsRecorded is {
+        do "a item details recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains catering analytics"
       described as {
@@ -833,7 +845,7 @@ context CateringContext as router is {
   }
   // ---- Event publication for CateringOrder ----
   type CateringOrderEvent is one of {
-    CateringContext.CateringOrder.OrderCreated or CateringContext.CateringOrder.MenuItemAdded or CateringContext.CateringOrder.MenuItemRemoved or CateringContext.CateringOrder.OrderConfirmed or CateringContext.CateringOrder.DeliveryInfoSet or CateringContext.CateringOrder.StaffAssigned or CateringContext.CateringOrder.PreparationStarted or CateringContext.CateringOrder.OrderReady or CateringContext.CateringOrder.DeliveryDispatched or CateringContext.CateringOrder.DeliveryConfirmed or CateringContext.CateringOrder.PaymentRecorded or CateringContext.CateringOrder.OrderCompleted or CateringContext.CateringOrder.OrderCancelled
+    CateringContext.CateringOrder.OrderCreated or CateringContext.CateringOrder.MenuItemAdded or CateringContext.CateringOrder.MenuItemRemoved or CateringContext.CateringOrder.OrderConfirmed or CateringContext.CateringOrder.DeliveryInfoSet or CateringContext.CateringOrder.StaffAssigned or CateringContext.CateringOrder.PreparationStarted or CateringContext.CateringOrder.OrderReady or CateringContext.CateringOrder.DeliveryDispatched or CateringContext.CateringOrder.DeliveryConfirmed or CateringContext.CateringOrder.PaymentRecorded or CateringContext.CateringOrder.OrderCompleted or CateringContext.CateringOrder.OrderCancelled or CateringContext.CateringOrder.ItemDetailsRecorded
   } with {
     briefly "CateringOrder event alternation"
     described as {
@@ -917,6 +929,11 @@ context CateringContext as router is {
         send orderCancelled to outlet CateringOrderEventSplitToCateringAnalytics
         send orderCancelled to outlet CateringOrderEventSplitToToPaymentProcessingService
         tell orderCancelled to entity CateringContext.CateringOrder
+      }
+      on itemDetailsRecorded: event CateringOrder.ItemDetailsRecorded is {
+        send itemDetailsRecorded to outlet CateringOrderEventSplitToCateringAnalytics
+        send itemDetailsRecorded to outlet CateringOrderEventSplitToToPaymentProcessingService
+        tell itemDetailsRecorded to entity CateringContext.CateringOrder
       }
       on other is {
         error "Unexpected message for processor CateringOrderEventSplit"

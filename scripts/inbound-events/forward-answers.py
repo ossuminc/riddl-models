@@ -45,7 +45,9 @@ for l in open(sys.argv[1]):
 only=set(sys.argv[2:])
 bym=collections.defaultdict(list)
 for i,f in enumerate(facts):
-    if i in dec and not dec[i]["target"].startswith("+") and (not only or f["model"] in only): bym[f["model"]].append((i,f,dec[i]))
+    if i in dec and (not only or f["model"] in only):
+        dc=dict(dec[i]); dc["target"]=dc["target"].lstrip("+"); dc["new"]=dec[i]["target"].startswith("+")
+        bym[f["model"]].append((i,f,dc))
 ok=fail=done=0
 for model,items in sorted(bym.items()):
     d=ROOT/model; c=next(d.glob("*.conf")); e=re.search(r'input-file\s*=\s*"?([^"\s]+)"?',c.read_text()).group(1)
@@ -59,7 +61,7 @@ for model,items in sorted(bym.items()):
             A=next((a for a in ns if a.get("kind")=="adaptor" and a["id"]==f["adaptor"] and byp[a["parent"]]["id"]==f["ctx"]),None)
             if not A: raise RuntimeError(f"[{i}] adaptor {f['adaptor']} not found")
             ctx=byp[A["parent"]]; ent,cmd=dcs["target"].split(".")
-            cfields=f["commands"].get(cmd) if ent==f["entity"] else None
+            cfields=f["commands"].get(cmd) if (ent==f["entity"] and not dcs["new"]) else None
             if cfields is None:
                 # a command of another entity in the same context (the answer belongs to it)
                 cn=[n for n in ns if n.get("kind")=="command" and n["id"]==cmd and byp.get(n["parent"],{}).get("id")==ent and byp[n["parent"]].get("parent")==A["parent"]]
@@ -73,6 +75,8 @@ for model,items in sorted(bym.items()):
             am=re.search(rf"let (\w+): type [\w.]+ = ask query [\w.]*{f['query']}\b[^\n]*\n(\s*do \"[^\"]*\"\n)?", body)
             if not am: raise RuntimeError(f"[{i}] ask {f['query']} not found in clause")
             answer=am.group(1)
+            if re.search(rf"send command {ent}\.{cmd}\(", body): continue   # already forwarded
+            if dcs["new"] and not [n for n in ns if n.get("kind")=="command" and n["id"]==cmd and byp.get(n["parent"],{}).get("id")==ent]: continue   # add-commands.py has not run yet
             at=cl["span"]["start"]["offset"]+am.end()
             ind=re.match(r"[ \t]*", body[body.rfind("\n",0,am.start())+1:]).group(0)
             # field values
@@ -98,8 +102,30 @@ for model,items in sorted(bym.items()):
             atxt=snap[A["file"]]; s0=A["span"]["start"]["offset"]
             hm=re.match(r"adaptor \w+ (?:from|to) context [\w.]+( as \w+)? is \{[ \t]*\n", atxt[s0:s0+300]); assert hm
             him=re.search(r"^(\s*)(inlet|outlet|handler) ", atxt[s0+hm.end():s0+hm.end()+600], re.M); ind=him.group(1) if him else "    "
-            if [p for p in ns if p.get("kind")=="outlet" and p.get("parent")==ap and p["id"]==f"{A['id']}To{ctx['id']}"]:
-                raise RuntimeError(f"{A['id']}: already has an outlet back to {ctx['id']}")
+            existing=[p for p in ns if p.get("kind")=="outlet" and p.get("parent")==ap and p["id"]==f"{A['id']}To{ctx['id']}"]
+            if existing:
+                # widen: the outlet (and the context's inlet) become an alternation of old + new commands
+                O=existing[0]; oref=(O.get("type") or {}).get("ref",""); ores=(O.get("type") or {}).get("resolved","")
+                inl=[p for p in ns if p.get("kind")=="inlet" and p.get("parent")==ctx["path"] and p["id"]==f"{ctx['id']}From{A['id']}"]
+                if not inl: raise RuntimeError(f"{A['id']}: outlet back exists but the context inlet does not")
+                I=inl[0]
+                def retype(node,newref):
+                    tx=snap[node["file"]]; s=node["span"]["start"]["offset"]; seg=tx[s:s+300]
+                    m=re.match(rf"(inlet|outlet) {node['id']} is (command|type) [\w.]+", seg); assert m, seg[:80]
+                    edits[node["file"]].append((s,s+m.end(),f"{m.group(1)} {node['id']} is {newref}"))
+                tn=byp.get(ores)
+                if tn and tn.get("kind")=="type":      # already an alternation: append
+                    tt=snap[tn["file"]]; t0,t1=tn["span"]["start"]["offset"],tn["span"]["end"]["offset"]; tsrc=tt[t0:t1]
+                    have=set(re.findall(r"[\w.]+", tsrc.split("{",1)[1].split("}",1)[0]))-{"or"}
+                    mm=re.search(r"\n(\s*)\}", tsrc)
+                    for c_ in cmds:
+                        if c_ not in have: edits[tn["file"]].append((t0+mm.start(),t0+mm.start(),f" or {c_}"))
+                else:                                   # a single command: promote both ends to a new alternation
+                    old_cmd=oref.split()[-1] if oref else ores.split(".",2)[-1]
+                    members=sorted(set(cmds)|{old_cmd})
+                    retype(O,f"type {A['id']}Command"); retype(I,f"type {A['id']}Command")
+                    ctxwork[ctx["path"]].append((A,members,"WIDEN"))
+                continue
             oty=f"command {cmds[0]}" if len(cmds)==1 else f"type {A['id']}Command"
             edits[A["file"]].append((s0+hm.end(),s0+hm.end(),f"{ind}outlet {A['id']}To{ctx['id']} is {oty}\n")); hdr[ap][1]+=1
             ctxwork[ctx["path"]].append((A,cmds,oty))
@@ -113,6 +139,19 @@ for model,items in sorted(bym.items()):
             hb=ctxt[H["span"]["start"]["offset"]:H["span"]["end"]["offset"]]
             pre=""
             for A,cmds,oty in items_:
+                if oty=="WIDEN":
+                    pre+=f"  type {A['id']}Command is one of {{\n    {' or '.join(cmds)}\n  }} with {{\n    briefly \"What {A['id']} turns its answers into\"\n  }}\n"
+                    for ec in cmds:
+                        ent,cmd=ec.split(".")
+                        if not any(r.endswith(f".{ent}.{cmd}") for r in relayed):
+                            sm=re.search(rf"on \w+: command {ent}\.\w+ is \{{\n\s*(?:send|forward) \w+ to outlet {ctx['id']}\.(\w+)\n", hb)
+                            if not sm: raise RuntimeError(f"{ctx['id']}: no relay outlet found for {ent}")
+                            bname=cmd[0].lower()+cmd[1:]
+                            verb="forward" if re.search(rf"on \w+: command {ent}\.\w+ is \{{\n\s*forward ", hb) else "send"
+                            hm2=re.match(r"\s*handler \w+ is \{[ \t]*\n", ctxt[H["span"]["start"]["offset"]:H["span"]["start"]["offset"]+120]); assert hm2
+                            edits[ctx["file"]].append((H["span"]["start"]["offset"]+hm2.end(),H["span"]["start"]["offset"]+hm2.end(),f"    on {bname}: command {ent}.{cmd} is {{\n      {verb} {bname} to outlet {ctx['id']}.{sm.group(1)}\n    }}\n"))
+                            relayed.add(f".{ent}.{cmd}")
+                    continue
                 if len(cmds)>1:
                     pre+=f"  type {A['id']}Command is one of {{\n    {' or '.join(cmds)}\n  }} with {{\n    briefly \"What {A['id']} turns its answers into\"\n  }}\n"
                 pre+=f"  inlet {ctx['id']}From{A['id']} is {oty} with {{\n    briefly \"What {A['id']} makes of the answers it gets\"\n  }}\n"
@@ -121,11 +160,12 @@ for model,items in sorted(bym.items()):
                 for ec in cmds:
                     ent,cmd=ec.split(".")
                     if not any(r.endswith(f".{ent}.{cmd}") for r in relayed):
-                        sm=re.search(rf"send \w+ to outlet {ctx['id']}\.({ent}CommandStream\w*|\w*CommandStreamOut|\w*CommandsFwd)\n", hb)
+                        sm=re.search(rf"on \w+: command {ent}\.\w+ is \{{\n\s*(?:send|forward) \w+ to outlet {ctx['id']}\.(\w+)\n", hb)
                         if not sm: raise RuntimeError(f"{ctx['id']}: no relay outlet found for {ent}")
                         bname=cmd[0].lower()+cmd[1:]
+                        verb="forward" if re.search(rf"on \w+: command {ent}\.\w+ is \{{\n\s*forward ", hb) else "send"
                         hm2=re.match(r"\s*handler \w+ is \{[ \t]*\n", ctxt[H["span"]["start"]["offset"]:H["span"]["start"]["offset"]+120]); assert hm2
-                        edits[ctx["file"]].append((H["span"]["start"]["offset"]+hm2.end(),H["span"]["start"]["offset"]+hm2.end(),f"    on {bname}: command {ent}.{cmd} is {{\n      send {bname} to outlet {ctx['id']}.{sm.group(1)}\n    }}\n"))
+                        edits[ctx["file"]].append((H["span"]["start"]["offset"]+hm2.end(),H["span"]["start"]["offset"]+hm2.end(),f"    on {bname}: command {ent}.{cmd} is {{\n      {verb} {bname} to outlet {ctx['id']}.{sm.group(1)}\n    }}\n"))
                         relayed.add(f".{ent}.{cmd}")
             edits[ctx["file"]].append((s0+hm.end(),s0+hm.end(),pre))
         for pth,(din,dout) in hdr.items():

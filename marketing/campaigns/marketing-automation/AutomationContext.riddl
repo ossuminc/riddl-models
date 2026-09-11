@@ -1,6 +1,11 @@
 // Marketing Automation - Automation Context
 context AutomationContext as router is {
-  inlet AutomationContextFromToCRMSystem is command AutomationWorkflow.EnrollLead with {
+  type ToCRMSystemCommand is one of {
+    AutomationWorkflow.EnrollLead or AutomationWorkflow.RecordLeadProfile
+  } with {
+    briefly "What ToCRMSystem turns its answers into"
+  }
+  inlet AutomationContextFromToCRMSystem is type ToCRMSystemCommand with {
     briefly "What ToCRMSystem makes of the answers it gets"
   }
   connector 'ToCRMSystem Intake' is from outlet AutomationContext.ToCRMSystem.ToCRMSystemToAutomationContext to inlet AutomationContext.AutomationContextFromToCRMSystem with {
@@ -21,6 +26,9 @@ context AutomationContext as router is {
   inlet AutomationWorkflowCommandStrIn is type AutomationWorkflowCommand  outlet AutomationWorkflowCommandStrOut is type AutomationWorkflowCommand
   inlet AutomationWorkflowResultStreIn is result AutomationWorkflow.AutomationWorkflowResult  outlet AutomationWorkflowResultStreOut is result AutomationWorkflow.AutomationWorkflowResult
   handler AutomationContextBoundary is {
+    on recordLeadProfile: command AutomationWorkflow.RecordLeadProfile is {
+      send recordLeadProfile to outlet AutomationContext.AutomationWorkflowCommandStrOut
+    }
     on createWorkflow: command AutomationWorkflow.CreateWorkflow is {
       send createWorkflow to outlet AutomationContext.AutomationWorkflowCommandStrOut
     }
@@ -89,12 +97,13 @@ context AutomationContext as router is {
     }
   }
   adaptor ToCRMSystem to context CRMSystem as router is { 
-    outlet ToCRMSystemToAutomationContext is command AutomationWorkflow.EnrollLead
+    outlet ToCRMSystemToAutomationContext is type ToCRMSystemCommand
     inlet ToCRMSystemIn is type AutomationWorkflowEvent    inlet ToCRMSystemReplies is type CRMSystem.CRMSystemReply    outlet ToCRMSystemOut is type CRMSystem.CRMSystemRequest
     handler ToCRMSystemHandler is {
       on leadEnrolled: event AutomationWorkflow.LeadEnrolled is {
         let askAnswer: type CRMSystem.LeadInfo = ask query CRMSystem.GetLeadInfo of context CRMSystem
         do "a lead entering a workflow needing the CRM's picture of who they are"
+        send command AutomationWorkflow.RecordLeadProfile(workflowId = leadEnrolled.workflowId, leadId = leadEnrolled.leadId, email = prompt("the email of this record lead profile"), firstName = prompt("the first name of this record lead profile"), lastName = prompt("the last name of this record lead profile"), leadScore = prompt("the lead score of this record lead profile")) to outlet AutomationContext.ToCRMSystem.ToCRMSystemToAutomationContext
       }
       on workflowActivated: event AutomationWorkflow.WorkflowActivated is {
         let askAnswer: type CRMSystem.SegmentMembers = ask query CRMSystem.GetSegmentMembers of context CRMSystem
@@ -561,6 +570,9 @@ context AutomationContext as router is {
         tell command AutomationContext.AutomationRepository.PersistWorkflowCompleted(workflowId = workflowCompleted.workflowId) to repository AutomationContext.AutomationRepository
         do "Increment workflows completed and calculate conversion rate"
       }
+      on leadProfileRecorded: event AutomationWorkflow.LeadProfileRecorded is {
+        do "a lead profile recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains automation metrics"
       described as {
@@ -575,7 +587,7 @@ context AutomationContext as router is {
   }
   // ---- Event publication for AutomationWorkflow ----
   type AutomationWorkflowEvent is one of {
-    AutomationContext.AutomationWorkflow.WorkflowCreated or AutomationContext.AutomationWorkflow.WorkflowActivated or AutomationContext.AutomationWorkflow.WorkflowPaused or AutomationContext.AutomationWorkflow.WorkflowResumed or AutomationContext.AutomationWorkflow.LeadEnrolled or AutomationContext.AutomationWorkflow.LeadStepAdvanced or AutomationContext.AutomationWorkflow.LeadRemoved or AutomationContext.AutomationWorkflow.ABTestConfigured or AutomationContext.AutomationWorkflow.ABTestResultRecorded or AutomationContext.AutomationWorkflow.WorkflowCompleted or AutomationContext.AutomationWorkflow.WorkflowArchived
+    AutomationContext.AutomationWorkflow.WorkflowCreated or AutomationContext.AutomationWorkflow.WorkflowActivated or AutomationContext.AutomationWorkflow.WorkflowPaused or AutomationContext.AutomationWorkflow.WorkflowResumed or AutomationContext.AutomationWorkflow.LeadEnrolled or AutomationContext.AutomationWorkflow.LeadStepAdvanced or AutomationContext.AutomationWorkflow.LeadRemoved or AutomationContext.AutomationWorkflow.ABTestConfigured or AutomationContext.AutomationWorkflow.ABTestResultRecorded or AutomationContext.AutomationWorkflow.WorkflowCompleted or AutomationContext.AutomationWorkflow.WorkflowArchived or AutomationContext.AutomationWorkflow.LeadProfileRecorded
   } with {
     briefly "AutomationWorkflow event alternation"
     described as {
@@ -636,6 +648,10 @@ context AutomationContext as router is {
       on workflowArchived: event AutomationWorkflow.WorkflowArchived is {
         send workflowArchived to outlet AutomationWorkflowEventSplitToAutomationMetrics
         tell workflowArchived to entity AutomationContext.AutomationWorkflow
+      }
+      on leadProfileRecorded: event AutomationWorkflow.LeadProfileRecorded is {
+        send leadProfileRecorded to outlet AutomationWorkflowEventSplitToAutomationMetrics
+        tell leadProfileRecorded to entity AutomationContext.AutomationWorkflow
       }
       on other is {
         error "Unexpected message for processor AutomationWorkflowEventSplit"

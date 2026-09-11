@@ -1,5 +1,11 @@
 // Compliance Reporting - Report Context
 context ReportContext as router is {
+  inlet ReportContextFromToRegulatoryCalendarService is command Report.RecordFilingDeadline with {
+    briefly "What ToRegulatoryCalendarService makes of the answers it gets"
+  }
+  connector 'ToRegulatoryCalendarService Intake' is from outlet ReportContext.ToRegulatoryCalendarService.ToRegulatoryCalendarServiceToReportContext to inlet ReportContext.ReportContextFromToRegulatoryCalendarService with {
+    briefly "Answers translated by ToRegulatoryCalendarService, on their way in"
+  }
   inlet ReportContextFromToDocumentManagementService is command Report.UpdateSection with {
     briefly "What ToDocumentManagementService makes of the answers it gets"
   }
@@ -33,6 +39,9 @@ context ReportContext as router is {
   inlet ReportCommandStreamIn is type ReportCommand  outlet ReportCommandStreamOut is type ReportCommand
   inlet ReportResultStreamIn is result Report.ReportResult  outlet ReportResultStreamOut is result Report.ReportResult
   handler ReportContextBoundary is {
+    on recordFilingDeadline: command Report.RecordFilingDeadline is {
+      send recordFilingDeadline to outlet ReportContext.ReportCommandStreamOut
+    }
     on createReport: command Report.CreateReport is {
       send createReport to outlet ReportContext.ReportCommandStreamOut
     }
@@ -274,12 +283,14 @@ context ReportContext as router is {
       |The model's side of the RegulatoryCalendarService conversation.
     }
   }
-  adaptor ToRegulatoryCalendarService to context RegulatoryCalendarService as merge is { 
+  adaptor ToRegulatoryCalendarService to context RegulatoryCalendarService as router is { 
+    outlet ToRegulatoryCalendarServiceToReportContext is command Report.RecordFilingDeadline
     inlet ToRegulatoryCalendarServiceIn is type ReportEvent    inlet ToRegulatoryCalendarServiceReplies is result RegulatoryCalendarService.UpcomingDeadlines    outlet ToRegulatoryCalendarServiceOut is type RegulatoryCalendarService.RegulatoryCalendarServiceRequest
     handler ToRegulatoryCalendarServiceHandler is {
       on reportCreated: event Report.ReportCreated is {
         let askAnswer: type RegulatoryCalendarService.UpcomingDeadlines = ask query RegulatoryCalendarService.GetUpcomingDeadlines of context RegulatoryCalendarService
         do "a new report needing the deadline it must meet"
+        send command Report.RecordFilingDeadline(reportId = reportCreated.reportId, requirement = reportCreated.requirement) to outlet ReportContext.ToRegulatoryCalendarService.ToRegulatoryCalendarServiceToReportContext
         let subscription: type RegulatoryCalendarService.SubscribeToUpdates = prompt("translate the reportCreated event into a SubscribeToUpdates, so changes to the rules this filing answers to reach us while it is open")
         send subscription to outlet ReportContext.ToRegulatoryCalendarService.ToRegulatoryCalendarServiceOut
       }
@@ -733,6 +744,9 @@ context ReportContext as router is {
         tell command ReportContext.ReportRepository.PersistFindingResolved(reportId = findingResolved.reportId) to repository ReportContext.ReportRepository
         do "Update resolution metrics"
       }
+      on filingDeadlineRecorded: event Report.FilingDeadlineRecorded is {
+        do "a filing deadline recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains compliance analytics"
       described as {
@@ -747,7 +761,7 @@ context ReportContext as router is {
   }
   // ---- Event publication for Report ----
   type ReportEvent is one of {
-    ReportContext.Report.ReportCreated or ReportContext.Report.SectionAdded or ReportContext.Report.SectionUpdated or ReportContext.Report.SubmittedForReview or ReportContext.Report.ReportApproved or ReportContext.Report.ReportRejected or ReportContext.Report.ReportSubmitted or ReportContext.Report.AcknowledgmentReceived or ReportContext.Report.ReportAmended or ReportContext.Report.FindingRecorded or ReportContext.Report.FindingResolved
+    ReportContext.Report.ReportCreated or ReportContext.Report.SectionAdded or ReportContext.Report.SectionUpdated or ReportContext.Report.SubmittedForReview or ReportContext.Report.ReportApproved or ReportContext.Report.ReportRejected or ReportContext.Report.ReportSubmitted or ReportContext.Report.AcknowledgmentReceived or ReportContext.Report.ReportAmended or ReportContext.Report.FindingRecorded or ReportContext.Report.FindingResolved or ReportContext.Report.FilingDeadlineRecorded
   } with {
     briefly "Report event alternation"
     described as {
@@ -816,6 +830,11 @@ context ReportContext as router is {
         send findingResolved to outlet ReportEventSplitToComplianceAnalytics
         send findingResolved to outlet ReportEventSplitToToAuditManagementService
         tell findingResolved to entity ReportContext.Report
+      }
+      on filingDeadlineRecorded: event Report.FilingDeadlineRecorded is {
+        send filingDeadlineRecorded to outlet ReportEventSplitToComplianceAnalytics
+        send filingDeadlineRecorded to outlet ReportEventSplitToToAuditManagementService
+        tell filingDeadlineRecorded to entity ReportContext.Report
       }
       on other is {
         error "Unexpected message for processor ReportEventSplit"

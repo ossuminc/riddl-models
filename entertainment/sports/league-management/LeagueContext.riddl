@@ -1,8 +1,26 @@
 // League Management - League Context
 context LeagueContext as router is {
+  inlet LeagueContextFromToBroadcastSystem is command Season.RecordBroadcastSlot with {
+    briefly "What ToBroadcastSystem makes of the answers it gets"
+  }
+  connector 'ToBroadcastSystem Intake' is from outlet LeagueContext.ToBroadcastSystem.ToBroadcastSystemToLeagueContext to inlet LeagueContext.LeagueContextFromToBroadcastSystem with {
+    briefly "Answers translated by ToBroadcastSystem, on their way in"
+  }
+  inlet LeagueContextFromToVenueBooking is command Season.RecordVenueAvailability with {
+    briefly "What ToVenueBooking makes of the answers it gets"
+  }
+  connector 'ToVenueBooking Intake' is from outlet LeagueContext.ToVenueBooking.ToVenueBookingToLeagueContext to inlet LeagueContext.LeagueContextFromToVenueBooking with {
+    briefly "Answers translated by ToVenueBooking, on their way in"
+  }
   inlet SeasonCommandStreamIn is type SeasonCommand  outlet SeasonCommandStreamOut is type SeasonCommand
   inlet SeasonResultStreamIn is result Season.SeasonResult  outlet SeasonResultStreamOut is result Season.SeasonResult
   handler LeagueContextBoundary is {
+    on recordVenueAvailability: command Season.RecordVenueAvailability is {
+      send recordVenueAvailability to outlet LeagueContext.SeasonCommandStreamOut
+    }
+    on recordBroadcastSlot: command Season.RecordBroadcastSlot is {
+      send recordBroadcastSlot to outlet LeagueContext.SeasonCommandStreamOut
+    }
     on createSeason: command Season.CreateSeason is {
       send createSeason to outlet LeagueContext.SeasonCommandStreamOut
     }
@@ -70,12 +88,14 @@ context LeagueContext as router is {
       |The model's side of the BroadcastSystem conversation.
     }
   }
-  adaptor ToBroadcastSystem to context BroadcastSystem as merge is { 
+  adaptor ToBroadcastSystem to context BroadcastSystem as router is { 
+    outlet ToBroadcastSystemToLeagueContext is command Season.RecordBroadcastSlot
     inlet ToBroadcastSystemIn is type SeasonEvent    inlet ToBroadcastSystemReplies is result BroadcastSystem.BroadcastScheduleResult    outlet ToBroadcastSystemOut is type BroadcastSystem.BroadcastSystemCommand
     handler ToBroadcastSystemHandler is {
       on matchScheduled: event Season.MatchScheduled is {
         let askAnswer: type BroadcastSystem.BroadcastScheduleResult = ask query BroadcastSystem.GetBroadcastSchedule of context BroadcastSystem
         do "a scheduled match being what a broadcast slot is sought for"
+        send command Season.RecordBroadcastSlot(seasonId = matchScheduled.seasonId, matchId = matchScheduled.matchId, channels = prompt("the channels of this record broadcast slot")) to outlet LeagueContext.ToBroadcastSystem.ToBroadcastSystemToLeagueContext
         let item0: type BroadcastSystem.ScheduleBroadcast = prompt("translate the matchScheduled event into a ScheduleBroadcast, a scheduled match being what there is to televise")
         send item0 to outlet LeagueContext.ToBroadcastSystem.ToBroadcastSystemOut
       }
@@ -121,12 +141,14 @@ context LeagueContext as router is {
       |The model's side of the VenueBooking conversation.
     }
   }
-  adaptor ToVenueBooking to context VenueBooking as merge is { 
+  adaptor ToVenueBooking to context VenueBooking as router is { 
+    outlet ToVenueBookingToLeagueContext is command Season.RecordVenueAvailability
     inlet ToVenueBookingIn is type SeasonEvent    inlet ToVenueBookingReplies is result VenueBooking.VenueAvailability    outlet ToVenueBookingOut is type VenueBooking.VenueBookingCommand
     handler ToVenueBookingHandler is {
       on matchScheduled: event Season.MatchScheduled is {
         let askAnswer: type VenueBooking.VenueAvailability = ask query VenueBooking.CheckAvailability of context VenueBooking
         do "and what a venue must be free for"
+        send command Season.RecordVenueAvailability(seasonId = matchScheduled.seasonId, matchId = matchScheduled.matchId, venueId = prompt("the venue id of this record venue availability"), available = prompt("the available of this record venue availability")) to outlet LeagueContext.ToVenueBooking.ToVenueBookingToLeagueContext
         let claim: type VenueBooking.ReserveVenue = prompt("translate the matchScheduled event into a ReserveVenue holding the ground the fixture needs")
         send claim to outlet LeagueContext.ToVenueBooking.ToVenueBookingOut
       }
@@ -496,6 +518,12 @@ context LeagueContext as router is {
         tell command LeagueContext.LeagueRepository.PersistViolationReported(seasonId = violationReported.seasonId) to repository LeagueContext.LeagueRepository
         do "Increment total violations"
       }
+      on broadcastSlotRecorded: event Season.BroadcastSlotRecorded is {
+        do "a broadcast slot recorded changes nothing this projector keeps"
+      }
+      on venueAvailabilityRecorded: event Season.VenueAvailabilityRecorded is {
+        do "a venue availability recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains league metrics"
       described as {
@@ -510,7 +538,7 @@ context LeagueContext as router is {
   }
   // ---- Event publication for Season ----
   type SeasonEvent is one of {
-    LeagueContext.Season.SeasonCreated or LeagueContext.Season.TeamRegistered or LeagueContext.Season.MatchScheduled or LeagueContext.Season.ResultRecorded or LeagueContext.Season.RefereeAssigned or LeagueContext.Season.ViolationReported or LeagueContext.Season.PlayoffsStarted or LeagueContext.Season.BracketAdvanced or LeagueContext.Season.SeasonCompleted or LeagueContext.Season.SeasonCancelled
+    LeagueContext.Season.SeasonCreated or LeagueContext.Season.TeamRegistered or LeagueContext.Season.MatchScheduled or LeagueContext.Season.ResultRecorded or LeagueContext.Season.RefereeAssigned or LeagueContext.Season.ViolationReported or LeagueContext.Season.PlayoffsStarted or LeagueContext.Season.BracketAdvanced or LeagueContext.Season.SeasonCompleted or LeagueContext.Season.SeasonCancelled or LeagueContext.Season.VenueAvailabilityRecorded or LeagueContext.Season.BroadcastSlotRecorded
   } with {
     briefly "Season event alternation"
     described as {
@@ -566,6 +594,18 @@ context LeagueContext as router is {
         send seasonCancelled to outlet SeasonEventSplitToToVenueBooking
         send seasonCancelled to outlet SeasonEventSplitToToBroadcastSystem
         tell seasonCancelled to entity LeagueContext.Season
+      }
+      on venueAvailabilityRecorded: event Season.VenueAvailabilityRecorded is {
+        send venueAvailabilityRecorded to outlet SeasonEventSplitToLeagueMetrics
+        send venueAvailabilityRecorded to outlet SeasonEventSplitToToVenueBooking
+        send venueAvailabilityRecorded to outlet SeasonEventSplitToToBroadcastSystem
+        tell venueAvailabilityRecorded to entity LeagueContext.Season
+      }
+      on broadcastSlotRecorded: event Season.BroadcastSlotRecorded is {
+        send broadcastSlotRecorded to outlet SeasonEventSplitToLeagueMetrics
+        send broadcastSlotRecorded to outlet SeasonEventSplitToToVenueBooking
+        send broadcastSlotRecorded to outlet SeasonEventSplitToToBroadcastSystem
+        tell broadcastSlotRecorded to entity LeagueContext.Season
       }
       on other is {
         error "Unexpected message for processor SeasonEventSplit"

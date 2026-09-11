@@ -1,5 +1,17 @@
 // Restaurant Operations - Order Context
 context OrderContext as router is {
+  inlet OrderContextFromToReservationService is command TableOrder.RecordReservation with {
+    briefly "What ToReservationService makes of the answers it gets"
+  }
+  connector 'ToReservationService Intake' is from outlet OrderContext.ToReservationService.ToReservationServiceToOrderContext to inlet OrderContext.OrderContextFromToReservationService with {
+    briefly "Answers translated by ToReservationService, on their way in"
+  }
+  inlet OrderContextFromToTableManagementService is command TableOrder.RecordTableOptions with {
+    briefly "What ToTableManagementService makes of the answers it gets"
+  }
+  connector 'ToTableManagementService Intake' is from outlet OrderContext.ToTableManagementService.ToTableManagementServiceToOrderContext to inlet OrderContext.OrderContextFromToTableManagementService with {
+    briefly "Answers translated by ToTableManagementService, on their way in"
+  }
   type ToMenuServiceCommand is one of {
     TableOrder.AddItem or TableOrder.VoidItem
   } with {
@@ -26,6 +38,12 @@ context OrderContext as router is {
   inlet TableOrderCommandStreamIn is type TableOrderCommand  outlet TableOrderCommandStreamOut is type TableOrderCommand
   inlet MarketplaceOrderResultStreamIn is result TableOrder.TableOrderResult  outlet MarketplaceOrderResultStreamOut is result TableOrder.TableOrderResult
   handler OrderContextBoundary is {
+    on recordTableOptions: command TableOrder.RecordTableOptions is {
+      send recordTableOptions to outlet OrderContext.TableOrderCommandStreamOut
+    }
+    on recordReservation: command TableOrder.RecordReservation is {
+      send recordReservation to outlet OrderContext.TableOrderCommandStreamOut
+    }
     on createOrder: command TableOrder.CreateOrder is {
       send createOrder to outlet OrderContext.TableOrderCommandStreamOut
     }
@@ -311,12 +329,14 @@ context OrderContext as router is {
       |The model's side of the ReservationService conversation.
     }
   }
-  adaptor ToReservationService to context ReservationService as merge is { 
+  adaptor ToReservationService to context ReservationService as router is { 
+    outlet ToReservationServiceToOrderContext is command TableOrder.RecordReservation
     inlet ToReservationServiceIn is type TableOrderEvent    inlet ToReservationServiceReplies is result ReservationService.ReservationDetails    outlet ToReservationServiceOut is type ReservationService.ReservationServiceRequest
     handler ToReservationServiceHandler is {
       on orderCreated: event TableOrder.OrderCreated is {
         let askAnswer: type ReservationService.ReservationDetails = ask query ReservationService.GetReservation of context ReservationService
         do "and the booking the table was held under"
+        send command TableOrder.RecordReservation(orderId = orderCreated.orderId, reservationId = prompt("the reservation id of this record reservation"), guestName = prompt("the guest name of this record reservation"), specialRequests = prompt("the special requests of this record reservation")) to outlet OrderContext.ToReservationService.ToReservationServiceToOrderContext
         let item0: type ReservationService.MarkSeated = prompt("translate the orderCreated event into a MarkSeated, a table order meaning the party is at the table")
         send item0 to outlet OrderContext.ToReservationService.ToReservationServiceOut
       }
@@ -358,12 +378,14 @@ context OrderContext as router is {
       |The model's side of the TableManagementService conversation.
     }
   }
-  adaptor ToTableManagementService to context TableManagementService as merge is { 
+  adaptor ToTableManagementService to context TableManagementService as router is { 
+    outlet ToTableManagementServiceToOrderContext is command TableOrder.RecordTableOptions
     inlet ToTableManagementServiceIn is type TableOrderEvent    inlet ToTableManagementServiceReplies is result TableManagementService.AvailableTables    outlet ToTableManagementServiceOut is type TableManagementService.TableManagementServiceCommand
     handler ToTableManagementServiceHandler is {
       on orderCreated: event TableOrder.OrderCreated is {
         let askAnswer: type TableManagementService.AvailableTables = ask query TableManagementService.GetAvailableTables of context TableManagementService
         do "an order arriving being when a table must be found for it"
+        send command TableOrder.RecordTableOptions(orderId = orderCreated.orderId, tables = prompt("the tables of this record table options")) to outlet OrderContext.ToTableManagementService.ToTableManagementServiceToOrderContext
         let item0: type TableManagementService.AssignTable = prompt("translate the orderCreated event into a AssignTable, an order being what occupies a table")
         send item0 to outlet OrderContext.ToTableManagementService.ToTableManagementServiceOut
       }
@@ -846,6 +868,12 @@ context OrderContext as router is {
         tell command OrderContext.OrderRepository.PersistOrderCancelled(orderId = orderCancelled.orderId) to repository OrderContext.OrderRepository
         do "Update cancellation metrics"
       }
+      on reservationRecorded: event TableOrder.ReservationRecorded is {
+        do "a reservation recorded changes nothing this projector keeps"
+      }
+      on tableOptionsRecorded: event TableOrder.TableOptionsRecorded is {
+        do "a table options recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains restaurant analytics"
       described as {
@@ -860,7 +888,7 @@ context OrderContext as router is {
   }
   // ---- Event publication for TableOrder ----
   type TableOrderEvent is one of {
-    OrderContext.TableOrder.OrderCreated or OrderContext.TableOrder.ItemAdded or OrderContext.TableOrder.ItemModified or OrderContext.TableOrder.ItemVoided or OrderContext.TableOrder.OrderSubmitted or OrderContext.TableOrder.ItemPreparing or OrderContext.TableOrder.ItemReady or OrderContext.TableOrder.ItemServed or OrderContext.TableOrder.BillRequested or OrderContext.TableOrder.DiscountApplied or OrderContext.TableOrder.PaymentProcessed or OrderContext.TableOrder.BillSplit or OrderContext.TableOrder.OrderClosed or OrderContext.TableOrder.OrderCancelled
+    OrderContext.TableOrder.OrderCreated or OrderContext.TableOrder.ItemAdded or OrderContext.TableOrder.ItemModified or OrderContext.TableOrder.ItemVoided or OrderContext.TableOrder.OrderSubmitted or OrderContext.TableOrder.ItemPreparing or OrderContext.TableOrder.ItemReady or OrderContext.TableOrder.ItemServed or OrderContext.TableOrder.BillRequested or OrderContext.TableOrder.DiscountApplied or OrderContext.TableOrder.PaymentProcessed or OrderContext.TableOrder.BillSplit or OrderContext.TableOrder.OrderClosed or OrderContext.TableOrder.OrderCancelled or OrderContext.TableOrder.TableOptionsRecorded or OrderContext.TableOrder.ReservationRecorded
   } with {
     briefly "TableOrder event alternation"
     described as {
@@ -945,6 +973,18 @@ context OrderContext as router is {
         send orderCancelled to outlet TableOrderEventSplitToToTableManagementService
         send orderCancelled to outlet TableOrderEventSplitToToPaymentProcessingService
         tell orderCancelled to entity OrderContext.TableOrder
+      }
+      on tableOptionsRecorded: event TableOrder.TableOptionsRecorded is {
+        send tableOptionsRecorded to outlet TableOrderEventSplitToRestaurantAnalytics
+        send tableOptionsRecorded to outlet TableOrderEventSplitToToTableManagementService
+        send tableOptionsRecorded to outlet TableOrderEventSplitToToPaymentProcessingService
+        tell tableOptionsRecorded to entity OrderContext.TableOrder
+      }
+      on reservationRecorded: event TableOrder.ReservationRecorded is {
+        send reservationRecorded to outlet TableOrderEventSplitToRestaurantAnalytics
+        send reservationRecorded to outlet TableOrderEventSplitToToTableManagementService
+        send reservationRecorded to outlet TableOrderEventSplitToToPaymentProcessingService
+        tell reservationRecorded to entity OrderContext.TableOrder
       }
       on other is {
         error "Unexpected message for processor TableOrderEventSplit"

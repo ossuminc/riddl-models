@@ -1,12 +1,17 @@
 // Infrastructure as Code - Stack Context
 context StackContext as router is {
+  type ToModuleRegistryServiceCommand is one of {
+    Stack.RecordModule or Stack.UpdateVariables
+  } with {
+    briefly "What ToModuleRegistryService turns its answers into"
+  }
   inlet StackContextFromToCloudProviderService is command Stack.ReconcileDrift with {
     briefly "What ToCloudProviderService makes of the answers it gets"
   }
   connector 'ToCloudProviderService Intake' is from outlet StackContext.ToCloudProviderService.ToCloudProviderServiceToStackContext to inlet StackContext.StackContextFromToCloudProviderService with {
     briefly "Answers translated by ToCloudProviderService, on their way in"
   }
-  inlet StackContextFromToModuleRegistryService is command Stack.UpdateVariables with {
+  inlet StackContextFromToModuleRegistryService is type ToModuleRegistryServiceCommand with {
     briefly "What ToModuleRegistryService makes of the answers it gets"
   }
   connector 'ToModuleRegistryService Intake' is from outlet StackContext.ToModuleRegistryService.ToModuleRegistryServiceToStackContext to inlet StackContext.StackContextFromToModuleRegistryService with {
@@ -27,6 +32,9 @@ context StackContext as router is {
   inlet StackCommandStreamIn is type StackCommand  outlet StackCommandStreamOut is type StackCommand
   inlet StackResultStreamIn is result Stack.StackResult  outlet StackResultStreamOut is result Stack.StackResult
   handler StackContextBoundary is {
+    on recordModule: command Stack.RecordModule is {
+      send recordModule to outlet StackContext.StackCommandStreamOut
+    }
     on createStack: command Stack.CreateStack is {
       send createStack to outlet StackContext.StackCommandStreamOut
     }
@@ -136,12 +144,13 @@ context StackContext as router is {
     }
   }
   adaptor ToModuleRegistryService to context ModuleRegistryService as router is { 
-    outlet ToModuleRegistryServiceToStackContext is command Stack.UpdateVariables
+    outlet ToModuleRegistryServiceToStackContext is type ToModuleRegistryServiceCommand
     inlet ToModuleRegistryServiceIn is type StackEvent    inlet ToModuleRegistryServiceReplies is type ModuleRegistryService.ModuleRegistryServiceReply    outlet ToModuleRegistryServiceOut is type ModuleRegistryService.ModuleRegistryServiceRequest
     handler ToModuleRegistryServiceHandler is {
       on stackCreated: event Stack.StackCreated is {
         let askAnswer: type ModuleRegistryService.ModuleBundle = ask query ModuleRegistryService.GetModule of context ModuleRegistryService
         do "a new stack needing the module it is composed from"
+        send command Stack.RecordModule(stackId = stackCreated.stackId, moduleId = prompt("the module id of this record module"), version = prompt("the version of this record module"), checksum = prompt("the checksum of this record module")) to outlet StackContext.ToModuleRegistryService.ToModuleRegistryServiceToStackContext
       }
       on planGenerated: event Stack.PlanGenerated is {
         let askAnswer: type ModuleRegistryService.ModuleVersionList = ask query ModuleRegistryService.ListModuleVersions of context ModuleRegistryService
@@ -676,6 +685,9 @@ context StackContext as router is {
         tell command StackContext.StackRepository.PersistStackDestroyed(stackId = stackDestroyed.stackId) to repository StackContext.StackRepository
         do "Update destruction metrics"
       }
+      on moduleRecorded: event Stack.ModuleRecorded is {
+        do "a module recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains infrastructure analytics"
       described as {
@@ -690,7 +702,7 @@ context StackContext as router is {
   }
   // ---- Event publication for Stack ----
   type StackEvent is one of {
-    StackContext.Stack.StackCreated or StackContext.Stack.PlanGenerated or StackContext.Stack.StackApplyStarted or StackContext.Stack.StackApplyCompleted or StackContext.Stack.DriftDetected or StackContext.Stack.DriftReconciled or StackContext.Stack.VariablesUpdated or StackContext.Stack.StackDestroyed or StackContext.Stack.StackLocked or StackContext.Stack.StackUnlocked
+    StackContext.Stack.StackCreated or StackContext.Stack.PlanGenerated or StackContext.Stack.StackApplyStarted or StackContext.Stack.StackApplyCompleted or StackContext.Stack.DriftDetected or StackContext.Stack.DriftReconciled or StackContext.Stack.VariablesUpdated or StackContext.Stack.StackDestroyed or StackContext.Stack.StackLocked or StackContext.Stack.StackUnlocked or StackContext.Stack.ModuleRecorded
   } with {
     briefly "Stack event alternation"
     described as {
@@ -758,6 +770,11 @@ context StackContext as router is {
         send stackUnlocked to outlet StackEventSplitToInfrastructureAnalytics
         send stackUnlocked to outlet StackEventSplitToToStateBackendService
         tell stackUnlocked to entity StackContext.Stack
+      }
+      on moduleRecorded: event Stack.ModuleRecorded is {
+        send moduleRecorded to outlet StackEventSplitToInfrastructureAnalytics
+        send moduleRecorded to outlet StackEventSplitToToStateBackendService
+        tell moduleRecorded to entity StackContext.Stack
       }
       on other is {
         error "Unexpected message for processor StackEventSplit"

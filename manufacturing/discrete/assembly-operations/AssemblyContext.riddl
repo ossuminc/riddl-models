@@ -1,12 +1,23 @@
 // Assembly Operations - Assembly Context
 context AssemblyContext as router is {
+  type ToQualityServiceCommand is one of {
+    AssemblyOrder.RecordDefect or AssemblyOrder.RecordInspectionPlan
+  } with {
+    briefly "What ToQualityService turns its answers into"
+  }
+  inlet AssemblyContextFromToWorkOrderService is command AssemblyOrder.RecordWorkOrderDetails with {
+    briefly "What ToWorkOrderService makes of the answers it gets"
+  }
+  connector 'ToWorkOrderService Intake' is from outlet AssemblyContext.ToWorkOrderService.ToWorkOrderServiceToAssemblyContext to inlet AssemblyContext.AssemblyContextFromToWorkOrderService with {
+    briefly "Answers translated by ToWorkOrderService, on their way in"
+  }
   inlet AssemblyContextFromToInventoryService is command AssemblyOrder.HoldAssembly with {
     briefly "What ToInventoryService makes of the answers it gets"
   }
   connector 'ToInventoryService Intake' is from outlet AssemblyContext.ToInventoryService.ToInventoryServiceToAssemblyContext to inlet AssemblyContext.AssemblyContextFromToInventoryService with {
     briefly "Answers translated by ToInventoryService, on their way in"
   }
-  inlet AssemblyContextFromToQualityService is command AssemblyOrder.RecordDefect with {
+  inlet AssemblyContextFromToQualityService is type ToQualityServiceCommand with {
     briefly "What ToQualityService makes of the answers it gets"
   }
   connector 'ToQualityService Intake' is from outlet AssemblyContext.ToQualityService.ToQualityServiceToAssemblyContext to inlet AssemblyContext.AssemblyContextFromToQualityService with {
@@ -32,6 +43,12 @@ context AssemblyContext as router is {
   inlet AssemblyOrderCommandStreamIn is type AssemblyOrderCommand  outlet AssemblyOrderCommandStreamOut is type AssemblyOrderCommand
   inlet AssemblyOrderResultStreamIn is result AssemblyOrder.AssemblyOrderResult  outlet AssemblyOrderResultStreamOut is result AssemblyOrder.AssemblyOrderResult
   handler AssemblyContextBoundary is {
+    on recordWorkOrderDetails: command AssemblyOrder.RecordWorkOrderDetails is {
+      send recordWorkOrderDetails to outlet AssemblyContext.AssemblyOrderCommandStreamOut
+    }
+    on recordInspectionPlan: command AssemblyOrder.RecordInspectionPlan is {
+      send recordInspectionPlan to outlet AssemblyContext.AssemblyOrderCommandStreamOut
+    }
     on createAssemblyOrder: command AssemblyOrder.CreateAssemblyOrder is {
       send createAssemblyOrder to outlet AssemblyContext.AssemblyOrderCommandStreamOut
     }
@@ -157,7 +174,7 @@ context AssemblyContext as router is {
     }
   }
   adaptor ToQualityService to context QualityService as router is { 
-    outlet ToQualityServiceToAssemblyContext is command AssemblyOrder.RecordDefect
+    outlet ToQualityServiceToAssemblyContext is type ToQualityServiceCommand
     inlet ToQualityServiceIn is type AssemblyOperations.QualityService.QualityCommand    inlet ToQualityServiceReplies is type QualityService.QualityServiceReply    outlet TranslatedQualityCommands is type QualityService.QualityServiceRequest
     handler ToQualityServiceHandler is {
       on recordDefect: command QualityService.RecordDefect is {
@@ -176,6 +193,7 @@ context AssemblyContext as router is {
       on assemblyStarted: event AssemblyOrder.AssemblyStarted is {
         let askAnswer: type QualityService.InspectionPlan = ask query QualityService.GetInspectionPlan of context QualityService
         do "an assembly starting needing the plan by which it will be inspected"
+        send command AssemblyOrder.RecordInspectionPlan(assemblyOrderId = assemblyStarted.assemblyOrderId, checkpoints = prompt("the checkpoints of this record inspection plan"), passCriteria = prompt("the pass criteria of this record inspection plan")) to outlet AssemblyContext.ToQualityService.ToQualityServiceToAssemblyContext
       }
       on other is {
         error "Unexpected message for adaptor ToQualityService"
@@ -212,7 +230,8 @@ context AssemblyContext as router is {
       |The model's side of the WorkOrderService conversation.
     }
   }
-  adaptor ToWorkOrderService to context WorkOrderService as merge is { 
+  adaptor ToWorkOrderService to context WorkOrderService as router is { 
+    outlet ToWorkOrderServiceToAssemblyContext is command AssemblyOrder.RecordWorkOrderDetails
     inlet ToWorkOrderServiceIn is type AssemblyOperations.WorkOrderService.WorkOrderServiceCommand    inlet ToWorkOrderServiceReplies is result WorkOrderService.WorkOrderDetails    outlet TranslatedWorkOrderCommands is type WorkOrderService.WorkOrderServiceRequest
     handler ToWorkOrderServiceHandler is {
       on reportAssemblyComplete: command WorkOrderService.ReportAssemblyComplete is {
@@ -221,6 +240,7 @@ context AssemblyContext as router is {
       on assemblyOrderCreated: event AssemblyOrder.AssemblyOrderCreated is {
         let askAnswer: type WorkOrderService.WorkOrderDetails = ask query WorkOrderService.GetWorkOrderDetails of context WorkOrderService
         do "a new assembly order needing the parent work order it belongs to"
+        send command AssemblyOrder.RecordWorkOrderDetails(assemblyOrderId = assemblyOrderCreated.assemblyOrderId, quantity = prompt("the quantity of this record work order details"), priority = prompt("the priority of this record work order details"), workOrderStatus = prompt("the work order status of this record work order details")) to outlet AssemblyContext.ToWorkOrderService.ToWorkOrderServiceToAssemblyContext
       }
       on reportAssemblyFailure: command WorkOrderService.ReportAssemblyFailure is {
         send reportAssemblyFailure to outlet TranslatedWorkOrderCommands
@@ -767,6 +787,12 @@ context AssemblyContext as router is {
       on defectRecorded: event AssemblyOrder.DefectRecorded is {
         tell command AssemblyContext.AssemblyOrderRepository.PersistDefectRecorded(assemblyOrderId = defectRecorded.assemblyOrderId) to repository AssemblyContext.AssemblyOrderRepository
       }
+      on inspectionPlanRecorded: event AssemblyOrder.InspectionPlanRecorded is {
+        do "a inspection plan recorded changes nothing this projector keeps"
+      }
+      on workOrderDetailsRecorded: event AssemblyOrder.WorkOrderDetailsRecorded is {
+        do "a work order details recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains assembly analytics"
       described as {
@@ -781,7 +807,7 @@ context AssemblyContext as router is {
     }
   }
   type AssemblyOrderEvent is one of {
-    AssemblyContext.AssemblyOrder.AssemblyOrderCreated or AssemblyContext.AssemblyOrder.AssemblyCompleted or AssemblyContext.AssemblyOrder.AssemblyFailed or AssemblyContext.AssemblyOrder.AssemblyHeld or AssemblyContext.AssemblyOrder.AssemblyStarted or AssemblyContext.AssemblyOrder.DefectRecorded or AssemblyContext.AssemblyOrder.HoldReleased or AssemblyContext.AssemblyOrder.StepCompleted
+    AssemblyContext.AssemblyOrder.AssemblyOrderCreated or AssemblyContext.AssemblyOrder.AssemblyCompleted or AssemblyContext.AssemblyOrder.AssemblyFailed or AssemblyContext.AssemblyOrder.AssemblyHeld or AssemblyContext.AssemblyOrder.AssemblyStarted or AssemblyContext.AssemblyOrder.DefectRecorded or AssemblyContext.AssemblyOrder.HoldReleased or AssemblyContext.AssemblyOrder.StepCompleted or AssemblyContext.AssemblyOrder.WorkOrderDetailsRecorded or AssemblyContext.AssemblyOrder.InspectionPlanRecorded
   } with {
     briefly "AssemblyOrder event union"
     described as {
@@ -825,6 +851,14 @@ context AssemblyContext as router is {
       on assemblyFailed: event AssemblyOrder.AssemblyFailed is {
         send assemblyFailed to outlet AssemblyOrderEventSplitToAssemblyLineAnalytics
         tell assemblyFailed to entity AssemblyContext.AssemblyOrder
+      }
+      on workOrderDetailsRecorded: event AssemblyOrder.WorkOrderDetailsRecorded is {
+        send workOrderDetailsRecorded to outlet AssemblyOrderEventSplitToAssemblyLineAnalytics
+        tell workOrderDetailsRecorded to entity AssemblyContext.AssemblyOrder
+      }
+      on inspectionPlanRecorded: event AssemblyOrder.InspectionPlanRecorded is {
+        send inspectionPlanRecorded to outlet AssemblyOrderEventSplitToAssemblyLineAnalytics
+        tell inspectionPlanRecorded to entity AssemblyContext.AssemblyOrder
       }
       on other is {
         error "Unexpected message for processor AssemblyOrderEventSplit"

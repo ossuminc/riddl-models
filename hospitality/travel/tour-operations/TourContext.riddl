@@ -1,5 +1,22 @@
 // Tour Operations - Tour Context
 context TourContext as router is {
+  inlet TourContextFromToGuideAssignmentService is command TourBooking.RecordGuide with {
+    briefly "What ToGuideAssignmentService makes of the answers it gets"
+  }
+  connector 'ToGuideAssignmentService Intake' is from outlet TourContext.ToGuideAssignmentService.ToGuideAssignmentServiceToTourContext to inlet TourContext.TourContextFromToGuideAssignmentService with {
+    briefly "Answers translated by ToGuideAssignmentService, on their way in"
+  }
+  type ToTourCatalogServiceCommand is one of {
+    TourBooking.RecordAlternativeTours or TourBooking.RecordTourDetails
+  } with {
+    briefly "What ToTourCatalogService turns its answers into"
+  }
+  inlet TourContextFromToTourCatalogService is type ToTourCatalogServiceCommand with {
+    briefly "What ToTourCatalogService makes of the answers it gets"
+  }
+  connector 'ToTourCatalogService Intake' is from outlet TourContext.ToTourCatalogService.ToTourCatalogServiceToTourContext to inlet TourContext.TourContextFromToTourCatalogService with {
+    briefly "Answers translated by ToTourCatalogService, on their way in"
+  }
   inlet TourContextFromToDepartureAvailabilityService is command TourBooking.CancelBooking with {
     briefly "What ToDepartureAvailabilityService makes of the answers it gets"
   }
@@ -15,6 +32,15 @@ context TourContext as router is {
   inlet TourBookingCommandStreamIn is type TourBookingCommand  outlet TourBookingCommandStreamOut is type TourBookingCommand
   inlet BookingResultStreamIn is result TourBooking.TourBookingResult  outlet BookingResultStreamOut is result TourBooking.TourBookingResult
   handler TourContextBoundary is {
+    on recordTourDetails: command TourBooking.RecordTourDetails is {
+      send recordTourDetails to outlet TourContext.TourBookingCommandStreamOut
+    }
+    on recordAlternativeTours: command TourBooking.RecordAlternativeTours is {
+      send recordAlternativeTours to outlet TourContext.TourBookingCommandStreamOut
+    }
+    on recordGuide: command TourBooking.RecordGuide is {
+      send recordGuide to outlet TourContext.TourBookingCommandStreamOut
+    }
     on createBooking: command TourBooking.CreateBooking is {
       send createBooking to outlet TourContext.TourBookingCommandStreamOut
     }
@@ -149,12 +175,14 @@ context TourContext as router is {
       |The model's side of the GuideAssignmentService conversation.
     }
   }
-  adaptor ToGuideAssignmentService to context GuideAssignmentService as merge is { 
+  adaptor ToGuideAssignmentService to context GuideAssignmentService as router is { 
+    outlet ToGuideAssignmentServiceToTourContext is command TourBooking.RecordGuide
     inlet ToGuideAssignmentServiceIn is type TourBookingEvent    inlet ToGuideAssignmentServiceReplies is result GuideAssignmentService.AvailableGuides    outlet ToGuideAssignmentServiceOut is type GuideAssignmentService.GuideAssignmentServiceRequest
     handler ToGuideAssignmentServiceHandler is {
       on bookingConfirmed: event TourBooking.BookingConfirmed is {
         let askAnswer: type GuideAssignmentService.AvailableGuides = ask query GuideAssignmentService.GetAvailableGuides of context GuideAssignmentService
         do "a confirmed booking needing a guide free to lead it"
+        send command TourBooking.RecordGuide(bookingId = bookingConfirmed.bookingId, guide = prompt("the guide of this record guide")) to outlet TourContext.ToGuideAssignmentService.ToGuideAssignmentServiceToTourContext
         let item0: type GuideAssignmentService.AssignGuide = prompt("translate the bookingConfirmed event into a AssignGuide, a confirmed booking being what needs someone to lead it")
         send item0 to outlet TourContext.ToGuideAssignmentService.ToGuideAssignmentServiceOut
       }
@@ -263,16 +291,19 @@ context TourContext as router is {
       |The model's side of the PaymentProcessingService conversation.
     }
   }
-  adaptor ToTourCatalogService to context TourCatalogService as merge is { 
+  adaptor ToTourCatalogService to context TourCatalogService as router is { 
+    outlet ToTourCatalogServiceToTourContext is type ToTourCatalogServiceCommand
     inlet ToTourCatalogServiceIn is type TourBookingEvent    inlet ToTourCatalogServiceReplies is type TourCatalogService.TourCatalogServiceReply    outlet ToTourCatalogServiceOut is type TourCatalogService.TourCatalogServiceRequest
     handler ToTourCatalogServiceHandler is {
       on bookingCreated: event TourBooking.BookingCreated is {
         let askAnswer: type TourCatalogService.TourDetails = ask query TourCatalogService.GetTourDetails of context TourCatalogService
         do "a new booking needing the tour's dates, capacity and itinerary"
+        send command TourBooking.RecordTourDetails(bookingId = bookingCreated.bookingId, tour = bookingCreated.tour) to outlet TourContext.ToTourCatalogService.ToTourCatalogServiceToTourContext
       }
       on bookingCancelled: event TourBooking.BookingCancelled is {
         let askAnswer: type TourCatalogService.TourSearchResults = ask query TourCatalogService.SearchTours of context TourCatalogService
         do "a cancellation needing other tours to offer instead"
+        send command TourBooking.RecordAlternativeTours(bookingId = bookingCancelled.bookingId, tours = prompt("the tours of this record alternative tours")) to outlet TourContext.ToTourCatalogService.ToTourCatalogServiceToTourContext
       }
       on other is {
         error "Unexpected message for adaptor ToTourCatalogService"
@@ -781,6 +812,15 @@ context TourContext as router is {
         tell command TourContext.BookingRepository.PersistBookingCancelled(bookingId = bookingCancelled.bookingId) to repository TourContext.BookingRepository
         do "Update cancellation metrics"
       }
+      on alternativeToursRecorded: event TourBooking.AlternativeToursRecorded is {
+        do "a alternative tours recorded changes nothing this projector keeps"
+      }
+      on guideRecorded: event TourBooking.GuideRecorded is {
+        do "a guide recorded changes nothing this projector keeps"
+      }
+      on tourDetailsRecorded: event TourBooking.TourDetailsRecorded is {
+        do "a tour details recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains tour analytics"
       described as {
@@ -795,7 +835,7 @@ context TourContext as router is {
   }
   // ---- Event publication for TourBooking ----
   type TourBookingEvent is one of {
-    TourContext.TourBooking.BookingCreated or TourContext.TourBooking.ParticipantAdded or TourContext.TourBooking.ParticipantRemoved or TourContext.TourBooking.AddOnAdded or TourContext.TourBooking.DepositProcessed or TourContext.TourBooking.BookingConfirmed or TourContext.TourBooking.FinalPaymentProcessed or TourContext.TourBooking.GuestCheckedIn or TourContext.TourBooking.TourStarted or TourContext.TourBooking.TourCompleted or TourContext.TourBooking.ReviewSubmitted or TourContext.TourBooking.BookingCancelled or TourContext.TourBooking.RefundProcessed
+    TourContext.TourBooking.BookingCreated or TourContext.TourBooking.ParticipantAdded or TourContext.TourBooking.ParticipantRemoved or TourContext.TourBooking.AddOnAdded or TourContext.TourBooking.DepositProcessed or TourContext.TourBooking.BookingConfirmed or TourContext.TourBooking.FinalPaymentProcessed or TourContext.TourBooking.GuestCheckedIn or TourContext.TourBooking.TourStarted or TourContext.TourBooking.TourCompleted or TourContext.TourBooking.ReviewSubmitted or TourContext.TourBooking.BookingCancelled or TourContext.TourBooking.RefundProcessed or TourContext.TourBooking.AlternativeToursRecorded or TourContext.TourBooking.TourDetailsRecorded or TourContext.TourBooking.GuideRecorded
   } with {
     briefly "TourBooking event alternation"
     described as {
@@ -877,6 +917,18 @@ context TourContext as router is {
       on refundProcessed: event TourBooking.RefundProcessed is {
         send refundProcessed to outlet TourBookingEventSplitToTourAnalytics
         tell refundProcessed to entity TourContext.TourBooking
+      }
+      on alternativeToursRecorded: event TourBooking.AlternativeToursRecorded is {
+        send alternativeToursRecorded to outlet TourBookingEventSplitToTourAnalytics
+        tell alternativeToursRecorded to entity TourContext.TourBooking
+      }
+      on tourDetailsRecorded: event TourBooking.TourDetailsRecorded is {
+        send tourDetailsRecorded to outlet TourBookingEventSplitToTourAnalytics
+        tell tourDetailsRecorded to entity TourContext.TourBooking
+      }
+      on guideRecorded: event TourBooking.GuideRecorded is {
+        send guideRecorded to outlet TourBookingEventSplitToTourAnalytics
+        tell guideRecorded to entity TourContext.TourBooking
       }
       on other is {
         error "Unexpected message for processor TourBookingEventSplit"

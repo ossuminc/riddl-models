@@ -1,5 +1,11 @@
 // Water Utility - Water Utility Context
 context WaterUtilityContext as router is {
+  inlet WaterUtilityContextFromToRegulatoryReporting is command WaterSystem.RecordComplianceRequirements with {
+    briefly "What ToRegulatoryReporting makes of the answers it gets"
+  }
+  connector 'ToRegulatoryReporting Intake' is from outlet WaterUtilityContext.ToRegulatoryReporting.ToRegulatoryReportingToWaterUtilityContext to inlet WaterUtilityContext.WaterUtilityContextFromToRegulatoryReporting with {
+    briefly "Answers translated by ToRegulatoryReporting, on their way in"
+  }
   inlet WaterUtilityContextFromToSCADASystem is command WaterSystem.UpdatePressure with {
     briefly "What ToSCADASystem makes of the answers it gets"
   }
@@ -9,6 +15,9 @@ context WaterUtilityContext as router is {
   inlet WaterSystemCommandStreamIn is type WaterSystemCommand  outlet WaterSystemCommandStreamOut is type WaterSystemCommand
   inlet WaterSystemResultStreamIn is result WaterSystem.WaterSystemResult  outlet WaterSystemResultStreamOut is result WaterSystem.WaterSystemResult
   handler WaterUtilityContextBoundary is {
+    on recordComplianceRequirements: command WaterSystem.RecordComplianceRequirements is {
+      send recordComplianceRequirements to outlet WaterUtilityContext.WaterSystemCommandStreamOut
+    }
     on registerSystem: command WaterSystem.RegisterSystem is {
       send registerSystem to outlet WaterUtilityContext.WaterSystemCommandStreamOut
     }
@@ -73,7 +82,8 @@ context WaterUtilityContext as router is {
       |The model's side of the RegulatoryReporting conversation.
     }
   }
-  adaptor ToRegulatoryReporting to context RegulatoryReporting as merge is { 
+  adaptor ToRegulatoryReporting to context RegulatoryReporting as router is { 
+    outlet ToRegulatoryReportingToWaterUtilityContext is command WaterSystem.RecordComplianceRequirements
     inlet ToRegulatoryReportingIn is type WaterSystemEvent    inlet ToRegulatoryReportingReplies is result RegulatoryReporting.ComplianceRequirements    outlet ToRegulatoryReportingOut is type RegulatoryReporting.RegulatoryReportingRequest
     handler ToRegulatoryReportingHandler is {
       on qualityTestRecorded: event QualityTestRecorded is {
@@ -83,6 +93,7 @@ context WaterUtilityContext as router is {
       on systemRegistered: event WaterSystem.SystemRegistered is {
         let askAnswer: type RegulatoryReporting.ComplianceRequirements = ask query RegulatoryReporting.GetComplianceRequirements of context RegulatoryReporting
         do "a newly registered system needing the rules it will be held to"
+        send command WaterSystem.RecordComplianceRequirements(systemId = systemRegistered.systemId, regulatoryBody = prompt("the regulatory body of this record compliance requirements"), requirements = prompt("the requirements of this record compliance requirements"), dueDate = prompt("the due date of this record compliance requirements")) to outlet WaterUtilityContext.ToRegulatoryReporting.ToRegulatoryReportingToWaterUtilityContext
       }
       on other is {
         error "Unexpected message for adaptor ToRegulatoryReporting"
@@ -518,6 +529,9 @@ context WaterUtilityContext as router is {
         tell command WaterUtilityContext.WaterUtilityRepository.PersistComplianceReportSubmitted(systemId = complianceReportSubmitted.systemId) to repository WaterUtilityContext.WaterUtilityRepository
         do "Increment compliance reports submitted"
       }
+      on complianceRequirementsRecorded: event WaterSystem.ComplianceRequirementsRecorded is {
+        do "a compliance requirements recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains water utility metrics"
       described as {
@@ -532,7 +546,7 @@ context WaterUtilityContext as router is {
   }
   // ---- Event publication for WaterSystem ----
   type WaterSystemEvent is one of {
-    WaterUtilityContext.WaterSystem.SystemRegistered or WaterUtilityContext.WaterSystem.TreatmentStatusUpdated or WaterUtilityContext.WaterSystem.QualityTestRecorded or WaterUtilityContext.WaterSystem.PressureUpdated or WaterUtilityContext.WaterSystem.LeakReported or WaterUtilityContext.WaterSystem.LeakResolved or WaterUtilityContext.WaterSystem.AlertRaised or WaterUtilityContext.WaterSystem.ComplianceReportSubmitted or WaterUtilityContext.WaterSystem.SystemShutdown or WaterUtilityContext.WaterSystem.SystemRestored
+    WaterUtilityContext.WaterSystem.SystemRegistered or WaterUtilityContext.WaterSystem.TreatmentStatusUpdated or WaterUtilityContext.WaterSystem.QualityTestRecorded or WaterUtilityContext.WaterSystem.PressureUpdated or WaterUtilityContext.WaterSystem.LeakReported or WaterUtilityContext.WaterSystem.LeakResolved or WaterUtilityContext.WaterSystem.AlertRaised or WaterUtilityContext.WaterSystem.ComplianceReportSubmitted or WaterUtilityContext.WaterSystem.SystemShutdown or WaterUtilityContext.WaterSystem.SystemRestored or WaterUtilityContext.WaterSystem.ComplianceRequirementsRecorded
   } with {
     briefly "WaterSystem event alternation"
     described as {
@@ -588,6 +602,10 @@ context WaterUtilityContext as router is {
       on systemRestored: event WaterSystem.SystemRestored is {
         send systemRestored to outlet WaterSystemEventSplitToWaterUtilityMetrics
         tell systemRestored to entity WaterUtilityContext.WaterSystem
+      }
+      on complianceRequirementsRecorded: event WaterSystem.ComplianceRequirementsRecorded is {
+        send complianceRequirementsRecorded to outlet WaterSystemEventSplitToWaterUtilityMetrics
+        tell complianceRequirementsRecorded to entity WaterUtilityContext.WaterSystem
       }
       on other is {
         error "Unexpected message for processor WaterSystemEventSplit"

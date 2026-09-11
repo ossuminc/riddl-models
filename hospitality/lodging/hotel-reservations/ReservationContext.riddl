@@ -1,5 +1,11 @@
 // Hotel Reservations - Reservation Context
 context ReservationContext as router is {
+  inlet ReservationContextFromToLoyaltyProgramService is command Reservation.RecordLoyaltyStatus with {
+    briefly "What ToLoyaltyProgramService makes of the answers it gets"
+  }
+  connector 'ToLoyaltyProgramService Intake' is from outlet ReservationContext.ToLoyaltyProgramService.ToLoyaltyProgramServiceToReservationContext to inlet ReservationContext.ReservationContextFromToLoyaltyProgramService with {
+    briefly "Answers translated by ToLoyaltyProgramService, on their way in"
+  }
   type FromHousekeepingServiceCommand is one of {
     Room.CompleteTurnover or Room.SendToMaintenance
   } with {
@@ -21,6 +27,9 @@ context ReservationContext as router is {
   inlet ReservationCommandStreamIn is type ReservationCommand  outlet ReservationCommandStreamOut is type ReservationCommand
   inlet ReservationBoardViewStreamIn is result Reservation.ReservationResult  outlet ReservationBoardViewStreamOut is result Reservation.ReservationResult
   handler ReservationContextBoundary is {
+    on recordLoyaltyStatus: command Reservation.RecordLoyaltyStatus is {
+      send recordLoyaltyStatus to outlet ReservationContext.ReservationCommandStreamOut
+    }
     on registerRoom: command Room.RegisterRoom is {
       send registerRoom to outlet ReservationContext.RoomCommandStreamOut
     }
@@ -316,12 +325,14 @@ context ReservationContext as router is {
       |The model's side of the LoyaltyProgramService conversation.
     }
   }
-  adaptor ToLoyaltyProgramService to context LoyaltyProgramService as merge is { 
+  adaptor ToLoyaltyProgramService to context LoyaltyProgramService as router is { 
+    outlet ToLoyaltyProgramServiceToReservationContext is command Reservation.RecordLoyaltyStatus
     inlet ToLoyaltyProgramServiceIn is type ReservationEvent    inlet ToLoyaltyProgramServiceReplies is result LoyaltyProgramService.MemberStatus    outlet ToLoyaltyProgramServiceOut is type LoyaltyProgramService.LoyaltyProgramServiceCommand
     handler ToLoyaltyProgramServiceHandler is {
       on reservationCreated: event Reservation.ReservationCreated is {
         let askAnswer: type LoyaltyProgramService.MemberStatus = ask query LoyaltyProgramService.GetMemberStatus of context LoyaltyProgramService
         do "the guest's standing deciding the rate and the room before anything is confirmed"
+        send command Reservation.RecordLoyaltyStatus(reservationId = reservationCreated.reservationId, loyaltyNumber = prompt("the loyalty number of this record loyalty status"), tier = prompt("the tier of this record loyalty status"), points = prompt("the points of this record loyalty status")) to outlet ReservationContext.ToLoyaltyProgramService.ToLoyaltyProgramServiceToReservationContext
       }
       on guestCheckedOut: event Reservation.GuestCheckedOut is {
         let item0: type LoyaltyProgramService.AccruePoints = prompt("translate the guestCheckedOut event into a AccruePoints, the stay being consumed and its spend final at checkout")
@@ -878,6 +889,9 @@ context ReservationContext as router is {
         tell command ReservationContext.ReservationRepository.PersistReservationCancelled(reservationId = reservationCancelled.reservationId) to repository ReservationContext.ReservationRepository
         do "Update cancellation metrics"
       }
+      on loyaltyStatusRecorded: event Reservation.LoyaltyStatusRecorded is {
+        do "a loyalty status recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains hotel analytics"
       described as {
@@ -892,7 +906,7 @@ context ReservationContext as router is {
   }
   // ---- Event publication for Reservation ----
   type ReservationEvent is one of {
-    ReservationContext.Reservation.ReservationCreated or ReservationContext.Reservation.ReservationConfirmed or ReservationContext.Reservation.ReservationModified or ReservationContext.Reservation.SpecialRequestAdded or ReservationContext.Reservation.GuestCheckedIn or ReservationContext.Reservation.ChargePosted or ReservationContext.Reservation.GuestCheckedOut or ReservationContext.Reservation.ReservationCancelled or ReservationContext.Reservation.NoShowRecorded
+    ReservationContext.Reservation.ReservationCreated or ReservationContext.Reservation.ReservationConfirmed or ReservationContext.Reservation.ReservationModified or ReservationContext.Reservation.SpecialRequestAdded or ReservationContext.Reservation.GuestCheckedIn or ReservationContext.Reservation.ChargePosted or ReservationContext.Reservation.GuestCheckedOut or ReservationContext.Reservation.ReservationCancelled or ReservationContext.Reservation.NoShowRecorded or ReservationContext.Reservation.LoyaltyStatusRecorded
   } with {
     briefly "Reservation event alternation"
     described as {
@@ -950,6 +964,10 @@ context ReservationContext as router is {
       on noShowRecorded: event Reservation.NoShowRecorded is {
         send noShowRecorded to outlet ReservationEventSplitToHotelAnalytics
         tell noShowRecorded to entity ReservationContext.Reservation
+      }
+      on loyaltyStatusRecorded: event Reservation.LoyaltyStatusRecorded is {
+        send loyaltyStatusRecorded to outlet ReservationEventSplitToHotelAnalytics
+        tell loyaltyStatusRecorded to entity ReservationContext.Reservation
       }
       on other is {
         error "Unexpected message for processor ReservationEventSplit"

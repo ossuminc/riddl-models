@@ -1,5 +1,11 @@
 // Fabric Production - Fabric Context
 context FabricContext as router is {
+  inlet FabricContextFromToCustomerOrderService is command FabricLot.RecordCustomerOrder with {
+    briefly "What ToCustomerOrderService makes of the answers it gets"
+  }
+  connector 'ToCustomerOrderService Intake' is from outlet FabricContext.ToCustomerOrderService.ToCustomerOrderServiceToFabricContext to inlet FabricContext.FabricContextFromToCustomerOrderService with {
+    briefly "Answers translated by ToCustomerOrderService, on their way in"
+  }
   type ToDyeChemicalInventoryCommand is one of {
     FabricLot.RecordWeavingDefect or FabricLot.StartDyeing
   } with {
@@ -32,6 +38,9 @@ context FabricContext as router is {
   inlet FabricLotCommandStreamIn is type FabricLotCommand  outlet FabricLotCommandStreamOut is type FabricLotCommand
   inlet FabricLotResultStreamIn is result FabricLot.FabricLotResult  outlet FabricLotResultStreamOut is result FabricLot.FabricLotResult
   handler FabricContextBoundary is {
+    on recordCustomerOrder: command FabricLot.RecordCustomerOrder is {
+      send recordCustomerOrder to outlet FabricContext.FabricLotCommandStreamOut
+    }
     on createFabricLot: command FabricLot.CreateFabricLot is {
       send createFabricLot to outlet FabricContext.FabricLotCommandStreamOut
     }
@@ -102,12 +111,14 @@ context FabricContext as router is {
       |The model's side of the CustomerOrderService conversation.
     }
   }
-  adaptor ToCustomerOrderService to context CustomerOrderService as merge is { 
+  adaptor ToCustomerOrderService to context CustomerOrderService as router is { 
+    outlet ToCustomerOrderServiceToFabricContext is command FabricLot.RecordCustomerOrder
     inlet ToCustomerOrderServiceIn is type FabricLotEvent    inlet ToCustomerOrderServiceReplies is result CustomerOrderService.FabricOrder    outlet ToCustomerOrderServiceOut is type CustomerOrderService.CustomerOrderServiceCommand
     handler ToCustomerOrderServiceHandler is {
       on fabricLotCreated: event FabricLot.FabricLotCreated is {
         let askAnswer: type CustomerOrderService.FabricOrder = ask query CustomerOrderService.GetFabricOrder of context CustomerOrderService
         do "a lot needing the order that called for it"
+        send command FabricLot.RecordCustomerOrder(fabricLotId = fabricLotCreated.fabricLotId, customerName = prompt("the customer name of this record customer order"), yardsOrdered = prompt("the yards ordered of this record customer order"), dueDate = prompt("the due date of this record customer order")) to outlet FabricContext.ToCustomerOrderService.ToCustomerOrderServiceToFabricContext
       }
       on fabricGraded: event FabricLot.FabricGraded is {
         let item0: type CustomerOrderService.UpdateOrderStatus = prompt("translate the fabricGraded event into a UpdateOrderStatus, grading being what fixes what the customer is getting")
@@ -660,6 +671,9 @@ context FabricContext as router is {
         tell command FabricContext.FabricLotRepository.PersistWeavingDefectRecorded(fabricLotId = weavingDefectRecorded.fabricLotId) to repository FabricContext.FabricLotRepository
         do "Update defect rate"
       }
+      on customerOrderRecorded: event FabricLot.CustomerOrderRecorded is {
+        do "a customer order recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Calculates loom efficiency"
       described as {
@@ -802,6 +816,9 @@ context FabricContext as router is {
       on dyeingCompleted: event FabricLot.DyeingCompleted is {
         tell command FabricContext.FabricLotRepository.PersistDyeingCompleted(fabricLotId = dyeingCompleted.fabricLotId) to repository FabricContext.FabricLotRepository
         do "Update color match statistics"
+      }
+      on customerOrderRecorded: event FabricLot.CustomerOrderRecorded is {
+        do "a customer order recorded changes nothing this projector keeps"
       }
     } with {
       briefly "Tracks dye consistency"
@@ -966,6 +983,9 @@ context FabricContext as router is {
         tell command FabricContext.FabricLotRepository.PersistFabricGraded(fabricLotId = fabricGraded.fabricLotId) to repository FabricContext.FabricLotRepository
         do "Update grading statistics"
       }
+      on customerOrderRecorded: event FabricLot.CustomerOrderRecorded is {
+        do "a customer order recorded changes nothing this projector keeps"
+      }
       on fabricShipped: event FabricLot.FabricShipped is {
         tell command FabricContext.FabricLotRepository.PersistFabricShipped(fabricLotId = fabricShipped.fabricLotId) to repository FabricContext.FabricLotRepository
         do "Update shipment statistics"
@@ -984,7 +1004,7 @@ context FabricContext as router is {
   }
   // ---- Event publication for FabricLot ----
   type FabricLotEvent is one of {
-    FabricContext.FabricLot.FabricLotCreated or FabricContext.FabricLot.WarpingStarted or FabricContext.FabricLot.WeavingStarted or FabricContext.FabricLot.WeavingDefectRecorded or FabricContext.FabricLot.WeavingCompleted or FabricContext.FabricLot.DyeingStarted or FabricContext.FabricLot.DyeingCompleted or FabricContext.FabricLot.FinishingApplied or FabricContext.FabricLot.FinishingCompleted or FabricContext.FabricLot.FabricGraded or FabricContext.FabricLot.FabricShipped
+    FabricContext.FabricLot.FabricLotCreated or FabricContext.FabricLot.WarpingStarted or FabricContext.FabricLot.WeavingStarted or FabricContext.FabricLot.WeavingDefectRecorded or FabricContext.FabricLot.WeavingCompleted or FabricContext.FabricLot.DyeingStarted or FabricContext.FabricLot.DyeingCompleted or FabricContext.FabricLot.FinishingApplied or FabricContext.FabricLot.FinishingCompleted or FabricContext.FabricLot.FabricGraded or FabricContext.FabricLot.FabricShipped or FabricContext.FabricLot.CustomerOrderRecorded
   } with {
     briefly "FabricLot event alternation"
     described as {
@@ -1074,6 +1094,13 @@ context FabricContext as router is {
         send fabricShipped to outlet FabricLotEventSplitToGradingYieldAnalytics
         send fabricShipped to outlet FabricLotEventSplitToToCustomerOrderService
         tell fabricShipped to entity FabricContext.FabricLot
+      }
+      on customerOrderRecorded: event FabricLot.CustomerOrderRecorded is {
+        send customerOrderRecorded to outlet FabricLotEventSplitToLoomEfficiencyAnalytics
+        send customerOrderRecorded to outlet FabricLotEventSplitToDyeLotConsistencyAnalytics
+        send customerOrderRecorded to outlet FabricLotEventSplitToGradingYieldAnalytics
+        send customerOrderRecorded to outlet FabricLotEventSplitToToCustomerOrderService
+        tell customerOrderRecorded to entity FabricContext.FabricLot
       }
       on other is {
         error "Unexpected message for processor FabricLotEventSplit"

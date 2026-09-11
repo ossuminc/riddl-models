@@ -1,7 +1,7 @@
 // Inventory Entity - Manages inventory items at specific warehouse locations
 aggregate event-sourced entity Inventory as flow is {
   type InventoryCommand is one of {
-    Inventory.ReceiveInventory or Inventory.AdjustInventory or Inventory.ReserveInventory or Inventory.ReleaseReservation or Inventory.TransferInventory or Inventory.UpdateLocation or Inventory.ShipInventory or Inventory.QuarantineInventory or Inventory.ReleaseFromQuarantine
+    Inventory.ReceiveInventory or Inventory.AdjustInventory or Inventory.ReserveInventory or Inventory.ReleaseReservation or Inventory.TransferInventory or Inventory.UpdateLocation or Inventory.ShipInventory or Inventory.QuarantineInventory or Inventory.ReleaseFromQuarantine or Inventory.RecordProductDetails
   } with {
     briefly "Inventory command alternation"
     described as {
@@ -110,6 +110,37 @@ aggregate event-sourced entity Inventory as flow is {
     briefly "Release inventory from quarantine"
     described as {
       |Releases inventory from quarantine, setting it to available, damaged, or other appropriate status.
+    }
+  }
+  command RecordProductDetails yields event ProductDetailsRecorded is {
+    inventoryId: InventoryId with {
+      briefly "inventory addressed"
+      described as {
+        |Inventory addressed.
+      }
+    }
+    productName: String(1,200) with {
+      briefly "product name"
+      described as {
+        |Product name.
+      }
+    }
+    sku: String(1,50) with {
+      briefly "sku"
+      described as {
+        |Sku.
+      }
+    }
+    weight: Number with {
+      briefly "weight"
+      described as {
+        |Weight.
+      }
+    }
+  } with {
+    briefly "Record product details"
+    described as {
+      |Carries an answer obtained from an external service into the inventory.
     }
   }
   // Events
@@ -225,6 +256,43 @@ aggregate event-sourced entity Inventory as flow is {
     briefly "Inventory was released from quarantine"
     described as {
       |Records the release of inventory from quarantine with its resulting status.
+    }
+  }
+  event ProductDetailsRecorded is {
+    inventoryId: InventoryId with {
+      briefly "inventory addressed"
+      described as {
+        |Inventory addressed.
+      }
+    }
+    productName: String(1,200) with {
+      briefly "product name"
+      described as {
+        |Product name.
+      }
+    }
+    sku: String(1,50) with {
+      briefly "sku"
+      described as {
+        |Sku.
+      }
+    }
+    weight: Number with {
+      briefly "weight"
+      described as {
+        |Weight.
+      }
+    }
+    recordedAt: TimeStamp with {
+      briefly "when it was recorded"
+      described as {
+        |When it was recorded.
+      }
+    }
+  } with {
+    briefly "Product details recorded"
+    described as {
+      |Emitted when record product details has been applied.
     }
   }
   // State records
@@ -382,6 +450,9 @@ aggregate event-sourced entity Inventory as flow is {
     on releaseFromQuarantine: command ReleaseFromQuarantine is {
       yield event InventoryReleasedFromQuarantine(inventoryId = releaseFromQuarantine.inventoryId, disposition = releaseFromQuarantine.disposition, releasedBy = releaseFromQuarantine.releasedBy, notes = releaseFromQuarantine.notes, timestamp = prompt("the timestamp of this inventory released from quarantine"))
     }
+    on recordProductDetails: command RecordProductDetails is {
+      yield event ProductDetailsRecorded(inventoryId = recordProductDetails.inventoryId, productName = recordProductDetails.productName, sku = recordProductDetails.sku, weight = recordProductDetails.weight, recordedAt = prompt("now"))
+    }
     on inventoryReceived: event InventoryReceived is {
       morph entity WarehouseContext.Inventory to state WarehouseContext.Inventory.ActiveInventoryState with record Inventory.ActiveInventoryStateData(inventoryId = inventoryReceived.inventoryId, productId = inventoryReceived.productId, locationId = inventoryReceived.locationId, quantity = inventoryReceived.quantity, unitOfMeasure = inventoryReceived.unitOfMeasure, lotNumber = inventoryReceived.lotNumber, expirationDate = inventoryReceived.expirationDate, reservedQuantity = prompt("the reserved quantity of this active inventory state data"), status = prompt("the status of this active inventory state data"), lastUpdated = prompt("the last updated of this active inventory state data"))
     }
@@ -408,6 +479,9 @@ aggregate event-sourced entity Inventory as flow is {
     }
     on inventoryReleasedFromQuarantine: event InventoryReleasedFromQuarantine is {
       morph entity WarehouseContext.Inventory to state WarehouseContext.Inventory.ActiveInventoryState with record Inventory.ActiveInventoryStateData(inventoryId = inventoryReleasedFromQuarantine.inventoryId, productId = prompt("the product id of this active inventory state data"), locationId = prompt("the location id of this active inventory state data"), quantity = prompt("the quantity of this active inventory state data"), reservedQuantity = prompt("the reserved quantity of this active inventory state data"), unitOfMeasure = prompt("the unit of measure of this active inventory state data"), status = prompt("the status of this active inventory state data"), lotNumber = prompt("the lot number of this active inventory state data"), expirationDate = empty, lastUpdated = prompt("the last updated of this active inventory state data"))
+    }
+    on productDetailsRecorded: event ProductDetailsRecorded is {
+      do "apply ProductDetailsRecorded to the inventory so it can be persisted and replayed"
     }
   } with {
     briefly "Processes inventory commands"

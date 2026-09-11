@@ -1,5 +1,11 @@
 // CI/CD Pipeline - Pipeline Context
 context PipelineContext as router is {
+  inlet PipelineContextFromToArtifactStorageService is command Pipeline.RecordArtifactLocation with {
+    briefly "What ToArtifactStorageService makes of the answers it gets"
+  }
+  connector 'ToArtifactStorageService Intake' is from outlet PipelineContext.ToArtifactStorageService.ToArtifactStorageServiceToPipelineContext to inlet PipelineContext.PipelineContextFromToArtifactStorageService with {
+    briefly "Answers translated by ToArtifactStorageService, on their way in"
+  }
   inlet PipelineContextFromArtifactStorageService is command Pipeline.StoreArtifact with {
     briefly "What FromArtifactStorageService makes of that service's news"
   }
@@ -15,6 +21,9 @@ context PipelineContext as router is {
   inlet PipelineCommandStreamIn is type PipelineCommand  outlet PipelineCommandStreamOut is type PipelineCommand
   inlet PipelineResultStreamIn is result Pipeline.PipelineResult  outlet PipelineResultStreamOut is result Pipeline.PipelineResult
   handler PipelineContextBoundary is {
+    on recordArtifactLocation: command Pipeline.RecordArtifactLocation is {
+      send recordArtifactLocation to outlet PipelineContext.PipelineCommandStreamOut
+    }
     on createPipeline: command Pipeline.CreatePipeline is {
       send createPipeline to outlet PipelineContext.PipelineCommandStreamOut
     }
@@ -78,7 +87,8 @@ context PipelineContext as router is {
       |The model's side of the ArtifactStorageService conversation.
     }
   }
-  adaptor ToArtifactStorageService to context ArtifactStorageService as merge is { 
+  adaptor ToArtifactStorageService to context ArtifactStorageService as router is { 
+    outlet ToArtifactStorageServiceToPipelineContext is command Pipeline.RecordArtifactLocation
     inlet ToArtifactStorageServiceIn is type PipelineEvent    inlet ToArtifactStorageServiceReplies is result ArtifactStorageService.ArtifactDownloadUrl    outlet ToArtifactStorageServiceOut is type ArtifactStorageService.ArtifactStorageServiceRequest
     handler ToArtifactStorageServiceHandler is {
       on stageCompleted: event StageCompleted is {
@@ -88,6 +98,7 @@ context PipelineContext as router is {
       on deploymentApproved: event Pipeline.DeploymentApproved is {
         let askAnswer: type ArtifactStorageService.ArtifactDownloadUrl = ask query ArtifactStorageService.DownloadArtifact of context ArtifactStorageService
         do "an approved deployment needing the artifact it will actually ship"
+        send command Pipeline.RecordArtifactLocation(pipelineId = deploymentApproved.pipelineId, artifactId = prompt("the artifact id of this record artifact location"), url = prompt("the url of this record artifact location"), expiresAt = prompt("the expires at of this record artifact location")) to outlet PipelineContext.ToArtifactStorageService.ToArtifactStorageServiceToPipelineContext
       }
       on other is {
         error "Unexpected message for adaptor ToArtifactStorageService"
@@ -619,6 +630,9 @@ context PipelineContext as router is {
       on deploymentApproved: event Pipeline.DeploymentApproved is {
         tell command PipelineContext.PipelineRepository.PersistDeploymentApproved(pipelineId = deploymentApproved.pipelineId) to repository PipelineContext.PipelineRepository
       }
+      on artifactLocationRecorded: event Pipeline.ArtifactLocationRecorded is {
+        do "a artifact location recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains pipeline analytics"
       described as {
@@ -633,7 +647,7 @@ context PipelineContext as router is {
   }
   // Event streaming infrastructure
   type PipelineEvent is one of {
-    PipelineContext.Pipeline.PipelineCreated or PipelineContext.Pipeline.PipelineStarted or PipelineContext.Pipeline.StageCompleted or PipelineContext.Pipeline.PipelineCompleted or PipelineContext.Pipeline.PipelineCancelled or PipelineContext.Pipeline.ApprovalRequested or PipelineContext.Pipeline.ArtifactStored or PipelineContext.Pipeline.DeploymentApproved or PipelineContext.Pipeline.DeploymentRejected
+    PipelineContext.Pipeline.PipelineCreated or PipelineContext.Pipeline.PipelineStarted or PipelineContext.Pipeline.StageCompleted or PipelineContext.Pipeline.PipelineCompleted or PipelineContext.Pipeline.PipelineCancelled or PipelineContext.Pipeline.ApprovalRequested or PipelineContext.Pipeline.ArtifactStored or PipelineContext.Pipeline.DeploymentApproved or PipelineContext.Pipeline.DeploymentRejected or PipelineContext.Pipeline.ArtifactLocationRecorded
   } with {
     briefly "Pipeline events"
     described as {
@@ -695,6 +709,12 @@ context PipelineContext as router is {
         send pipelineCompleted to outlet PipelineEventSplitToToSourceControlService
         send pipelineCompleted to outlet PipelineEventSplitToToNotificationService
         tell pipelineCompleted to entity PipelineContext.Pipeline
+      }
+      on artifactLocationRecorded: event Pipeline.ArtifactLocationRecorded is {
+        send artifactLocationRecorded to outlet PipelineEventSplitToPipelineAnalytics
+        send artifactLocationRecorded to outlet PipelineEventSplitToToSourceControlService
+        send artifactLocationRecorded to outlet PipelineEventSplitToToNotificationService
+        tell artifactLocationRecorded to entity PipelineContext.Pipeline
       }
       on other is {
         error "Unexpected message for processor PipelineEventSplit"

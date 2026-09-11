@@ -1,5 +1,11 @@
 // Production Management - Production Context
 context ProductionContext as router is {
+  inlet ProductionContextFromToVenueSystem is command Production.RecordVenueDetails with {
+    briefly "What ToVenueSystem makes of the answers it gets"
+  }
+  connector 'ToVenueSystem Intake' is from outlet ProductionContext.ToVenueSystem.ToVenueSystemToProductionContext to inlet ProductionContext.ProductionContextFromToVenueSystem with {
+    briefly "Answers translated by ToVenueSystem, on their way in"
+  }
   inlet ProductionContextFromToCrewManagement is command Production.AssignCrew with {
     briefly "What ToCrewManagement makes of the answers it gets"
   }
@@ -15,6 +21,9 @@ context ProductionContext as router is {
   inlet ProductionCommandStreamIn is type ProductionCommand  outlet ProductionCommandStreamOut is type ProductionCommand
   inlet ProductionResultStreamIn is result Production.ProductionResult  outlet ProductionResultStreamOut is result Production.ProductionResult
   handler ProductionContextBoundary is {
+    on recordVenueDetails: command Production.RecordVenueDetails is {
+      send recordVenueDetails to outlet ProductionContext.ProductionCommandStreamOut
+    }
     on createProduction: command Production.CreateProduction is {
       send createProduction to outlet ProductionContext.ProductionCommandStreamOut
     }
@@ -129,12 +138,14 @@ context ProductionContext as router is {
       |The model's side of the VenueSystem conversation.
     }
   }
-  adaptor ToVenueSystem to context VenueSystem as merge is { 
+  adaptor ToVenueSystem to context VenueSystem as router is { 
+    outlet ToVenueSystemToProductionContext is command Production.RecordVenueDetails
     inlet ToVenueSystemIn is type ProductionEvent    inlet ToVenueSystemReplies is result VenueSystem.VenueDetails    outlet ToVenueSystemOut is type VenueSystem.VenueSystemRequest
     handler ToVenueSystemHandler is {
       on productionCreated: event Production.ProductionCreated is {
         let askAnswer: type VenueSystem.VenueDetails = ask query VenueSystem.GetVenueDetails of context VenueSystem
         do "a production needing the hall's dimensions and rig before anything is planned"
+        send command Production.RecordVenueDetails(productionId = productionCreated.productionId, venueId = prompt("the venue id of this record venue details"), capacity = prompt("the capacity of this record venue details"), stageSpecs = prompt("the stage specs of this record venue details")) to outlet ProductionContext.ToVenueSystem.ToVenueSystemToProductionContext
         let item0: type VenueSystem.ReserveVenue = prompt("translate the productionCreated event into a ReserveVenue, the production being what creates the need for a hall")
         send item0 to outlet ProductionContext.ToVenueSystem.ToVenueSystemOut
       }
@@ -503,6 +514,9 @@ context ProductionContext as router is {
       on productionCancelled: event Production.ProductionCancelled is {
         tell command ProductionContext.ProductionRepository.PersistProductionCancelled(productionId = productionCancelled.productionId) to repository ProductionContext.ProductionRepository
       }
+      on venueDetailsRecorded: event Production.VenueDetailsRecorded is {
+        do "a venue details recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains production metrics"
       described as {
@@ -562,6 +576,10 @@ context ProductionContext as router is {
       on productionCancelled: event Production.ProductionCancelled is {
         send productionCancelled to outlet ProductionEventSplitToProductionMetrics
         tell productionCancelled to entity ProductionContext.Production
+      }
+      on venueDetailsRecorded: event Production.VenueDetailsRecorded is {
+        send venueDetailsRecorded to outlet ProductionEventSplitToProductionMetrics
+        tell venueDetailsRecorded to entity ProductionContext.Production
       }
       on other is {
         error "Unexpected message for processor ProductionEventSplit"

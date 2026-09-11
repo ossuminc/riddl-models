@@ -1,8 +1,26 @@
 // Benefits Administration - Benefits Context
 context BenefitsContext as router is {
+  inlet BenefitsContextFromToInsuranceCarrier is command BenefitsEnrollment.RecordPlanTerms with {
+    briefly "What ToInsuranceCarrier makes of the answers it gets"
+  }
+  connector 'ToInsuranceCarrier Intake' is from outlet BenefitsContext.ToInsuranceCarrier.ToInsuranceCarrierToBenefitsContext to inlet BenefitsContext.BenefitsContextFromToInsuranceCarrier with {
+    briefly "Answers translated by ToInsuranceCarrier, on their way in"
+  }
+  inlet BenefitsContextFromToPayrollSystem is command BenefitsEnrollment.RecordCompensationBasis with {
+    briefly "What ToPayrollSystem makes of the answers it gets"
+  }
+  connector 'ToPayrollSystem Intake' is from outlet BenefitsContext.ToPayrollSystem.ToPayrollSystemToBenefitsContext to inlet BenefitsContext.BenefitsContextFromToPayrollSystem with {
+    briefly "Answers translated by ToPayrollSystem, on their way in"
+  }
   inlet BenefitsEnrollmentCommandStrIn is type BenefitsEnrollmentCommand  outlet BenefitsEnrollmentCommandStrOut is type BenefitsEnrollmentCommand
   inlet BenefitsEnrollmentResultStreIn is result BenefitsEnrollment.BenefitsEnrollmentResult  outlet BenefitsEnrollmentResultStreOut is result BenefitsEnrollment.BenefitsEnrollmentResult
   handler BenefitsContextBoundary is {
+    on recordCompensationBasis: command BenefitsEnrollment.RecordCompensationBasis is {
+      send recordCompensationBasis to outlet BenefitsContext.BenefitsEnrollmentCommandStrOut
+    }
+    on recordPlanTerms: command BenefitsEnrollment.RecordPlanTerms is {
+      send recordPlanTerms to outlet BenefitsContext.BenefitsEnrollmentCommandStrOut
+    }
     on createEnrollment: command BenefitsEnrollment.CreateEnrollment is {
       send createEnrollment to outlet BenefitsContext.BenefitsEnrollmentCommandStrOut
     }
@@ -119,12 +137,14 @@ context BenefitsContext as router is {
       |The model's side of the InsuranceCarrier conversation.
     }
   }
-  adaptor ToInsuranceCarrier to context InsuranceCarrier as merge is { 
+  adaptor ToInsuranceCarrier to context InsuranceCarrier as router is { 
+    outlet ToInsuranceCarrierToBenefitsContext is command BenefitsEnrollment.RecordPlanTerms
     inlet ToInsuranceCarrierIn is type BenefitsEnrollmentEvent    inlet ToInsuranceCarrierReplies is result InsuranceCarrier.PlanDetails    outlet ToInsuranceCarrierOut is type InsuranceCarrier.InsuranceCarrierRequest
     handler ToInsuranceCarrierHandler is {
       on planSelected: event BenefitsEnrollment.PlanSelected is {
         let askAnswer: type InsuranceCarrier.PlanDetails = ask query InsuranceCarrier.GetPlanDetails of context InsuranceCarrier
         do "a selected plan needing the carrier's terms for it"
+        send command BenefitsEnrollment.RecordPlanTerms(enrollmentId = planSelected.enrollmentId, premiumSchedule = prompt("the premium schedule of this record plan terms"), networkProviders = prompt("the network providers of this record plan terms")) to outlet BenefitsContext.ToInsuranceCarrier.ToInsuranceCarrierToBenefitsContext
       }
       on enrollmentApproved: event BenefitsEnrollment.EnrollmentApproved is {
         let item0: type InsuranceCarrier.SubmitEnrollmentFile = prompt("translate the enrollmentApproved event into a SubmitEnrollmentFile, approval being what the carrier must be told to cover")
@@ -165,12 +185,14 @@ context BenefitsContext as router is {
       |The model's side of the PayrollSystem conversation.
     }
   }
-  adaptor ToPayrollSystem to context PayrollSystem as merge is { 
+  adaptor ToPayrollSystem to context PayrollSystem as router is { 
+    outlet ToPayrollSystemToBenefitsContext is command BenefitsEnrollment.RecordCompensationBasis
     inlet ToPayrollSystemIn is type BenefitsEnrollmentEvent    inlet ToPayrollSystemReplies is result PayrollSystem.EmployeeCompensation    outlet ToPayrollSystemOut is type PayrollSystem.PayrollSystemRequest
     handler ToPayrollSystemHandler is {
       on enrollmentSubmitted: event BenefitsEnrollment.EnrollmentSubmitted is {
         let askAnswer: type PayrollSystem.EmployeeCompensation = ask query PayrollSystem.GetEmployeeCompensation of context PayrollSystem
         do "a submitted enrollment needing the pay its contributions are figured from"
+        send command BenefitsEnrollment.RecordCompensationBasis(enrollmentId = enrollmentSubmitted.enrollmentId, annualSalary = prompt("the annual salary of this record compensation basis"), payFrequency = prompt("the pay frequency of this record compensation basis")) to outlet BenefitsContext.ToPayrollSystem.ToPayrollSystemToBenefitsContext
       }
       on enrollmentApproved: event BenefitsEnrollment.EnrollmentApproved is {
         let item0: type PayrollSystem.UpdateDeductions = prompt("translate the enrollmentApproved event into a UpdateDeductions, approval being what fixes the amount to withhold")
@@ -556,6 +578,12 @@ context BenefitsContext as router is {
         tell command BenefitsContext.BenefitsRepository.PersistEnrollmentTerminated(enrollmentId = enrollmentTerminated.enrollmentId) to repository BenefitsContext.BenefitsRepository
         do "Increment terminated enrollments"
       }
+      on compensationBasisRecorded: event BenefitsEnrollment.CompensationBasisRecorded is {
+        do "a compensation basis recorded changes nothing this projector keeps"
+      }
+      on planTermsRecorded: event BenefitsEnrollment.PlanTermsRecorded is {
+        do "a plan terms recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains benefits metrics"
       described as {
@@ -570,7 +598,7 @@ context BenefitsContext as router is {
   }
   // ---- Event publication for BenefitsEnrollment ----
   type BenefitsEnrollmentEvent is one of {
-    BenefitsContext.BenefitsEnrollment.EnrollmentCreated or BenefitsContext.BenefitsEnrollment.PlanSelected or BenefitsContext.BenefitsEnrollment.DependentAdded or BenefitsContext.BenefitsEnrollment.DependentRemoved or BenefitsContext.BenefitsEnrollment.EnrollmentSubmitted or BenefitsContext.BenefitsEnrollment.EnrollmentApproved or BenefitsContext.BenefitsEnrollment.EnrollmentDenied or BenefitsContext.BenefitsEnrollment.LifeEventRecorded or BenefitsContext.BenefitsEnrollment.CobraInitiated or BenefitsContext.BenefitsEnrollment.EnrollmentTerminated
+    BenefitsContext.BenefitsEnrollment.EnrollmentCreated or BenefitsContext.BenefitsEnrollment.PlanSelected or BenefitsContext.BenefitsEnrollment.DependentAdded or BenefitsContext.BenefitsEnrollment.DependentRemoved or BenefitsContext.BenefitsEnrollment.EnrollmentSubmitted or BenefitsContext.BenefitsEnrollment.EnrollmentApproved or BenefitsContext.BenefitsEnrollment.EnrollmentDenied or BenefitsContext.BenefitsEnrollment.LifeEventRecorded or BenefitsContext.BenefitsEnrollment.CobraInitiated or BenefitsContext.BenefitsEnrollment.EnrollmentTerminated or BenefitsContext.BenefitsEnrollment.CompensationBasisRecorded or BenefitsContext.BenefitsEnrollment.PlanTermsRecorded
   } with {
     briefly "BenefitsEnrollment event alternation"
     described as {
@@ -629,6 +657,14 @@ context BenefitsContext as router is {
       on enrollmentTerminated: event BenefitsEnrollment.EnrollmentTerminated is {
         send enrollmentTerminated to outlet BenefitsEnrollmentEventSplitToBenefitsMetrics
         tell enrollmentTerminated to entity BenefitsContext.BenefitsEnrollment
+      }
+      on compensationBasisRecorded: event BenefitsEnrollment.CompensationBasisRecorded is {
+        send compensationBasisRecorded to outlet BenefitsEnrollmentEventSplitToBenefitsMetrics
+        tell compensationBasisRecorded to entity BenefitsContext.BenefitsEnrollment
+      }
+      on planTermsRecorded: event BenefitsEnrollment.PlanTermsRecorded is {
+        send planTermsRecorded to outlet BenefitsEnrollmentEventSplitToBenefitsMetrics
+        tell planTermsRecorded to entity BenefitsContext.BenefitsEnrollment
       }
       on other is {
         error "Unexpected message for processor BenefitsEnrollmentEventSplit"

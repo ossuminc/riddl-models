@@ -1,5 +1,17 @@
 // Advertising Delivery - Ad Context
 context AdContext as router is {
+  inlet AdContextFromToCampaignService is command AdImpression.AttributeToCampaign with {
+    briefly "What ToCampaignService makes of the answers it gets"
+  }
+  connector 'ToCampaignService Intake' is from outlet AdContext.ToCampaignService.ToCampaignServiceToAdContext to inlet AdContext.AdContextFromToCampaignService with {
+    briefly "Answers translated by ToCampaignService, on their way in"
+  }
+  inlet AdContextFromToTargetingService is command AdImpression.RecordTargetingOutcome with {
+    briefly "What ToTargetingService makes of the answers it gets"
+  }
+  connector 'ToTargetingService Intake' is from outlet AdContext.ToTargetingService.ToTargetingServiceToAdContext to inlet AdContext.AdContextFromToTargetingService with {
+    briefly "Answers translated by ToTargetingService, on their way in"
+  }
   inlet AdContextFromToAdDecisionService is command AdImpression.RecordImpression with {
     briefly "What ToAdDecisionService makes of the answers it gets"
   }
@@ -9,6 +21,12 @@ context AdContext as router is {
   inlet AdImpressionCommandStreamIn is type AdImpressionCommand  outlet AdImpressionCommandStreamOut is type AdImpressionCommand
   inlet AdImpressionResultStreamIn is result AdImpression.AdImpressionResult  outlet AdImpressionResultStreamOut is result AdImpression.AdImpressionResult
   handler AdContextBoundary is {
+    on recordTargetingOutcome: command AdImpression.RecordTargetingOutcome is {
+      send recordTargetingOutcome to outlet AdContext.AdImpressionCommandStreamOut
+    }
+    on attributeToCampaign: command AdImpression.AttributeToCampaign is {
+      send attributeToCampaign to outlet AdContext.AdImpressionCommandStreamOut
+    }
     on openImpressionOpportunity: command AdImpression.OpenImpressionOpportunity is {
       send openImpressionOpportunity to outlet AdContext.AdImpressionCommandStreamOut
     }
@@ -139,12 +157,14 @@ context AdContext as router is {
       |The model's side of the CampaignService conversation.
     }
   }
-  adaptor ToCampaignService to context CampaignService as merge is { 
+  adaptor ToCampaignService to context CampaignService as router is { 
+    outlet ToCampaignServiceToAdContext is command AdImpression.AttributeToCampaign
     inlet ToCampaignServiceIn is type AdImpressionEvent    inlet ToCampaignServiceReplies is result CampaignService.GetCampaignResult    outlet ToCampaignServiceOut is query CampaignService.GetCampaign
     handler ToCampaignServiceHandler is {
       on impressionRecorded: event AdImpression.ImpressionRecorded is {
         let askAnswer: type CampaignService.GetCampaignResult = ask query CampaignService.GetCampaign of context CampaignService
         do "a recorded impression needing the campaign it should be counted against"
+        send command AdImpression.AttributeToCampaign(impressionId = impressionRecorded.impressionId, campaignId = prompt("the campaign id of this attribute to campaign")) to outlet AdContext.ToCampaignService.ToCampaignServiceToAdContext
       }
       on other is {
         error "Unexpected message for adaptor ToCampaignService"
@@ -245,12 +265,14 @@ context AdContext as router is {
       |The model's side of the RTBExchange conversation.
     }
   }
-  adaptor ToTargetingService to context TargetingService as merge is { 
+  adaptor ToTargetingService to context TargetingService as router is { 
+    outlet ToTargetingServiceToAdContext is command AdImpression.RecordTargetingOutcome
     inlet ToTargetingServiceIn is type AdImpressionEvent    inlet ToTargetingServiceReplies is result TargetingService.TargetingResult    outlet ToTargetingServiceOut is query TargetingService.EvaluateTargeting
     handler ToTargetingServiceHandler is {
       on impressionOpportunityOpened: event AdImpression.ImpressionOpportunityOpened is {
         let askAnswer: type TargetingService.TargetingResult = ask query TargetingService.EvaluateTargeting of context TargetingService
         do "an opportunity opening needing the viewer matched against the targeting rules"
+        send command AdImpression.RecordTargetingOutcome(impressionId = impressionOpportunityOpened.impressionId, matches = prompt("the matches of this record targeting outcome"), score = prompt("the score of this record targeting outcome")) to outlet AdContext.ToTargetingService.ToTargetingServiceToAdContext
       }
       on other is {
         error "Unexpected message for adaptor ToTargetingService"
@@ -587,6 +609,12 @@ context AdContext as router is {
       on adClicked: event AdImpression.AdClicked is {
         tell command AdContext.AdRepository.PersistAdClicked(impressionId = adClicked.impressionId) to repository AdContext.AdRepository
       }
+      on campaignAttributed: event AdImpression.CampaignAttributed is {
+        do "a campaign attributed changes nothing this projector keeps"
+      }
+      on targetingOutcomeRecorded: event AdImpression.TargetingOutcomeRecorded is {
+        do "a targeting outcome recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains ad analytics"
       described as {
@@ -644,6 +672,16 @@ context AdContext as router is {
         send impressionOpportunityOpened to outlet AdImpressionEventSplitToToAdDecisionService
         send impressionOpportunityOpened to outlet AdImpressionEventSplitToToRTBExchange
         send impressionOpportunityOpened to outlet AdImpressionEventSplitToToTargetingService
+      }
+      on targetingOutcomeRecorded: event AdImpression.TargetingOutcomeRecorded is {
+        send targetingOutcomeRecorded to outlet AdImpressionEventSplitToToAdDecisionService
+        send targetingOutcomeRecorded to outlet AdImpressionEventSplitToToRTBExchange
+        send targetingOutcomeRecorded to outlet AdImpressionEventSplitToToTargetingService
+      }
+      on campaignAttributed: event AdImpression.CampaignAttributed is {
+        send campaignAttributed to outlet AdImpressionEventSplitToToAdDecisionService
+        send campaignAttributed to outlet AdImpressionEventSplitToToRTBExchange
+        send campaignAttributed to outlet AdImpressionEventSplitToToTargetingService
       }
       on other is {
         error "Unexpected message for processor AdImpressionEventSplit"

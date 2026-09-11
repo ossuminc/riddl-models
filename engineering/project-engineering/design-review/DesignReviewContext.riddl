@@ -1,5 +1,11 @@
 // Design Review - Design Review Context
 context DesignReviewContext as router is {
+  inlet DesignReviewContextFromToIdentityService is command Submittal.RecordReviewerDetails with {
+    briefly "What ToIdentityService makes of the answers it gets"
+  }
+  connector 'ToIdentityService Intake' is from outlet DesignReviewContext.ToIdentityService.ToIdentityServiceToDesignReviewContext to inlet DesignReviewContext.DesignReviewContextFromToIdentityService with {
+    briefly "Answers translated by ToIdentityService, on their way in"
+  }
   inlet DesignReviewContextFromToProjectService is command Submittal.UpdateSubmittal with {
     briefly "What ToProjectService makes of the answers it gets"
   }
@@ -9,6 +15,9 @@ context DesignReviewContext as router is {
   inlet SubmittalCommandStreamIn is type SubmittalCommand  outlet SubmittalCommandStreamOut is type SubmittalCommand
   inlet SubmittalResultStreamIn is result Submittal.SubmittalResult  outlet SubmittalResultStreamOut is result Submittal.SubmittalResult
   handler DesignReviewContextBoundary is {
+    on recordReviewerDetails: command Submittal.RecordReviewerDetails is {
+      send recordReviewerDetails to outlet DesignReviewContext.SubmittalCommandStreamOut
+    }
     on createSubmittal: command Submittal.CreateSubmittal is {
       send createSubmittal to outlet DesignReviewContext.SubmittalCommandStreamOut
     }
@@ -104,12 +113,14 @@ context DesignReviewContext as router is {
       |The model's side of the DocumentStorage conversation.
     }
   }
-  adaptor ToIdentityService to context IdentityService as merge is { 
+  adaptor ToIdentityService to context IdentityService as router is { 
+    outlet ToIdentityServiceToDesignReviewContext is command Submittal.RecordReviewerDetails
     inlet ToIdentityServiceIn is type SubmittalEvent    inlet ToIdentityServiceReplies is result IdentityService.ReviewerDetails    outlet ToIdentityServiceOut is query IdentityService.GetReviewerInfo
     handler ToIdentityServiceHandler is {
       on reviewerAssigned: event Submittal.ReviewerAssigned is {
         let askAnswer: type IdentityService.ReviewerDetails = ask query IdentityService.GetReviewerInfo of context IdentityService
         do "an assigned reviewer needing their name and discipline filled in"
+        send command Submittal.RecordReviewerDetails(submittalId = reviewerAssigned.submittalId, reviewerId = prompt("the reviewer id of this record reviewer details"), name = prompt("the name of this record reviewer details"), discipline = prompt("the discipline of this record reviewer details")) to outlet DesignReviewContext.ToIdentityService.ToIdentityServiceToDesignReviewContext
       }
       on other is {
         error "Unexpected message for adaptor ToIdentityService"
@@ -605,6 +616,9 @@ context DesignReviewContext as router is {
         tell command DesignReviewContext.SubmittalRepository.PersistSubmittalRejected(submittalId = submittalRejected.submittalId) to repository DesignReviewContext.SubmittalRepository
         do "Update rejection metrics"
       }
+      on reviewerDetailsRecorded: event Submittal.ReviewerDetailsRecorded is {
+        do "a reviewer details recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains review analytics"
       described as {
@@ -619,7 +633,7 @@ context DesignReviewContext as router is {
   }
   // ---- Event publication for Submittal ----
   type SubmittalEvent is one of {
-    DesignReviewContext.Submittal.SubmittalCreated or DesignReviewContext.Submittal.SubmittalUpdated or DesignReviewContext.Submittal.SubmittalSubmitted or DesignReviewContext.Submittal.ReviewerAssigned or DesignReviewContext.Submittal.ReviewerRemoved or DesignReviewContext.Submittal.CommentAdded or DesignReviewContext.Submittal.CommentResolved or DesignReviewContext.Submittal.RevisionSubmitted or DesignReviewContext.Submittal.ApprovalRecorded or DesignReviewContext.Submittal.SubmittalRejected or DesignReviewContext.Submittal.SubmittalWithdrawn or DesignReviewContext.Submittal.MilestoneAdded or DesignReviewContext.Submittal.MilestoneSignedOff
+    DesignReviewContext.Submittal.SubmittalCreated or DesignReviewContext.Submittal.SubmittalUpdated or DesignReviewContext.Submittal.SubmittalSubmitted or DesignReviewContext.Submittal.ReviewerAssigned or DesignReviewContext.Submittal.ReviewerRemoved or DesignReviewContext.Submittal.CommentAdded or DesignReviewContext.Submittal.CommentResolved or DesignReviewContext.Submittal.RevisionSubmitted or DesignReviewContext.Submittal.ApprovalRecorded or DesignReviewContext.Submittal.SubmittalRejected or DesignReviewContext.Submittal.SubmittalWithdrawn or DesignReviewContext.Submittal.MilestoneAdded or DesignReviewContext.Submittal.MilestoneSignedOff or DesignReviewContext.Submittal.ReviewerDetailsRecorded
   } with {
     briefly "Submittal event alternation"
     described as {
@@ -692,6 +706,11 @@ context DesignReviewContext as router is {
         send milestoneSignedOff to outlet SubmittalEventSplitToReviewAnalytics
         send milestoneSignedOff to outlet SubmittalEventSplitToToNotificationService
         tell milestoneSignedOff to entity DesignReviewContext.Submittal
+      }
+      on reviewerDetailsRecorded: event Submittal.ReviewerDetailsRecorded is {
+        send reviewerDetailsRecorded to outlet SubmittalEventSplitToReviewAnalytics
+        send reviewerDetailsRecorded to outlet SubmittalEventSplitToToNotificationService
+        tell reviewerDetailsRecorded to entity DesignReviewContext.Submittal
       }
       on other is {
         error "Unexpected message for processor SubmittalEventSplit"

@@ -1,5 +1,16 @@
 // Hospital Admission/Discharge - Admission Context
 context AdmissionContext as router is {
+  type ToPatientRegistrationCommand is one of {
+    Admission.RecordDemographics or Admission.RecordInsurance
+  } with {
+    briefly "What ToPatientRegistration turns its answers into"
+  }
+  inlet AdmissionContextFromToPatientRegistration is type ToPatientRegistrationCommand with {
+    briefly "What ToPatientRegistration makes of the answers it gets"
+  }
+  connector 'ToPatientRegistration Intake' is from outlet AdmissionContext.ToPatientRegistration.ToPatientRegistrationToAdmissionContext to inlet AdmissionContext.AdmissionContextFromToPatientRegistration with {
+    briefly "Answers translated by ToPatientRegistration, on their way in"
+  }
   inlet AdmissionContextFromToBedManagementService is command Admission.AssignBed with {
     briefly "What ToBedManagementService makes of the answers it gets"
   }
@@ -45,6 +56,12 @@ context AdmissionContext as router is {
   inlet AdmissionCommandStreamIn is type AdmissionCommand  outlet AdmissionCommandStreamOut is type AdmissionCommand
   inlet AdmissionResultStreamIn is result Admission.AdmissionResult  outlet AdmissionResultStreamOut is result Admission.AdmissionResult
   handler AdmissionContextBoundary is {
+    on recordInsurance: command Admission.RecordInsurance is {
+      send recordInsurance to outlet AdmissionContext.AdmissionCommandStreamOut
+    }
+    on recordDemographics: command Admission.RecordDemographics is {
+      send recordDemographics to outlet AdmissionContext.AdmissionCommandStreamOut
+    }
     on createAdmission: command Admission.CreateAdmission is {
       send createAdmission to outlet AdmissionContext.AdmissionCommandStreamOut
     }
@@ -302,14 +319,17 @@ context AdmissionContext as router is {
       |The model's side of the PatientRegistration conversation.
     }
   }
-  adaptor ToPatientRegistration to context PatientRegistration as merge is { 
+  adaptor ToPatientRegistration to context PatientRegistration as router is { 
+    outlet ToPatientRegistrationToAdmissionContext is type ToPatientRegistrationCommand
     inlet ToPatientRegistrationIn is type AdmissionEvent    inlet ToPatientRegistrationReplies is type PatientRegistration.PatientRegistrationReply    outlet ToPatientRegistrationOut is type PatientRegistration.PatientRegistrationRequest
     handler ToPatientRegistrationHandler is {
       on admissionCreated: event Admission.AdmissionCreated is {
         let askAnswer: type PatientRegistration.PatientDemographics = ask query PatientRegistration.GetPatientDemographics of context PatientRegistration
         do "and of who the patient is"
+        send command Admission.RecordDemographics(admissionId = admissionCreated.admissionId, mrn = prompt("the mrn of this record demographics"), firstName = prompt("the first name of this record demographics"), lastName = prompt("the last name of this record demographics"), dateOfBirth = prompt("the date of birth of this record demographics")) to outlet AdmissionContext.ToPatientRegistration.ToPatientRegistrationToAdmissionContext
         let askAnswer: type PatientRegistration.InsuranceInfo = ask query PatientRegistration.GetInsuranceInfo of context PatientRegistration
         do "admission raising the question of who pays"
+        send command Admission.RecordInsurance(admissionId = admissionCreated.admissionId, primaryInsurance = prompt("the primary insurance of this record insurance"), policyNumber = prompt("the policy number of this record insurance"), verified = prompt("the verified of this record insurance")) to outlet AdmissionContext.ToPatientRegistration.ToPatientRegistrationToAdmissionContext
         let item0: type PatientRegistration.VerifyInsurance = prompt("translate the admissionCreated event into a VerifyInsurance, admission being where the question of who pays arises")
         send item0 to outlet AdmissionContext.ToPatientRegistration.ToPatientRegistrationOut
       }
@@ -694,6 +714,12 @@ context AdmissionContext as router is {
       on dischargeCompleted: event Admission.DischargeCompleted is {
         tell command AdmissionContext.AdmissionRepository.PersistDischargeCompleted(admissionId = dischargeCompleted.admissionId) to repository AdmissionContext.AdmissionRepository
       }
+      on demographicsRecorded: event Admission.DemographicsRecorded is {
+        do "a demographics recorded changes nothing this projector keeps"
+      }
+      on insuranceRecorded: event Admission.InsuranceRecorded is {
+        do "a insurance recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Maintains occupancy metrics"
       described as {
@@ -837,6 +863,12 @@ context AdmissionContext as router is {
         tell command AdmissionContext.AdmissionRepository.PersistTransferRequested(admissionId = transferRequested.admissionId) to repository AdmissionContext.AdmissionRepository
         do "apply TransferRequested to the LengthOfStayProjector projection"
       }
+      on demographicsRecorded: event Admission.DemographicsRecorded is {
+        do "a demographics recorded changes nothing this projector keeps"
+      }
+      on insuranceRecorded: event Admission.InsuranceRecorded is {
+        do "a insurance recorded changes nothing this projector keeps"
+      }
       on dischargeCompleted: event Admission.DischargeCompleted is {
         tell command AdmissionContext.AdmissionRepository.PersistDischargeCompleted(admissionId = dischargeCompleted.admissionId) to repository AdmissionContext.AdmissionRepository
       }
@@ -971,6 +1003,12 @@ context AdmissionContext as router is {
       on bedAssigned: event Admission.BedAssigned is {
         tell command AdmissionContext.BedCensusRepository.PersistBedAssigned(admissionId = bedAssigned.admissionId) to repository AdmissionContext.BedCensusRepository
       }
+      on demographicsRecorded: event Admission.DemographicsRecorded is {
+        do "a demographics recorded changes nothing this projector keeps"
+      }
+      on insuranceRecorded: event Admission.InsuranceRecorded is {
+        do "a insurance recorded changes nothing this projector keeps"
+      }
       on patientTransferred: event Admission.PatientTransferred is {
         tell command AdmissionContext.BedCensusRepository.PersistPatientTransferred(admissionId = patientTransferred.admissionId) to repository AdmissionContext.BedCensusRepository
       }
@@ -990,7 +1028,7 @@ context AdmissionContext as router is {
     }
   }
   type AdmissionEvent is one of {
-    AdmissionContext.Admission.AdmissionCreated or AdmissionContext.Admission.BedAssigned or AdmissionContext.Admission.TransferRequested or AdmissionContext.Admission.PatientTransferred or AdmissionContext.Admission.ConditionUpdated or AdmissionContext.Admission.DischargeInitiated or AdmissionContext.Admission.DischargeCompleted
+    AdmissionContext.Admission.AdmissionCreated or AdmissionContext.Admission.BedAssigned or AdmissionContext.Admission.TransferRequested or AdmissionContext.Admission.PatientTransferred or AdmissionContext.Admission.ConditionUpdated or AdmissionContext.Admission.DischargeInitiated or AdmissionContext.Admission.DischargeCompleted or AdmissionContext.Admission.InsuranceRecorded or AdmissionContext.Admission.DemographicsRecorded
   } with {
     briefly "Admission events"
     described as {
@@ -1061,6 +1099,22 @@ context AdmissionContext as router is {
         send dischargeCompleted to outlet AdmissionEventSplitToToBillingService
         send dischargeCompleted to outlet AdmissionEventSplitToToBedManagementService
         tell dischargeCompleted to entity AdmissionContext.Admission
+      }
+      on insuranceRecorded: event Admission.InsuranceRecorded is {
+        send insuranceRecorded to outlet AdmissionEventSplitToBedOccupancyProjector
+        send insuranceRecorded to outlet AdmissionEventSplitToLengthOfStayProjector
+        send insuranceRecorded to outlet AdmissionEventSplitToThroughputProjector
+        send insuranceRecorded to outlet AdmissionEventSplitToToBillingService
+        send insuranceRecorded to outlet AdmissionEventSplitToToBedManagementService
+        tell insuranceRecorded to entity AdmissionContext.Admission
+      }
+      on demographicsRecorded: event Admission.DemographicsRecorded is {
+        send demographicsRecorded to outlet AdmissionEventSplitToBedOccupancyProjector
+        send demographicsRecorded to outlet AdmissionEventSplitToLengthOfStayProjector
+        send demographicsRecorded to outlet AdmissionEventSplitToThroughputProjector
+        send demographicsRecorded to outlet AdmissionEventSplitToToBillingService
+        send demographicsRecorded to outlet AdmissionEventSplitToToBedManagementService
+        tell demographicsRecorded to entity AdmissionContext.Admission
       }
       on other is {
         error "Unexpected message for processor AdmissionEventSplit"

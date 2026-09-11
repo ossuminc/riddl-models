@@ -1,5 +1,22 @@
 // Permit Management - Permit Context
 context PermitContext as router is {
+  inlet PermitContextFromToDocumentStorageService is command Permit.AttachRetrievedDocument with {
+    briefly "What ToDocumentStorageService makes of the answers it gets"
+  }
+  connector 'ToDocumentStorageService Intake' is from outlet PermitContext.ToDocumentStorageService.ToDocumentStorageServiceToPermitContext to inlet PermitContext.PermitContextFromToDocumentStorageService with {
+    briefly "Answers translated by ToDocumentStorageService, on their way in"
+  }
+  type ToGISServiceCommand is one of {
+    Permit.RecordParcelInfo or Permit.RecordZoningRequirements
+  } with {
+    briefly "What ToGISService turns its answers into"
+  }
+  inlet PermitContextFromToGISService is type ToGISServiceCommand with {
+    briefly "What ToGISService makes of the answers it gets"
+  }
+  connector 'ToGISService Intake' is from outlet PermitContext.ToGISService.ToGISServiceToPermitContext to inlet PermitContext.PermitContextFromToGISService with {
+    briefly "Answers translated by ToGISService, on their way in"
+  }
   inlet PermitContextFromToContractorLicensingService is command Permit.RequestCorrections with {
     briefly "What ToContractorLicensingService makes of the answers it gets"
   }
@@ -27,6 +44,15 @@ context PermitContext as router is {
   inlet PermitCommandStreamIn is type PermitCommand  outlet PermitCommandStreamOut is type PermitCommand
   inlet PermitQueryResultStreamIn is result Permit.PermitQueryResult  outlet PermitQueryResultStreamOut is result Permit.PermitQueryResult
   handler PermitContextBoundary is {
+    on recordZoningRequirements: command Permit.RecordZoningRequirements is {
+      send recordZoningRequirements to outlet PermitContext.PermitCommandStreamOut
+    }
+    on recordParcelInfo: command Permit.RecordParcelInfo is {
+      send recordParcelInfo to outlet PermitContext.PermitCommandStreamOut
+    }
+    on attachRetrievedDocument: command Permit.AttachRetrievedDocument is {
+      send attachRetrievedDocument to outlet PermitContext.PermitCommandStreamOut
+    }
     on submitApplication: command Permit.SubmitApplication is {
       send submitApplication to outlet PermitContext.PermitCommandStreamOut
     }
@@ -138,7 +164,8 @@ context PermitContext as router is {
       |The model's side of the DocumentStorageService conversation.
     }
   }
-  adaptor ToDocumentStorageService to context DocumentStorageService as merge is { 
+  adaptor ToDocumentStorageService to context DocumentStorageService as router is { 
+    outlet ToDocumentStorageServiceToPermitContext is command Permit.AttachRetrievedDocument
     inlet ToDocumentStorageServiceIn is type PermitEvent    inlet ToDocumentStorageServiceReplies is result DocumentStorageService.DocumentResult    outlet ToDocumentStorageServiceOut is type DocumentStorageService.DocumentStorageServiceRequest
     handler ToDocumentStorageServiceHandler is {
       on documentUploaded: event DocumentUploaded is {
@@ -148,6 +175,7 @@ context PermitContext as router is {
       on reviewerAssigned: event Permit.ReviewerAssigned is {
         let askAnswer: type DocumentStorageService.DocumentResult = ask query DocumentStorageService.RetrieveDocument of context DocumentStorageService
         do "a reviewer needing the documents fetched back before they can read them"
+        send command Permit.AttachRetrievedDocument(permitId = reviewerAssigned.permitId, documentId = prompt("the document id of this attach retrieved document"), fileName = prompt("the file name of this attach retrieved document"), downloadUrl = prompt("the download url of this attach retrieved document")) to outlet PermitContext.ToDocumentStorageService.ToDocumentStorageServiceToPermitContext
       }
       on other is {
         error "Unexpected message for adaptor ToDocumentStorageService"
@@ -188,16 +216,19 @@ context PermitContext as router is {
       |The model's side of the FeeCalculationService conversation.
     }
   }
-  adaptor ToGISService to context GISService as merge is { 
+  adaptor ToGISService to context GISService as router is { 
+    outlet ToGISServiceToPermitContext is type ToGISServiceCommand
     inlet ToGISServiceIn is type PermitEvent    inlet ToGISServiceReplies is type GISService.GISServiceReply    outlet ToGISServiceOut is type GISService.GISServiceRequest
     handler ToGISServiceHandler is {
       on applicationSubmitted: event Permit.ApplicationSubmitted is {
         let askAnswer: type GISService.ParcelInfoResult = ask query GISService.GetParcelInfo of context GISService
         do "an application needing the parcel it names to be real"
+        send command Permit.RecordParcelInfo(permitId = applicationSubmitted.permitId, parcelId = prompt("the parcel id of this record parcel info"), zoningCode = prompt("the zoning code of this record parcel info"), historicDistrict = prompt("the historic district of this record parcel info")) to outlet PermitContext.ToGISService.ToGISServiceToPermitContext
       }
       on reviewerAssigned: event Permit.ReviewerAssigned is {
         let askAnswer: type GISService.ZoningRequirementsResult = ask query GISService.GetZoningRequirements of context GISService
         do "a reviewer needing the zoning rules that apply to the parcel"
+        send command Permit.RecordZoningRequirements(permitId = reviewerAssigned.permitId, zoningCode = prompt("the zoning code of this record zoning requirements"), maxHeight = prompt("the max height of this record zoning requirements"), maxLotCoverage = prompt("the max lot coverage of this record zoning requirements")) to outlet PermitContext.ToGISService.ToGISServiceToPermitContext
       }
       on other is {
         error "Unexpected message for adaptor ToGISService"
@@ -1044,6 +1075,15 @@ context PermitContext as router is {
       on permitClosed: event Permit.PermitClosed is {
         tell command PermitContext.PermitRepository.PersistPermitClosed(permitId = permitClosed.permitId) to repository PermitContext.PermitRepository
       }
+      on parcelInfoRecorded: event Permit.ParcelInfoRecorded is {
+        do "a parcel info recorded changes nothing this projector keeps"
+      }
+      on retrievedDocumentAttached: event Permit.RetrievedDocumentAttached is {
+        do "a retrieved document attached changes nothing this projector keeps"
+      }
+      on zoningRequirementsRecorded: event Permit.ZoningRequirementsRecorded is {
+        do "a zoning requirements recorded changes nothing this projector keeps"
+      }
     } with {
       briefly "Processes analytics events"
       described as {
@@ -1058,7 +1098,7 @@ context PermitContext as router is {
   }
   // ---- Event publication for Permit ----
   type PermitEvent is one of {
-    PermitContext.Permit.ApplicationSubmitted or PermitContext.Permit.DocumentUploaded or PermitContext.Permit.ReviewerAssigned or PermitContext.Permit.ReviewSubmitted or PermitContext.Permit.CorrectionsRequested or PermitContext.Permit.CorrectionsSubmitted or PermitContext.Permit.FeesCalculated or PermitContext.Permit.PaymentProcessed or PermitContext.Permit.PermitApproved or PermitContext.Permit.PermitIssued or PermitContext.Permit.InspectionScheduled or PermitContext.Permit.InspectorAssigned or PermitContext.Permit.InspectionRecorded or PermitContext.Permit.PermitExtended or PermitContext.Permit.PermitClosed or PermitContext.Permit.PermitVoided or PermitContext.Permit.PermitRevoked
+    PermitContext.Permit.ApplicationSubmitted or PermitContext.Permit.DocumentUploaded or PermitContext.Permit.ReviewerAssigned or PermitContext.Permit.ReviewSubmitted or PermitContext.Permit.CorrectionsRequested or PermitContext.Permit.CorrectionsSubmitted or PermitContext.Permit.FeesCalculated or PermitContext.Permit.PaymentProcessed or PermitContext.Permit.PermitApproved or PermitContext.Permit.PermitIssued or PermitContext.Permit.InspectionScheduled or PermitContext.Permit.InspectorAssigned or PermitContext.Permit.InspectionRecorded or PermitContext.Permit.PermitExtended or PermitContext.Permit.PermitClosed or PermitContext.Permit.PermitVoided or PermitContext.Permit.PermitRevoked or PermitContext.Permit.ZoningRequirementsRecorded or PermitContext.Permit.ParcelInfoRecorded or PermitContext.Permit.RetrievedDocumentAttached
   } with {
     briefly "Permit event alternation"
     described as {
@@ -1157,6 +1197,18 @@ context PermitContext as router is {
       on permitRevoked: event Permit.PermitRevoked is {
         send permitRevoked to outlet PermitEventSplitToPermitAnalytics
         tell permitRevoked to entity PermitContext.Permit
+      }
+      on zoningRequirementsRecorded: event Permit.ZoningRequirementsRecorded is {
+        send zoningRequirementsRecorded to outlet PermitEventSplitToPermitAnalytics
+        tell zoningRequirementsRecorded to entity PermitContext.Permit
+      }
+      on parcelInfoRecorded: event Permit.ParcelInfoRecorded is {
+        send parcelInfoRecorded to outlet PermitEventSplitToPermitAnalytics
+        tell parcelInfoRecorded to entity PermitContext.Permit
+      }
+      on retrievedDocumentAttached: event Permit.RetrievedDocumentAttached is {
+        send retrievedDocumentAttached to outlet PermitEventSplitToPermitAnalytics
+        tell retrievedDocumentAttached to entity PermitContext.Permit
       }
       on other is {
         error "Unexpected message for processor PermitEventSplit"
