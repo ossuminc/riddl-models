@@ -1,5 +1,13 @@
 // Front of House bounded context
 context FrontOfHouse as router is {
+  inlet FrontOfHouseTableOrderToReportingIn is type TableOrderEvent  outlet FrontOfHouseTableOrderToReportingOut is type TableOrderEvent
+  connector 'FromFrontOfHouseReservations TableOrder Feed' is from outlet FrontOfHouse.TableOrderEventSource.TableOrderEventSourceToReporting to inlet FrontOfHouse.FrontOfHouseTableOrderToReportingIn with {
+    briefly "TableOrder events on their way to Reporting"
+  }
+  inlet FrontOfHouseReservationToReportingIn is type ReservationEvent  outlet FrontOfHouseReservationToReportingOut is type ReservationEvent
+  connector 'FromFrontOfHouseReservations Reservation Feed' is from outlet FrontOfHouse.ReservationEventSplit.ReservationEventSplitToReporting to inlet FrontOfHouse.FrontOfHouseReservationToReportingIn with {
+    briefly "Reservation events on their way to Reporting"
+  }
   outlet FOHOrderSubmittedToKitchen is event TableOrder.OrderSubmitted
   outlet FOHOrderSubmittedToBar is event TableOrder.OrderSubmitted
   outlet FOHPaymentProcessedToLoyalty is event TableOrder.PaymentProcessed
@@ -23,6 +31,15 @@ context FrontOfHouse as router is {
   inlet ReservationBoardViewStreamIn is result ReservationBoardView  outlet ReservationBoardViewStreamOut is result ReservationBoardView
   inlet TableOrderResultStreamIn is result TableOrder.TableOrderResult  outlet TableOrderResultStreamOut is result TableOrder.TableOrderResult
   handler FrontOfHouseBoundary is {
+    on orderClosed: event TableOrder.OrderClosed is {
+      send orderClosed to outlet FrontOfHouse.FrontOfHouseTableOrderToReportingOut
+    }
+    on reservationMade: event Reservation.ReservationMade is {
+      send reservationMade to outlet FrontOfHouse.FrontOfHouseReservationToReportingOut
+    }
+    on reservationCancelled: event Reservation.ReservationCancelled is {
+      send reservationCancelled to outlet FrontOfHouse.FrontOfHouseReservationToReportingOut
+    }
     on orderSubmitted: event TableOrder.OrderSubmitted is {
       send orderSubmitted to outlet FrontOfHouse.FOHOrderSubmittedToKitchen
       send orderSubmitted to outlet FrontOfHouse.FOHOrderSubmittedToBar
@@ -31,6 +48,7 @@ context FrontOfHouse as router is {
     }
     on paymentProcessed: event TableOrder.PaymentProcessed is {
       send paymentProcessed to outlet FrontOfHouse.FOHPaymentProcessedToLoyalty
+      send paymentProcessed to outlet FrontOfHouse.FrontOfHouseTableOrderToReportingOut
       tell event TableOrder.PointsAccrualRouted(tableOrderId = paymentProcessed.tableOrderId, pointsAccrualRoutedAt = system.now) to entity FrontOfHouse.TableOrder
     }
     on drinkOrderReceived: event Bar.DrinkOrder.DrinkOrderReceived is {
@@ -1000,6 +1018,7 @@ context FrontOfHouse as router is {
     }
   }
   streamlet TableOrderEventSource as split is {
+    outlet TableOrderEventSourceToReporting is type TableOrderEvent
     outlet TableOrderEventSourceToToPaymentGateway is type TableOrderEvent
     inlet TableOrderEventSourceIn is type TableOrderEvent    outlet TableOrderEvents is type OrderEvent
     handler TableOrderEventEmitter is {
@@ -1018,10 +1037,12 @@ context FrontOfHouse as router is {
       on paymentProcessed: event TableOrder.PaymentProcessed is {
         send paymentProcessed to outlet TableOrderEvents
         send paymentProcessed to outlet TableOrderEventSourceToToPaymentGateway
+        send paymentProcessed to outlet TableOrderEventSourceToReporting
       }
       on orderClosed: event TableOrder.OrderClosed is {
         send orderClosed to outlet TableOrderEvents
         send orderClosed to outlet TableOrderEventSourceToToPaymentGateway
+        send orderClosed to outlet TableOrderEventSourceToReporting
       }
     } with {
       briefly "Table order event emitter"
@@ -1364,6 +1385,7 @@ context FrontOfHouse as router is {
     }
   }
   streamlet ReservationEventSplit as split is {
+    outlet ReservationEventSplitToReporting is type ReservationEvent
     inlet ReservationEventSplitIn is type ReservationEvent    outlet ReservationEventSplitToReservationEventSource is type ReservationEvent
     outlet ReservationEventSplitToReservationRepository is type ReservationEvent
     outlet ReservationEventSplitToReservationBoard is type ReservationEvent
@@ -1372,6 +1394,7 @@ context FrontOfHouse as router is {
         send reservationMade to outlet ReservationEventSplitToReservationRepository
         send reservationMade to outlet ReservationEventSplitToReservationBoard
         send reservationMade to outlet ReservationEventSplitToReservationEventSource
+        send reservationMade to outlet ReservationEventSplitToReporting
         tell reservationMade to entity FrontOfHouse.Reservation
       }
       on reservationConfirmed: event Reservation.ReservationConfirmed is {
@@ -1384,6 +1407,7 @@ context FrontOfHouse as router is {
         send reservationCancelled to outlet ReservationEventSplitToReservationRepository
         send reservationCancelled to outlet ReservationEventSplitToReservationBoard
         send reservationCancelled to outlet ReservationEventSplitToReservationEventSource
+        send reservationCancelled to outlet ReservationEventSplitToReporting
         tell reservationCancelled to entity FrontOfHouse.Reservation
       }
       on partySeated: event Reservation.PartySeated is {

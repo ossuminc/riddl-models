@@ -1,5 +1,9 @@
 // Loyalty bounded context
 context Loyalty as router is {
+  inlet LoyaltyToMarketingIn is type LoyaltyAccountEvent  outlet LoyaltyToMarketingOut is type LoyaltyAccountEvent
+  connector 'FromLoyalty Feed' is from outlet Loyalty.LoyaltyAccountEventSource.LoyaltyAccountEventSourceToMarketing to inlet Loyalty.LoyaltyToMarketingIn with {
+    briefly "LoyaltyAccount events on their way to Marketing"
+  }
   connector 'LoyaltyAccountEventLog To LoyaltyAccountRepository' is from outlet Loyalty.LoyaltyAccountEventLog.LoyaltyAccountEventLogToLoyaltyAccountRepository to inlet Loyalty.LoyaltyAccountRepository.LoyaltyAccountRepositoryFromLoyaltyAccountEventLog  connector 'FromOnlinePayment To Loyalty' is from outlet Loyalty.FromOnlinePayment.FromOnlinePaymentToLoyalty to inlet Loyalty.LoyaltyFromFromOnlinePayment  inlet LoyaltyFromFromOnlinePayment is command AccruePoints  connector 'FromPayment To Loyalty' is from outlet Loyalty.FromPayment.FromPaymentToLoyalty to inlet Loyalty.LoyaltyFromFromPayment  inlet LoyaltyFromFromPayment is command AccruePoints  connector 'FromMarketing To Loyalty' is from outlet Loyalty.FromMarketing.FromMarketingToLoyalty to inlet Loyalty.LoyaltyFromFromMarketing  inlet LoyaltyFromFromMarketing is command LoyaltyAccount.AccruePoints  inlet LoyaltyAccountCommandStreamIn is type LoyaltyAccountCommand  outlet LoyaltyAccountCommandStreamOut is type LoyaltyAccountCommand
   inlet LoyaltyAccountResultStreamIn is result LoyaltyAccount.LoyaltyAccountResult  outlet LoyaltyAccountResultStreamOut is result LoyaltyAccount.LoyaltyAccountResult
   outlet AccrualIntakeOut is command LoyaltyAccount.AccruePoints
@@ -11,6 +15,12 @@ context Loyalty as router is {
     }
   }
   handler LoyaltyBoundary is {
+    on pointsAccrued: event LoyaltyAccount.PointsAccrued is {
+      send pointsAccrued to outlet Loyalty.LoyaltyToMarketingOut
+    }
+    on customerEnrolled: event LoyaltyAccount.CustomerEnrolled is {
+      send customerEnrolled to outlet Loyalty.LoyaltyToMarketingOut
+    }
     on enrollCustomer: command LoyaltyAccount.EnrollCustomer is {
       forward enrollCustomer to outlet Loyalty.LoyaltyAccountCommandStreamOut
     }
@@ -374,6 +384,7 @@ context Loyalty as router is {
     }
   }
   streamlet LoyaltyAccountEventSource as split is {
+    outlet LoyaltyAccountEventSourceToMarketing is type LoyaltyAccountEvent
     outlet LoyaltyAccountEventSourceToLoyaltyAccountProjection is type LoyaltyAccountEvent
     inlet LoyaltyAccountEventSourceIn is type LoyaltyAccountEvent    outlet LoyaltyAccountEvents is type LoyaltyEvent
     handler LoyaltyAccountEventEmitter is {
@@ -383,10 +394,12 @@ context Loyalty as router is {
       on customerEnrolled: event LoyaltyAccount.CustomerEnrolled is {
         send customerEnrolled to outlet LoyaltyAccountEvents
         send customerEnrolled to outlet LoyaltyAccountEventSourceToLoyaltyAccountProjection
+        send customerEnrolled to outlet LoyaltyAccountEventSourceToMarketing
       }
       on pointsAccrued: event LoyaltyAccount.PointsAccrued is {
         send pointsAccrued to outlet LoyaltyAccountEvents
         send pointsAccrued to outlet LoyaltyAccountEventSourceToLoyaltyAccountProjection
+        send pointsAccrued to outlet LoyaltyAccountEventSourceToMarketing
       }
       on pointsRedeemed: event LoyaltyAccount.PointsRedeemed is {
         send pointsRedeemed to outlet LoyaltyAccountEvents
@@ -435,7 +448,7 @@ context Loyalty as router is {
     }
   }
   adaptor FromMarketing from context Corporate.Marketing as flow is { 
-    outlet FromMarketingToLoyalty is command LoyaltyAccount.AccruePoints
+    inlet FromMarketingIn is type Marketing.CampaignEvent    outlet FromMarketingToLoyalty is command LoyaltyAccount.AccruePoints
     handler CampaignEventIntake is {
       on event Corporate.Marketing.Campaign.CampaignLaunched is {
         let accruePoints: type LoyaltyAccount.AccruePoints = prompt("the accrue points that results from campaign launched")

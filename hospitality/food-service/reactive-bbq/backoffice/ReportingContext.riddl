@@ -26,7 +26,25 @@ context Reporting as router is {
       |InventoryReportRepository.
     }
   }
+  type ReportView is one of {
+    SalesReportView or LaborReportView or InventoryReportView
+  } with {
+    briefly "Everything the report repository answers"
+  }
+  inlet ReportViewStreamIn is type ReportView  outlet ReportViewStreamOut is type ReportView
+  connector 'ReportView Stream Egress' is from outlet Reporting.SalesReportRepository.SalesReportRepositoryResponses to inlet Reporting.ReportViewStreamIn with {
+    briefly "Report views on their way out to the application"
+  }
   handler ReportingBoundary is {
+    on salesReportView: result SalesReportView is {
+      send salesReportView to outlet Reporting.ReportViewStreamOut
+    }
+    on laborReportView: result LaborReportView is {
+      send laborReportView to outlet Reporting.ReportViewStreamOut
+    }
+    on inventoryReportView: result InventoryReportView is {
+      send inventoryReportView to outlet Reporting.ReportViewStreamOut
+    }
     on shiftCreated: event Shift.ShiftCreated is {
       send shiftCreated to outlet Reporting.ShiftToReportingOut
     }
@@ -70,6 +88,18 @@ context Reporting as router is {
       |to a definition inside. Inbound messages are relayed to the definition
       |that owns them; outbound ones are republished from here.
     }
+  }
+  connector 'SalesReport FrontOfHouse Feed' is from outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToSalesReport to inlet Reporting.SalesReport.SalesReportFromFrontOfHouse with {
+    briefly "Dine-in payments the sales report is built from"
+  }
+  connector 'SalesReport OnlineOrdering Feed' is from outlet Reporting.FromOnlineOrdering.FromOnlineOrderingToSalesReport to inlet Reporting.SalesReport.SalesReportFromOnlineOrdering with {
+    briefly "Online payments the sales report is built from"
+  }
+  connector 'LaborReport Feed' is from outlet Reporting.ShiftEventSink.ShiftEventSinkToLaborReport to inlet Reporting.LaborReport.LaborReportIn with {
+    briefly "The shift events the labor report is built from"
+  }
+  connector 'InventoryReport Feed' is from outlet Reporting.InventoryEventSink.InventoryEventSinkToInventoryReport to inlet Reporting.InventoryReport.InventoryReportIn with {
+    briefly "The stock events the inventory report is built from"
   }
   connector 'ShiftToReporting Intake' is from outlet Reporting.ShiftToReportingOut to inlet Reporting.ShiftEventSink.IncomingShiftEvents  connector 'InventoryToReporting Intake' is from outlet Reporting.InventoryToReportingOut to inlet Reporting.InventoryEventSink.IncomingInventoryEvents  query GetInventoryReport replies result InventoryReportView is {
     inventoryReportKey: String(1,100) with {
@@ -237,7 +267,8 @@ context Reporting as router is {
       |Commands accepted by the InventoryReportRepository.
     }
   }
-  repository SalesReportRepository as sink is {
+  repository SalesReportRepository as merge is {
+    outlet SalesReportRepositoryResponses is type ReportView
     inlet SalesReportRepositoryFromAccountingConfirmSink is command RecordAccountingPosting    inlet SalesReportRepositoryFromSalesReport is type SalesReportCommand    inlet SalesReportRepositoryDirectWrites is type SalesReportCommand with {
       briefly "Writes told directly by this context's sinks and adaptors"
       described as {
@@ -632,9 +663,9 @@ context Reporting as router is {
       |Stores inventory report data.
     }
   }
-  projector SalesReport as source is {
+  projector SalesReport as merge is {
     updates repository Reporting.SalesReportRepository
-    outlet SalesReportOut is type SalesReportCommand
+    inlet SalesReportFromFrontOfHouse is type Restaurant.FrontOfHouse.OrderEvent    inlet SalesReportFromOnlineOrdering is type Restaurant.OnlineOrdering.OnlineOrderEvent    outlet SalesReportOut is type SalesReportCommand
     record SalesReportEntry is {
       reportDate: Date with {
         briefly "Date"
@@ -701,6 +732,9 @@ context Reporting as router is {
           onlineRevenue, recalculate averageOrderValue"
         set field SalesReportEntry.onlineRevenue to prompt("onlineRevenue + payment amount")
       }
+      on other is {
+        do "the remaining members of these inlets' types change nothing the sales report keeps"
+      }
     } with {
       briefly "Sales report handler"
       described as {
@@ -715,9 +749,9 @@ context Reporting as router is {
       | so report generation never impacts peak-hour performance.
     }
   }
-  projector LaborReport as source is {
+  projector LaborReport as flow is {
     updates repository Reporting.LaborReportRepository
-    outlet LaborReportOut is type LaborReportCommand
+    inlet LaborReportIn is type ShiftEvent    outlet LaborReportOut is type LaborReportCommand
     record LaborReportEntry is {
       laborReportDate: Date with {
         briefly "Date"
@@ -780,6 +814,9 @@ context Reporting as router is {
           laborReportDate: increment shiftsCancelled"
         set field LaborReportEntry.shiftsCancelled to prompt("shiftsCancelled + 1")
       }
+      on other is {
+        do "the remaining members of this inlet's type change nothing the labor report keeps"
+      }
     } with {
       briefly "Labor report handler"
       described as {
@@ -792,9 +829,9 @@ context Reporting as router is {
       |Builds labor reports from scheduling clock events.
     }
   }
-  projector InventoryReport as source is {
+  projector InventoryReport as flow is {
     updates repository Reporting.InventoryReportRepository
-    outlet InventoryReportOut is type InventoryReportCommand
+    inlet InventoryReportIn is type InventoryEvent    outlet InventoryReportOut is type InventoryReportCommand
     record InventoryReportEntry is {
       inventoryReportDate: Date with {
         briefly "Date"
@@ -859,6 +896,9 @@ context Reporting as router is {
           lowStockItems and outOfStockItems counts"
         set field InventoryReportEntry.totalStockValue to prompt("recalculated from adjustedStockLevel")
       }
+      on other is {
+        do "the remaining members of this inlet's type change nothing the inventory report keeps"
+      }
     } with {
       briefly "Inventory report handler"
       described as {
@@ -871,7 +911,7 @@ context Reporting as router is {
       |Builds inventory reports from stock events.
     }
   }
-  adaptor ToAccountingSystem to context AccountingSystem is { 
+  adaptor ToAccountingSystem to context AccountingSystem as flow is { 
     outlet ToAccountingSystemOut is command ReactiveBBQ.BackOffice.AccountingSystem.PostTransaction
     inlet ToAccountingSystemIn is command ReactiveBBQ.BackOffice.Reporting.InventoryReportRepository.RecordInventoryEvent    handler OutboundAccountingSystem is {
       on recordInventoryEvent: command RecordInventoryEvent is {
@@ -950,8 +990,30 @@ context Reporting as router is {
       |external accounting system.
     }
   }
-  adaptor FromFrontOfHouseReservations from context Restaurant.FrontOfHouse as flow is { 
-    outlet FromFrontOfHouseReservationsToReporting is type SalesReportCommand
+  adaptor FromOnlineOrdering from context Restaurant.OnlineOrdering as flow is { 
+    inlet FromOnlineOrderingIn is type ReactiveBBQ.Restaurant.OnlineOrdering.OnlineOrderEvent    outlet FromOnlineOrderingToSalesReport is type Restaurant.OnlineOrdering.OnlineOrderEvent
+    handler FromOnlineOrderingHandler is {
+      on onlinePaymentProcessed: event Restaurant.OnlineOrdering.OnlineOrder.OnlinePaymentProcessed is {
+        send onlinePaymentProcessed to outlet Reporting.FromOnlineOrdering.FromOnlineOrderingToSalesReport
+      }
+      on other is {
+        do "the remaining online order events change nothing the sales report keeps"
+      }
+    } with {
+      briefly "from online ordering"
+      described as {
+        |Carries the online payments the sales report is built from.
+      }
+    }
+  } with {
+    briefly "OnlineOrdering integration"
+    described as {
+      |The back office's side of the OnlineOrdering conversation: payments, for reporting.
+    }
+  }
+  adaptor FromFrontOfHouseReservations from context Restaurant.FrontOfHouse as router is { 
+    inlet FromFrontOfHouseReservationsFromTableOrderIn is type ReactiveBBQ.Restaurant.FrontOfHouse.TableOrder.TableOrderEvent    inlet FromFrontOfHouseReservationsFromReservationIn is type ReactiveBBQ.Restaurant.FrontOfHouse.ReservationEvent    outlet FromFrontOfHouseReservationsToReporting is type SalesReportCommand
+    outlet FromFrontOfHouseReservationsToSalesReport is type Restaurant.FrontOfHouse.OrderEvent
     handler ReservationEventIntake is {
       on reservationMade: event Restaurant.FrontOfHouse.Reservation.ReservationMade is {
         send command RecordReservationEvent(reservationId = reservationMade.reservationId, eventType = prompt("the event type of this record reservation event")) to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting
@@ -975,6 +1037,7 @@ context Reporting as router is {
       on paymentProcessed: event Restaurant.FrontOfHouse.TableOrder.PaymentProcessed is {
         send command RecordTableOrderEvent(tableOrderId = paymentProcessed.tableOrderId, eventType = prompt("the event type of this record table order event"), paymentAmount = prompt("the payment amount of this record table order event")) to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting
         do "record payment for sales reporting"
+        send paymentProcessed to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToSalesReport
       }
       on orderClosed: event Restaurant.FrontOfHouse.TableOrder.OrderClosed is {
         send command RecordTableOrderEvent(tableOrderId = orderClosed.tableOrderId, eventType = prompt("the event type of this record table order event"), paymentAmount = prompt("the payment amount of this record table order event")) to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting
@@ -997,22 +1060,26 @@ context Reporting as router is {
       |topology for sales and reservation reports.
     }
   }
-  streamlet ShiftEventSink as flow is {
+  streamlet ShiftEventSink as split is {
     outlet ShiftEventSinkToLaborReportRepository is command RecordShiftEvent
+    outlet ShiftEventSinkToLaborReport is type ShiftEvent
     inlet IncomingShiftEvents is type ShiftEvent    handler ShiftEventIntake is {
       on other is {
         do "the remaining members of this inlet's type - rejections and events this sink does not act on - change nothing here"
       }
       on clockedIn: event BackOffice.Scheduling.Shift.ClockedIn is {
         send command RecordShiftEvent(shiftId = clockedIn.shiftId, eventType = prompt("the event type of this record shift event"), eventTime = clockedIn.clockedInAt) to outlet Reporting.ShiftEventSink.ShiftEventSinkToLaborReportRepository
+        send clockedIn to outlet ShiftEventSinkToLaborReport
         do "record clock-in for labor reporting"
       }
       on clockedOut: event BackOffice.Scheduling.Shift.ClockedOut is {
         send command RecordShiftEvent(shiftId = clockedOut.shiftId, eventType = prompt("the event type of this record shift event"), eventTime = clockedOut.clockedOutAt) to outlet Reporting.ShiftEventSink.ShiftEventSinkToLaborReportRepository
+        send clockedOut to outlet ShiftEventSinkToLaborReport
         do "record clock-out for labor reporting"
       }
       on shiftCancelled: event BackOffice.Scheduling.Shift.ShiftCancelled is {
         send command RecordShiftEvent(shiftId = shiftCancelled.shiftId, eventType = prompt("the event type of this record shift event"), eventTime = shiftCancelled.shiftCancelledAt) to outlet Reporting.ShiftEventSink.ShiftEventSinkToLaborReportRepository
+        send shiftCancelled to outlet ShiftEventSinkToLaborReport
         do "record cancellation for labor reporting"
       }
     } with {
@@ -1030,6 +1097,7 @@ context Reporting as router is {
   }
   streamlet InventoryEventSink as split is {
     outlet InventoryEventSinkToInventoryReportRepository is command RecordInventoryEvent
+    outlet InventoryEventSinkToInventoryReport is type InventoryEvent
     outlet InventoryEventSinkToAccounting is command RecordInventoryEvent
     inlet IncomingInventoryEvents is type InventoryEvent    handler InventoryEventIntake is {
       on other is {
@@ -1037,16 +1105,19 @@ context Reporting as router is {
       }
       on stockReceived: event BackOffice.Inventory.InventoryItem.StockReceived is {
         send command RecordInventoryEvent(inventoryItemId = stockReceived.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockReceived.receivedQuantity) to outlet Reporting.InventoryEventSink.InventoryEventSinkToInventoryReportRepository
+        send stockReceived to outlet InventoryEventSinkToInventoryReport
         send command RecordInventoryEvent(inventoryItemId = stockReceived.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockReceived.receivedQuantity) to outlet Reporting.InventoryEventSink.InventoryEventSinkToAccounting
         do "record stock received for inventory reporting, and hand the same
           receipt to the ledger, which is where it becomes a payable"
       }
       on stockConsumed: event BackOffice.Inventory.InventoryItem.StockConsumed is {
         send command RecordInventoryEvent(inventoryItemId = stockConsumed.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockConsumed.consumedQuantity) to outlet Reporting.InventoryEventSink.InventoryEventSinkToInventoryReportRepository
+        send stockConsumed to outlet InventoryEventSinkToInventoryReport
         do "record stock consumed for inventory reporting"
       }
       on stockAdjusted: event BackOffice.Inventory.InventoryItem.StockAdjusted is {
         send command RecordInventoryEvent(inventoryItemId = stockAdjusted.inventoryItemId, eventType = prompt("the event type of this record inventory event"), quantity = stockAdjusted.adjustmentQuantity) to outlet Reporting.InventoryEventSink.InventoryEventSinkToInventoryReportRepository
+        send stockAdjusted to outlet InventoryEventSinkToInventoryReport
         do "record stock adjusted for inventory reporting"
       }
     } with {

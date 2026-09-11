@@ -1,11 +1,22 @@
 // Online Ordering bounded context
 context OnlineOrdering as router is {
+  inlet OnlineOrderingOnlineOrderToReportingIn is type OnlineOrderEvent  outlet OnlineOrderingOnlineOrderToReportingOut is type OnlineOrderEvent
+  connector 'FromOnlineOrdering OnlineOrder Feed' is from outlet OnlineOrdering.OnlineOrderEventSource.OnlineOrderEventSourceToReporting to inlet OnlineOrdering.OnlineOrderingOnlineOrderToReportingIn with {
+    briefly "OnlineOrder events on their way to Reporting"
+  }
+  inlet OnlineOrderingToDeliveryIn is type OnlineOrderEvent  outlet OnlineOrderingToDeliveryOut is type OnlineOrderEvent
+  connector 'FromOnlineOrdering Feed' is from outlet OnlineOrdering.OnlineOrderEventSource.OnlineOrderEventSourceToDelivery to inlet OnlineOrdering.OnlineOrderingToDeliveryIn with {
+    briefly "OnlineOrder events on their way to Delivery"
+  }
   outlet OnlineOrderSubmittedToKitchen is event OnlineOrder.OnlineOrderSubmitted
   outlet OnlinePaymentProcessedToLoyalty is event OnlineOrder.OnlinePaymentProcessed
   connector 'DeliveryEventSink To OnlineOrder' is from outlet OnlineOrdering.DeliveryEventSink.DeliveryEventSinkToOnlineOrder to inlet OnlineOrdering.OnlineOrder.OnlineOrderFromDeliveryEventSink  connector 'OnlineOrderEventLog To OnlineOrderRepository' is from outlet OnlineOrdering.OnlineOrderEventLog.OnlineOrderEventLogToOnlineOrderRepository to inlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryFromOnlineOrderEventLog  inlet DeliveryToOnlineIn is type DeliveryEvent  outlet DeliveryToOnlineOut is type DeliveryEvent
   inlet OnlineOrderCommandStreamIn is type OnlineOrderCommand  outlet OnlineOrderCommandStreamOut is type OnlineOrderCommand
   inlet OnlineOrderResultStreamIn is result OnlineOrder.OnlineOrderResult  outlet OnlineOrderResultStreamOut is result OnlineOrder.OnlineOrderResult
   handler OnlineOrderingBoundary is {
+    on fulfillmentSelected: event OnlineOrder.FulfillmentSelected is {
+      send fulfillmentSelected to outlet OnlineOrdering.OnlineOrderingToDeliveryOut
+    }
     on onlineOrderSubmitted: event OnlineOrder.OnlineOrderSubmitted is {
       send onlineOrderSubmitted to outlet OnlineOrdering.OnlineOrderSubmittedToKitchen
       tell event OnlineOrder.OnlineTicketRouted(onlineOrderId = onlineOrderSubmitted.onlineOrderId, onlineTicketRoutedAt = system.now) to entity OnlineOrdering.OnlineOrder
@@ -13,6 +24,7 @@ context OnlineOrdering as router is {
     on onlinePaymentProcessed: event OnlineOrder.OnlinePaymentProcessed is {
       send onlinePaymentProcessed to outlet OnlineOrdering.OnlinePaymentProcessedToLoyalty
       tell event OnlineOrder.OnlinePointsAccrualRouted(onlineOrderId = onlinePaymentProcessed.onlineOrderId, onlinePointsAccrualRoutedAt = system.now) to entity OnlineOrdering.OnlineOrder
+      send onlinePaymentProcessed to outlet OnlineOrdering.OnlineOrderingOnlineOrderToReportingOut
     }
     on deliveryCreated: event DeliveryOrder.DeliveryCreated is {
       send deliveryCreated to outlet OnlineOrdering.DeliveryToOnlineOut
@@ -652,6 +664,8 @@ context OnlineOrdering as router is {
     }
   }
   streamlet OnlineOrderEventSource as split is {
+    outlet OnlineOrderEventSourceToReporting is type OnlineOrderEvent
+    outlet OnlineOrderEventSourceToDelivery is type OnlineOrderEvent
     outlet OnlineOrderEventSourceToOnlineOrderProjection is type OnlineOrderEvent
     inlet OnlineOrderEventSourceIn is type OnlineOrderEvent    outlet SubmittedOnlineOrderEvents is type OnlineOrderEvent
     handler OnlineOrderEventEmitter is {
@@ -673,9 +687,11 @@ context OnlineOrdering as router is {
       }
       on fulfillmentSelected: event OnlineOrder.FulfillmentSelected is {
         send fulfillmentSelected to outlet OnlineOrderEventSourceToOnlineOrderProjection
+        send fulfillmentSelected to outlet OnlineOrderEventSourceToDelivery
       }
       on onlinePaymentProcessed: event OnlineOrder.OnlinePaymentProcessed is {
         send onlinePaymentProcessed to outlet OnlineOrderEventSourceToOnlineOrderProjection
+        send onlinePaymentProcessed to outlet OnlineOrderEventSourceToReporting
       }
       on onlineOrderInPreparation: event OnlineOrder.OnlineOrderInPreparation is {
         send onlineOrderInPreparation to outlet OnlineOrderEventSourceToOnlineOrderProjection
