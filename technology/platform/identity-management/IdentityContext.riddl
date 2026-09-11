@@ -1,5 +1,17 @@
 // Identity Management bounded context
 context IdentityContext as router is {
+  inlet IdentityContextFromDirectoryService is command Identity.DeactivateIdentity with {
+    briefly "What FromDirectoryService makes of that service's news"
+  }
+  connector 'FromDirectoryService Intake' is from outlet IdentityContext.FromDirectoryService.FromDirectoryServiceToIdentityContext to inlet IdentityContext.IdentityContextFromDirectoryService with {
+    briefly "What FromDirectoryService makes of that news, on its way in"
+  }
+  inlet IdentityContextFromMFAProvider is command Identity.CreateSession with {
+    briefly "What FromMFAProvider makes of that service's news"
+  }
+  connector 'FromMFAProvider Intake' is from outlet IdentityContext.FromMFAProvider.FromMFAProviderToIdentityContext to inlet IdentityContext.IdentityContextFromMFAProvider with {
+    briefly "What FromMFAProvider makes of that news, on its way in"
+  }
   inlet IdentityCommandStreamIn is type IdentityCommand  outlet IdentityCommandStreamOut is type IdentityCommand
   inlet IdentityQueryResultStreamIn is result Identity.IdentityQueryResult  outlet IdentityQueryResultStreamOut is result Identity.IdentityQueryResult
   handler IdentityContextBoundary is {
@@ -44,13 +56,13 @@ context IdentityContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'IdentityCommand Stream Intake' is from outlet IdentityContext.IdentityCommandStreamOut to inlet IdentityContext.Identity.IdentityCommands  connector 'IdentityQueryResult Stream Egress' is from outlet IdentityContext.IdentityRepository.IdentityRepositoryResponses to inlet IdentityContext.IdentityQueryResultStreamIn  adaptor FromAuditService from context AuditService is { 
-    handler FromAuditServiceHandler is {
-      on event AuditService.AuditEntryRecorded is {
-        do "the model receives audit entry recorded"
+  connector 'IdentityCommand Stream Intake' is from outlet IdentityContext.IdentityCommandStreamOut to inlet IdentityContext.Identity.IdentityCommands  connector 'IdentityQueryResult Stream Egress' is from outlet IdentityContext.IdentityRepository.IdentityRepositoryResponses to inlet IdentityContext.IdentityQueryResultStreamIn  adaptor FromAuditService from context AuditService as flow is { 
+    inlet FromAuditServiceIn is type AuditService.AuditServiceEvent    handler FromAuditServiceHandler is {
+      on auditEntryRecorded: event AuditService.AuditEntryRecorded is {
+        do "the audit trail has it; nothing the identity holds changes"
       }
-      on event AuditService.SecurityAlertTriggered is {
-        do "the model receives security alert triggered"
+      on securityAlertTriggered: event AuditService.SecurityAlertTriggered is {
+        do "a security alert is raised; suspending the identity is a security decision"
       }
       on other is {
         error "Unexpected message for adaptor FromAuditService"
@@ -67,16 +79,18 @@ context IdentityContext as router is {
       |The model's side of the AuditService conversation.
     }
   }
-  adaptor FromDirectoryService from context DirectoryService is { 
+  adaptor FromDirectoryService from context DirectoryService as flow is { 
+    inlet FromDirectoryServiceIn is type DirectoryService.DirectoryServiceEvent    outlet FromDirectoryServiceToIdentityContext is command Identity.DeactivateIdentity
     handler FromDirectoryServiceHandler is {
-      on event DirectoryService.GroupMembershipChanged is {
-        do "the model receives group membership changed"
+      on groupMembershipChanged: event DirectoryService.GroupMembershipChanged is {
+        do "the directory's groups changed; the identity carries no groups of its own"
       }
-      on event DirectoryService.UserRemoved is {
-        do "the model receives user removed"
+      on userRemoved: event DirectoryService.UserRemoved is {
+        let item0: type Identity.DeactivateIdentity = prompt("translate the userRemoved event into a DeactivateIdentity, a user removed from the directory has no identity to keep active")
+        send item0 to outlet IdentityContext.FromDirectoryService.FromDirectoryServiceToIdentityContext
       }
-      on event DirectoryService.UserSynchronized is {
-        do "the model receives user synchronized"
+      on userSynchronized: event DirectoryService.UserSynchronized is {
+        do "the directory's copy is synced; an identity is created when the user first signs in"
       }
       on other is {
         error "Unexpected message for adaptor FromDirectoryService"
@@ -93,16 +107,18 @@ context IdentityContext as router is {
       |The model's side of the DirectoryService conversation.
     }
   }
-  adaptor FromMFAProvider from context MFAProvider is { 
+  adaptor FromMFAProvider from context MFAProvider as flow is { 
+    inlet FromMFAProviderIn is type MFAProvider.MFAProviderEvent    outlet FromMFAProviderToIdentityContext is command Identity.CreateSession
     handler FromMFAProviderHandler is {
-      on event MFAProvider.MFAChallengeIssued is {
-        do "the model receives mfa challenge issued"
+      on mFAChallengeIssued: event MFAProvider.MFAChallengeIssued is {
+        do "the challenge is out; the session waits on the answer"
       }
-      on event MFAProvider.MFAVerificationFailed is {
-        do "the model receives mfa verification failed"
+      on mFAVerificationFailed: event MFAProvider.MFAVerificationFailed is {
+        do "the challenge failed; the user tries again and the identity is unchanged"
       }
-      on event MFAProvider.MFAVerificationSucceeded is {
-        do "the model receives mfa verification succeeded"
+      on mFAVerificationSucceeded: event MFAProvider.MFAVerificationSucceeded is {
+        let item0: type Identity.CreateSession = prompt("translate the mFAVerificationSucceeded event into a CreateSession, a passed challenge is the final gate, so the session opens")
+        send item0 to outlet IdentityContext.FromMFAProvider.FromMFAProviderToIdentityContext
       }
       on other is {
         error "Unexpected message for adaptor FromMFAProvider"

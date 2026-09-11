@@ -1,5 +1,17 @@
 // CI/CD Pipeline - Pipeline Context
 context PipelineContext as router is {
+  inlet PipelineContextFromArtifactStorageService is command Pipeline.StoreArtifact with {
+    briefly "What FromArtifactStorageService makes of that service's news"
+  }
+  connector 'FromArtifactStorageService Intake' is from outlet PipelineContext.FromArtifactStorageService.FromArtifactStorageServiceToPipelineContext to inlet PipelineContext.PipelineContextFromArtifactStorageService with {
+    briefly "What FromArtifactStorageService makes of that news, on its way in"
+  }
+  inlet PipelineContextFromDeploymentOrchestratorService is command Pipeline.CompleteStage with {
+    briefly "What FromDeploymentOrchestratorService makes of that service's news"
+  }
+  connector 'FromDeploymentOrchestratorService Intake' is from outlet PipelineContext.FromDeploymentOrchestratorService.FromDeploymentOrchestratorServiceToPipelineContext to inlet PipelineContext.PipelineContextFromDeploymentOrchestratorService with {
+    briefly "What FromDeploymentOrchestratorService makes of that news, on its way in"
+  }
   inlet PipelineCommandStreamIn is type PipelineCommand  outlet PipelineCommandStreamOut is type PipelineCommand
   inlet PipelineResultStreamIn is result Pipeline.PipelineResult  outlet PipelineResultStreamOut is result Pipeline.PipelineResult
   handler PipelineContextBoundary is {
@@ -44,10 +56,12 @@ context PipelineContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'PipelineCommand Stream Intake' is from outlet PipelineContext.PipelineCommandStreamOut to inlet PipelineContext.Pipeline.PipelineCommands  connector 'PipelineResult Stream Egress' is from outlet PipelineContext.PipelineRepository.PipelineRepositoryResponses to inlet PipelineContext.PipelineResultStreamIn  adaptor FromArtifactStorageService from context ArtifactStorageService is { 
+  connector 'PipelineCommand Stream Intake' is from outlet PipelineContext.PipelineCommandStreamOut to inlet PipelineContext.Pipeline.PipelineCommands  connector 'PipelineResult Stream Egress' is from outlet PipelineContext.PipelineRepository.PipelineRepositoryResponses to inlet PipelineContext.PipelineResultStreamIn  adaptor FromArtifactStorageService from context ArtifactStorageService as flow is { 
+    inlet FromArtifactStorageServiceIn is event ArtifactStorageService.ArtifactUploaded    outlet FromArtifactStorageServiceToPipelineContext is command Pipeline.StoreArtifact
     handler FromArtifactStorageServiceHandler is {
-      on event ArtifactStorageService.ArtifactUploaded is {
-        do "the model receives artifact uploaded"
+      on artifactUploaded: event ArtifactStorageService.ArtifactUploaded is {
+        let item0: type Pipeline.StoreArtifact = prompt("translate the artifactUploaded event into a StoreArtifact, an uploaded artifact and its location are what the pipeline records as stored")
+        send item0 to outlet PipelineContext.FromArtifactStorageService.FromArtifactStorageServiceToPipelineContext
       }
       on other is {
         error "Unexpected message for adaptor FromArtifactStorageService"
@@ -90,13 +104,13 @@ context PipelineContext as router is {
       |The model's side of the ArtifactStorageService conversation.
     }
   }
-  adaptor FromContainerRegistryService from context ContainerRegistryService is { 
-    handler FromContainerRegistryServiceHandler is {
-      on event ContainerRegistryService.ImagePushed is {
-        do "the model receives image pushed"
+  adaptor FromContainerRegistryService from context ContainerRegistryService as flow is { 
+    inlet FromContainerRegistryServiceIn is type ContainerRegistryService.ContainerRegistryServiceEvent    handler FromContainerRegistryServiceHandler is {
+      on imagePushed: event ContainerRegistryService.ImagePushed is {
+        do "the registry has the image; storing the artifact was recorded here"
       }
-      on event ContainerRegistryService.ImageScanned is {
-        do "the model receives image scanned"
+      on imageScanned: event ContainerRegistryService.ImageScanned is {
+        do "the scan is done; a reviewer reads it before approving deployment"
       }
       on other is {
         error "Unexpected message for adaptor FromContainerRegistryService"
@@ -137,19 +151,21 @@ context PipelineContext as router is {
       |The model's side of the ContainerRegistryService conversation.
     }
   }
-  adaptor FromDeploymentOrchestratorService from context DeploymentOrchestratorService is { 
+  adaptor FromDeploymentOrchestratorService from context DeploymentOrchestratorService as flow is { 
+    inlet FromDeploymentOrchestratorServiceIn is type DeploymentOrchestratorService.DeploymentOrchestratorServiceEvent    outlet FromDeploymentOrchestratorServiceToPipelineContext is command Pipeline.CompleteStage
     handler FromDeploymentOrchestratorServiceHandler is {
-      on event DeploymentOrchestratorService.DeploymentFailed is {
-        do "the model receives deployment failed"
+      on deploymentFailed: event DeploymentOrchestratorService.DeploymentFailed is {
+        do "the deployment failed; whether to retry, roll back or cancel is the engineer's call"
       }
-      on event DeploymentOrchestratorService.DeploymentRolledBack is {
-        do "the model receives deployment rolled back"
+      on deploymentRolledBack: event DeploymentOrchestratorService.DeploymentRolledBack is {
+        do "the environment is back on the previous build; cancelling was recorded here"
       }
-      on event DeploymentOrchestratorService.DeploymentStarted is {
-        do "the model receives deployment started"
+      on deploymentStarted: event DeploymentOrchestratorService.DeploymentStarted is {
+        do "the rollout has begun; approving it was recorded here"
       }
-      on event DeploymentOrchestratorService.DeploymentSucceeded is {
-        do "the model receives deployment succeeded"
+      on deploymentSucceeded: event DeploymentOrchestratorService.DeploymentSucceeded is {
+        let item0: type Pipeline.CompleteStage = prompt("translate the deploymentSucceeded event into a CompleteStage, a deployment that succeeded completes the deploy stage")
+        send item0 to outlet PipelineContext.FromDeploymentOrchestratorService.FromDeploymentOrchestratorServiceToPipelineContext
       }
       on other is {
         error "Unexpected message for adaptor FromDeploymentOrchestratorService"
@@ -230,13 +246,13 @@ context PipelineContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromSourceControlService from context SourceControlService is { 
-    handler FromSourceControlServiceHandler is {
-      on event SourceControlService.CommitStatusSet is {
-        do "the model receives commit status set"
+  adaptor FromSourceControlService from context SourceControlService as flow is { 
+    inlet FromSourceControlServiceIn is type SourceControlService.SourceControlServiceEvent    handler FromSourceControlServiceHandler is {
+      on commitStatusSet: event SourceControlService.CommitStatusSet is {
+        do "the commit shows our status; the pipeline's own state is unchanged"
       }
-      on event SourceControlService.RepositoryFetched is {
-        do "the model receives repository fetched"
+      on repositoryFetched: event SourceControlService.RepositoryFetched is {
+        do "the source is checked out; the first stage runs on it"
       }
       on other is {
         error "Unexpected message for adaptor FromSourceControlService"

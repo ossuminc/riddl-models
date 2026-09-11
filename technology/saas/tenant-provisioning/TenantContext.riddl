@@ -1,5 +1,11 @@
 // Tenant Provisioning - Tenant Context
 context TenantContext as router is {
+  inlet TenantContextFromInfrastructureOrchestrator is command Tenant.ProvisionResource with {
+    briefly "What FromInfrastructureOrchestrator makes of that service's news"
+  }
+  connector 'FromInfrastructureOrchestrator Intake' is from outlet TenantContext.FromInfrastructureOrchestrator.FromInfrastructureOrchestratorToTenantContext to inlet TenantContext.TenantContextFromInfrastructureOrchestrator with {
+    briefly "What FromInfrastructureOrchestrator makes of that news, on its way in"
+  }
   inlet TenantCommandStreamIn is type TenantCommand  outlet TenantCommandStreamOut is type TenantCommand
   inlet TenantResultStreamIn is result Tenant.TenantResult  outlet TenantResultStreamOut is result Tenant.TenantResult
   handler TenantContextBoundary is {
@@ -41,13 +47,13 @@ context TenantContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'TenantCommand Stream Intake' is from outlet TenantContext.TenantCommandStreamOut to inlet TenantContext.Tenant.TenantCommands  connector 'TenantResult Stream Egress' is from outlet TenantContext.TenantRepository.TenantRepositoryResponses to inlet TenantContext.TenantResultStreamIn  adaptor FromBillingIntegrationService from context BillingIntegrationService is { 
-    handler FromBillingIntegrationServiceHandler is {
-      on event BillingIntegrationService.BillingAccountCreated is {
-        do "the model receives billing account created"
+  connector 'TenantCommand Stream Intake' is from outlet TenantContext.TenantCommandStreamOut to inlet TenantContext.Tenant.TenantCommands  connector 'TenantResult Stream Egress' is from outlet TenantContext.TenantRepository.TenantRepositoryResponses to inlet TenantContext.TenantResultStreamIn  adaptor FromBillingIntegrationService from context BillingIntegrationService as flow is { 
+    inlet FromBillingIntegrationServiceIn is type BillingIntegrationService.BillingIntegrationServiceEvent    handler FromBillingIntegrationServiceHandler is {
+      on billingAccountCreated: event BillingIntegrationService.BillingAccountCreated is {
+        do "billing has the account; creating the tenant was recorded here"
       }
-      on event BillingIntegrationService.BillingTierUpdated is {
-        do "the model receives billing tier updated"
+      on billingTierUpdated: event BillingIntegrationService.BillingTierUpdated is {
+        do "billing has the tier; upgrading was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromBillingIntegrationService"
@@ -90,13 +96,13 @@ context TenantContext as router is {
       |The model's side of the BillingIntegrationService conversation.
     }
   }
-  adaptor FromDNSManagementService from context DNSManagementService is { 
-    handler FromDNSManagementServiceHandler is {
-      on event DNSManagementService.CustomDomainConfigured is {
-        do "the model receives custom domain configured"
+  adaptor FromDNSManagementService from context DNSManagementService as flow is { 
+    inlet FromDNSManagementServiceIn is type DNSManagementService.DNSManagementServiceEvent    handler FromDNSManagementServiceHandler is {
+      on customDomainConfigured: event DNSManagementService.CustomDomainConfigured is {
+        do "the domain resolves; configuring the tenant was recorded here"
       }
-      on event DNSManagementService.DomainVerificationFailed is {
-        do "the model receives domain verification failed"
+      on domainVerificationFailed: event DNSManagementService.DomainVerificationFailed is {
+        do "the domain did not verify; fixing the DNS record is the customer's act"
       }
       on other is {
         error "Unexpected message for adaptor FromDNSManagementService"
@@ -135,13 +141,13 @@ context TenantContext as router is {
       |The model's side of the DNSManagementService conversation.
     }
   }
-  adaptor FromIdentityProviderService from context IdentityProviderService is { 
-    handler FromIdentityProviderServiceHandler is {
-      on event IdentityProviderService.SSOConfigured is {
-        do "the model receives sso configured"
+  adaptor FromIdentityProviderService from context IdentityProviderService as flow is { 
+    inlet FromIdentityProviderServiceIn is type IdentityProviderService.IdentityProviderServiceEvent    handler FromIdentityProviderServiceHandler is {
+      on sSOConfigured: event IdentityProviderService.SSOConfigured is {
+        do "single sign-on is set up; creating the tenant was recorded here"
       }
-      on event IdentityProviderService.TenantRealmCreated is {
-        do "the model receives tenant realm created"
+      on tenantRealmCreated: event IdentityProviderService.TenantRealmCreated is {
+        do "the realm exists; creating the tenant was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromIdentityProviderService"
@@ -182,13 +188,15 @@ context TenantContext as router is {
       |The model's side of the IdentityProviderService conversation.
     }
   }
-  adaptor FromInfrastructureOrchestrator from context InfrastructureOrchestrator is { 
+  adaptor FromInfrastructureOrchestrator from context InfrastructureOrchestrator as flow is { 
+    inlet FromInfrastructureOrchestratorIn is type InfrastructureOrchestrator.InfrastructureOrchestratorEvent    outlet FromInfrastructureOrchestratorToTenantContext is command Tenant.ProvisionResource
     handler FromInfrastructureOrchestratorHandler is {
-      on event InfrastructureOrchestrator.InfrastructureProvisioned is {
-        do "the model receives infrastructure provisioned"
+      on infrastructureProvisioned: event InfrastructureOrchestrator.InfrastructureProvisioned is {
+        let item0: type Tenant.ProvisionResource = prompt("translate the infrastructureProvisioned event into a ProvisionResource, infrastructure the orchestrator stood up is a resource the tenant records")
+        send item0 to outlet TenantContext.FromInfrastructureOrchestrator.FromInfrastructureOrchestratorToTenantContext
       }
-      on event InfrastructureOrchestrator.InfrastructureProvisioningFailed is {
-        do "the model receives infrastructure provisioning failed"
+      on infrastructureProvisioningFailed: event InfrastructureOrchestrator.InfrastructureProvisioningFailed is {
+        do "provisioning failed; retrying is the operator's act"
       }
       on other is {
         error "Unexpected message for adaptor FromInfrastructureOrchestrator"
@@ -227,10 +235,10 @@ context TenantContext as router is {
       |The model's side of the InfrastructureOrchestrator conversation.
     }
   }
-  adaptor FromMonitoringService from context MonitoringService is { 
-    handler FromMonitoringServiceHandler is {
-      on event MonitoringService.MonitoringConfigured is {
-        do "the model receives monitoring configured"
+  adaptor FromMonitoringService from context MonitoringService as flow is { 
+    inlet FromMonitoringServiceIn is event MonitoringService.MonitoringConfigured    handler FromMonitoringServiceHandler is {
+      on monitoringConfigured: event MonitoringService.MonitoringConfigured is {
+        do "monitoring is watching; provisioning the resource was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromMonitoringService"

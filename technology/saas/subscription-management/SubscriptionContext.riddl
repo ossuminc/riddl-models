@@ -1,5 +1,16 @@
 // Subscription Management - Subscription Context
 context SubscriptionContext as router is {
+  type FromPaymentGatewayServiceCommand is one of {
+    Subscription.RecordPayment or Subscription.RecordPaymentFailure
+  } with {
+    briefly "What FromPaymentGatewayService turns that service's news into"
+  }
+  inlet SubscriptionContextFromPaymentGatewayService is type SubscriptionContext.FromPaymentGatewayServiceCommand with {
+    briefly "What FromPaymentGatewayService makes of that service's news"
+  }
+  connector 'FromPaymentGatewayService Intake' is from outlet SubscriptionContext.FromPaymentGatewayService.FromPaymentGatewayServiceToSubscriptionContext to inlet SubscriptionContext.SubscriptionContextFromPaymentGatewayService with {
+    briefly "What FromPaymentGatewayService makes of that news, on its way in"
+  }
   inlet SubscriptionCommandStreamIn is type SubscriptionCommand  outlet SubscriptionCommandStreamOut is type SubscriptionCommand
   inlet SubscriptionResultStreamIn is result Subscription.SubscriptionResult  outlet SubscriptionResultStreamOut is result Subscription.SubscriptionResult
   handler SubscriptionContextBoundary is {
@@ -50,10 +61,10 @@ context SubscriptionContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'SubscriptionCommand Stream Intake' is from outlet SubscriptionContext.SubscriptionCommandStreamOut to inlet SubscriptionContext.Subscription.SubscriptionCommands  connector 'SubscriptionResult Stream Egress' is from outlet SubscriptionContext.SubscriptionRepository.SubscriptionRepositoryResponses to inlet SubscriptionContext.SubscriptionResultStreamIn  adaptor FromInvoiceService from context InvoiceService is { 
-    handler FromInvoiceServiceHandler is {
-      on event InvoiceService.InvoiceGenerated is {
-        do "the model receives invoice generated"
+  connector 'SubscriptionCommand Stream Intake' is from outlet SubscriptionContext.SubscriptionCommandStreamOut to inlet SubscriptionContext.Subscription.SubscriptionCommands  connector 'SubscriptionResult Stream Egress' is from outlet SubscriptionContext.SubscriptionRepository.SubscriptionRepositoryResponses to inlet SubscriptionContext.SubscriptionResultStreamIn  adaptor FromInvoiceService from context InvoiceService as flow is { 
+    inlet FromInvoiceServiceIn is event InvoiceService.InvoiceGenerated    handler FromInvoiceServiceHandler is {
+      on invoiceGenerated: event InvoiceService.InvoiceGenerated is {
+        do "the invoice exists; renewing was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromInvoiceService"
@@ -130,13 +141,16 @@ context SubscriptionContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromPaymentGatewayService from context PaymentGatewayService is { 
+  adaptor FromPaymentGatewayService from context PaymentGatewayService as flow is { 
+    inlet FromPaymentGatewayServiceIn is type PaymentGatewayService.PaymentGatewayServiceEvent    outlet FromPaymentGatewayServiceToSubscriptionContext is type SubscriptionContext.FromPaymentGatewayServiceCommand
     handler FromPaymentGatewayServiceHandler is {
-      on event PaymentGatewayService.PaymentChargeFailed is {
-        do "the model receives payment charge failed"
+      on paymentChargeFailed: event PaymentGatewayService.PaymentChargeFailed is {
+        let item0: type Subscription.RecordPaymentFailure = prompt("translate the paymentChargeFailed event into a RecordPaymentFailure, a charge the gateway could not take is what the subscription records as a failed payment")
+        send item0 to outlet SubscriptionContext.FromPaymentGatewayService.FromPaymentGatewayServiceToSubscriptionContext
       }
-      on event PaymentGatewayService.PaymentCharged is {
-        do "the model receives payment charged"
+      on paymentCharged: event PaymentGatewayService.PaymentCharged is {
+        let item0: type Subscription.RecordPayment = prompt("translate the paymentCharged event into a RecordPayment, money actually taken is what the subscription records as paid")
+        send item0 to outlet SubscriptionContext.FromPaymentGatewayService.FromPaymentGatewayServiceToSubscriptionContext
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentGatewayService"
@@ -179,13 +193,13 @@ context SubscriptionContext as router is {
       |The model's side of the PaymentGatewayService conversation.
     }
   }
-  adaptor FromProvisioningService from context ProvisioningService is { 
-    handler FromProvisioningServiceHandler is {
-      on event ProvisioningService.AccessProvisioned is {
-        do "the model receives access provisioned"
+  adaptor FromProvisioningService from context ProvisioningService as flow is { 
+    inlet FromProvisioningServiceIn is type ProvisioningService.ProvisioningServiceEvent    handler FromProvisioningServiceHandler is {
+      on accessProvisioned: event ProvisioningService.AccessProvisioned is {
+        do "the customer has access; creating the subscription was recorded here"
       }
-      on event ProvisioningService.AccessRevoked is {
-        do "the model receives access revoked"
+      on accessRevoked: event ProvisioningService.AccessRevoked is {
+        do "access is gone; the cancellation or suspension was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromProvisioningService"

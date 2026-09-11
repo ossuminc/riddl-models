@@ -1,5 +1,17 @@
 // Deployment Context - Bounded context for deployment management
 context DeploymentContext as router is {
+  inlet DeploymentContextFromInfrastructureService is command Deployment.RollbackDeployment with {
+    briefly "What FromInfrastructureService makes of that service's news"
+  }
+  connector 'FromInfrastructureService Intake' is from outlet DeploymentContext.FromInfrastructureService.FromInfrastructureServiceToDeploymentContext to inlet DeploymentContext.DeploymentContextFromInfrastructureService with {
+    briefly "What FromInfrastructureService makes of that news, on its way in"
+  }
+  inlet DeploymentContextFromMonitoringService is command Deployment.VerifyDeployment with {
+    briefly "What FromMonitoringService makes of that service's news"
+  }
+  connector 'FromMonitoringService Intake' is from outlet DeploymentContext.FromMonitoringService.FromMonitoringServiceToDeploymentContext to inlet DeploymentContext.DeploymentContextFromMonitoringService with {
+    briefly "What FromMonitoringService makes of that news, on its way in"
+  }
   inlet DeploymentCommandStreamIn is type DeploymentCommand  outlet DeploymentCommandStreamOut is type DeploymentCommand
   inlet EnvironmentCommandStreamIn is type EnvironmentCommand  outlet EnvironmentCommandStreamOut is type EnvironmentCommand
   inlet DeploymentQueryResultStreamIn is result Deployment.DeploymentQueryResult  outlet DeploymentQueryResultStreamOut is result Deployment.DeploymentQueryResult
@@ -42,13 +54,13 @@ context DeploymentContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'DeploymentCommand Stream Intake' is from outlet DeploymentContext.DeploymentCommandStreamOut to inlet DeploymentContext.Deployment.DeploymentCommands  connector 'EnvironmentCommand Stream Intake' is from outlet DeploymentContext.EnvironmentCommandStreamOut to inlet DeploymentContext.Environment.EnvironmentCommands  connector 'DeploymentQueryResult Stream Egress' is from outlet DeploymentContext.DeploymentRepository.DeploymentRepositoryResponses to inlet DeploymentContext.DeploymentQueryResultStreamIn  adaptor FromArtifactRegistry from context ArtifactRegistry is { 
-    handler FromArtifactRegistryHandler is {
-      on event ArtifactRegistry.ArtifactFetched is {
-        do "the model receives artifact fetched"
+  connector 'DeploymentCommand Stream Intake' is from outlet DeploymentContext.DeploymentCommandStreamOut to inlet DeploymentContext.Deployment.DeploymentCommands  connector 'EnvironmentCommand Stream Intake' is from outlet DeploymentContext.EnvironmentCommandStreamOut to inlet DeploymentContext.Environment.EnvironmentCommands  connector 'DeploymentQueryResult Stream Egress' is from outlet DeploymentContext.DeploymentRepository.DeploymentRepositoryResponses to inlet DeploymentContext.DeploymentQueryResultStreamIn  adaptor FromArtifactRegistry from context ArtifactRegistry as flow is { 
+    inlet FromArtifactRegistryIn is type ArtifactRegistry.ArtifactRegistryEvent    handler FromArtifactRegistryHandler is {
+      on artifactFetched: event ArtifactRegistry.ArtifactFetched is {
+        do "the artifact is in hand; the rollout uses it"
       }
-      on event ArtifactRegistry.ArtifactValidated is {
-        do "the model receives artifact validated"
+      on artifactValidated: event ArtifactRegistry.ArtifactValidated is {
+        do "the artifact checks out; approval is still a person's decision"
       }
       on other is {
         error "Unexpected message for adaptor FromArtifactRegistry"
@@ -91,16 +103,18 @@ context DeploymentContext as router is {
       |The model's side of the ArtifactRegistry conversation.
     }
   }
-  adaptor FromInfrastructureService from context InfrastructureService is { 
+  adaptor FromInfrastructureService from context InfrastructureService as flow is { 
+    inlet FromInfrastructureServiceIn is type InfrastructureService.InfrastructureServiceEvent    outlet FromInfrastructureServiceToDeploymentContext is command Deployment.RollbackDeployment
     handler FromInfrastructureServiceHandler is {
-      on event InfrastructureService.InfrastructureDeploymentCompleted is {
-        do "the model receives infrastructure deployment completed"
+      on infrastructureDeploymentCompleted: event InfrastructureService.InfrastructureDeploymentCompleted is {
+        do "the rollout is on the infrastructure; verification follows the health check"
       }
-      on event InfrastructureService.InfrastructureDeploymentFailed is {
-        do "the model receives infrastructure deployment failed"
+      on infrastructureDeploymentFailed: event InfrastructureService.InfrastructureDeploymentFailed is {
+        let item0: type Deployment.RollbackDeployment = prompt("translate the infrastructureDeploymentFailed event into a RollbackDeployment, a rollout the infrastructure could not complete is rolled back")
+        send item0 to outlet DeploymentContext.FromInfrastructureService.FromInfrastructureServiceToDeploymentContext
       }
-      on event InfrastructureService.InfrastructureDeploymentStarted is {
-        do "the model receives infrastructure deployment started"
+      on infrastructureDeploymentStarted: event InfrastructureService.InfrastructureDeploymentStarted is {
+        do "the infrastructure is rolling out; executing was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromInfrastructureService"
@@ -147,16 +161,18 @@ context DeploymentContext as router is {
       |The model's side of the InfrastructureService conversation.
     }
   }
-  adaptor FromMonitoringService from context MonitoringService is { 
+  adaptor FromMonitoringService from context MonitoringService as flow is { 
+    inlet FromMonitoringServiceIn is type MonitoringService.MonitoringServiceEvent    outlet FromMonitoringServiceToDeploymentContext is command Deployment.VerifyDeployment
     handler FromMonitoringServiceHandler is {
-      on event MonitoringService.AlertTriggered is {
-        do "the model receives alert triggered"
+      on alertTriggered: event MonitoringService.AlertTriggered is {
+        do "an alert fired; whether it is the deployment's fault is the engineer's call"
       }
-      on event MonitoringService.HealthCheckCompleted is {
-        do "the model receives health check completed"
+      on healthCheckCompleted: event MonitoringService.HealthCheckCompleted is {
+        let item0: type Deployment.VerifyDeployment = prompt("translate the healthCheckCompleted event into a VerifyDeployment, the health check's outcome is what verifies the deployment")
+        send item0 to outlet DeploymentContext.FromMonitoringService.FromMonitoringServiceToDeploymentContext
       }
-      on event MonitoringService.ServiceRecovered is {
-        do "the model receives service recovered"
+      on serviceRecovered: event MonitoringService.ServiceRecovered is {
+        do "the service is healthy again; the deployment's own state is unchanged"
       }
       on other is {
         error "Unexpected message for adaptor FromMonitoringService"
