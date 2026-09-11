@@ -100,6 +100,38 @@ Three things a fresh session must not relearn the hard way:
   **a "riddlc does not check X" note is a measurement with an expiry date**, and
   a stale one invites building a guard nobody needs.
 
+### Implied adaptor ports: ruled "abolish", PAUSED, and half-mechanical
+
+**Nothing is implemented in riddl and nothing should be migrated here yet.** Reid
+ruled to abolish implied adaptor ports (the reasoning is in
+`../riddl/task/2026-09-10-abolish-implied-adaptor-ports.md`), then paused on
+riddl's feasibility measurement. Sequencing request is on record: **the
+deprecation warning must ship before the error**, so the corpus can migrate
+against a compiler that names each site.
+
+Where the argument landed, measured both ways:
+
+- **Inlets are mechanical.** 845 of 1056 port-less adaptors can name a type that
+  already exists -- 692 via a superset alternation (usually the far entity's
+  `<Entity>Event`), 153 handling a single type. Only 11 genuinely need splitting
+  (handled set spans two entities; A103 already prescribes one type per adaptor).
+- **Outlets are NOT.** 499 adaptors lack one and most have nothing to derive it
+  from: an adaptor whose body is `do "Adjust vendor balance for return"` emits
+  nothing. riddl-models' own task claimed the whole migration was mechanical; that
+  was right for inlets and wrong for outlets, and riddl's measurement is what
+  showed it.
+- **The inbound campaign is shrinking the problem as it runs.** Port-less adaptors
+  616 -> 336 and declared inlets 9 -> 289 in one day, because the campaign writes
+  `type <Ctx>Event`, the outlet, and the adaptor's declared inlet for every
+  external context it touches.
+
+**A measurement trap worth remembering**, because it produced a confident wrong
+number that nearly went to riddl: `dump --json` resolves a clause's message to a
+ROOT-qualified path while a type node's alternation text is CONTEXT-qualified.
+Comparing the two forms as sets matches nothing and reports every case as
+uncoverable -- it said 607 where the truth was 211. Normalise to `Owner.Message`.
+It surfaced only because the result disagreed with a case read by hand.
+
 ### In flight
 
 **1006 inbound `do "the model receives ..."` placeholders across 178 models** —
