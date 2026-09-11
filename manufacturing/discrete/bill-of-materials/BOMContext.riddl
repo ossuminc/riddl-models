@@ -1,5 +1,11 @@
 // Bill of Materials Management - BOM Context
 context BOMContext as router is {
+  inlet BOMContextFromEngineeringChangeService is command BillOfMaterials.ReleaseBOM with {
+    briefly "What FromEngineeringChangeService makes of that service's news"
+  }
+  connector 'FromEngineeringChangeService Intake' is from outlet BOMContext.FromEngineeringChangeService.FromEngineeringChangeServiceToBOMContext to inlet BOMContext.BOMContextFromEngineeringChangeService with {
+    briefly "What FromEngineeringChangeService makes of that news, on its way in"
+  }
   connector 'WhereUsedProjector Storage' is from outlet BOMContext.WhereUsedProjector.WhereUsedProjectorToRepository to inlet BOMContext.BOMRepository.BOMRepositoryFromWhereUsedProjector with {
     briefly "WhereUsedProjector messages on their way to BOMRepository"
     described as {
@@ -50,10 +56,10 @@ context BOMContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'BillOfMaterialsCommand Stream Intake' is from outlet BOMContext.BillOfMaterialsCommandStreamOut to inlet BOMContext.BillOfMaterials.BillOfMaterialsCommands  connector 'BillOfMaterialsResult Stream Egress' is from outlet BOMContext.BOMRepository.BOMRepositoryResponses to inlet BOMContext.BillOfMaterialsResultStreamIn  adaptor FromCostingService from context CostingService is { 
-    handler FromCostingServiceHandler is {
-      on event CostingService.StandardCostUpdated is {
-        do "the model receives standard cost updated"
+  connector 'BillOfMaterialsCommand Stream Intake' is from outlet BOMContext.BillOfMaterialsCommandStreamOut to inlet BOMContext.BillOfMaterials.BillOfMaterialsCommands  connector 'BillOfMaterialsResult Stream Egress' is from outlet BOMContext.BOMRepository.BOMRepositoryResponses to inlet BOMContext.BillOfMaterialsResultStreamIn  adaptor FromCostingService from context CostingService as flow is { 
+    inlet FromCostingServiceIn is event CostingService.StandardCostUpdated    handler FromCostingServiceHandler is {
+      on standardCostUpdated: event CostingService.StandardCostUpdated is {
+        do "costing has the new standard; calculating it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromCostingService"
@@ -100,16 +106,18 @@ context BOMContext as router is {
       |The model's side of the CostingService conversation.
     }
   }
-  adaptor FromEngineeringChangeService from context EngineeringChangeService is { 
+  adaptor FromEngineeringChangeService from context EngineeringChangeService as flow is { 
+    inlet FromEngineeringChangeServiceIn is type EngineeringChangeService.EngineeringChangeServiceEvent    outlet FromEngineeringChangeServiceToBOMContext is command BillOfMaterials.ReleaseBOM
     handler FromEngineeringChangeServiceHandler is {
-      on event EngineeringChangeService.ChangeApproved is {
-        do "the model receives change approved"
+      on changeApproved: event EngineeringChangeService.ChangeApproved is {
+        let item0: type BillOfMaterials.ReleaseBOM = prompt("translate the changeApproved event into a ReleaseBOM, an approved engineering change is what releases the revision, and it names who approved")
+        send item0 to outlet BOMContext.FromEngineeringChangeService.FromEngineeringChangeServiceToBOMContext
       }
-      on event EngineeringChangeService.ChangeImplemented is {
-        do "the model receives change implemented"
+      on changeImplemented: event EngineeringChangeService.ChangeImplemented is {
+        do "the change is in effect; the BOM was released when the change was approved"
       }
-      on event EngineeringChangeService.ChangeRequestCreated is {
-        do "the model receives change request created"
+      on changeRequestCreated: event EngineeringChangeService.ChangeRequestCreated is {
+        do "engineering has the request; revising was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromEngineeringChangeService"

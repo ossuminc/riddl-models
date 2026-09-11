@@ -1,5 +1,22 @@
 // Assembly Operations - Assembly Context
 context AssemblyContext as router is {
+  inlet AssemblyContextFromInventoryService is command AssemblyOrder.HoldAssembly with {
+    briefly "What FromInventoryService makes of that service's news"
+  }
+  connector 'FromInventoryService Intake' is from outlet AssemblyContext.FromInventoryService.FromInventoryServiceToAssemblyContext to inlet AssemblyContext.AssemblyContextFromInventoryService with {
+    briefly "What FromInventoryService makes of that news, on its way in"
+  }
+  type FromQualityServiceCommand is one of {
+    AssemblyOrder.FailAssembly or AssemblyOrder.RecordDefect
+  } with {
+    briefly "What FromQualityService turns that service's news into"
+  }
+  inlet AssemblyContextFromQualityService is type AssemblyContext.FromQualityServiceCommand with {
+    briefly "What FromQualityService makes of that service's news"
+  }
+  connector 'FromQualityService Intake' is from outlet AssemblyContext.FromQualityService.FromQualityServiceToAssemblyContext to inlet AssemblyContext.AssemblyContextFromQualityService with {
+    briefly "What FromQualityService makes of that news, on its way in"
+  }
   inlet TranslationToContextQualSrc is type QualityService.QualityCommand  connector 'Translation To Context QualityService Egress' is from outlet AssemblyContext.ToQualityService.TranslatedQualityCommands to inlet AssemblyContext.TranslationToContextQualSrc  inlet AssemblyOrderCommandStreamIn is type AssemblyOrderCommand  outlet AssemblyOrderCommandStreamOut is type AssemblyOrderCommand
   inlet AssemblyOrderResultStreamIn is result AssemblyOrder.AssemblyOrderResult  outlet AssemblyOrderResultStreamOut is result AssemblyOrder.AssemblyOrderResult
   handler AssemblyContextBoundary is {
@@ -41,16 +58,18 @@ context AssemblyContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'AssemblyOrderCommand Stream Intake' is from outlet AssemblyContext.AssemblyOrderCommandStreamOut to inlet AssemblyContext.AssemblyOrder.AssemblyOrderCommands  connector 'AssemblyOrderResult Stream Egress' is from outlet AssemblyContext.AssemblyOrderRepository.AssemblyOrderRepositoryResponses to inlet AssemblyContext.AssemblyOrderResultStreamIn  adaptor FromInventoryService from context InventoryService is { 
+  connector 'AssemblyOrderCommand Stream Intake' is from outlet AssemblyContext.AssemblyOrderCommandStreamOut to inlet AssemblyContext.AssemblyOrder.AssemblyOrderCommands  connector 'AssemblyOrderResult Stream Egress' is from outlet AssemblyContext.AssemblyOrderRepository.AssemblyOrderRepositoryResponses to inlet AssemblyContext.AssemblyOrderResultStreamIn  adaptor FromInventoryService from context InventoryService as flow is { 
+    inlet FromInventoryServiceIn is type InventoryService.InventoryServiceEvent    outlet FromInventoryServiceToAssemblyContext is command AssemblyOrder.HoldAssembly
     handler FromInventoryServiceHandler is {
-      on event InventoryService.ComponentShortage is {
-        do "the model receives component shortage"
+      on componentShortage: event InventoryService.ComponentShortage is {
+        let item0: type AssemblyOrder.HoldAssembly = prompt("translate the componentShortage event into a HoldAssembly, an assembly cannot run without its components, so it is held")
+        send item0 to outlet AssemblyContext.FromInventoryService.FromInventoryServiceToAssemblyContext
       }
-      on event InventoryService.ComponentsIssued is {
-        do "the model receives components issued"
+      on componentsIssued: event InventoryService.ComponentsIssued is {
+        do "the components are at the line; starting was recorded here"
       }
-      on event InventoryService.ComponentsReserved is {
-        do "the model receives components reserved"
+      on componentsReserved: event InventoryService.ComponentsReserved is {
+        do "the components are held; the order starts when the line does"
       }
       on other is {
         error "Unexpected message for adaptor FromInventoryService"
@@ -95,13 +114,16 @@ context AssemblyContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor FromQualityService from context QualityService is { 
+  adaptor FromQualityService from context QualityService as flow is { 
+    inlet FromQualityServiceIn is type QualityService.QualityServiceEvent    outlet FromQualityServiceToAssemblyContext is type AssemblyContext.FromQualityServiceCommand
     handler FromQualityServiceHandler is {
-      on event QualityService.DefectLogged is {
-        do "the model receives defect logged"
+      on defectLogged: event QualityService.DefectLogged is {
+        let item0: type AssemblyOrder.RecordDefect = prompt("translate the defectLogged event into a RecordDefect, a defect quality logs against the assembly is one the order records")
+        send item0 to outlet AssemblyContext.FromQualityService.FromQualityServiceToAssemblyContext
       }
-      on event QualityService.FailureLogged is {
-        do "the model receives failure logged"
+      on failureLogged: event QualityService.FailureLogged is {
+        let item0: type AssemblyOrder.FailAssembly = prompt("translate the failureLogged event into a FailAssembly, a failure quality logs is the assembly failing")
+        send item0 to outlet AssemblyContext.FromQualityService.FromQualityServiceToAssemblyContext
       }
       on other is {
         error "Unexpected message for adaptor FromQualityService"
@@ -150,10 +172,10 @@ context AssemblyContext as router is {
       |The model's side of the QualityService conversation.
     }
   }
-  adaptor FromWorkOrderService from context WorkOrderService is { 
-    handler FromWorkOrderServiceHandler is {
-      on event WorkOrderService.AssemblyReported is {
-        do "the model receives assembly reported"
+  adaptor FromWorkOrderService from context WorkOrderService as flow is { 
+    inlet FromWorkOrderServiceIn is event WorkOrderService.AssemblyReported    handler FromWorkOrderServiceHandler is {
+      on assemblyReported: event WorkOrderService.AssemblyReported is {
+        do "the work order has our progress; nothing here changes"
       }
       on other is {
         error "Unexpected message for adaptor FromWorkOrderService"

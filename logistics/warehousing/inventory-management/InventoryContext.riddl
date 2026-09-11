@@ -1,5 +1,11 @@
 // Inventory Management - Inventory Context
 context InventoryContext as router is {
+  inlet InventoryContextFromQualityControlService is command Inventory.RecordInspection with {
+    briefly "What FromQualityControlService makes of that service's news"
+  }
+  connector 'FromQualityControlService Intake' is from outlet InventoryContext.FromQualityControlService.FromQualityControlServiceToInventoryContext to inlet InventoryContext.InventoryContextFromQualityControlService with {
+    briefly "What FromQualityControlService makes of that news, on its way in"
+  }
   inlet InventoryCommandStreamIn is type InventoryCommand  outlet InventoryCommandStreamOut is type InventoryCommand
   inlet StockItemResultStreamIn is result Inventory.InventoryResult  outlet StockItemResultStreamOut is result Inventory.InventoryResult
   handler InventoryContextBoundary is {
@@ -50,10 +56,10 @@ context InventoryContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'InventoryCommand Stream Intake' is from outlet InventoryContext.InventoryCommandStreamOut to inlet InventoryContext.Inventory.InventoryCommands  connector 'StockItemResult Stream Egress' is from outlet InventoryContext.InventoryRepository.InventoryRepositoryResponses to inlet InventoryContext.StockItemResultStreamIn  adaptor FromBarcodeService from context BarcodeService is { 
-    handler FromBarcodeServiceHandler is {
-      on event BarcodeService.LabelGenerated is {
-        do "the model receives label generated"
+  connector 'InventoryCommand Stream Intake' is from outlet InventoryContext.InventoryCommandStreamOut to inlet InventoryContext.Inventory.InventoryCommands  connector 'StockItemResult Stream Egress' is from outlet InventoryContext.InventoryRepository.InventoryRepositoryResponses to inlet InventoryContext.StockItemResultStreamIn  adaptor FromBarcodeService from context BarcodeService as flow is { 
+    inlet FromBarcodeServiceIn is event BarcodeService.LabelGenerated    handler FromBarcodeServiceHandler is {
+      on labelGenerated: event BarcodeService.LabelGenerated is {
+        do "the label exists; receiving the stock was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromBarcodeService"
@@ -96,13 +102,13 @@ context InventoryContext as router is {
       |The model's side of the BarcodeService conversation.
     }
   }
-  adaptor FromOrderManagementService from context OrderManagementService is { 
-    handler FromOrderManagementServiceHandler is {
-      on event OrderManagementService.AllocationNotified is {
-        do "the model receives allocation notified"
+  adaptor FromOrderManagementService from context OrderManagementService as flow is { 
+    inlet FromOrderManagementServiceIn is type OrderManagementService.OrderManagementServiceEvent    handler FromOrderManagementServiceHandler is {
+      on allocationNotified: event OrderManagementService.AllocationNotified is {
+        do "order management has been told; allocating was recorded here"
       }
-      on event OrderManagementService.AllocationRequested is {
-        do "the model receives allocation requested"
+      on allocationRequested: event OrderManagementService.AllocationRequested is {
+        do "order management has the request; reserving the stock was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromOrderManagementService"
@@ -145,10 +151,10 @@ context InventoryContext as router is {
       |The model's side of the OrderManagementService conversation.
     }
   }
-  adaptor FromProcurementService from context ProcurementService is { 
-    handler FromProcurementServiceHandler is {
-      on event ProcurementService.PurchaseOrderCreated is {
-        do "the model receives purchase order created"
+  adaptor FromProcurementService from context ProcurementService as flow is { 
+    inlet FromProcurementServiceIn is event ProcurementService.PurchaseOrderCreated    handler FromProcurementServiceHandler is {
+      on purchaseOrderCreated: event ProcurementService.PurchaseOrderCreated is {
+        do "the purchase order exists; requesting replenishment was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromProcurementService"
@@ -191,13 +197,15 @@ context InventoryContext as router is {
       |The model's side of the ProcurementService conversation.
     }
   }
-  adaptor FromQualityControlService from context QualityControlService is { 
+  adaptor FromQualityControlService from context QualityControlService as flow is { 
+    inlet FromQualityControlServiceIn is type QualityControlService.QualityControlServiceEvent    outlet FromQualityControlServiceToInventoryContext is command Inventory.RecordInspection
     handler FromQualityControlServiceHandler is {
-      on event QualityControlService.InspectionCompleted is {
-        do "the model receives inspection completed"
+      on inspectionCompleted: event QualityControlService.InspectionCompleted is {
+        let item0: type Inventory.RecordInspection = prompt("translate the inspectionCompleted event into a RecordInspection, the inspector's finding is what the received stock records")
+        send item0 to outlet InventoryContext.FromQualityControlService.FromQualityControlServiceToInventoryContext
       }
-      on event QualityControlService.InspectionStarted is {
-        do "the model receives inspection started"
+      on inspectionStarted: event QualityControlService.InspectionStarted is {
+        do "quality control has begun; receiving the stock was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromQualityControlService"
@@ -240,13 +248,13 @@ context InventoryContext as router is {
       |The model's side of the QualityControlService conversation.
     }
   }
-  adaptor FromShippingService from context ShippingService is { 
-    handler FromShippingServiceHandler is {
-      on event ShippingService.ShipmentConfirmed is {
-        do "the model receives shipment confirmed"
+  adaptor FromShippingService from context ShippingService as flow is { 
+    inlet FromShippingServiceIn is type ShippingService.ShippingServiceEvent    handler FromShippingServiceHandler is {
+      on shipmentConfirmed: event ShippingService.ShipmentConfirmed is {
+        do "the carrier confirms the shipment; picking was recorded here"
       }
-      on event ShippingService.ShipmentCreated is {
-        do "the model receives shipment created"
+      on shipmentCreated: event ShippingService.ShipmentCreated is {
+        do "the shipment exists; allocating was recorded here and picking is next"
       }
       on other is {
         error "Unexpected message for adaptor FromShippingService"

@@ -1,5 +1,17 @@
 // Order Fulfillment - Fulfillment Context
 context FulfillmentContext as router is {
+  inlet FulfillmentContextFromCarrierSystem is command FulfillmentOrder.CreateShippingLabel with {
+    briefly "What FromCarrierSystem makes of that service's news"
+  }
+  connector 'FromCarrierSystem Intake' is from outlet FulfillmentContext.FromCarrierSystem.FromCarrierSystemToFulfillmentContext to inlet FulfillmentContext.FulfillmentContextFromCarrierSystem with {
+    briefly "What FromCarrierSystem makes of that news, on its way in"
+  }
+  inlet FulfillmentContextFromWarehouseSystem is command FulfillmentOrder.AllocateInventory with {
+    briefly "What FromWarehouseSystem makes of that service's news"
+  }
+  connector 'FromWarehouseSystem Intake' is from outlet FulfillmentContext.FromWarehouseSystem.FromWarehouseSystemToFulfillmentContext to inlet FulfillmentContext.FulfillmentContextFromWarehouseSystem with {
+    briefly "What FromWarehouseSystem makes of that news, on its way in"
+  }
   inlet FulfillmentOrderCommandStreaIn is type FulfillmentOrderCommand  outlet FulfillmentOrderCommandStreaOut is type FulfillmentOrderCommand
   inlet FulfillmentOrderResultStreamIn is result FulfillmentOrder.FulfillmentOrderResult  outlet FulfillmentOrderResultStreamOut is result FulfillmentOrder.FulfillmentOrderResult
   handler FulfillmentContextBoundary is {
@@ -50,10 +62,12 @@ context FulfillmentContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'FulfillmentOrderCommand Stream Intake' is from outlet FulfillmentContext.FulfillmentOrderCommandStreaOut to inlet FulfillmentContext.FulfillmentOrder.FulfillmentOrderCommands  connector 'FulfillmentOrderResult Stream Egress' is from outlet FulfillmentContext.FulfillmentRepository.FulfillmentRepositoryResponses to inlet FulfillmentContext.FulfillmentOrderResultStreamIn  adaptor FromCarrierSystem from context CarrierSystem is { 
+  connector 'FulfillmentOrderCommand Stream Intake' is from outlet FulfillmentContext.FulfillmentOrderCommandStreaOut to inlet FulfillmentContext.FulfillmentOrder.FulfillmentOrderCommands  connector 'FulfillmentOrderResult Stream Egress' is from outlet FulfillmentContext.FulfillmentRepository.FulfillmentRepositoryResponses to inlet FulfillmentContext.FulfillmentOrderResultStreamIn  adaptor FromCarrierSystem from context CarrierSystem as flow is { 
+    inlet FromCarrierSystemIn is event CarrierSystem.ShipmentBooked    outlet FromCarrierSystemToFulfillmentContext is command FulfillmentOrder.CreateShippingLabel
     handler FromCarrierSystemHandler is {
-      on event CarrierSystem.ShipmentBooked is {
-        do "the model receives shipment booked"
+      on shipmentBooked: event CarrierSystem.ShipmentBooked is {
+        let item0: type FulfillmentOrder.CreateShippingLabel = prompt("translate the shipmentBooked event into a CreateShippingLabel, the carrier's booking is what the label and its tracking number are printed from")
+        send item0 to outlet FulfillmentContext.FromCarrierSystem.FromCarrierSystemToFulfillmentContext
       }
       on result CarrierSystem.ShipmentRates is {
         do "the model receives shipment rates"
@@ -103,13 +117,15 @@ context FulfillmentContext as router is {
       |The model's side of the CarrierSystem conversation.
     }
   }
-  adaptor FromWarehouseSystem from context WarehouseSystem is { 
+  adaptor FromWarehouseSystem from context WarehouseSystem as flow is { 
+    inlet FromWarehouseSystemIn is type WarehouseSystem.WarehouseSystemEvent    outlet FromWarehouseSystemToFulfillmentContext is command FulfillmentOrder.AllocateInventory
     handler FromWarehouseSystemHandler is {
-      on event WarehouseSystem.InventoryReleased is {
-        do "the model receives inventory released"
+      on inventoryReleased: event WarehouseSystem.InventoryReleased is {
+        do "the stock is free again; cancelling was recorded here"
       }
-      on event WarehouseSystem.InventoryReserved is {
-        do "the model receives inventory reserved"
+      on inventoryReserved: event WarehouseSystem.InventoryReserved is {
+        let item0: type FulfillmentOrder.AllocateInventory = prompt("translate the inventoryReserved event into a AllocateInventory, stock actually held by the warehouse is what the order records as allocated")
+        send item0 to outlet FulfillmentContext.FromWarehouseSystem.FromWarehouseSystemToFulfillmentContext
       }
       on other is {
         error "Unexpected message for adaptor FromWarehouseSystem"

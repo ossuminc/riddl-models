@@ -1,5 +1,17 @@
 // CNC Operations - CNC Context
 context CNCContext as router is {
+  inlet CNCContextFromQualityService is command CNCMachine.PauseCycle with {
+    briefly "What FromQualityService makes of that service's news"
+  }
+  connector 'FromQualityService Intake' is from outlet CNCContext.FromQualityService.FromQualityServiceToCNCContext to inlet CNCContext.CNCContextFromQualityService with {
+    briefly "What FromQualityService makes of that news, on its way in"
+  }
+  inlet CNCContextFromToolManagementService is command CNCMachine.ReportAlarm with {
+    briefly "What FromToolManagementService makes of that service's news"
+  }
+  connector 'FromToolManagementService Intake' is from outlet CNCContext.FromToolManagementService.FromToolManagementServiceToCNCContext to inlet CNCContext.CNCContextFromToolManagementService with {
+    briefly "What FromToolManagementService makes of that news, on its way in"
+  }
   connector 'AlarmAnalytics Storage' is from outlet CNCContext.AlarmAnalytics.AlarmAnalyticsToRepository to inlet CNCContext.CNCRepository.CNCRepositoryFromAlarmAnalytics with {
     briefly "AlarmAnalytics messages on their way to CNCRepository"
     described as {
@@ -59,16 +71,16 @@ context CNCContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'CNCMachineCommand Stream Intake' is from outlet CNCContext.CNCMachineCommandStreamOut to inlet CNCContext.CNCMachine.CNCMachineCommands  connector 'CNCMachineResult Stream Egress' is from outlet CNCContext.CNCRepository.CNCRepositoryResponses to inlet CNCContext.CNCMachineResultStreamIn  adaptor FromMaintenanceService from context MaintenanceService is { 
-    handler FromMaintenanceServiceHandler is {
-      on event MaintenanceService.MaintenanceRequested is {
-        do "the model receives maintenance requested"
+  connector 'CNCMachineCommand Stream Intake' is from outlet CNCContext.CNCMachineCommandStreamOut to inlet CNCContext.CNCMachine.CNCMachineCommands  connector 'CNCMachineResult Stream Egress' is from outlet CNCContext.CNCRepository.CNCRepositoryResponses to inlet CNCContext.CNCMachineResultStreamIn  adaptor FromMaintenanceService from context MaintenanceService as flow is { 
+    inlet FromMaintenanceServiceIn is type MaintenanceService.MaintenanceServiceEvent    handler FromMaintenanceServiceHandler is {
+      on maintenanceRequested: event MaintenanceService.MaintenanceRequested is {
+        do "maintenance has the ticket; raising the alarm was recorded here"
       }
-      on event MaintenanceService.PMDueReminder is {
-        do "the model receives pm due reminder"
+      on pMDueReminder: event MaintenanceService.PMDueReminder is {
+        do "preventive maintenance is due; pausing for it is the operator's call"
       }
-      on event MaintenanceService.PMScheduled is {
-        do "the model receives pm scheduled"
+      on pMScheduled: event MaintenanceService.PMScheduled is {
+        do "the maintenance is booked; the cycle count that triggered it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromMaintenanceService"
@@ -113,22 +125,24 @@ context CNCContext as router is {
       |The model's side of the MaintenanceService conversation.
     }
   }
-  adaptor FromQualityService from context QualityService is { 
+  adaptor FromQualityService from context QualityService as flow is { 
+    inlet FromQualityServiceIn is type QualityService.QualityServiceEvent    outlet FromQualityServiceToCNCContext is command CNCMachine.PauseCycle
     handler FromQualityServiceHandler is {
-      on event QualityService.FirstArticleApproved is {
-        do "the model receives first article approved"
+      on firstArticleApproved: event QualityService.FirstArticleApproved is {
+        do "the first article passed; the operator starts the production run"
       }
-      on event QualityService.FirstArticleRejected is {
-        do "the model receives first article rejected"
+      on firstArticleRejected: event QualityService.FirstArticleRejected is {
+        do "the first article failed; the operator corrects the setup before another is cut"
       }
-      on event QualityService.FirstArticleRequested is {
-        do "the model receives first article requested"
+      on firstArticleRequested: event QualityService.FirstArticleRequested is {
+        do "quality has the request; the setup that raised it was recorded here"
       }
-      on event QualityService.MeasurementRecorded is {
-        do "the model receives measurement recorded"
+      on measurementRecorded: event QualityService.MeasurementRecorded is {
+        do "quality has the measurement; the cycle was recorded here"
       }
-      on event QualityService.SPCViolation is {
-        do "the model receives spc violation"
+      on sPCViolation: event QualityService.SPCViolation is {
+        let item0: type CNCMachine.PauseCycle = prompt("translate the sPCViolation event into a PauseCycle, a process out of control is stopped before it cuts more scrap")
+        send item0 to outlet CNCContext.FromQualityService.FromQualityServiceToCNCContext
       }
       on other is {
         error "Unexpected message for adaptor FromQualityService"
@@ -173,16 +187,18 @@ context CNCContext as router is {
       |The model's side of the QualityService conversation.
     }
   }
-  adaptor FromToolManagementService from context ToolManagementService is { 
+  adaptor FromToolManagementService from context ToolManagementService as flow is { 
+    inlet FromToolManagementServiceIn is type ToolManagementService.ToolManagementServiceEvent    outlet FromToolManagementServiceToCNCContext is command CNCMachine.ReportAlarm
     handler FromToolManagementServiceHandler is {
-      on event ToolManagementService.ToolExhausted is {
-        do "the model receives tool exhausted"
+      on toolExhausted: event ToolManagementService.ToolExhausted is {
+        let item0: type CNCMachine.ReportAlarm = prompt("translate the toolExhausted event into a ReportAlarm, an exhausted tool is an alarm condition on the machine")
+        send item0 to outlet CNCContext.FromToolManagementService.FromToolManagementServiceToCNCContext
       }
-      on event ToolManagementService.ToolLifeUpdated is {
-        do "the model receives tool life updated"
+      on toolLifeUpdated: event ToolManagementService.ToolLifeUpdated is {
+        do "the tool's remaining life is on record; the cycle was recorded here"
       }
-      on event ToolManagementService.ToolLifeWarning is {
-        do "the model receives tool life warning"
+      on toolLifeWarning: event ToolManagementService.ToolLifeWarning is {
+        do "the tool is nearing its life; changing it is the operator's call"
       }
       on other is {
         error "Unexpected message for adaptor FromToolManagementService"

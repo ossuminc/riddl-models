@@ -1,5 +1,16 @@
 // Work Order Management - WorkOrder Context
 context WorkOrderContext as router is {
+  type FromInventoryServiceCommand is one of {
+    WorkOrder.IssueMaterials or WorkOrder.PlaceOnHold
+  } with {
+    briefly "What FromInventoryService turns that service's news into"
+  }
+  inlet WorkOrderContextFromInventoryService is type WorkOrderContext.FromInventoryServiceCommand with {
+    briefly "What FromInventoryService makes of that service's news"
+  }
+  connector 'FromInventoryService Intake' is from outlet WorkOrderContext.FromInventoryService.FromInventoryServiceToWorkOrderContext to inlet WorkOrderContext.WorkOrderContextFromInventoryService with {
+    briefly "What FromInventoryService makes of that news, on its way in"
+  }
   inlet WorkOrderCommandStreamIn is type WorkOrderCommand  outlet WorkOrderCommandStreamOut is type WorkOrderCommand
   inlet WorkOrderResultStreamIn is result WorkOrder.WorkOrderResult  outlet WorkOrderResultStreamOut is result WorkOrder.WorkOrderResult
   handler WorkOrderContextBoundary is {
@@ -75,10 +86,10 @@ context WorkOrderContext as router is {
       |The model's side of the BillOfMaterialsService conversation.
     }
   }
-  adaptor FromEquipmentService from context EquipmentService is { 
-    handler FromEquipmentServiceHandler is {
-      on event EquipmentService.DowntimeReported is {
-        do "the model receives downtime reported"
+  adaptor FromEquipmentService from context EquipmentService as flow is { 
+    inlet FromEquipmentServiceIn is event EquipmentService.DowntimeReported    handler FromEquipmentServiceHandler is {
+      on downtimeReported: event EquipmentService.DowntimeReported is {
+        do "the downtime is logged; placing the order on hold was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromEquipmentService"
@@ -121,19 +132,22 @@ context WorkOrderContext as router is {
       |The model's side of the EquipmentService conversation.
     }
   }
-  adaptor FromInventoryService from context InventoryService is { 
+  adaptor FromInventoryService from context InventoryService as flow is { 
+    inlet FromInventoryServiceIn is type InventoryService.InventoryServiceEvent    outlet FromInventoryServiceToWorkOrderContext is type WorkOrderContext.FromInventoryServiceCommand
     handler FromInventoryServiceHandler is {
-      on event InventoryService.FinishedGoodsReceived is {
-        do "the model receives finished goods received"
+      on finishedGoodsReceived: event InventoryService.FinishedGoodsReceived is {
+        do "the goods are in stock; completing was recorded here"
       }
-      on event InventoryService.MaterialShortage is {
-        do "the model receives material shortage"
+      on materialShortage: event InventoryService.MaterialShortage is {
+        let item0: type WorkOrder.PlaceOnHold = prompt("translate the materialShortage event into a PlaceOnHold, a work order cannot run short of material, so it is held")
+        send item0 to outlet WorkOrderContext.FromInventoryService.FromInventoryServiceToWorkOrderContext
       }
-      on event InventoryService.MaterialsIssuedFromInventory is {
-        do "the model receives materials issued from inventory"
+      on materialsIssuedFromInventory: event InventoryService.MaterialsIssuedFromInventory is {
+        let item0: type WorkOrder.IssueMaterials = prompt("translate the materialsIssuedFromInventory event into a IssueMaterials, material actually drawn from stock is what the work order records as issued")
+        send item0 to outlet WorkOrderContext.FromInventoryService.FromInventoryServiceToWorkOrderContext
       }
-      on event InventoryService.MaterialsReserved is {
-        do "the model receives materials reserved"
+      on materialsReserved: event InventoryService.MaterialsReserved is {
+        do "the material is held; the order runs when it is released and started"
       }
       on other is {
         error "Unexpected message for adaptor FromInventoryService"
@@ -180,10 +194,10 @@ context WorkOrderContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor FromQualityManagementService from context QualityManagementService is { 
-    handler FromQualityManagementServiceHandler is {
-      on event QualityManagementService.NonConformanceRecorded is {
-        do "the model receives non conformance recorded"
+  adaptor FromQualityManagementService from context QualityManagementService as flow is { 
+    inlet FromQualityManagementServiceIn is event QualityManagementService.NonConformanceRecorded    handler FromQualityManagementServiceHandler is {
+      on nonConformanceRecorded: event QualityManagementService.NonConformanceRecorded is {
+        do "quality has the non-conformance; recording the result was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromQualityManagementService"

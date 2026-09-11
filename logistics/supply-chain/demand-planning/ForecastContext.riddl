@@ -1,5 +1,17 @@
 // Demand Planning - Forecast Context
 context ForecastContext as router is {
+  inlet ForecastContextFromERPIntegration is command Forecast.GenerateStatisticalForecast with {
+    briefly "What FromERPIntegration makes of that service's news"
+  }
+  connector 'FromERPIntegration Intake' is from outlet ForecastContext.FromERPIntegration.FromERPIntegrationToForecastContext to inlet ForecastContext.ForecastContextFromERPIntegration with {
+    briefly "What FromERPIntegration makes of that news, on its way in"
+  }
+  inlet ForecastContextFromSalesInput is command Forecast.AddConsensusInput with {
+    briefly "What FromSalesInput makes of that service's news"
+  }
+  connector 'FromSalesInput Intake' is from outlet ForecastContext.FromSalesInput.FromSalesInputToForecastContext to inlet ForecastContext.ForecastContextFromSalesInput with {
+    briefly "What FromSalesInput makes of that news, on its way in"
+  }
   inlet ForecastCommandStreamIn is type ForecastCommand  outlet ForecastCommandStreamOut is type ForecastCommand
   inlet ForecastResultStreamIn is result Forecast.ForecastResult  outlet ForecastResultStreamOut is result Forecast.ForecastResult
   handler ForecastContextBoundary is {
@@ -53,13 +65,15 @@ context ForecastContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'ForecastCommand Stream Intake' is from outlet ForecastContext.ForecastCommandStreamOut to inlet ForecastContext.Forecast.ForecastCommands  connector 'ForecastResult Stream Egress' is from outlet ForecastContext.ForecastRepository.ForecastRepositoryResponses to inlet ForecastContext.ForecastResultStreamIn  adaptor FromERPIntegration from context ERPIntegration is { 
+  connector 'ForecastCommand Stream Intake' is from outlet ForecastContext.ForecastCommandStreamOut to inlet ForecastContext.Forecast.ForecastCommands  connector 'ForecastResult Stream Egress' is from outlet ForecastContext.ForecastRepository.ForecastRepositoryResponses to inlet ForecastContext.ForecastResultStreamIn  adaptor FromERPIntegration from context ERPIntegration as flow is { 
+    inlet FromERPIntegrationIn is type ERPIntegration.ERPIntegrationEvent    outlet FromERPIntegrationToForecastContext is command Forecast.GenerateStatisticalForecast
     handler FromERPIntegrationHandler is {
-      on event ERPIntegration.ForecastPublished is {
-        do "the model receives forecast published"
+      on forecastPublished: event ERPIntegration.ForecastPublished is {
+        do "the ERP has the forecast; approving it was recorded here"
       }
-      on event ERPIntegration.HistoricalDemandFetched is {
-        do "the model receives historical demand fetched"
+      on historicalDemandFetched: event ERPIntegration.HistoricalDemandFetched is {
+        let item0: type Forecast.GenerateStatisticalForecast = prompt("translate the historicalDemandFetched event into a GenerateStatisticalForecast, the fetched history is what a statistical forecast is computed from")
+        send item0 to outlet ForecastContext.FromERPIntegration.FromERPIntegrationToForecastContext
       }
       on other is {
         error "Unexpected message for adaptor FromERPIntegration"
@@ -102,13 +116,13 @@ context ForecastContext as router is {
       |The model's side of the ERPIntegration conversation.
     }
   }
-  adaptor FromForecastingEngine from context ForecastingEngine is { 
-    handler FromForecastingEngineHandler is {
-      on event ForecastingEngine.MLForecastGenerated is {
-        do "the model receives ml forecast generated"
+  adaptor FromForecastingEngine from context ForecastingEngine as flow is { 
+    inlet FromForecastingEngineIn is type ForecastingEngine.ForecastingEngineEvent    handler FromForecastingEngineHandler is {
+      on mLForecastGenerated: event ForecastingEngine.MLForecastGenerated is {
+        do "the engine's forecast is in; the planner weighs it as one input, not as the answer"
       }
-      on event ForecastingEngine.TimeSeriesAnalysisComplete is {
-        do "the model receives time series analysis complete"
+      on timeSeriesAnalysisComplete: event ForecastingEngine.TimeSeriesAnalysisComplete is {
+        do "the analysis is done; the planner reads it before adjusting anything"
       }
       on other is {
         error "Unexpected message for adaptor FromForecastingEngine"
@@ -149,13 +163,13 @@ context ForecastContext as router is {
       |The model's side of the ForecastingEngine conversation.
     }
   }
-  adaptor FromMarketIntelligence from context MarketIntelligence is { 
-    handler FromMarketIntelligenceHandler is {
-      on event MarketIntelligence.CompetitorActivityReceived is {
-        do "the model receives competitor activity received"
+  adaptor FromMarketIntelligence from context MarketIntelligence as flow is { 
+    inlet FromMarketIntelligenceIn is type MarketIntelligence.MarketIntelligenceEvent    handler FromMarketIntelligenceHandler is {
+      on competitorActivityReceived: event MarketIntelligence.CompetitorActivityReceived is {
+        do "competitor news informs the planner's adjustment; a person decides"
       }
-      on event MarketIntelligence.MarketTrendsReceived is {
-        do "the model receives market trends received"
+      on marketTrendsReceived: event MarketIntelligence.MarketTrendsReceived is {
+        do "market trends inform the planner's adjustment; a person decides"
       }
       on other is {
         error "Unexpected message for adaptor FromMarketIntelligence"
@@ -196,13 +210,15 @@ context ForecastContext as router is {
       |The model's side of the MarketIntelligence conversation.
     }
   }
-  adaptor FromSalesInput from context SalesInput is { 
+  adaptor FromSalesInput from context SalesInput as flow is { 
+    inlet FromSalesInputIn is type SalesInput.SalesInputEvent    outlet FromSalesInputToForecastContext is command Forecast.AddConsensusInput
     handler FromSalesInputHandler is {
-      on event SalesInput.SalesForecastReceived is {
-        do "the model receives sales forecast received"
+      on salesForecastReceived: event SalesInput.SalesForecastReceived is {
+        let item0: type Forecast.AddConsensusInput = prompt("translate the salesForecastReceived event into a AddConsensusInput, what sales expects is their input to the consensus, and they own it")
+        send item0 to outlet ForecastContext.FromSalesInput.FromSalesInputToForecastContext
       }
-      on event SalesInput.SalesForecastRequested is {
-        do "the model receives sales forecast requested"
+      on salesForecastRequested: event SalesInput.SalesForecastRequested is {
+        do "sales has the request; the forecast that raised it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromSalesInput"

@@ -1,5 +1,22 @@
 // Warehouse Context - Bounded context for warehouse operations
 context WarehouseContext as router is {
+  type FromOrderManagementContextCommand is one of {
+    Inventory.ReleaseReservation or Inventory.ReserveInventory
+  } with {
+    briefly "What FromOrderManagementContext turns that service's news into"
+  }
+  inlet WarehouseContextFromOrderManagementContext is type WarehouseContext.FromOrderManagementContextCommand with {
+    briefly "What FromOrderManagementContext makes of that service's news"
+  }
+  connector 'FromOrderManagementContext Intake' is from outlet WarehouseContext.FromOrderManagementContext.FromOrderManagementContextToWarehouseContext to inlet WarehouseContext.WarehouseContextFromOrderManagementContext with {
+    briefly "What FromOrderManagementContext makes of that news, on its way in"
+  }
+  inlet WarehouseContextFromPurchasingContext is command Inventory.ReceiveInventory with {
+    briefly "What FromPurchasingContext makes of that service's news"
+  }
+  connector 'FromPurchasingContext Intake' is from outlet WarehouseContext.FromPurchasingContext.FromPurchasingContextToWarehouseContext to inlet WarehouseContext.WarehouseContextFromPurchasingContext with {
+    briefly "What FromPurchasingContext makes of that news, on its way in"
+  }
   inlet InventoryCommandStreamIn is type InventoryCommand  outlet InventoryCommandStreamOut is type InventoryCommand
   inlet StockItemResultStreamIn is result Inventory.InventoryEntityResult  outlet StockItemResultStreamOut is result Inventory.InventoryEntityResult
   handler WarehouseContextBoundary is {
@@ -44,13 +61,13 @@ context WarehouseContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'InventoryCommand Stream Intake' is from outlet WarehouseContext.InventoryCommandStreamOut to inlet WarehouseContext.Inventory.InventoryCommands  connector 'StockItemResult Stream Egress' is from outlet WarehouseContext.InventoryRepository.InventoryRepositoryResponses to inlet WarehouseContext.StockItemResultStreamIn  adaptor FromInventoryPlanningContext from context InventoryPlanningContext is { 
-    handler FromInventoryPlanningContextHandler is {
-      on event InventoryPlanningContext.DemandForecastUpdated is {
-        do "the model receives demand forecast updated"
+  connector 'InventoryCommand Stream Intake' is from outlet WarehouseContext.InventoryCommandStreamOut to inlet WarehouseContext.Inventory.InventoryCommands  connector 'StockItemResult Stream Egress' is from outlet WarehouseContext.InventoryRepository.InventoryRepositoryResponses to inlet WarehouseContext.StockItemResultStreamIn  adaptor FromInventoryPlanningContext from context InventoryPlanningContext as flow is { 
+    inlet FromInventoryPlanningContextIn is type InventoryPlanningContext.InventoryPlanningContextEvent    handler FromInventoryPlanningContextHandler is {
+      on demandForecastUpdated: event InventoryPlanningContext.DemandForecastUpdated is {
+        do "planning's forecast moved; nothing the warehouse holds changes until an order or purchase order follows"
       }
-      on event InventoryPlanningContext.ReorderPointUpdated is {
-        do "the model receives reorder point updated"
+      on reorderPointUpdated: event InventoryPlanningContext.ReorderPointUpdated is {
+        do "the reorder point moved; replenishment is purchasing's act"
       }
       on other is {
         error "Unexpected message for adaptor FromInventoryPlanningContext"
@@ -67,16 +84,19 @@ context WarehouseContext as router is {
       |The model's side of the InventoryPlanningContext conversation.
     }
   }
-  adaptor FromOrderManagementContext from context OrderManagementContext is { 
+  adaptor FromOrderManagementContext from context OrderManagementContext as flow is { 
+    inlet FromOrderManagementContextIn is type OrderManagementContext.OrderManagementContextEvent    outlet FromOrderManagementContextToWarehouseContext is type WarehouseContext.FromOrderManagementContextCommand
     handler FromOrderManagementContextHandler is {
-      on event OrderManagementContext.OrderCancelled is {
-        do "the model receives order cancelled"
+      on orderCancelled: event OrderManagementContext.OrderCancelled is {
+        let item0: type Inventory.ReleaseReservation = prompt("translate the orderCancelled event into a ReleaseReservation, a cancelled order no longer needs the stock held for it")
+        send item0 to outlet WarehouseContext.FromOrderManagementContext.FromOrderManagementContextToWarehouseContext
       }
-      on event OrderManagementContext.OrderCreated is {
-        do "the model receives order created"
+      on orderCreated: event OrderManagementContext.OrderCreated is {
+        let item0: type Inventory.ReserveInventory = prompt("translate the orderCreated event into a ReserveInventory, a new order's lines are what stock is held for")
+        send item0 to outlet WarehouseContext.FromOrderManagementContext.FromOrderManagementContextToWarehouseContext
       }
-      on event OrderManagementContext.OrderShipmentRequested is {
-        do "the model receives order shipment requested"
+      on orderShipmentRequested: event OrderManagementContext.OrderShipmentRequested is {
+        do "order management wants it shipped by the date; the stock leaves when the warehouse ships it"
       }
       on other is {
         error "Unexpected message for adaptor FromOrderManagementContext"
@@ -115,13 +135,15 @@ context WarehouseContext as router is {
       |The model's side of the ProductCatalogContext conversation.
     }
   }
-  adaptor FromPurchasingContext from context PurchasingContext is { 
+  adaptor FromPurchasingContext from context PurchasingContext as flow is { 
+    inlet FromPurchasingContextIn is type PurchasingContext.PurchasingContextEvent    outlet FromPurchasingContextToWarehouseContext is command Inventory.ReceiveInventory
     handler FromPurchasingContextHandler is {
-      on event PurchasingContext.InboundShipmentArrived is {
-        do "the model receives inbound shipment arrived"
+      on inboundShipmentArrived: event PurchasingContext.InboundShipmentArrived is {
+        let item0: type Inventory.ReceiveInventory = prompt("translate the inboundShipmentArrived event into a ReceiveInventory, a shipment at the dock is what the warehouse receives against its purchase order")
+        send item0 to outlet WarehouseContext.FromPurchasingContext.FromPurchasingContextToWarehouseContext
       }
-      on event PurchasingContext.PurchaseOrderReceived is {
-        do "the model receives purchase order received"
+      on purchaseOrderReceived: event PurchasingContext.PurchaseOrderReceived is {
+        do "a purchase order is placed; stock is received when the shipment arrives"
       }
       on other is {
         error "Unexpected message for adaptor FromPurchasingContext"
@@ -138,13 +160,13 @@ context WarehouseContext as router is {
       |The model's side of the PurchasingContext conversation.
     }
   }
-  adaptor FromShippingContext from context ShippingContext is { 
-    handler FromShippingContextHandler is {
-      on event ShippingContext.ShipmentDelivered is {
-        do "the model receives shipment delivered"
+  adaptor FromShippingContext from context ShippingContext as flow is { 
+    inlet FromShippingContextIn is type ShippingContext.ShippingContextEvent    handler FromShippingContextHandler is {
+      on shipmentDelivered: event ShippingContext.ShipmentDelivered is {
+        do "the goods reached the customer; the stock left when it was shipped"
       }
-      on event ShippingContext.ShipmentDispatched is {
-        do "the model receives shipment dispatched"
+      on shipmentDispatched: event ShippingContext.ShipmentDispatched is {
+        do "the carrier has taken the shipment; shipping the stock was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromShippingContext"
