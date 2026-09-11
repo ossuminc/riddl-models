@@ -1,5 +1,17 @@
 // Trouble Ticketing - Ticket Context
 context TicketContext as router is {
+  inlet TicketContextFromDispatchSystem is command TroubleTicket.UpdateDispatchStatus with {
+    briefly "What FromDispatchSystem makes of that service's news"
+  }
+  connector 'FromDispatchSystem Intake' is from outlet TicketContext.FromDispatchSystem.FromDispatchSystemToTicketContext to inlet TicketContext.TicketContextFromDispatchSystem with {
+    briefly "What FromDispatchSystem makes of that news, on its way in"
+  }
+  inlet TicketContextFromNetworkDiagnostics is command TroubleTicket.AddDiagnostic with {
+    briefly "What FromNetworkDiagnostics makes of that service's news"
+  }
+  connector 'FromNetworkDiagnostics Intake' is from outlet TicketContext.FromNetworkDiagnostics.FromNetworkDiagnosticsToTicketContext to inlet TicketContext.TicketContextFromNetworkDiagnostics with {
+    briefly "What FromNetworkDiagnostics makes of that news, on its way in"
+  }
   inlet TroubleTicketCommandStreamIn is type TroubleTicketCommand  outlet TroubleTicketCommandStreamOut is type TroubleTicketCommand
   inlet TicketResultStreamIn is result TroubleTicket.TroubleTicketResult  outlet TicketResultStreamOut is result TroubleTicket.TroubleTicketResult
   handler TicketContextBoundary is {
@@ -53,10 +65,10 @@ context TicketContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'TroubleTicketCommand Stream Intake' is from outlet TicketContext.TroubleTicketCommandStreamOut to inlet TicketContext.TroubleTicket.TroubleTicketCommands  connector 'TicketResult Stream Egress' is from outlet TicketContext.TicketRepository.TicketRepositoryResponses to inlet TicketContext.TicketResultStreamIn  adaptor FromCRM from context CRM is { 
-    handler FromCRMHandler is {
-      on event CRM.CustomerHistoryRetrieved is {
-        do "the model receives customer history retrieved"
+  connector 'TroubleTicketCommand Stream Intake' is from outlet TicketContext.TroubleTicketCommandStreamOut to inlet TicketContext.TroubleTicket.TroubleTicketCommands  connector 'TicketResult Stream Egress' is from outlet TicketContext.TicketRepository.TicketRepositoryResponses to inlet TicketContext.TicketResultStreamIn  adaptor FromCRM from context CRM as flow is { 
+    inlet FromCRMIn is event CRM.CustomerHistoryRetrieved    handler FromCRMHandler is {
+      on customerHistoryRetrieved: event CRM.CustomerHistoryRetrieved is {
+        do "the history is in hand; the agent reads it"
       }
       on other is {
         error "Unexpected message for adaptor FromCRM"
@@ -95,10 +107,10 @@ context TicketContext as router is {
       |The model's side of the CRM conversation.
     }
   }
-  adaptor FromCustomerNotification from context CustomerNotification is { 
-    handler FromCustomerNotificationHandler is {
-      on event CustomerNotification.UpdateSent is {
-        do "the model receives update sent"
+  adaptor FromCustomerNotification from context CustomerNotification as flow is { 
+    inlet FromCustomerNotificationIn is event CustomerNotification.UpdateSent    handler FromCustomerNotificationHandler is {
+      on updateSent: event CustomerNotification.UpdateSent is {
+        do "the customer has been told; the ticket's own state is unchanged"
       }
       on other is {
         error "Unexpected message for adaptor FromCustomerNotification"
@@ -153,16 +165,19 @@ context TicketContext as router is {
       |The model's side of the CustomerNotification conversation.
     }
   }
-  adaptor FromDispatchSystem from context DispatchSystem is { 
+  adaptor FromDispatchSystem from context DispatchSystem as flow is { 
+    inlet FromDispatchSystemIn is type DispatchSystem.DispatchSystemEvent    outlet FromDispatchSystemToTicketContext is command TroubleTicket.UpdateDispatchStatus
     handler FromDispatchSystemHandler is {
-      on event DispatchSystem.DispatchCompleted is {
-        do "the model receives dispatch completed"
+      on dispatchCompleted: event DispatchSystem.DispatchCompleted is {
+        let item0: type TroubleTicket.UpdateDispatchStatus = prompt("translate the dispatchCompleted event into a UpdateDispatchStatus, a dispatch the field system reports complete is the status the ticket records")
+        send item0 to outlet TicketContext.FromDispatchSystem.FromDispatchSystemToTicketContext
       }
-      on event DispatchSystem.DispatchScheduled is {
-        do "the model receives dispatch scheduled"
+      on dispatchScheduled: event DispatchSystem.DispatchScheduled is {
+        do "the dispatch is booked; dispatching the technician was recorded here"
       }
-      on event DispatchSystem.TechnicianArrived is {
-        do "the model receives technician arrived"
+      on technicianArrived: event DispatchSystem.TechnicianArrived is {
+        let item0: type TroubleTicket.UpdateDispatchStatus = prompt("translate the technicianArrived event into a UpdateDispatchStatus, the technician arriving on site is the status the ticket records")
+        send item0 to outlet TicketContext.FromDispatchSystem.FromDispatchSystemToTicketContext
       }
       on other is {
         error "Unexpected message for adaptor FromDispatchSystem"
@@ -201,10 +216,10 @@ context TicketContext as router is {
       |The model's side of the DispatchSystem conversation.
     }
   }
-  adaptor FromKnowledgeBase from context KnowledgeBase is { 
-    handler FromKnowledgeBaseHandler is {
-      on event KnowledgeBase.SolutionsFound is {
-        do "the model receives solutions found"
+  adaptor FromKnowledgeBase from context KnowledgeBase as flow is { 
+    inlet FromKnowledgeBaseIn is event KnowledgeBase.SolutionsFound    handler FromKnowledgeBaseHandler is {
+      on solutionsFound: event KnowledgeBase.SolutionsFound is {
+        do "the candidate solutions are in; the agent picks one"
       }
       on other is {
         error "Unexpected message for adaptor FromKnowledgeBase"
@@ -243,10 +258,12 @@ context TicketContext as router is {
       |The model's side of the KnowledgeBase conversation.
     }
   }
-  adaptor FromNetworkDiagnostics from context NetworkDiagnostics is { 
+  adaptor FromNetworkDiagnostics from context NetworkDiagnostics as flow is { 
+    inlet FromNetworkDiagnosticsIn is event NetworkDiagnostics.DiagnosticsComplete    outlet FromNetworkDiagnosticsToTicketContext is command TroubleTicket.AddDiagnostic
     handler FromNetworkDiagnosticsHandler is {
-      on event NetworkDiagnostics.DiagnosticsComplete is {
-        do "the model receives diagnostics complete"
+      on diagnosticsComplete: event NetworkDiagnostics.DiagnosticsComplete is {
+        let item0: type TroubleTicket.AddDiagnostic = prompt("translate the diagnosticsComplete event into a AddDiagnostic, the diagnostics' findings are what the ticket records")
+        send item0 to outlet TicketContext.FromNetworkDiagnostics.FromNetworkDiagnosticsToTicketContext
       }
       on other is {
         error "Unexpected message for adaptor FromNetworkDiagnostics"

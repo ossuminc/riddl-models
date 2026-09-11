@@ -1,5 +1,16 @@
 // Network Monitoring - Monitoring Context
 context MonitoringContext as router is {
+  type FromSNMPCollectorCommand is one of {
+    NetworkDevice.RaiseAlert or NetworkDevice.RecordMetrics
+  } with {
+    briefly "What FromSNMPCollector turns that service's news into"
+  }
+  inlet MonitoringContextFromSNMPCollector is type MonitoringContext.FromSNMPCollectorCommand with {
+    briefly "What FromSNMPCollector makes of that service's news"
+  }
+  connector 'FromSNMPCollector Intake' is from outlet MonitoringContext.FromSNMPCollector.FromSNMPCollectorToMonitoringContext to inlet MonitoringContext.MonitoringContextFromSNMPCollector with {
+    briefly "What FromSNMPCollector makes of that news, on its way in"
+  }
   inlet NetworkDeviceCommandStreamIn is type NetworkDeviceCommand  outlet NetworkDeviceCommandStreamOut is type NetworkDeviceCommand
   inlet NetworkDeviceResultStreamIn is result NetworkDevice.NetworkDeviceResult  outlet NetworkDeviceResultStreamOut is result NetworkDevice.NetworkDeviceResult
   handler MonitoringContextBoundary is {
@@ -80,13 +91,13 @@ context MonitoringContext as router is {
       |The model's side of the AlertNotification conversation.
     }
   }
-  adaptor FromConfigBackup from context ConfigBackup is { 
-    handler FromConfigBackupHandler is {
-      on event ConfigBackup.ConfigBackedUp is {
-        do "the model receives config backed up"
+  adaptor FromConfigBackup from context ConfigBackup as flow is { 
+    inlet FromConfigBackupIn is type ConfigBackup.ConfigBackupEvent    handler FromConfigBackupHandler is {
+      on configBackedUp: event ConfigBackup.ConfigBackedUp is {
+        do "the config is backed up; updating the device was recorded here"
       }
-      on event ConfigBackup.ConfigsCompared is {
-        do "the model receives configs compared"
+      on configsCompared: event ConfigBackup.ConfigsCompared is {
+        do "the diff is in; an engineer reads it"
       }
       on other is {
         error "Unexpected message for adaptor FromConfigBackup"
@@ -127,13 +138,16 @@ context MonitoringContext as router is {
       |The model's side of the ConfigBackup conversation.
     }
   }
-  adaptor FromSNMPCollector from context SNMPCollector is { 
+  adaptor FromSNMPCollector from context SNMPCollector as flow is { 
+    inlet FromSNMPCollectorIn is type SNMPCollector.SNMPCollectorEvent    outlet FromSNMPCollectorToMonitoringContext is type MonitoringContext.FromSNMPCollectorCommand
     handler FromSNMPCollectorHandler is {
-      on event SNMPCollector.SNMPDataCollected is {
-        do "the model receives snmp data collected"
+      on sNMPDataCollected: event SNMPCollector.SNMPDataCollected is {
+        let item0: type NetworkDevice.RecordMetrics = prompt("translate the sNMPDataCollected event into a RecordMetrics, what the poll collected is the metrics the device records")
+        send item0 to outlet MonitoringContext.FromSNMPCollector.FromSNMPCollectorToMonitoringContext
       }
-      on event SNMPCollector.SNMPPollFailed is {
-        do "the model receives snmp poll failed"
+      on sNMPPollFailed: event SNMPCollector.SNMPPollFailed is {
+        let item0: type NetworkDevice.RaiseAlert = prompt("translate the sNMPPollFailed event into a RaiseAlert, a device that does not answer its poll is an alert condition")
+        send item0 to outlet MonitoringContext.FromSNMPCollector.FromSNMPCollectorToMonitoringContext
       }
       on other is {
         error "Unexpected message for adaptor FromSNMPCollector"
@@ -172,10 +186,10 @@ context MonitoringContext as router is {
       |The model's side of the SNMPCollector conversation.
     }
   }
-  adaptor FromSyslogReceiver from context SyslogReceiver is { 
-    handler FromSyslogReceiverHandler is {
-      on event SyslogReceiver.SyslogReceived is {
-        do "the model receives syslog received"
+  adaptor FromSyslogReceiver from context SyslogReceiver as flow is { 
+    inlet FromSyslogReceiverIn is event SyslogReceiver.SyslogReceived    handler FromSyslogReceiverHandler is {
+      on syslogReceived: event SyslogReceiver.SyslogReceived is {
+        do "a syslog line arrived; an alert is raised on a threshold, not a line"
       }
       on other is {
         error "Unexpected message for adaptor FromSyslogReceiver"
@@ -192,10 +206,10 @@ context MonitoringContext as router is {
       |The model's side of the SyslogReceiver conversation.
     }
   }
-  adaptor FromTopologyDiscovery from context TopologyDiscovery is { 
-    handler FromTopologyDiscoveryHandler is {
-      on event TopologyDiscovery.TopologyDiscovered is {
-        do "the model receives topology discovered"
+  adaptor FromTopologyDiscovery from context TopologyDiscovery as flow is { 
+    inlet FromTopologyDiscoveryIn is event TopologyDiscovery.TopologyDiscovered    handler FromTopologyDiscoveryHandler is {
+      on topologyDiscovered: event TopologyDiscovery.TopologyDiscovered is {
+        do "the topology is known; the device's own record is unchanged"
       }
       on other is {
         error "Unexpected message for adaptor FromTopologyDiscovery"

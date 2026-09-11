@@ -1,5 +1,22 @@
 // Customs Brokerage - Entry Context
 context EntryContext as router is {
+  type FromCBPAceServiceCommand is one of {
+    Entry.RecordCBPResponse or Entry.RecordRelease
+  } with {
+    briefly "What FromCBPAceService turns that service's news into"
+  }
+  inlet EntryContextFromCBPAceService is type EntryContext.FromCBPAceServiceCommand with {
+    briefly "What FromCBPAceService makes of that service's news"
+  }
+  connector 'FromCBPAceService Intake' is from outlet EntryContext.FromCBPAceService.FromCBPAceServiceToEntryContext to inlet EntryContext.EntryContextFromCBPAceService with {
+    briefly "What FromCBPAceService makes of that news, on its way in"
+  }
+  inlet EntryContextFromDutyPaymentService is command Entry.ProcessPayment with {
+    briefly "What FromDutyPaymentService makes of that service's news"
+  }
+  connector 'FromDutyPaymentService Intake' is from outlet EntryContext.FromDutyPaymentService.FromDutyPaymentServiceToEntryContext to inlet EntryContext.EntryContextFromDutyPaymentService with {
+    briefly "What FromDutyPaymentService makes of that news, on its way in"
+  }
   inlet EntryCommandStreamIn is type EntryCommand  outlet EntryCommandStreamOut is type EntryCommand
   inlet EntryResultStreamIn is result Entry.EntryResult  outlet EntryResultStreamOut is result Entry.EntryResult
   handler EntryContextBoundary is {
@@ -53,22 +70,27 @@ context EntryContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'EntryCommand Stream Intake' is from outlet EntryContext.EntryCommandStreamOut to inlet EntryContext.Entry.EntryCommands  connector 'EntryResult Stream Egress' is from outlet EntryContext.EntryRepository.EntryRepositoryResponses to inlet EntryContext.EntryResultStreamIn  adaptor FromCBPAceService from context CBPAceService is { 
+  connector 'EntryCommand Stream Intake' is from outlet EntryContext.EntryCommandStreamOut to inlet EntryContext.Entry.EntryCommands  connector 'EntryResult Stream Egress' is from outlet EntryContext.EntryRepository.EntryRepositoryResponses to inlet EntryContext.EntryResultStreamIn  adaptor FromCBPAceService from context CBPAceService as flow is { 
+    inlet FromCBPAceServiceIn is type CBPAceService.CBPAceServiceEvent    outlet FromCBPAceServiceToEntryContext is type EntryContext.FromCBPAceServiceCommand
     handler FromCBPAceServiceHandler is {
-      on event CBPAceService.EntryAccepted is {
-        do "the model receives entry accepted"
+      on entryAccepted: event CBPAceService.EntryAccepted is {
+        let item0: type Entry.RecordCBPResponse = prompt("translate the entryAccepted event into a RecordCBPResponse, acceptance is CBP's response to the entry, and the entry records it")
+        send item0 to outlet EntryContext.FromCBPAceService.FromCBPAceServiceToEntryContext
       }
-      on event CBPAceService.EntryAcknowledged is {
-        do "the model receives entry acknowledged"
+      on entryAcknowledged: event CBPAceService.EntryAcknowledged is {
+        do "CBP has the entry; submitting was recorded here and the response follows"
       }
-      on event CBPAceService.EntryRejected is {
-        do "the model receives entry rejected"
+      on entryRejected: event CBPAceService.EntryRejected is {
+        let item0: type Entry.RecordCBPResponse = prompt("translate the entryRejected event into a RecordCBPResponse, rejection is CBP's response to the entry, and the entry records it")
+        send item0 to outlet EntryContext.FromCBPAceService.FromCBPAceServiceToEntryContext
       }
-      on event CBPAceService.HoldNotification is {
-        do "the model receives hold notification"
+      on holdNotification: event CBPAceService.HoldNotification is {
+        let item0: type Entry.RecordCBPResponse = prompt("translate the holdNotification event into a RecordCBPResponse, a hold is CBP's response to the entry, and the entry records it")
+        send item0 to outlet EntryContext.FromCBPAceService.FromCBPAceServiceToEntryContext
       }
-      on event CBPAceService.ReleaseNotification is {
-        do "the model receives release notification"
+      on releaseNotification: event CBPAceService.ReleaseNotification is {
+        let item0: type Entry.RecordRelease = prompt("translate the releaseNotification event into a RecordRelease, CBP releasing the goods is the release the entry records")
+        send item0 to outlet EntryContext.FromCBPAceService.FromCBPAceServiceToEntryContext
       }
       on other is {
         error "Unexpected message for adaptor FromCBPAceService"
@@ -113,10 +135,10 @@ context EntryContext as router is {
       |The model's side of the CBPAceService conversation.
     }
   }
-  adaptor FromDocumentManagementService from context DocumentManagementService is { 
-    handler FromDocumentManagementServiceHandler is {
-      on event DocumentManagementService.DocumentUploaded is {
-        do "the model receives document uploaded"
+  adaptor FromDocumentManagementService from context DocumentManagementService as flow is { 
+    inlet FromDocumentManagementServiceIn is event DocumentManagementService.DocumentUploaded    handler FromDocumentManagementServiceHandler is {
+      on documentUploaded: event DocumentManagementService.DocumentUploaded is {
+        do "the document is stored; attaching it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromDocumentManagementService"
@@ -159,16 +181,18 @@ context EntryContext as router is {
       |The model's side of the DocumentManagementService conversation.
     }
   }
-  adaptor FromDutyPaymentService from context DutyPaymentService is { 
+  adaptor FromDutyPaymentService from context DutyPaymentService as flow is { 
+    inlet FromDutyPaymentServiceIn is type DutyPaymentService.DutyPaymentServiceEvent    outlet FromDutyPaymentServiceToEntryContext is command Entry.ProcessPayment
     handler FromDutyPaymentServiceHandler is {
-      on event DutyPaymentService.PaymentConfirmed is {
-        do "the model receives payment confirmed"
+      on paymentConfirmed: event DutyPaymentService.PaymentConfirmed is {
+        let item0: type Entry.ProcessPayment = prompt("translate the paymentConfirmed event into a ProcessPayment, duty actually paid is what the entry records as paid")
+        send item0 to outlet EntryContext.FromDutyPaymentService.FromDutyPaymentServiceToEntryContext
       }
-      on event DutyPaymentService.PaymentFailed is {
-        do "the model receives payment failed"
+      on paymentFailed: event DutyPaymentService.PaymentFailed is {
+        do "the duty payment did not clear; the broker resubmits it"
       }
-      on event DutyPaymentService.RefundProcessed is {
-        do "the model receives refund processed"
+      on refundProcessed: event DutyPaymentService.RefundProcessed is {
+        do "the refund has gone; liquidation was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromDutyPaymentService"
@@ -237,16 +261,16 @@ context EntryContext as router is {
       |The model's side of the HTSClassificationService conversation.
     }
   }
-  adaptor FromPGAPartnerService from context PGAPartnerService is { 
-    handler FromPGAPartnerServiceHandler is {
-      on event PGAPartnerService.PGAHold is {
-        do "the model receives pga hold"
+  adaptor FromPGAPartnerService from context PGAPartnerService as flow is { 
+    inlet FromPGAPartnerServiceIn is type PGAPartnerService.PGAPartnerServiceEvent    handler FromPGAPartnerServiceHandler is {
+      on pGAHold: event PGAPartnerService.PGAHold is {
+        do "a partner agency holds the goods; the broker responds through the agency, not the entry"
       }
-      on event PGAPartnerService.PGAMayProceed is {
-        do "the model receives pga may proceed"
+      on pGAMayProceed: event PGAPartnerService.PGAMayProceed is {
+        do "the partner agency has no objection; release still comes from CBP"
       }
-      on event PGAPartnerService.PGAResponseReceived is {
-        do "the model receives pga response received"
+      on pGAResponseReceived: event PGAPartnerService.PGAResponseReceived is {
+        do "the agency has answered; the broker reads it"
       }
       on other is {
         error "Unexpected message for adaptor FromPGAPartnerService"

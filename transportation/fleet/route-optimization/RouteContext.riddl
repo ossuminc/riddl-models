@@ -1,5 +1,11 @@
 // Route Optimization - Route Context
 context RouteContext as router is {
+  inlet RouteContextFromOptimizationEngineService is command Route.ReorderStops with {
+    briefly "What FromOptimizationEngineService makes of that service's news"
+  }
+  connector 'FromOptimizationEngineService Intake' is from outlet RouteContext.FromOptimizationEngineService.FromOptimizationEngineServiceToRouteContext to inlet RouteContext.RouteContextFromOptimizationEngineService with {
+    briefly "What FromOptimizationEngineService makes of that news, on its way in"
+  }
   inlet RouteCommandStreamIn is type RouteCommand  outlet RouteCommandStreamOut is type RouteCommand
   inlet RouteResultStreamIn is result Route.RouteResult  outlet RouteResultStreamOut is result Route.RouteResult
   handler RouteContextBoundary is {
@@ -56,16 +62,16 @@ context RouteContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'RouteCommand Stream Intake' is from outlet RouteContext.RouteCommandStreamOut to inlet RouteContext.Route.RouteCommands  connector 'RouteResult Stream Egress' is from outlet RouteContext.RouteRepository.RouteRepositoryResponses to inlet RouteContext.RouteResultStreamIn  adaptor FromCustomerNotificationService from context CustomerNotificationService is { 
-    handler FromCustomerNotificationServiceHandler is {
-      on event CustomerNotificationService.ConfirmationSent is {
-        do "the model receives confirmation sent"
+  connector 'RouteCommand Stream Intake' is from outlet RouteContext.RouteCommandStreamOut to inlet RouteContext.Route.RouteCommands  connector 'RouteResult Stream Egress' is from outlet RouteContext.RouteRepository.RouteRepositoryResponses to inlet RouteContext.RouteResultStreamIn  adaptor FromCustomerNotificationService from context CustomerNotificationService as flow is { 
+    inlet FromCustomerNotificationServiceIn is type CustomerNotificationService.CustomerNotificationServiceEvent    handler FromCustomerNotificationServiceHandler is {
+      on confirmationSent: event CustomerNotificationService.ConfirmationSent is {
+        do "the customer has been told; completing the stop was recorded here"
       }
-      on event CustomerNotificationService.EtaSent is {
-        do "the model receives eta sent"
+      on etaSent: event CustomerNotificationService.EtaSent is {
+        do "the customer has the ETA; the route's own state is unchanged"
       }
-      on event CustomerNotificationService.FailureNoticeSent is {
-        do "the model receives failure notice sent"
+      on failureNoticeSent: event CustomerNotificationService.FailureNoticeSent is {
+        do "the customer has been told; the failure was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromCustomerNotificationService"
@@ -118,13 +124,13 @@ context RouteContext as router is {
       |The model's side of the CustomerNotificationService conversation.
     }
   }
-  adaptor FromDriverMobileAppService from context DriverMobileAppService is { 
-    handler FromDriverMobileAppServiceHandler is {
-      on event DriverMobileAppService.NavigationUpdateSent is {
-        do "the model receives navigation update sent"
+  adaptor FromDriverMobileAppService from context DriverMobileAppService as flow is { 
+    inlet FromDriverMobileAppServiceIn is type DriverMobileAppService.DriverMobileAppServiceEvent    handler FromDriverMobileAppServiceHandler is {
+      on navigationUpdateSent: event DriverMobileAppService.NavigationUpdateSent is {
+        do "the driver has the new sequence; reordering was recorded here"
       }
-      on event DriverMobileAppService.RouteReceivedByDriver is {
-        do "the model receives route received by driver"
+      on routeReceivedByDriver: event DriverMobileAppService.RouteReceivedByDriver is {
+        do "the driver has the route; assigning them was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromDriverMobileAppService"
@@ -193,10 +199,12 @@ context RouteContext as router is {
       |The model's side of the GeocodingService conversation.
     }
   }
-  adaptor FromOptimizationEngineService from context OptimizationEngineService is { 
+  adaptor FromOptimizationEngineService from context OptimizationEngineService as flow is { 
+    inlet FromOptimizationEngineServiceIn is event OptimizationEngineService.OptimizationCompleted    outlet FromOptimizationEngineServiceToRouteContext is command Route.ReorderStops
     handler FromOptimizationEngineServiceHandler is {
-      on event OptimizationEngineService.OptimizationCompleted is {
-        do "the model receives optimization completed"
+      on optimizationCompleted: event OptimizationEngineService.OptimizationCompleted is {
+        let item0: type Route.ReorderStops = prompt("translate the optimizationCompleted event into a ReorderStops, the engine's sequence is the order the route's stops take")
+        send item0 to outlet RouteContext.FromOptimizationEngineService.FromOptimizationEngineServiceToRouteContext
       }
       on other is {
         error "Unexpected message for adaptor FromOptimizationEngineService"
@@ -265,10 +273,10 @@ context RouteContext as router is {
       |The model's side of the RoutingEngineService conversation.
     }
   }
-  adaptor FromTrafficService from context TrafficService is { 
-    handler FromTrafficServiceHandler is {
-      on event TrafficService.TrafficAlert is {
-        do "the model receives traffic alert"
+  adaptor FromTrafficService from context TrafficService as flow is { 
+    inlet FromTrafficServiceIn is event TrafficService.TrafficAlert    handler FromTrafficServiceHandler is {
+      on trafficAlert: event TrafficService.TrafficAlert is {
+        do "traffic informs a re-optimisation; the dispatcher decides"
       }
       on other is {
         error "Unexpected message for adaptor FromTrafficService"

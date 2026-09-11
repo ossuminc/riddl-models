@@ -1,5 +1,17 @@
 // Billing Context - Bounded Context for Usage Billing
 context BillingContext as router is {
+  inlet BillingContextFromPaymentGateway is command BillingAccount.ApplyPayment with {
+    briefly "What FromPaymentGateway makes of that service's news"
+  }
+  connector 'FromPaymentGateway Intake' is from outlet BillingContext.FromPaymentGateway.FromPaymentGatewayToBillingContext to inlet BillingContext.BillingContextFromPaymentGateway with {
+    briefly "What FromPaymentGateway makes of that news, on its way in"
+  }
+  inlet BillingContextFromRatingEngine is command BillingAccount.RecordUsage with {
+    briefly "What FromRatingEngine makes of that service's news"
+  }
+  connector 'FromRatingEngine Intake' is from outlet BillingContext.FromRatingEngine.FromRatingEngineToBillingContext to inlet BillingContext.BillingContextFromRatingEngine with {
+    briefly "What FromRatingEngine makes of that news, on its way in"
+  }
   connector 'RevenueAnalyticsProjector Storage' is from outlet BillingContext.RevenueAnalyticsProjector.RevenueAnalyticsProjectorToRepository to inlet BillingContext.BillingAccountRepository.BillingAccountRepositoryFromRevenueAnalyticsProjector with {
     briefly "RevenueAnalyticsProjector messages on their way to BillingAccountRepository"
     described as {
@@ -53,16 +65,16 @@ context BillingContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'BillingAccountCommand Stream Intake' is from outlet BillingContext.BillingAccountCommandStreamOut to inlet BillingContext.BillingAccount.BillingAccountCommands  connector 'BillingAccountResult Stream Egress' is from outlet BillingContext.BillingAccountRepository.BillingAccountRepositoryResponses to inlet BillingContext.BillingAccountResultStreamIn  adaptor FromCustomerPortal from context CustomerPortal is { 
-    handler FromCustomerPortalHandler is {
-      on event CustomerPortal.CustomerDisputedCharge is {
-        do "the model receives customer disputed charge"
+  connector 'BillingAccountCommand Stream Intake' is from outlet BillingContext.BillingAccountCommandStreamOut to inlet BillingContext.BillingAccount.BillingAccountCommands  connector 'BillingAccountResult Stream Egress' is from outlet BillingContext.BillingAccountRepository.BillingAccountRepositoryResponses to inlet BillingContext.BillingAccountResultStreamIn  adaptor FromCustomerPortal from context CustomerPortal as flow is { 
+    inlet FromCustomerPortalIn is type CustomerPortal.CustomerPortalEvent    handler FromCustomerPortalHandler is {
+      on customerDisputedCharge: event CustomerPortal.CustomerDisputedCharge is {
+        do "the customer disputes a charge; a credit is a decision taken after review"
       }
-      on event CustomerPortal.CustomerInitiatedPayment is {
-        do "the model receives customer initiated payment"
+      on customerInitiatedPayment: event CustomerPortal.CustomerInitiatedPayment is {
+        do "the customer has started a payment; it is applied when the gateway processes it"
       }
-      on event CustomerPortal.CustomerViewedBill is {
-        do "the model receives customer viewed bill"
+      on customerViewedBill: event CustomerPortal.CustomerViewedBill is {
+        do "the customer has looked; the account's own state is unchanged"
       }
       on other is {
         error "Unexpected message for adaptor FromCustomerPortal"
@@ -79,13 +91,13 @@ context BillingContext as router is {
       |The model's side of the CustomerPortal conversation.
     }
   }
-  adaptor FromNetworkMediation from context NetworkMediation is { 
-    handler FromNetworkMediationHandler is {
-      on event NetworkMediation.CDRBatchReady is {
-        do "the model receives cdr batch ready"
+  adaptor FromNetworkMediation from context NetworkMediation as flow is { 
+    inlet FromNetworkMediationIn is type NetworkMediation.NetworkMediationEvent    handler FromNetworkMediationHandler is {
+      on cDRBatchReady: event NetworkMediation.CDRBatchReady is {
+        do "a batch is ready; each record reaches the account once it is rated"
       }
-      on event NetworkMediation.CDRReceived is {
-        do "the model receives cdr received"
+      on cDRReceived: event NetworkMediation.CDRReceived is {
+        do "a raw call record has arrived; it is rated before the account records it as usage"
       }
       on other is {
         error "Unexpected message for adaptor FromNetworkMediation"
@@ -102,13 +114,15 @@ context BillingContext as router is {
       |The model's side of the NetworkMediation conversation.
     }
   }
-  adaptor FromPaymentGateway from context PaymentGateway is { 
+  adaptor FromPaymentGateway from context PaymentGateway as flow is { 
+    inlet FromPaymentGatewayIn is type PaymentGateway.PaymentGatewayEvent    outlet FromPaymentGatewayToBillingContext is command BillingAccount.ApplyPayment
     handler FromPaymentGatewayHandler is {
-      on event PaymentGateway.PaymentFailed is {
-        do "the model receives payment failed"
+      on paymentFailed: event PaymentGateway.PaymentFailed is {
+        do "the payment did not go through; the gateway retries and the balance stands"
       }
-      on event PaymentGateway.PaymentProcessed is {
-        do "the model receives payment processed"
+      on paymentProcessed: event PaymentGateway.PaymentProcessed is {
+        let item0: type BillingAccount.ApplyPayment = prompt("translate the paymentProcessed event into a ApplyPayment, money the gateway actually took is what the account applies against its balance")
+        send item0 to outlet BillingContext.FromPaymentGateway.FromPaymentGatewayToBillingContext
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentGateway"
@@ -125,13 +139,15 @@ context BillingContext as router is {
       |The model's side of the PaymentGateway conversation.
     }
   }
-  adaptor FromRatingEngine from context RatingEngine is { 
+  adaptor FromRatingEngine from context RatingEngine as flow is { 
+    inlet FromRatingEngineIn is type RatingEngine.RatingEngineEvent    outlet FromRatingEngineToBillingContext is command BillingAccount.RecordUsage
     handler FromRatingEngineHandler is {
-      on event RatingEngine.RatingError is {
-        do "the model receives rating error"
+      on ratingError: event RatingEngine.RatingError is {
+        do "the record could not be rated; correcting it is the rating team's act"
       }
-      on event RatingEngine.UsageRated is {
-        do "the model receives usage rated"
+      on usageRated: event RatingEngine.UsageRated is {
+        let item0: type BillingAccount.RecordUsage = prompt("translate the usageRated event into a RecordUsage, a rated usage record is what the account records as usage")
+        send item0 to outlet BillingContext.FromRatingEngine.FromRatingEngineToBillingContext
       }
       on other is {
         error "Unexpected message for adaptor FromRatingEngine"
@@ -148,10 +164,10 @@ context BillingContext as router is {
       |The model's side of the RatingEngine conversation.
     }
   }
-  adaptor FromTaxCalculation from context TaxCalculation is { 
-    handler FromTaxCalculationHandler is {
-      on event TaxCalculation.TaxesCalculated is {
-        do "the model receives taxes calculated"
+  adaptor FromTaxCalculation from context TaxCalculation as flow is { 
+    inlet FromTaxCalculationIn is event TaxCalculation.TaxesCalculated    handler FromTaxCalculationHandler is {
+      on taxesCalculated: event TaxCalculation.TaxesCalculated is {
+        do "the taxes for the invoice are computed; the invoice carries them"
       }
       on other is {
         error "Unexpected message for adaptor FromTaxCalculation"
