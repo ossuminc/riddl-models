@@ -159,7 +159,7 @@ context ReservationContext as router is {
     }
   }
   adaptor ToGuestCommunicationService to context GuestCommunicationService as flow is { 
-    outlet ToGuestCommunicationServiceOut is type GuestCommunicationService.GuestCommunicationServiceCommand
+    inlet ToGuestCommunicationServiceIn is type ReservationEvent    outlet ToGuestCommunicationServiceOut is type GuestCommunicationService.GuestCommunicationServiceCommand
     handler ToGuestCommunicationServiceHandler is {
       on reservationConfirmed: event Reservation.ReservationConfirmed is {
         let confirmation: type GuestCommunicationService.SendConfirmation = prompt("translate the reservationConfirmed event into a SendConfirmation giving the guest their confirmation number now the booking is committed")
@@ -264,8 +264,8 @@ context ReservationContext as router is {
       |The model's side of the LoyaltyProgramService conversation.
     }
   }
-  adaptor ToLoyaltyProgramService to context LoyaltyProgramService as flow is { 
-    outlet ToLoyaltyProgramServiceOut is type LoyaltyProgramService.LoyaltyProgramServiceCommand
+  adaptor ToLoyaltyProgramService to context LoyaltyProgramService as merge is { 
+    inlet ToLoyaltyProgramServiceIn is type ReservationEvent    inlet ToLoyaltyProgramServiceReplies is result LoyaltyProgramService.MemberStatus    outlet ToLoyaltyProgramServiceOut is type LoyaltyProgramService.LoyaltyProgramServiceCommand
     handler ToLoyaltyProgramServiceHandler is {
       on reservationCreated: event Reservation.ReservationCreated is {
         let askAnswer: type LoyaltyProgramService.MemberStatus = ask query LoyaltyProgramService.GetMemberStatus of context LoyaltyProgramService
@@ -323,7 +323,7 @@ context ReservationContext as router is {
     }
   }
   adaptor ToPaymentGatewayService to context PaymentGatewayService as flow is { 
-    outlet ToPaymentGatewayServiceOut is type PaymentGatewayService.PaymentGatewayServiceCommand
+    inlet ToPaymentGatewayServiceIn is type ReservationEvent    outlet ToPaymentGatewayServiceOut is type PaymentGatewayService.PaymentGatewayServiceCommand
     handler ToPaymentGatewayServiceHandler is {
       on reservationConfirmed: event ReservationConfirmed is {
         let notice: type PaymentGatewayService.AuthorizePayment = prompt("translate the reservationConfirmed event into a AuthorizePayment holding the room rate against the guest's card, which is what makes the reservation firm")
@@ -848,15 +848,22 @@ context ReservationContext as router is {
       |persistence.
     }
   }
-  streamlet ReservationEventSplit as flow is {
+  streamlet ReservationEventSplit as split is {
+    outlet ReservationEventSplitToToPaymentGatewayService is type ReservationEvent
+    outlet ReservationEventSplitToToLoyaltyProgramService is type ReservationEvent
+    outlet ReservationEventSplitToToGuestCommunicationService is type ReservationEvent
     inlet ReservationEventSplitIn is type ReservationEvent    outlet ReservationEventSplitToHotelAnalytics is type ReservationEvent
     handler ReservationEventSplitHandler is {
       on reservationCreated: event Reservation.ReservationCreated is {
         send reservationCreated to outlet ReservationEventSplitToHotelAnalytics
+        send reservationCreated to outlet ReservationEventSplitToToLoyaltyProgramService
         tell reservationCreated to entity ReservationContext.Reservation
       }
       on reservationConfirmed: event Reservation.ReservationConfirmed is {
         send reservationConfirmed to outlet ReservationEventSplitToHotelAnalytics
+        send reservationConfirmed to outlet ReservationEventSplitToToPaymentGatewayService
+        send reservationConfirmed to outlet ReservationEventSplitToToLoyaltyProgramService
+        send reservationConfirmed to outlet ReservationEventSplitToToGuestCommunicationService
         tell reservationConfirmed to entity ReservationContext.Reservation
       }
       on reservationModified: event Reservation.ReservationModified is {
@@ -877,10 +884,13 @@ context ReservationContext as router is {
       }
       on guestCheckedOut: event Reservation.GuestCheckedOut is {
         send guestCheckedOut to outlet ReservationEventSplitToHotelAnalytics
+        send guestCheckedOut to outlet ReservationEventSplitToToPaymentGatewayService
+        send guestCheckedOut to outlet ReservationEventSplitToToLoyaltyProgramService
         tell guestCheckedOut to entity ReservationContext.Reservation
       }
       on reservationCancelled: event Reservation.ReservationCancelled is {
         send reservationCancelled to outlet ReservationEventSplitToHotelAnalytics
+        send reservationCancelled to outlet ReservationEventSplitToToPaymentGatewayService
         tell reservationCancelled to entity ReservationContext.Reservation
       }
       on noShowRecorded: event Reservation.NoShowRecorded is {
@@ -901,6 +911,15 @@ context ReservationContext as router is {
     described as {
       |Fans Reservation events out to the repository and projectors.
     }
+  }
+  connector 'ToPaymentGatewayService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToPaymentGatewayService to inlet ReservationContext.ToPaymentGatewayService.ToPaymentGatewayServiceIn with {
+    briefly "The Reservation events ToPaymentGatewayService translates, on their way to it"
+  }
+  connector 'ToLoyaltyProgramService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToLoyaltyProgramService to inlet ReservationContext.ToLoyaltyProgramService.ToLoyaltyProgramServiceIn with {
+    briefly "The Reservation events ToLoyaltyProgramService translates, on their way to it"
+  }
+  connector 'ToGuestCommunicationService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToGuestCommunicationService to inlet ReservationContext.ToGuestCommunicationService.ToGuestCommunicationServiceIn with {
+    briefly "The Reservation events ToGuestCommunicationService translates, on their way to it"
   }
   connector 'ReservationEvent Stream' is from outlet ReservationContext.Reservation.ReservationEvents2 to inlet ReservationContext.ReservationEventSplit.ReservationEventSplitIn with {
     briefly "Reservation events, fanned out to storage and read models"

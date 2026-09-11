@@ -76,8 +76,8 @@ context SubscriberContext as router is {
       |The model's side of the BillingSystem conversation.
     }
   }
-  adaptor ToBillingSystem to context BillingSystem as flow is { 
-    outlet ToBillingSystemOut is type BillingSystem.BillingSystemCommand
+  adaptor ToBillingSystem to context BillingSystem as merge is { 
+    inlet ToBillingSystemIn is type SubscriberEvent    inlet ToBillingSystemReplies is result BillingSystem.AccountBalance    outlet ToBillingSystemOut is type BillingSystem.BillingSystemCommand
     handler ToBillingSystemHandler is {
       on subscriberCreated: event Subscriber.SubscriberCreated is {
         let account: type BillingSystem.CreateBillingAccount = prompt("translate the subscriberCreated event into a CreateBillingAccount for the subscriber whose relationship with us has just begun")
@@ -110,8 +110,8 @@ context SubscriberContext as router is {
       |The model's side of the BillingSystem conversation.
     }
   }
-  adaptor ToCRMSystem to context CRMSystem as flow is { 
-    outlet ToCRMSystemOut is type CRMSystem.CRMSystemCommand
+  adaptor ToCRMSystem to context CRMSystem as merge is { 
+    inlet ToCRMSystemIn is type SubscriberEvent    inlet ToCRMSystemReplies is result CRMSystem.CustomerHistory    outlet ToCRMSystemOut is type CRMSystem.CRMSystemCommand
     handler ToCRMSystemHandler is {
       on subscriberCreated: event Subscriber.SubscriberCreated is {
         let item0: type CRMSystem.CreateCustomerRecord = prompt("translate the subscriberCreated event into a CreateCustomerRecord, a new subscriber being a customer the CRM does not yet hold")
@@ -159,7 +159,7 @@ context SubscriberContext as router is {
     }
   }
   adaptor ToDeviceManagement to context DeviceManagement as flow is { 
-    outlet ToDeviceManagementOut is type DeviceManagement.DeviceManagementCommand
+    inlet ToDeviceManagementIn is type SubscriberEvent    outlet ToDeviceManagementOut is type DeviceManagement.DeviceManagementCommand
     handler ToDeviceManagementHandler is {
       on deviceAssigned: event Subscriber.DeviceAssigned is {
         let item0: type DeviceManagement.RegisterDevice = prompt("translate the deviceAssigned event into a RegisterDevice, assignment being when the network must know the handset")
@@ -205,7 +205,7 @@ context SubscriberContext as router is {
     }
   }
   adaptor ToNetworkProvisioning to context NetworkProvisioning as flow is { 
-    outlet ToNetworkProvisioningOut is type NetworkProvisioning.NetworkProvisioningCommand
+    inlet ToNetworkProvisioningIn is type SubscriberEvent    outlet ToNetworkProvisioningOut is type NetworkProvisioning.NetworkProvisioningCommand
     handler ToNetworkProvisioningHandler is {
       on serviceLineAdded: event Subscriber.ServiceLineAdded is {
         let item0: type NetworkProvisioning.ProvisionService = prompt("translate the serviceLineAdded event into a ProvisionService, a new line being what the network must be told to carry")
@@ -634,27 +634,37 @@ context SubscriberContext as router is {
       |persistence.
     }
   }
-  streamlet SubscriberEventSplit as flow is {
+  streamlet SubscriberEventSplit as split is {
+    outlet SubscriberEventSplitToToNetworkProvisioning is type SubscriberEvent
+    outlet SubscriberEventSplitToToDeviceManagement is type SubscriberEvent
+    outlet SubscriberEventSplitToToCRMSystem is type SubscriberEvent
+    outlet SubscriberEventSplitToToBillingSystem is type SubscriberEvent
     inlet SubscriberEventSplitIn is type SubscriberEvent    outlet SubscriberEventSplitToSubscriberAnalytics is type SubscriberEvent
     handler SubscriberEventSplitHandler is {
       on subscriberCreated: event Subscriber.SubscriberCreated is {
         send subscriberCreated to outlet SubscriberEventSplitToSubscriberAnalytics
+        send subscriberCreated to outlet SubscriberEventSplitToToCRMSystem
+        send subscriberCreated to outlet SubscriberEventSplitToToBillingSystem
         tell subscriberCreated to entity SubscriberContext.Subscriber
       }
       on serviceLineAdded: event Subscriber.ServiceLineAdded is {
         send serviceLineAdded to outlet SubscriberEventSplitToSubscriberAnalytics
+        send serviceLineAdded to outlet SubscriberEventSplitToToNetworkProvisioning
         tell serviceLineAdded to entity SubscriberContext.Subscriber
       }
       on serviceActivated: event Subscriber.ServiceActivated is {
         send serviceActivated to outlet SubscriberEventSplitToSubscriberAnalytics
+        send serviceActivated to outlet SubscriberEventSplitToToBillingSystem
         tell serviceActivated to entity SubscriberContext.Subscriber
       }
       on planChanged: event Subscriber.PlanChanged is {
         send planChanged to outlet SubscriberEventSplitToSubscriberAnalytics
+        send planChanged to outlet SubscriberEventSplitToToBillingSystem
         tell planChanged to entity SubscriberContext.Subscriber
       }
       on deviceAssigned: event Subscriber.DeviceAssigned is {
         send deviceAssigned to outlet SubscriberEventSplitToSubscriberAnalytics
+        send deviceAssigned to outlet SubscriberEventSplitToToDeviceManagement
         tell deviceAssigned to entity SubscriberContext.Subscriber
       }
       on contactUpdated: event Subscriber.ContactUpdated is {
@@ -671,6 +681,7 @@ context SubscriberContext as router is {
       }
       on serviceDisconnected: event Subscriber.ServiceDisconnected is {
         send serviceDisconnected to outlet SubscriberEventSplitToSubscriberAnalytics
+        send serviceDisconnected to outlet SubscriberEventSplitToToNetworkProvisioning
         tell serviceDisconnected to entity SubscriberContext.Subscriber
       }
       on accountCancelled: event Subscriber.AccountCancelled is {
@@ -679,6 +690,8 @@ context SubscriberContext as router is {
       }
       on supportTicketCreated: event Subscriber.SupportTicketCreated is {
         send supportTicketCreated to outlet SubscriberEventSplitToSubscriberAnalytics
+        send supportTicketCreated to outlet SubscriberEventSplitToToCRMSystem
+        send supportTicketCreated to outlet SubscriberEventSplitToToBillingSystem
         tell supportTicketCreated to entity SubscriberContext.Subscriber
       }
       on other is {
@@ -695,6 +708,18 @@ context SubscriberContext as router is {
     described as {
       |Fans Subscriber events out to the repository and projectors.
     }
+  }
+  connector 'ToNetworkProvisioning Feed' is from outlet SubscriberContext.SubscriberEventSplit.SubscriberEventSplitToToNetworkProvisioning to inlet SubscriberContext.ToNetworkProvisioning.ToNetworkProvisioningIn with {
+    briefly "The Subscriber events ToNetworkProvisioning translates, on their way to it"
+  }
+  connector 'ToDeviceManagement Feed' is from outlet SubscriberContext.SubscriberEventSplit.SubscriberEventSplitToToDeviceManagement to inlet SubscriberContext.ToDeviceManagement.ToDeviceManagementIn with {
+    briefly "The Subscriber events ToDeviceManagement translates, on their way to it"
+  }
+  connector 'ToCRMSystem Feed' is from outlet SubscriberContext.SubscriberEventSplit.SubscriberEventSplitToToCRMSystem to inlet SubscriberContext.ToCRMSystem.ToCRMSystemIn with {
+    briefly "The Subscriber events ToCRMSystem translates, on their way to it"
+  }
+  connector 'ToBillingSystem Feed' is from outlet SubscriberContext.SubscriberEventSplit.SubscriberEventSplitToToBillingSystem to inlet SubscriberContext.ToBillingSystem.ToBillingSystemIn with {
+    briefly "The Subscriber events ToBillingSystem translates, on their way to it"
   }
   connector 'SubscriberEvent Stream' is from outlet SubscriberContext.Subscriber.SubscriberEvents2 to inlet SubscriberContext.SubscriberEventSplit.SubscriberEventSplitIn with {
     briefly "Subscriber events, fanned out to storage and read models"

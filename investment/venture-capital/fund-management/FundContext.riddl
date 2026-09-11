@@ -70,8 +70,8 @@ context FundContext as router is {
       |The model's side of the BankingService conversation.
     }
   }
-  adaptor ToBankingService to context BankingService as flow is { 
-    outlet ToBankingServiceOut is type BankingService.BankingServiceRequest
+  adaptor ToBankingService to context BankingService as merge is { 
+    inlet ToBankingServiceIn is type FundEvent    inlet ToBankingServiceReplies is result BankingService.AccountBalance    outlet ToBankingServiceOut is type BankingService.BankingServiceRequest
     handler ToBankingServiceHandler is {
       on capitalCallIssued: event Fund.CapitalCallIssued is {
         let askAnswer: type BankingService.AccountBalance = ask query BankingService.GetAccountBalance of context BankingService
@@ -117,7 +117,7 @@ context FundContext as router is {
     }
   }
   adaptor ToComplianceReporting to context ComplianceReporting as flow is { 
-    outlet ToComplianceReportingOut is type ComplianceReporting.ComplianceReportingCommand
+    inlet ToComplianceReportingIn is type FundEvent    outlet ToComplianceReportingOut is type ComplianceReporting.ComplianceReportingCommand
     handler ToComplianceReportingHandler is {
       on nAVUpdated: event Fund.NAVUpdated is {
         let item0: type ComplianceReporting.FileForm10K = prompt("translate the nAVUpdated event into a FileForm10K, the periodic valuation being what the annual report reports")
@@ -142,8 +142,8 @@ context FundContext as router is {
       |The model's side of the ComplianceReporting conversation.
     }
   }
-  adaptor ToFundAccounting to context FundAccounting as flow is { 
-    outlet ToFundAccountingOut is type FundAccounting.FundAccountingCommand
+  adaptor ToFundAccounting to context FundAccounting as merge is { 
+    inlet ToFundAccountingIn is type FundEvent    inlet ToFundAccountingReplies is result FundAccounting.FundNAV    outlet ToFundAccountingOut is type FundAccounting.FundAccountingCommand
     handler ToFundAccountingHandler is {
       on callPaymentReceived: event Fund.CallPaymentReceived is {
         let item0: type FundAccounting.RecordInvestment = prompt("translate the callPaymentReceived event into a RecordInvestment, receipt of the call being what fixes the amount invested")
@@ -191,7 +191,7 @@ context FundContext as router is {
     }
   }
   adaptor ToLPPortal to context LPPortal as flow is { 
-    outlet ToLPPortalOut is type LPPortal.LPPortalCommand
+    inlet ToLPPortalIn is type FundEvent    outlet ToLPPortalOut is type LPPortal.LPPortalCommand
     handler ToLPPortalHandler is {
       on capitalCallIssued: event Fund.CapitalCallIssued is {
         let notice: type LPPortal.SendCapitalCallNotice = prompt("translate the capitalCallIssued event into a SendCapitalCallNotice telling the LP what they must now fund and by when")
@@ -611,7 +611,11 @@ context FundContext as router is {
       |Fund performance analytics.
     }
   }
-  streamlet FundEventSplit as flow is {
+  streamlet FundEventSplit as split is {
+    outlet FundEventSplitToToLPPortal is type FundEvent
+    outlet FundEventSplitToToFundAccounting is type FundEvent
+    outlet FundEventSplitToToComplianceReporting is type FundEvent
+    outlet FundEventSplitToToBankingService is type FundEvent
     inlet FundEventSplitIn is type FundEvent    outlet FundEventSplitToFundPerformance is type FundEvent
     handler FundEventSplitHandler is {
       on fundCreated: event Fund.FundCreated is {
@@ -632,14 +636,20 @@ context FundContext as router is {
       }
       on capitalCallIssued: event Fund.CapitalCallIssued is {
         send capitalCallIssued to outlet FundEventSplitToFundPerformance
+        send capitalCallIssued to outlet FundEventSplitToToLPPortal
+        send capitalCallIssued to outlet FundEventSplitToToBankingService
         tell capitalCallIssued to entity FundContext.Fund
       }
       on callPaymentReceived: event Fund.CallPaymentReceived is {
         send callPaymentReceived to outlet FundEventSplitToFundPerformance
+        send callPaymentReceived to outlet FundEventSplitToToFundAccounting
         tell callPaymentReceived to entity FundContext.Fund
       }
       on distributionIssued: event Fund.DistributionIssued is {
         send distributionIssued to outlet FundEventSplitToFundPerformance
+        send distributionIssued to outlet FundEventSplitToToLPPortal
+        send distributionIssued to outlet FundEventSplitToToComplianceReporting
+        send distributionIssued to outlet FundEventSplitToToBankingService
         tell distributionIssued to entity FundContext.Fund
       }
       on managementFeeCharged: event Fund.ManagementFeeCharged is {
@@ -648,6 +658,9 @@ context FundContext as router is {
       }
       on nAVUpdated: event Fund.NAVUpdated is {
         send nAVUpdated to outlet FundEventSplitToFundPerformance
+        send nAVUpdated to outlet FundEventSplitToToLPPortal
+        send nAVUpdated to outlet FundEventSplitToToFundAccounting
+        send nAVUpdated to outlet FundEventSplitToToComplianceReporting
         tell nAVUpdated to entity FundContext.Fund
       }
       on harvestPeriodStarted: event Fund.HarvestPeriodStarted is {
@@ -672,6 +685,18 @@ context FundContext as router is {
     described as {
       |Fans Fund events out to the repository and projectors.
     }
+  }
+  connector 'ToLPPortal Feed' is from outlet FundContext.FundEventSplit.FundEventSplitToToLPPortal to inlet FundContext.ToLPPortal.ToLPPortalIn with {
+    briefly "The Fund events ToLPPortal translates, on their way to it"
+  }
+  connector 'ToFundAccounting Feed' is from outlet FundContext.FundEventSplit.FundEventSplitToToFundAccounting to inlet FundContext.ToFundAccounting.ToFundAccountingIn with {
+    briefly "The Fund events ToFundAccounting translates, on their way to it"
+  }
+  connector 'ToComplianceReporting Feed' is from outlet FundContext.FundEventSplit.FundEventSplitToToComplianceReporting to inlet FundContext.ToComplianceReporting.ToComplianceReportingIn with {
+    briefly "The Fund events ToComplianceReporting translates, on their way to it"
+  }
+  connector 'ToBankingService Feed' is from outlet FundContext.FundEventSplit.FundEventSplitToToBankingService to inlet FundContext.ToBankingService.ToBankingServiceIn with {
+    briefly "The Fund events ToBankingService translates, on their way to it"
   }
   connector 'FundEvent Stream' is from outlet FundContext.Fund.FundEvents2 to inlet FundContext.FundEventSplit.FundEventSplitIn with {
     briefly "Fund events, fanned out to storage and read models"

@@ -59,8 +59,8 @@ context EngagementContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'EngagementCommand Stream Intake' is from outlet EngagementContext.EngagementCommandStreamOut to inlet EngagementContext.Engagement.EngagementCommands  connector 'EngagementQueryResult Stream Egress' is from outlet EngagementContext.EngagementRepository.EngagementRepositoryResponses to inlet EngagementContext.EngagementQueryResultStreamIn  adaptor ToBankFeedService to context BankFeedService as flow is { 
-    outlet ToBankFeedServiceOut is query BankFeedService.GetTransactions
+  connector 'EngagementCommand Stream Intake' is from outlet EngagementContext.EngagementCommandStreamOut to inlet EngagementContext.Engagement.EngagementCommands  connector 'EngagementQueryResult Stream Egress' is from outlet EngagementContext.EngagementRepository.EngagementRepositoryResponses to inlet EngagementContext.EngagementQueryResultStreamIn  adaptor ToBankFeedService to context BankFeedService as merge is { 
+    inlet ToBankFeedServiceIn is type EngagementEvent    inlet ToBankFeedServiceReplies is result BankFeedService.BankTransactionsResult    outlet ToBankFeedServiceOut is query BankFeedService.GetTransactions
     handler ToBankFeedServiceHandler is {
       on accountReconciled: event Engagement.AccountReconciled is {
         let askAnswer: type BankFeedService.BankTransactionsResult = ask query BankFeedService.GetTransactions of context BankFeedService
@@ -105,7 +105,7 @@ context EngagementContext as router is {
     }
   }
   adaptor ToClientPortalService to context ClientPortalService as flow is { 
-    outlet ToClientPortalServiceOut is command ClientPortalService.PublishDocument
+    inlet ToClientPortalServiceIn is type EngagementEvent    outlet ToClientPortalServiceOut is command ClientPortalService.PublishDocument
     handler ToClientPortalServiceHandler is {
       on financialsReviewed: event Engagement.FinancialsReviewed is {
         let publication: type ClientPortalService.PublishDocument = prompt("translate the financialsReviewed event into a PublishDocument releasing the statements to the client, review being what makes them fit to publish")
@@ -146,8 +146,8 @@ context EngagementContext as router is {
       |The model's side of the DocumentStorageService conversation.
     }
   }
-  adaptor ToDocumentStorageService to context DocumentStorageService as flow is { 
-    outlet ToDocumentStorageServiceOut is type DocumentStorageService.DocumentStorageServiceRequest
+  adaptor ToDocumentStorageService to context DocumentStorageService as merge is { 
+    inlet ToDocumentStorageServiceIn is type EngagementEvent    inlet ToDocumentStorageServiceReplies is result DocumentStorageService.DocumentResult    outlet ToDocumentStorageServiceOut is type DocumentStorageService.DocumentStorageServiceRequest
     handler ToDocumentStorageServiceHandler is {
       on financialsGenerated: event FinancialsGenerated is {
         let artifact: type DocumentStorageService.StoreDocument = prompt("translate the financialsGenerated event into a StoreDocument keeping the statements as produced")
@@ -195,7 +195,7 @@ context EngagementContext as router is {
     }
   }
   adaptor ToPaymentProcessingService to context PaymentProcessingService as flow is { 
-    outlet ToPaymentProcessingServiceOut is command PaymentProcessingService.ProcessPayment
+    inlet ToPaymentProcessingServiceIn is type EngagementEvent    outlet ToPaymentProcessingServiceOut is command PaymentProcessingService.ProcessPayment
     handler ToPaymentProcessingServiceHandler is {
       on invoiceGenerated: event Engagement.InvoiceGenerated is {
         let notice: type PaymentProcessingService.ProcessPayment = prompt("translate the invoiceGenerated event into a ProcessPayment collecting what the client owes on the invoice just raised against them")
@@ -236,8 +236,8 @@ context EngagementContext as router is {
       |The model's side of the TaxService conversation.
     }
   }
-  adaptor ToTaxService to context TaxService as flow is { 
-    outlet ToTaxServiceOut is type TaxService.TaxServiceRequest
+  adaptor ToTaxService to context TaxService as merge is { 
+    inlet ToTaxServiceIn is type EngagementEvent    inlet ToTaxServiceReplies is result TaxService.TaxRatesResult    outlet ToTaxServiceOut is type TaxService.TaxServiceRequest
     handler ToTaxServiceHandler is {
       on invoiceGenerated: event Engagement.InvoiceGenerated is {
         let askAnswer: type TaxService.TaxRatesResult = ask query TaxService.GetTaxRates of context TaxService
@@ -840,7 +840,12 @@ context EngagementContext as router is {
       |persistence.
     }
   }
-  streamlet EngagementEventSplit as flow is {
+  streamlet EngagementEventSplit as split is {
+    outlet EngagementEventSplitToToTaxService is type EngagementEvent
+    outlet EngagementEventSplitToToPaymentProcessingService is type EngagementEvent
+    outlet EngagementEventSplitToToDocumentStorageService is type EngagementEvent
+    outlet EngagementEventSplitToToClientPortalService is type EngagementEvent
+    outlet EngagementEventSplitToToBankFeedService is type EngagementEvent
     inlet EngagementEventSplitIn is type EngagementEvent    outlet EngagementEventSplitToBillingAnalytics is type EngagementEvent
     handler EngagementEventSplitHandler is {
       on engagementCreated: event Engagement.EngagementCreated is {
@@ -865,14 +870,19 @@ context EngagementContext as router is {
       }
       on accountReconciled: event Engagement.AccountReconciled is {
         send accountReconciled to outlet EngagementEventSplitToBillingAnalytics
+        send accountReconciled to outlet EngagementEventSplitToToBankFeedService
         tell accountReconciled to entity EngagementContext.Engagement
       }
       on financialsGenerated: event Engagement.FinancialsGenerated is {
         send financialsGenerated to outlet EngagementEventSplitToBillingAnalytics
+        send financialsGenerated to outlet EngagementEventSplitToToTaxService
+        send financialsGenerated to outlet EngagementEventSplitToToDocumentStorageService
         tell financialsGenerated to entity EngagementContext.Engagement
       }
       on financialsReviewed: event Engagement.FinancialsReviewed is {
         send financialsReviewed to outlet EngagementEventSplitToBillingAnalytics
+        send financialsReviewed to outlet EngagementEventSplitToToDocumentStorageService
+        send financialsReviewed to outlet EngagementEventSplitToToClientPortalService
         tell financialsReviewed to entity EngagementContext.Engagement
       }
       on timeRecorded: event Engagement.TimeRecorded is {
@@ -881,6 +891,8 @@ context EngagementContext as router is {
       }
       on invoiceGenerated: event Engagement.InvoiceGenerated is {
         send invoiceGenerated to outlet EngagementEventSplitToBillingAnalytics
+        send invoiceGenerated to outlet EngagementEventSplitToToTaxService
+        send invoiceGenerated to outlet EngagementEventSplitToToPaymentProcessingService
         tell invoiceGenerated to entity EngagementContext.Engagement
       }
       on paymentRecorded: event Engagement.PaymentRecorded is {
@@ -905,6 +917,21 @@ context EngagementContext as router is {
     described as {
       |Fans Engagement events out to the repository and projectors.
     }
+  }
+  connector 'ToTaxService Feed' is from outlet EngagementContext.EngagementEventSplit.EngagementEventSplitToToTaxService to inlet EngagementContext.ToTaxService.ToTaxServiceIn with {
+    briefly "The Engagement events ToTaxService translates, on their way to it"
+  }
+  connector 'ToPaymentProcessingService Feed' is from outlet EngagementContext.EngagementEventSplit.EngagementEventSplitToToPaymentProcessingService to inlet EngagementContext.ToPaymentProcessingService.ToPaymentProcessingServiceIn with {
+    briefly "The Engagement events ToPaymentProcessingService translates, on their way to it"
+  }
+  connector 'ToDocumentStorageService Feed' is from outlet EngagementContext.EngagementEventSplit.EngagementEventSplitToToDocumentStorageService to inlet EngagementContext.ToDocumentStorageService.ToDocumentStorageServiceIn with {
+    briefly "The Engagement events ToDocumentStorageService translates, on their way to it"
+  }
+  connector 'ToClientPortalService Feed' is from outlet EngagementContext.EngagementEventSplit.EngagementEventSplitToToClientPortalService to inlet EngagementContext.ToClientPortalService.ToClientPortalServiceIn with {
+    briefly "The Engagement events ToClientPortalService translates, on their way to it"
+  }
+  connector 'ToBankFeedService Feed' is from outlet EngagementContext.EngagementEventSplit.EngagementEventSplitToToBankFeedService to inlet EngagementContext.ToBankFeedService.ToBankFeedServiceIn with {
+    briefly "The Engagement events ToBankFeedService translates, on their way to it"
   }
   connector 'EngagementEvent Stream' is from outlet EngagementContext.Engagement.EngagementEvents2 to inlet EngagementContext.EngagementEventSplit.EngagementEventSplitIn with {
     briefly "Engagement events, fanned out to storage and read models"

@@ -85,8 +85,8 @@ context BenefitContext as router is {
       |The model's side of the EBTCardService conversation.
     }
   }
-  adaptor ToEBTCardService to context EBTCardService as flow is { 
-    outlet ToEBTCardServiceOut is type EBTCardService.EBTCardServiceCommand
+  adaptor ToEBTCardService to context EBTCardService as merge is { 
+    inlet ToEBTCardServiceIn is type BenefitEvent    inlet ToEBTCardServiceReplies is result EBTCardService.CardBalanceResult    outlet ToEBTCardServiceOut is type EBTCardService.EBTCardServiceCommand
     handler ToEBTCardServiceHandler is {
       on paymentIssued: event Benefit.PaymentIssued is {
         let askAnswer: type EBTCardService.CardBalanceResult = ask query EBTCardService.GetCardBalance of context EBTCardService
@@ -139,7 +139,7 @@ context BenefitContext as router is {
     }
   }
   adaptor ToFraudDetectionService to context FraudDetectionService as flow is { 
-    outlet ToFraudDetectionServiceOut is command FraudDetectionService.CheckForFraud
+    inlet ToFraudDetectionServiceIn is type BenefitEvent    outlet ToFraudDetectionServiceOut is command FraudDetectionService.CheckForFraud
     handler ToFraudDetectionServiceHandler is {
       on applicationSubmitted: event ApplicationSubmitted is {
         let item0: type FraudDetectionService.CheckForFraud = prompt("translate the applicationSubmitted event into a CheckForFraud, screening a claim before it is weighed rather than after it is paid")
@@ -181,7 +181,7 @@ context BenefitContext as router is {
     }
   }
   adaptor ToIdentityVerificationService to context IdentityVerificationService as flow is { 
-    outlet ToIdentityVerificationServiceOut is command IdentityVerificationService.VerifyIdentity
+    inlet ToIdentityVerificationServiceIn is type BenefitEvent    outlet ToIdentityVerificationServiceOut is command IdentityVerificationService.VerifyIdentity
     handler ToIdentityVerificationServiceHandler is {
       on applicationSubmitted: event ApplicationSubmitted is {
         let check0: type IdentityVerificationService.VerifyIdentity = prompt("translate the applicationSubmitted event into a VerifyIdentity confirming the claimant before eligibility is weighed")
@@ -202,8 +202,8 @@ context BenefitContext as router is {
       |The model's side of the IdentityVerificationService conversation.
     }
   }
-  adaptor ToIncomeVerificationService to context IncomeVerificationService as flow is { 
-    outlet ToIncomeVerificationServiceOut is query IncomeVerificationService.GetWageData
+  adaptor ToIncomeVerificationService to context IncomeVerificationService as merge is { 
+    inlet ToIncomeVerificationServiceIn is type BenefitEvent    inlet ToIncomeVerificationServiceReplies is result IncomeVerificationService.WageDataResult    outlet ToIncomeVerificationServiceOut is query IncomeVerificationService.GetWageData
     handler ToIncomeVerificationServiceHandler is {
       on applicationSubmitted: event Benefit.ApplicationSubmitted is {
         let askAnswer: type IncomeVerificationService.WageDataResult = ask query IncomeVerificationService.GetWageData of context IncomeVerificationService
@@ -225,7 +225,7 @@ context BenefitContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendNotification
+    inlet ToNotificationServiceIn is type BenefitEvent    outlet ToNotificationServiceOut is command NotificationService.SendNotification
     handler ToNotificationServiceHandler is {
       on benefitApproved: event BenefitApproved is {
         let notice: type NotificationService.SendNotification = prompt("translate the benefitApproved event into a SendNotification telling the beneficiary their benefit is approved, from when, and at what level")
@@ -290,7 +290,7 @@ context BenefitContext as router is {
     }
   }
   adaptor ToPaymentProcessingService to context PaymentProcessingService as flow is { 
-    outlet ToPaymentProcessingServiceOut is command PaymentProcessingService.ProcessPayment
+    inlet ToPaymentProcessingServiceIn is type BenefitEvent    outlet ToPaymentProcessingServiceOut is command PaymentProcessingService.ProcessPayment
     handler ToPaymentProcessingServiceHandler is {
       on benefitApproved: event Benefit.BenefitApproved is {
         let notice: type PaymentProcessingService.ProcessPayment = prompt("translate the benefitApproved event into a ProcessPayment paying the benefit the approval makes the agency liable for")
@@ -939,11 +939,20 @@ context BenefitContext as router is {
       |persistence.
     }
   }
-  streamlet BenefitEventSplit as flow is {
+  streamlet BenefitEventSplit as split is {
+    outlet BenefitEventSplitToToPaymentProcessingService is type BenefitEvent
+    outlet BenefitEventSplitToToNotificationService is type BenefitEvent
+    outlet BenefitEventSplitToToIncomeVerificationService is type BenefitEvent
+    outlet BenefitEventSplitToToIdentityVerificationService is type BenefitEvent
+    outlet BenefitEventSplitToToFraudDetectionService is type BenefitEvent
+    outlet BenefitEventSplitToToEBTCardService is type BenefitEvent
     inlet BenefitEventSplitIn is type BenefitEvent    outlet BenefitEventSplitToProgramAnalytics is type BenefitEvent
     handler BenefitEventSplitHandler is {
       on applicationSubmitted: event Benefit.ApplicationSubmitted is {
         send applicationSubmitted to outlet BenefitEventSplitToProgramAnalytics
+        send applicationSubmitted to outlet BenefitEventSplitToToIncomeVerificationService
+        send applicationSubmitted to outlet BenefitEventSplitToToIdentityVerificationService
+        send applicationSubmitted to outlet BenefitEventSplitToToFraudDetectionService
         tell applicationSubmitted to entity BenefitContext.Benefit
       }
       on documentUploaded: event Benefit.DocumentUploaded is {
@@ -960,22 +969,29 @@ context BenefitContext as router is {
       }
       on benefitApproved: event Benefit.BenefitApproved is {
         send benefitApproved to outlet BenefitEventSplitToProgramAnalytics
+        send benefitApproved to outlet BenefitEventSplitToToPaymentProcessingService
+        send benefitApproved to outlet BenefitEventSplitToToNotificationService
+        send benefitApproved to outlet BenefitEventSplitToToEBTCardService
         tell benefitApproved to entity BenefitContext.Benefit
       }
       on benefitDenied: event Benefit.BenefitDenied is {
         send benefitDenied to outlet BenefitEventSplitToProgramAnalytics
+        send benefitDenied to outlet BenefitEventSplitToToNotificationService
         tell benefitDenied to entity BenefitContext.Benefit
       }
       on paymentIssued: event Benefit.PaymentIssued is {
         send paymentIssued to outlet BenefitEventSplitToProgramAnalytics
+        send paymentIssued to outlet BenefitEventSplitToToEBTCardService
         tell paymentIssued to entity BenefitContext.Benefit
       }
       on benefitSuspended: event Benefit.BenefitSuspended is {
         send benefitSuspended to outlet BenefitEventSplitToProgramAnalytics
+        send benefitSuspended to outlet BenefitEventSplitToToNotificationService
         tell benefitSuspended to entity BenefitContext.Benefit
       }
       on benefitReinstated: event Benefit.BenefitReinstated is {
         send benefitReinstated to outlet BenefitEventSplitToProgramAnalytics
+        send benefitReinstated to outlet BenefitEventSplitToToNotificationService
         tell benefitReinstated to entity BenefitContext.Benefit
       }
       on appealFiled: event Benefit.AppealFiled is {
@@ -984,6 +1000,7 @@ context BenefitContext as router is {
       }
       on appealResolved: event Benefit.AppealResolved is {
         send appealResolved to outlet BenefitEventSplitToProgramAnalytics
+        send appealResolved to outlet BenefitEventSplitToToNotificationService
         tell appealResolved to entity BenefitContext.Benefit
       }
       on recertificationInitiated: event Benefit.RecertificationInitiated is {
@@ -992,6 +1009,7 @@ context BenefitContext as router is {
       }
       on recertificationCompleted: event Benefit.RecertificationCompleted is {
         send recertificationCompleted to outlet BenefitEventSplitToProgramAnalytics
+        send recertificationCompleted to outlet BenefitEventSplitToToEBTCardService
         tell recertificationCompleted to entity BenefitContext.Benefit
       }
       on householdUpdated: event Benefit.HouseholdUpdated is {
@@ -1000,6 +1018,7 @@ context BenefitContext as router is {
       }
       on benefitTerminated: event Benefit.BenefitTerminated is {
         send benefitTerminated to outlet BenefitEventSplitToProgramAnalytics
+        send benefitTerminated to outlet BenefitEventSplitToToNotificationService
         tell benefitTerminated to entity BenefitContext.Benefit
       }
       on other is {
@@ -1016,6 +1035,24 @@ context BenefitContext as router is {
     described as {
       |Fans Benefit events out to the repository and projectors.
     }
+  }
+  connector 'ToPaymentProcessingService Feed' is from outlet BenefitContext.BenefitEventSplit.BenefitEventSplitToToPaymentProcessingService to inlet BenefitContext.ToPaymentProcessingService.ToPaymentProcessingServiceIn with {
+    briefly "The Benefit events ToPaymentProcessingService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet BenefitContext.BenefitEventSplit.BenefitEventSplitToToNotificationService to inlet BenefitContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Benefit events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToIncomeVerificationService Feed' is from outlet BenefitContext.BenefitEventSplit.BenefitEventSplitToToIncomeVerificationService to inlet BenefitContext.ToIncomeVerificationService.ToIncomeVerificationServiceIn with {
+    briefly "The Benefit events ToIncomeVerificationService translates, on their way to it"
+  }
+  connector 'ToIdentityVerificationService Feed' is from outlet BenefitContext.BenefitEventSplit.BenefitEventSplitToToIdentityVerificationService to inlet BenefitContext.ToIdentityVerificationService.ToIdentityVerificationServiceIn with {
+    briefly "The Benefit events ToIdentityVerificationService translates, on their way to it"
+  }
+  connector 'ToFraudDetectionService Feed' is from outlet BenefitContext.BenefitEventSplit.BenefitEventSplitToToFraudDetectionService to inlet BenefitContext.ToFraudDetectionService.ToFraudDetectionServiceIn with {
+    briefly "The Benefit events ToFraudDetectionService translates, on their way to it"
+  }
+  connector 'ToEBTCardService Feed' is from outlet BenefitContext.BenefitEventSplit.BenefitEventSplitToToEBTCardService to inlet BenefitContext.ToEBTCardService.ToEBTCardServiceIn with {
+    briefly "The Benefit events ToEBTCardService translates, on their way to it"
   }
   connector 'BenefitEvent Stream' is from outlet BenefitContext.Benefit.BenefitEvents2 to inlet BenefitContext.BenefitEventSplit.BenefitEventSplitIn with {
     briefly "Benefit events, fanned out to storage and read models"

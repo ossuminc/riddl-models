@@ -67,8 +67,8 @@ context WaterUtilityContext as router is {
       |The model's side of the RegulatoryReporting conversation.
     }
   }
-  adaptor ToRegulatoryReporting to context RegulatoryReporting as flow is { 
-    outlet ToRegulatoryReportingOut is type RegulatoryReporting.RegulatoryReportingRequest
+  adaptor ToRegulatoryReporting to context RegulatoryReporting as merge is { 
+    inlet ToRegulatoryReportingIn is type WaterSystemEvent    inlet ToRegulatoryReportingReplies is result RegulatoryReporting.ComplianceRequirements    outlet ToRegulatoryReportingOut is type RegulatoryReporting.RegulatoryReportingRequest
     handler ToRegulatoryReportingHandler is {
       on qualityTestRecorded: event QualityTestRecorded is {
         let item0: type RegulatoryReporting.SubmitReport = prompt("translate the qualityTestRecorded event into a SubmitReport passing the result to the regulator")
@@ -113,8 +113,8 @@ context WaterUtilityContext as router is {
       |The model's side of the SCADASystem conversation.
     }
   }
-  adaptor ToSCADASystem to context SCADASystem as flow is { 
-    outlet ToSCADASystemOut is type SCADASystem.SCADASystemRequest
+  adaptor ToSCADASystem to context SCADASystem as merge is { 
+    inlet ToSCADASystemIn is type WaterSystemEvent    inlet ToSCADASystemReplies is result SCADASystem.SensorReadings    outlet ToSCADASystemOut is type SCADASystem.SCADASystemRequest
     handler ToSCADASystemHandler is {
       on alertRaised: event WaterSystem.AlertRaised is {
         let askAnswer: type SCADASystem.SensorReadings = ask query SCADASystem.GetSensorReadings of context SCADASystem
@@ -532,11 +532,14 @@ context WaterUtilityContext as router is {
       |persistence.
     }
   }
-  streamlet WaterSystemEventSplit as flow is {
+  streamlet WaterSystemEventSplit as split is {
+    outlet WaterSystemEventSplitToToSCADASystem is type WaterSystemEvent
+    outlet WaterSystemEventSplitToToRegulatoryReporting is type WaterSystemEvent
     inlet WaterSystemEventSplitIn is type WaterSystemEvent    outlet WaterSystemEventSplitToWaterUtilityMetrics is type WaterSystemEvent
     handler WaterSystemEventSplitHandler is {
       on systemRegistered: event WaterSystem.SystemRegistered is {
         send systemRegistered to outlet WaterSystemEventSplitToWaterUtilityMetrics
+        send systemRegistered to outlet WaterSystemEventSplitToToRegulatoryReporting
         tell systemRegistered to entity WaterUtilityContext.WaterSystem
       }
       on treatmentStatusUpdated: event WaterSystem.TreatmentStatusUpdated is {
@@ -545,6 +548,7 @@ context WaterUtilityContext as router is {
       }
       on qualityTestRecorded: event WaterSystem.QualityTestRecorded is {
         send qualityTestRecorded to outlet WaterSystemEventSplitToWaterUtilityMetrics
+        send qualityTestRecorded to outlet WaterSystemEventSplitToToRegulatoryReporting
         tell qualityTestRecorded to entity WaterUtilityContext.WaterSystem
       }
       on pressureUpdated: event WaterSystem.PressureUpdated is {
@@ -553,6 +557,7 @@ context WaterUtilityContext as router is {
       }
       on leakReported: event WaterSystem.LeakReported is {
         send leakReported to outlet WaterSystemEventSplitToWaterUtilityMetrics
+        send leakReported to outlet WaterSystemEventSplitToToSCADASystem
         tell leakReported to entity WaterUtilityContext.WaterSystem
       }
       on leakResolved: event WaterSystem.LeakResolved is {
@@ -561,6 +566,7 @@ context WaterUtilityContext as router is {
       }
       on alertRaised: event WaterSystem.AlertRaised is {
         send alertRaised to outlet WaterSystemEventSplitToWaterUtilityMetrics
+        send alertRaised to outlet WaterSystemEventSplitToToSCADASystem
         tell alertRaised to entity WaterUtilityContext.WaterSystem
       }
       on complianceReportSubmitted: event WaterSystem.ComplianceReportSubmitted is {
@@ -589,6 +595,12 @@ context WaterUtilityContext as router is {
     described as {
       |Fans WaterSystem events out to the repository and projectors.
     }
+  }
+  connector 'ToSCADASystem Feed' is from outlet WaterUtilityContext.WaterSystemEventSplit.WaterSystemEventSplitToToSCADASystem to inlet WaterUtilityContext.ToSCADASystem.ToSCADASystemIn with {
+    briefly "The WaterSystem events ToSCADASystem translates, on their way to it"
+  }
+  connector 'ToRegulatoryReporting Feed' is from outlet WaterUtilityContext.WaterSystemEventSplit.WaterSystemEventSplitToToRegulatoryReporting to inlet WaterUtilityContext.ToRegulatoryReporting.ToRegulatoryReportingIn with {
+    briefly "The WaterSystem events ToRegulatoryReporting translates, on their way to it"
   }
   connector 'WaterSystemEvent Stream' is from outlet WaterUtilityContext.WaterSystem.WaterSystemEvents2 to inlet WaterUtilityContext.WaterSystemEventSplit.WaterSystemEventSplitIn with {
     briefly "WaterSystem events, fanned out to storage and read models"

@@ -79,7 +79,7 @@ context SubcontractorContext as router is {
     }
   }
   adaptor ToInsuranceVerificationService to context InsuranceVerificationService as flow is { 
-    outlet ToInsuranceVerificationServiceOut is command InsuranceVerificationService.VerifyInsurance
+    inlet ToInsuranceVerificationServiceIn is type SubcontractorEvent    outlet ToInsuranceVerificationServiceOut is command InsuranceVerificationService.VerifyInsurance
     handler ToInsuranceVerificationServiceHandler is {
       on subcontractorRegistered: event SubcontractorRegistered is {
         let check0: type InsuranceVerificationService.VerifyInsurance = prompt("translate the subcontractorRegistered event into a VerifyInsurance, since a sub may not be let on site on an unchecked cover claim")
@@ -121,7 +121,7 @@ context SubcontractorContext as router is {
     }
   }
   adaptor ToLicenseVerificationService to context LicenseVerificationService as flow is { 
-    outlet ToLicenseVerificationServiceOut is command LicenseVerificationService.VerifyLicense
+    inlet ToLicenseVerificationServiceIn is type SubcontractorEvent    outlet ToLicenseVerificationServiceOut is command LicenseVerificationService.VerifyLicense
     handler ToLicenseVerificationServiceHandler is {
       on subcontractorRegistered: event SubcontractorRegistered is {
         let check0: type LicenseVerificationService.VerifyLicense = prompt("translate the subcontractorRegistered event into a VerifyLicense checking the trade licence the sub asserts")
@@ -143,7 +143,7 @@ context SubcontractorContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendSubcontractorNotification
+    inlet ToNotificationServiceIn is type SubcontractorEvent    outlet ToNotificationServiceOut is command NotificationService.SendSubcontractorNotification
     handler ToNotificationServiceHandler is {
       on subcontractorApproved: event SubcontractorApproved is {
         let notice: type NotificationService.SendSubcontractorNotification = prompt("translate the subcontractorApproved event into a SendSubcontractorNotification telling the subcontractor they are approved to be awarded work")
@@ -201,7 +201,7 @@ context SubcontractorContext as router is {
     }
   }
   adaptor ToPaymentService to context PaymentService as flow is { 
-    outlet ToPaymentServiceOut is command PaymentService.ProcessPayment
+    inlet ToPaymentServiceIn is type SubcontractorEvent    outlet ToPaymentServiceOut is command PaymentService.ProcessPayment
     handler ToPaymentServiceHandler is {
       on payApplicationApproved: event Subcontractor.PayApplicationApproved is {
         let notice: type PaymentService.ProcessPayment = prompt("translate the payApplicationApproved event into a ProcessPayment paying the subcontractor the approved application makes us liable for")
@@ -608,15 +608,22 @@ context SubcontractorContext as router is {
       |persistence.
     }
   }
-  streamlet SubcontractorEventSplit as flow is {
+  streamlet SubcontractorEventSplit as split is {
+    outlet SubcontractorEventSplitToToPaymentService is type SubcontractorEvent
+    outlet SubcontractorEventSplitToToNotificationService is type SubcontractorEvent
+    outlet SubcontractorEventSplitToToLicenseVerificationService is type SubcontractorEvent
+    outlet SubcontractorEventSplitToToInsuranceVerificationService is type SubcontractorEvent
     inlet SubcontractorEventSplitIn is type SubcontractorEvent    outlet SubcontractorEventSplitToSubcontractorAnalytics is type SubcontractorEvent
     handler SubcontractorEventSplitHandler is {
       on subcontractorRegistered: event Subcontractor.SubcontractorRegistered is {
         send subcontractorRegistered to outlet SubcontractorEventSplitToSubcontractorAnalytics
+        send subcontractorRegistered to outlet SubcontractorEventSplitToToLicenseVerificationService
+        send subcontractorRegistered to outlet SubcontractorEventSplitToToInsuranceVerificationService
         tell subcontractorRegistered to entity SubcontractorContext.Subcontractor
       }
       on subcontractorApproved: event Subcontractor.SubcontractorApproved is {
         send subcontractorApproved to outlet SubcontractorEventSplitToSubcontractorAnalytics
+        send subcontractorApproved to outlet SubcontractorEventSplitToToNotificationService
         tell subcontractorApproved to entity SubcontractorContext.Subcontractor
       }
       on infoUpdated: event Subcontractor.InfoUpdated is {
@@ -629,6 +636,7 @@ context SubcontractorContext as router is {
       }
       on subcontractAwarded: event Subcontractor.SubcontractAwarded is {
         send subcontractAwarded to outlet SubcontractorEventSplitToSubcontractorAnalytics
+        send subcontractAwarded to outlet SubcontractorEventSplitToToNotificationService
         tell subcontractAwarded to entity SubcontractorContext.Subcontractor
       }
       on payApplicationSubmitted: event Subcontractor.PayApplicationSubmitted is {
@@ -637,6 +645,8 @@ context SubcontractorContext as router is {
       }
       on payApplicationApproved: event Subcontractor.PayApplicationApproved is {
         send payApplicationApproved to outlet SubcontractorEventSplitToSubcontractorAnalytics
+        send payApplicationApproved to outlet SubcontractorEventSplitToToPaymentService
+        send payApplicationApproved to outlet SubcontractorEventSplitToToNotificationService
         tell payApplicationApproved to entity SubcontractorContext.Subcontractor
       }
       on performanceRated: event Subcontractor.PerformanceRated is {
@@ -645,6 +655,7 @@ context SubcontractorContext as router is {
       }
       on subcontractorPutOnHold: event Subcontractor.SubcontractorPutOnHold is {
         send subcontractorPutOnHold to outlet SubcontractorEventSplitToSubcontractorAnalytics
+        send subcontractorPutOnHold to outlet SubcontractorEventSplitToToNotificationService
         tell subcontractorPutOnHold to entity SubcontractorContext.Subcontractor
       }
       on subcontractorReactivated: event Subcontractor.SubcontractorReactivated is {
@@ -653,6 +664,7 @@ context SubcontractorContext as router is {
       }
       on subcontractorTerminated: event Subcontractor.SubcontractorTerminated is {
         send subcontractorTerminated to outlet SubcontractorEventSplitToSubcontractorAnalytics
+        send subcontractorTerminated to outlet SubcontractorEventSplitToToNotificationService
         tell subcontractorTerminated to entity SubcontractorContext.Subcontractor
       }
       on other is {
@@ -669,6 +681,18 @@ context SubcontractorContext as router is {
     described as {
       |Fans Subcontractor events out to the repository and projectors.
     }
+  }
+  connector 'ToPaymentService Feed' is from outlet SubcontractorContext.SubcontractorEventSplit.SubcontractorEventSplitToToPaymentService to inlet SubcontractorContext.ToPaymentService.ToPaymentServiceIn with {
+    briefly "The Subcontractor events ToPaymentService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet SubcontractorContext.SubcontractorEventSplit.SubcontractorEventSplitToToNotificationService to inlet SubcontractorContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Subcontractor events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToLicenseVerificationService Feed' is from outlet SubcontractorContext.SubcontractorEventSplit.SubcontractorEventSplitToToLicenseVerificationService to inlet SubcontractorContext.ToLicenseVerificationService.ToLicenseVerificationServiceIn with {
+    briefly "The Subcontractor events ToLicenseVerificationService translates, on their way to it"
+  }
+  connector 'ToInsuranceVerificationService Feed' is from outlet SubcontractorContext.SubcontractorEventSplit.SubcontractorEventSplitToToInsuranceVerificationService to inlet SubcontractorContext.ToInsuranceVerificationService.ToInsuranceVerificationServiceIn with {
+    briefly "The Subcontractor events ToInsuranceVerificationService translates, on their way to it"
   }
   connector 'SubcontractorEvent Stream' is from outlet SubcontractorContext.Subcontractor.SubcontractorEvents2 to inlet SubcontractorContext.SubcontractorEventSplit.SubcontractorEventSplitIn with {
     briefly "Subcontractor events, fanned out to storage and read models"

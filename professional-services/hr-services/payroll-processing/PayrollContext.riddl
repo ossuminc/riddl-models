@@ -79,7 +79,7 @@ context PayrollContext as router is {
     }
   }
   adaptor ToBankingService to context BankingService as flow is { 
-    outlet ToBankingServiceOut is command BankingService.SubmitACHBatch
+    inlet ToBankingServiceIn is type PayrollRunEvent    outlet ToBankingServiceOut is command BankingService.SubmitACHBatch
     handler ToBankingServiceHandler is {
       on payrollApproved: event PayrollRun.PayrollApproved is {
         let item0: type BankingService.SubmitACHBatch = prompt("translate the payrollApproved event into a SubmitACHBatch, approval being what authorises the money to move")
@@ -121,7 +121,7 @@ context PayrollContext as router is {
     }
   }
   adaptor ToGeneralLedger to context GeneralLedger as flow is { 
-    outlet ToGeneralLedgerOut is command GeneralLedger.PostPayrollJournalEntry
+    inlet ToGeneralLedgerIn is type PayrollRunEvent    outlet ToGeneralLedgerOut is command GeneralLedger.PostPayrollJournalEntry
     handler ToGeneralLedgerHandler is {
       on payrollApproved: event PayrollRun.PayrollApproved is {
         let item0: type GeneralLedger.PostPayrollJournalEntry = prompt("translate the payrollApproved event into a PostPayrollJournalEntry, approval being what makes the amounts final and postable")
@@ -142,8 +142,8 @@ context PayrollContext as router is {
       |The model's side of the GeneralLedger conversation.
     }
   }
-  adaptor ToHRISSystem to context HRISSystem as flow is { 
-    outlet ToHRISSystemOut is type HRISSystem.HRISSystemRequest
+  adaptor ToHRISSystem to context HRISSystem as merge is { 
+    inlet ToHRISSystemIn is type PayrollRunEvent    inlet ToHRISSystemReplies is type HRISSystem.HRISSystemReply    outlet ToHRISSystemOut is type HRISSystem.HRISSystemRequest
     handler ToHRISSystemHandler is {
       on payrollInitiated: event PayrollRun.PayrollInitiated is {
         let askAnswer: type HRISSystem.EmployeeList = ask query HRISSystem.GetEmployeeList of context HRISSystem
@@ -168,8 +168,8 @@ context PayrollContext as router is {
       |The model's side of the HRISSystem conversation.
     }
   }
-  adaptor ToTaxService to context TaxService as flow is { 
-    outlet ToTaxServiceOut is type TaxService.TaxServiceCommand
+  adaptor ToTaxService to context TaxService as merge is { 
+    inlet ToTaxServiceIn is type PayrollRunEvent    inlet ToTaxServiceReplies is result TaxService.TaxCalculation    outlet ToTaxServiceOut is type TaxService.TaxServiceCommand
     handler ToTaxServiceHandler is {
       on payrollCalculated: event PayrollRun.PayrollCalculated is {
         let askAnswer: type TaxService.TaxCalculation = ask query TaxService.GetTaxCalculation of context TaxService
@@ -194,8 +194,8 @@ context PayrollContext as router is {
       |The model's side of the TaxService conversation.
     }
   }
-  adaptor ToTimeTracking to context TimeTracking as flow is { 
-    outlet ToTimeTrackingOut is query TimeTracking.GetTimeEntries
+  adaptor ToTimeTracking to context TimeTracking as merge is { 
+    inlet ToTimeTrackingIn is type PayrollRunEvent    inlet ToTimeTrackingReplies is result TimeTracking.TimeEntries    outlet ToTimeTrackingOut is query TimeTracking.GetTimeEntries
     handler ToTimeTrackingHandler is {
       on timeEntryAdded: event PayrollRun.TimeEntryAdded is {
         let askAnswer: type TimeTracking.TimeEntries = ask query TimeTracking.GetTimeEntries of context TimeTracking
@@ -603,19 +603,28 @@ context PayrollContext as router is {
       |persistence.
     }
   }
-  streamlet PayrollRunEventSplit as flow is {
+  streamlet PayrollRunEventSplit as split is {
+    outlet PayrollRunEventSplitToToTimeTracking is type PayrollRunEvent
+    outlet PayrollRunEventSplitToToTaxService is type PayrollRunEvent
+    outlet PayrollRunEventSplitToToHRISSystem is type PayrollRunEvent
+    outlet PayrollRunEventSplitToToGeneralLedger is type PayrollRunEvent
+    outlet PayrollRunEventSplitToToBankingService is type PayrollRunEvent
     inlet PayrollRunEventSplitIn is type PayrollRunEvent    outlet PayrollRunEventSplitToPayrollAnalytics is type PayrollRunEvent
     handler PayrollRunEventSplitHandler is {
       on payrollInitiated: event PayrollRun.PayrollInitiated is {
         send payrollInitiated to outlet PayrollRunEventSplitToPayrollAnalytics
+        send payrollInitiated to outlet PayrollRunEventSplitToToHRISSystem
         tell payrollInitiated to entity PayrollContext.PayrollRun
       }
       on payrollCalculated: event PayrollRun.PayrollCalculated is {
         send payrollCalculated to outlet PayrollRunEventSplitToPayrollAnalytics
+        send payrollCalculated to outlet PayrollRunEventSplitToToTaxService
+        send payrollCalculated to outlet PayrollRunEventSplitToToHRISSystem
         tell payrollCalculated to entity PayrollContext.PayrollRun
       }
       on timeEntryAdded: event PayrollRun.TimeEntryAdded is {
         send timeEntryAdded to outlet PayrollRunEventSplitToPayrollAnalytics
+        send timeEntryAdded to outlet PayrollRunEventSplitToToTimeTracking
         tell timeEntryAdded to entity PayrollContext.PayrollRun
       }
       on deductionApplied: event PayrollRun.DeductionApplied is {
@@ -632,6 +641,8 @@ context PayrollContext as router is {
       }
       on payrollApproved: event PayrollRun.PayrollApproved is {
         send payrollApproved to outlet PayrollRunEventSplitToPayrollAnalytics
+        send payrollApproved to outlet PayrollRunEventSplitToToGeneralLedger
+        send payrollApproved to outlet PayrollRunEventSplitToToBankingService
         tell payrollApproved to entity PayrollContext.PayrollRun
       }
       on paymentsProcessed: event PayrollRun.PaymentsProcessed is {
@@ -660,6 +671,21 @@ context PayrollContext as router is {
     described as {
       |Fans PayrollRun events out to the repository and projectors.
     }
+  }
+  connector 'ToTimeTracking Feed' is from outlet PayrollContext.PayrollRunEventSplit.PayrollRunEventSplitToToTimeTracking to inlet PayrollContext.ToTimeTracking.ToTimeTrackingIn with {
+    briefly "The PayrollRun events ToTimeTracking translates, on their way to it"
+  }
+  connector 'ToTaxService Feed' is from outlet PayrollContext.PayrollRunEventSplit.PayrollRunEventSplitToToTaxService to inlet PayrollContext.ToTaxService.ToTaxServiceIn with {
+    briefly "The PayrollRun events ToTaxService translates, on their way to it"
+  }
+  connector 'ToHRISSystem Feed' is from outlet PayrollContext.PayrollRunEventSplit.PayrollRunEventSplitToToHRISSystem to inlet PayrollContext.ToHRISSystem.ToHRISSystemIn with {
+    briefly "The PayrollRun events ToHRISSystem translates, on their way to it"
+  }
+  connector 'ToGeneralLedger Feed' is from outlet PayrollContext.PayrollRunEventSplit.PayrollRunEventSplitToToGeneralLedger to inlet PayrollContext.ToGeneralLedger.ToGeneralLedgerIn with {
+    briefly "The PayrollRun events ToGeneralLedger translates, on their way to it"
+  }
+  connector 'ToBankingService Feed' is from outlet PayrollContext.PayrollRunEventSplit.PayrollRunEventSplitToToBankingService to inlet PayrollContext.ToBankingService.ToBankingServiceIn with {
+    briefly "The PayrollRun events ToBankingService translates, on their way to it"
   }
   connector 'PayrollRunEvent Stream' is from outlet PayrollContext.PayrollRun.PayrollRunEvents2 to inlet PayrollContext.PayrollRunEventSplit.PayrollRunEventSplitIn with {
     briefly "PayrollRun events, fanned out to storage and read models"

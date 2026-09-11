@@ -85,7 +85,7 @@ context TransferContext as router is {
     }
   }
   adaptor ToACHNetworkService to context ACHNetworkService as flow is { 
-    outlet ToACHNetworkServiceOut is command ACHNetworkService.SubmitACHTransaction
+    inlet ToACHNetworkServiceIn is type TransferEvent    outlet ToACHNetworkServiceOut is command ACHNetworkService.SubmitACHTransaction
     handler ToACHNetworkServiceHandler is {
       on transferRouted: event Transfer.TransferRouted is {
         let item0: type ACHNetworkService.SubmitACHTransaction = prompt("translate the transferRouted event into a SubmitACHTransaction, routing being the decision that this transfer goes by ACH")
@@ -127,7 +127,7 @@ context TransferContext as router is {
     }
   }
   adaptor ToAccountService to context AccountService as flow is { 
-    outlet ToAccountServiceOut is command AccountService.DebitAccount
+    inlet ToAccountServiceIn is type TransferEvent    outlet ToAccountServiceOut is command AccountService.DebitAccount
     handler ToAccountServiceHandler is {
       on transferValidated: event Transfer.TransferValidated is {
         let item0: type AccountService.DebitAccount = prompt("translate the transferValidated event into a DebitAccount, validation being what makes it safe to take the money")
@@ -148,8 +148,8 @@ context TransferContext as router is {
       |The model's side of the AccountService conversation.
     }
   }
-  adaptor ToFXService to context FXService as flow is { 
-    outlet ToFXServiceOut is query FXService.GetExchangeRate
+  adaptor ToFXService to context FXService as merge is { 
+    inlet ToFXServiceIn is type TransferEvent    inlet ToFXServiceReplies is result FXService.ExchangeQuote    outlet ToFXServiceOut is query FXService.GetExchangeRate
     handler ToFXServiceHandler is {
       on transferValidated: event Transfer.TransferValidated is {
         let askAnswer: type FXService.ExchangeQuote = ask query FXService.GetExchangeRate of context FXService
@@ -171,7 +171,7 @@ context TransferContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendTransferNotification
+    inlet ToNotificationServiceIn is type TransferEvent    outlet ToNotificationServiceOut is command NotificationService.SendTransferNotification
     handler ToNotificationServiceHandler is {
       on transferCompleted: event TransferCompleted is {
         let notice: type NotificationService.SendTransferNotification = prompt("translate the transferCompleted event into a SendTransferNotification telling the originator the funds have landed")
@@ -223,7 +223,7 @@ context TransferContext as router is {
     }
   }
   adaptor ToSanctionsService to context SanctionsService as flow is { 
-    outlet ToSanctionsServiceOut is command SanctionsService.ScreenTransfer
+    inlet ToSanctionsServiceIn is type TransferEvent    outlet ToSanctionsServiceOut is command SanctionsService.ScreenTransfer
     handler ToSanctionsServiceHandler is {
       on transferSubmitted: event TransferSubmitted is {
         let item0: type SanctionsService.ScreenTransfer = prompt("translate the transferSubmitted event into a ScreenTransfer, screening being a precondition of release rather than a review of it")
@@ -267,7 +267,7 @@ context TransferContext as router is {
     }
   }
   adaptor ToWireNetworkService to context WireNetworkService as flow is { 
-    outlet ToWireNetworkServiceOut is command WireNetworkService.SubmitWire
+    inlet ToWireNetworkServiceIn is type TransferEvent    outlet ToWireNetworkServiceOut is command WireNetworkService.SubmitWire
     handler ToWireNetworkServiceHandler is {
       on transferRouted: event Transfer.TransferRouted is {
         let item0: type WireNetworkService.SubmitWire = prompt("translate the transferRouted event into a SubmitWire, and the same decision sending others by wire")
@@ -630,15 +630,24 @@ context TransferContext as router is {
       |Maintains fund transfer analytics data.
     }
   }
-  streamlet TransferEventSplit as flow is {
+  streamlet TransferEventSplit as split is {
+    outlet TransferEventSplitToToWireNetworkService is type TransferEvent
+    outlet TransferEventSplitToToSanctionsService is type TransferEvent
+    outlet TransferEventSplitToToNotificationService is type TransferEvent
+    outlet TransferEventSplitToToFXService is type TransferEvent
+    outlet TransferEventSplitToToAccountService is type TransferEvent
+    outlet TransferEventSplitToToACHNetworkService is type TransferEvent
     inlet TransferEventSplitIn is type TransferEvent    outlet TransferEventSplitToTransferAnalytics is type TransferEvent
     handler TransferEventSplitHandler is {
       on transferSubmitted: event Transfer.TransferSubmitted is {
         send transferSubmitted to outlet TransferEventSplitToTransferAnalytics
+        send transferSubmitted to outlet TransferEventSplitToToSanctionsService
         tell transferSubmitted to entity TransferContext.Transfer
       }
       on transferValidated: event Transfer.TransferValidated is {
         send transferValidated to outlet TransferEventSplitToTransferAnalytics
+        send transferValidated to outlet TransferEventSplitToToFXService
+        send transferValidated to outlet TransferEventSplitToToAccountService
         tell transferValidated to entity TransferContext.Transfer
       }
       on feesApplied: event Transfer.FeesApplied is {
@@ -651,6 +660,8 @@ context TransferContext as router is {
       }
       on transferRouted: event Transfer.TransferRouted is {
         send transferRouted to outlet TransferEventSplitToTransferAnalytics
+        send transferRouted to outlet TransferEventSplitToToWireNetworkService
+        send transferRouted to outlet TransferEventSplitToToACHNetworkService
         tell transferRouted to entity TransferContext.Transfer
       }
       on transferProcessed: event Transfer.TransferProcessed is {
@@ -659,14 +670,17 @@ context TransferContext as router is {
       }
       on transferCompleted: event Transfer.TransferCompleted is {
         send transferCompleted to outlet TransferEventSplitToTransferAnalytics
+        send transferCompleted to outlet TransferEventSplitToToNotificationService
         tell transferCompleted to entity TransferContext.Transfer
       }
       on transferReturned: event Transfer.TransferReturned is {
         send transferReturned to outlet TransferEventSplitToTransferAnalytics
+        send transferReturned to outlet TransferEventSplitToToNotificationService
         tell transferReturned to entity TransferContext.Transfer
       }
       on transferCancelled: event Transfer.TransferCancelled is {
         send transferCancelled to outlet TransferEventSplitToTransferAnalytics
+        send transferCancelled to outlet TransferEventSplitToToNotificationService
         tell transferCancelled to entity TransferContext.Transfer
       }
       on other is {
@@ -683,6 +697,24 @@ context TransferContext as router is {
     described as {
       |Fans Transfer events out to the repository and projectors.
     }
+  }
+  connector 'ToWireNetworkService Feed' is from outlet TransferContext.TransferEventSplit.TransferEventSplitToToWireNetworkService to inlet TransferContext.ToWireNetworkService.ToWireNetworkServiceIn with {
+    briefly "The Transfer events ToWireNetworkService translates, on their way to it"
+  }
+  connector 'ToSanctionsService Feed' is from outlet TransferContext.TransferEventSplit.TransferEventSplitToToSanctionsService to inlet TransferContext.ToSanctionsService.ToSanctionsServiceIn with {
+    briefly "The Transfer events ToSanctionsService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet TransferContext.TransferEventSplit.TransferEventSplitToToNotificationService to inlet TransferContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Transfer events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToFXService Feed' is from outlet TransferContext.TransferEventSplit.TransferEventSplitToToFXService to inlet TransferContext.ToFXService.ToFXServiceIn with {
+    briefly "The Transfer events ToFXService translates, on their way to it"
+  }
+  connector 'ToAccountService Feed' is from outlet TransferContext.TransferEventSplit.TransferEventSplitToToAccountService to inlet TransferContext.ToAccountService.ToAccountServiceIn with {
+    briefly "The Transfer events ToAccountService translates, on their way to it"
+  }
+  connector 'ToACHNetworkService Feed' is from outlet TransferContext.TransferEventSplit.TransferEventSplitToToACHNetworkService to inlet TransferContext.ToACHNetworkService.ToACHNetworkServiceIn with {
+    briefly "The Transfer events ToACHNetworkService translates, on their way to it"
   }
   connector 'TransferEvent Stream' is from outlet TransferContext.Transfer.TransferEvents2 to inlet TransferContext.TransferEventSplit.TransferEventSplitIn with {
     briefly "Transfer events, fanned out to storage and read models"

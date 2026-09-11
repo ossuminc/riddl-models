@@ -45,7 +45,7 @@ context GasContext as router is {
     }
   }
   connector 'DistrictCommand Stream Intake' is from outlet GasContext.DistrictCommandStreamOut to inlet GasContext.District.DistrictCommands  connector 'DistrictResult Stream Egress' is from outlet GasContext.GasRepository.GasRepositoryResponses to inlet GasContext.DistrictResultStreamIn  adaptor ToCustomerNotification to context CustomerNotification as flow is { 
-    outlet ToCustomerNotificationOut is command CustomerNotification.SendServiceAlert
+    inlet ToCustomerNotificationIn is type DistrictEvent    outlet ToCustomerNotificationOut is command CustomerNotification.SendServiceAlert
     handler ToCustomerNotificationHandler is {
       on leakReported: event LeakReported is {
         let alert: type CustomerNotification.SendServiceAlert = prompt("translate the leakReported event into a SendServiceAlert warning the customers served by the affected main that gas service is at risk and what to do now, without disclosing the reporter")
@@ -90,7 +90,7 @@ context GasContext as router is {
     }
   }
   adaptor ToEmergencyDispatch to context EmergencyDispatch as flow is { 
-    outlet ToEmergencyDispatchOut is command EmergencyDispatch.DispatchEmergencyCrew
+    inlet ToEmergencyDispatchIn is type DistrictEvent    outlet ToEmergencyDispatchOut is command EmergencyDispatch.DispatchEmergencyCrew
     handler ToEmergencyDispatchHandler is {
       on leakReported: event District.LeakReported is {
         let dispatch: type EmergencyDispatch.DispatchEmergencyCrew = prompt("translate the leakReported event into a DispatchEmergencyCrew, a reported leak being the one thing that must not wait")
@@ -131,8 +131,8 @@ context GasContext as router is {
       |The model's side of the PipelineSCADA conversation.
     }
   }
-  adaptor ToPipelineSCADA to context PipelineSCADA as flow is { 
-    outlet ToPipelineSCADAOut is type PipelineSCADA.PipelineSCADARequest
+  adaptor ToPipelineSCADA to context PipelineSCADA as merge is { 
+    inlet ToPipelineSCADAIn is type DistrictEvent    inlet ToPipelineSCADAReplies is result PipelineSCADA.RealtimePressure    outlet ToPipelineSCADAOut is type PipelineSCADA.PipelineSCADARequest
     handler ToPipelineSCADAHandler is {
       on leakReported: event District.LeakReported is {
         let askAnswer: type PipelineSCADA.RealtimePressure = ask query PipelineSCADA.GetRealtimePressure of context PipelineSCADA
@@ -178,7 +178,7 @@ context GasContext as router is {
     }
   }
   adaptor ToRegulatoryCompliance to context RegulatoryCompliance as flow is { 
-    outlet ToRegulatoryComplianceOut is type RegulatoryCompliance.RegulatoryComplianceCommand
+    inlet ToRegulatoryComplianceIn is type DistrictEvent    outlet ToRegulatoryComplianceOut is type RegulatoryCompliance.RegulatoryComplianceCommand
     handler ToRegulatoryComplianceHandler is {
       on inspectionRecorded: event InspectionRecorded is {
         let item0: type RegulatoryCompliance.SubmitInspectionReport = prompt("translate the inspectionRecorded event into a SubmitInspectionReport passing the inspection to the regulator")
@@ -560,7 +560,11 @@ context GasContext as router is {
       |persistence.
     }
   }
-  streamlet DistrictEventSplit as flow is {
+  streamlet DistrictEventSplit as split is {
+    outlet DistrictEventSplitToToRegulatoryCompliance is type DistrictEvent
+    outlet DistrictEventSplitToToPipelineSCADA is type DistrictEvent
+    outlet DistrictEventSplitToToEmergencyDispatch is type DistrictEvent
+    outlet DistrictEventSplitToToCustomerNotification is type DistrictEvent
     inlet DistrictEventSplitIn is type DistrictEvent    outlet DistrictEventSplitToSafetyMetrics is type DistrictEvent
     handler DistrictEventSplitHandler is {
       on districtCreated: event District.DistrictCreated is {
@@ -569,10 +573,14 @@ context GasContext as router is {
       }
       on pressureReadingRecorded: event District.PressureReadingRecorded is {
         send pressureReadingRecorded to outlet DistrictEventSplitToSafetyMetrics
+        send pressureReadingRecorded to outlet DistrictEventSplitToToPipelineSCADA
         tell pressureReadingRecorded to entity GasContext.District
       }
       on leakReported: event District.LeakReported is {
         send leakReported to outlet DistrictEventSplitToSafetyMetrics
+        send leakReported to outlet DistrictEventSplitToToPipelineSCADA
+        send leakReported to outlet DistrictEventSplitToToEmergencyDispatch
+        send leakReported to outlet DistrictEventSplitToToCustomerNotification
         tell leakReported to entity GasContext.District
       }
       on odorComplaintReceived: event District.OdorComplaintReceived is {
@@ -585,6 +593,7 @@ context GasContext as router is {
       }
       on inspectionRecorded: event District.InspectionRecorded is {
         send inspectionRecorded to outlet DistrictEventSplitToSafetyMetrics
+        send inspectionRecorded to outlet DistrictEventSplitToToRegulatoryCompliance
         tell inspectionRecorded to entity GasContext.District
       }
       on sectionIsolated: event District.SectionIsolated is {
@@ -613,6 +622,18 @@ context GasContext as router is {
     described as {
       |Fans District events out to the repository and projectors.
     }
+  }
+  connector 'ToRegulatoryCompliance Feed' is from outlet GasContext.DistrictEventSplit.DistrictEventSplitToToRegulatoryCompliance to inlet GasContext.ToRegulatoryCompliance.ToRegulatoryComplianceIn with {
+    briefly "The District events ToRegulatoryCompliance translates, on their way to it"
+  }
+  connector 'ToPipelineSCADA Feed' is from outlet GasContext.DistrictEventSplit.DistrictEventSplitToToPipelineSCADA to inlet GasContext.ToPipelineSCADA.ToPipelineSCADAIn with {
+    briefly "The District events ToPipelineSCADA translates, on their way to it"
+  }
+  connector 'ToEmergencyDispatch Feed' is from outlet GasContext.DistrictEventSplit.DistrictEventSplitToToEmergencyDispatch to inlet GasContext.ToEmergencyDispatch.ToEmergencyDispatchIn with {
+    briefly "The District events ToEmergencyDispatch translates, on their way to it"
+  }
+  connector 'ToCustomerNotification Feed' is from outlet GasContext.DistrictEventSplit.DistrictEventSplitToToCustomerNotification to inlet GasContext.ToCustomerNotification.ToCustomerNotificationIn with {
+    briefly "The District events ToCustomerNotification translates, on their way to it"
   }
   connector 'DistrictEvent Stream' is from outlet GasContext.District.DistrictEvents2 to inlet GasContext.DistrictEventSplit.DistrictEventSplitIn with {
     briefly "District events, fanned out to storage and read models"

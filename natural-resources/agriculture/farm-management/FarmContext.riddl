@@ -50,8 +50,8 @@ context FarmContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'FarmFieldCommand Stream Intake' is from outlet FarmContext.FarmFieldCommandStreamOut to inlet FarmContext.FarmField.FarmFieldCommands  connector 'FarmFieldResult Stream Egress' is from outlet FarmContext.FarmRepository.FarmRepositoryResponses to inlet FarmContext.FarmFieldResultStreamIn  adaptor ToMarketPricing to context MarketPricing as flow is { 
-    outlet ToMarketPricingOut is type MarketPricing.MarketPricingRequest
+  connector 'FarmFieldCommand Stream Intake' is from outlet FarmContext.FarmFieldCommandStreamOut to inlet FarmContext.FarmField.FarmFieldCommands  connector 'FarmFieldResult Stream Egress' is from outlet FarmContext.FarmRepository.FarmRepositoryResponses to inlet FarmContext.FarmFieldResultStreamIn  adaptor ToMarketPricing to context MarketPricing as merge is { 
+    inlet ToMarketPricingIn is type FarmFieldEvent    inlet ToMarketPricingReplies is type MarketPricing.MarketPricingReply    outlet ToMarketPricingOut is type MarketPricing.MarketPricingRequest
     handler ToMarketPricingHandler is {
       on harvestRecorded: event FarmField.HarvestRecorded is {
         let askAnswer: type MarketPricing.CropPrice = ask query MarketPricing.GetCropPrice of context MarketPricing
@@ -76,8 +76,8 @@ context FarmContext as router is {
       |The model's side of the MarketPricing conversation.
     }
   }
-  adaptor ToWeatherService to context WeatherService as flow is { 
-    outlet ToWeatherServiceOut is type WeatherService.WeatherServiceRequest
+  adaptor ToWeatherService to context WeatherService as merge is { 
+    inlet ToWeatherServiceIn is type FarmFieldEvent    inlet ToWeatherServiceReplies is type WeatherService.WeatherServiceReply    outlet ToWeatherServiceOut is type WeatherService.WeatherServiceRequest
     handler ToWeatherServiceHandler is {
       on irrigationScheduled: event FarmField.IrrigationScheduled is {
         let askAnswer: type WeatherService.WeatherForecast = ask query WeatherService.GetForecast of context WeatherService
@@ -511,7 +511,9 @@ context FarmContext as router is {
       |persistence.
     }
   }
-  streamlet FarmFieldEventSplit as flow is {
+  streamlet FarmFieldEventSplit as split is {
+    outlet FarmFieldEventSplitToToWeatherService is type FarmFieldEvent
+    outlet FarmFieldEventSplitToToMarketPricing is type FarmFieldEvent
     inlet FarmFieldEventSplitIn is type FarmFieldEvent    outlet FarmFieldEventSplitToFarmMetrics is type FarmFieldEvent
     handler FarmFieldEventSplitHandler is {
       on fieldCreated: event FarmField.FieldCreated is {
@@ -528,10 +530,12 @@ context FarmContext as router is {
       }
       on soilReadingRecorded: event FarmField.SoilReadingRecorded is {
         send soilReadingRecorded to outlet FarmFieldEventSplitToFarmMetrics
+        send soilReadingRecorded to outlet FarmFieldEventSplitToToWeatherService
         tell soilReadingRecorded to entity FarmContext.FarmField
       }
       on irrigationScheduled: event FarmField.IrrigationScheduled is {
         send irrigationScheduled to outlet FarmFieldEventSplitToFarmMetrics
+        send irrigationScheduled to outlet FarmFieldEventSplitToToWeatherService
         tell irrigationScheduled to entity FarmContext.FarmField
       }
       on irrigationCompleted: event FarmField.IrrigationCompleted is {
@@ -548,10 +552,12 @@ context FarmContext as router is {
       }
       on harvestPlanned: event FarmField.HarvestPlanned is {
         send harvestPlanned to outlet FarmFieldEventSplitToFarmMetrics
+        send harvestPlanned to outlet FarmFieldEventSplitToToMarketPricing
         tell harvestPlanned to entity FarmContext.FarmField
       }
       on harvestRecorded: event FarmField.HarvestRecorded is {
         send harvestRecorded to outlet FarmFieldEventSplitToFarmMetrics
+        send harvestRecorded to outlet FarmFieldEventSplitToToMarketPricing
         tell harvestRecorded to entity FarmContext.FarmField
       }
       on fieldSetFallow: event FarmField.FieldSetFallow is {
@@ -572,6 +578,12 @@ context FarmContext as router is {
     described as {
       |Fans FarmField events out to the repository and projectors.
     }
+  }
+  connector 'ToWeatherService Feed' is from outlet FarmContext.FarmFieldEventSplit.FarmFieldEventSplitToToWeatherService to inlet FarmContext.ToWeatherService.ToWeatherServiceIn with {
+    briefly "The FarmField events ToWeatherService translates, on their way to it"
+  }
+  connector 'ToMarketPricing Feed' is from outlet FarmContext.FarmFieldEventSplit.FarmFieldEventSplitToToMarketPricing to inlet FarmContext.ToMarketPricing.ToMarketPricingIn with {
+    briefly "The FarmField events ToMarketPricing translates, on their way to it"
   }
   connector 'FarmFieldEvent Stream' is from outlet FarmContext.FarmField.FarmFieldEvents2 to inlet FarmContext.FarmFieldEventSplit.FarmFieldEventSplitIn with {
     briefly "FarmField events, fanned out to storage and read models"

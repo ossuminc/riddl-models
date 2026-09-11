@@ -70,8 +70,8 @@ context LeagueContext as router is {
       |The model's side of the BroadcastSystem conversation.
     }
   }
-  adaptor ToBroadcastSystem to context BroadcastSystem as flow is { 
-    outlet ToBroadcastSystemOut is type BroadcastSystem.BroadcastSystemCommand
+  adaptor ToBroadcastSystem to context BroadcastSystem as merge is { 
+    inlet ToBroadcastSystemIn is type SeasonEvent    inlet ToBroadcastSystemReplies is result BroadcastSystem.BroadcastScheduleResult    outlet ToBroadcastSystemOut is type BroadcastSystem.BroadcastSystemCommand
     handler ToBroadcastSystemHandler is {
       on matchScheduled: event Season.MatchScheduled is {
         let askAnswer: type BroadcastSystem.BroadcastScheduleResult = ask query BroadcastSystem.GetBroadcastSchedule of context BroadcastSystem
@@ -121,8 +121,8 @@ context LeagueContext as router is {
       |The model's side of the VenueBooking conversation.
     }
   }
-  adaptor ToVenueBooking to context VenueBooking as flow is { 
-    outlet ToVenueBookingOut is type VenueBooking.VenueBookingCommand
+  adaptor ToVenueBooking to context VenueBooking as merge is { 
+    inlet ToVenueBookingIn is type SeasonEvent    inlet ToVenueBookingReplies is result VenueBooking.VenueAvailability    outlet ToVenueBookingOut is type VenueBooking.VenueBookingCommand
     handler ToVenueBookingHandler is {
       on matchScheduled: event Season.MatchScheduled is {
         let askAnswer: type VenueBooking.VenueAvailability = ask query VenueBooking.CheckAvailability of context VenueBooking
@@ -518,7 +518,9 @@ context LeagueContext as router is {
       |persistence.
     }
   }
-  streamlet SeasonEventSplit as flow is {
+  streamlet SeasonEventSplit as split is {
+    outlet SeasonEventSplitToToVenueBooking is type SeasonEvent
+    outlet SeasonEventSplitToToBroadcastSystem is type SeasonEvent
     inlet SeasonEventSplitIn is type SeasonEvent    outlet SeasonEventSplitToLeagueMetrics is type SeasonEvent
     handler SeasonEventSplitHandler is {
       on seasonCreated: event Season.SeasonCreated is {
@@ -531,6 +533,8 @@ context LeagueContext as router is {
       }
       on matchScheduled: event Season.MatchScheduled is {
         send matchScheduled to outlet SeasonEventSplitToLeagueMetrics
+        send matchScheduled to outlet SeasonEventSplitToToVenueBooking
+        send matchScheduled to outlet SeasonEventSplitToToBroadcastSystem
         tell matchScheduled to entity LeagueContext.Season
       }
       on resultRecorded: event Season.ResultRecorded is {
@@ -559,6 +563,8 @@ context LeagueContext as router is {
       }
       on seasonCancelled: event Season.SeasonCancelled is {
         send seasonCancelled to outlet SeasonEventSplitToLeagueMetrics
+        send seasonCancelled to outlet SeasonEventSplitToToVenueBooking
+        send seasonCancelled to outlet SeasonEventSplitToToBroadcastSystem
         tell seasonCancelled to entity LeagueContext.Season
       }
       on other is {
@@ -575,6 +581,12 @@ context LeagueContext as router is {
     described as {
       |Fans Season events out to the repository and projectors.
     }
+  }
+  connector 'ToVenueBooking Feed' is from outlet LeagueContext.SeasonEventSplit.SeasonEventSplitToToVenueBooking to inlet LeagueContext.ToVenueBooking.ToVenueBookingIn with {
+    briefly "The Season events ToVenueBooking translates, on their way to it"
+  }
+  connector 'ToBroadcastSystem Feed' is from outlet LeagueContext.SeasonEventSplit.SeasonEventSplitToToBroadcastSystem to inlet LeagueContext.ToBroadcastSystem.ToBroadcastSystemIn with {
+    briefly "The Season events ToBroadcastSystem translates, on their way to it"
   }
   connector 'SeasonEvent Stream' is from outlet LeagueContext.Season.SeasonEvents2 to inlet LeagueContext.SeasonEventSplit.SeasonEventSplitIn with {
     briefly "Season events, fanned out to storage and read models"

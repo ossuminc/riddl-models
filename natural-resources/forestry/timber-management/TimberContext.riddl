@@ -68,7 +68,7 @@ context TimberContext as router is {
     }
   }
   adaptor ToForestryRegulator to context ForestryRegulator as flow is { 
-    outlet ToForestryRegulatorOut is type ForestryRegulator.ForestryRegulatorCommand
+    inlet ToForestryRegulatorIn is type StandEvent    outlet ToForestryRegulatorOut is type ForestryRegulator.ForestryRegulatorCommand
     handler ToForestryRegulatorHandler is {
       on harvestCompleted: event HarvestCompleted is {
         let item0: type ForestryRegulator.SubmitHarvestNotification = prompt("translate the harvestCompleted event into a SubmitHarvestNotification declaring what was cut")
@@ -91,8 +91,8 @@ context TimberContext as router is {
       |The model's side of the ForestryRegulator conversation.
     }
   }
-  adaptor ToLoggingContractor to context LoggingContractor as flow is { 
-    outlet ToLoggingContractorOut is type LoggingContractor.LoggingContractorRequest
+  adaptor ToLoggingContractor to context LoggingContractor as merge is { 
+    inlet ToLoggingContractorIn is type StandEvent    inlet ToLoggingContractorReplies is result LoggingContractor.CrewAvailability    outlet ToLoggingContractorOut is type LoggingContractor.LoggingContractorRequest
     handler ToLoggingContractorHandler is {
       on timberSaleRecorded: event Stand.TimberSaleRecorded is {
         let askAnswer: type LoggingContractor.CrewAvailability = ask query LoggingContractor.GetCrewAvailability of context LoggingContractor
@@ -117,8 +117,8 @@ context TimberContext as router is {
       |The model's side of the LoggingContractor conversation.
     }
   }
-  adaptor ToNurserySupplier to context NurserySupplier as flow is { 
-    outlet ToNurserySupplierOut is type NurserySupplier.NurserySupplierRequest
+  adaptor ToNurserySupplier to context NurserySupplier as merge is { 
+    inlet ToNurserySupplierIn is type StandEvent    inlet ToNurserySupplierReplies is result NurserySupplier.SeedlingAvailability    outlet ToNurserySupplierOut is type NurserySupplier.NurserySupplierRequest
     handler ToNurserySupplierHandler is {
       on harvestCompleted: event Stand.HarvestCompleted is {
         let askAnswer: type NurserySupplier.SeedlingAvailability = ask query NurserySupplier.GetSeedlingAvailability of context NurserySupplier
@@ -143,8 +143,8 @@ context TimberContext as router is {
       |The model's side of the NurserySupplier conversation.
     }
   }
-  adaptor ToTimberBuyer to context TimberBuyer as flow is { 
-    outlet ToTimberBuyerOut is type TimberBuyer.TimberBuyerRequest
+  adaptor ToTimberBuyer to context TimberBuyer as merge is { 
+    inlet ToTimberBuyerIn is type StandEvent    inlet ToTimberBuyerReplies is result TimberBuyer.TimberPrices    outlet ToTimberBuyerOut is type TimberBuyer.TimberBuyerRequest
     handler ToTimberBuyerHandler is {
       on cruiseRecorded: event Stand.CruiseRecorded is {
         let askAnswer: type TimberBuyer.TimberPrices = ask query TimberBuyer.GetCurrentPrices of context TimberBuyer
@@ -544,7 +544,11 @@ context TimberContext as router is {
       |persistence.
     }
   }
-  streamlet StandEventSplit as flow is {
+  streamlet StandEventSplit as split is {
+    outlet StandEventSplitToToTimberBuyer is type StandEvent
+    outlet StandEventSplitToToNurserySupplier is type StandEvent
+    outlet StandEventSplitToToLoggingContractor is type StandEvent
+    outlet StandEventSplitToToForestryRegulator is type StandEvent
     inlet StandEventSplitIn is type StandEvent    outlet StandEventSplitToHarvestAnalytics is type StandEvent
     handler StandEventSplitHandler is {
       on standRegistered: event Stand.StandRegistered is {
@@ -553,14 +557,18 @@ context TimberContext as router is {
       }
       on cruiseRecorded: event Stand.CruiseRecorded is {
         send cruiseRecorded to outlet StandEventSplitToHarvestAnalytics
+        send cruiseRecorded to outlet StandEventSplitToToTimberBuyer
         tell cruiseRecorded to entity TimberContext.Stand
       }
       on harvestPlanned: event Stand.HarvestPlanned is {
         send harvestPlanned to outlet StandEventSplitToHarvestAnalytics
+        send harvestPlanned to outlet StandEventSplitToToTimberBuyer
+        send harvestPlanned to outlet StandEventSplitToToLoggingContractor
         tell harvestPlanned to entity TimberContext.Stand
       }
       on timberSaleRecorded: event Stand.TimberSaleRecorded is {
         send timberSaleRecorded to outlet StandEventSplitToHarvestAnalytics
+        send timberSaleRecorded to outlet StandEventSplitToToLoggingContractor
         tell timberSaleRecorded to entity TimberContext.Stand
       }
       on harvestStarted: event Stand.HarvestStarted is {
@@ -573,10 +581,13 @@ context TimberContext as router is {
       }
       on harvestCompleted: event Stand.HarvestCompleted is {
         send harvestCompleted to outlet StandEventSplitToHarvestAnalytics
+        send harvestCompleted to outlet StandEventSplitToToNurserySupplier
+        send harvestCompleted to outlet StandEventSplitToToForestryRegulator
         tell harvestCompleted to entity TimberContext.Stand
       }
       on regenerationPlanned: event Stand.RegenerationPlanned is {
         send regenerationPlanned to outlet StandEventSplitToHarvestAnalytics
+        send regenerationPlanned to outlet StandEventSplitToToNurserySupplier
         tell regenerationPlanned to entity TimberContext.Stand
       }
       on plantingRecorded: event Stand.PlantingRecorded is {
@@ -601,6 +612,18 @@ context TimberContext as router is {
     described as {
       |Fans Stand events out to the repository and projectors.
     }
+  }
+  connector 'ToTimberBuyer Feed' is from outlet TimberContext.StandEventSplit.StandEventSplitToToTimberBuyer to inlet TimberContext.ToTimberBuyer.ToTimberBuyerIn with {
+    briefly "The Stand events ToTimberBuyer translates, on their way to it"
+  }
+  connector 'ToNurserySupplier Feed' is from outlet TimberContext.StandEventSplit.StandEventSplitToToNurserySupplier to inlet TimberContext.ToNurserySupplier.ToNurserySupplierIn with {
+    briefly "The Stand events ToNurserySupplier translates, on their way to it"
+  }
+  connector 'ToLoggingContractor Feed' is from outlet TimberContext.StandEventSplit.StandEventSplitToToLoggingContractor to inlet TimberContext.ToLoggingContractor.ToLoggingContractorIn with {
+    briefly "The Stand events ToLoggingContractor translates, on their way to it"
+  }
+  connector 'ToForestryRegulator Feed' is from outlet TimberContext.StandEventSplit.StandEventSplitToToForestryRegulator to inlet TimberContext.ToForestryRegulator.ToForestryRegulatorIn with {
+    briefly "The Stand events ToForestryRegulator translates, on their way to it"
   }
   connector 'StandEvent Stream' is from outlet TimberContext.Stand.StandEvents2 to inlet TimberContext.StandEventSplit.StandEventSplitIn with {
     briefly "Stand events, fanned out to storage and read models"

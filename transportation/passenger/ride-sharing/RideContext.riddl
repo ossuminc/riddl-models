@@ -84,8 +84,8 @@ context RideContext as router is {
       |The model's side of the DriverMatchingService conversation.
     }
   }
-  adaptor ToDriverMatchingService to context DriverMatchingService as flow is { 
-    outlet ToDriverMatchingServiceOut is type DriverMatchingService.DriverMatchingServiceCommand
+  adaptor ToDriverMatchingService to context DriverMatchingService as merge is { 
+    inlet ToDriverMatchingServiceIn is type RideEvent    inlet ToDriverMatchingServiceReplies is result DriverMatchingService.AvailableDrivers    outlet ToDriverMatchingServiceOut is type DriverMatchingService.DriverMatchingServiceCommand
     handler ToDriverMatchingServiceHandler is {
       on rideRequested: event Ride.RideRequested is {
         let askAnswer: type DriverMatchingService.AvailableDrivers = ask query DriverMatchingService.GetAvailableDrivers of context DriverMatchingService
@@ -112,8 +112,8 @@ context RideContext as router is {
       |The model's side of the DriverMatchingService conversation.
     }
   }
-  adaptor ToFareCalculationService to context FareCalculationService as flow is { 
-    outlet ToFareCalculationServiceOut is type FareCalculationService.FareCalculationServiceCommand
+  adaptor ToFareCalculationService to context FareCalculationService as merge is { 
+    inlet ToFareCalculationServiceIn is type RideEvent    inlet ToFareCalculationServiceReplies is type FareCalculationService.FareCalculationServiceReply    outlet ToFareCalculationServiceOut is type FareCalculationService.FareCalculationServiceCommand
     handler ToFareCalculationServiceHandler is {
       on rideRequested: event Ride.RideRequested is {
         let askAnswer: type FareCalculationService.FareCalculation = ask query FareCalculationService.GetFareCalculation of context FareCalculationService
@@ -141,7 +141,7 @@ context RideContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type RideEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on driverAssigned: event DriverAssigned is {
         let notice: type NotificationService.SendRiderNotification = prompt("translate the driverAssigned event into a SendRiderNotification telling the rider which driver and vehicle is coming for them")
@@ -211,7 +211,7 @@ context RideContext as router is {
     }
   }
   adaptor ToPaymentService to context PaymentService as flow is { 
-    outlet ToPaymentServiceOut is type PaymentService.PaymentServiceCommand
+    inlet ToPaymentServiceIn is type RideEvent    outlet ToPaymentServiceOut is type PaymentService.PaymentServiceCommand
     handler ToPaymentServiceHandler is {
       on tripCompleted: event TripCompleted is {
         let charge: type PaymentService.ChargeRide = prompt("translate the tripCompleted event into a ChargeRide taking the rider's fare, which is final once the trip has ended")
@@ -234,8 +234,8 @@ context RideContext as router is {
       |The model's side of the PaymentService conversation.
     }
   }
-  adaptor ToRoutingService to context RoutingService as flow is { 
-    outlet ToRoutingServiceOut is type RoutingService.RoutingServiceRequest
+  adaptor ToRoutingService to context RoutingService as merge is { 
+    inlet ToRoutingServiceIn is type RideEvent    inlet ToRoutingServiceReplies is type RoutingService.RoutingServiceReply    outlet ToRoutingServiceOut is type RoutingService.RoutingServiceRequest
     handler ToRoutingServiceHandler is {
       on driverIsEnRoute: event Ride.DriverIsEnRoute is {
         let askAnswer: type RoutingService.ETAResult = ask query RoutingService.GetETA of context RoutingService
@@ -284,7 +284,7 @@ context RideContext as router is {
     }
   }
   adaptor ToSafetyService to context SafetyService as flow is { 
-    outlet ToSafetyServiceOut is type SafetyService.SafetyServiceCommand
+    inlet ToSafetyServiceIn is type RideEvent    outlet ToSafetyServiceOut is type SafetyService.SafetyServiceCommand
     handler ToSafetyServiceHandler is {
       on safetyIncidentReported: event Ride.SafetyIncidentReported is {
         let item0: type SafetyService.ReportSafetyIncident = prompt("translate the safetyIncidentReported event into a ReportSafetyIncident, the ride's own record of the incident being what the safety service is told")
@@ -715,27 +715,42 @@ context RideContext as router is {
       |persistence.
     }
   }
-  streamlet RideEventSplit as flow is {
+  streamlet RideEventSplit as split is {
+    outlet RideEventSplitToToSafetyService is type RideEvent
+    outlet RideEventSplitToToRoutingService is type RideEvent
+    outlet RideEventSplitToToPaymentService is type RideEvent
+    outlet RideEventSplitToToNotificationService is type RideEvent
+    outlet RideEventSplitToToFareCalculationService is type RideEvent
+    outlet RideEventSplitToToDriverMatchingService is type RideEvent
     inlet RideEventSplitIn is type RideEvent    outlet RideEventSplitToRideAnalytics is type RideEvent
     handler RideEventSplitHandler is {
       on rideRequested: event Ride.RideRequested is {
         send rideRequested to outlet RideEventSplitToRideAnalytics
+        send rideRequested to outlet RideEventSplitToToFareCalculationService
+        send rideRequested to outlet RideEventSplitToToDriverMatchingService
         tell rideRequested to entity RideContext.Ride
       }
       on driverAssigned: event Ride.DriverAssigned is {
         send driverAssigned to outlet RideEventSplitToRideAnalytics
+        send driverAssigned to outlet RideEventSplitToToNotificationService
+        send driverAssigned to outlet RideEventSplitToToDriverMatchingService
         tell driverAssigned to entity RideContext.Ride
       }
       on driverIsEnRoute: event Ride.DriverIsEnRoute is {
         send driverIsEnRoute to outlet RideEventSplitToRideAnalytics
+        send driverIsEnRoute to outlet RideEventSplitToToRoutingService
+        send driverIsEnRoute to outlet RideEventSplitToToNotificationService
         tell driverIsEnRoute to entity RideContext.Ride
       }
       on driverHasArrived: event Ride.DriverHasArrived is {
         send driverHasArrived to outlet RideEventSplitToRideAnalytics
+        send driverHasArrived to outlet RideEventSplitToToNotificationService
         tell driverHasArrived to entity RideContext.Ride
       }
       on tripStarted: event Ride.TripStarted is {
         send tripStarted to outlet RideEventSplitToRideAnalytics
+        send tripStarted to outlet RideEventSplitToToSafetyService
+        send tripStarted to outlet RideEventSplitToToRoutingService
         tell tripStarted to entity RideContext.Ride
       }
       on locationUpdated: event Ride.LocationUpdated is {
@@ -744,6 +759,9 @@ context RideContext as router is {
       }
       on tripCompleted: event Ride.TripCompleted is {
         send tripCompleted to outlet RideEventSplitToRideAnalytics
+        send tripCompleted to outlet RideEventSplitToToPaymentService
+        send tripCompleted to outlet RideEventSplitToToNotificationService
+        send tripCompleted to outlet RideEventSplitToToFareCalculationService
         tell tripCompleted to entity RideContext.Ride
       }
       on paymentProcessed: event Ride.PaymentProcessed is {
@@ -756,10 +774,12 @@ context RideContext as router is {
       }
       on rideCancelled: event Ride.RideCancelled is {
         send rideCancelled to outlet RideEventSplitToRideAnalytics
+        send rideCancelled to outlet RideEventSplitToToNotificationService
         tell rideCancelled to entity RideContext.Ride
       }
       on safetyIncidentReported: event Ride.SafetyIncidentReported is {
         send safetyIncidentReported to outlet RideEventSplitToRideAnalytics
+        send safetyIncidentReported to outlet RideEventSplitToToSafetyService
         tell safetyIncidentReported to entity RideContext.Ride
       }
       on other is {
@@ -776,6 +796,24 @@ context RideContext as router is {
     described as {
       |Fans Ride events out to the repository and projectors.
     }
+  }
+  connector 'ToSafetyService Feed' is from outlet RideContext.RideEventSplit.RideEventSplitToToSafetyService to inlet RideContext.ToSafetyService.ToSafetyServiceIn with {
+    briefly "The Ride events ToSafetyService translates, on their way to it"
+  }
+  connector 'ToRoutingService Feed' is from outlet RideContext.RideEventSplit.RideEventSplitToToRoutingService to inlet RideContext.ToRoutingService.ToRoutingServiceIn with {
+    briefly "The Ride events ToRoutingService translates, on their way to it"
+  }
+  connector 'ToPaymentService Feed' is from outlet RideContext.RideEventSplit.RideEventSplitToToPaymentService to inlet RideContext.ToPaymentService.ToPaymentServiceIn with {
+    briefly "The Ride events ToPaymentService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet RideContext.RideEventSplit.RideEventSplitToToNotificationService to inlet RideContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Ride events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToFareCalculationService Feed' is from outlet RideContext.RideEventSplit.RideEventSplitToToFareCalculationService to inlet RideContext.ToFareCalculationService.ToFareCalculationServiceIn with {
+    briefly "The Ride events ToFareCalculationService translates, on their way to it"
+  }
+  connector 'ToDriverMatchingService Feed' is from outlet RideContext.RideEventSplit.RideEventSplitToToDriverMatchingService to inlet RideContext.ToDriverMatchingService.ToDriverMatchingServiceIn with {
+    briefly "The Ride events ToDriverMatchingService translates, on their way to it"
   }
   connector 'RideEvent Stream' is from outlet RideContext.Ride.RideEvents2 to inlet RideContext.RideEventSplit.RideEventSplitIn with {
     briefly "Ride events, fanned out to storage and read models"

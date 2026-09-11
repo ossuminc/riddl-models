@@ -77,7 +77,7 @@ context MeteringContext as router is {
     }
   }
   adaptor ToBillingSystem to context BillingSystem as flow is { 
-    outlet ToBillingSystemOut is command BillingSystem.SubmitValidatedUsage
+    inlet ToBillingSystemIn is type MeterEvent    outlet ToBillingSystemOut is command BillingSystem.SubmitValidatedUsage
     handler ToBillingSystemHandler is {
       on intervalDataRecorded: event Meter.IntervalDataRecorded is {
         let item0: type BillingSystem.SubmitValidatedUsage = prompt("translate the intervalDataRecorded event into a SubmitValidatedUsage, interval data being what a bill is computed from")
@@ -120,8 +120,8 @@ context MeteringContext as router is {
       |The model's side of the HeadEndSystem conversation.
     }
   }
-  adaptor ToHeadEndSystem to context HeadEndSystem as flow is { 
-    outlet ToHeadEndSystemOut is type HeadEndSystem.HeadEndSystemCommand
+  adaptor ToHeadEndSystem to context HeadEndSystem as merge is { 
+    inlet ToHeadEndSystemIn is type MeterEvent    inlet ToHeadEndSystemReplies is result HeadEndSystem.MeterStatusResult    outlet ToHeadEndSystemOut is type HeadEndSystem.HeadEndSystemCommand
     handler ToHeadEndSystemHandler is {
       on alertRaised: event Meter.AlertRaised is {
         let askAnswer: type HeadEndSystem.MeterStatusResult = ask query HeadEndSystem.GetMeterStatus of context HeadEndSystem
@@ -154,8 +154,8 @@ context MeteringContext as router is {
       |The model's side of the HeadEndSystem conversation.
     }
   }
-  adaptor ToMeterDataManagement to context MeterDataManagement as flow is { 
-    outlet ToMeterDataManagementOut is type MeterDataManagement.MeterDataManagementCommand
+  adaptor ToMeterDataManagement to context MeterDataManagement as merge is { 
+    inlet ToMeterDataManagementIn is type MeterEvent    inlet ToMeterDataManagementReplies is result MeterDataManagement.ValidationResult    outlet ToMeterDataManagementOut is type MeterDataManagement.MeterDataManagementCommand
     handler ToMeterDataManagementHandler is {
       on readingRecorded: event Meter.ReadingRecorded is {
         let askAnswer: type MeterDataManagement.ValidationResult = ask query MeterDataManagement.GetValidation of context MeterDataManagement
@@ -203,7 +203,7 @@ context MeteringContext as router is {
     }
   }
   adaptor ToOutageManagement to context OutageManagement as flow is { 
-    outlet ToOutageManagementOut is type OutageManagement.OutageManagementCommand
+    inlet ToOutageManagementIn is type MeterEvent    outlet ToOutageManagementOut is type OutageManagement.OutageManagementCommand
     handler ToOutageManagementHandler is {
       on meterDisconnected: event Meter.MeterDisconnected is {
         let item0: type OutageManagement.ReportMeterOutage = prompt("translate the meterDisconnected event into a ReportMeterOutage, a disconnected meter being how an outage is first seen")
@@ -632,7 +632,11 @@ context MeteringContext as router is {
       |persistence.
     }
   }
-  streamlet MeterEventSplit as flow is {
+  streamlet MeterEventSplit as split is {
+    outlet MeterEventSplitToToOutageManagement is type MeterEvent
+    outlet MeterEventSplitToToMeterDataManagement is type MeterEvent
+    outlet MeterEventSplitToToHeadEndSystem is type MeterEvent
+    outlet MeterEventSplitToToBillingSystem is type MeterEvent
     inlet MeterEventSplitIn is type MeterEvent    outlet MeterEventSplitToMeteringAnalytics is type MeterEvent
     handler MeterEventSplitHandler is {
       on meterInstalled: event Meter.MeterInstalled is {
@@ -641,18 +645,23 @@ context MeteringContext as router is {
       }
       on meterActivated: event Meter.MeterActivated is {
         send meterActivated to outlet MeterEventSplitToMeteringAnalytics
+        send meterActivated to outlet MeterEventSplitToToHeadEndSystem
         tell meterActivated to entity MeteringContext.Meter
       }
       on readingRecorded: event Meter.ReadingRecorded is {
         send readingRecorded to outlet MeterEventSplitToMeteringAnalytics
+        send readingRecorded to outlet MeterEventSplitToToMeterDataManagement
         tell readingRecorded to entity MeteringContext.Meter
       }
       on intervalDataRecorded: event Meter.IntervalDataRecorded is {
         send intervalDataRecorded to outlet MeterEventSplitToMeteringAnalytics
+        send intervalDataRecorded to outlet MeterEventSplitToToMeterDataManagement
+        send intervalDataRecorded to outlet MeterEventSplitToToBillingSystem
         tell intervalDataRecorded to entity MeteringContext.Meter
       }
       on alertRaised: event Meter.AlertRaised is {
         send alertRaised to outlet MeterEventSplitToMeteringAnalytics
+        send alertRaised to outlet MeterEventSplitToToHeadEndSystem
         tell alertRaised to entity MeteringContext.Meter
       }
       on alertResolved: event Meter.AlertResolved is {
@@ -669,10 +678,14 @@ context MeteringContext as router is {
       }
       on meterDisconnected: event Meter.MeterDisconnected is {
         send meterDisconnected to outlet MeterEventSplitToMeteringAnalytics
+        send meterDisconnected to outlet MeterEventSplitToToOutageManagement
+        send meterDisconnected to outlet MeterEventSplitToToHeadEndSystem
         tell meterDisconnected to entity MeteringContext.Meter
       }
       on meterReconnected: event Meter.MeterReconnected is {
         send meterReconnected to outlet MeterEventSplitToMeteringAnalytics
+        send meterReconnected to outlet MeterEventSplitToToOutageManagement
+        send meterReconnected to outlet MeterEventSplitToToHeadEndSystem
         tell meterReconnected to entity MeteringContext.Meter
       }
       on meterDecommissioned: event Meter.MeterDecommissioned is {
@@ -693,6 +706,18 @@ context MeteringContext as router is {
     described as {
       |Fans Meter events out to the repository and projectors.
     }
+  }
+  connector 'ToOutageManagement Feed' is from outlet MeteringContext.MeterEventSplit.MeterEventSplitToToOutageManagement to inlet MeteringContext.ToOutageManagement.ToOutageManagementIn with {
+    briefly "The Meter events ToOutageManagement translates, on their way to it"
+  }
+  connector 'ToMeterDataManagement Feed' is from outlet MeteringContext.MeterEventSplit.MeterEventSplitToToMeterDataManagement to inlet MeteringContext.ToMeterDataManagement.ToMeterDataManagementIn with {
+    briefly "The Meter events ToMeterDataManagement translates, on their way to it"
+  }
+  connector 'ToHeadEndSystem Feed' is from outlet MeteringContext.MeterEventSplit.MeterEventSplitToToHeadEndSystem to inlet MeteringContext.ToHeadEndSystem.ToHeadEndSystemIn with {
+    briefly "The Meter events ToHeadEndSystem translates, on their way to it"
+  }
+  connector 'ToBillingSystem Feed' is from outlet MeteringContext.MeterEventSplit.MeterEventSplitToToBillingSystem to inlet MeteringContext.ToBillingSystem.ToBillingSystemIn with {
+    briefly "The Meter events ToBillingSystem translates, on their way to it"
   }
   connector 'MeterEvent Stream' is from outlet MeteringContext.Meter.MeterEvents2 to inlet MeteringContext.MeterEventSplit.MeterEventSplitIn with {
     briefly "Meter events, fanned out to storage and read models"

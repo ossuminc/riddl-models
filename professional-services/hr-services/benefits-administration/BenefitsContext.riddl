@@ -71,7 +71,7 @@ context BenefitsContext as router is {
     }
   }
   adaptor ToComplianceReportingSystem to context ComplianceReportingSystem as flow is { 
-    outlet ToComplianceReportingSystemOut is type ComplianceReportingSystem.ComplianceReportingSystemCommand
+    inlet ToComplianceReportingSystemIn is type BenefitsEnrollmentEvent    outlet ToComplianceReportingSystemOut is type ComplianceReportingSystem.ComplianceReportingSystemCommand
     handler ToComplianceReportingSystemHandler is {
       on enrollmentApproved: event BenefitsEnrollment.EnrollmentApproved is {
         let item0: type ComplianceReportingSystem.GenerateAcaReport = prompt("translate the enrollmentApproved event into a GenerateAcaReport, coverage in force being the ACA-reportable fact")
@@ -119,8 +119,8 @@ context BenefitsContext as router is {
       |The model's side of the InsuranceCarrier conversation.
     }
   }
-  adaptor ToInsuranceCarrier to context InsuranceCarrier as flow is { 
-    outlet ToInsuranceCarrierOut is type InsuranceCarrier.InsuranceCarrierRequest
+  adaptor ToInsuranceCarrier to context InsuranceCarrier as merge is { 
+    inlet ToInsuranceCarrierIn is type BenefitsEnrollmentEvent    inlet ToInsuranceCarrierReplies is result InsuranceCarrier.PlanDetails    outlet ToInsuranceCarrierOut is type InsuranceCarrier.InsuranceCarrierRequest
     handler ToInsuranceCarrierHandler is {
       on planSelected: event BenefitsEnrollment.PlanSelected is {
         let askAnswer: type InsuranceCarrier.PlanDetails = ask query InsuranceCarrier.GetPlanDetails of context InsuranceCarrier
@@ -165,8 +165,8 @@ context BenefitsContext as router is {
       |The model's side of the PayrollSystem conversation.
     }
   }
-  adaptor ToPayrollSystem to context PayrollSystem as flow is { 
-    outlet ToPayrollSystemOut is type PayrollSystem.PayrollSystemRequest
+  adaptor ToPayrollSystem to context PayrollSystem as merge is { 
+    inlet ToPayrollSystemIn is type BenefitsEnrollmentEvent    inlet ToPayrollSystemReplies is result PayrollSystem.EmployeeCompensation    outlet ToPayrollSystemOut is type PayrollSystem.PayrollSystemRequest
     handler ToPayrollSystemHandler is {
       on enrollmentSubmitted: event BenefitsEnrollment.EnrollmentSubmitted is {
         let askAnswer: type PayrollSystem.EmployeeCompensation = ask query PayrollSystem.GetEmployeeCompensation of context PayrollSystem
@@ -578,7 +578,10 @@ context BenefitsContext as router is {
       |persistence.
     }
   }
-  streamlet BenefitsEnrollmentEventSplit as flow is {
+  streamlet BenefitsEnrollmentEventSplit as split is {
+    outlet BenefitsEnrollmentEventSplitToToPayrollSystem is type BenefitsEnrollmentEvent
+    outlet BenefitsEnrollmentEventSplitToToInsuranceCarrier is type BenefitsEnrollmentEvent
+    outlet BenefitsEnrollmentEventSplitToToComplianceReportingSystem is type BenefitsEnrollmentEvent
     inlet BenefitsEnrollmentEventSplitIn is type BenefitsEnrollmentEvent    outlet BenefitsEnrollmentEventSplitToBenefitsMetrics is type BenefitsEnrollmentEvent
     handler BenefitsEnrollmentEventSplitHandler is {
       on enrollmentCreated: event BenefitsEnrollment.EnrollmentCreated is {
@@ -587,6 +590,7 @@ context BenefitsContext as router is {
       }
       on planSelected: event BenefitsEnrollment.PlanSelected is {
         send planSelected to outlet BenefitsEnrollmentEventSplitToBenefitsMetrics
+        send planSelected to outlet BenefitsEnrollmentEventSplitToToInsuranceCarrier
         tell planSelected to entity BenefitsContext.BenefitsEnrollment
       }
       on dependentAdded: event BenefitsEnrollment.DependentAdded is {
@@ -599,10 +603,14 @@ context BenefitsContext as router is {
       }
       on enrollmentSubmitted: event BenefitsEnrollment.EnrollmentSubmitted is {
         send enrollmentSubmitted to outlet BenefitsEnrollmentEventSplitToBenefitsMetrics
+        send enrollmentSubmitted to outlet BenefitsEnrollmentEventSplitToToPayrollSystem
         tell enrollmentSubmitted to entity BenefitsContext.BenefitsEnrollment
       }
       on enrollmentApproved: event BenefitsEnrollment.EnrollmentApproved is {
         send enrollmentApproved to outlet BenefitsEnrollmentEventSplitToBenefitsMetrics
+        send enrollmentApproved to outlet BenefitsEnrollmentEventSplitToToPayrollSystem
+        send enrollmentApproved to outlet BenefitsEnrollmentEventSplitToToInsuranceCarrier
+        send enrollmentApproved to outlet BenefitsEnrollmentEventSplitToToComplianceReportingSystem
         tell enrollmentApproved to entity BenefitsContext.BenefitsEnrollment
       }
       on enrollmentDenied: event BenefitsEnrollment.EnrollmentDenied is {
@@ -615,6 +623,7 @@ context BenefitsContext as router is {
       }
       on cobraInitiated: event BenefitsEnrollment.CobraInitiated is {
         send cobraInitiated to outlet BenefitsEnrollmentEventSplitToBenefitsMetrics
+        send cobraInitiated to outlet BenefitsEnrollmentEventSplitToToComplianceReportingSystem
         tell cobraInitiated to entity BenefitsContext.BenefitsEnrollment
       }
       on enrollmentTerminated: event BenefitsEnrollment.EnrollmentTerminated is {
@@ -635,6 +644,15 @@ context BenefitsContext as router is {
     described as {
       |Fans BenefitsEnrollment events out to the repository and projectors.
     }
+  }
+  connector 'ToPayrollSystem Feed' is from outlet BenefitsContext.BenefitsEnrollmentEventSplit.BenefitsEnrollmentEventSplitToToPayrollSystem to inlet BenefitsContext.ToPayrollSystem.ToPayrollSystemIn with {
+    briefly "The BenefitsEnrollment events ToPayrollSystem translates, on their way to it"
+  }
+  connector 'ToInsuranceCarrier Feed' is from outlet BenefitsContext.BenefitsEnrollmentEventSplit.BenefitsEnrollmentEventSplitToToInsuranceCarrier to inlet BenefitsContext.ToInsuranceCarrier.ToInsuranceCarrierIn with {
+    briefly "The BenefitsEnrollment events ToInsuranceCarrier translates, on their way to it"
+  }
+  connector 'ToComplianceReportingSystem Feed' is from outlet BenefitsContext.BenefitsEnrollmentEventSplit.BenefitsEnrollmentEventSplitToToComplianceReportingSystem to inlet BenefitsContext.ToComplianceReportingSystem.ToComplianceReportingSystemIn with {
+    briefly "The BenefitsEnrollment events ToComplianceReportingSystem translates, on their way to it"
   }
   connector 'BenefitsEnrollmentEvent Stream' is from outlet BenefitsContext.BenefitsEnrollment.BenefitsEnrollmentEvents2 to inlet BenefitsContext.BenefitsEnrollmentEventSplit.BenefitsEnrollmentEventSplitIn with {
     briefly "BenefitsEnrollment events, fanned out to storage and read models"

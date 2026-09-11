@@ -84,8 +84,8 @@ context FulfillmentContext as router is {
       |The model's side of the CarrierSystem conversation.
     }
   }
-  adaptor ToCarrierSystem to context CarrierSystem as flow is { 
-    outlet ToCarrierSystemOut is type CarrierSystem.CarrierSystemCommand
+  adaptor ToCarrierSystem to context CarrierSystem as merge is { 
+    inlet ToCarrierSystemIn is type FulfillmentOrderEvent    inlet ToCarrierSystemReplies is type CarrierSystem.CarrierSystemReply    outlet ToCarrierSystemOut is type CarrierSystem.CarrierSystemCommand
     handler ToCarrierSystemHandler is {
       on orderShipped: event FulfillmentOrder.OrderShipped is {
         let askAnswer: type CarrierSystem.TrackingStatus = ask query CarrierSystem.GetTrackingStatus of context CarrierSystem
@@ -139,8 +139,8 @@ context FulfillmentContext as router is {
       |The model's side of the WarehouseSystem conversation.
     }
   }
-  adaptor ToWarehouseSystem to context WarehouseSystem as flow is { 
-    outlet ToWarehouseSystemOut is type WarehouseSystem.WarehouseSystemCommand
+  adaptor ToWarehouseSystem to context WarehouseSystem as merge is { 
+    inlet ToWarehouseSystemIn is type FulfillmentOrderEvent    inlet ToWarehouseSystemReplies is result WarehouseSystem.InventoryAvailability    outlet ToWarehouseSystemOut is type WarehouseSystem.WarehouseSystemCommand
     handler ToWarehouseSystemHandler is {
       on fulfillmentOrderCreated: event FulfillmentOrder.FulfillmentOrderCreated is {
         let askAnswer: type WarehouseSystem.InventoryAvailability = ask query WarehouseSystem.CheckInventoryAvailability of context WarehouseSystem
@@ -564,11 +564,14 @@ context FulfillmentContext as router is {
       |Union of FulfillmentOrder events for streaming.
     }
   }
-  streamlet FulfillmentOrderEventSplit as flow is {
+  streamlet FulfillmentOrderEventSplit as split is {
+    outlet FulfillmentOrderEventSplitToToWarehouseSystem is type FulfillmentOrderEvent
+    outlet FulfillmentOrderEventSplitToToCarrierSystem is type FulfillmentOrderEvent
     inlet FulfillmentOrderEventSplitIn is type FulfillmentOrderEvent    outlet FulfillmentOrderEventSplitToFulfillmentMetrics is type FulfillmentOrderEvent
     handler FulfillmentOrderEventSplitHandler is {
       on fulfillmentOrderCreated: event FulfillmentOrder.FulfillmentOrderCreated is {
         send fulfillmentOrderCreated to outlet FulfillmentOrderEventSplitToFulfillmentMetrics
+        send fulfillmentOrderCreated to outlet FulfillmentOrderEventSplitToToWarehouseSystem
         tell fulfillmentOrderCreated to entity FulfillmentContext.FulfillmentOrder
       }
       on inventoryAllocated: event FulfillmentOrder.InventoryAllocated is {
@@ -581,10 +584,12 @@ context FulfillmentContext as router is {
       }
       on orderPacked: event FulfillmentOrder.OrderPacked is {
         send orderPacked to outlet FulfillmentOrderEventSplitToFulfillmentMetrics
+        send orderPacked to outlet FulfillmentOrderEventSplitToToCarrierSystem
         tell orderPacked to entity FulfillmentContext.FulfillmentOrder
       }
       on carrierSelected: event FulfillmentOrder.CarrierSelected is {
         send carrierSelected to outlet FulfillmentOrderEventSplitToFulfillmentMetrics
+        send carrierSelected to outlet FulfillmentOrderEventSplitToToCarrierSystem
         tell carrierSelected to entity FulfillmentContext.FulfillmentOrder
       }
       on shippingLabelCreated: event FulfillmentOrder.ShippingLabelCreated is {
@@ -593,6 +598,7 @@ context FulfillmentContext as router is {
       }
       on orderShipped: event FulfillmentOrder.OrderShipped is {
         send orderShipped to outlet FulfillmentOrderEventSplitToFulfillmentMetrics
+        send orderShipped to outlet FulfillmentOrderEventSplitToToCarrierSystem
         tell orderShipped to entity FulfillmentContext.FulfillmentOrder
       }
       on shipmentStatusUpdated: event FulfillmentOrder.ShipmentStatusUpdated is {
@@ -609,6 +615,7 @@ context FulfillmentContext as router is {
       }
       on fulfillmentCancelled: event FulfillmentOrder.FulfillmentCancelled is {
         send fulfillmentCancelled to outlet FulfillmentOrderEventSplitToFulfillmentMetrics
+        send fulfillmentCancelled to outlet FulfillmentOrderEventSplitToToWarehouseSystem
         tell fulfillmentCancelled to entity FulfillmentContext.FulfillmentOrder
       }
       on other is {
@@ -625,6 +632,12 @@ context FulfillmentContext as router is {
     described as {
       |Fans FulfillmentOrder events out to the repository and projectors.
     }
+  }
+  connector 'ToWarehouseSystem Feed' is from outlet FulfillmentContext.FulfillmentOrderEventSplit.FulfillmentOrderEventSplitToToWarehouseSystem to inlet FulfillmentContext.ToWarehouseSystem.ToWarehouseSystemIn with {
+    briefly "The FulfillmentOrder events ToWarehouseSystem translates, on their way to it"
+  }
+  connector 'ToCarrierSystem Feed' is from outlet FulfillmentContext.FulfillmentOrderEventSplit.FulfillmentOrderEventSplitToToCarrierSystem to inlet FulfillmentContext.ToCarrierSystem.ToCarrierSystemIn with {
+    briefly "The FulfillmentOrder events ToCarrierSystem translates, on their way to it"
   }
   connector 'FulfillmentOrderEvent Stream' is from outlet FulfillmentContext.FulfillmentOrder.FulfillmentOrderEvents2 to inlet FulfillmentContext.FulfillmentOrderEventSplit.FulfillmentOrderEventSplitIn with {
     briefly "FulfillmentOrder events, fanned out to storage and read models"

@@ -61,8 +61,8 @@ context ReportingContext as router is {
       |The model's side of the ComplianceRegistry conversation.
     }
   }
-  adaptor ToComplianceRegistry to context ComplianceRegistry as flow is { 
-    outlet ToComplianceRegistryOut is type ComplianceRegistry.ComplianceRegistryRequest
+  adaptor ToComplianceRegistry to context ComplianceRegistry as merge is { 
+    inlet ToComplianceRegistryIn is type ClientReportEvent    inlet ToComplianceRegistryReplies is result ComplianceRegistry.RequiredDisclosures    outlet ToComplianceRegistryOut is type ComplianceRegistry.ComplianceRegistryRequest
     handler ToComplianceRegistryHandler is {
       on reportGenerated: event ClientReport.ReportGenerated is {
         let askAnswer: type ComplianceRegistry.RequiredDisclosures = ask query ComplianceRegistry.GetRequiredDisclosures of context ComplianceRegistry
@@ -87,8 +87,8 @@ context ReportingContext as router is {
       |The model's side of the ComplianceRegistry conversation.
     }
   }
-  adaptor ToMarketDataProvider to context MarketDataProvider as flow is { 
-    outlet ToMarketDataProviderOut is type MarketDataProvider.MarketDataProviderRequest
+  adaptor ToMarketDataProvider to context MarketDataProvider as merge is { 
+    inlet ToMarketDataProviderIn is type ClientReportEvent    inlet ToMarketDataProviderReplies is type MarketDataProvider.MarketDataProviderReply    outlet ToMarketDataProviderOut is type MarketDataProvider.MarketDataProviderRequest
     handler ToMarketDataProviderHandler is {
       on performanceCalculated: event ClientReport.PerformanceCalculated is {
         let askAnswer: type MarketDataProvider.BenchmarkReturns = ask query MarketDataProvider.GetBenchmarkReturns of context MarketDataProvider
@@ -113,8 +113,8 @@ context ReportingContext as router is {
       |The model's side of the MarketDataProvider conversation.
     }
   }
-  adaptor ToPortfolioSystem to context PortfolioSystem as flow is { 
-    outlet ToPortfolioSystemOut is type PortfolioSystem.PortfolioSystemRequest
+  adaptor ToPortfolioSystem to context PortfolioSystem as merge is { 
+    inlet ToPortfolioSystemIn is type ClientReportEvent    inlet ToPortfolioSystemReplies is type PortfolioSystem.PortfolioSystemReply    outlet ToPortfolioSystemOut is type PortfolioSystem.PortfolioSystemRequest
     handler ToPortfolioSystemHandler is {
       on reportComposed: event ClientReport.ReportComposed is {
         let askAnswer: type PortfolioSystem.AccountInfo = ask query PortfolioSystem.GetAccountInfo of context PortfolioSystem
@@ -461,31 +461,41 @@ context ReportingContext as router is {
       |Client reporting analytics.
     }
   }
-  streamlet ClientReportEventSplit as flow is {
+  streamlet ClientReportEventSplit as split is {
+    outlet ClientReportEventSplitToToPortfolioSystem is type ClientReportEvent
+    outlet ClientReportEventSplitToToMarketDataProvider is type ClientReportEvent
+    outlet ClientReportEventSplitToToComplianceRegistry is type ClientReportEvent
     inlet ClientReportEventSplitIn is type ClientReportEvent    outlet ClientReportEventSplitToReportingMetrics is type ClientReportEvent
     handler ClientReportEventSplitHandler is {
       on reportGenerated: event ClientReport.ReportGenerated is {
         send reportGenerated to outlet ClientReportEventSplitToReportingMetrics
+        send reportGenerated to outlet ClientReportEventSplitToToPortfolioSystem
+        send reportGenerated to outlet ClientReportEventSplitToToComplianceRegistry
         tell reportGenerated to entity ReportingContext.ClientReport
       }
       on portfolioDataAttached: event ClientReport.PortfolioDataAttached is {
         send portfolioDataAttached to outlet ClientReportEventSplitToReportingMetrics
+        send portfolioDataAttached to outlet ClientReportEventSplitToToMarketDataProvider
         tell portfolioDataAttached to entity ReportingContext.ClientReport
       }
       on performanceCalculated: event ClientReport.PerformanceCalculated is {
         send performanceCalculated to outlet ClientReportEventSplitToReportingMetrics
+        send performanceCalculated to outlet ClientReportEventSplitToToMarketDataProvider
         tell performanceCalculated to entity ReportingContext.ClientReport
       }
       on reportComposed: event ClientReport.ReportComposed is {
         send reportComposed to outlet ClientReportEventSplitToReportingMetrics
+        send reportComposed to outlet ClientReportEventSplitToToPortfolioSystem
         tell reportComposed to entity ReportingContext.ClientReport
       }
       on reportApproved: event ClientReport.ReportApproved is {
         send reportApproved to outlet ClientReportEventSplitToReportingMetrics
+        send reportApproved to outlet ClientReportEventSplitToToPortfolioSystem
         tell reportApproved to entity ReportingContext.ClientReport
       }
       on reportDistributed: event ClientReport.ReportDistributed is {
         send reportDistributed to outlet ClientReportEventSplitToReportingMetrics
+        send reportDistributed to outlet ClientReportEventSplitToToComplianceRegistry
         tell reportDistributed to entity ReportingContext.ClientReport
       }
       on reportFailed: event ClientReport.ReportFailed is {
@@ -510,6 +520,15 @@ context ReportingContext as router is {
     described as {
       |Fans ClientReport events out to the repository and projectors.
     }
+  }
+  connector 'ToPortfolioSystem Feed' is from outlet ReportingContext.ClientReportEventSplit.ClientReportEventSplitToToPortfolioSystem to inlet ReportingContext.ToPortfolioSystem.ToPortfolioSystemIn with {
+    briefly "The ClientReport events ToPortfolioSystem translates, on their way to it"
+  }
+  connector 'ToMarketDataProvider Feed' is from outlet ReportingContext.ClientReportEventSplit.ClientReportEventSplitToToMarketDataProvider to inlet ReportingContext.ToMarketDataProvider.ToMarketDataProviderIn with {
+    briefly "The ClientReport events ToMarketDataProvider translates, on their way to it"
+  }
+  connector 'ToComplianceRegistry Feed' is from outlet ReportingContext.ClientReportEventSplit.ClientReportEventSplitToToComplianceRegistry to inlet ReportingContext.ToComplianceRegistry.ToComplianceRegistryIn with {
+    briefly "The ClientReport events ToComplianceRegistry translates, on their way to it"
   }
   connector 'ClientReportEvent Stream' is from outlet ReportingContext.ClientReport.ClientReportEvents2 to inlet ReportingContext.ClientReportEventSplit.ClientReportEventSplitIn with {
     briefly "ClientReport events, fanned out to storage and read models"

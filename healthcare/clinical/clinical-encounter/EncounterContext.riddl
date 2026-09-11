@@ -68,7 +68,7 @@ context EncounterContext as router is {
     }
   }
   adaptor ToBillingService to context BillingService as flow is { 
-    outlet ToBillingServiceOut is command BillingService.SubmitEncounterForBilling
+    inlet ToBillingServiceIn is type EncounterEvent    outlet ToBillingServiceOut is command BillingService.SubmitEncounterForBilling
     handler ToBillingServiceHandler is {
       on encounterCompleted: event Encounter.EncounterCompleted is {
         let charge: type BillingService.SubmitEncounterForBilling = prompt("translate the encounterCompleted event into a SubmitEncounterForBilling for the visit whose diagnoses and procedures are now final")
@@ -110,7 +110,7 @@ context EncounterContext as router is {
     }
   }
   adaptor ToCodingService to context CodingService as flow is { 
-    outlet ToCodingServiceOut is command CodingService.SuggestCodes
+    inlet ToCodingServiceIn is type EncounterEvent    outlet ToCodingServiceOut is command CodingService.SuggestCodes
     handler ToCodingServiceHandler is {
       on noteSigned: event Encounter.NoteSigned is {
         let item0: type CodingService.SuggestCodes = prompt("translate the noteSigned event into a SuggestCodes, a signed note being the first point the documentation is fixed")
@@ -174,7 +174,7 @@ context EncounterContext as router is {
     }
   }
   adaptor ToOrderEntryService to context OrderEntryService as flow is { 
-    outlet ToOrderEntryServiceOut is command OrderEntryService.SubmitOrder
+    inlet ToOrderEntryServiceIn is type EncounterEvent    outlet ToOrderEntryServiceOut is command OrderEntryService.SubmitOrder
     handler ToOrderEntryServiceHandler is {
       on orderPlaced: event Encounter.OrderPlaced is {
         let item0: type OrderEntryService.SubmitOrder = prompt("translate the orderPlaced event into a SubmitOrder, the order being what the ancillary department receives")
@@ -195,8 +195,8 @@ context EncounterContext as router is {
       |The model's side of the OrderEntryService conversation.
     }
   }
-  adaptor ToPatientRecordService to context PatientRecordService as flow is { 
-    outlet ToPatientRecordServiceOut is query PatientRecordService.GetPatient
+  adaptor ToPatientRecordService to context PatientRecordService as merge is { 
+    inlet ToPatientRecordServiceIn is type EncounterEvent    inlet ToPatientRecordServiceReplies is result PatientRecordService.PatientRecord    outlet ToPatientRecordServiceOut is query PatientRecordService.GetPatient
     handler ToPatientRecordServiceHandler is {
       on encounterStarted: event Encounter.EncounterStarted is {
         let askAnswer: type PatientRecordService.PatientRecord = ask query PatientRecordService.GetPatient of context PatientRecordService
@@ -238,7 +238,7 @@ context EncounterContext as router is {
     }
   }
   adaptor ToSchedulingService to context SchedulingService as flow is { 
-    outlet ToSchedulingServiceOut is command SchedulingService.CheckInPatient
+    inlet ToSchedulingServiceIn is type EncounterEvent    outlet ToSchedulingServiceOut is command SchedulingService.CheckInPatient
     handler ToSchedulingServiceHandler is {
       on encounterStarted: event Encounter.EncounterStarted is {
         let request: type SchedulingService.CheckInPatient = prompt("translate the patientCheckedIn event into a CheckInPatient telling the scheduler the slot is now in use")
@@ -625,11 +625,18 @@ context EncounterContext as router is {
       |Union of all encounter entity events for streaming.
     }
   }
-  streamlet EncounterEventSplit as flow is {
+  streamlet EncounterEventSplit as split is {
+    outlet EncounterEventSplitToToSchedulingService is type EncounterEvent
+    outlet EncounterEventSplitToToPatientRecordService is type EncounterEvent
+    outlet EncounterEventSplitToToOrderEntryService is type EncounterEvent
+    outlet EncounterEventSplitToToCodingService is type EncounterEvent
+    outlet EncounterEventSplitToToBillingService is type EncounterEvent
     inlet EncounterEventSplitIn is type EncounterEvent    outlet EncounterEventSplitToEncounterAnalytics is type EncounterEvent
     handler EncounterEventSplitHandler is {
       on encounterStarted: event Encounter.EncounterStarted is {
         send encounterStarted to outlet EncounterEventSplitToEncounterAnalytics
+        send encounterStarted to outlet EncounterEventSplitToToSchedulingService
+        send encounterStarted to outlet EncounterEventSplitToToPatientRecordService
         tell encounterStarted to entity EncounterContext.Encounter
       }
       on vitalsRecorded: event Encounter.VitalsRecorded is {
@@ -654,14 +661,17 @@ context EncounterContext as router is {
       }
       on orderPlaced: event Encounter.OrderPlaced is {
         send orderPlaced to outlet EncounterEventSplitToEncounterAnalytics
+        send orderPlaced to outlet EncounterEventSplitToToOrderEntryService
         tell orderPlaced to entity EncounterContext.Encounter
       }
       on noteSigned: event Encounter.NoteSigned is {
         send noteSigned to outlet EncounterEventSplitToEncounterAnalytics
+        send noteSigned to outlet EncounterEventSplitToToCodingService
         tell noteSigned to entity EncounterContext.Encounter
       }
       on encounterCompleted: event Encounter.EncounterCompleted is {
         send encounterCompleted to outlet EncounterEventSplitToEncounterAnalytics
+        send encounterCompleted to outlet EncounterEventSplitToToBillingService
         tell encounterCompleted to entity EncounterContext.Encounter
       }
       on encounterCanceled: event Encounter.EncounterCanceled is {
@@ -682,6 +692,21 @@ context EncounterContext as router is {
     described as {
       |Fans Encounter events out to the repository and projectors.
     }
+  }
+  connector 'ToSchedulingService Feed' is from outlet EncounterContext.EncounterEventSplit.EncounterEventSplitToToSchedulingService to inlet EncounterContext.ToSchedulingService.ToSchedulingServiceIn with {
+    briefly "The Encounter events ToSchedulingService translates, on their way to it"
+  }
+  connector 'ToPatientRecordService Feed' is from outlet EncounterContext.EncounterEventSplit.EncounterEventSplitToToPatientRecordService to inlet EncounterContext.ToPatientRecordService.ToPatientRecordServiceIn with {
+    briefly "The Encounter events ToPatientRecordService translates, on their way to it"
+  }
+  connector 'ToOrderEntryService Feed' is from outlet EncounterContext.EncounterEventSplit.EncounterEventSplitToToOrderEntryService to inlet EncounterContext.ToOrderEntryService.ToOrderEntryServiceIn with {
+    briefly "The Encounter events ToOrderEntryService translates, on their way to it"
+  }
+  connector 'ToCodingService Feed' is from outlet EncounterContext.EncounterEventSplit.EncounterEventSplitToToCodingService to inlet EncounterContext.ToCodingService.ToCodingServiceIn with {
+    briefly "The Encounter events ToCodingService translates, on their way to it"
+  }
+  connector 'ToBillingService Feed' is from outlet EncounterContext.EncounterEventSplit.EncounterEventSplitToToBillingService to inlet EncounterContext.ToBillingService.ToBillingServiceIn with {
+    briefly "The Encounter events ToBillingService translates, on their way to it"
   }
   connector 'EncounterEvent Stream' is from outlet EncounterContext.Encounter.EncounterEvents2 to inlet EncounterContext.EncounterEventSplit.EncounterEventSplitIn with {
     briefly "Encounter events, fanned out to storage and read models"

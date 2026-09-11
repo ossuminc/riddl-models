@@ -89,7 +89,7 @@ context RouteContext as router is {
     }
   }
   adaptor ToCustomerNotificationService to context CustomerNotificationService as flow is { 
-    outlet ToCustomerNotificationServiceOut is type CustomerNotificationService.CustomerNotificationServiceCommand
+    inlet ToCustomerNotificationServiceIn is type RouteEvent    outlet ToCustomerNotificationServiceOut is type CustomerNotificationService.CustomerNotificationServiceCommand
     handler ToCustomerNotificationServiceHandler is {
       on stopCompleted: event StopCompleted is {
         let msg: type CustomerNotificationService.SendDeliveryConfirmation = prompt("translate the stopCompleted event into a SendDeliveryConfirmation for the customer")
@@ -148,7 +148,7 @@ context RouteContext as router is {
     }
   }
   adaptor ToDriverMobileAppService to context DriverMobileAppService as flow is { 
-    outlet ToDriverMobileAppServiceOut is type DriverMobileAppService.DriverMobileAppServiceCommand
+    inlet ToDriverMobileAppServiceIn is type RouteEvent    outlet ToDriverMobileAppServiceOut is type DriverMobileAppService.DriverMobileAppServiceCommand
     handler ToDriverMobileAppServiceHandler is {
       on driverAssigned: event Route.DriverAssigned is {
         let item0: type DriverMobileAppService.SendRouteToDriver = prompt("translate the driverAssigned event into a SendRouteToDriver, assignment being when a driver needs the route")
@@ -173,8 +173,8 @@ context RouteContext as router is {
       |The model's side of the DriverMobileAppService conversation.
     }
   }
-  adaptor ToGeocodingService to context GeocodingService as flow is { 
-    outlet ToGeocodingServiceOut is type GeocodingService.GeocodingServiceRequest
+  adaptor ToGeocodingService to context GeocodingService as merge is { 
+    inlet ToGeocodingServiceIn is type RouteEvent    inlet ToGeocodingServiceReplies is type GeocodingService.GeocodingServiceReply    outlet ToGeocodingServiceOut is type GeocodingService.GeocodingServiceRequest
     handler ToGeocodingServiceHandler is {
       on stopAdded: event Route.StopAdded is {
         let askAnswer: type GeocodingService.GeocodedLocation = ask query GeocodingService.GeocodeAddress of context GeocodingService
@@ -222,7 +222,7 @@ context RouteContext as router is {
     }
   }
   adaptor ToOptimizationEngineService to context OptimizationEngineService as flow is { 
-    outlet ToOptimizationEngineServiceOut is type OptimizationEngineService.OptimizationEngineServiceCommand
+    inlet ToOptimizationEngineServiceIn is type RouteEvent    outlet ToOptimizationEngineServiceOut is type OptimizationEngineService.OptimizationEngineServiceCommand
     handler ToOptimizationEngineServiceHandler is {
       on stopAdded: event Route.StopAdded is {
         let item0: type OptimizationEngineService.OptimizeStopSequence = prompt("translate the stopAdded event into a OptimizeStopSequence, a new stop changing what the best order is")
@@ -247,8 +247,8 @@ context RouteContext as router is {
       |The model's side of the OptimizationEngineService conversation.
     }
   }
-  adaptor ToRoutingEngineService to context RoutingEngineService as flow is { 
-    outlet ToRoutingEngineServiceOut is type RoutingEngineService.RoutingEngineServiceRequest
+  adaptor ToRoutingEngineService to context RoutingEngineService as merge is { 
+    inlet ToRoutingEngineServiceIn is type RouteEvent    inlet ToRoutingEngineServiceReplies is type RoutingEngineService.RoutingEngineServiceReply    outlet ToRoutingEngineServiceOut is type RoutingEngineService.RoutingEngineServiceRequest
     handler ToRoutingEngineServiceHandler is {
       on routeOptimized: event Route.RouteOptimized is {
         let askAnswer: type RoutingEngineService.DrivingRoute = ask query RoutingEngineService.CalculateRoute of context RoutingEngineService
@@ -293,8 +293,8 @@ context RouteContext as router is {
       |The model's side of the TrafficService conversation.
     }
   }
-  adaptor ToTrafficService to context TrafficService as flow is { 
-    outlet ToTrafficServiceOut is query TrafficService.GetTrafficConditions
+  adaptor ToTrafficService to context TrafficService as merge is { 
+    inlet ToTrafficServiceIn is type RouteEvent    inlet ToTrafficServiceReplies is result TrafficService.TrafficConditions    outlet ToTrafficServiceOut is query TrafficService.GetTrafficConditions
     handler ToTrafficServiceHandler is {
       on routeStarted: event Route.RouteStarted is {
         let askAnswer: type TrafficService.TrafficConditions = ask query TrafficService.GetTrafficConditions of context TrafficService
@@ -778,7 +778,13 @@ context RouteContext as router is {
       |persistence.
     }
   }
-  streamlet RouteEventSplit as flow is {
+  streamlet RouteEventSplit as split is {
+    outlet RouteEventSplitToToTrafficService is type RouteEvent
+    outlet RouteEventSplitToToRoutingEngineService is type RouteEvent
+    outlet RouteEventSplitToToOptimizationEngineService is type RouteEvent
+    outlet RouteEventSplitToToGeocodingService is type RouteEvent
+    outlet RouteEventSplitToToDriverMobileAppService is type RouteEvent
+    outlet RouteEventSplitToToCustomerNotificationService is type RouteEvent
     inlet RouteEventSplitIn is type RouteEvent    outlet RouteEventSplitToRouteAnalytics is type RouteEvent
     handler RouteEventSplitHandler is {
       on routeCreated: event Route.RouteCreated is {
@@ -787,6 +793,8 @@ context RouteContext as router is {
       }
       on stopAdded: event Route.StopAdded is {
         send stopAdded to outlet RouteEventSplitToRouteAnalytics
+        send stopAdded to outlet RouteEventSplitToToOptimizationEngineService
+        send stopAdded to outlet RouteEventSplitToToGeocodingService
         tell stopAdded to entity RouteContext.Route
       }
       on stopRemoved: event Route.StopRemoved is {
@@ -795,26 +803,35 @@ context RouteContext as router is {
       }
       on routeOptimized: event Route.RouteOptimized is {
         send routeOptimized to outlet RouteEventSplitToRouteAnalytics
+        send routeOptimized to outlet RouteEventSplitToToRoutingEngineService
         tell routeOptimized to entity RouteContext.Route
       }
       on stopsReordered: event Route.StopsReordered is {
         send stopsReordered to outlet RouteEventSplitToRouteAnalytics
+        send stopsReordered to outlet RouteEventSplitToToRoutingEngineService
+        send stopsReordered to outlet RouteEventSplitToToDriverMobileAppService
+        send stopsReordered to outlet RouteEventSplitToToCustomerNotificationService
         tell stopsReordered to entity RouteContext.Route
       }
       on driverAssigned: event Route.DriverAssigned is {
         send driverAssigned to outlet RouteEventSplitToRouteAnalytics
+        send driverAssigned to outlet RouteEventSplitToToDriverMobileAppService
         tell driverAssigned to entity RouteContext.Route
       }
       on routeStarted: event Route.RouteStarted is {
         send routeStarted to outlet RouteEventSplitToRouteAnalytics
+        send routeStarted to outlet RouteEventSplitToToTrafficService
+        send routeStarted to outlet RouteEventSplitToToCustomerNotificationService
         tell routeStarted to entity RouteContext.Route
       }
       on arrivedAtStop: event Route.ArrivedAtStop is {
         send arrivedAtStop to outlet RouteEventSplitToRouteAnalytics
+        send arrivedAtStop to outlet RouteEventSplitToToGeocodingService
         tell arrivedAtStop to entity RouteContext.Route
       }
       on stopCompleted: event Route.StopCompleted is {
         send stopCompleted to outlet RouteEventSplitToRouteAnalytics
+        send stopCompleted to outlet RouteEventSplitToToCustomerNotificationService
         tell stopCompleted to entity RouteContext.Route
       }
       on stopSkipped: event Route.StopSkipped is {
@@ -823,6 +840,8 @@ context RouteContext as router is {
       }
       on deliveryFailed: event Route.DeliveryFailed is {
         send deliveryFailed to outlet RouteEventSplitToRouteAnalytics
+        send deliveryFailed to outlet RouteEventSplitToToOptimizationEngineService
+        send deliveryFailed to outlet RouteEventSplitToToCustomerNotificationService
         tell deliveryFailed to entity RouteContext.Route
       }
       on routeCompleted: event Route.RouteCompleted is {
@@ -847,6 +866,24 @@ context RouteContext as router is {
     described as {
       |Fans Route events out to the repository and projectors.
     }
+  }
+  connector 'ToTrafficService Feed' is from outlet RouteContext.RouteEventSplit.RouteEventSplitToToTrafficService to inlet RouteContext.ToTrafficService.ToTrafficServiceIn with {
+    briefly "The Route events ToTrafficService translates, on their way to it"
+  }
+  connector 'ToRoutingEngineService Feed' is from outlet RouteContext.RouteEventSplit.RouteEventSplitToToRoutingEngineService to inlet RouteContext.ToRoutingEngineService.ToRoutingEngineServiceIn with {
+    briefly "The Route events ToRoutingEngineService translates, on their way to it"
+  }
+  connector 'ToOptimizationEngineService Feed' is from outlet RouteContext.RouteEventSplit.RouteEventSplitToToOptimizationEngineService to inlet RouteContext.ToOptimizationEngineService.ToOptimizationEngineServiceIn with {
+    briefly "The Route events ToOptimizationEngineService translates, on their way to it"
+  }
+  connector 'ToGeocodingService Feed' is from outlet RouteContext.RouteEventSplit.RouteEventSplitToToGeocodingService to inlet RouteContext.ToGeocodingService.ToGeocodingServiceIn with {
+    briefly "The Route events ToGeocodingService translates, on their way to it"
+  }
+  connector 'ToDriverMobileAppService Feed' is from outlet RouteContext.RouteEventSplit.RouteEventSplitToToDriverMobileAppService to inlet RouteContext.ToDriverMobileAppService.ToDriverMobileAppServiceIn with {
+    briefly "The Route events ToDriverMobileAppService translates, on their way to it"
+  }
+  connector 'ToCustomerNotificationService Feed' is from outlet RouteContext.RouteEventSplit.RouteEventSplitToToCustomerNotificationService to inlet RouteContext.ToCustomerNotificationService.ToCustomerNotificationServiceIn with {
+    briefly "The Route events ToCustomerNotificationService translates, on their way to it"
   }
   connector 'RouteEvent Stream' is from outlet RouteContext.Route.RouteEvents2 to inlet RouteContext.RouteEventSplit.RouteEventSplitIn with {
     briefly "Route events, fanned out to storage and read models"

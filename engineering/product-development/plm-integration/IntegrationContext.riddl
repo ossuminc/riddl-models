@@ -71,7 +71,7 @@ context IntegrationContext as router is {
     }
   }
   adaptor ToCADSystemService to context CADSystemService as flow is { 
-    outlet ToCADSystemServiceOut is command CADSystemService.FetchCADFile
+    inlet ToCADSystemServiceIn is type IntegrationEvent    outlet ToCADSystemServiceOut is command CADSystemService.FetchCADFile
     handler ToCADSystemServiceHandler is {
       on syncJobStarted: event Integration.SyncJobStarted is {
         let item0: type CADSystemService.FetchCADFile = prompt("translate the syncJobStarted event into a FetchCADFile, the job being unable to proceed without the geometry")
@@ -113,7 +113,7 @@ context IntegrationContext as router is {
     }
   }
   adaptor ToERPSystemService to context ERPSystemService as flow is { 
-    outlet ToERPSystemServiceOut is command ERPSystemService.SyncBOM
+    inlet ToERPSystemServiceIn is type IntegrationEvent    outlet ToERPSystemServiceOut is command ERPSystemService.SyncBOM
     handler ToERPSystemServiceHandler is {
       on productSynced: event Integration.ProductSynced is {
         let item0: type ERPSystemService.SyncBOM = prompt("translate the productSynced event into a SyncBOM, a synced product leaving its bill of materials stale")
@@ -155,7 +155,7 @@ context IntegrationContext as router is {
     }
   }
   adaptor ToMessageQueueService to context MessageQueueService as flow is { 
-    outlet ToMessageQueueServiceOut is type MessageQueueService.MessageQueueServiceCommand
+    inlet ToMessageQueueServiceIn is type IntegrationEvent    outlet ToMessageQueueServiceOut is type MessageQueueService.MessageQueueServiceCommand
     handler ToMessageQueueServiceHandler is {
       on changeEventProcessed: event Integration.ChangeEventProcessed is {
         let item0: type MessageQueueService.PublishEvent = prompt("translate the changeEventProcessed event into a PublishEvent, a processed change being what downstream subscribers wait for")
@@ -201,7 +201,7 @@ context IntegrationContext as router is {
     }
   }
   adaptor ToMonitoringService to context MonitoringService as flow is { 
-    outlet ToMonitoringServiceOut is type MonitoringService.MonitoringServiceCommand
+    inlet ToMonitoringServiceIn is type IntegrationEvent    outlet ToMonitoringServiceOut is type MonitoringService.MonitoringServiceCommand
     handler ToMonitoringServiceHandler is {
       on syncJobCompleted: event Integration.SyncJobCompleted is {
         let item0: type MonitoringService.RecordMetric = prompt("translate the syncJobCompleted event into a RecordMetric, a finished job being what there is to measure")
@@ -247,7 +247,7 @@ context IntegrationContext as router is {
     }
   }
   adaptor ToPLMSystemService to context PLMSystemService as flow is { 
-    outlet ToPLMSystemServiceOut is type PLMSystemService.PLMSystemServiceCommand
+    inlet ToPLMSystemServiceIn is type IntegrationEvent    outlet ToPLMSystemServiceOut is type PLMSystemService.PLMSystemServiceCommand
     handler ToPLMSystemServiceHandler is {
       on syncJobStarted: event Integration.SyncJobStarted is {
         let item0: type PLMSystemService.FetchProduct = prompt("translate the syncJobStarted event into a FetchProduct, the job needing the current product record before it can compare")
@@ -687,7 +687,12 @@ context IntegrationContext as router is {
       |persistence.
     }
   }
-  streamlet IntegrationEventSplit as flow is {
+  streamlet IntegrationEventSplit as split is {
+    outlet IntegrationEventSplitToToPLMSystemService is type IntegrationEvent
+    outlet IntegrationEventSplitToToMonitoringService is type IntegrationEvent
+    outlet IntegrationEventSplitToToMessageQueueService is type IntegrationEvent
+    outlet IntegrationEventSplitToToERPSystemService is type IntegrationEvent
+    outlet IntegrationEventSplitToToCADSystemService is type IntegrationEvent
     inlet IntegrationEventSplitIn is type IntegrationEvent    outlet IntegrationEventSplitToIntegrationAnalytics is type IntegrationEvent
     handler IntegrationEventSplitHandler is {
       on integrationCreated: event Integration.IntegrationCreated is {
@@ -700,6 +705,7 @@ context IntegrationContext as router is {
       }
       on integrationEnabled: event Integration.IntegrationEnabled is {
         send integrationEnabled to outlet IntegrationEventSplitToIntegrationAnalytics
+        send integrationEnabled to outlet IntegrationEventSplitToToMessageQueueService
         tell integrationEnabled to entity IntegrationContext.Integration
       }
       on integrationDisabled: event Integration.IntegrationDisabled is {
@@ -716,22 +722,29 @@ context IntegrationContext as router is {
       }
       on productSynced: event Integration.ProductSynced is {
         send productSynced to outlet IntegrationEventSplitToIntegrationAnalytics
+        send productSynced to outlet IntegrationEventSplitToToERPSystemService
         tell productSynced to entity IntegrationContext.Integration
       }
       on syncJobStarted: event Integration.SyncJobStarted is {
         send syncJobStarted to outlet IntegrationEventSplitToIntegrationAnalytics
+        send syncJobStarted to outlet IntegrationEventSplitToToPLMSystemService
+        send syncJobStarted to outlet IntegrationEventSplitToToCADSystemService
         tell syncJobStarted to entity IntegrationContext.Integration
       }
       on syncJobCompleted: event Integration.SyncJobCompleted is {
         send syncJobCompleted to outlet IntegrationEventSplitToIntegrationAnalytics
+        send syncJobCompleted to outlet IntegrationEventSplitToToMonitoringService
         tell syncJobCompleted to entity IntegrationContext.Integration
       }
       on syncJobCancelled: event Integration.SyncJobCancelled is {
         send syncJobCancelled to outlet IntegrationEventSplitToIntegrationAnalytics
+        send syncJobCancelled to outlet IntegrationEventSplitToToMonitoringService
         tell syncJobCancelled to entity IntegrationContext.Integration
       }
       on changeEventProcessed: event Integration.ChangeEventProcessed is {
         send changeEventProcessed to outlet IntegrationEventSplitToIntegrationAnalytics
+        send changeEventProcessed to outlet IntegrationEventSplitToToPLMSystemService
+        send changeEventProcessed to outlet IntegrationEventSplitToToMessageQueueService
         tell changeEventProcessed to entity IntegrationContext.Integration
       }
       on fieldMappingUpdated: event Integration.FieldMappingUpdated is {
@@ -752,6 +765,21 @@ context IntegrationContext as router is {
     described as {
       |Fans Integration events out to the repository and projectors.
     }
+  }
+  connector 'ToPLMSystemService Feed' is from outlet IntegrationContext.IntegrationEventSplit.IntegrationEventSplitToToPLMSystemService to inlet IntegrationContext.ToPLMSystemService.ToPLMSystemServiceIn with {
+    briefly "The Integration events ToPLMSystemService translates, on their way to it"
+  }
+  connector 'ToMonitoringService Feed' is from outlet IntegrationContext.IntegrationEventSplit.IntegrationEventSplitToToMonitoringService to inlet IntegrationContext.ToMonitoringService.ToMonitoringServiceIn with {
+    briefly "The Integration events ToMonitoringService translates, on their way to it"
+  }
+  connector 'ToMessageQueueService Feed' is from outlet IntegrationContext.IntegrationEventSplit.IntegrationEventSplitToToMessageQueueService to inlet IntegrationContext.ToMessageQueueService.ToMessageQueueServiceIn with {
+    briefly "The Integration events ToMessageQueueService translates, on their way to it"
+  }
+  connector 'ToERPSystemService Feed' is from outlet IntegrationContext.IntegrationEventSplit.IntegrationEventSplitToToERPSystemService to inlet IntegrationContext.ToERPSystemService.ToERPSystemServiceIn with {
+    briefly "The Integration events ToERPSystemService translates, on their way to it"
+  }
+  connector 'ToCADSystemService Feed' is from outlet IntegrationContext.IntegrationEventSplit.IntegrationEventSplitToToCADSystemService to inlet IntegrationContext.ToCADSystemService.ToCADSystemServiceIn with {
+    briefly "The Integration events ToCADSystemService translates, on their way to it"
   }
   connector 'IntegrationEvent Stream' is from outlet IntegrationContext.Integration.IntegrationEvents2 to inlet IntegrationContext.IntegrationEventSplit.IntegrationEventSplitIn with {
     briefly "Integration events, fanned out to storage and read models"

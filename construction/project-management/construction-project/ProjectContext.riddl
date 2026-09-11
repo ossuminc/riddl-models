@@ -85,7 +85,7 @@ context ProjectContext as router is {
     }
   }
   adaptor ToAccountingService to context AccountingService as flow is { 
-    outlet ToAccountingServiceOut is command AccountingService.RecordExpense
+    inlet ToAccountingServiceIn is type ProjectEvent    outlet ToAccountingServiceOut is command AccountingService.RecordExpense
     handler ToAccountingServiceHandler is {
       on changeOrderApproved: event Project.ChangeOrderApproved is {
         let item0: type AccountingService.RecordExpense = prompt("translate the changeOrderApproved event into a RecordExpense, approval of the change order being what fixes the amount to be posted")
@@ -127,7 +127,7 @@ context ProjectContext as router is {
     }
   }
   adaptor ToDocumentService to context DocumentService as flow is { 
-    outlet ToDocumentServiceOut is command DocumentService.StoreDocument
+    inlet ToDocumentServiceIn is type ProjectEvent    outlet ToDocumentServiceOut is command DocumentService.StoreDocument
     handler ToDocumentServiceHandler is {
       on changeOrderApproved: event ChangeOrderApproved is {
         let artifact: type DocumentService.StoreDocument = prompt("translate the changeOrderApproved event into a StoreDocument keeping the approved change order, which is what the contract is varied by")
@@ -149,7 +149,7 @@ context ProjectContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendProjectNotification
+    inlet ToNotificationServiceIn is type ProjectEvent    outlet ToNotificationServiceOut is command NotificationService.SendProjectNotification
     handler ToNotificationServiceHandler is {
       on milestoneCompleted: event MilestoneCompleted is {
         let notice: type NotificationService.SendProjectNotification = prompt("translate the milestoneCompleted event into a SendProjectNotification telling the owner a milestone is done, since payment and schedule both hang on it")
@@ -211,7 +211,7 @@ context ProjectContext as router is {
     }
   }
   adaptor ToSchedulingService to context SchedulingService as flow is { 
-    outlet ToSchedulingServiceOut is command SchedulingService.ScheduleResource
+    inlet ToSchedulingServiceIn is type ProjectEvent    outlet ToSchedulingServiceOut is command SchedulingService.ScheduleResource
     handler ToSchedulingServiceHandler is {
       on taskAdded: event Project.TaskAdded is {
         let request: type SchedulingService.ScheduleResource = prompt("translate the taskAdded event into a ScheduleResource claiming the people and plant the new task needs")
@@ -662,7 +662,11 @@ context ProjectContext as router is {
       |persistence.
     }
   }
-  streamlet ProjectEventSplit as flow is {
+  streamlet ProjectEventSplit as split is {
+    outlet ProjectEventSplitToToSchedulingService is type ProjectEvent
+    outlet ProjectEventSplitToToNotificationService is type ProjectEvent
+    outlet ProjectEventSplitToToDocumentService is type ProjectEvent
+    outlet ProjectEventSplitToToAccountingService is type ProjectEvent
     inlet ProjectEventSplitIn is type ProjectEvent    outlet ProjectEventSplitToProjectAnalytics is type ProjectEvent
     handler ProjectEventSplitHandler is {
       on projectCreated: event Project.ProjectCreated is {
@@ -679,6 +683,7 @@ context ProjectContext as router is {
       }
       on taskAdded: event Project.TaskAdded is {
         send taskAdded to outlet ProjectEventSplitToProjectAnalytics
+        send taskAdded to outlet ProjectEventSplitToToSchedulingService
         tell taskAdded to entity ProjectContext.Project
       }
       on taskProgressUpdated: event Project.TaskProgressUpdated is {
@@ -687,14 +692,19 @@ context ProjectContext as router is {
       }
       on milestoneCompleted: event Project.MilestoneCompleted is {
         send milestoneCompleted to outlet ProjectEventSplitToProjectAnalytics
+        send milestoneCompleted to outlet ProjectEventSplitToToNotificationService
         tell milestoneCompleted to entity ProjectContext.Project
       }
       on changeOrderSubmitted: event Project.ChangeOrderSubmitted is {
         send changeOrderSubmitted to outlet ProjectEventSplitToProjectAnalytics
+        send changeOrderSubmitted to outlet ProjectEventSplitToToNotificationService
         tell changeOrderSubmitted to entity ProjectContext.Project
       }
       on changeOrderApproved: event Project.ChangeOrderApproved is {
         send changeOrderApproved to outlet ProjectEventSplitToProjectAnalytics
+        send changeOrderApproved to outlet ProjectEventSplitToToNotificationService
+        send changeOrderApproved to outlet ProjectEventSplitToToDocumentService
+        send changeOrderApproved to outlet ProjectEventSplitToToAccountingService
         tell changeOrderApproved to entity ProjectContext.Project
       }
       on budgetUpdated: event Project.BudgetUpdated is {
@@ -703,14 +713,17 @@ context ProjectContext as router is {
       }
       on projectPutOnHold: event Project.ProjectPutOnHold is {
         send projectPutOnHold to outlet ProjectEventSplitToProjectAnalytics
+        send projectPutOnHold to outlet ProjectEventSplitToToNotificationService
         tell projectPutOnHold to entity ProjectContext.Project
       }
       on projectResumed: event Project.ProjectResumed is {
         send projectResumed to outlet ProjectEventSplitToProjectAnalytics
+        send projectResumed to outlet ProjectEventSplitToToNotificationService
         tell projectResumed to entity ProjectContext.Project
       }
       on projectCompleted: event Project.ProjectCompleted is {
         send projectCompleted to outlet ProjectEventSplitToProjectAnalytics
+        send projectCompleted to outlet ProjectEventSplitToToNotificationService
         tell projectCompleted to entity ProjectContext.Project
       }
       on projectCancelled: event Project.ProjectCancelled is {
@@ -731,6 +744,18 @@ context ProjectContext as router is {
     described as {
       |Fans Project events out to the repository and projectors.
     }
+  }
+  connector 'ToSchedulingService Feed' is from outlet ProjectContext.ProjectEventSplit.ProjectEventSplitToToSchedulingService to inlet ProjectContext.ToSchedulingService.ToSchedulingServiceIn with {
+    briefly "The Project events ToSchedulingService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet ProjectContext.ProjectEventSplit.ProjectEventSplitToToNotificationService to inlet ProjectContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Project events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToDocumentService Feed' is from outlet ProjectContext.ProjectEventSplit.ProjectEventSplitToToDocumentService to inlet ProjectContext.ToDocumentService.ToDocumentServiceIn with {
+    briefly "The Project events ToDocumentService translates, on their way to it"
+  }
+  connector 'ToAccountingService Feed' is from outlet ProjectContext.ProjectEventSplit.ProjectEventSplitToToAccountingService to inlet ProjectContext.ToAccountingService.ToAccountingServiceIn with {
+    briefly "The Project events ToAccountingService translates, on their way to it"
   }
   connector 'ProjectEvent Stream' is from outlet ProjectContext.Project.ProjectEvents2 to inlet ProjectContext.ProjectEventSplit.ProjectEventSplitIn with {
     briefly "Project events, fanned out to storage and read models"

@@ -64,8 +64,8 @@ context FundAdminContext as router is {
       |The model's side of the CustodianSystem conversation.
     }
   }
-  adaptor ToCustodianSystem to context CustodianSystem as flow is { 
-    outlet ToCustodianSystemOut is type CustodianSystem.CustodianSystemRequest
+  adaptor ToCustodianSystem to context CustodianSystem as merge is { 
+    inlet ToCustodianSystemIn is type FundAccountEvent    inlet ToCustodianSystemReplies is result CustodianSystem.AccountBalance    outlet ToCustodianSystemOut is type CustodianSystem.CustodianSystemRequest
     handler ToCustodianSystemHandler is {
       on callPaymentReceived: event FundAccount.CallPaymentReceived is {
         let askAnswer: type CustodianSystem.AccountBalance = ask query CustodianSystem.GetAccountBalance of context CustodianSystem
@@ -116,8 +116,8 @@ context FundAdminContext as router is {
       |The model's side of the RegulatoryFiling conversation.
     }
   }
-  adaptor ToRegulatoryFiling to context RegulatoryFiling as flow is { 
-    outlet ToRegulatoryFilingOut is type RegulatoryFiling.RegulatoryFilingRequest
+  adaptor ToRegulatoryFiling to context RegulatoryFiling as merge is { 
+    inlet ToRegulatoryFilingIn is type FundAccountEvent    inlet ToRegulatoryFilingReplies is result RegulatoryFiling.FilingStatus    outlet ToRegulatoryFilingOut is type RegulatoryFiling.RegulatoryFilingRequest
     handler ToRegulatoryFilingHandler is {
       on lpReportGenerated: event FundAccount.LpReportGenerated is {
         let askAnswer: type RegulatoryFiling.FilingStatus = ask query RegulatoryFiling.GetFilingStatus of context RegulatoryFiling
@@ -481,7 +481,9 @@ context FundAdminContext as router is {
       |Fund administration analytics.
     }
   }
-  streamlet FundAccountEventSplit as flow is {
+  streamlet FundAccountEventSplit as split is {
+    outlet FundAccountEventSplitToToRegulatoryFiling is type FundAccountEvent
+    outlet FundAccountEventSplitToToCustodianSystem is type FundAccountEvent
     inlet FundAccountEventSplitIn is type FundAccountEvent    outlet FundAccountEventSplitToFundMetrics is type FundAccountEvent
     handler FundAccountEventSplitHandler is {
       on fundAccountCreated: event FundAccount.FundAccountCreated is {
@@ -494,14 +496,17 @@ context FundAdminContext as router is {
       }
       on callPaymentReceived: event FundAccount.CallPaymentReceived is {
         send callPaymentReceived to outlet FundAccountEventSplitToFundMetrics
+        send callPaymentReceived to outlet FundAccountEventSplitToToCustodianSystem
         tell callPaymentReceived to entity FundAdminContext.FundAccount
       }
       on distributionProcessed: event FundAccount.DistributionProcessed is {
         send distributionProcessed to outlet FundAccountEventSplitToFundMetrics
+        send distributionProcessed to outlet FundAccountEventSplitToToCustodianSystem
         tell distributionProcessed to entity FundAdminContext.FundAccount
       }
       on navCalculated: event FundAccount.NavCalculated is {
         send navCalculated to outlet FundAccountEventSplitToFundMetrics
+        send navCalculated to outlet FundAccountEventSplitToToRegulatoryFiling
         tell navCalculated to entity FundAdminContext.FundAccount
       }
       on transactionRecorded: event FundAccount.TransactionRecorded is {
@@ -510,6 +515,7 @@ context FundAdminContext as router is {
       }
       on lpReportGenerated: event FundAccount.LpReportGenerated is {
         send lpReportGenerated to outlet FundAccountEventSplitToFundMetrics
+        send lpReportGenerated to outlet FundAccountEventSplitToToRegulatoryFiling
         tell lpReportGenerated to entity FundAdminContext.FundAccount
       }
       on fundStageAdvanced: event FundAccount.FundStageAdvanced is {
@@ -534,6 +540,12 @@ context FundAdminContext as router is {
     described as {
       |Fans FundAccount events out to the repository and projectors.
     }
+  }
+  connector 'ToRegulatoryFiling Feed' is from outlet FundAdminContext.FundAccountEventSplit.FundAccountEventSplitToToRegulatoryFiling to inlet FundAdminContext.ToRegulatoryFiling.ToRegulatoryFilingIn with {
+    briefly "The FundAccount events ToRegulatoryFiling translates, on their way to it"
+  }
+  connector 'ToCustodianSystem Feed' is from outlet FundAdminContext.FundAccountEventSplit.FundAccountEventSplitToToCustodianSystem to inlet FundAdminContext.ToCustodianSystem.ToCustodianSystemIn with {
+    briefly "The FundAccount events ToCustodianSystem translates, on their way to it"
   }
   connector 'FundAccountEvent Stream' is from outlet FundAdminContext.FundAccount.FundAccountEvents2 to inlet FundAdminContext.FundAccountEventSplit.FundAccountEventSplitIn with {
     briefly "FundAccount events, fanned out to storage and read models"

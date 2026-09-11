@@ -70,8 +70,8 @@ context MediaBuyingContext as router is {
       |The model's side of the AnalyticsPlatform conversation.
     }
   }
-  adaptor ToAnalyticsPlatform to context AnalyticsPlatform as flow is { 
-    outlet ToAnalyticsPlatformOut is type AnalyticsPlatform.AnalyticsPlatformRequest
+  adaptor ToAnalyticsPlatform to context AnalyticsPlatform as merge is { 
+    inlet ToAnalyticsPlatformIn is type MediaOrderEvent    inlet ToAnalyticsPlatformReplies is result AnalyticsPlatform.CampaignROI    outlet ToAnalyticsPlatformOut is type AnalyticsPlatform.AnalyticsPlatformRequest
     handler ToAnalyticsPlatformHandler is {
       on orderCompleted: event MediaOrder.OrderCompleted is {
         let askAnswer: type AnalyticsPlatform.CampaignROI = ask query AnalyticsPlatform.GetCampaignROI of context AnalyticsPlatform
@@ -118,8 +118,8 @@ context MediaBuyingContext as router is {
       |The model's side of the MediaVendor conversation.
     }
   }
-  adaptor ToMediaVendor to context MediaVendor as flow is { 
-    outlet ToMediaVendorOut is type MediaVendor.MediaVendorRequest
+  adaptor ToMediaVendor to context MediaVendor as merge is { 
+    inlet ToMediaVendorIn is type MediaOrderEvent    inlet ToMediaVendorReplies is result MediaVendor.AvailableInventory    outlet ToMediaVendorOut is type MediaVendor.MediaVendorRequest
     handler ToMediaVendorHandler is {
       on mediaOrderCreated: event MediaOrder.MediaOrderCreated is {
         let askAnswer: type MediaVendor.AvailableInventory = ask query MediaVendor.GetAvailableInventory of context MediaVendor
@@ -497,11 +497,14 @@ context MediaBuyingContext as router is {
       |persistence.
     }
   }
-  streamlet MediaOrderEventSplit as flow is {
+  streamlet MediaOrderEventSplit as split is {
+    outlet MediaOrderEventSplitToToMediaVendor is type MediaOrderEvent
+    outlet MediaOrderEventSplitToToAnalyticsPlatform is type MediaOrderEvent
     inlet MediaOrderEventSplitIn is type MediaOrderEvent    outlet MediaOrderEventSplitToMediaBuyingMetrics is type MediaOrderEvent
     handler MediaOrderEventSplitHandler is {
       on mediaOrderCreated: event MediaOrder.MediaOrderCreated is {
         send mediaOrderCreated to outlet MediaOrderEventSplitToMediaBuyingMetrics
+        send mediaOrderCreated to outlet MediaOrderEventSplitToToMediaVendor
         tell mediaOrderCreated to entity MediaBuyingContext.MediaOrder
       }
       on orderSubmitted: event MediaOrder.OrderSubmitted is {
@@ -514,6 +517,7 @@ context MediaBuyingContext as router is {
       }
       on orderApproved: event MediaOrder.OrderApproved is {
         send orderApproved to outlet MediaOrderEventSplitToMediaBuyingMetrics
+        send orderApproved to outlet MediaOrderEventSplitToToMediaVendor
         tell orderApproved to entity MediaBuyingContext.MediaOrder
       }
       on inventoryBooked: event MediaOrder.InventoryBooked is {
@@ -526,10 +530,12 @@ context MediaBuyingContext as router is {
       }
       on performanceRecorded: event MediaOrder.PerformanceRecorded is {
         send performanceRecorded to outlet MediaOrderEventSplitToMediaBuyingMetrics
+        send performanceRecorded to outlet MediaOrderEventSplitToToAnalyticsPlatform
         tell performanceRecorded to entity MediaBuyingContext.MediaOrder
       }
       on orderCompleted: event MediaOrder.OrderCompleted is {
         send orderCompleted to outlet MediaOrderEventSplitToMediaBuyingMetrics
+        send orderCompleted to outlet MediaOrderEventSplitToToAnalyticsPlatform
         tell orderCompleted to entity MediaBuyingContext.MediaOrder
       }
       on orderCancelled: event MediaOrder.OrderCancelled is {
@@ -550,6 +556,12 @@ context MediaBuyingContext as router is {
     described as {
       |Fans MediaOrder events out to the repository and projectors.
     }
+  }
+  connector 'ToMediaVendor Feed' is from outlet MediaBuyingContext.MediaOrderEventSplit.MediaOrderEventSplitToToMediaVendor to inlet MediaBuyingContext.ToMediaVendor.ToMediaVendorIn with {
+    briefly "The MediaOrder events ToMediaVendor translates, on their way to it"
+  }
+  connector 'ToAnalyticsPlatform Feed' is from outlet MediaBuyingContext.MediaOrderEventSplit.MediaOrderEventSplitToToAnalyticsPlatform to inlet MediaBuyingContext.ToAnalyticsPlatform.ToAnalyticsPlatformIn with {
+    briefly "The MediaOrder events ToAnalyticsPlatform translates, on their way to it"
   }
   connector 'MediaOrderEvent Stream' is from outlet MediaBuyingContext.MediaOrder.MediaOrderEvents2 to inlet MediaBuyingContext.MediaOrderEventSplit.MediaOrderEventSplitIn with {
     briefly "MediaOrder events, fanned out to storage and read models"

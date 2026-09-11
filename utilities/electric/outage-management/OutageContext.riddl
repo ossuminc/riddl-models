@@ -84,8 +84,8 @@ context OutageContext as router is {
       |The model's side of the CrewDispatchSystem conversation.
     }
   }
-  adaptor ToCrewDispatchSystem to context CrewDispatchSystem as flow is { 
-    outlet ToCrewDispatchSystemOut is type CrewDispatchSystem.CrewDispatchSystemCommand
+  adaptor ToCrewDispatchSystem to context CrewDispatchSystem as merge is { 
+    inlet ToCrewDispatchSystemIn is type OutageEventEvent    inlet ToCrewDispatchSystemReplies is result CrewDispatchSystem.AvailableCrews    outlet ToCrewDispatchSystemOut is type CrewDispatchSystem.CrewDispatchSystemCommand
     handler ToCrewDispatchSystemHandler is {
       on outageConfirmed: event OutageEvent.OutageConfirmed is {
         let askAnswer: type CrewDispatchSystem.AvailableCrews = ask query CrewDispatchSystem.GetAvailableCrews of context CrewDispatchSystem
@@ -137,8 +137,8 @@ context OutageContext as router is {
       |The model's side of the SCADASystem conversation.
     }
   }
-  adaptor ToSCADASystem to context SCADASystem as flow is { 
-    outlet ToSCADASystemOut is type SCADASystem.SCADASystemRequest
+  adaptor ToSCADASystem to context SCADASystem as merge is { 
+    inlet ToSCADASystemIn is type OutageEventEvent    inlet ToSCADASystemReplies is result SCADASystem.FeederStatus    outlet ToSCADASystemOut is type SCADASystem.SCADASystemRequest
     handler ToSCADASystemHandler is {
       on outageReported: event OutageEvent.OutageReported is {
         let askAnswer: type SCADASystem.FeederStatus = ask query SCADASystem.GetFeederStatus of context SCADASystem
@@ -538,15 +538,20 @@ context OutageContext as router is {
       |persistence.
     }
   }
-  streamlet OutageEventEventSplit as flow is {
+  streamlet OutageEventEventSplit as split is {
+    outlet OutageEventEventSplitToToSCADASystem is type OutageEventEvent
+    outlet OutageEventEventSplitToToCrewDispatchSystem is type OutageEventEvent
     inlet OutageEventEventSplitIn is type OutageEventEvent    outlet OutageEventEventSplitToOutageMetrics is type OutageEventEvent
     handler OutageEventEventSplitHandler is {
       on outageReported: event OutageEvent.OutageReported is {
         send outageReported to outlet OutageEventEventSplitToOutageMetrics
+        send outageReported to outlet OutageEventEventSplitToToSCADASystem
         tell outageReported to entity OutageContext.OutageEvent
       }
       on outageConfirmed: event OutageEvent.OutageConfirmed is {
         send outageConfirmed to outlet OutageEventEventSplitToOutageMetrics
+        send outageConfirmed to outlet OutageEventEventSplitToToSCADASystem
+        send outageConfirmed to outlet OutageEventEventSplitToToCrewDispatchSystem
         tell outageConfirmed to entity OutageContext.OutageEvent
       }
       on crewDispatched: event OutageEvent.CrewDispatched is {
@@ -567,6 +572,7 @@ context OutageContext as router is {
       }
       on powerRestored: event OutageEvent.PowerRestored is {
         send powerRestored to outlet OutageEventEventSplitToOutageMetrics
+        send powerRestored to outlet OutageEventEventSplitToToCrewDispatchSystem
         tell powerRestored to entity OutageContext.OutageEvent
       }
       on customersNotified: event OutageEvent.CustomersNotified is {
@@ -595,6 +601,12 @@ context OutageContext as router is {
     described as {
       |Fans OutageEvent events out to the repository and projectors.
     }
+  }
+  connector 'ToSCADASystem Feed' is from outlet OutageContext.OutageEventEventSplit.OutageEventEventSplitToToSCADASystem to inlet OutageContext.ToSCADASystem.ToSCADASystemIn with {
+    briefly "The OutageEvent events ToSCADASystem translates, on their way to it"
+  }
+  connector 'ToCrewDispatchSystem Feed' is from outlet OutageContext.OutageEventEventSplit.OutageEventEventSplitToToCrewDispatchSystem to inlet OutageContext.ToCrewDispatchSystem.ToCrewDispatchSystemIn with {
+    briefly "The OutageEvent events ToCrewDispatchSystem translates, on their way to it"
   }
   connector 'OutageEventEvent Stream' is from outlet OutageContext.OutageEvent.OutageEventEvents2 to inlet OutageContext.OutageEventEventSplit.OutageEventEventSplitIn with {
     briefly "OutageEvent events, fanned out to storage and read models"

@@ -91,8 +91,8 @@ context ContractContext as router is {
       |The model's side of the DocumentRepository conversation.
     }
   }
-  adaptor ToDocumentRepository to context DocumentRepository as flow is { 
-    outlet ToDocumentRepositoryOut is type DocumentRepository.DocumentRepositoryRequest
+  adaptor ToDocumentRepository to context DocumentRepository as merge is { 
+    inlet ToDocumentRepositoryIn is type ContractEvent    inlet ToDocumentRepositoryReplies is type DocumentRepository.DocumentRepositoryReply    outlet ToDocumentRepositoryOut is type DocumentRepository.DocumentRepositoryRequest
     handler ToDocumentRepositoryHandler is {
       on contractCreated: event ContractCreated is {
         let artifact: type DocumentRepository.StoreDocument = prompt("translate the contractCreated event into a StoreDocument keeping the draft as the repository's copy of record")
@@ -146,8 +146,8 @@ context ContractContext as router is {
       |The model's side of the ESignatureService conversation.
     }
   }
-  adaptor ToESignatureService to context ESignatureService as flow is { 
-    outlet ToESignatureServiceOut is type ESignatureService.ESignatureServiceRequest
+  adaptor ToESignatureService to context ESignatureService as merge is { 
+    inlet ToESignatureServiceIn is type ContractEvent    inlet ToESignatureServiceReplies is result ESignatureService.EnvelopeStatus    outlet ToESignatureServiceOut is type ESignatureService.ESignatureServiceRequest
     handler ToESignatureServiceHandler is {
       on contractSentForSignature: event ContractSentForSignature is {
         let artifact: type ESignatureService.SendEnvelope = prompt("translate the contractSentForSignature event into a SendEnvelope putting the contract in front of the signatories")
@@ -685,15 +685,19 @@ context ContractContext as router is {
       |persistence.
     }
   }
-  streamlet ContractEventSplit as flow is {
+  streamlet ContractEventSplit as split is {
+    outlet ContractEventSplitToToESignatureService is type ContractEvent
+    outlet ContractEventSplitToToDocumentRepository is type ContractEvent
     inlet ContractEventSplitIn is type ContractEvent    outlet ContractEventSplitToContractMetrics is type ContractEvent
     handler ContractEventSplitHandler is {
       on contractCreated: event Contract.ContractCreated is {
         send contractCreated to outlet ContractEventSplitToContractMetrics
+        send contractCreated to outlet ContractEventSplitToToDocumentRepository
         tell contractCreated to entity ContractContext.Contract
       }
       on contractSubmittedForReview: event Contract.ContractSubmittedForReview is {
         send contractSubmittedForReview to outlet ContractEventSplitToContractMetrics
+        send contractSubmittedForReview to outlet ContractEventSplitToToDocumentRepository
         tell contractSubmittedForReview to entity ContractContext.Contract
       }
       on reviewCommentAdded: event Contract.ReviewCommentAdded is {
@@ -702,6 +706,7 @@ context ContractContext as router is {
       }
       on redlineSubmitted: event Contract.RedlineSubmitted is {
         send redlineSubmitted to outlet ContractEventSplitToContractMetrics
+        send redlineSubmitted to outlet ContractEventSplitToToDocumentRepository
         tell redlineSubmitted to entity ContractContext.Contract
       }
       on redlineAccepted: event Contract.RedlineAccepted is {
@@ -722,10 +727,12 @@ context ContractContext as router is {
       }
       on contractSentForSignature: event Contract.ContractSentForSignature is {
         send contractSentForSignature to outlet ContractEventSplitToContractMetrics
+        send contractSentForSignature to outlet ContractEventSplitToToESignatureService
         tell contractSentForSignature to entity ContractContext.Contract
       }
       on signatureRecorded: event Contract.SignatureRecorded is {
         send signatureRecorded to outlet ContractEventSplitToContractMetrics
+        send signatureRecorded to outlet ContractEventSplitToToESignatureService
         tell signatureRecorded to entity ContractContext.Contract
       }
       on contractActivated: event Contract.ContractActivated is {
@@ -766,6 +773,12 @@ context ContractContext as router is {
     described as {
       |Fans Contract events out to the repository and projectors.
     }
+  }
+  connector 'ToESignatureService Feed' is from outlet ContractContext.ContractEventSplit.ContractEventSplitToToESignatureService to inlet ContractContext.ToESignatureService.ToESignatureServiceIn with {
+    briefly "The Contract events ToESignatureService translates, on their way to it"
+  }
+  connector 'ToDocumentRepository Feed' is from outlet ContractContext.ContractEventSplit.ContractEventSplitToToDocumentRepository to inlet ContractContext.ToDocumentRepository.ToDocumentRepositoryIn with {
+    briefly "The Contract events ToDocumentRepository translates, on their way to it"
   }
   connector 'ContractEvent Stream' is from outlet ContractContext.Contract.ContractEvents2 to inlet ContractContext.ContractEventSplit.ContractEventSplitIn with {
     briefly "Contract events, fanned out to storage and read models"

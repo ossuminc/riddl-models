@@ -134,7 +134,7 @@ context OrderContext as router is {
     }
   }
   adaptor ToInventoryService to context InventoryService as flow is { 
-    outlet ToInventoryServiceOut is type InventoryService.InventoryServiceCommand
+    inlet ToInventoryServiceIn is type OrderEvent    outlet ToInventoryServiceOut is type InventoryService.InventoryServiceCommand
     handler ToInventoryServiceHandler is {
       on orderPlaced: event Order.OrderPlaced is {
         let item0: type InventoryService.AllocateStock = prompt("translate the orderPlaced event into a AllocateStock, the order being what creates the claim on stock")
@@ -194,7 +194,7 @@ context OrderContext as router is {
     }
   }
   adaptor ToPaymentGateway to context PaymentGateway as flow is { 
-    outlet ToPaymentGatewayOut is type PaymentGateway.PaymentGatewayCommand
+    inlet ToPaymentGatewayIn is type OrderEvent    outlet ToPaymentGatewayOut is type PaymentGateway.PaymentGatewayCommand
     handler ToPaymentGatewayHandler is {
       on orderPlaced: event Order.OrderPlaced is {
         let notice: type PaymentGateway.ProcessPayment = prompt("translate the orderPlaced event into a ProcessPayment taking payment for the order the customer has just committed to")
@@ -905,11 +905,15 @@ context OrderContext as router is {
       |persistence.
     }
   }
-  streamlet OrderEventSplit as flow is {
+  streamlet OrderEventSplit as split is {
+    outlet OrderEventSplitToToPaymentGateway is type OrderEvent
+    outlet OrderEventSplitToToInventoryService is type OrderEvent
     inlet OrderEventSplitIn is type OrderEvent    outlet OrderEventSplitToOrderAnalytics is type OrderEvent
     handler OrderEventSplitHandler is {
       on orderPlaced: event Order.OrderPlaced is {
         send orderPlaced to outlet OrderEventSplitToOrderAnalytics
+        send orderPlaced to outlet OrderEventSplitToToPaymentGateway
+        send orderPlaced to outlet OrderEventSplitToToInventoryService
         tell orderPlaced to entity OrderContext.Order
       }
       on paymentConfirmed: event Order.PaymentConfirmed is {
@@ -930,6 +934,8 @@ context OrderContext as router is {
       }
       on orderCancelled: event Order.OrderCancelled is {
         send orderCancelled to outlet OrderEventSplitToOrderAnalytics
+        send orderCancelled to outlet OrderEventSplitToToPaymentGateway
+        send orderCancelled to outlet OrderEventSplitToToInventoryService
         tell orderCancelled to entity OrderContext.Order
       }
       on other is {
@@ -1018,6 +1024,12 @@ context OrderContext as router is {
     described as {
       |Fans Shipment events out to the repository and projectors.
     }
+  }
+  connector 'ToPaymentGateway Feed' is from outlet OrderContext.OrderEventSplit.OrderEventSplitToToPaymentGateway to inlet OrderContext.ToPaymentGateway.ToPaymentGatewayIn with {
+    briefly "The Order events ToPaymentGateway translates, on their way to it"
+  }
+  connector 'ToInventoryService Feed' is from outlet OrderContext.OrderEventSplit.OrderEventSplitToToInventoryService to inlet OrderContext.ToInventoryService.ToInventoryServiceIn with {
+    briefly "The Order events ToInventoryService translates, on their way to it"
   }
   connector 'OrderEvent Stream' is from outlet OrderContext.Order.OrderEvents2 to inlet OrderContext.OrderEventSplit.OrderEventSplitIn with {
     briefly "Order events, fanned out to storage and read models"

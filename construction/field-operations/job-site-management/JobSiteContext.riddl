@@ -54,7 +54,7 @@ context JobSiteContext as router is {
     }
   }
   connector 'JobSiteCommand Stream Intake' is from outlet JobSiteContext.JobSiteCommandStreamOut to inlet JobSiteContext.JobSite.JobSiteCommands  connector 'JobSiteResult Stream Egress' is from outlet JobSiteContext.JobSiteRepository.JobSiteRepositoryResponses to inlet JobSiteContext.JobSiteResultStreamIn  adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type JobSiteEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on issueReported: event IssueReported is {
         let alert: type NotificationService.SendSiteAlert = prompt("translate the issueReported event into a SendSiteAlert telling the site supervisor what was found and where on the site, carrying the reported severity so they can judge whether to stop work")
@@ -133,7 +133,7 @@ context JobSiteContext as router is {
     }
   }
   adaptor ToSafetyComplianceService to context SafetyComplianceService as flow is { 
-    outlet ToSafetyComplianceServiceOut is command SafetyComplianceService.SubmitInspectionReport
+    inlet ToSafetyComplianceServiceIn is type JobSiteEvent    outlet ToSafetyComplianceServiceOut is command SafetyComplianceService.SubmitInspectionReport
     handler ToSafetyComplianceServiceHandler is {
       on safetyInspectionRecorded: event SafetyInspectionRecorded is {
         let item0: type SafetyComplianceService.SubmitInspectionReport = prompt("translate the safetyInspectionRecorded event into a SubmitInspectionReport, site safety being reportable as it is observed")
@@ -604,7 +604,9 @@ context JobSiteContext as router is {
       |persistence.
     }
   }
-  streamlet JobSiteEventSplit as flow is {
+  streamlet JobSiteEventSplit as split is {
+    outlet JobSiteEventSplitToToSafetyComplianceService is type JobSiteEvent
+    outlet JobSiteEventSplitToToNotificationService is type JobSiteEvent
     inlet JobSiteEventSplitIn is type JobSiteEvent    outlet JobSiteEventSplitToSiteAnalytics is type JobSiteEvent
     handler JobSiteEventSplitHandler is {
       on siteEstablished: event JobSite.SiteEstablished is {
@@ -625,14 +627,17 @@ context JobSiteContext as router is {
       }
       on dailyReportSubmitted: event JobSite.DailyReportSubmitted is {
         send dailyReportSubmitted to outlet JobSiteEventSplitToSiteAnalytics
+        send dailyReportSubmitted to outlet JobSiteEventSplitToToNotificationService
         tell dailyReportSubmitted to entity JobSiteContext.JobSite
       }
       on safetyInspectionRecorded: event JobSite.SafetyInspectionRecorded is {
         send safetyInspectionRecorded to outlet JobSiteEventSplitToSiteAnalytics
+        send safetyInspectionRecorded to outlet JobSiteEventSplitToToSafetyComplianceService
         tell safetyInspectionRecorded to entity JobSiteContext.JobSite
       }
       on issueReported: event JobSite.IssueReported is {
         send issueReported to outlet JobSiteEventSplitToSiteAnalytics
+        send issueReported to outlet JobSiteEventSplitToToNotificationService
         tell issueReported to entity JobSiteContext.JobSite
       }
       on issueResolved: event JobSite.IssueResolved is {
@@ -669,6 +674,12 @@ context JobSiteContext as router is {
     described as {
       |Fans JobSite events out to the repository and projectors.
     }
+  }
+  connector 'ToSafetyComplianceService Feed' is from outlet JobSiteContext.JobSiteEventSplit.JobSiteEventSplitToToSafetyComplianceService to inlet JobSiteContext.ToSafetyComplianceService.ToSafetyComplianceServiceIn with {
+    briefly "The JobSite events ToSafetyComplianceService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet JobSiteContext.JobSiteEventSplit.JobSiteEventSplitToToNotificationService to inlet JobSiteContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The JobSite events ToNotificationService translates, on their way to it"
   }
   connector 'JobSiteEvent Stream' is from outlet JobSiteContext.JobSite.JobSiteEvents2 to inlet JobSiteContext.JobSiteEventSplit.JobSiteEventSplitIn with {
     briefly "JobSite events, fanned out to storage and read models"

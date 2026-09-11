@@ -75,8 +75,8 @@ context ProductionContext as router is {
       |The model's side of the CrewManagement conversation.
     }
   }
-  adaptor ToCrewManagement to context CrewManagement as flow is { 
-    outlet ToCrewManagementOut is type CrewManagement.CrewManagementRequest
+  adaptor ToCrewManagement to context CrewManagement as merge is { 
+    inlet ToCrewManagementIn is type ProductionEvent    inlet ToCrewManagementReplies is result CrewManagement.AvailableCrew    outlet ToCrewManagementOut is type CrewManagement.CrewManagementRequest
     handler ToCrewManagementHandler is {
       on crewAssigned: event Production.CrewAssigned is {
         let request: type CrewManagement.BookCrewMember = prompt("translate the crewAssigned event into a BookCrewMember committing that person's time to the production")
@@ -121,8 +121,8 @@ context ProductionContext as router is {
       |The model's side of the VenueSystem conversation.
     }
   }
-  adaptor ToVenueSystem to context VenueSystem as flow is { 
-    outlet ToVenueSystemOut is type VenueSystem.VenueSystemRequest
+  adaptor ToVenueSystem to context VenueSystem as merge is { 
+    inlet ToVenueSystemIn is type ProductionEvent    inlet ToVenueSystemReplies is result VenueSystem.VenueDetails    outlet ToVenueSystemOut is type VenueSystem.VenueSystemRequest
     handler ToVenueSystemHandler is {
       on productionCreated: event Production.ProductionCreated is {
         let askAnswer: type VenueSystem.VenueDetails = ask query VenueSystem.GetVenueDetails of context VenueSystem
@@ -507,15 +507,20 @@ context ProductionContext as router is {
       |Production management analytics.
     }
   }
-  streamlet ProductionEventSplit as flow is {
+  streamlet ProductionEventSplit as split is {
+    outlet ProductionEventSplitToToVenueSystem is type ProductionEvent
+    outlet ProductionEventSplitToToCrewManagement is type ProductionEvent
     inlet ProductionEventSplitIn is type ProductionEvent    outlet ProductionEventSplitToProductionMetrics is type ProductionEvent
     handler ProductionEventSplitHandler is {
       on productionCreated: event Production.ProductionCreated is {
         send productionCreated to outlet ProductionEventSplitToProductionMetrics
+        send productionCreated to outlet ProductionEventSplitToToVenueSystem
+        send productionCreated to outlet ProductionEventSplitToToCrewManagement
         tell productionCreated to entity ProductionContext.Production
       }
       on crewAssigned: event Production.CrewAssigned is {
         send crewAssigned to outlet ProductionEventSplitToProductionMetrics
+        send crewAssigned to outlet ProductionEventSplitToToCrewManagement
         tell crewAssigned to entity ProductionContext.Production
       }
       on equipmentAllocated: event Production.EquipmentAllocated is {
@@ -564,6 +569,12 @@ context ProductionContext as router is {
     described as {
       |Fans Production events out to the repository and projectors.
     }
+  }
+  connector 'ToVenueSystem Feed' is from outlet ProductionContext.ProductionEventSplit.ProductionEventSplitToToVenueSystem to inlet ProductionContext.ToVenueSystem.ToVenueSystemIn with {
+    briefly "The Production events ToVenueSystem translates, on their way to it"
+  }
+  connector 'ToCrewManagement Feed' is from outlet ProductionContext.ProductionEventSplit.ProductionEventSplitToToCrewManagement to inlet ProductionContext.ToCrewManagement.ToCrewManagementIn with {
+    briefly "The Production events ToCrewManagement translates, on their way to it"
   }
   connector 'ProductionEvent Stream' is from outlet ProductionContext.Production.ProductionEvents2 to inlet ProductionContext.ProductionEventSplit.ProductionEventSplitIn with {
     briefly "Production events, fanned out to storage and read models"

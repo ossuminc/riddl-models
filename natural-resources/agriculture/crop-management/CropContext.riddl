@@ -47,8 +47,8 @@ context CropContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'FieldCommand Stream Intake' is from outlet CropContext.FieldCommandStreamOut to inlet CropContext.Field.FieldCommands  connector 'FieldResult Stream Egress' is from outlet CropContext.CropRepository.CropRepositoryResponses to inlet CropContext.FieldResultStreamIn  adaptor ToEquipmentTracking to context EquipmentTracking as flow is { 
-    outlet ToEquipmentTrackingOut is query EquipmentTracking.GetEquipmentLocation
+  connector 'FieldCommand Stream Intake' is from outlet CropContext.FieldCommandStreamOut to inlet CropContext.Field.FieldCommands  connector 'FieldResult Stream Egress' is from outlet CropContext.CropRepository.CropRepositoryResponses to inlet CropContext.FieldResultStreamIn  adaptor ToEquipmentTracking to context EquipmentTracking as merge is { 
+    inlet ToEquipmentTrackingIn is type FieldEvent    inlet ToEquipmentTrackingReplies is result EquipmentTracking.EquipmentLocation    outlet ToEquipmentTrackingOut is query EquipmentTracking.GetEquipmentLocation
     handler ToEquipmentTrackingHandler is {
       on fieldPrepared: event Field.FieldPrepared is {
         let askAnswer: type EquipmentTracking.EquipmentLocation = ask query EquipmentTracking.GetEquipmentLocation of context EquipmentTracking
@@ -69,8 +69,8 @@ context CropContext as router is {
       |The model's side of the EquipmentTracking conversation.
     }
   }
-  adaptor ToMarketPrices to context MarketPrices as flow is { 
-    outlet ToMarketPricesOut is query MarketPrices.GetCropPrices
+  adaptor ToMarketPrices to context MarketPrices as merge is { 
+    inlet ToMarketPricesIn is type FieldEvent    inlet ToMarketPricesReplies is result MarketPrices.CropPriceInfo    outlet ToMarketPricesOut is query MarketPrices.GetCropPrices
     handler ToMarketPricesHandler is {
       on harvestCompleted: event Field.HarvestCompleted is {
         let askAnswer: type MarketPrices.CropPriceInfo = ask query MarketPrices.GetCropPrices of context MarketPrices
@@ -112,7 +112,7 @@ context CropContext as router is {
     }
   }
   adaptor ToSoilTesting to context SoilTesting as flow is { 
-    outlet ToSoilTestingOut is command SoilTesting.SubmitSoilSample
+    inlet ToSoilTestingIn is type FieldEvent    outlet ToSoilTestingOut is command SoilTesting.SubmitSoilSample
     handler ToSoilTestingHandler is {
       on fieldPrepared: event Field.FieldPrepared is {
         let item0: type SoilTesting.SubmitSoilSample = prompt("translate the fieldPrepared event into a SubmitSoilSample, preparation being when what is in the soil starts to matter")
@@ -133,8 +133,8 @@ context CropContext as router is {
       |The model's side of the SoilTesting conversation.
     }
   }
-  adaptor ToWeatherService to context WeatherService as flow is { 
-    outlet ToWeatherServiceOut is type WeatherService.WeatherServiceRequest
+  adaptor ToWeatherService to context WeatherService as merge is { 
+    inlet ToWeatherServiceIn is type FieldEvent    inlet ToWeatherServiceReplies is type WeatherService.WeatherServiceReply    outlet ToWeatherServiceOut is type WeatherService.WeatherServiceRequest
     handler ToWeatherServiceHandler is {
       on cropPlanted: event Field.CropPlanted is {
         let askAnswer: type WeatherService.WeatherForecast = ask query WeatherService.GetForecast of context WeatherService
@@ -547,7 +547,11 @@ context CropContext as router is {
       |persistence.
     }
   }
-  streamlet FieldEventSplit as flow is {
+  streamlet FieldEventSplit as split is {
+    outlet FieldEventSplitToToWeatherService is type FieldEvent
+    outlet FieldEventSplitToToSoilTesting is type FieldEvent
+    outlet FieldEventSplitToToMarketPrices is type FieldEvent
+    outlet FieldEventSplitToToEquipmentTracking is type FieldEvent
     inlet FieldEventSplitIn is type FieldEvent    outlet FieldEventSplitToYieldAnalytics is type FieldEvent
     handler FieldEventSplitHandler is {
       on fieldRegistered: event Field.FieldRegistered is {
@@ -556,10 +560,13 @@ context CropContext as router is {
       }
       on fieldPrepared: event Field.FieldPrepared is {
         send fieldPrepared to outlet FieldEventSplitToYieldAnalytics
+        send fieldPrepared to outlet FieldEventSplitToToSoilTesting
+        send fieldPrepared to outlet FieldEventSplitToToEquipmentTracking
         tell fieldPrepared to entity CropContext.Field
       }
       on cropPlanted: event Field.CropPlanted is {
         send cropPlanted to outlet FieldEventSplitToYieldAnalytics
+        send cropPlanted to outlet FieldEventSplitToToWeatherService
         tell cropPlanted to entity CropContext.Field
       }
       on applicationRecorded: event Field.ApplicationRecorded is {
@@ -568,6 +575,7 @@ context CropContext as router is {
       }
       on scoutingRecorded: event Field.ScoutingRecorded is {
         send scoutingRecorded to outlet FieldEventSplitToYieldAnalytics
+        send scoutingRecorded to outlet FieldEventSplitToToWeatherService
         tell scoutingRecorded to entity CropContext.Field
       }
       on irrigationRecorded: event Field.IrrigationRecorded is {
@@ -584,6 +592,7 @@ context CropContext as router is {
       }
       on harvestCompleted: event Field.HarvestCompleted is {
         send harvestCompleted to outlet FieldEventSplitToYieldAnalytics
+        send harvestCompleted to outlet FieldEventSplitToToMarketPrices
         tell harvestCompleted to entity CropContext.Field
       }
       on fieldSetFallow: event Field.FieldSetFallow is {
@@ -604,6 +613,18 @@ context CropContext as router is {
     described as {
       |Fans Field events out to the repository and projectors.
     }
+  }
+  connector 'ToWeatherService Feed' is from outlet CropContext.FieldEventSplit.FieldEventSplitToToWeatherService to inlet CropContext.ToWeatherService.ToWeatherServiceIn with {
+    briefly "The Field events ToWeatherService translates, on their way to it"
+  }
+  connector 'ToSoilTesting Feed' is from outlet CropContext.FieldEventSplit.FieldEventSplitToToSoilTesting to inlet CropContext.ToSoilTesting.ToSoilTestingIn with {
+    briefly "The Field events ToSoilTesting translates, on their way to it"
+  }
+  connector 'ToMarketPrices Feed' is from outlet CropContext.FieldEventSplit.FieldEventSplitToToMarketPrices to inlet CropContext.ToMarketPrices.ToMarketPricesIn with {
+    briefly "The Field events ToMarketPrices translates, on their way to it"
+  }
+  connector 'ToEquipmentTracking Feed' is from outlet CropContext.FieldEventSplit.FieldEventSplitToToEquipmentTracking to inlet CropContext.ToEquipmentTracking.ToEquipmentTrackingIn with {
+    briefly "The Field events ToEquipmentTracking translates, on their way to it"
   }
   connector 'FieldEvent Stream' is from outlet CropContext.Field.FieldEvents2 to inlet CropContext.FieldEventSplit.FieldEventSplitIn with {
     briefly "Field events, fanned out to storage and read models"

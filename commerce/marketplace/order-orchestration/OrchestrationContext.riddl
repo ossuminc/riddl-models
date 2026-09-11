@@ -78,7 +78,7 @@ context OrchestrationContext as router is {
     }
   }
   adaptor ToInventoryService to context InventoryService as flow is { 
-    outlet ToInventoryServiceOut is command InventoryService.ReserveStock
+    inlet ToInventoryServiceIn is type MarketplaceOrderEvent    outlet ToInventoryServiceOut is command InventoryService.ReserveStock
     handler ToInventoryServiceHandler is {
       on orderCreated: event MarketplaceOrder.OrderCreated is {
         let claim: type InventoryService.ReserveStock = prompt("translate the orderCreated event into a ReserveStock claiming the goods the marketplace order commits to supplying")
@@ -152,7 +152,7 @@ context OrchestrationContext as router is {
   include "MarketplaceOrder.riddl"
   // Adaptors for external system integration
   adaptor VendorAdapter to context VendorService as flow is { 
-    outlet VendorAdapterOut is command VendorService.NotifyNewSubOrder
+    inlet VendorAdapterIn is type MarketplaceOrderEvent    outlet VendorAdapterOut is command VendorService.NotifyNewSubOrder
     handler VendorRouting is {
       on subOrderRouted: event MarketplaceOrder.SubOrderRouted is {
         let item0: type VendorService.NotifyNewSubOrder = prompt("translate the subOrderRouted event into a NotifyNewSubOrder, routing being the point a vendor is given work")
@@ -174,7 +174,7 @@ context OrchestrationContext as router is {
     }
   }
   adaptor PaymentAdapter to context PaymentService as flow is { 
-    outlet PaymentAdapterOut is type PaymentService.PaymentServiceCommand
+    inlet PaymentAdapterIn is type MarketplaceOrderEvent    outlet PaymentAdapterOut is type PaymentService.PaymentServiceCommand
     handler PaymentProcessing is {
       on subOrderDelivered: event SubOrderDelivered is {
         let notice: type PaymentService.CapturePayment = prompt("translate the subOrderDelivered event into a CapturePayment taking the money for a sub-order the vendor has now delivered, where the amount is final")
@@ -200,7 +200,7 @@ context OrchestrationContext as router is {
     }
   }
   adaptor NotificationAdapter to context NotificationService as flow is { 
-    outlet NotificationAdapterOut is type NotificationService.NotificationServiceCommand
+    inlet NotificationAdapterIn is type MarketplaceOrderEvent    outlet NotificationAdapterOut is type NotificationService.NotificationServiceCommand
     handler CustomerNotifications is {
       on orderCreated: event OrderCreated is {
         let msg: type NotificationService.SendOrderConfirmation = prompt("translate the orderCreated event into a SendOrderConfirmation for the customer")
@@ -562,15 +562,22 @@ context OrchestrationContext as router is {
       |persistence.
     }
   }
-  streamlet MarketplaceOrderEventSplit as flow is {
+  streamlet MarketplaceOrderEventSplit as split is {
+    outlet MarketplaceOrderEventSplitToVendorAdapter is type MarketplaceOrderEvent
+    outlet MarketplaceOrderEventSplitToToInventoryService is type MarketplaceOrderEvent
+    outlet MarketplaceOrderEventSplitToPaymentAdapter is type MarketplaceOrderEvent
+    outlet MarketplaceOrderEventSplitToNotificationAdapter is type MarketplaceOrderEvent
     inlet MarketplaceOrderEventSplitIn is type MarketplaceOrderEvent    outlet MarketplaceOrderEventSplitToOrderAnalytics is type MarketplaceOrderEvent
     handler MarketplaceOrderEventSplitHandler is {
       on orderCreated: event MarketplaceOrder.OrderCreated is {
         send orderCreated to outlet MarketplaceOrderEventSplitToOrderAnalytics
+        send orderCreated to outlet MarketplaceOrderEventSplitToToInventoryService
+        send orderCreated to outlet MarketplaceOrderEventSplitToNotificationAdapter
         tell orderCreated to entity OrchestrationContext.MarketplaceOrder
       }
       on subOrderRouted: event MarketplaceOrder.SubOrderRouted is {
         send subOrderRouted to outlet MarketplaceOrderEventSplitToOrderAnalytics
+        send subOrderRouted to outlet MarketplaceOrderEventSplitToVendorAdapter
         tell subOrderRouted to entity OrchestrationContext.MarketplaceOrder
       }
       on subOrderAcknowledged: event MarketplaceOrder.SubOrderAcknowledged is {
@@ -579,18 +586,24 @@ context OrchestrationContext as router is {
       }
       on subOrderShipped: event MarketplaceOrder.SubOrderShipped is {
         send subOrderShipped to outlet MarketplaceOrderEventSplitToOrderAnalytics
+        send subOrderShipped to outlet MarketplaceOrderEventSplitToNotificationAdapter
         tell subOrderShipped to entity OrchestrationContext.MarketplaceOrder
       }
       on subOrderDelivered: event MarketplaceOrder.SubOrderDelivered is {
         send subOrderDelivered to outlet MarketplaceOrderEventSplitToOrderAnalytics
+        send subOrderDelivered to outlet MarketplaceOrderEventSplitToPaymentAdapter
+        send subOrderDelivered to outlet MarketplaceOrderEventSplitToNotificationAdapter
         tell subOrderDelivered to entity OrchestrationContext.MarketplaceOrder
       }
       on subOrderCancelled: event MarketplaceOrder.SubOrderCancelled is {
         send subOrderCancelled to outlet MarketplaceOrderEventSplitToOrderAnalytics
+        send subOrderCancelled to outlet MarketplaceOrderEventSplitToPaymentAdapter
+        send subOrderCancelled to outlet MarketplaceOrderEventSplitToNotificationAdapter
         tell subOrderCancelled to entity OrchestrationContext.MarketplaceOrder
       }
       on orderCompleted: event MarketplaceOrder.OrderCompleted is {
         send orderCompleted to outlet MarketplaceOrderEventSplitToOrderAnalytics
+        send orderCompleted to outlet MarketplaceOrderEventSplitToNotificationAdapter
         tell orderCompleted to entity OrchestrationContext.MarketplaceOrder
       }
       on orderCancelled: event MarketplaceOrder.OrderCancelled is {
@@ -611,6 +624,18 @@ context OrchestrationContext as router is {
     described as {
       |Fans MarketplaceOrder events out to the repository and projectors.
     }
+  }
+  connector 'VendorAdapter Feed' is from outlet OrchestrationContext.MarketplaceOrderEventSplit.MarketplaceOrderEventSplitToVendorAdapter to inlet OrchestrationContext.VendorAdapter.VendorAdapterIn with {
+    briefly "The MarketplaceOrder events VendorAdapter translates, on their way to it"
+  }
+  connector 'ToInventoryService Feed' is from outlet OrchestrationContext.MarketplaceOrderEventSplit.MarketplaceOrderEventSplitToToInventoryService to inlet OrchestrationContext.ToInventoryService.ToInventoryServiceIn with {
+    briefly "The MarketplaceOrder events ToInventoryService translates, on their way to it"
+  }
+  connector 'PaymentAdapter Feed' is from outlet OrchestrationContext.MarketplaceOrderEventSplit.MarketplaceOrderEventSplitToPaymentAdapter to inlet OrchestrationContext.PaymentAdapter.PaymentAdapterIn with {
+    briefly "The MarketplaceOrder events PaymentAdapter translates, on their way to it"
+  }
+  connector 'NotificationAdapter Feed' is from outlet OrchestrationContext.MarketplaceOrderEventSplit.MarketplaceOrderEventSplitToNotificationAdapter to inlet OrchestrationContext.NotificationAdapter.NotificationAdapterIn with {
+    briefly "The MarketplaceOrder events NotificationAdapter translates, on their way to it"
   }
   connector 'MarketplaceOrderEvent Stream' is from outlet OrchestrationContext.MarketplaceOrder.MarketplaceOrderEvents2 to inlet OrchestrationContext.MarketplaceOrderEventSplit.MarketplaceOrderEventSplitIn with {
     briefly "MarketplaceOrder events, fanned out to storage and read models"

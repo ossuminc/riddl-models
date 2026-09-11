@@ -74,7 +74,7 @@ context PaymentContext as router is {
     }
   }
   adaptor ToCardNetworkService to context CardNetworkService as flow is { 
-    outlet ToCardNetworkServiceOut is command CardNetworkService.SendAuthRequest
+    inlet ToCardNetworkServiceIn is type PaymentEvent    outlet ToCardNetworkServiceOut is command CardNetworkService.SendAuthRequest
     handler ToCardNetworkServiceHandler is {
       on paymentAuthenticated: event Payment.PaymentAuthenticated is {
         let item0: type CardNetworkService.SendAuthRequest = prompt("translate the paymentAuthenticated event into a SendAuthRequest, authentication having come back being what makes the payment fit to present to the network")
@@ -116,7 +116,7 @@ context PaymentContext as router is {
     }
   }
   adaptor ToFraudService to context FraudService as flow is { 
-    outlet ToFraudServiceOut is command FraudService.ScreenTransaction
+    inlet ToFraudServiceIn is type PaymentEvent    outlet ToFraudServiceOut is command FraudService.ScreenTransaction
     handler ToFraudServiceHandler is {
       on paymentAuthorized: event PaymentAuthorized is {
         let item0: type FraudService.ScreenTransaction = prompt("translate the paymentAuthorized event into a ScreenTransaction, authorization being where the exposure is taken")
@@ -137,8 +137,8 @@ context PaymentContext as router is {
       |The model's side of the FraudService conversation.
     }
   }
-  adaptor ToMerchantService to context MerchantService as flow is { 
-    outlet ToMerchantServiceOut is query MerchantService.GetMerchant
+  adaptor ToMerchantService to context MerchantService as merge is { 
+    inlet ToMerchantServiceIn is type PaymentEvent    inlet ToMerchantServiceReplies is result MerchantService.MerchantDetails    outlet ToMerchantServiceOut is query MerchantService.GetMerchant
     handler ToMerchantServiceHandler is {
       on paymentInitiated: event Payment.PaymentInitiated is {
         let askAnswer: type MerchantService.MerchantDetails = ask query MerchantService.GetMerchant of context MerchantService
@@ -160,7 +160,7 @@ context PaymentContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendPaymentNotification
+    inlet ToNotificationServiceIn is type PaymentEvent    outlet ToNotificationServiceOut is command NotificationService.SendPaymentNotification
     handler ToNotificationServiceHandler is {
       on paymentDeclined: event PaymentDeclined is {
         let notice: type NotificationService.SendPaymentNotification = prompt("translate the paymentDeclined event into a SendPaymentNotification telling the merchant the payment was declined and the reason the processor gave, since they must decide whether to retry")
@@ -218,7 +218,7 @@ context PaymentContext as router is {
     }
   }
   adaptor ToSettlementService to context SettlementService as flow is { 
-    outlet ToSettlementServiceOut is command SettlementService.SubmitForSettlement
+    inlet ToSettlementServiceIn is type PaymentEvent    outlet ToSettlementServiceOut is command SettlementService.SubmitForSettlement
     handler ToSettlementServiceHandler is {
       on paymentCaptured: event Payment.PaymentCaptured is {
         let batch: type SettlementService.SubmitForSettlement = prompt("translate the paymentCaptured event into a SubmitForSettlement, capture being where the amount stops moving and the payment can join a settlement batch")
@@ -262,7 +262,7 @@ context PaymentContext as router is {
     }
   }
   adaptor ToThreeDSecureService to context ThreeDSecureService as flow is { 
-    outlet ToThreeDSecureServiceOut is command ThreeDSecureService.InitiateAuthentication
+    inlet ToThreeDSecureServiceIn is type PaymentEvent    outlet ToThreeDSecureServiceOut is command ThreeDSecureService.InitiateAuthentication
     handler ToThreeDSecureServiceHandler is {
       on paymentInitiated: event Payment.PaymentInitiated is {
         let item0: type ThreeDSecureService.InitiateAuthentication = prompt("translate the paymentInitiated event into a InitiateAuthentication, a payment entering being when the cardholder must be authenticated, before anything is authorized")
@@ -647,27 +647,39 @@ context PaymentContext as router is {
       |Maintains payment processing analytics data.
     }
   }
-  streamlet PaymentEventSplit as flow is {
+  streamlet PaymentEventSplit as split is {
+    outlet PaymentEventSplitToToThreeDSecureService is type PaymentEvent
+    outlet PaymentEventSplitToToSettlementService is type PaymentEvent
+    outlet PaymentEventSplitToToNotificationService is type PaymentEvent
+    outlet PaymentEventSplitToToMerchantService is type PaymentEvent
+    outlet PaymentEventSplitToToFraudService is type PaymentEvent
+    outlet PaymentEventSplitToToCardNetworkService is type PaymentEvent
     inlet PaymentEventSplitIn is type PaymentEvent    outlet PaymentEventSplitToPaymentAnalytics is type PaymentEvent
     handler PaymentEventSplitHandler is {
       on paymentAuthorized: event Payment.PaymentAuthorized is {
         send paymentAuthorized to outlet PaymentEventSplitToPaymentAnalytics
+        send paymentAuthorized to outlet PaymentEventSplitToToFraudService
         tell paymentAuthorized to entity PaymentContext.Payment
       }
       on paymentInitiated: event Payment.PaymentInitiated is {
         send paymentInitiated to outlet PaymentEventSplitToPaymentAnalytics
+        send paymentInitiated to outlet PaymentEventSplitToToThreeDSecureService
+        send paymentInitiated to outlet PaymentEventSplitToToMerchantService
         tell paymentInitiated to entity PaymentContext.Payment
       }
       on paymentAuthenticated: event Payment.PaymentAuthenticated is {
         send paymentAuthenticated to outlet PaymentEventSplitToPaymentAnalytics
+        send paymentAuthenticated to outlet PaymentEventSplitToToCardNetworkService
         tell paymentAuthenticated to entity PaymentContext.Payment
       }
       on paymentDeclined: event Payment.PaymentDeclined is {
         send paymentDeclined to outlet PaymentEventSplitToPaymentAnalytics
+        send paymentDeclined to outlet PaymentEventSplitToToNotificationService
         tell paymentDeclined to entity PaymentContext.Payment
       }
       on paymentCaptured: event Payment.PaymentCaptured is {
         send paymentCaptured to outlet PaymentEventSplitToPaymentAnalytics
+        send paymentCaptured to outlet PaymentEventSplitToToSettlementService
         tell paymentCaptured to entity PaymentContext.Payment
       }
       on paymentVoided: event Payment.PaymentVoided is {
@@ -676,18 +688,22 @@ context PaymentContext as router is {
       }
       on paymentRefunded: event Payment.PaymentRefunded is {
         send paymentRefunded to outlet PaymentEventSplitToPaymentAnalytics
+        send paymentRefunded to outlet PaymentEventSplitToToNotificationService
         tell paymentRefunded to entity PaymentContext.Payment
       }
       on paymentSettled: event Payment.PaymentSettled is {
         send paymentSettled to outlet PaymentEventSplitToPaymentAnalytics
+        send paymentSettled to outlet PaymentEventSplitToToNotificationService
         tell paymentSettled to entity PaymentContext.Payment
       }
       on disputeRecorded: event Payment.DisputeRecorded is {
         send disputeRecorded to outlet PaymentEventSplitToPaymentAnalytics
+        send disputeRecorded to outlet PaymentEventSplitToToNotificationService
         tell disputeRecorded to entity PaymentContext.Payment
       }
       on disputeResolved: event Payment.DisputeResolved is {
         send disputeResolved to outlet PaymentEventSplitToPaymentAnalytics
+        send disputeResolved to outlet PaymentEventSplitToToNotificationService
         tell disputeResolved to entity PaymentContext.Payment
       }
       on other is {
@@ -704,6 +720,24 @@ context PaymentContext as router is {
     described as {
       |Fans Payment events out to the repository and projectors.
     }
+  }
+  connector 'ToThreeDSecureService Feed' is from outlet PaymentContext.PaymentEventSplit.PaymentEventSplitToToThreeDSecureService to inlet PaymentContext.ToThreeDSecureService.ToThreeDSecureServiceIn with {
+    briefly "The Payment events ToThreeDSecureService translates, on their way to it"
+  }
+  connector 'ToSettlementService Feed' is from outlet PaymentContext.PaymentEventSplit.PaymentEventSplitToToSettlementService to inlet PaymentContext.ToSettlementService.ToSettlementServiceIn with {
+    briefly "The Payment events ToSettlementService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet PaymentContext.PaymentEventSplit.PaymentEventSplitToToNotificationService to inlet PaymentContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Payment events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToMerchantService Feed' is from outlet PaymentContext.PaymentEventSplit.PaymentEventSplitToToMerchantService to inlet PaymentContext.ToMerchantService.ToMerchantServiceIn with {
+    briefly "The Payment events ToMerchantService translates, on their way to it"
+  }
+  connector 'ToFraudService Feed' is from outlet PaymentContext.PaymentEventSplit.PaymentEventSplitToToFraudService to inlet PaymentContext.ToFraudService.ToFraudServiceIn with {
+    briefly "The Payment events ToFraudService translates, on their way to it"
+  }
+  connector 'ToCardNetworkService Feed' is from outlet PaymentContext.PaymentEventSplit.PaymentEventSplitToToCardNetworkService to inlet PaymentContext.ToCardNetworkService.ToCardNetworkServiceIn with {
+    briefly "The Payment events ToCardNetworkService translates, on their way to it"
   }
   connector 'PaymentEvent Stream' is from outlet PaymentContext.Payment.PaymentEvents2 to inlet PaymentContext.PaymentEventSplit.PaymentEventSplitIn with {
     briefly "Payment events, fanned out to storage and read models"

@@ -118,8 +118,8 @@ context RoomContext as router is {
       |The model's side of the HousekeepingManagementService conversation.
     }
   }
-  adaptor ToHousekeepingManagementService to context HousekeepingManagementService as flow is { 
-    outlet ToHousekeepingManagementServiceOut is type HousekeepingManagementService.HousekeepingManagementServiceRequest
+  adaptor ToHousekeepingManagementService to context HousekeepingManagementService as merge is { 
+    inlet ToHousekeepingManagementServiceIn is type RoomEvent    inlet ToHousekeepingManagementServiceReplies is result HousekeepingManagementService.HousekeepingQueueResult    outlet ToHousekeepingManagementServiceOut is type HousekeepingManagementService.HousekeepingManagementServiceRequest
     handler ToHousekeepingManagementServiceHandler is {
       on roomStatusChanged: event Room.RoomStatusChanged is {
         let askAnswer: type HousekeepingManagementService.HousekeepingQueueResult = ask query HousekeepingManagementService.GetHousekeepingQueue of context HousekeepingManagementService
@@ -261,8 +261,8 @@ context RoomContext as router is {
       |The model's side of the QualityManagementService conversation.
     }
   }
-  adaptor ToQualityManagementService to context QualityManagementService as flow is { 
-    outlet ToQualityManagementServiceOut is type QualityManagementService.QualityManagementServiceRequest
+  adaptor ToQualityManagementService to context QualityManagementService as merge is { 
+    inlet ToQualityManagementServiceIn is type RoomEvent    inlet ToQualityManagementServiceReplies is result QualityManagementService.QualityMetricsResult    outlet ToQualityManagementServiceOut is type QualityManagementService.QualityManagementServiceRequest
     handler ToQualityManagementServiceHandler is {
       on roomInspected: event Room.RoomInspected is {
         let askAnswer: type QualityManagementService.QualityMetricsResult = ask query QualityManagementService.GetQualityMetrics of context QualityManagementService
@@ -310,8 +310,8 @@ context RoomContext as router is {
       |The model's side of the ReservationService conversation.
     }
   }
-  adaptor ToReservationService to context ReservationService as flow is { 
-    outlet ToReservationServiceOut is query ReservationService.GetRoomReservations
+  adaptor ToReservationService to context ReservationService as merge is { 
+    inlet ToReservationServiceIn is type RoomEvent    inlet ToReservationServiceReplies is result ReservationService.RoomReservationsResult    outlet ToReservationServiceOut is query ReservationService.GetRoomReservations
     handler ToReservationServiceHandler is {
       on roomBlocked: event Room.RoomBlocked is {
         let askAnswer: type ReservationService.RoomReservationsResult = ask query ReservationService.GetRoomReservations of context ReservationService
@@ -953,7 +953,10 @@ context RoomContext as router is {
       |persistence.
     }
   }
-  streamlet RoomEventSplit as flow is {
+  streamlet RoomEventSplit as split is {
+    outlet RoomEventSplitToToReservationService is type RoomEvent
+    outlet RoomEventSplitToToQualityManagementService is type RoomEvent
+    outlet RoomEventSplitToToHousekeepingManagementService is type RoomEvent
     inlet RoomEventSplitIn is type RoomEvent    outlet RoomEventSplitToHousekeepingAnalytics is type RoomEvent
     handler RoomEventSplitHandler is {
       on roomCreated: event Room.RoomCreated is {
@@ -970,10 +973,12 @@ context RoomContext as router is {
       }
       on roomStatusChanged: event Room.RoomStatusChanged is {
         send roomStatusChanged to outlet RoomEventSplitToHousekeepingAnalytics
+        send roomStatusChanged to outlet RoomEventSplitToToHousekeepingManagementService
         tell roomStatusChanged to entity RoomContext.Room
       }
       on housekeeperAssigned: event Room.HousekeeperAssigned is {
         send housekeeperAssigned to outlet RoomEventSplitToHousekeepingAnalytics
+        send housekeeperAssigned to outlet RoomEventSplitToToHousekeepingManagementService
         tell housekeeperAssigned to entity RoomContext.Room
       }
       on cleaningRecorded: event Room.CleaningRecorded is {
@@ -982,6 +987,7 @@ context RoomContext as router is {
       }
       on roomInspected: event Room.RoomInspected is {
         send roomInspected to outlet RoomEventSplitToHousekeepingAnalytics
+        send roomInspected to outlet RoomEventSplitToToQualityManagementService
         tell roomInspected to entity RoomContext.Room
       }
       on maintenanceReported: event Room.MaintenanceReported is {
@@ -994,6 +1000,7 @@ context RoomContext as router is {
       }
       on roomBlocked: event Room.RoomBlocked is {
         send roomBlocked to outlet RoomEventSplitToHousekeepingAnalytics
+        send roomBlocked to outlet RoomEventSplitToToReservationService
         tell roomBlocked to entity RoomContext.Room
       }
       on roomUnblocked: event Room.RoomUnblocked is {
@@ -1018,6 +1025,15 @@ context RoomContext as router is {
     described as {
       |Fans Room events out to the repository and projectors.
     }
+  }
+  connector 'ToReservationService Feed' is from outlet RoomContext.RoomEventSplit.RoomEventSplitToToReservationService to inlet RoomContext.ToReservationService.ToReservationServiceIn with {
+    briefly "The Room events ToReservationService translates, on their way to it"
+  }
+  connector 'ToQualityManagementService Feed' is from outlet RoomContext.RoomEventSplit.RoomEventSplitToToQualityManagementService to inlet RoomContext.ToQualityManagementService.ToQualityManagementServiceIn with {
+    briefly "The Room events ToQualityManagementService translates, on their way to it"
+  }
+  connector 'ToHousekeepingManagementService Feed' is from outlet RoomContext.RoomEventSplit.RoomEventSplitToToHousekeepingManagementService to inlet RoomContext.ToHousekeepingManagementService.ToHousekeepingManagementServiceIn with {
+    briefly "The Room events ToHousekeepingManagementService translates, on their way to it"
   }
   connector 'RoomEvent Stream' is from outlet RoomContext.Room.RoomEvents2 to inlet RoomContext.RoomEventSplit.RoomEventSplitIn with {
     briefly "Room events, fanned out to storage and read models"

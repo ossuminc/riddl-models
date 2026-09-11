@@ -77,7 +77,7 @@ context ReservationContext as router is {
     }
   }
   adaptor ToChannelManagementService to context ChannelManagementService as flow is { 
-    outlet ToChannelManagementServiceOut is command ChannelManagementService.UpdateInventory
+    inlet ToChannelManagementServiceIn is type ReservationEvent    outlet ToChannelManagementServiceOut is command ChannelManagementService.UpdateInventory
     handler ToChannelManagementServiceHandler is {
       on reservationCreated: event Reservation.ReservationCreated is {
         let item0: type ChannelManagementService.UpdateInventory = prompt("translate the reservationCreated event into a UpdateInventory, a booking removing a room from the pool")
@@ -129,7 +129,7 @@ context ReservationContext as router is {
     }
   }
   adaptor ToGuestCommunicationService to context GuestCommunicationService as flow is { 
-    outlet ToGuestCommunicationServiceOut is type GuestCommunicationService.GuestCommunicationServiceCommand
+    inlet ToGuestCommunicationServiceIn is type ReservationEvent    outlet ToGuestCommunicationServiceOut is type GuestCommunicationService.GuestCommunicationServiceCommand
     handler ToGuestCommunicationServiceHandler is {
       on reservationConfirmed: event Reservation.ReservationConfirmed is {
         let confirmation: type GuestCommunicationService.SendConfirmationEmail = prompt("translate the reservationConfirmed event into a SendConfirmationEmail giving the guest their confirmation number and stay details")
@@ -180,7 +180,7 @@ context ReservationContext as router is {
     }
   }
   adaptor ToHousekeepingService to context HousekeepingService as flow is { 
-    outlet ToHousekeepingServiceOut is command HousekeepingService.RequestRoomCleaning
+    inlet ToHousekeepingServiceIn is type ReservationEvent    outlet ToHousekeepingServiceOut is command HousekeepingService.RequestRoomCleaning
     handler ToHousekeepingServiceHandler is {
       on guestCheckedOut: event Reservation.GuestCheckedOut is {
         let item0: type HousekeepingService.RequestRoomCleaning = prompt("translate the guestCheckedOut event into a RequestRoomCleaning, checkout being when the room must be turned over")
@@ -221,8 +221,8 @@ context ReservationContext as router is {
       |The model's side of the LoyaltyProgramService conversation.
     }
   }
-  adaptor ToLoyaltyProgramService to context LoyaltyProgramService as flow is { 
-    outlet ToLoyaltyProgramServiceOut is type LoyaltyProgramService.LoyaltyProgramServiceRequest
+  adaptor ToLoyaltyProgramService to context LoyaltyProgramService as merge is { 
+    inlet ToLoyaltyProgramServiceIn is type ReservationEvent    inlet ToLoyaltyProgramServiceReplies is result LoyaltyProgramService.MemberTierResult    outlet ToLoyaltyProgramServiceOut is type LoyaltyProgramService.LoyaltyProgramServiceRequest
     handler ToLoyaltyProgramServiceHandler is {
       on reservationCreated: event Reservation.ReservationCreated is {
         let askAnswer: type LoyaltyProgramService.MemberTierResult = ask query LoyaltyProgramService.GetMemberTier of context LoyaltyProgramService
@@ -276,7 +276,7 @@ context ReservationContext as router is {
     }
   }
   adaptor ToPaymentProcessingService to context PaymentProcessingService as flow is { 
-    outlet ToPaymentProcessingServiceOut is type PaymentProcessingService.PaymentProcessingServiceCommand
+    inlet ToPaymentProcessingServiceIn is type ReservationEvent    outlet ToPaymentProcessingServiceOut is type PaymentProcessingService.PaymentProcessingServiceCommand
     handler ToPaymentProcessingServiceHandler is {
       on reservationConfirmed: event ReservationConfirmed is {
         let notice: type PaymentProcessingService.AuthorizePayment = prompt("translate the reservationConfirmed event into a AuthorizePayment holding the room rate against the guest's card, which is what makes the reservation firm")
@@ -328,8 +328,8 @@ context ReservationContext as router is {
       |The model's side of the RoomManagementService conversation.
     }
   }
-  adaptor ToRoomManagementService to context RoomManagementService as flow is { 
-    outlet ToRoomManagementServiceOut is type RoomManagementService.RoomManagementServiceCommand
+  adaptor ToRoomManagementService to context RoomManagementService as merge is { 
+    inlet ToRoomManagementServiceIn is type ReservationEvent    inlet ToRoomManagementServiceReplies is result RoomManagementService.AvailableRoomsResult    outlet ToRoomManagementServiceOut is type RoomManagementService.RoomManagementServiceCommand
     handler ToRoomManagementServiceHandler is {
       on reservationCreated: event Reservation.ReservationCreated is {
         let askAnswer: type RoomManagementService.AvailableRoomsResult = ask query RoomManagementService.GetAvailableRooms of context RoomManagementService
@@ -754,11 +754,20 @@ context ReservationContext as router is {
       |persistence.
     }
   }
-  streamlet ReservationEventSplit as flow is {
+  streamlet ReservationEventSplit as split is {
+    outlet ReservationEventSplitToToRoomManagementService is type ReservationEvent
+    outlet ReservationEventSplitToToPaymentProcessingService is type ReservationEvent
+    outlet ReservationEventSplitToToLoyaltyProgramService is type ReservationEvent
+    outlet ReservationEventSplitToToHousekeepingService is type ReservationEvent
+    outlet ReservationEventSplitToToGuestCommunicationService is type ReservationEvent
+    outlet ReservationEventSplitToToChannelManagementService is type ReservationEvent
     inlet ReservationEventSplitIn is type ReservationEvent    outlet ReservationEventSplitToReservationAnalytics is type ReservationEvent
     handler ReservationEventSplitHandler is {
       on reservationCreated: event Reservation.ReservationCreated is {
         send reservationCreated to outlet ReservationEventSplitToReservationAnalytics
+        send reservationCreated to outlet ReservationEventSplitToToRoomManagementService
+        send reservationCreated to outlet ReservationEventSplitToToLoyaltyProgramService
+        send reservationCreated to outlet ReservationEventSplitToToChannelManagementService
         tell reservationCreated to entity ReservationContext.Reservation
       }
       on reservationModified: event Reservation.ReservationModified is {
@@ -767,10 +776,13 @@ context ReservationContext as router is {
       }
       on reservationConfirmed: event Reservation.ReservationConfirmed is {
         send reservationConfirmed to outlet ReservationEventSplitToReservationAnalytics
+        send reservationConfirmed to outlet ReservationEventSplitToToPaymentProcessingService
+        send reservationConfirmed to outlet ReservationEventSplitToToGuestCommunicationService
         tell reservationConfirmed to entity ReservationContext.Reservation
       }
       on roomAssigned: event Reservation.RoomAssigned is {
         send roomAssigned to outlet ReservationEventSplitToReservationAnalytics
+        send roomAssigned to outlet ReservationEventSplitToToRoomManagementService
         tell roomAssigned to entity ReservationContext.Reservation
       }
       on guestCheckedIn: event Reservation.GuestCheckedIn is {
@@ -787,10 +799,18 @@ context ReservationContext as router is {
       }
       on guestCheckedOut: event Reservation.GuestCheckedOut is {
         send guestCheckedOut to outlet ReservationEventSplitToReservationAnalytics
+        send guestCheckedOut to outlet ReservationEventSplitToToRoomManagementService
+        send guestCheckedOut to outlet ReservationEventSplitToToPaymentProcessingService
+        send guestCheckedOut to outlet ReservationEventSplitToToLoyaltyProgramService
+        send guestCheckedOut to outlet ReservationEventSplitToToHousekeepingService
+        send guestCheckedOut to outlet ReservationEventSplitToToGuestCommunicationService
         tell guestCheckedOut to entity ReservationContext.Reservation
       }
       on reservationCancelled: event Reservation.ReservationCancelled is {
         send reservationCancelled to outlet ReservationEventSplitToReservationAnalytics
+        send reservationCancelled to outlet ReservationEventSplitToToRoomManagementService
+        send reservationCancelled to outlet ReservationEventSplitToToPaymentProcessingService
+        send reservationCancelled to outlet ReservationEventSplitToToChannelManagementService
         tell reservationCancelled to entity ReservationContext.Reservation
       }
       on guestMarkedNoShow: event Reservation.GuestMarkedNoShow is {
@@ -811,6 +831,24 @@ context ReservationContext as router is {
     described as {
       |Fans Reservation events out to the repository and projectors.
     }
+  }
+  connector 'ToRoomManagementService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToRoomManagementService to inlet ReservationContext.ToRoomManagementService.ToRoomManagementServiceIn with {
+    briefly "The Reservation events ToRoomManagementService translates, on their way to it"
+  }
+  connector 'ToPaymentProcessingService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToPaymentProcessingService to inlet ReservationContext.ToPaymentProcessingService.ToPaymentProcessingServiceIn with {
+    briefly "The Reservation events ToPaymentProcessingService translates, on their way to it"
+  }
+  connector 'ToLoyaltyProgramService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToLoyaltyProgramService to inlet ReservationContext.ToLoyaltyProgramService.ToLoyaltyProgramServiceIn with {
+    briefly "The Reservation events ToLoyaltyProgramService translates, on their way to it"
+  }
+  connector 'ToHousekeepingService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToHousekeepingService to inlet ReservationContext.ToHousekeepingService.ToHousekeepingServiceIn with {
+    briefly "The Reservation events ToHousekeepingService translates, on their way to it"
+  }
+  connector 'ToGuestCommunicationService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToGuestCommunicationService to inlet ReservationContext.ToGuestCommunicationService.ToGuestCommunicationServiceIn with {
+    briefly "The Reservation events ToGuestCommunicationService translates, on their way to it"
+  }
+  connector 'ToChannelManagementService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToChannelManagementService to inlet ReservationContext.ToChannelManagementService.ToChannelManagementServiceIn with {
+    briefly "The Reservation events ToChannelManagementService translates, on their way to it"
   }
   connector 'ReservationEvent Stream' is from outlet ReservationContext.Reservation.ReservationEvents2 to inlet ReservationContext.ReservationEventSplit.ReservationEventSplitIn with {
     briefly "Reservation events, fanned out to storage and read models"

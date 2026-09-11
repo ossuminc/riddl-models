@@ -67,8 +67,8 @@ context PipelineContext as router is {
       |The model's side of the RegulatoryPortal conversation.
     }
   }
-  adaptor ToRegulatoryPortal to context RegulatoryPortal as flow is { 
-    outlet ToRegulatoryPortalOut is type RegulatoryPortal.RegulatoryPortalRequest
+  adaptor ToRegulatoryPortal to context RegulatoryPortal as merge is { 
+    inlet ToRegulatoryPortalIn is type PipelineSegmentEvent    inlet ToRegulatoryPortalReplies is result RegulatoryPortal.ComplianceStatus    outlet ToRegulatoryPortalOut is type RegulatoryPortal.RegulatoryPortalRequest
     handler ToRegulatoryPortalHandler is {
       on inspectionRecorded: event InspectionRecorded is {
         let item0: type RegulatoryPortal.SubmitComplianceFiling = prompt("translate the inspectionRecorded event into a SubmitComplianceFiling, an inspection being the reportable fact itself")
@@ -113,8 +113,8 @@ context PipelineContext as router is {
       |The model's side of the SCADASystem conversation.
     }
   }
-  adaptor ToSCADASystem to context SCADASystem as flow is { 
-    outlet ToSCADASystemOut is type SCADASystem.SCADASystemRequest
+  adaptor ToSCADASystem to context SCADASystem as merge is { 
+    inlet ToSCADASystemIn is type PipelineSegmentEvent    inlet ToSCADASystemReplies is result SCADASystem.LiveReadings    outlet ToSCADASystemOut is type SCADASystem.SCADASystemRequest
     handler ToSCADASystemHandler is {
       on flowReadingRecorded: event PipelineSegment.FlowReadingRecorded is {
         let askAnswer: type SCADASystem.LiveReadings = ask query SCADASystem.GetLiveReadings of context SCADASystem
@@ -520,7 +520,9 @@ context PipelineContext as router is {
       |persistence.
     }
   }
-  streamlet PipelineSegmentEventSplit as flow is {
+  streamlet PipelineSegmentEventSplit as split is {
+    outlet PipelineSegmentEventSplitToToSCADASystem is type PipelineSegmentEvent
+    outlet PipelineSegmentEventSplitToToRegulatoryPortal is type PipelineSegmentEvent
     inlet PipelineSegmentEventSplitIn is type PipelineSegmentEvent    outlet PipelineSegmentEventSplitToPipelineMetrics is type PipelineSegmentEvent
     handler PipelineSegmentEventSplitHandler is {
       on segmentCommissioned: event PipelineSegment.SegmentCommissioned is {
@@ -529,10 +531,12 @@ context PipelineContext as router is {
       }
       on flowReadingRecorded: event PipelineSegment.FlowReadingRecorded is {
         send flowReadingRecorded to outlet PipelineSegmentEventSplitToPipelineMetrics
+        send flowReadingRecorded to outlet PipelineSegmentEventSplitToToSCADASystem
         tell flowReadingRecorded to entity PipelineContext.PipelineSegment
       }
       on leakIndicatorReported: event PipelineSegment.LeakIndicatorReported is {
         send leakIndicatorReported to outlet PipelineSegmentEventSplitToPipelineMetrics
+        send leakIndicatorReported to outlet PipelineSegmentEventSplitToToSCADASystem
         tell leakIndicatorReported to entity PipelineContext.PipelineSegment
       }
       on maintenanceScheduled: event PipelineSegment.MaintenanceScheduled is {
@@ -545,10 +549,12 @@ context PipelineContext as router is {
       }
       on inspectionRecorded: event PipelineSegment.InspectionRecorded is {
         send inspectionRecorded to outlet PipelineSegmentEventSplitToPipelineMetrics
+        send inspectionRecorded to outlet PipelineSegmentEventSplitToToRegulatoryPortal
         tell inspectionRecorded to entity PipelineContext.PipelineSegment
       }
       on complianceReportFiled: event PipelineSegment.ComplianceReportFiled is {
         send complianceReportFiled to outlet PipelineSegmentEventSplitToPipelineMetrics
+        send complianceReportFiled to outlet PipelineSegmentEventSplitToToRegulatoryPortal
         tell complianceReportFiled to entity PipelineContext.PipelineSegment
       }
       on segmentShutDown: event PipelineSegment.SegmentShutDown is {
@@ -577,6 +583,12 @@ context PipelineContext as router is {
     described as {
       |Fans PipelineSegment events out to the repository and projectors.
     }
+  }
+  connector 'ToSCADASystem Feed' is from outlet PipelineContext.PipelineSegmentEventSplit.PipelineSegmentEventSplitToToSCADASystem to inlet PipelineContext.ToSCADASystem.ToSCADASystemIn with {
+    briefly "The PipelineSegment events ToSCADASystem translates, on their way to it"
+  }
+  connector 'ToRegulatoryPortal Feed' is from outlet PipelineContext.PipelineSegmentEventSplit.PipelineSegmentEventSplitToToRegulatoryPortal to inlet PipelineContext.ToRegulatoryPortal.ToRegulatoryPortalIn with {
+    briefly "The PipelineSegment events ToRegulatoryPortal translates, on their way to it"
   }
   connector 'PipelineSegmentEvent Stream' is from outlet PipelineContext.PipelineSegment.PipelineSegmentEvents2 to inlet PipelineContext.PipelineSegmentEventSplit.PipelineSegmentEventSplitIn with {
     briefly "PipelineSegment events, fanned out to storage and read models"

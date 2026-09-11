@@ -76,8 +76,8 @@ context InventoryContext as router is {
       |The model's side of the BarcodeService conversation.
     }
   }
-  adaptor ToBarcodeService to context BarcodeService as flow is { 
-    outlet ToBarcodeServiceOut is type BarcodeService.BarcodeServiceCommand
+  adaptor ToBarcodeService to context BarcodeService as merge is { 
+    inlet ToBarcodeServiceIn is type InventoryEvent    inlet ToBarcodeServiceReplies is result BarcodeService.BarcodeData    outlet ToBarcodeServiceOut is type BarcodeService.BarcodeServiceCommand
     handler ToBarcodeServiceHandler is {
       on stockReceived: event Inventory.StockReceived is {
         let askAnswer: type BarcodeService.BarcodeData = ask query BarcodeService.GetBarcode of context BarcodeService
@@ -126,7 +126,7 @@ context InventoryContext as router is {
     }
   }
   adaptor ToOrderManagementService to context OrderManagementService as flow is { 
-    outlet ToOrderManagementServiceOut is type OrderManagementService.OrderManagementServiceCommand
+    inlet ToOrderManagementServiceIn is type InventoryEvent    outlet ToOrderManagementServiceOut is type OrderManagementService.OrderManagementServiceCommand
     handler ToOrderManagementServiceHandler is {
       on stockReserved: event Inventory.StockReserved is {
         let item0: type OrderManagementService.RequestInventoryAllocation = prompt("translate the stockReserved event into a RequestInventoryAllocation, a reservation being the request for a firm allocation")
@@ -171,8 +171,8 @@ context InventoryContext as router is {
       |The model's side of the ProcurementService conversation.
     }
   }
-  adaptor ToProcurementService to context ProcurementService as flow is { 
-    outlet ToProcurementServiceOut is type ProcurementService.ProcurementServiceRequest
+  adaptor ToProcurementService to context ProcurementService as merge is { 
+    inlet ToProcurementServiceIn is type InventoryEvent    inlet ToProcurementServiceReplies is result ProcurementService.PurchaseOrderStatus    outlet ToProcurementServiceOut is type ProcurementService.ProcurementServiceRequest
     handler ToProcurementServiceHandler is {
       on cycleCountRecorded: event Inventory.CycleCountRecorded is {
         let askAnswer: type ProcurementService.PurchaseOrderStatus = ask query ProcurementService.GetPurchaseOrderStatus of context ProcurementService
@@ -272,7 +272,7 @@ context InventoryContext as router is {
     }
   }
   adaptor ToShippingService to context ShippingService as flow is { 
-    outlet ToShippingServiceOut is type ShippingService.ShippingServiceCommand
+    inlet ToShippingServiceIn is type InventoryEvent    outlet ToShippingServiceOut is type ShippingService.ShippingServiceCommand
     handler ToShippingServiceHandler is {
       on stockAllocated: event Inventory.StockAllocated is {
         let item0: type ShippingService.CreateShipment = prompt("translate the stockAllocated event into a CreateShipment, allocation being what a shipment is built from")
@@ -297,8 +297,8 @@ context InventoryContext as router is {
       |The model's side of the ShippingService conversation.
     }
   }
-  adaptor ToWarehouseManagementService to context WarehouseManagementService as flow is { 
-    outlet ToWarehouseManagementServiceOut is type WarehouseManagementService.WarehouseManagementServiceRequest
+  adaptor ToWarehouseManagementService to context WarehouseManagementService as merge is { 
+    inlet ToWarehouseManagementServiceIn is type InventoryEvent    inlet ToWarehouseManagementServiceReplies is type WarehouseManagementService.WarehouseManagementServiceReply    outlet ToWarehouseManagementServiceOut is type WarehouseManagementService.WarehouseManagementServiceRequest
     handler ToWarehouseManagementServiceHandler is {
       on stockReceived: event Inventory.StockReceived is {
         let slotting: type WarehouseManagementService.SlottingRecommendation = ask query WarehouseManagementService.GetSlottingRecommendation of context WarehouseManagementService
@@ -723,7 +723,12 @@ context InventoryContext as router is {
       |Union of Inventory events for streaming.
     }
   }
-  streamlet InventoryEventSplit as flow is {
+  streamlet InventoryEventSplit as split is {
+    outlet InventoryEventSplitToToWarehouseManagementService is type InventoryEvent
+    outlet InventoryEventSplitToToShippingService is type InventoryEvent
+    outlet InventoryEventSplitToToProcurementService is type InventoryEvent
+    outlet InventoryEventSplitToToOrderManagementService is type InventoryEvent
+    outlet InventoryEventSplitToToBarcodeService is type InventoryEvent
     inlet InventoryEventSplitIn is type InventoryEvent    outlet InventoryEventSplitToInventoryAnalytics is type InventoryEvent
     handler InventoryEventSplitHandler is {
       on inventoryInitialized: event Inventory.InventoryInitialized is {
@@ -732,10 +737,13 @@ context InventoryContext as router is {
       }
       on stockReceived: event Inventory.StockReceived is {
         send stockReceived to outlet InventoryEventSplitToInventoryAnalytics
+        send stockReceived to outlet InventoryEventSplitToToWarehouseManagementService
+        send stockReceived to outlet InventoryEventSplitToToBarcodeService
         tell stockReceived to entity InventoryContext.Inventory
       }
       on stockReserved: event Inventory.StockReserved is {
         send stockReserved to outlet InventoryEventSplitToInventoryAnalytics
+        send stockReserved to outlet InventoryEventSplitToToOrderManagementService
         tell stockReserved to entity InventoryContext.Inventory
       }
       on reservationReleased: event Inventory.ReservationReleased is {
@@ -744,14 +752,18 @@ context InventoryContext as router is {
       }
       on stockAllocated: event Inventory.StockAllocated is {
         send stockAllocated to outlet InventoryEventSplitToInventoryAnalytics
+        send stockAllocated to outlet InventoryEventSplitToToShippingService
+        send stockAllocated to outlet InventoryEventSplitToToOrderManagementService
         tell stockAllocated to entity InventoryContext.Inventory
       }
       on stockPicked: event Inventory.StockPicked is {
         send stockPicked to outlet InventoryEventSplitToInventoryAnalytics
+        send stockPicked to outlet InventoryEventSplitToToShippingService
         tell stockPicked to entity InventoryContext.Inventory
       }
       on stockTransferred: event Inventory.StockTransferred is {
         send stockTransferred to outlet InventoryEventSplitToInventoryAnalytics
+        send stockTransferred to outlet InventoryEventSplitToToWarehouseManagementService
         tell stockTransferred to entity InventoryContext.Inventory
       }
       on stockAdjusted: event Inventory.StockAdjusted is {
@@ -760,10 +772,12 @@ context InventoryContext as router is {
       }
       on cycleCountRecorded: event Inventory.CycleCountRecorded is {
         send cycleCountRecorded to outlet InventoryEventSplitToInventoryAnalytics
+        send cycleCountRecorded to outlet InventoryEventSplitToToProcurementService
         tell cycleCountRecorded to entity InventoryContext.Inventory
       }
       on replenishmentRequested: event Inventory.ReplenishmentRequested is {
         send replenishmentRequested to outlet InventoryEventSplitToInventoryAnalytics
+        send replenishmentRequested to outlet InventoryEventSplitToToProcurementService
         tell replenishmentRequested to entity InventoryContext.Inventory
       }
       on other is {
@@ -780,6 +794,21 @@ context InventoryContext as router is {
     described as {
       |Fans Inventory events out to the repository and projectors.
     }
+  }
+  connector 'ToWarehouseManagementService Feed' is from outlet InventoryContext.InventoryEventSplit.InventoryEventSplitToToWarehouseManagementService to inlet InventoryContext.ToWarehouseManagementService.ToWarehouseManagementServiceIn with {
+    briefly "The Inventory events ToWarehouseManagementService translates, on their way to it"
+  }
+  connector 'ToShippingService Feed' is from outlet InventoryContext.InventoryEventSplit.InventoryEventSplitToToShippingService to inlet InventoryContext.ToShippingService.ToShippingServiceIn with {
+    briefly "The Inventory events ToShippingService translates, on their way to it"
+  }
+  connector 'ToProcurementService Feed' is from outlet InventoryContext.InventoryEventSplit.InventoryEventSplitToToProcurementService to inlet InventoryContext.ToProcurementService.ToProcurementServiceIn with {
+    briefly "The Inventory events ToProcurementService translates, on their way to it"
+  }
+  connector 'ToOrderManagementService Feed' is from outlet InventoryContext.InventoryEventSplit.InventoryEventSplitToToOrderManagementService to inlet InventoryContext.ToOrderManagementService.ToOrderManagementServiceIn with {
+    briefly "The Inventory events ToOrderManagementService translates, on their way to it"
+  }
+  connector 'ToBarcodeService Feed' is from outlet InventoryContext.InventoryEventSplit.InventoryEventSplitToToBarcodeService to inlet InventoryContext.ToBarcodeService.ToBarcodeServiceIn with {
+    briefly "The Inventory events ToBarcodeService translates, on their way to it"
   }
   connector 'InventoryEvent Stream' is from outlet InventoryContext.Inventory.InventoryEvents2 to inlet InventoryContext.InventoryEventSplit.InventoryEventSplitIn with {
     briefly "Inventory events, fanned out to storage and read models"

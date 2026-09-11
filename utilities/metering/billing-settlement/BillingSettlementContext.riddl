@@ -73,8 +73,8 @@ context BillingSettlementContext as router is {
       |The model's side of the EnergySupplierGateway conversation.
     }
   }
-  adaptor ToEnergySupplierGateway to context EnergySupplierGateway as flow is { 
-    outlet ToEnergySupplierGatewayOut is type EnergySupplierGateway.EnergySupplierGatewayRequest
+  adaptor ToEnergySupplierGateway to context EnergySupplierGateway as merge is { 
+    inlet ToEnergySupplierGatewayIn is type BillingAccountEvent    inlet ToEnergySupplierGatewayReplies is result EnergySupplierGateway.SupplierRates    outlet ToEnergySupplierGatewayOut is type EnergySupplierGateway.EnergySupplierGatewayRequest
     handler ToEnergySupplierGatewayHandler is {
       on settlementInitiated: event BillingAccount.SettlementInitiated is {
         let submission: type EnergySupplierGateway.SubmitSettlement = prompt("translate the settlementInitiated event into a SubmitSettlement putting the period's reconciled volumes to the supplier")
@@ -121,8 +121,8 @@ context BillingSettlementContext as router is {
       |The model's side of the MeterDataSystem conversation.
     }
   }
-  adaptor ToMeterDataSystem to context MeterDataSystem as flow is { 
-    outlet ToMeterDataSystemOut is type MeterDataSystem.MeterDataSystemRequest
+  adaptor ToMeterDataSystem to context MeterDataSystem as merge is { 
+    inlet ToMeterDataSystemIn is type BillingAccountEvent    inlet ToMeterDataSystemReplies is result MeterDataSystem.MeterReadings    outlet ToMeterDataSystemOut is type MeterDataSystem.MeterDataSystemRequest
     handler ToMeterDataSystemHandler is {
       on billDisputed: event BillingAccount.BillDisputed is {
         let askAnswer: type MeterDataSystem.MeterReadings = ask query MeterDataSystem.GetMeterReadings of context MeterDataSystem
@@ -173,7 +173,7 @@ context BillingSettlementContext as router is {
     }
   }
   adaptor ToPaymentProcessor to context PaymentProcessor as flow is { 
-    outlet ToPaymentProcessorOut is type PaymentProcessor.PaymentProcessorCommand
+    inlet ToPaymentProcessorIn is type BillingAccountEvent    outlet ToPaymentProcessorOut is type PaymentProcessor.PaymentProcessorCommand
     handler ToPaymentProcessorHandler is {
       on billGenerated: event BillingAccount.BillGenerated is {
         let notice: type PaymentProcessor.ProcessPayment = prompt("translate the billGenerated event into a ProcessPayment collecting what the customer owes on the bill just raised")
@@ -535,7 +535,10 @@ context BillingSettlementContext as router is {
       |persistence.
     }
   }
-  streamlet BillingAccountEventSplit as flow is {
+  streamlet BillingAccountEventSplit as split is {
+    outlet BillingAccountEventSplitToToPaymentProcessor is type BillingAccountEvent
+    outlet BillingAccountEventSplitToToMeterDataSystem is type BillingAccountEvent
+    outlet BillingAccountEventSplitToToEnergySupplierGateway is type BillingAccountEvent
     inlet BillingAccountEventSplitIn is type BillingAccountEvent    outlet BillingAccountEventSplitToBillingMetrics is type BillingAccountEvent
     handler BillingAccountEventSplitHandler is {
       on accountCreated: event BillingAccount.AccountCreated is {
@@ -544,14 +547,17 @@ context BillingSettlementContext as router is {
       }
       on meterReadingSubmitted: event BillingAccount.MeterReadingSubmitted is {
         send meterReadingSubmitted to outlet BillingAccountEventSplitToBillingMetrics
+        send meterReadingSubmitted to outlet BillingAccountEventSplitToToMeterDataSystem
         tell meterReadingSubmitted to entity BillingSettlementContext.BillingAccount
       }
       on usageCalculated: event BillingAccount.UsageCalculated is {
         send usageCalculated to outlet BillingAccountEventSplitToBillingMetrics
+        send usageCalculated to outlet BillingAccountEventSplitToToEnergySupplierGateway
         tell usageCalculated to entity BillingSettlementContext.BillingAccount
       }
       on billGenerated: event BillingAccount.BillGenerated is {
         send billGenerated to outlet BillingAccountEventSplitToBillingMetrics
+        send billGenerated to outlet BillingAccountEventSplitToToPaymentProcessor
         tell billGenerated to entity BillingSettlementContext.BillingAccount
       }
       on paymentRecorded: event BillingAccount.PaymentRecorded is {
@@ -560,10 +566,13 @@ context BillingSettlementContext as router is {
       }
       on settlementInitiated: event BillingAccount.SettlementInitiated is {
         send settlementInitiated to outlet BillingAccountEventSplitToBillingMetrics
+        send settlementInitiated to outlet BillingAccountEventSplitToToEnergySupplierGateway
         tell settlementInitiated to entity BillingSettlementContext.BillingAccount
       }
       on billDisputed: event BillingAccount.BillDisputed is {
         send billDisputed to outlet BillingAccountEventSplitToBillingMetrics
+        send billDisputed to outlet BillingAccountEventSplitToToPaymentProcessor
+        send billDisputed to outlet BillingAccountEventSplitToToMeterDataSystem
         tell billDisputed to entity BillingSettlementContext.BillingAccount
       }
       on accountClosed: event BillingAccount.AccountClosed is {
@@ -584,6 +593,15 @@ context BillingSettlementContext as router is {
     described as {
       |Fans BillingAccount events out to the repository and projectors.
     }
+  }
+  connector 'ToPaymentProcessor Feed' is from outlet BillingSettlementContext.BillingAccountEventSplit.BillingAccountEventSplitToToPaymentProcessor to inlet BillingSettlementContext.ToPaymentProcessor.ToPaymentProcessorIn with {
+    briefly "The BillingAccount events ToPaymentProcessor translates, on their way to it"
+  }
+  connector 'ToMeterDataSystem Feed' is from outlet BillingSettlementContext.BillingAccountEventSplit.BillingAccountEventSplitToToMeterDataSystem to inlet BillingSettlementContext.ToMeterDataSystem.ToMeterDataSystemIn with {
+    briefly "The BillingAccount events ToMeterDataSystem translates, on their way to it"
+  }
+  connector 'ToEnergySupplierGateway Feed' is from outlet BillingSettlementContext.BillingAccountEventSplit.BillingAccountEventSplitToToEnergySupplierGateway to inlet BillingSettlementContext.ToEnergySupplierGateway.ToEnergySupplierGatewayIn with {
+    briefly "The BillingAccount events ToEnergySupplierGateway translates, on their way to it"
   }
   connector 'BillingAccountEvent Stream' is from outlet BillingSettlementContext.BillingAccount.BillingAccountEvents2 to inlet BillingSettlementContext.BillingAccountEventSplit.BillingAccountEventSplitIn with {
     briefly "BillingAccount events, fanned out to storage and read models"

@@ -71,7 +71,7 @@ context PropertyContext as router is {
     }
   }
   adaptor ToMaintenanceDispatchService to context MaintenanceDispatchService as flow is { 
-    outlet ToMaintenanceDispatchServiceOut is command MaintenanceDispatchService.DispatchTechnician
+    inlet ToMaintenanceDispatchServiceIn is type PropertyEvent    outlet ToMaintenanceDispatchServiceOut is command MaintenanceDispatchService.DispatchTechnician
     handler ToMaintenanceDispatchServiceHandler is {
       on maintenanceRequestSubmitted: event Property.MaintenanceRequestSubmitted is {
         let notice: type MaintenanceDispatchService.DispatchTechnician = prompt("translate the maintenanceRequestSubmitted event into a DispatchTechnician sending someone to the reported fault")
@@ -93,7 +93,7 @@ context PropertyContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendTenantNotification
+    inlet ToNotificationServiceIn is type PropertyEvent    outlet ToNotificationServiceOut is command NotificationService.SendTenantNotification
     handler ToNotificationServiceHandler is {
       on leaseApproved: event LeaseApproved is {
         let notice: type NotificationService.SendTenantNotification = prompt("translate the leaseApproved event into a SendTenantNotification telling the applicant their lease is approved and what happens before move-in")
@@ -149,7 +149,7 @@ context PropertyContext as router is {
     }
   }
   adaptor ToPaymentProcessingService to context PaymentProcessingService as flow is { 
-    outlet ToPaymentProcessingServiceOut is command PaymentProcessingService.ProcessRentPayment
+    inlet ToPaymentProcessingServiceIn is type PropertyEvent    outlet ToPaymentProcessingServiceOut is command PaymentProcessingService.ProcessRentPayment
     handler ToPaymentProcessingServiceHandler is {
       on paymentRecorded: event Property.PaymentRecorded is {
         let notice: type PaymentProcessingService.ProcessRentPayment = prompt("translate the paymentRecorded event into a ProcessRentPayment moving the rent the tenant has just tendered against their lease")
@@ -191,7 +191,7 @@ context PropertyContext as router is {
     }
   }
   adaptor ToTenantScreeningService to context TenantScreeningService as flow is { 
-    outlet ToTenantScreeningServiceOut is command TenantScreeningService.ScreenTenant
+    inlet ToTenantScreeningServiceIn is type PropertyEvent    outlet ToTenantScreeningServiceOut is command TenantScreeningService.ScreenTenant
     handler ToTenantScreeningServiceHandler is {
       on leaseApproved: event LeaseApproved is {
         let check0: type TenantScreeningService.ScreenTenant = prompt("translate the leaseApproved event into a ScreenTenant checking the applicant before they are handed keys")
@@ -554,7 +554,11 @@ context PropertyContext as router is {
       |persistence.
     }
   }
-  streamlet PropertyEventSplit as flow is {
+  streamlet PropertyEventSplit as split is {
+    outlet PropertyEventSplitToToTenantScreeningService is type PropertyEvent
+    outlet PropertyEventSplitToToPaymentProcessingService is type PropertyEvent
+    outlet PropertyEventSplitToToNotificationService is type PropertyEvent
+    outlet PropertyEventSplitToToMaintenanceDispatchService is type PropertyEvent
     inlet PropertyEventSplitIn is type PropertyEvent    outlet PropertyEventSplitToPropertyAnalytics is type PropertyEvent
     handler PropertyEventSplitHandler is {
       on propertyAdded: event Property.PropertyAdded is {
@@ -571,26 +575,33 @@ context PropertyContext as router is {
       }
       on leaseApproved: event Property.LeaseApproved is {
         send leaseApproved to outlet PropertyEventSplitToPropertyAnalytics
+        send leaseApproved to outlet PropertyEventSplitToToTenantScreeningService
+        send leaseApproved to outlet PropertyEventSplitToToNotificationService
         tell leaseApproved to entity PropertyContext.Property
       }
       on leaseRenewed: event Property.LeaseRenewed is {
         send leaseRenewed to outlet PropertyEventSplitToPropertyAnalytics
+        send leaseRenewed to outlet PropertyEventSplitToToNotificationService
         tell leaseRenewed to entity PropertyContext.Property
       }
       on leaseTerminated: event Property.LeaseTerminated is {
         send leaseTerminated to outlet PropertyEventSplitToPropertyAnalytics
+        send leaseTerminated to outlet PropertyEventSplitToToNotificationService
         tell leaseTerminated to entity PropertyContext.Property
       }
       on paymentRecorded: event Property.PaymentRecorded is {
         send paymentRecorded to outlet PropertyEventSplitToPropertyAnalytics
+        send paymentRecorded to outlet PropertyEventSplitToToPaymentProcessingService
         tell paymentRecorded to entity PropertyContext.Property
       }
       on maintenanceRequestSubmitted: event Property.MaintenanceRequestSubmitted is {
         send maintenanceRequestSubmitted to outlet PropertyEventSplitToPropertyAnalytics
+        send maintenanceRequestSubmitted to outlet PropertyEventSplitToToMaintenanceDispatchService
         tell maintenanceRequestSubmitted to entity PropertyContext.Property
       }
       on maintenanceRequestCompleted: event Property.MaintenanceRequestCompleted is {
         send maintenanceRequestCompleted to outlet PropertyEventSplitToPropertyAnalytics
+        send maintenanceRequestCompleted to outlet PropertyEventSplitToToNotificationService
         tell maintenanceRequestCompleted to entity PropertyContext.Property
       }
       on other is {
@@ -607,6 +618,18 @@ context PropertyContext as router is {
     described as {
       |Fans Property events out to the repository and projectors.
     }
+  }
+  connector 'ToTenantScreeningService Feed' is from outlet PropertyContext.PropertyEventSplit.PropertyEventSplitToToTenantScreeningService to inlet PropertyContext.ToTenantScreeningService.ToTenantScreeningServiceIn with {
+    briefly "The Property events ToTenantScreeningService translates, on their way to it"
+  }
+  connector 'ToPaymentProcessingService Feed' is from outlet PropertyContext.PropertyEventSplit.PropertyEventSplitToToPaymentProcessingService to inlet PropertyContext.ToPaymentProcessingService.ToPaymentProcessingServiceIn with {
+    briefly "The Property events ToPaymentProcessingService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet PropertyContext.PropertyEventSplit.PropertyEventSplitToToNotificationService to inlet PropertyContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Property events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToMaintenanceDispatchService Feed' is from outlet PropertyContext.PropertyEventSplit.PropertyEventSplitToToMaintenanceDispatchService to inlet PropertyContext.ToMaintenanceDispatchService.ToMaintenanceDispatchServiceIn with {
+    briefly "The Property events ToMaintenanceDispatchService translates, on their way to it"
   }
   connector 'PropertyEvent Stream' is from outlet PropertyContext.Property.PropertyEvents2 to inlet PropertyContext.PropertyEventSplit.PropertyEventSplitIn with {
     briefly "Property events, fanned out to storage and read models"

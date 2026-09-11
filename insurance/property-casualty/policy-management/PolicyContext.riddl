@@ -64,8 +64,8 @@ context PolicyContext as router is {
       |The model's side of the AgencyManagementService conversation.
     }
   }
-  adaptor ToAgencyManagementService to context AgencyManagementService as flow is { 
-    outlet ToAgencyManagementServiceOut is type AgencyManagementService.AgencyManagementServiceRequest
+  adaptor ToAgencyManagementService to context AgencyManagementService as merge is { 
+    inlet ToAgencyManagementServiceIn is type PolicyEvent    inlet ToAgencyManagementServiceReplies is result AgencyManagementService.AgentInfo    outlet ToAgencyManagementServiceOut is type AgencyManagementService.AgencyManagementServiceRequest
     handler ToAgencyManagementServiceHandler is {
       on policyIssued: event Policy.PolicyIssued is {
         let askAnswer: type AgencyManagementService.AgentInfo = ask query AgencyManagementService.GetAgentInfo of context AgencyManagementService
@@ -114,7 +114,7 @@ context PolicyContext as router is {
     }
   }
   adaptor ToBillingService to context BillingService as flow is { 
-    outlet ToBillingServiceOut is type BillingService.BillingServiceCommand
+    inlet ToBillingServiceIn is type PolicyEvent    outlet ToBillingServiceOut is type BillingService.BillingServiceCommand
     handler ToBillingServiceHandler is {
       on policyIssued: event Policy.PolicyIssued is {
         let schedule: type BillingService.CreateBillingSchedule = prompt("translate the policyIssued event into a CreateBillingSchedule laying out the instalments for the policy just issued")
@@ -163,7 +163,7 @@ context PolicyContext as router is {
     }
   }
   adaptor ToDocumentGenerationService to context DocumentGenerationService as flow is { 
-    outlet ToDocumentGenerationServiceOut is type DocumentGenerationService.DocumentGenerationServiceCommand
+    inlet ToDocumentGenerationServiceIn is type PolicyEvent    outlet ToDocumentGenerationServiceOut is type DocumentGenerationService.DocumentGenerationServiceCommand
     handler ToDocumentGenerationServiceHandler is {
       on policyIssued: event PolicyIssued is {
         let artifact: type DocumentGenerationService.GeneratePolicyDocuments = prompt("translate the policyIssued event into a GeneratePolicyDocuments producing the policy wording and schedule")
@@ -188,8 +188,8 @@ context PolicyContext as router is {
       |The model's side of the DocumentGenerationService conversation.
     }
   }
-  adaptor ToRatingEngineService to context RatingEngineService as flow is { 
-    outlet ToRatingEngineServiceOut is type RatingEngineService.RatingEngineServiceCommand
+  adaptor ToRatingEngineService to context RatingEngineService as merge is { 
+    inlet ToRatingEngineServiceIn is type PolicyEvent    inlet ToRatingEngineServiceReplies is type RatingEngineService.RatingEngineServiceReply    outlet ToRatingEngineServiceOut is type RatingEngineService.RatingEngineServiceCommand
     handler ToRatingEngineServiceHandler is {
       on endorsementAdded: event Policy.EndorsementAdded is {
         let rating: type RatingEngineService.CalculatePremium = prompt("translate the endorsementAdded event into a CalculatePremium, an endorsement changing the coverage that the premium prices")
@@ -239,7 +239,7 @@ context PolicyContext as router is {
     }
   }
   adaptor ToRegulatoryReportingService to context RegulatoryReportingService as flow is { 
-    outlet ToRegulatoryReportingServiceOut is command RegulatoryReportingService.SubmitPolicyFiling
+    inlet ToRegulatoryReportingServiceIn is type PolicyEvent    outlet ToRegulatoryReportingServiceOut is command RegulatoryReportingService.SubmitPolicyFiling
     handler ToRegulatoryReportingServiceHandler is {
       on policyBound: event Policy.PolicyBound is {
         let item0: type RegulatoryReportingService.SubmitPolicyFiling = prompt("translate the policyBound event into a SubmitPolicyFiling, a bound policy being the reportable fact")
@@ -280,8 +280,8 @@ context PolicyContext as router is {
       |The model's side of the UnderwritingService conversation.
     }
   }
-  adaptor ToUnderwritingService to context UnderwritingService as flow is { 
-    outlet ToUnderwritingServiceOut is type UnderwritingService.UnderwritingServiceCommand
+  adaptor ToUnderwritingService to context UnderwritingService as merge is { 
+    inlet ToUnderwritingServiceIn is type PolicyEvent    inlet ToUnderwritingServiceReplies is result UnderwritingService.RiskEvaluation    outlet ToUnderwritingServiceOut is type UnderwritingService.UnderwritingServiceCommand
     handler ToUnderwritingServiceHandler is {
       on endorsementAdded: event Policy.EndorsementAdded is {
         let askAnswer: type UnderwritingService.RiskEvaluation = ask query UnderwritingService.GetRiskEvaluation of context UnderwritingService
@@ -656,23 +656,40 @@ context PolicyContext as router is {
       |Maintains insurance policy analytics data.
     }
   }
-  streamlet PolicyEventSplit as flow is {
+  streamlet PolicyEventSplit as split is {
+    outlet PolicyEventSplitToToUnderwritingService is type PolicyEvent
+    outlet PolicyEventSplitToToRegulatoryReportingService is type PolicyEvent
+    outlet PolicyEventSplitToToRatingEngineService is type PolicyEvent
+    outlet PolicyEventSplitToToDocumentGenerationService is type PolicyEvent
+    outlet PolicyEventSplitToToBillingService is type PolicyEvent
+    outlet PolicyEventSplitToToAgencyManagementService is type PolicyEvent
     inlet PolicyEventSplitIn is type PolicyEvent    outlet PolicyEventSplitToPolicyAnalytics is type PolicyEvent
     handler PolicyEventSplitHandler is {
       on policyIssued: event Policy.PolicyIssued is {
         send policyIssued to outlet PolicyEventSplitToPolicyAnalytics
+        send policyIssued to outlet PolicyEventSplitToToUnderwritingService
+        send policyIssued to outlet PolicyEventSplitToToRatingEngineService
+        send policyIssued to outlet PolicyEventSplitToToDocumentGenerationService
+        send policyIssued to outlet PolicyEventSplitToToBillingService
+        send policyIssued to outlet PolicyEventSplitToToAgencyManagementService
         tell policyIssued to entity PolicyContext.Policy
       }
       on policyBound: event Policy.PolicyBound is {
         send policyBound to outlet PolicyEventSplitToPolicyAnalytics
+        send policyBound to outlet PolicyEventSplitToToRegulatoryReportingService
+        send policyBound to outlet PolicyEventSplitToToAgencyManagementService
         tell policyBound to entity PolicyContext.Policy
       }
       on endorsementAdded: event Policy.EndorsementAdded is {
         send endorsementAdded to outlet PolicyEventSplitToPolicyAnalytics
+        send endorsementAdded to outlet PolicyEventSplitToToUnderwritingService
+        send endorsementAdded to outlet PolicyEventSplitToToRatingEngineService
+        send endorsementAdded to outlet PolicyEventSplitToToDocumentGenerationService
         tell endorsementAdded to entity PolicyContext.Policy
       }
       on renewalOffered: event Policy.RenewalOffered is {
         send renewalOffered to outlet PolicyEventSplitToPolicyAnalytics
+        send renewalOffered to outlet PolicyEventSplitToToRatingEngineService
         tell renewalOffered to entity PolicyContext.Policy
       }
       on renewalAccepted: event Policy.RenewalAccepted is {
@@ -689,6 +706,7 @@ context PolicyContext as router is {
       }
       on policyCancelled: event Policy.PolicyCancelled is {
         send policyCancelled to outlet PolicyEventSplitToPolicyAnalytics
+        send policyCancelled to outlet PolicyEventSplitToToBillingService
         tell policyCancelled to entity PolicyContext.Policy
       }
       on policyNonRenewed: event Policy.PolicyNonRenewed is {
@@ -709,6 +727,24 @@ context PolicyContext as router is {
     described as {
       |Fans Policy events out to the repository and projectors.
     }
+  }
+  connector 'ToUnderwritingService Feed' is from outlet PolicyContext.PolicyEventSplit.PolicyEventSplitToToUnderwritingService to inlet PolicyContext.ToUnderwritingService.ToUnderwritingServiceIn with {
+    briefly "The Policy events ToUnderwritingService translates, on their way to it"
+  }
+  connector 'ToRegulatoryReportingService Feed' is from outlet PolicyContext.PolicyEventSplit.PolicyEventSplitToToRegulatoryReportingService to inlet PolicyContext.ToRegulatoryReportingService.ToRegulatoryReportingServiceIn with {
+    briefly "The Policy events ToRegulatoryReportingService translates, on their way to it"
+  }
+  connector 'ToRatingEngineService Feed' is from outlet PolicyContext.PolicyEventSplit.PolicyEventSplitToToRatingEngineService to inlet PolicyContext.ToRatingEngineService.ToRatingEngineServiceIn with {
+    briefly "The Policy events ToRatingEngineService translates, on their way to it"
+  }
+  connector 'ToDocumentGenerationService Feed' is from outlet PolicyContext.PolicyEventSplit.PolicyEventSplitToToDocumentGenerationService to inlet PolicyContext.ToDocumentGenerationService.ToDocumentGenerationServiceIn with {
+    briefly "The Policy events ToDocumentGenerationService translates, on their way to it"
+  }
+  connector 'ToBillingService Feed' is from outlet PolicyContext.PolicyEventSplit.PolicyEventSplitToToBillingService to inlet PolicyContext.ToBillingService.ToBillingServiceIn with {
+    briefly "The Policy events ToBillingService translates, on their way to it"
+  }
+  connector 'ToAgencyManagementService Feed' is from outlet PolicyContext.PolicyEventSplit.PolicyEventSplitToToAgencyManagementService to inlet PolicyContext.ToAgencyManagementService.ToAgencyManagementServiceIn with {
+    briefly "The Policy events ToAgencyManagementService translates, on their way to it"
   }
   connector 'PolicyEvent Stream' is from outlet PolicyContext.Policy.PolicyEvents2 to inlet PolicyContext.PolicyEventSplit.PolicyEventSplitIn with {
     briefly "Policy events, fanned out to storage and read models"

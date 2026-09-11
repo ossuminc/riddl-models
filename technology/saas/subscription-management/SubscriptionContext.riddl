@@ -82,7 +82,7 @@ context SubscriptionContext as router is {
     }
   }
   adaptor ToInvoiceService to context InvoiceService as flow is { 
-    outlet ToInvoiceServiceOut is command InvoiceService.GenerateInvoice
+    inlet ToInvoiceServiceIn is type SubscriptionEvent    outlet ToInvoiceServiceOut is command InvoiceService.GenerateInvoice
     handler ToInvoiceServiceHandler is {
       on subscriptionRenewed: event Subscription.SubscriptionRenewed is {
         let notice: type InvoiceService.GenerateInvoice = prompt("translate the subscriptionRenewed event into a GenerateInvoice for the term just renewed, the renewal being where the period closes and the next becomes billable")
@@ -104,7 +104,7 @@ context SubscriptionContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendSubscriptionNotification
+    inlet ToNotificationServiceIn is type SubscriptionEvent    outlet ToNotificationServiceOut is command NotificationService.SendSubscriptionNotification
     handler ToNotificationServiceHandler is {
       on paymentFailed: event PaymentFailed is {
         let notice: type NotificationService.SendSubscriptionNotification = prompt("translate the paymentFailed event into a SendSubscriptionNotification telling the subscriber the charge failed and what happens if it is not fixed, since service depends on it")
@@ -168,7 +168,7 @@ context SubscriptionContext as router is {
     }
   }
   adaptor ToPaymentGatewayService to context PaymentGatewayService as flow is { 
-    outlet ToPaymentGatewayServiceOut is command PaymentGatewayService.ChargePayment
+    inlet ToPaymentGatewayServiceIn is type SubscriptionEvent    outlet ToPaymentGatewayServiceOut is command PaymentGatewayService.ChargePayment
     handler ToPaymentGatewayServiceHandler is {
       on subscriptionCreated: event Subscription.SubscriptionCreated is {
         let charge: type PaymentGatewayService.ChargePayment = prompt("translate the subscriptionCreated event into a ChargePayment taking the first term the subscriber has just committed to")
@@ -217,7 +217,7 @@ context SubscriptionContext as router is {
     }
   }
   adaptor ToProvisioningService to context ProvisioningService as flow is { 
-    outlet ToProvisioningServiceOut is type ProvisioningService.ProvisioningServiceCommand
+    inlet ToProvisioningServiceIn is type SubscriptionEvent    outlet ToProvisioningServiceOut is type ProvisioningService.ProvisioningServiceCommand
     handler ToProvisioningServiceHandler is {
       on subscriptionCreated: event Subscription.SubscriptionCreated is {
         let item0: type ProvisioningService.ProvisionAccess = prompt("translate the subscriptionCreated event into a ProvisionAccess, a subscription being what entitles someone to the product")
@@ -246,8 +246,8 @@ context SubscriptionContext as router is {
       |The model's side of the ProvisioningService conversation.
     }
   }
-  adaptor ToUsageMeteringService to context UsageMeteringService as flow is { 
-    outlet ToUsageMeteringServiceOut is query UsageMeteringService.GetUsage
+  adaptor ToUsageMeteringService to context UsageMeteringService as merge is { 
+    inlet ToUsageMeteringServiceIn is type SubscriptionEvent    inlet ToUsageMeteringServiceReplies is result UsageMeteringService.UsageData    outlet ToUsageMeteringServiceOut is query UsageMeteringService.GetUsage
     handler ToUsageMeteringServiceHandler is {
       on subscriptionRenewed: event Subscription.SubscriptionRenewed is {
         let askAnswer: type UsageMeteringService.UsageData = ask query UsageMeteringService.GetUsage of context UsageMeteringService
@@ -662,11 +662,18 @@ context SubscriptionContext as router is {
       |Union of all Subscription events for streaming.
     }
   }
-  streamlet SubscriptionEventSplit as flow is {
+  streamlet SubscriptionEventSplit as split is {
+    outlet SubscriptionEventSplitToToUsageMeteringService is type SubscriptionEvent
+    outlet SubscriptionEventSplitToToProvisioningService is type SubscriptionEvent
+    outlet SubscriptionEventSplitToToPaymentGatewayService is type SubscriptionEvent
+    outlet SubscriptionEventSplitToToNotificationService is type SubscriptionEvent
+    outlet SubscriptionEventSplitToToInvoiceService is type SubscriptionEvent
     inlet SubscriptionEventSplitIn is type SubscriptionEvent    outlet SubscriptionEventSplitToSubscriptionAnalytics is type SubscriptionEvent
     handler SubscriptionEventSplitHandler is {
       on subscriptionCreated: event Subscription.SubscriptionCreated is {
         send subscriptionCreated to outlet SubscriptionEventSplitToSubscriptionAnalytics
+        send subscriptionCreated to outlet SubscriptionEventSplitToToProvisioningService
+        send subscriptionCreated to outlet SubscriptionEventSplitToToPaymentGatewayService
         tell subscriptionCreated to entity SubscriptionContext.Subscription
       }
       on trialStarted: event Subscription.TrialStarted is {
@@ -675,10 +682,12 @@ context SubscriptionContext as router is {
       }
       on trialConverted: event Subscription.TrialConverted is {
         send trialConverted to outlet SubscriptionEventSplitToSubscriptionAnalytics
+        send trialConverted to outlet SubscriptionEventSplitToToNotificationService
         tell trialConverted to entity SubscriptionContext.Subscription
       }
       on planChanged: event Subscription.PlanChanged is {
         send planChanged to outlet SubscriptionEventSplitToSubscriptionAnalytics
+        send planChanged to outlet SubscriptionEventSplitToToNotificationService
         tell planChanged to entity SubscriptionContext.Subscription
       }
       on discountApplied: event Subscription.DiscountApplied is {
@@ -691,10 +700,13 @@ context SubscriptionContext as router is {
       }
       on paymentFailed: event Subscription.PaymentFailed is {
         send paymentFailed to outlet SubscriptionEventSplitToSubscriptionAnalytics
+        send paymentFailed to outlet SubscriptionEventSplitToToNotificationService
         tell paymentFailed to entity SubscriptionContext.Subscription
       }
       on subscriptionSuspended: event Subscription.SubscriptionSuspended is {
         send subscriptionSuspended to outlet SubscriptionEventSplitToSubscriptionAnalytics
+        send subscriptionSuspended to outlet SubscriptionEventSplitToToProvisioningService
+        send subscriptionSuspended to outlet SubscriptionEventSplitToToNotificationService
         tell subscriptionSuspended to entity SubscriptionContext.Subscription
       }
       on subscriptionReactivated: event Subscription.SubscriptionReactivated is {
@@ -703,10 +715,15 @@ context SubscriptionContext as router is {
       }
       on subscriptionCanceled: event Subscription.SubscriptionCanceled is {
         send subscriptionCanceled to outlet SubscriptionEventSplitToSubscriptionAnalytics
+        send subscriptionCanceled to outlet SubscriptionEventSplitToToProvisioningService
+        send subscriptionCanceled to outlet SubscriptionEventSplitToToNotificationService
         tell subscriptionCanceled to entity SubscriptionContext.Subscription
       }
       on subscriptionRenewed: event Subscription.SubscriptionRenewed is {
         send subscriptionRenewed to outlet SubscriptionEventSplitToSubscriptionAnalytics
+        send subscriptionRenewed to outlet SubscriptionEventSplitToToUsageMeteringService
+        send subscriptionRenewed to outlet SubscriptionEventSplitToToPaymentGatewayService
+        send subscriptionRenewed to outlet SubscriptionEventSplitToToInvoiceService
         tell subscriptionRenewed to entity SubscriptionContext.Subscription
       }
       on other is {
@@ -723,6 +740,21 @@ context SubscriptionContext as router is {
     described as {
       |Fans Subscription events out to the repository and projectors.
     }
+  }
+  connector 'ToUsageMeteringService Feed' is from outlet SubscriptionContext.SubscriptionEventSplit.SubscriptionEventSplitToToUsageMeteringService to inlet SubscriptionContext.ToUsageMeteringService.ToUsageMeteringServiceIn with {
+    briefly "The Subscription events ToUsageMeteringService translates, on their way to it"
+  }
+  connector 'ToProvisioningService Feed' is from outlet SubscriptionContext.SubscriptionEventSplit.SubscriptionEventSplitToToProvisioningService to inlet SubscriptionContext.ToProvisioningService.ToProvisioningServiceIn with {
+    briefly "The Subscription events ToProvisioningService translates, on their way to it"
+  }
+  connector 'ToPaymentGatewayService Feed' is from outlet SubscriptionContext.SubscriptionEventSplit.SubscriptionEventSplitToToPaymentGatewayService to inlet SubscriptionContext.ToPaymentGatewayService.ToPaymentGatewayServiceIn with {
+    briefly "The Subscription events ToPaymentGatewayService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet SubscriptionContext.SubscriptionEventSplit.SubscriptionEventSplitToToNotificationService to inlet SubscriptionContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Subscription events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToInvoiceService Feed' is from outlet SubscriptionContext.SubscriptionEventSplit.SubscriptionEventSplitToToInvoiceService to inlet SubscriptionContext.ToInvoiceService.ToInvoiceServiceIn with {
+    briefly "The Subscription events ToInvoiceService translates, on their way to it"
   }
   connector 'SubscriptionEvent Stream' is from outlet SubscriptionContext.Subscription.SubscriptionEvents to inlet SubscriptionContext.SubscriptionEventSplit.SubscriptionEventSplitIn with {
     briefly "Subscription events, fanned out to storage and read models"

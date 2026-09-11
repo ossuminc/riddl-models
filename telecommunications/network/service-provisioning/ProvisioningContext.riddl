@@ -78,8 +78,8 @@ context ProvisioningContext as router is {
       |The model's side of the NetworkElementManager conversation.
     }
   }
-  adaptor ToNetworkElementManager to context NetworkElementManager as flow is { 
-    outlet ToNetworkElementManagerOut is type NetworkElementManager.NetworkElementManagerRequest
+  adaptor ToNetworkElementManager to context NetworkElementManager as merge is { 
+    inlet ToNetworkElementManagerIn is type ServiceOrderEvent    inlet ToNetworkElementManagerReplies is result NetworkElementManager.ElementStatus    outlet ToNetworkElementManagerOut is type NetworkElementManager.NetworkElementManagerRequest
     handler ToNetworkElementManagerHandler is {
       on serviceTested: event ServiceOrder.ServiceTested is {
         let askAnswer: type NetworkElementManager.ElementStatus = ask query NetworkElementManager.GetElementStatus of context NetworkElementManager
@@ -124,8 +124,8 @@ context ProvisioningContext as router is {
       |The model's side of the NetworkInventorySystem conversation.
     }
   }
-  adaptor ToNetworkInventorySystem to context NetworkInventorySystem as flow is { 
-    outlet ToNetworkInventorySystemOut is type NetworkInventorySystem.NetworkInventorySystemRequest
+  adaptor ToNetworkInventorySystem to context NetworkInventorySystem as merge is { 
+    inlet ToNetworkInventorySystemIn is type ServiceOrderEvent    inlet ToNetworkInventorySystemReplies is result NetworkInventorySystem.AvailableResources    outlet ToNetworkInventorySystemOut is type NetworkInventorySystem.NetworkInventorySystemRequest
     handler ToNetworkInventorySystemHandler is {
       on serviceDesigned: event ServiceOrder.ServiceDesigned is {
         let claim: type NetworkInventorySystem.ReserveResources = prompt("translate the serviceDesigned event into a ReserveResources claiming the network elements the design commits to, the design being where what is needed becomes known")
@@ -173,7 +173,7 @@ context ProvisioningContext as router is {
     }
   }
   adaptor ToServiceTestingSystem to context ServiceTestingSystem as flow is { 
-    outlet ToServiceTestingSystemOut is command ServiceTestingSystem.RunServiceTest
+    inlet ToServiceTestingSystemIn is type ServiceOrderEvent    outlet ToServiceTestingSystemOut is command ServiceTestingSystem.RunServiceTest
     handler ToServiceTestingSystemHandler is {
       on taskCompleted: event ServiceOrder.TaskCompleted is {
         let item0: type ServiceTestingSystem.RunServiceTest = prompt("translate the taskCompleted event into a RunServiceTest, a completed task being what must be proved to work")
@@ -547,7 +547,10 @@ context ProvisioningContext as router is {
       |persistence.
     }
   }
-  streamlet ServiceOrderEventSplit as flow is {
+  streamlet ServiceOrderEventSplit as split is {
+    outlet ServiceOrderEventSplitToToServiceTestingSystem is type ServiceOrderEvent
+    outlet ServiceOrderEventSplitToToNetworkInventorySystem is type ServiceOrderEvent
+    outlet ServiceOrderEventSplitToToNetworkElementManager is type ServiceOrderEvent
     inlet ServiceOrderEventSplitIn is type ServiceOrderEvent    outlet ServiceOrderEventSplitToProvisioningMetrics is type ServiceOrderEvent
     handler ServiceOrderEventSplitHandler is {
       on orderCreated: event ServiceOrder.OrderCreated is {
@@ -556,22 +559,27 @@ context ProvisioningContext as router is {
       }
       on orderValidated: event ServiceOrder.OrderValidated is {
         send orderValidated to outlet ServiceOrderEventSplitToProvisioningMetrics
+        send orderValidated to outlet ServiceOrderEventSplitToToNetworkInventorySystem
         tell orderValidated to entity ProvisioningContext.ServiceOrder
       }
       on serviceDesigned: event ServiceOrder.ServiceDesigned is {
         send serviceDesigned to outlet ServiceOrderEventSplitToProvisioningMetrics
+        send serviceDesigned to outlet ServiceOrderEventSplitToToNetworkInventorySystem
         tell serviceDesigned to entity ProvisioningContext.ServiceOrder
       }
       on provisioningStarted: event ServiceOrder.ProvisioningStarted is {
         send provisioningStarted to outlet ServiceOrderEventSplitToProvisioningMetrics
+        send provisioningStarted to outlet ServiceOrderEventSplitToToNetworkElementManager
         tell provisioningStarted to entity ProvisioningContext.ServiceOrder
       }
       on taskCompleted: event ServiceOrder.TaskCompleted is {
         send taskCompleted to outlet ServiceOrderEventSplitToProvisioningMetrics
+        send taskCompleted to outlet ServiceOrderEventSplitToToServiceTestingSystem
         tell taskCompleted to entity ProvisioningContext.ServiceOrder
       }
       on serviceTested: event ServiceOrder.ServiceTested is {
         send serviceTested to outlet ServiceOrderEventSplitToProvisioningMetrics
+        send serviceTested to outlet ServiceOrderEventSplitToToNetworkElementManager
         tell serviceTested to entity ProvisioningContext.ServiceOrder
       }
       on serviceActivated: event ServiceOrder.ServiceActivated is {
@@ -600,6 +608,15 @@ context ProvisioningContext as router is {
     described as {
       |Fans ServiceOrder events out to the repository and projectors.
     }
+  }
+  connector 'ToServiceTestingSystem Feed' is from outlet ProvisioningContext.ServiceOrderEventSplit.ServiceOrderEventSplitToToServiceTestingSystem to inlet ProvisioningContext.ToServiceTestingSystem.ToServiceTestingSystemIn with {
+    briefly "The ServiceOrder events ToServiceTestingSystem translates, on their way to it"
+  }
+  connector 'ToNetworkInventorySystem Feed' is from outlet ProvisioningContext.ServiceOrderEventSplit.ServiceOrderEventSplitToToNetworkInventorySystem to inlet ProvisioningContext.ToNetworkInventorySystem.ToNetworkInventorySystemIn with {
+    briefly "The ServiceOrder events ToNetworkInventorySystem translates, on their way to it"
+  }
+  connector 'ToNetworkElementManager Feed' is from outlet ProvisioningContext.ServiceOrderEventSplit.ServiceOrderEventSplitToToNetworkElementManager to inlet ProvisioningContext.ToNetworkElementManager.ToNetworkElementManagerIn with {
+    briefly "The ServiceOrder events ToNetworkElementManager translates, on their way to it"
   }
   connector 'ServiceOrderEvent Stream' is from outlet ProvisioningContext.ServiceOrder.ServiceOrderEvents2 to inlet ProvisioningContext.ServiceOrderEventSplit.ServiceOrderEventSplitIn with {
     briefly "ServiceOrder events, fanned out to storage and read models"

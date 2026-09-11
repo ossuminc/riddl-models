@@ -93,7 +93,7 @@ context RentalContext as router is {
     }
   }
   adaptor ToDriverVerificationService to context DriverVerificationService as flow is { 
-    outlet ToDriverVerificationServiceOut is command DriverVerificationService.VerifyDriver
+    inlet ToDriverVerificationServiceIn is type RentalEvent    outlet ToDriverVerificationServiceOut is command DriverVerificationService.VerifyDriver
     handler ToDriverVerificationServiceHandler is {
       on rentalCreated: event RentalCreated is {
         let check0: type DriverVerificationService.VerifyDriver = prompt("translate the rentalCreated event into a VerifyDriver checking the licence before a vehicle is handed over")
@@ -138,7 +138,7 @@ context RentalContext as router is {
     }
   }
   adaptor ToFleetMaintenanceService to context FleetMaintenanceService as flow is { 
-    outlet ToFleetMaintenanceServiceOut is type FleetMaintenanceService.FleetMaintenanceServiceCommand
+    inlet ToFleetMaintenanceServiceIn is type RentalEvent    outlet ToFleetMaintenanceServiceOut is type FleetMaintenanceService.FleetMaintenanceServiceCommand
     handler ToFleetMaintenanceServiceHandler is {
       on vehicleCheckedIn: event Rental.VehicleCheckedIn is {
         let item0: type FleetMaintenanceService.ScheduleInspection = prompt("translate the vehicleCheckedIn event into a ScheduleInspection, return being when a vehicle is looked over")
@@ -183,8 +183,8 @@ context RentalContext as router is {
       |The model's side of the InsuranceProviderService conversation.
     }
   }
-  adaptor ToInsuranceProviderService to context InsuranceProviderService as flow is { 
-    outlet ToInsuranceProviderServiceOut is type InsuranceProviderService.InsuranceProviderServiceRequest
+  adaptor ToInsuranceProviderService to context InsuranceProviderService as merge is { 
+    inlet ToInsuranceProviderServiceIn is type RentalEvent    inlet ToInsuranceProviderServiceReplies is result InsuranceProviderService.InsuranceOptions    outlet ToInsuranceProviderServiceOut is type InsuranceProviderService.InsuranceProviderServiceRequest
     handler ToInsuranceProviderServiceHandler is {
       on rentalCreated: event Rental.RentalCreated is {
         let askAnswer: type InsuranceProviderService.InsuranceOptions = ask query InsuranceProviderService.GetInsuranceOptions of context InsuranceProviderService
@@ -274,7 +274,7 @@ context RentalContext as router is {
     }
   }
   adaptor ToPaymentProcessingService to context PaymentProcessingService as flow is { 
-    outlet ToPaymentProcessingServiceOut is type PaymentProcessingService.PaymentProcessingServiceCommand
+    inlet ToPaymentProcessingServiceIn is type RentalEvent    outlet ToPaymentProcessingServiceOut is type PaymentProcessingService.PaymentProcessingServiceCommand
     handler ToPaymentProcessingServiceHandler is {
       on rentalCreated: event RentalCreated is {
         let msg: type PaymentProcessingService.AuthorizeRentalPayment = prompt("translate the rentalCreated event into a AuthorizeRentalPayment for its recipient")
@@ -305,8 +305,8 @@ context RentalContext as router is {
       |The model's side of the PaymentProcessingService conversation.
     }
   }
-  adaptor ToPricingService to context PricingService as flow is { 
-    outlet ToPricingServiceOut is query PricingService.CalculateRentalPrice
+  adaptor ToPricingService to context PricingService as merge is { 
+    inlet ToPricingServiceIn is type RentalEvent    inlet ToPricingServiceReplies is result PricingService.RentalPrice    outlet ToPricingServiceOut is query PricingService.CalculateRentalPrice
     handler ToPricingServiceHandler is {
       on rentalCreated: event Rental.RentalCreated is {
         let askAnswer: type PricingService.RentalPrice = ask query PricingService.CalculateRentalPrice of context PricingService
@@ -350,8 +350,8 @@ context RentalContext as router is {
       |The model's side of the VehicleAvailabilityService conversation.
     }
   }
-  adaptor ToVehicleAvailabilityService to context VehicleAvailabilityService as flow is { 
-    outlet ToVehicleAvailabilityServiceOut is type VehicleAvailabilityService.VehicleAvailabilityServiceCommand
+  adaptor ToVehicleAvailabilityService to context VehicleAvailabilityService as merge is { 
+    inlet ToVehicleAvailabilityServiceIn is type RentalEvent    inlet ToVehicleAvailabilityServiceReplies is result VehicleAvailabilityService.AvailableVehicles    outlet ToVehicleAvailabilityServiceOut is type VehicleAvailabilityService.VehicleAvailabilityServiceCommand
     handler ToVehicleAvailabilityServiceHandler is {
       on rentalCreated: event Rental.RentalCreated is {
         let askAnswer: type VehicleAvailabilityService.AvailableVehicles = ask query VehicleAvailabilityService.SearchAvailableVehicles of context VehicleAvailabilityService
@@ -823,11 +823,22 @@ context RentalContext as router is {
       |persistence.
     }
   }
-  streamlet RentalEventSplit as flow is {
+  streamlet RentalEventSplit as split is {
+    outlet RentalEventSplitToToVehicleAvailabilityService is type RentalEvent
+    outlet RentalEventSplitToToPricingService is type RentalEvent
+    outlet RentalEventSplitToToPaymentProcessingService is type RentalEvent
+    outlet RentalEventSplitToToInsuranceProviderService is type RentalEvent
+    outlet RentalEventSplitToToFleetMaintenanceService is type RentalEvent
+    outlet RentalEventSplitToToDriverVerificationService is type RentalEvent
     inlet RentalEventSplitIn is type RentalEvent    outlet RentalEventSplitToRentalAnalytics is type RentalEvent
     handler RentalEventSplitHandler is {
       on rentalCreated: event Rental.RentalCreated is {
         send rentalCreated to outlet RentalEventSplitToRentalAnalytics
+        send rentalCreated to outlet RentalEventSplitToToVehicleAvailabilityService
+        send rentalCreated to outlet RentalEventSplitToToPricingService
+        send rentalCreated to outlet RentalEventSplitToToPaymentProcessingService
+        send rentalCreated to outlet RentalEventSplitToToInsuranceProviderService
+        send rentalCreated to outlet RentalEventSplitToToDriverVerificationService
         tell rentalCreated to entity RentalContext.Rental
       }
       on addOnAdded: event Rental.AddOnAdded is {
@@ -836,6 +847,7 @@ context RentalContext as router is {
       }
       on insuranceSelected: event Rental.InsuranceSelected is {
         send insuranceSelected to outlet RentalEventSplitToRentalAnalytics
+        send insuranceSelected to outlet RentalEventSplitToToInsuranceProviderService
         tell insuranceSelected to entity RentalContext.Rental
       }
       on paymentAuthorized: event Rental.PaymentAuthorized is {
@@ -856,14 +868,18 @@ context RentalContext as router is {
       }
       on vehicleCheckedIn: event Rental.VehicleCheckedIn is {
         send vehicleCheckedIn to outlet RentalEventSplitToRentalAnalytics
+        send vehicleCheckedIn to outlet RentalEventSplitToToVehicleAvailabilityService
+        send vehicleCheckedIn to outlet RentalEventSplitToToFleetMaintenanceService
         tell vehicleCheckedIn to entity RentalContext.Rental
       }
       on damagesAssessed: event Rental.DamagesAssessed is {
         send damagesAssessed to outlet RentalEventSplitToRentalAnalytics
+        send damagesAssessed to outlet RentalEventSplitToToFleetMaintenanceService
         tell damagesAssessed to entity RentalContext.Rental
       }
       on finalChargesProcessed: event Rental.FinalChargesProcessed is {
         send finalChargesProcessed to outlet RentalEventSplitToRentalAnalytics
+        send finalChargesProcessed to outlet RentalEventSplitToToPaymentProcessingService
         tell finalChargesProcessed to entity RentalContext.Rental
       }
       on rentalCompleted: event Rental.RentalCompleted is {
@@ -872,6 +888,8 @@ context RentalContext as router is {
       }
       on rentalCancelled: event Rental.RentalCancelled is {
         send rentalCancelled to outlet RentalEventSplitToRentalAnalytics
+        send rentalCancelled to outlet RentalEventSplitToToVehicleAvailabilityService
+        send rentalCancelled to outlet RentalEventSplitToToPaymentProcessingService
         tell rentalCancelled to entity RentalContext.Rental
       }
       on other is {
@@ -888,6 +906,24 @@ context RentalContext as router is {
     described as {
       |Fans Rental events out to the repository and projectors.
     }
+  }
+  connector 'ToVehicleAvailabilityService Feed' is from outlet RentalContext.RentalEventSplit.RentalEventSplitToToVehicleAvailabilityService to inlet RentalContext.ToVehicleAvailabilityService.ToVehicleAvailabilityServiceIn with {
+    briefly "The Rental events ToVehicleAvailabilityService translates, on their way to it"
+  }
+  connector 'ToPricingService Feed' is from outlet RentalContext.RentalEventSplit.RentalEventSplitToToPricingService to inlet RentalContext.ToPricingService.ToPricingServiceIn with {
+    briefly "The Rental events ToPricingService translates, on their way to it"
+  }
+  connector 'ToPaymentProcessingService Feed' is from outlet RentalContext.RentalEventSplit.RentalEventSplitToToPaymentProcessingService to inlet RentalContext.ToPaymentProcessingService.ToPaymentProcessingServiceIn with {
+    briefly "The Rental events ToPaymentProcessingService translates, on their way to it"
+  }
+  connector 'ToInsuranceProviderService Feed' is from outlet RentalContext.RentalEventSplit.RentalEventSplitToToInsuranceProviderService to inlet RentalContext.ToInsuranceProviderService.ToInsuranceProviderServiceIn with {
+    briefly "The Rental events ToInsuranceProviderService translates, on their way to it"
+  }
+  connector 'ToFleetMaintenanceService Feed' is from outlet RentalContext.RentalEventSplit.RentalEventSplitToToFleetMaintenanceService to inlet RentalContext.ToFleetMaintenanceService.ToFleetMaintenanceServiceIn with {
+    briefly "The Rental events ToFleetMaintenanceService translates, on their way to it"
+  }
+  connector 'ToDriverVerificationService Feed' is from outlet RentalContext.RentalEventSplit.RentalEventSplitToToDriverVerificationService to inlet RentalContext.ToDriverVerificationService.ToDriverVerificationServiceIn with {
+    briefly "The Rental events ToDriverVerificationService translates, on their way to it"
   }
   connector 'RentalEvent Stream' is from outlet RentalContext.Rental.RentalEvents2 to inlet RentalContext.RentalEventSplit.RentalEventSplitIn with {
     briefly "Rental events, fanned out to storage and read models"

@@ -92,7 +92,7 @@ context TicketingContext as router is {
     }
   }
   adaptor ToPaymentGateway to context PaymentGateway as flow is { 
-    outlet ToPaymentGatewayOut is type PaymentGateway.PaymentGatewayCommand
+    inlet ToPaymentGatewayIn is type TicketEvent    outlet ToPaymentGatewayOut is type PaymentGateway.PaymentGatewayCommand
     handler ToPaymentGatewayHandler is {
       on ticketPurchased: event TicketPurchased is {
         let notice: type PaymentGateway.ProcessPayment = prompt("translate the ticketPurchased event into a ProcessPayment taking the buyer's payment for the ticket they have just committed to")
@@ -143,8 +143,8 @@ context TicketingContext as router is {
       |The model's side of the VenueSystem conversation.
     }
   }
-  adaptor ToVenueSystem to context VenueSystem as flow is { 
-    outlet ToVenueSystemOut is type VenueSystem.VenueSystemCommand
+  adaptor ToVenueSystem to context VenueSystem as merge is { 
+    inlet ToVenueSystemIn is type TicketEvent    inlet ToVenueSystemReplies is result VenueSystem.SeatAvailability    outlet ToVenueSystemOut is type VenueSystem.VenueSystemCommand
     handler ToVenueSystemHandler is {
       on ticketCreated: event Ticket.TicketCreated is {
         let askAnswer: type VenueSystem.SeatAvailability = ask query VenueSystem.GetSeatAvailability of context VenueSystem
@@ -494,19 +494,24 @@ context TicketingContext as router is {
       |Ticket sales and entry analytics.
     }
   }
-  streamlet TicketEventSplit as flow is {
+  streamlet TicketEventSplit as split is {
+    outlet TicketEventSplitToToVenueSystem is type TicketEvent
+    outlet TicketEventSplitToToPaymentGateway is type TicketEvent
     inlet TicketEventSplitIn is type TicketEvent    outlet TicketEventSplitToTicketingMetrics is type TicketEvent
     handler TicketEventSplitHandler is {
       on ticketCreated: event Ticket.TicketCreated is {
         send ticketCreated to outlet TicketEventSplitToTicketingMetrics
+        send ticketCreated to outlet TicketEventSplitToToVenueSystem
         tell ticketCreated to entity TicketingContext.Ticket
       }
       on ticketReserved: event Ticket.TicketReserved is {
         send ticketReserved to outlet TicketEventSplitToTicketingMetrics
+        send ticketReserved to outlet TicketEventSplitToToVenueSystem
         tell ticketReserved to entity TicketingContext.Ticket
       }
       on ticketPurchased: event Ticket.TicketPurchased is {
         send ticketPurchased to outlet TicketEventSplitToTicketingMetrics
+        send ticketPurchased to outlet TicketEventSplitToToPaymentGateway
         tell ticketPurchased to entity TicketingContext.Ticket
       }
       on ticketDelivered: event Ticket.TicketDelivered is {
@@ -519,14 +524,17 @@ context TicketingContext as router is {
       }
       on ticketRefunded: event Ticket.TicketRefunded is {
         send ticketRefunded to outlet TicketEventSplitToTicketingMetrics
+        send ticketRefunded to outlet TicketEventSplitToToPaymentGateway
         tell ticketRefunded to entity TicketingContext.Ticket
       }
       on ticketCancelled: event Ticket.TicketCancelled is {
         send ticketCancelled to outlet TicketEventSplitToTicketingMetrics
+        send ticketCancelled to outlet TicketEventSplitToToVenueSystem
         tell ticketCancelled to entity TicketingContext.Ticket
       }
       on reservationExpired: event Ticket.ReservationExpired is {
         send reservationExpired to outlet TicketEventSplitToTicketingMetrics
+        send reservationExpired to outlet TicketEventSplitToToVenueSystem
         tell reservationExpired to entity TicketingContext.Ticket
       }
       on other is {
@@ -543,6 +551,12 @@ context TicketingContext as router is {
     described as {
       |Fans Ticket events out to the repository and projectors.
     }
+  }
+  connector 'ToVenueSystem Feed' is from outlet TicketingContext.TicketEventSplit.TicketEventSplitToToVenueSystem to inlet TicketingContext.ToVenueSystem.ToVenueSystemIn with {
+    briefly "The Ticket events ToVenueSystem translates, on their way to it"
+  }
+  connector 'ToPaymentGateway Feed' is from outlet TicketingContext.TicketEventSplit.TicketEventSplitToToPaymentGateway to inlet TicketingContext.ToPaymentGateway.ToPaymentGatewayIn with {
+    briefly "The Ticket events ToPaymentGateway translates, on their way to it"
   }
   connector 'TicketEvent Stream' is from outlet TicketingContext.Ticket.TicketEvents2 to inlet TicketingContext.TicketEventSplit.TicketEventSplitIn with {
     briefly "Ticket events, fanned out to storage and read models"

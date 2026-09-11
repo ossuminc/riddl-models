@@ -48,7 +48,7 @@ context AppointmentContext as router is {
     }
   }
   connector 'AppointmentCommand Stream Intake' is from outlet AppointmentContext.AppointmentCommandStreamOut to inlet AppointmentContext.Appointment.AppointmentCommands  connector 'AppointmentResult Stream Egress' is from outlet AppointmentContext.AppointmentRepository.AppointmentRepositoryResponses to inlet AppointmentContext.AppointmentResultStreamIn  adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendAppointmentNotification
+    inlet ToNotificationServiceIn is type AppointmentEvent    outlet ToNotificationServiceOut is command NotificationService.SendAppointmentNotification
     handler ToNotificationServiceHandler is {
       on appointmentScheduled: event AppointmentScheduled is {
         let notice: type NotificationService.SendAppointmentNotification = prompt("translate the appointmentScheduled event into a SendAppointmentNotification telling the patient when and where their appointment is")
@@ -81,8 +81,8 @@ context AppointmentContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor ToPatientService to context PatientService as flow is { 
-    outlet ToPatientServiceOut is query PatientService.GetPatientInfo
+  adaptor ToPatientService to context PatientService as merge is { 
+    inlet ToPatientServiceIn is type AppointmentEvent    inlet ToPatientServiceReplies is result PatientService.PatientInfo    outlet ToPatientServiceOut is query PatientService.GetPatientInfo
     handler ToPatientServiceHandler is {
       on appointmentScheduled: event Appointment.AppointmentScheduled is {
         let askAnswer: type PatientService.PatientInfo = ask query PatientService.GetPatientInfo of context PatientService
@@ -123,8 +123,8 @@ context AppointmentContext as router is {
       |The model's side of the ProviderScheduleService conversation.
     }
   }
-  adaptor ToProviderScheduleService to context ProviderScheduleService as flow is { 
-    outlet ToProviderScheduleServiceOut is type ProviderScheduleService.ProviderScheduleServiceRequest
+  adaptor ToProviderScheduleService to context ProviderScheduleService as merge is { 
+    inlet ToProviderScheduleServiceIn is type AppointmentEvent    inlet ToProviderScheduleServiceReplies is result ProviderScheduleService.AvailabilityResult    outlet ToProviderScheduleServiceOut is type ProviderScheduleService.ProviderScheduleServiceRequest
     handler ToProviderScheduleServiceHandler is {
       on appointmentConfirmed: event Appointment.AppointmentConfirmed is {
         let block: type ProviderScheduleService.BlockTime = prompt("translate the appointmentConfirmed event into a BlockTime taking the provider's slot out of availability")
@@ -170,7 +170,7 @@ context AppointmentContext as router is {
     }
   }
   adaptor ToReminderService to context ReminderService as flow is { 
-    outlet ToReminderServiceOut is command ReminderService.SendReminder
+    inlet ToReminderServiceIn is type AppointmentEvent    outlet ToReminderServiceOut is command ReminderService.SendReminder
     handler ToReminderServiceHandler is {
       on appointmentConfirmed: event Appointment.AppointmentConfirmed is {
         let reminder: type ReminderService.SendReminder = prompt("translate the appointmentConfirmed event into a SendReminder carrying remindAt, the moment it should reach the patient ahead of their appointment")
@@ -217,7 +217,7 @@ context AppointmentContext as router is {
     }
   }
   adaptor ToWaitlistService to context WaitlistService as flow is { 
-    outlet ToWaitlistServiceOut is command WaitlistService.AddToWaitlist
+    inlet ToWaitlistServiceIn is type AppointmentEvent    outlet ToWaitlistServiceOut is command WaitlistService.AddToWaitlist
     handler ToWaitlistServiceHandler is {
       on appointmentCanceled: event Appointment.AppointmentCanceled is {
         let item0: type WaitlistService.AddToWaitlist = prompt("translate the appointmentCanceled event into a AddToWaitlist, a cancelled slot being what a waitlist exists to fill")
@@ -576,23 +576,36 @@ context AppointmentContext as router is {
   // Source streamlet for appointment events
   // Sink streamlet for appointment events
   // Connector wiring source to sink
-  streamlet AppointmentEventSplit as flow is {
+  streamlet AppointmentEventSplit as split is {
+    outlet AppointmentEventSplitToToWaitlistService is type AppointmentEvent
+    outlet AppointmentEventSplitToToReminderService is type AppointmentEvent
+    outlet AppointmentEventSplitToToProviderScheduleService is type AppointmentEvent
+    outlet AppointmentEventSplitToToPatientService is type AppointmentEvent
+    outlet AppointmentEventSplitToToNotificationService is type AppointmentEvent
     inlet AppointmentEventSplitIn is type AppointmentEvent    outlet AppointmentEventSplitToSchedulingAnalytics is type AppointmentEvent
     handler AppointmentEventSplitHandler is {
       on appointmentScheduled: event Appointment.AppointmentScheduled is {
         send appointmentScheduled to outlet AppointmentEventSplitToSchedulingAnalytics
+        send appointmentScheduled to outlet AppointmentEventSplitToToPatientService
+        send appointmentScheduled to outlet AppointmentEventSplitToToNotificationService
         tell appointmentScheduled to entity AppointmentContext.Appointment
       }
       on appointmentConfirmed: event Appointment.AppointmentConfirmed is {
         send appointmentConfirmed to outlet AppointmentEventSplitToSchedulingAnalytics
+        send appointmentConfirmed to outlet AppointmentEventSplitToToReminderService
+        send appointmentConfirmed to outlet AppointmentEventSplitToToProviderScheduleService
         tell appointmentConfirmed to entity AppointmentContext.Appointment
       }
       on appointmentRescheduled: event Appointment.AppointmentRescheduled is {
         send appointmentRescheduled to outlet AppointmentEventSplitToSchedulingAnalytics
+        send appointmentRescheduled to outlet AppointmentEventSplitToToProviderScheduleService
+        send appointmentRescheduled to outlet AppointmentEventSplitToToNotificationService
         tell appointmentRescheduled to entity AppointmentContext.Appointment
       }
       on appointmentCanceled: event Appointment.AppointmentCanceled is {
         send appointmentCanceled to outlet AppointmentEventSplitToSchedulingAnalytics
+        send appointmentCanceled to outlet AppointmentEventSplitToToWaitlistService
+        send appointmentCanceled to outlet AppointmentEventSplitToToNotificationService
         tell appointmentCanceled to entity AppointmentContext.Appointment
       }
       on patientCheckedIn: event Appointment.PatientCheckedIn is {
@@ -609,6 +622,7 @@ context AppointmentContext as router is {
       }
       on patientNoShow: event Appointment.PatientNoShow is {
         send patientNoShow to outlet AppointmentEventSplitToSchedulingAnalytics
+        send patientNoShow to outlet AppointmentEventSplitToToNotificationService
         tell patientNoShow to entity AppointmentContext.Appointment
       }
       on other is {
@@ -625,6 +639,21 @@ context AppointmentContext as router is {
     described as {
       |Fans Appointment events out to the repository and projectors.
     }
+  }
+  connector 'ToWaitlistService Feed' is from outlet AppointmentContext.AppointmentEventSplit.AppointmentEventSplitToToWaitlistService to inlet AppointmentContext.ToWaitlistService.ToWaitlistServiceIn with {
+    briefly "The Appointment events ToWaitlistService translates, on their way to it"
+  }
+  connector 'ToReminderService Feed' is from outlet AppointmentContext.AppointmentEventSplit.AppointmentEventSplitToToReminderService to inlet AppointmentContext.ToReminderService.ToReminderServiceIn with {
+    briefly "The Appointment events ToReminderService translates, on their way to it"
+  }
+  connector 'ToProviderScheduleService Feed' is from outlet AppointmentContext.AppointmentEventSplit.AppointmentEventSplitToToProviderScheduleService to inlet AppointmentContext.ToProviderScheduleService.ToProviderScheduleServiceIn with {
+    briefly "The Appointment events ToProviderScheduleService translates, on their way to it"
+  }
+  connector 'ToPatientService Feed' is from outlet AppointmentContext.AppointmentEventSplit.AppointmentEventSplitToToPatientService to inlet AppointmentContext.ToPatientService.ToPatientServiceIn with {
+    briefly "The Appointment events ToPatientService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet AppointmentContext.AppointmentEventSplit.AppointmentEventSplitToToNotificationService to inlet AppointmentContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Appointment events ToNotificationService translates, on their way to it"
   }
   connector 'AppointmentEvent Stream' is from outlet AppointmentContext.Appointment.AppointmentEvents2 to inlet AppointmentContext.AppointmentEventSplit.AppointmentEventSplitIn with {
     briefly "Appointment events, fanned out to storage and read models"

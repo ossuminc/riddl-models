@@ -101,7 +101,7 @@ context ServiceRequestContext as router is {
     }
   }
   adaptor ToBillingService to context BillingService as flow is { 
-    outlet ToBillingServiceOut is command BillingService.PostCharge
+    inlet ToBillingServiceIn is type ServiceRequestEvent    outlet ToBillingServiceOut is command BillingService.PostCharge
     handler ToBillingServiceHandler is {
       on serviceCompleted: event ServiceRequest.ServiceCompleted is {
         let notice: type BillingService.PostCharge = prompt("translate the serviceCompleted event into a PostCharge putting what the guest now owes for the delivered service onto their folio")
@@ -146,7 +146,7 @@ context ServiceRequestContext as router is {
     }
   }
   adaptor ToGuestNotificationService to context GuestNotificationService as flow is { 
-    outlet ToGuestNotificationServiceOut is type GuestNotificationService.GuestNotificationServiceCommand
+    inlet ToGuestNotificationServiceIn is type ServiceRequestEvent    outlet ToGuestNotificationServiceOut is type GuestNotificationService.GuestNotificationServiceCommand
     handler ToGuestNotificationServiceHandler is {
       on serviceStarted: event ServiceStarted is {
         let notice: type GuestNotificationService.SendServiceUpdate = prompt("translate the serviceStarted event into a SendServiceUpdate telling the guest someone is on the way, so they know their request is moving")
@@ -210,7 +210,7 @@ context ServiceRequestContext as router is {
     }
   }
   adaptor ToKitchenService to context KitchenService as flow is { 
-    outlet ToKitchenServiceOut is command KitchenService.SubmitFoodOrder
+    inlet ToKitchenServiceIn is type ServiceRequestEvent    outlet ToKitchenServiceOut is command KitchenService.SubmitFoodOrder
     handler ToKitchenServiceHandler is {
       on roomServiceOrderAdded: event ServiceRequest.RoomServiceOrderAdded is {
         let item0: type KitchenService.SubmitFoodOrder = prompt("translate the roomServiceOrderAdded event into a SubmitFoodOrder, a room service order being what the kitchen cooks")
@@ -260,7 +260,7 @@ context ServiceRequestContext as router is {
     }
   }
   adaptor ToLaundryService to context LaundryService as flow is { 
-    outlet ToLaundryServiceOut is command LaundryService.SubmitLaundryOrder
+    inlet ToLaundryServiceIn is type ServiceRequestEvent    outlet ToLaundryServiceOut is command LaundryService.SubmitLaundryOrder
     handler ToLaundryServiceHandler is {
       on laundryOrderAdded: event ServiceRequest.LaundryOrderAdded is {
         let item0: type LaundryService.SubmitLaundryOrder = prompt("translate the laundryOrderAdded event into a SubmitLaundryOrder, a laundry order being what the laundry washes")
@@ -307,7 +307,7 @@ context ServiceRequestContext as router is {
     }
   }
   adaptor ToMaintenanceService to context MaintenanceService as flow is { 
-    outlet ToMaintenanceServiceOut is command MaintenanceService.CreateMaintenanceTicket
+    inlet ToMaintenanceServiceIn is type ServiceRequestEvent    outlet ToMaintenanceServiceOut is command MaintenanceService.CreateMaintenanceTicket
     handler ToMaintenanceServiceHandler is {
       on requestEscalated: event ServiceRequest.RequestEscalated is {
         let item0: type MaintenanceService.CreateMaintenanceTicket = prompt("translate the requestEscalated event into a CreateMaintenanceTicket, escalation being what hands the job to maintenance")
@@ -350,8 +350,8 @@ context ServiceRequestContext as router is {
       |The model's side of the StaffDispatchService conversation.
     }
   }
-  adaptor ToStaffDispatchService to context StaffDispatchService as flow is { 
-    outlet ToStaffDispatchServiceOut is type StaffDispatchService.StaffDispatchServiceRequest
+  adaptor ToStaffDispatchService to context StaffDispatchService as merge is { 
+    inlet ToStaffDispatchServiceIn is type ServiceRequestEvent    inlet ToStaffDispatchServiceReplies is result StaffDispatchService.AvailableStaffResult    outlet ToStaffDispatchServiceOut is type StaffDispatchService.StaffDispatchServiceRequest
     handler ToStaffDispatchServiceHandler is {
       on serviceRequestCreated: event ServiceRequest.ServiceRequestCreated is {
         let askAnswer: type StaffDispatchService.AvailableStaffResult = ask query StaffDispatchService.GetAvailableStaff of context StaffDispatchService
@@ -403,7 +403,7 @@ context ServiceRequestContext as router is {
     }
   }
   adaptor ToTelephonyService to context TelephonyService as flow is { 
-    outlet ToTelephonyServiceOut is type TelephonyService.TelephonyServiceCommand
+    inlet ToTelephonyServiceIn is type ServiceRequestEvent    outlet ToTelephonyServiceOut is type TelephonyService.TelephonyServiceCommand
     handler ToTelephonyServiceHandler is {
       on wakeupCallScheduled: event ServiceRequest.WakeupCallScheduled is {
         let item0: type TelephonyService.ScheduleGuestWakeup = prompt("translate the wakeupCallScheduled event into a ScheduleGuestWakeup, the scheduled call being what the switchboard must hold")
@@ -854,11 +854,19 @@ context ServiceRequestContext as router is {
       |persistence.
     }
   }
-  streamlet ServiceRequestEventSplit as flow is {
+  streamlet ServiceRequestEventSplit as split is {
+    outlet ServiceRequestEventSplitToToTelephonyService is type ServiceRequestEvent
+    outlet ServiceRequestEventSplitToToStaffDispatchService is type ServiceRequestEvent
+    outlet ServiceRequestEventSplitToToMaintenanceService is type ServiceRequestEvent
+    outlet ServiceRequestEventSplitToToLaundryService is type ServiceRequestEvent
+    outlet ServiceRequestEventSplitToToKitchenService is type ServiceRequestEvent
+    outlet ServiceRequestEventSplitToToGuestNotificationService is type ServiceRequestEvent
+    outlet ServiceRequestEventSplitToToBillingService is type ServiceRequestEvent
     inlet ServiceRequestEventSplitIn is type ServiceRequestEvent    outlet ServiceRequestEventSplitToServiceAnalytics is type ServiceRequestEvent
     handler ServiceRequestEventSplitHandler is {
       on serviceRequestCreated: event ServiceRequest.ServiceRequestCreated is {
         send serviceRequestCreated to outlet ServiceRequestEventSplitToServiceAnalytics
+        send serviceRequestCreated to outlet ServiceRequestEventSplitToToStaffDispatchService
         tell serviceRequestCreated to entity ServiceRequestContext.ServiceRequest
       }
       on requestDetailsUpdated: event ServiceRequest.RequestDetailsUpdated is {
@@ -867,22 +875,29 @@ context ServiceRequestContext as router is {
       }
       on staffAssigned: event ServiceRequest.StaffAssigned is {
         send staffAssigned to outlet ServiceRequestEventSplitToServiceAnalytics
+        send staffAssigned to outlet ServiceRequestEventSplitToToGuestNotificationService
         tell staffAssigned to entity ServiceRequestContext.ServiceRequest
       }
       on serviceStarted: event ServiceRequest.ServiceStarted is {
         send serviceStarted to outlet ServiceRequestEventSplitToServiceAnalytics
+        send serviceStarted to outlet ServiceRequestEventSplitToToGuestNotificationService
         tell serviceStarted to entity ServiceRequestContext.ServiceRequest
       }
       on serviceCompleted: event ServiceRequest.ServiceCompleted is {
         send serviceCompleted to outlet ServiceRequestEventSplitToServiceAnalytics
+        send serviceCompleted to outlet ServiceRequestEventSplitToToGuestNotificationService
+        send serviceCompleted to outlet ServiceRequestEventSplitToToBillingService
         tell serviceCompleted to entity ServiceRequestContext.ServiceRequest
       }
       on requestCancelled: event ServiceRequest.RequestCancelled is {
         send requestCancelled to outlet ServiceRequestEventSplitToServiceAnalytics
+        send requestCancelled to outlet ServiceRequestEventSplitToToTelephonyService
+        send requestCancelled to outlet ServiceRequestEventSplitToToGuestNotificationService
         tell requestCancelled to entity ServiceRequestContext.ServiceRequest
       }
       on requestEscalated: event ServiceRequest.RequestEscalated is {
         send requestEscalated to outlet ServiceRequestEventSplitToServiceAnalytics
+        send requestEscalated to outlet ServiceRequestEventSplitToToMaintenanceService
         tell requestEscalated to entity ServiceRequestContext.ServiceRequest
       }
       on feedbackRecorded: event ServiceRequest.FeedbackRecorded is {
@@ -891,14 +906,17 @@ context ServiceRequestContext as router is {
       }
       on roomServiceOrderAdded: event ServiceRequest.RoomServiceOrderAdded is {
         send roomServiceOrderAdded to outlet ServiceRequestEventSplitToServiceAnalytics
+        send roomServiceOrderAdded to outlet ServiceRequestEventSplitToToKitchenService
         tell roomServiceOrderAdded to entity ServiceRequestContext.ServiceRequest
       }
       on laundryOrderAdded: event ServiceRequest.LaundryOrderAdded is {
         send laundryOrderAdded to outlet ServiceRequestEventSplitToServiceAnalytics
+        send laundryOrderAdded to outlet ServiceRequestEventSplitToToLaundryService
         tell laundryOrderAdded to entity ServiceRequestContext.ServiceRequest
       }
       on wakeupCallScheduled: event ServiceRequest.WakeupCallScheduled is {
         send wakeupCallScheduled to outlet ServiceRequestEventSplitToServiceAnalytics
+        send wakeupCallScheduled to outlet ServiceRequestEventSplitToToTelephonyService
         tell wakeupCallScheduled to entity ServiceRequestContext.ServiceRequest
       }
       on other is {
@@ -915,6 +933,27 @@ context ServiceRequestContext as router is {
     described as {
       |Fans ServiceRequest events out to the repository and projectors.
     }
+  }
+  connector 'ToTelephonyService Feed' is from outlet ServiceRequestContext.ServiceRequestEventSplit.ServiceRequestEventSplitToToTelephonyService to inlet ServiceRequestContext.ToTelephonyService.ToTelephonyServiceIn with {
+    briefly "The ServiceRequest events ToTelephonyService translates, on their way to it"
+  }
+  connector 'ToStaffDispatchService Feed' is from outlet ServiceRequestContext.ServiceRequestEventSplit.ServiceRequestEventSplitToToStaffDispatchService to inlet ServiceRequestContext.ToStaffDispatchService.ToStaffDispatchServiceIn with {
+    briefly "The ServiceRequest events ToStaffDispatchService translates, on their way to it"
+  }
+  connector 'ToMaintenanceService Feed' is from outlet ServiceRequestContext.ServiceRequestEventSplit.ServiceRequestEventSplitToToMaintenanceService to inlet ServiceRequestContext.ToMaintenanceService.ToMaintenanceServiceIn with {
+    briefly "The ServiceRequest events ToMaintenanceService translates, on their way to it"
+  }
+  connector 'ToLaundryService Feed' is from outlet ServiceRequestContext.ServiceRequestEventSplit.ServiceRequestEventSplitToToLaundryService to inlet ServiceRequestContext.ToLaundryService.ToLaundryServiceIn with {
+    briefly "The ServiceRequest events ToLaundryService translates, on their way to it"
+  }
+  connector 'ToKitchenService Feed' is from outlet ServiceRequestContext.ServiceRequestEventSplit.ServiceRequestEventSplitToToKitchenService to inlet ServiceRequestContext.ToKitchenService.ToKitchenServiceIn with {
+    briefly "The ServiceRequest events ToKitchenService translates, on their way to it"
+  }
+  connector 'ToGuestNotificationService Feed' is from outlet ServiceRequestContext.ServiceRequestEventSplit.ServiceRequestEventSplitToToGuestNotificationService to inlet ServiceRequestContext.ToGuestNotificationService.ToGuestNotificationServiceIn with {
+    briefly "The ServiceRequest events ToGuestNotificationService translates, on their way to it"
+  }
+  connector 'ToBillingService Feed' is from outlet ServiceRequestContext.ServiceRequestEventSplit.ServiceRequestEventSplitToToBillingService to inlet ServiceRequestContext.ToBillingService.ToBillingServiceIn with {
+    briefly "The ServiceRequest events ToBillingService translates, on their way to it"
   }
   connector 'ServiceRequestEvent Stream' is from outlet ServiceRequestContext.ServiceRequest.ServiceRequestEvents2 to inlet ServiceRequestContext.ServiceRequestEventSplit.ServiceRequestEventSplitIn with {
     briefly "ServiceRequest events, fanned out to storage and read models"

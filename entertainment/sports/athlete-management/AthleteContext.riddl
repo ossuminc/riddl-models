@@ -64,8 +64,8 @@ context AthleteContext as router is {
       |The model's side of the LeagueRegistry conversation.
     }
   }
-  adaptor ToLeagueRegistry to context LeagueRegistry as flow is { 
-    outlet ToLeagueRegistryOut is type LeagueRegistry.LeagueRegistryRequest
+  adaptor ToLeagueRegistry to context LeagueRegistry as merge is { 
+    inlet ToLeagueRegistryIn is type AthleteEvent    inlet ToLeagueRegistryReplies is result LeagueRegistry.LeagueEligibility    outlet ToLeagueRegistryOut is type LeagueRegistry.LeagueRegistryRequest
     handler ToLeagueRegistryHandler is {
       on contractSigned: event Athlete.ContractSigned is {
         let askAnswer: type LeagueRegistry.LeagueEligibility = ask query LeagueRegistry.GetLeagueEligibility of context LeagueRegistry
@@ -108,8 +108,8 @@ context AthleteContext as router is {
       |The model's side of the MedicalSystem conversation.
     }
   }
-  adaptor ToMedicalSystem to context MedicalSystem as flow is { 
-    outlet ToMedicalSystemOut is type MedicalSystem.MedicalSystemRequest
+  adaptor ToMedicalSystem to context MedicalSystem as merge is { 
+    inlet ToMedicalSystemIn is type AthleteEvent    inlet ToMedicalSystemReplies is result MedicalSystem.MedicalHistory    outlet ToMedicalSystemOut is type MedicalSystem.MedicalSystemRequest
     handler ToMedicalSystemHandler is {
       on injuryRecorded: event Athlete.InjuryRecorded is {
         let askAnswer: type MedicalSystem.MedicalHistory = ask query MedicalSystem.GetMedicalHistory of context MedicalSystem
@@ -458,7 +458,9 @@ context AthleteContext as router is {
       |Athlete and roster analytics.
     }
   }
-  streamlet AthleteEventSplit as flow is {
+  streamlet AthleteEventSplit as split is {
+    outlet AthleteEventSplitToToMedicalSystem is type AthleteEvent
+    outlet AthleteEventSplitToToLeagueRegistry is type AthleteEvent
     inlet AthleteEventSplitIn is type AthleteEvent    outlet AthleteEventSplitToAthleteMetrics is type AthleteEvent
     handler AthleteEventSplitHandler is {
       on athleteRegistered: event Athlete.AthleteRegistered is {
@@ -467,10 +469,12 @@ context AthleteContext as router is {
       }
       on contractSigned: event Athlete.ContractSigned is {
         send contractSigned to outlet AthleteEventSplitToAthleteMetrics
+        send contractSigned to outlet AthleteEventSplitToToLeagueRegistry
         tell contractSigned to entity AthleteContext.Athlete
       }
       on injuryRecorded: event Athlete.InjuryRecorded is {
         send injuryRecorded to outlet AthleteEventSplitToAthleteMetrics
+        send injuryRecorded to outlet AthleteEventSplitToToMedicalSystem
         tell injuryRecorded to entity AthleteContext.Athlete
       }
       on injuryCleared: event Athlete.InjuryCleared is {
@@ -511,6 +515,12 @@ context AthleteContext as router is {
     described as {
       |Fans Athlete events out to the repository and projectors.
     }
+  }
+  connector 'ToMedicalSystem Feed' is from outlet AthleteContext.AthleteEventSplit.AthleteEventSplitToToMedicalSystem to inlet AthleteContext.ToMedicalSystem.ToMedicalSystemIn with {
+    briefly "The Athlete events ToMedicalSystem translates, on their way to it"
+  }
+  connector 'ToLeagueRegistry Feed' is from outlet AthleteContext.AthleteEventSplit.AthleteEventSplitToToLeagueRegistry to inlet AthleteContext.ToLeagueRegistry.ToLeagueRegistryIn with {
+    briefly "The Athlete events ToLeagueRegistry translates, on their way to it"
   }
   connector 'AthleteEvent Stream' is from outlet AthleteContext.Athlete.AthleteEvents2 to inlet AthleteContext.AthleteEventSplit.AthleteEventSplitIn with {
     briefly "Athlete events, fanned out to storage and read models"

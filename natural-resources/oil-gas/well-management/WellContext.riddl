@@ -59,8 +59,8 @@ context WellContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'WellCommand Stream Intake' is from outlet WellContext.WellCommandStreamOut to inlet WellContext.Well.WellCommands  connector 'WellResult Stream Egress' is from outlet WellContext.WellRepository.WellRepositoryResponses to inlet WellContext.WellResultStreamIn  adaptor ToLandManagement to context LandManagement as flow is { 
-    outlet ToLandManagementOut is query LandManagement.GetLeaseInfo
+  connector 'WellCommand Stream Intake' is from outlet WellContext.WellCommandStreamOut to inlet WellContext.Well.WellCommands  connector 'WellResult Stream Egress' is from outlet WellContext.WellRepository.WellRepositoryResponses to inlet WellContext.WellResultStreamIn  adaptor ToLandManagement to context LandManagement as merge is { 
+    inlet ToLandManagementIn is type WellEvent    inlet ToLandManagementReplies is result LandManagement.LeaseInfo    outlet ToLandManagementOut is query LandManagement.GetLeaseInfo
     handler ToLandManagementHandler is {
       on wellPlanned: event Well.WellPlanned is {
         let askAnswer: type LandManagement.LeaseInfo = ask query LandManagement.GetLeaseInfo of context LandManagement
@@ -102,7 +102,7 @@ context WellContext as router is {
     }
   }
   adaptor ToProductionAccounting to context ProductionAccounting as flow is { 
-    outlet ToProductionAccountingOut is command ProductionAccounting.RecordSales
+    inlet ToProductionAccountingIn is type WellEvent    outlet ToProductionAccountingOut is command ProductionAccounting.RecordSales
     handler ToProductionAccountingHandler is {
       on productionRecorded: event Well.ProductionRecorded is {
         let item0: type ProductionAccounting.RecordSales = prompt("translate the productionRecorded event into a RecordSales, recorded production being what fixes the volume sold")
@@ -146,7 +146,7 @@ context WellContext as router is {
     }
   }
   adaptor ToRegulatorySystem to context RegulatorySystem as flow is { 
-    outlet ToRegulatorySystemOut is type RegulatorySystem.RegulatorySystemCommand
+    inlet ToRegulatorySystemIn is type WellEvent    outlet ToRegulatorySystemOut is type RegulatorySystem.RegulatorySystemCommand
     handler ToRegulatorySystemHandler is {
       on productionRecorded: event ProductionRecorded is {
         let item0: type RegulatorySystem.SubmitPermitApplication = prompt("translate the productionRecorded event into a SubmitPermitApplication where continued production needs fresh authority")
@@ -169,8 +169,8 @@ context WellContext as router is {
       |The model's side of the RegulatorySystem conversation.
     }
   }
-  adaptor ToSCADA to context SCADA as flow is { 
-    outlet ToSCADAOut is query SCADA.GetWellTelemetry
+  adaptor ToSCADA to context SCADA as merge is { 
+    inlet ToSCADAIn is type WellEvent    inlet ToSCADAReplies is result SCADA.WellTelemetry    outlet ToSCADAOut is query SCADA.GetWellTelemetry
     handler ToSCADAHandler is {
       on productionRecorded: event Well.ProductionRecorded is {
         let askAnswer: type SCADA.WellTelemetry = ask query SCADA.GetWellTelemetry of context SCADA
@@ -617,11 +617,16 @@ context WellContext as router is {
       |persistence.
     }
   }
-  streamlet WellEventSplit as flow is {
+  streamlet WellEventSplit as split is {
+    outlet WellEventSplitToToSCADA is type WellEvent
+    outlet WellEventSplitToToRegulatorySystem is type WellEvent
+    outlet WellEventSplitToToProductionAccounting is type WellEvent
+    outlet WellEventSplitToToLandManagement is type WellEvent
     inlet WellEventSplitIn is type WellEvent    outlet WellEventSplitToProductionAnalytics is type WellEvent
     handler WellEventSplitHandler is {
       on wellPlanned: event Well.WellPlanned is {
         send wellPlanned to outlet WellEventSplitToProductionAnalytics
+        send wellPlanned to outlet WellEventSplitToToLandManagement
         tell wellPlanned to entity WellContext.Well
       }
       on permitSubmitted: event Well.PermitSubmitted is {
@@ -650,6 +655,9 @@ context WellContext as router is {
       }
       on productionRecorded: event Well.ProductionRecorded is {
         send productionRecorded to outlet WellEventSplitToProductionAnalytics
+        send productionRecorded to outlet WellEventSplitToToSCADA
+        send productionRecorded to outlet WellEventSplitToToRegulatorySystem
+        send productionRecorded to outlet WellEventSplitToToProductionAccounting
         tell productionRecorded to entity WellContext.Well
       }
       on wellShutIn: event Well.WellShutIn is {
@@ -682,6 +690,18 @@ context WellContext as router is {
     described as {
       |Fans Well events out to the repository and projectors.
     }
+  }
+  connector 'ToSCADA Feed' is from outlet WellContext.WellEventSplit.WellEventSplitToToSCADA to inlet WellContext.ToSCADA.ToSCADAIn with {
+    briefly "The Well events ToSCADA translates, on their way to it"
+  }
+  connector 'ToRegulatorySystem Feed' is from outlet WellContext.WellEventSplit.WellEventSplitToToRegulatorySystem to inlet WellContext.ToRegulatorySystem.ToRegulatorySystemIn with {
+    briefly "The Well events ToRegulatorySystem translates, on their way to it"
+  }
+  connector 'ToProductionAccounting Feed' is from outlet WellContext.WellEventSplit.WellEventSplitToToProductionAccounting to inlet WellContext.ToProductionAccounting.ToProductionAccountingIn with {
+    briefly "The Well events ToProductionAccounting translates, on their way to it"
+  }
+  connector 'ToLandManagement Feed' is from outlet WellContext.WellEventSplit.WellEventSplitToToLandManagement to inlet WellContext.ToLandManagement.ToLandManagementIn with {
+    briefly "The Well events ToLandManagement translates, on their way to it"
   }
   connector 'WellEvent Stream' is from outlet WellContext.Well.WellEvents2 to inlet WellContext.WellEventSplit.WellEventSplitIn with {
     briefly "Well events, fanned out to storage and read models"

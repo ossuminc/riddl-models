@@ -159,7 +159,7 @@ context DistributionContext as router is {
   include "DistributionOrder.riddl"
   // Adaptors for external system integration
   adaptor InventoryAdapter to context InventoryService as flow is { 
-    outlet InventoryAdapterOut is type InventoryService.InventoryServiceCommand
+    inlet InventoryAdapterIn is type DistributionOrderEvent    outlet InventoryAdapterOut is type InventoryService.InventoryServiceCommand
     handler InventoryAllocation is {
       on orderConfirmed: event DistributionOrder.OrderConfirmed is {
         let claim: type InventoryService.AllocateStock = prompt("translate the orderConfirmed event into an AllocateStock claiming the goods the confirmed order commits to")
@@ -185,7 +185,7 @@ context DistributionContext as router is {
     }
   }
   adaptor ShippingAdapter to context ShippingService as flow is { 
-    outlet ShippingAdapterOut is command ShippingService.SchedulePickup
+    inlet ShippingAdapterIn is type DistributionOrderEvent    outlet ShippingAdapterOut is command ShippingService.SchedulePickup
     handler ShippingEvents is {
       on orderConfirmed: event DistributionOrder.OrderConfirmed is {
         let item0: type ShippingService.SchedulePickup = prompt("translate the orderConfirmed event into a SchedulePickup, confirmation being when there is something to collect")
@@ -207,7 +207,7 @@ context DistributionContext as router is {
     }
   }
   adaptor BillingAdapter to context BillingService as flow is { 
-    outlet BillingAdapterOut is command BillingService.CreateInvoice
+    inlet BillingAdapterIn is type DistributionOrderEvent    outlet BillingAdapterOut is command BillingService.CreateInvoice
     handler BillingEvents is {
       on orderShipped: event DistributionOrder.OrderShipped is {
         let notice: type BillingService.CreateInvoice = prompt("translate the orderShipped event into a CreateInvoice for the order just shipped, which this model bills on despatch rather than delivery")
@@ -509,7 +509,10 @@ context DistributionContext as router is {
       |persistence.
     }
   }
-  streamlet DistributionOrderEventSplit as flow is {
+  streamlet DistributionOrderEventSplit as split is {
+    outlet DistributionOrderEventSplitToShippingAdapter is type DistributionOrderEvent
+    outlet DistributionOrderEventSplitToInventoryAdapter is type DistributionOrderEvent
+    outlet DistributionOrderEventSplitToBillingAdapter is type DistributionOrderEvent
     inlet DistributionOrderEventSplitIn is type DistributionOrderEvent    outlet DistributionOrderEventSplitToDistributionAnalytics is type DistributionOrderEvent
     handler DistributionOrderEventSplitHandler is {
       on orderCreated: event DistributionOrder.OrderCreated is {
@@ -522,10 +525,13 @@ context DistributionContext as router is {
       }
       on orderConfirmed: event DistributionOrder.OrderConfirmed is {
         send orderConfirmed to outlet DistributionOrderEventSplitToDistributionAnalytics
+        send orderConfirmed to outlet DistributionOrderEventSplitToShippingAdapter
+        send orderConfirmed to outlet DistributionOrderEventSplitToInventoryAdapter
         tell orderConfirmed to entity DistributionContext.DistributionOrder
       }
       on orderShipped: event DistributionOrder.OrderShipped is {
         send orderShipped to outlet DistributionOrderEventSplitToDistributionAnalytics
+        send orderShipped to outlet DistributionOrderEventSplitToBillingAdapter
         tell orderShipped to entity DistributionContext.DistributionOrder
       }
       on orderDelivered: event DistributionOrder.OrderDelivered is {
@@ -534,6 +540,7 @@ context DistributionContext as router is {
       }
       on orderCancelled: event DistributionOrder.OrderCancelled is {
         send orderCancelled to outlet DistributionOrderEventSplitToDistributionAnalytics
+        send orderCancelled to outlet DistributionOrderEventSplitToInventoryAdapter
         tell orderCancelled to entity DistributionContext.DistributionOrder
       }
       on other is {
@@ -550,6 +557,15 @@ context DistributionContext as router is {
     described as {
       |Fans DistributionOrder events out to the repository and projectors.
     }
+  }
+  connector 'ShippingAdapter Feed' is from outlet DistributionContext.DistributionOrderEventSplit.DistributionOrderEventSplitToShippingAdapter to inlet DistributionContext.ShippingAdapter.ShippingAdapterIn with {
+    briefly "The DistributionOrder events ShippingAdapter translates, on their way to it"
+  }
+  connector 'InventoryAdapter Feed' is from outlet DistributionContext.DistributionOrderEventSplit.DistributionOrderEventSplitToInventoryAdapter to inlet DistributionContext.InventoryAdapter.InventoryAdapterIn with {
+    briefly "The DistributionOrder events InventoryAdapter translates, on their way to it"
+  }
+  connector 'BillingAdapter Feed' is from outlet DistributionContext.DistributionOrderEventSplit.DistributionOrderEventSplitToBillingAdapter to inlet DistributionContext.BillingAdapter.BillingAdapterIn with {
+    briefly "The DistributionOrder events BillingAdapter translates, on their way to it"
   }
   connector 'DistributionOrderEvent Stream' is from outlet DistributionContext.DistributionOrder.DistributionOrderEvents2 to inlet DistributionContext.DistributionOrderEventSplit.DistributionOrderEventSplitIn with {
     briefly "DistributionOrder events, fanned out to storage and read models"

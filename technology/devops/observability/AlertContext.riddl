@@ -58,8 +58,8 @@ context AlertContext as router is {
       |The model's side of the DashboardService conversation.
     }
   }
-  adaptor ToDashboardService to context DashboardService as flow is { 
-    outlet ToDashboardServiceOut is type DashboardService.DashboardServiceRequest
+  adaptor ToDashboardService to context DashboardService as merge is { 
+    inlet ToDashboardServiceIn is type AlertEvent    inlet ToDashboardServiceReplies is result DashboardService.DashboardConfig    outlet ToDashboardServiceOut is type DashboardService.DashboardServiceRequest
     handler ToDashboardServiceHandler is {
       on alertCreated: event Alert.AlertCreated is {
         let askAnswer: type DashboardService.DashboardConfig = ask query DashboardService.GetDashboard of context DashboardService
@@ -104,8 +104,8 @@ context AlertContext as router is {
       |The model's side of the DistributedTracingService conversation.
     }
   }
-  adaptor ToDistributedTracingService to context DistributedTracingService as flow is { 
-    outlet ToDistributedTracingServiceOut is type DistributedTracingService.DistributedTracingServiceRequest
+  adaptor ToDistributedTracingService to context DistributedTracingService as merge is { 
+    inlet ToDistributedTracingServiceIn is type AlertEvent    inlet ToDistributedTracingServiceReplies is result DistributedTracingService.TraceSearchResult    outlet ToDistributedTracingServiceOut is type DistributedTracingService.DistributedTracingServiceRequest
     handler ToDistributedTracingServiceHandler is {
       on alertAcknowledged: event Alert.AlertAcknowledged is {
         let askAnswer: type DistributedTracingService.TraceSearchResult = ask query DistributedTracingService.GetTrace of context DistributedTracingService
@@ -154,8 +154,8 @@ context AlertContext as router is {
       |The model's side of the LogAggregationService conversation.
     }
   }
-  adaptor ToLogAggregationService to context LogAggregationService as flow is { 
-    outlet ToLogAggregationServiceOut is type LogAggregationService.LogAggregationServiceRequest
+  adaptor ToLogAggregationService to context LogAggregationService as merge is { 
+    inlet ToLogAggregationServiceIn is type AlertEvent    inlet ToLogAggregationServiceReplies is result LogAggregationService.LogSearchResult    outlet ToLogAggregationServiceOut is type LogAggregationService.LogAggregationServiceRequest
     handler ToLogAggregationServiceHandler is {
       on alertAcknowledged: event Alert.AlertAcknowledged is {
         let askAnswer: type LogAggregationService.LogSearchResult = ask query LogAggregationService.SearchLogs of context LogAggregationService
@@ -200,8 +200,8 @@ context AlertContext as router is {
       |The model's side of the MetricsCollectionService conversation.
     }
   }
-  adaptor ToMetricsCollectionService to context MetricsCollectionService as flow is { 
-    outlet ToMetricsCollectionServiceOut is type MetricsCollectionService.MetricsCollectionServiceRequest
+  adaptor ToMetricsCollectionService to context MetricsCollectionService as merge is { 
+    inlet ToMetricsCollectionServiceIn is type AlertEvent    inlet ToMetricsCollectionServiceReplies is result MetricsCollectionService.MetricQueryResult    outlet ToMetricsCollectionServiceOut is type MetricsCollectionService.MetricsCollectionServiceRequest
     handler ToMetricsCollectionServiceHandler is {
       on alertResolved: event Alert.AlertResolved is {
         let askAnswer: type MetricsCollectionService.MetricQueryResult = ask query MetricsCollectionService.QueryMetrics of context MetricsCollectionService
@@ -250,7 +250,7 @@ context AlertContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendAlertNotification
+    inlet ToNotificationServiceIn is type AlertEvent    outlet ToNotificationServiceOut is command NotificationService.SendAlertNotification
     handler ToNotificationServiceHandler is {
       on alertCreated: event AlertCreated is {
         let notice: type NotificationService.SendAlertNotification = prompt("translate the alertCreated event into a SendAlertNotification telling the on-call responder an alert is firing, what fired it, and how severe it is")
@@ -584,19 +584,33 @@ context AlertContext as router is {
       |persistence.
     }
   }
-  streamlet AlertEventSplit as flow is {
+  streamlet AlertEventSplit as split is {
+    outlet AlertEventSplitToToNotificationService is type AlertEvent
+    outlet AlertEventSplitToToMetricsCollectionService is type AlertEvent
+    outlet AlertEventSplitToToLogAggregationService is type AlertEvent
+    outlet AlertEventSplitToToDistributedTracingService is type AlertEvent
+    outlet AlertEventSplitToToDashboardService is type AlertEvent
     inlet AlertEventSplitIn is type AlertEvent    outlet AlertEventSplitToObservabilityAnalytics is type AlertEvent
     handler AlertEventSplitHandler is {
       on alertCreated: event Alert.AlertCreated is {
         send alertCreated to outlet AlertEventSplitToObservabilityAnalytics
+        send alertCreated to outlet AlertEventSplitToToNotificationService
+        send alertCreated to outlet AlertEventSplitToToMetricsCollectionService
+        send alertCreated to outlet AlertEventSplitToToLogAggregationService
+        send alertCreated to outlet AlertEventSplitToToDistributedTracingService
+        send alertCreated to outlet AlertEventSplitToToDashboardService
         tell alertCreated to entity AlertContext.Alert
       }
       on alertAcknowledged: event Alert.AlertAcknowledged is {
         send alertAcknowledged to outlet AlertEventSplitToObservabilityAnalytics
+        send alertAcknowledged to outlet AlertEventSplitToToLogAggregationService
+        send alertAcknowledged to outlet AlertEventSplitToToDistributedTracingService
         tell alertAcknowledged to entity AlertContext.Alert
       }
       on alertResolved: event Alert.AlertResolved is {
         send alertResolved to outlet AlertEventSplitToObservabilityAnalytics
+        send alertResolved to outlet AlertEventSplitToToNotificationService
+        send alertResolved to outlet AlertEventSplitToToMetricsCollectionService
         tell alertResolved to entity AlertContext.Alert
       }
       on alertSilenced: event Alert.AlertSilenced is {
@@ -605,6 +619,9 @@ context AlertContext as router is {
       }
       on alertEscalated: event Alert.AlertEscalated is {
         send alertEscalated to outlet AlertEventSplitToObservabilityAnalytics
+        send alertEscalated to outlet AlertEventSplitToToNotificationService
+        send alertEscalated to outlet AlertEventSplitToToDistributedTracingService
+        send alertEscalated to outlet AlertEventSplitToToDashboardService
         tell alertEscalated to entity AlertContext.Alert
       }
       on commentAdded: event Alert.CommentAdded is {
@@ -629,6 +646,21 @@ context AlertContext as router is {
     described as {
       |Fans Alert events out to the repository and projectors.
     }
+  }
+  connector 'ToNotificationService Feed' is from outlet AlertContext.AlertEventSplit.AlertEventSplitToToNotificationService to inlet AlertContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Alert events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToMetricsCollectionService Feed' is from outlet AlertContext.AlertEventSplit.AlertEventSplitToToMetricsCollectionService to inlet AlertContext.ToMetricsCollectionService.ToMetricsCollectionServiceIn with {
+    briefly "The Alert events ToMetricsCollectionService translates, on their way to it"
+  }
+  connector 'ToLogAggregationService Feed' is from outlet AlertContext.AlertEventSplit.AlertEventSplitToToLogAggregationService to inlet AlertContext.ToLogAggregationService.ToLogAggregationServiceIn with {
+    briefly "The Alert events ToLogAggregationService translates, on their way to it"
+  }
+  connector 'ToDistributedTracingService Feed' is from outlet AlertContext.AlertEventSplit.AlertEventSplitToToDistributedTracingService to inlet AlertContext.ToDistributedTracingService.ToDistributedTracingServiceIn with {
+    briefly "The Alert events ToDistributedTracingService translates, on their way to it"
+  }
+  connector 'ToDashboardService Feed' is from outlet AlertContext.AlertEventSplit.AlertEventSplitToToDashboardService to inlet AlertContext.ToDashboardService.ToDashboardServiceIn with {
+    briefly "The Alert events ToDashboardService translates, on their way to it"
   }
   connector 'AlertEvent Stream' is from outlet AlertContext.Alert.AlertEvents2 to inlet AlertContext.AlertEventSplit.AlertEventSplitIn with {
     briefly "Alert events, fanned out to storage and read models"

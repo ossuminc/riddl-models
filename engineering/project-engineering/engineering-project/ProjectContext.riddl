@@ -86,7 +86,7 @@ context ProjectContext as router is {
     }
   }
   adaptor ToBillingService to context BillingService as flow is { 
-    outlet ToBillingServiceOut is command BillingService.CreateInvoice
+    inlet ToBillingServiceIn is type ProjectEvent    outlet ToBillingServiceOut is command BillingService.CreateInvoice
     handler ToBillingServiceHandler is {
       on milestoneCompleted: event Project.MilestoneCompleted is {
         let notice: type BillingService.CreateInvoice = prompt("translate the milestoneCompleted event into a CreateInvoice billing the project milestone just completed, whose value is now fixed")
@@ -128,7 +128,7 @@ context ProjectContext as router is {
     }
   }
   adaptor ToCalendarService to context CalendarService as flow is { 
-    outlet ToCalendarServiceOut is command CalendarService.ScheduleMeeting
+    inlet ToCalendarServiceIn is type ProjectEvent    outlet ToCalendarServiceOut is command CalendarService.ScheduleMeeting
     handler ToCalendarServiceHandler is {
       on milestoneAdded: event Project.MilestoneAdded is {
         let request: type CalendarService.ScheduleMeeting = prompt("translate the milestoneAdded event into a ScheduleMeeting putting the milestone review in the team's calendars")
@@ -190,7 +190,7 @@ context ProjectContext as router is {
     }
   }
   adaptor ToDocumentService to context DocumentService as flow is { 
-    outlet ToDocumentServiceOut is command DocumentService.StoreDeliverable
+    inlet ToDocumentServiceIn is type ProjectEvent    outlet ToDocumentServiceOut is command DocumentService.StoreDeliverable
     handler ToDocumentServiceHandler is {
       on milestoneCompleted: event MilestoneCompleted is {
         let artifact: type DocumentService.StoreDeliverable = prompt("translate the milestoneCompleted event into a StoreDeliverable keeping what the milestone produced")
@@ -212,7 +212,7 @@ context ProjectContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendProjectUpdate
+    inlet ToNotificationServiceIn is type ProjectEvent    outlet ToNotificationServiceOut is command NotificationService.SendProjectUpdate
     handler ToNotificationServiceHandler is {
       on milestoneCompleted: event MilestoneCompleted is {
         let notice: type NotificationService.SendProjectUpdate = prompt("translate the milestoneCompleted event into a SendProjectUpdate telling the client a milestone is met, since schedule and invoicing both hang on it")
@@ -253,8 +253,8 @@ context ProjectContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor ToResourceService to context ResourceService as flow is { 
-    outlet ToResourceServiceOut is query ResourceService.GetAvailableResources
+  adaptor ToResourceService to context ResourceService as merge is { 
+    inlet ToResourceServiceIn is type ProjectEvent    inlet ToResourceServiceReplies is result ResourceService.ResourceAvailability    outlet ToResourceServiceOut is query ResourceService.GetAvailableResources
     handler ToResourceServiceHandler is {
       on taskAdded: event Project.TaskAdded is {
         let askAnswer: type ResourceService.ResourceAvailability = ask query ResourceService.GetAvailableResources of context ResourceService
@@ -784,7 +784,12 @@ context ProjectContext as router is {
       |persistence.
     }
   }
-  streamlet ProjectEventSplit as flow is {
+  streamlet ProjectEventSplit as split is {
+    outlet ProjectEventSplitToToResourceService is type ProjectEvent
+    outlet ProjectEventSplitToToNotificationService is type ProjectEvent
+    outlet ProjectEventSplitToToDocumentService is type ProjectEvent
+    outlet ProjectEventSplitToToCalendarService is type ProjectEvent
+    outlet ProjectEventSplitToToBillingService is type ProjectEvent
     inlet ProjectEventSplitIn is type ProjectEvent    outlet ProjectEventSplitToProjectAnalytics is type ProjectEvent
     handler ProjectEventSplitHandler is {
       on projectCreated: event Project.ProjectCreated is {
@@ -801,10 +806,12 @@ context ProjectContext as router is {
       }
       on phaseUpdated: event Project.PhaseUpdated is {
         send phaseUpdated to outlet ProjectEventSplitToProjectAnalytics
+        send phaseUpdated to outlet ProjectEventSplitToToNotificationService
         tell phaseUpdated to entity ProjectContext.Project
       }
       on taskAdded: event Project.TaskAdded is {
         send taskAdded to outlet ProjectEventSplitToProjectAnalytics
+        send taskAdded to outlet ProjectEventSplitToToResourceService
         tell taskAdded to entity ProjectContext.Project
       }
       on taskStatusUpdated: event Project.TaskStatusUpdated is {
@@ -821,14 +828,19 @@ context ProjectContext as router is {
       }
       on milestoneAdded: event Project.MilestoneAdded is {
         send milestoneAdded to outlet ProjectEventSplitToProjectAnalytics
+        send milestoneAdded to outlet ProjectEventSplitToToCalendarService
         tell milestoneAdded to entity ProjectContext.Project
       }
       on milestoneCompleted: event Project.MilestoneCompleted is {
         send milestoneCompleted to outlet ProjectEventSplitToProjectAnalytics
+        send milestoneCompleted to outlet ProjectEventSplitToToNotificationService
+        send milestoneCompleted to outlet ProjectEventSplitToToDocumentService
+        send milestoneCompleted to outlet ProjectEventSplitToToBillingService
         tell milestoneCompleted to entity ProjectContext.Project
       }
       on riskAdded: event Project.RiskAdded is {
         send riskAdded to outlet ProjectEventSplitToProjectAnalytics
+        send riskAdded to outlet ProjectEventSplitToToNotificationService
         tell riskAdded to entity ProjectContext.Project
       }
       on riskUpdated: event Project.RiskUpdated is {
@@ -837,14 +849,17 @@ context ProjectContext as router is {
       }
       on projectPlacedOnHold: event Project.ProjectPlacedOnHold is {
         send projectPlacedOnHold to outlet ProjectEventSplitToProjectAnalytics
+        send projectPlacedOnHold to outlet ProjectEventSplitToToNotificationService
         tell projectPlacedOnHold to entity ProjectContext.Project
       }
       on projectResumed: event Project.ProjectResumed is {
         send projectResumed to outlet ProjectEventSplitToProjectAnalytics
+        send projectResumed to outlet ProjectEventSplitToToNotificationService
         tell projectResumed to entity ProjectContext.Project
       }
       on projectCompleted: event Project.ProjectCompleted is {
         send projectCompleted to outlet ProjectEventSplitToProjectAnalytics
+        send projectCompleted to outlet ProjectEventSplitToToNotificationService
         tell projectCompleted to entity ProjectContext.Project
       }
       on projectCancelled: event Project.ProjectCancelled is {
@@ -865,6 +880,21 @@ context ProjectContext as router is {
     described as {
       |Fans Project events out to the repository and projectors.
     }
+  }
+  connector 'ToResourceService Feed' is from outlet ProjectContext.ProjectEventSplit.ProjectEventSplitToToResourceService to inlet ProjectContext.ToResourceService.ToResourceServiceIn with {
+    briefly "The Project events ToResourceService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet ProjectContext.ProjectEventSplit.ProjectEventSplitToToNotificationService to inlet ProjectContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Project events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToDocumentService Feed' is from outlet ProjectContext.ProjectEventSplit.ProjectEventSplitToToDocumentService to inlet ProjectContext.ToDocumentService.ToDocumentServiceIn with {
+    briefly "The Project events ToDocumentService translates, on their way to it"
+  }
+  connector 'ToCalendarService Feed' is from outlet ProjectContext.ProjectEventSplit.ProjectEventSplitToToCalendarService to inlet ProjectContext.ToCalendarService.ToCalendarServiceIn with {
+    briefly "The Project events ToCalendarService translates, on their way to it"
+  }
+  connector 'ToBillingService Feed' is from outlet ProjectContext.ProjectEventSplit.ProjectEventSplitToToBillingService to inlet ProjectContext.ToBillingService.ToBillingServiceIn with {
+    briefly "The Project events ToBillingService translates, on their way to it"
   }
   connector 'ProjectEvent Stream' is from outlet ProjectContext.Project.ProjectEvents2 to inlet ProjectContext.ProjectEventSplit.ProjectEventSplitIn with {
     briefly "Project events, fanned out to storage and read models"

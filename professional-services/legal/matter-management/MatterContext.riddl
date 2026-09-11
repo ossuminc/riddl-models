@@ -76,8 +76,8 @@ context MatterContext as router is {
       |The model's side of the CourtFilingSystem conversation.
     }
   }
-  adaptor ToCourtFilingSystem to context CourtFilingSystem as flow is { 
-    outlet ToCourtFilingSystemOut is type CourtFilingSystem.CourtFilingSystemRequest
+  adaptor ToCourtFilingSystem to context CourtFilingSystem as merge is { 
+    inlet ToCourtFilingSystemIn is type LegalMatterEvent    inlet ToCourtFilingSystemReplies is result CourtFilingSystem.FilingDeadlines    outlet ToCourtFilingSystemOut is type CourtFilingSystem.CourtFilingSystemRequest
     handler ToCourtFilingSystemHandler is {
       on matterActivated: event LegalMatter.MatterActivated is {
         let askAnswer: type CourtFilingSystem.FilingDeadlines = ask query CourtFilingSystem.GetFilingDeadlines of context CourtFilingSystem
@@ -125,8 +125,8 @@ context MatterContext as router is {
       |The model's side of the TimekeepingSystem conversation.
     }
   }
-  adaptor ToTimekeepingSystem to context TimekeepingSystem as flow is { 
-    outlet ToTimekeepingSystemOut is type TimekeepingSystem.TimekeepingSystemCommand
+  adaptor ToTimekeepingSystem to context TimekeepingSystem as merge is { 
+    inlet ToTimekeepingSystemIn is type LegalMatterEvent    inlet ToTimekeepingSystemReplies is result TimekeepingSystem.MatterBillingSummary    outlet ToTimekeepingSystemOut is type TimekeepingSystem.TimekeepingSystemCommand
     handler ToTimekeepingSystemHandler is {
       on matterClosed: event LegalMatter.MatterClosed is {
         let askAnswer: type TimekeepingSystem.MatterBillingSummary = ask query TimekeepingSystem.GetMatterBillingSummary of context TimekeepingSystem
@@ -608,7 +608,9 @@ context MatterContext as router is {
       |persistence.
     }
   }
-  streamlet LegalMatterEventSplit as flow is {
+  streamlet LegalMatterEventSplit as split is {
+    outlet LegalMatterEventSplitToToTimekeepingSystem is type LegalMatterEvent
+    outlet LegalMatterEventSplitToToCourtFilingSystem is type LegalMatterEvent
     inlet LegalMatterEventSplitIn is type LegalMatterEvent    outlet LegalMatterEventSplitToMatterMetrics is type LegalMatterEvent
     handler LegalMatterEventSplitHandler is {
       on matterCreated: event LegalMatter.MatterCreated is {
@@ -625,18 +627,22 @@ context MatterContext as router is {
       }
       on matterActivated: event LegalMatter.MatterActivated is {
         send matterActivated to outlet LegalMatterEventSplitToMatterMetrics
+        send matterActivated to outlet LegalMatterEventSplitToToCourtFilingSystem
         tell matterActivated to entity MatterContext.LegalMatter
       }
       on timeRecorded: event LegalMatter.TimeRecorded is {
         send timeRecorded to outlet LegalMatterEventSplitToMatterMetrics
+        send timeRecorded to outlet LegalMatterEventSplitToToTimekeepingSystem
         tell timeRecorded to entity MatterContext.LegalMatter
       }
       on expenseRecorded: event LegalMatter.ExpenseRecorded is {
         send expenseRecorded to outlet LegalMatterEventSplitToMatterMetrics
+        send expenseRecorded to outlet LegalMatterEventSplitToToTimekeepingSystem
         tell expenseRecorded to entity MatterContext.LegalMatter
       }
       on documentAttached: event LegalMatter.DocumentAttached is {
         send documentAttached to outlet LegalMatterEventSplitToMatterMetrics
+        send documentAttached to outlet LegalMatterEventSplitToToCourtFilingSystem
         tell documentAttached to entity MatterContext.LegalMatter
       }
       on courtDeadlineAdded: event LegalMatter.CourtDeadlineAdded is {
@@ -657,6 +663,7 @@ context MatterContext as router is {
       }
       on matterClosed: event LegalMatter.MatterClosed is {
         send matterClosed to outlet LegalMatterEventSplitToMatterMetrics
+        send matterClosed to outlet LegalMatterEventSplitToToTimekeepingSystem
         tell matterClosed to entity MatterContext.LegalMatter
       }
       on matterRejected: event LegalMatter.MatterRejected is {
@@ -677,6 +684,12 @@ context MatterContext as router is {
     described as {
       |Fans LegalMatter events out to the repository and projectors.
     }
+  }
+  connector 'ToTimekeepingSystem Feed' is from outlet MatterContext.LegalMatterEventSplit.LegalMatterEventSplitToToTimekeepingSystem to inlet MatterContext.ToTimekeepingSystem.ToTimekeepingSystemIn with {
+    briefly "The LegalMatter events ToTimekeepingSystem translates, on their way to it"
+  }
+  connector 'ToCourtFilingSystem Feed' is from outlet MatterContext.LegalMatterEventSplit.LegalMatterEventSplitToToCourtFilingSystem to inlet MatterContext.ToCourtFilingSystem.ToCourtFilingSystemIn with {
+    briefly "The LegalMatter events ToCourtFilingSystem translates, on their way to it"
   }
   connector 'LegalMatterEvent Stream' is from outlet MatterContext.LegalMatter.LegalMatterEvents2 to inlet MatterContext.LegalMatterEventSplit.LegalMatterEventSplitIn with {
     briefly "LegalMatter events, fanned out to storage and read models"

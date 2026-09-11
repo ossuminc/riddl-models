@@ -77,7 +77,7 @@ context DesignReviewContext as router is {
     }
   }
   adaptor ToDocumentStorage to context DocumentStorage as flow is { 
-    outlet ToDocumentStorageOut is command DocumentStorage.StoreDocument
+    inlet ToDocumentStorageIn is type SubmittalEvent    outlet ToDocumentStorageOut is command DocumentStorage.StoreDocument
     handler ToDocumentStorageHandler is {
       on submittalCreated: event SubmittalCreated is {
         let artifact: type DocumentStorage.StoreDocument = prompt("translate the submittalCreated event into a StoreDocument keeping the submittal as filed")
@@ -98,8 +98,8 @@ context DesignReviewContext as router is {
       |The model's side of the DocumentStorage conversation.
     }
   }
-  adaptor ToIdentityService to context IdentityService as flow is { 
-    outlet ToIdentityServiceOut is query IdentityService.GetReviewerInfo
+  adaptor ToIdentityService to context IdentityService as merge is { 
+    inlet ToIdentityServiceIn is type SubmittalEvent    inlet ToIdentityServiceReplies is result IdentityService.ReviewerDetails    outlet ToIdentityServiceOut is query IdentityService.GetReviewerInfo
     handler ToIdentityServiceHandler is {
       on reviewerAssigned: event Submittal.ReviewerAssigned is {
         let askAnswer: type IdentityService.ReviewerDetails = ask query IdentityService.GetReviewerInfo of context IdentityService
@@ -121,7 +121,7 @@ context DesignReviewContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendReviewNotification
+    inlet ToNotificationServiceIn is type SubmittalEvent    outlet ToNotificationServiceOut is command NotificationService.SendReviewNotification
     handler ToNotificationServiceHandler is {
       on reviewerAssigned: event ReviewerAssigned is {
         let notice: type NotificationService.SendReviewNotification = prompt("translate the reviewerAssigned event into a SendReviewNotification telling the reviewer they are on this submittal and what is expected of them")
@@ -154,8 +154,8 @@ context DesignReviewContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor ToProjectService to context ProjectService as flow is { 
-    outlet ToProjectServiceOut is query ProjectService.GetProjectInfo
+  adaptor ToProjectService to context ProjectService as merge is { 
+    inlet ToProjectServiceIn is type SubmittalEvent    inlet ToProjectServiceReplies is result ProjectService.ProjectDetails    outlet ToProjectServiceOut is query ProjectService.GetProjectInfo
     handler ToProjectServiceHandler is {
       on submittalCreated: event Submittal.SubmittalCreated is {
         let askAnswer: type ProjectService.ProjectDetails = ask query ProjectService.GetProjectInfo of context ProjectService
@@ -619,11 +619,17 @@ context DesignReviewContext as router is {
       |persistence.
     }
   }
-  streamlet SubmittalEventSplit as flow is {
+  streamlet SubmittalEventSplit as split is {
+    outlet SubmittalEventSplitToToProjectService is type SubmittalEvent
+    outlet SubmittalEventSplitToToNotificationService is type SubmittalEvent
+    outlet SubmittalEventSplitToToIdentityService is type SubmittalEvent
+    outlet SubmittalEventSplitToToDocumentStorage is type SubmittalEvent
     inlet SubmittalEventSplitIn is type SubmittalEvent    outlet SubmittalEventSplitToReviewAnalytics is type SubmittalEvent
     handler SubmittalEventSplitHandler is {
       on submittalCreated: event Submittal.SubmittalCreated is {
         send submittalCreated to outlet SubmittalEventSplitToReviewAnalytics
+        send submittalCreated to outlet SubmittalEventSplitToToProjectService
+        send submittalCreated to outlet SubmittalEventSplitToToDocumentStorage
         tell submittalCreated to entity DesignReviewContext.Submittal
       }
       on submittalUpdated: event Submittal.SubmittalUpdated is {
@@ -636,6 +642,8 @@ context DesignReviewContext as router is {
       }
       on reviewerAssigned: event Submittal.ReviewerAssigned is {
         send reviewerAssigned to outlet SubmittalEventSplitToReviewAnalytics
+        send reviewerAssigned to outlet SubmittalEventSplitToToNotificationService
+        send reviewerAssigned to outlet SubmittalEventSplitToToIdentityService
         tell reviewerAssigned to entity DesignReviewContext.Submittal
       }
       on reviewerRemoved: event Submittal.ReviewerRemoved is {
@@ -656,10 +664,12 @@ context DesignReviewContext as router is {
       }
       on approvalRecorded: event Submittal.ApprovalRecorded is {
         send approvalRecorded to outlet SubmittalEventSplitToReviewAnalytics
+        send approvalRecorded to outlet SubmittalEventSplitToToNotificationService
         tell approvalRecorded to entity DesignReviewContext.Submittal
       }
       on submittalRejected: event Submittal.SubmittalRejected is {
         send submittalRejected to outlet SubmittalEventSplitToReviewAnalytics
+        send submittalRejected to outlet SubmittalEventSplitToToNotificationService
         tell submittalRejected to entity DesignReviewContext.Submittal
       }
       on submittalWithdrawn: event Submittal.SubmittalWithdrawn is {
@@ -672,6 +682,7 @@ context DesignReviewContext as router is {
       }
       on milestoneSignedOff: event Submittal.MilestoneSignedOff is {
         send milestoneSignedOff to outlet SubmittalEventSplitToReviewAnalytics
+        send milestoneSignedOff to outlet SubmittalEventSplitToToNotificationService
         tell milestoneSignedOff to entity DesignReviewContext.Submittal
       }
       on other is {
@@ -688,6 +699,18 @@ context DesignReviewContext as router is {
     described as {
       |Fans Submittal events out to the repository and projectors.
     }
+  }
+  connector 'ToProjectService Feed' is from outlet DesignReviewContext.SubmittalEventSplit.SubmittalEventSplitToToProjectService to inlet DesignReviewContext.ToProjectService.ToProjectServiceIn with {
+    briefly "The Submittal events ToProjectService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet DesignReviewContext.SubmittalEventSplit.SubmittalEventSplitToToNotificationService to inlet DesignReviewContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Submittal events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToIdentityService Feed' is from outlet DesignReviewContext.SubmittalEventSplit.SubmittalEventSplitToToIdentityService to inlet DesignReviewContext.ToIdentityService.ToIdentityServiceIn with {
+    briefly "The Submittal events ToIdentityService translates, on their way to it"
+  }
+  connector 'ToDocumentStorage Feed' is from outlet DesignReviewContext.SubmittalEventSplit.SubmittalEventSplitToToDocumentStorage to inlet DesignReviewContext.ToDocumentStorage.ToDocumentStorageIn with {
+    briefly "The Submittal events ToDocumentStorage translates, on their way to it"
   }
   connector 'SubmittalEvent Stream' is from outlet DesignReviewContext.Submittal.SubmittalEvents2 to inlet DesignReviewContext.SubmittalEventSplit.SubmittalEventSplitIn with {
     briefly "Submittal events, fanned out to storage and read models"

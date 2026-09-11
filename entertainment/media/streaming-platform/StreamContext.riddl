@@ -68,7 +68,7 @@ context StreamContext as router is {
     }
   }
   adaptor ToAnalyticsService to context AnalyticsService as flow is { 
-    outlet ToAnalyticsServiceOut is command AnalyticsService.TrackViewEvent
+    inlet ToAnalyticsServiceIn is type StreamEvent    outlet ToAnalyticsServiceOut is command AnalyticsService.TrackViewEvent
     handler ToAnalyticsServiceHandler is {
       on metricsReported: event Stream.MetricsReported is {
         let item0: type AnalyticsService.TrackViewEvent = prompt("translate the metricsReported event into a TrackViewEvent, reported metrics being what the analytics store keeps")
@@ -89,8 +89,8 @@ context StreamContext as router is {
       |The model's side of the AnalyticsService conversation.
     }
   }
-  adaptor ToCDNService to context CDNService as flow is { 
-    outlet ToCDNServiceOut is query CDNService.GetStreamUrl
+  adaptor ToCDNService to context CDNService as merge is { 
+    inlet ToCDNServiceIn is type StreamEvent    inlet ToCDNServiceReplies is result CDNService.StreamUrlResult    outlet ToCDNServiceOut is query CDNService.GetStreamUrl
     handler ToCDNServiceHandler is {
       on streamStarted: event Stream.StreamStarted is {
         let askAnswer: type CDNService.StreamUrlResult = ask query CDNService.GetStreamUrl of context CDNService
@@ -111,8 +111,8 @@ context StreamContext as router is {
       |The model's side of the CDNService conversation.
     }
   }
-  adaptor ToContinueWatchingService to context ContinueWatchingService as flow is { 
-    outlet ToContinueWatchingServiceOut is type ContinueWatchingService.ContinueWatchingServiceRequest
+  adaptor ToContinueWatchingService to context ContinueWatchingService as merge is { 
+    inlet ToContinueWatchingServiceIn is type StreamEvent    inlet ToContinueWatchingServiceReplies is result ContinueWatchingService.GetProgressResult    outlet ToContinueWatchingServiceOut is type ContinueWatchingService.ContinueWatchingServiceRequest
     handler ToContinueWatchingServiceHandler is {
       on streamStarted: event Stream.StreamStarted is {
         let askAnswer: type ContinueWatchingService.GetProgressResult = ask query ContinueWatchingService.GetProgress of context ContinueWatchingService
@@ -164,7 +164,7 @@ context StreamContext as router is {
     }
   }
   adaptor ToDRMService to context DRMService as flow is { 
-    outlet ToDRMServiceOut is command DRMService.RequestLicense
+    inlet ToDRMServiceIn is type StreamEvent    outlet ToDRMServiceOut is command DRMService.RequestLicense
     handler ToDRMServiceHandler is {
       on streamStarted: event Stream.StreamStarted is {
         let item0: type DRMService.RequestLicense = prompt("translate the streamStarted event into a RequestLicense, playback needing a licence before a frame is shown")
@@ -185,8 +185,8 @@ context StreamContext as router is {
       |The model's side of the DRMService conversation.
     }
   }
-  adaptor ToRecommendationService to context RecommendationService as flow is { 
-    outlet ToRecommendationServiceOut is query RecommendationService.GetRecommendations
+  adaptor ToRecommendationService to context RecommendationService as merge is { 
+    inlet ToRecommendationServiceIn is type StreamEvent    inlet ToRecommendationServiceReplies is result RecommendationService.RecommendationList    outlet ToRecommendationServiceOut is query RecommendationService.GetRecommendations
     handler ToRecommendationServiceHandler is {
       on streamEnded: event Stream.StreamEnded is {
         let askAnswer: type RecommendationService.RecommendationList = ask query RecommendationService.GetRecommendations of context RecommendationService
@@ -207,8 +207,8 @@ context StreamContext as router is {
       |The model's side of the RecommendationService conversation.
     }
   }
-  adaptor ToSubscriptionService to context SubscriptionService as flow is { 
-    outlet ToSubscriptionServiceOut is query SubscriptionService.CheckEntitlement
+  adaptor ToSubscriptionService to context SubscriptionService as merge is { 
+    inlet ToSubscriptionServiceIn is type StreamEvent    inlet ToSubscriptionServiceReplies is result SubscriptionService.EntitlementResult    outlet ToSubscriptionServiceOut is query SubscriptionService.CheckEntitlement
     handler ToSubscriptionServiceHandler is {
       on streamStarted: event Stream.StreamStarted is {
         let askAnswer: type SubscriptionService.EntitlementResult = ask query SubscriptionService.CheckEntitlement of context SubscriptionService
@@ -549,15 +549,26 @@ context StreamContext as router is {
       |Maintains streaming analytics data.
     }
   }
-  streamlet StreamEventSplit as flow is {
+  streamlet StreamEventSplit as split is {
+    outlet StreamEventSplitToToSubscriptionService is type StreamEvent
+    outlet StreamEventSplitToToRecommendationService is type StreamEvent
+    outlet StreamEventSplitToToDRMService is type StreamEvent
+    outlet StreamEventSplitToToContinueWatchingService is type StreamEvent
+    outlet StreamEventSplitToToCDNService is type StreamEvent
+    outlet StreamEventSplitToToAnalyticsService is type StreamEvent
     inlet StreamEventSplitIn is type StreamEvent    outlet StreamEventSplitToStreamAnalytics is type StreamEvent
     handler StreamEventSplitHandler is {
       on streamStarted: event Stream.StreamStarted is {
         send streamStarted to outlet StreamEventSplitToStreamAnalytics
+        send streamStarted to outlet StreamEventSplitToToSubscriptionService
+        send streamStarted to outlet StreamEventSplitToToDRMService
+        send streamStarted to outlet StreamEventSplitToToContinueWatchingService
+        send streamStarted to outlet StreamEventSplitToToCDNService
         tell streamStarted to entity StreamContext.Stream
       }
       on streamPaused: event Stream.StreamPaused is {
         send streamPaused to outlet StreamEventSplitToStreamAnalytics
+        send streamPaused to outlet StreamEventSplitToToContinueWatchingService
         tell streamPaused to entity StreamContext.Stream
       }
       on streamResumed: event Stream.StreamResumed is {
@@ -574,10 +585,13 @@ context StreamContext as router is {
       }
       on metricsReported: event Stream.MetricsReported is {
         send metricsReported to outlet StreamEventSplitToStreamAnalytics
+        send metricsReported to outlet StreamEventSplitToToAnalyticsService
         tell metricsReported to entity StreamContext.Stream
       }
       on streamEnded: event Stream.StreamEnded is {
         send streamEnded to outlet StreamEventSplitToStreamAnalytics
+        send streamEnded to outlet StreamEventSplitToToRecommendationService
+        send streamEnded to outlet StreamEventSplitToToContinueWatchingService
         tell streamEnded to entity StreamContext.Stream
       }
       on streamErrorOccurred: event Stream.StreamErrorOccurred is {
@@ -598,6 +612,24 @@ context StreamContext as router is {
     described as {
       |Fans Stream events out to the repository and projectors.
     }
+  }
+  connector 'ToSubscriptionService Feed' is from outlet StreamContext.StreamEventSplit.StreamEventSplitToToSubscriptionService to inlet StreamContext.ToSubscriptionService.ToSubscriptionServiceIn with {
+    briefly "The Stream events ToSubscriptionService translates, on their way to it"
+  }
+  connector 'ToRecommendationService Feed' is from outlet StreamContext.StreamEventSplit.StreamEventSplitToToRecommendationService to inlet StreamContext.ToRecommendationService.ToRecommendationServiceIn with {
+    briefly "The Stream events ToRecommendationService translates, on their way to it"
+  }
+  connector 'ToDRMService Feed' is from outlet StreamContext.StreamEventSplit.StreamEventSplitToToDRMService to inlet StreamContext.ToDRMService.ToDRMServiceIn with {
+    briefly "The Stream events ToDRMService translates, on their way to it"
+  }
+  connector 'ToContinueWatchingService Feed' is from outlet StreamContext.StreamEventSplit.StreamEventSplitToToContinueWatchingService to inlet StreamContext.ToContinueWatchingService.ToContinueWatchingServiceIn with {
+    briefly "The Stream events ToContinueWatchingService translates, on their way to it"
+  }
+  connector 'ToCDNService Feed' is from outlet StreamContext.StreamEventSplit.StreamEventSplitToToCDNService to inlet StreamContext.ToCDNService.ToCDNServiceIn with {
+    briefly "The Stream events ToCDNService translates, on their way to it"
+  }
+  connector 'ToAnalyticsService Feed' is from outlet StreamContext.StreamEventSplit.StreamEventSplitToToAnalyticsService to inlet StreamContext.ToAnalyticsService.ToAnalyticsServiceIn with {
+    briefly "The Stream events ToAnalyticsService translates, on their way to it"
   }
   connector 'StreamEvent Stream' is from outlet StreamContext.Stream.StreamEvents2 to inlet StreamContext.StreamEventSplit.StreamEventSplitIn with {
     briefly "Stream events, fanned out to storage and read models"

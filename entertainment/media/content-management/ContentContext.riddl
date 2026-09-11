@@ -86,7 +86,7 @@ context ContentContext as router is {
     }
   }
   adaptor ToCDNService to context CDNService as flow is { 
-    outlet ToCDNServiceOut is command CDNService.DistributeContent
+    inlet ToCDNServiceIn is type ContentEvent    outlet ToCDNServiceOut is command CDNService.DistributeContent
     handler ToCDNServiceHandler is {
       on contentPublished: event Content.ContentPublished is {
         let item0: type CDNService.DistributeContent = prompt("translate the contentPublished event into a DistributeContent, publication being what commits content to the edge")
@@ -130,7 +130,7 @@ context ContentContext as router is {
     }
   }
   adaptor ToMediaAssetService to context MediaAssetService as flow is { 
-    outlet ToMediaAssetServiceOut is command MediaAssetService.UploadAsset
+    inlet ToMediaAssetServiceIn is type ContentEvent    outlet ToMediaAssetServiceOut is command MediaAssetService.UploadAsset
     handler ToMediaAssetServiceHandler is {
       on assetAdded: event Content.AssetAdded is {
         let item0: type MediaAssetService.UploadAsset = prompt("translate the assetAdded event into a UploadAsset, an attached asset having to live where the library can serve it")
@@ -152,7 +152,7 @@ context ContentContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendContentNotification
+    inlet ToNotificationServiceIn is type ContentEvent    outlet ToNotificationServiceOut is command NotificationService.SendContentNotification
     handler ToNotificationServiceHandler is {
       on contentApproved: event ContentApproved is {
         let notice: type NotificationService.SendContentNotification = prompt("translate the contentApproved event into a SendContentNotification telling the author their content passed review and may be published")
@@ -185,8 +185,8 @@ context ContentContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor ToRightsService to context RightsService as flow is { 
-    outlet ToRightsServiceOut is query RightsService.CheckRightsClearance
+  adaptor ToRightsService to context RightsService as merge is { 
+    inlet ToRightsServiceIn is type ContentEvent    inlet ToRightsServiceReplies is result RightsService.RightsClearance    outlet ToRightsServiceOut is query RightsService.CheckRightsClearance
     handler ToRightsServiceHandler is {
       on contentSubmittedForReview: event Content.ContentSubmittedForReview is {
         let askAnswer: type RightsService.RightsClearance = ask query RightsService.CheckRightsClearance of context RightsService
@@ -228,7 +228,7 @@ context ContentContext as router is {
     }
   }
   adaptor ToSearchService to context SearchService as flow is { 
-    outlet ToSearchServiceOut is command SearchService.IndexContent
+    inlet ToSearchServiceIn is type ContentEvent    outlet ToSearchServiceOut is command SearchService.IndexContent
     handler ToSearchServiceHandler is {
       on contentPublished: event Content.ContentPublished is {
         let item0: type SearchService.IndexContent = prompt("translate the contentPublished event into a IndexContent, publication being what makes content findable")
@@ -272,7 +272,7 @@ context ContentContext as router is {
     }
   }
   adaptor ToTranscodingService to context TranscodingService as flow is { 
-    outlet ToTranscodingServiceOut is command TranscodingService.TranscodeAsset
+    inlet ToTranscodingServiceIn is type ContentEvent    outlet ToTranscodingServiceOut is command TranscodingService.TranscodeAsset
     handler ToTranscodingServiceHandler is {
       on assetAdded: event Content.AssetAdded is {
         let item0: type TranscodingService.TranscodeAsset = prompt("translate the assetAdded event into a TranscodeAsset, a new asset arriving in one format and needing others")
@@ -694,7 +694,13 @@ context ContentContext as router is {
       |Maintains content library analytics data.
     }
   }
-  streamlet ContentEventSplit as flow is {
+  streamlet ContentEventSplit as split is {
+    outlet ContentEventSplitToToTranscodingService is type ContentEvent
+    outlet ContentEventSplitToToSearchService is type ContentEvent
+    outlet ContentEventSplitToToRightsService is type ContentEvent
+    outlet ContentEventSplitToToNotificationService is type ContentEvent
+    outlet ContentEventSplitToToMediaAssetService is type ContentEvent
+    outlet ContentEventSplitToToCDNService is type ContentEvent
     inlet ContentEventSplitIn is type ContentEvent    outlet ContentEventSplitToContentAnalytics is type ContentEvent
     handler ContentEventSplitHandler is {
       on contentCreated: event Content.ContentCreated is {
@@ -707,6 +713,8 @@ context ContentContext as router is {
       }
       on assetAdded: event Content.AssetAdded is {
         send assetAdded to outlet ContentEventSplitToContentAnalytics
+        send assetAdded to outlet ContentEventSplitToToTranscodingService
+        send assetAdded to outlet ContentEventSplitToToMediaAssetService
         tell assetAdded to entity ContentContext.Content
       }
       on assetRemoved: event Content.AssetRemoved is {
@@ -723,22 +731,29 @@ context ContentContext as router is {
       }
       on contentSubmittedForReview: event Content.ContentSubmittedForReview is {
         send contentSubmittedForReview to outlet ContentEventSplitToContentAnalytics
+        send contentSubmittedForReview to outlet ContentEventSplitToToRightsService
         tell contentSubmittedForReview to entity ContentContext.Content
       }
       on contentApproved: event Content.ContentApproved is {
         send contentApproved to outlet ContentEventSplitToContentAnalytics
+        send contentApproved to outlet ContentEventSplitToToNotificationService
         tell contentApproved to entity ContentContext.Content
       }
       on contentRejected: event Content.ContentRejected is {
         send contentRejected to outlet ContentEventSplitToContentAnalytics
+        send contentRejected to outlet ContentEventSplitToToNotificationService
         tell contentRejected to entity ContentContext.Content
       }
       on contentPublished: event Content.ContentPublished is {
         send contentPublished to outlet ContentEventSplitToContentAnalytics
+        send contentPublished to outlet ContentEventSplitToToSearchService
+        send contentPublished to outlet ContentEventSplitToToNotificationService
+        send contentPublished to outlet ContentEventSplitToToCDNService
         tell contentPublished to entity ContentContext.Content
       }
       on contentUnpublished: event Content.ContentUnpublished is {
         send contentUnpublished to outlet ContentEventSplitToContentAnalytics
+        send contentUnpublished to outlet ContentEventSplitToToNotificationService
         tell contentUnpublished to entity ContentContext.Content
       }
       on contentArchived: event Content.ContentArchived is {
@@ -759,6 +774,24 @@ context ContentContext as router is {
     described as {
       |Fans Content events out to the repository and projectors.
     }
+  }
+  connector 'ToTranscodingService Feed' is from outlet ContentContext.ContentEventSplit.ContentEventSplitToToTranscodingService to inlet ContentContext.ToTranscodingService.ToTranscodingServiceIn with {
+    briefly "The Content events ToTranscodingService translates, on their way to it"
+  }
+  connector 'ToSearchService Feed' is from outlet ContentContext.ContentEventSplit.ContentEventSplitToToSearchService to inlet ContentContext.ToSearchService.ToSearchServiceIn with {
+    briefly "The Content events ToSearchService translates, on their way to it"
+  }
+  connector 'ToRightsService Feed' is from outlet ContentContext.ContentEventSplit.ContentEventSplitToToRightsService to inlet ContentContext.ToRightsService.ToRightsServiceIn with {
+    briefly "The Content events ToRightsService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet ContentContext.ContentEventSplit.ContentEventSplitToToNotificationService to inlet ContentContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Content events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToMediaAssetService Feed' is from outlet ContentContext.ContentEventSplit.ContentEventSplitToToMediaAssetService to inlet ContentContext.ToMediaAssetService.ToMediaAssetServiceIn with {
+    briefly "The Content events ToMediaAssetService translates, on their way to it"
+  }
+  connector 'ToCDNService Feed' is from outlet ContentContext.ContentEventSplit.ContentEventSplitToToCDNService to inlet ContentContext.ToCDNService.ToCDNServiceIn with {
+    briefly "The Content events ToCDNService translates, on their way to it"
   }
   connector 'ContentEvent Stream' is from outlet ContentContext.Content.ContentEvents2 to inlet ContentContext.ContentEventSplit.ContentEventSplitIn with {
     briefly "Content events, fanned out to storage and read models"

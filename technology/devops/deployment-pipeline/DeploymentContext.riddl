@@ -78,7 +78,7 @@ context DeploymentContext as router is {
     }
   }
   adaptor ToArtifactRegistry to context ArtifactRegistry as flow is { 
-    outlet ToArtifactRegistryOut is type ArtifactRegistry.ArtifactRegistryCommand
+    inlet ToArtifactRegistryIn is type DeploymentEvent    outlet ToArtifactRegistryOut is type ArtifactRegistry.ArtifactRegistryCommand
     handler ToArtifactRegistryHandler is {
       on deploymentInitiated: event Deployment.DeploymentInitiated is {
         let item0: type ArtifactRegistry.ValidateArtifact = prompt("translate the deploymentInitiated event into a ValidateArtifact, an artifact being unfit to approve before it is known intact")
@@ -132,7 +132,7 @@ context DeploymentContext as router is {
     }
   }
   adaptor ToInfrastructureService to context InfrastructureService as flow is { 
-    outlet ToInfrastructureServiceOut is type InfrastructureService.InfrastructureServiceCommand
+    inlet ToInfrastructureServiceIn is type DeploymentEvent    outlet ToInfrastructureServiceOut is type InfrastructureService.InfrastructureServiceCommand
     handler ToInfrastructureServiceHandler is {
       on deploymentStarted: event Deployment.DeploymentStarted is {
         let item0: type InfrastructureService.DeployToInfrastructure = prompt("translate the deploymentStarted event into a DeployToInfrastructure, the start being when the infrastructure is actually asked")
@@ -1008,11 +1008,14 @@ context DeploymentContext as router is {
       |Union of all Deployment events for streaming.
     }
   }
-  streamlet DeploymentEventSplit as flow is {
+  streamlet DeploymentEventSplit as split is {
+    outlet DeploymentEventSplitToToInfrastructureService is type DeploymentEvent
+    outlet DeploymentEventSplitToToArtifactRegistry is type DeploymentEvent
     inlet DeploymentEventSplitIn is type DeploymentEvent    outlet DeploymentEventSplitToDeploymentMetricsProjector is type DeploymentEvent
     handler DeploymentEventSplitHandler is {
       on deploymentInitiated: event Deployment.DeploymentInitiated is {
         send deploymentInitiated to outlet DeploymentEventSplitToDeploymentMetricsProjector
+        send deploymentInitiated to outlet DeploymentEventSplitToToArtifactRegistry
         tell deploymentInitiated to entity DeploymentContext.Deployment
       }
       on deploymentAwaitingApproval: event Deployment.DeploymentAwaitingApproval is {
@@ -1025,10 +1028,13 @@ context DeploymentContext as router is {
       }
       on deploymentStarted: event Deployment.DeploymentStarted is {
         send deploymentStarted to outlet DeploymentEventSplitToDeploymentMetricsProjector
+        send deploymentStarted to outlet DeploymentEventSplitToToInfrastructureService
+        send deploymentStarted to outlet DeploymentEventSplitToToArtifactRegistry
         tell deploymentStarted to entity DeploymentContext.Deployment
       }
       on deploymentVerified: event Deployment.DeploymentVerified is {
         send deploymentVerified to outlet DeploymentEventSplitToDeploymentMetricsProjector
+        send deploymentVerified to outlet DeploymentEventSplitToToInfrastructureService
         tell deploymentVerified to entity DeploymentContext.Deployment
       }
       on deploymentCompleted: event Deployment.DeploymentCompleted is {
@@ -1041,6 +1047,7 @@ context DeploymentContext as router is {
       }
       on deploymentRolledBack: event Deployment.DeploymentRolledBack is {
         send deploymentRolledBack to outlet DeploymentEventSplitToDeploymentMetricsProjector
+        send deploymentRolledBack to outlet DeploymentEventSplitToToInfrastructureService
         tell deploymentRolledBack to entity DeploymentContext.Deployment
       }
       on other is {
@@ -1083,6 +1090,12 @@ context DeploymentContext as router is {
     described as {
       |Fans Environment events out to the repository and projectors.
     }
+  }
+  connector 'ToInfrastructureService Feed' is from outlet DeploymentContext.DeploymentEventSplit.DeploymentEventSplitToToInfrastructureService to inlet DeploymentContext.ToInfrastructureService.ToInfrastructureServiceIn with {
+    briefly "The Deployment events ToInfrastructureService translates, on their way to it"
+  }
+  connector 'ToArtifactRegistry Feed' is from outlet DeploymentContext.DeploymentEventSplit.DeploymentEventSplitToToArtifactRegistry to inlet DeploymentContext.ToArtifactRegistry.ToArtifactRegistryIn with {
+    briefly "The Deployment events ToArtifactRegistry translates, on their way to it"
   }
   connector 'DeploymentEvent Stream' is from outlet DeploymentContext.Deployment.DeploymentEvents to inlet DeploymentContext.DeploymentEventSplit.DeploymentEventSplitIn with {
     briefly "Deployment events, fanned out to storage and read models"

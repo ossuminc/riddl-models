@@ -78,8 +78,8 @@ context PipelineContext as router is {
       |The model's side of the ArtifactStorageService conversation.
     }
   }
-  adaptor ToArtifactStorageService to context ArtifactStorageService as flow is { 
-    outlet ToArtifactStorageServiceOut is type ArtifactStorageService.ArtifactStorageServiceRequest
+  adaptor ToArtifactStorageService to context ArtifactStorageService as merge is { 
+    inlet ToArtifactStorageServiceIn is type PipelineEvent    inlet ToArtifactStorageServiceReplies is result ArtifactStorageService.ArtifactDownloadUrl    outlet ToArtifactStorageServiceOut is type ArtifactStorageService.ArtifactStorageServiceRequest
     handler ToArtifactStorageServiceHandler is {
       on stageCompleted: event StageCompleted is {
         let notice: type ArtifactStorageService.UploadArtifact = prompt("translate the stageCompleted event into an UploadArtifact keeping what the stage built, since later stages and rollbacks need it")
@@ -128,7 +128,7 @@ context PipelineContext as router is {
     }
   }
   adaptor ToContainerRegistryService to context ContainerRegistryService as flow is { 
-    outlet ToContainerRegistryServiceOut is type ContainerRegistryService.ContainerRegistryServiceCommand
+    inlet ToContainerRegistryServiceIn is type PipelineEvent    outlet ToContainerRegistryServiceOut is type ContainerRegistryService.ContainerRegistryServiceCommand
     handler ToContainerRegistryServiceHandler is {
       on artifactStored: event Pipeline.ArtifactStored is {
         let item0: type ContainerRegistryService.PushImage = prompt("translate the artifactStored event into a PushImage, a built artifact being what a registry holds")
@@ -183,7 +183,7 @@ context PipelineContext as router is {
     }
   }
   adaptor ToDeploymentOrchestratorService to context DeploymentOrchestratorService as flow is { 
-    outlet ToDeploymentOrchestratorServiceOut is type DeploymentOrchestratorService.DeploymentOrchestratorServiceCommand
+    inlet ToDeploymentOrchestratorServiceIn is type PipelineEvent    outlet ToDeploymentOrchestratorServiceOut is type DeploymentOrchestratorService.DeploymentOrchestratorServiceCommand
     handler ToDeploymentOrchestratorServiceHandler is {
       on deploymentApproved: event Pipeline.DeploymentApproved is {
         let item0: type DeploymentOrchestratorService.DeployToEnvironment = prompt("translate the deploymentApproved event into a DeployToEnvironment, approval being what authorises the change to land")
@@ -209,7 +209,7 @@ context PipelineContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendBuildNotification
+    inlet ToNotificationServiceIn is type PipelineEvent    outlet ToNotificationServiceOut is command NotificationService.SendBuildNotification
     handler ToNotificationServiceHandler is {
       on pipelineCompleted: event PipelineCompleted is {
         let notice: type NotificationService.SendBuildNotification = prompt("translate the pipelineCompleted event into a SendBuildNotification telling the committer the pipeline finished and whether their change is deployable")
@@ -270,7 +270,7 @@ context PipelineContext as router is {
     }
   }
   adaptor ToSourceControlService to context SourceControlService as flow is { 
-    outlet ToSourceControlServiceOut is type SourceControlService.SourceControlServiceCommand
+    inlet ToSourceControlServiceIn is type PipelineEvent    outlet ToSourceControlServiceOut is type SourceControlService.SourceControlServiceCommand
     handler ToSourceControlServiceHandler is {
       on pipelineStarted: event Pipeline.PipelineStarted is {
         let item0: type SourceControlService.FetchRepository = prompt("translate the pipelineStarted event into a FetchRepository, a pipeline having nothing to build until the source arrives")
@@ -640,7 +640,12 @@ context PipelineContext as router is {
       |Union of all Pipeline events for streaming.
     }
   }
-  streamlet PipelineEventSplit as flow is {
+  streamlet PipelineEventSplit as split is {
+    outlet PipelineEventSplitToToSourceControlService is type PipelineEvent
+    outlet PipelineEventSplitToToNotificationService is type PipelineEvent
+    outlet PipelineEventSplitToToDeploymentOrchestratorService is type PipelineEvent
+    outlet PipelineEventSplitToToContainerRegistryService is type PipelineEvent
+    outlet PipelineEventSplitToToArtifactStorageService is type PipelineEvent
     inlet PipelineEventSplitIn is type PipelineEvent    outlet PipelineEventSplitToPipelineAnalytics is type PipelineEvent
     handler PipelineEventSplitHandler is {
       on pipelineCreated: event Pipeline.PipelineCreated is {
@@ -649,34 +654,46 @@ context PipelineContext as router is {
       }
       on pipelineStarted: event Pipeline.PipelineStarted is {
         send pipelineStarted to outlet PipelineEventSplitToPipelineAnalytics
+        send pipelineStarted to outlet PipelineEventSplitToToSourceControlService
         tell pipelineStarted to entity PipelineContext.Pipeline
       }
       on stageCompleted: event Pipeline.StageCompleted is {
         send stageCompleted to outlet PipelineEventSplitToPipelineAnalytics
+        send stageCompleted to outlet PipelineEventSplitToToArtifactStorageService
         tell stageCompleted to entity PipelineContext.Pipeline
       }
       on artifactStored: event Pipeline.ArtifactStored is {
         send artifactStored to outlet PipelineEventSplitToPipelineAnalytics
+        send artifactStored to outlet PipelineEventSplitToToContainerRegistryService
         tell artifactStored to entity PipelineContext.Pipeline
       }
       on approvalRequested: event Pipeline.ApprovalRequested is {
         send approvalRequested to outlet PipelineEventSplitToPipelineAnalytics
+        send approvalRequested to outlet PipelineEventSplitToToNotificationService
         tell approvalRequested to entity PipelineContext.Pipeline
       }
       on deploymentApproved: event Pipeline.DeploymentApproved is {
         send deploymentApproved to outlet PipelineEventSplitToPipelineAnalytics
+        send deploymentApproved to outlet PipelineEventSplitToToNotificationService
+        send deploymentApproved to outlet PipelineEventSplitToToDeploymentOrchestratorService
+        send deploymentApproved to outlet PipelineEventSplitToToArtifactStorageService
         tell deploymentApproved to entity PipelineContext.Pipeline
       }
       on deploymentRejected: event Pipeline.DeploymentRejected is {
         send deploymentRejected to outlet PipelineEventSplitToPipelineAnalytics
+        send deploymentRejected to outlet PipelineEventSplitToToNotificationService
         tell deploymentRejected to entity PipelineContext.Pipeline
       }
       on pipelineCancelled: event Pipeline.PipelineCancelled is {
         send pipelineCancelled to outlet PipelineEventSplitToPipelineAnalytics
+        send pipelineCancelled to outlet PipelineEventSplitToToNotificationService
+        send pipelineCancelled to outlet PipelineEventSplitToToDeploymentOrchestratorService
         tell pipelineCancelled to entity PipelineContext.Pipeline
       }
       on pipelineCompleted: event Pipeline.PipelineCompleted is {
         send pipelineCompleted to outlet PipelineEventSplitToPipelineAnalytics
+        send pipelineCompleted to outlet PipelineEventSplitToToSourceControlService
+        send pipelineCompleted to outlet PipelineEventSplitToToNotificationService
         tell pipelineCompleted to entity PipelineContext.Pipeline
       }
       on other is {
@@ -693,6 +710,21 @@ context PipelineContext as router is {
     described as {
       |Fans Pipeline events out to the repository and projectors.
     }
+  }
+  connector 'ToSourceControlService Feed' is from outlet PipelineContext.PipelineEventSplit.PipelineEventSplitToToSourceControlService to inlet PipelineContext.ToSourceControlService.ToSourceControlServiceIn with {
+    briefly "The Pipeline events ToSourceControlService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet PipelineContext.PipelineEventSplit.PipelineEventSplitToToNotificationService to inlet PipelineContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Pipeline events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToDeploymentOrchestratorService Feed' is from outlet PipelineContext.PipelineEventSplit.PipelineEventSplitToToDeploymentOrchestratorService to inlet PipelineContext.ToDeploymentOrchestratorService.ToDeploymentOrchestratorServiceIn with {
+    briefly "The Pipeline events ToDeploymentOrchestratorService translates, on their way to it"
+  }
+  connector 'ToContainerRegistryService Feed' is from outlet PipelineContext.PipelineEventSplit.PipelineEventSplitToToContainerRegistryService to inlet PipelineContext.ToContainerRegistryService.ToContainerRegistryServiceIn with {
+    briefly "The Pipeline events ToContainerRegistryService translates, on their way to it"
+  }
+  connector 'ToArtifactStorageService Feed' is from outlet PipelineContext.PipelineEventSplit.PipelineEventSplitToToArtifactStorageService to inlet PipelineContext.ToArtifactStorageService.ToArtifactStorageServiceIn with {
+    briefly "The Pipeline events ToArtifactStorageService translates, on their way to it"
   }
   connector 'PipelineEvent Stream' is from outlet PipelineContext.Pipeline.PipelineEvents to inlet PipelineContext.PipelineEventSplit.PipelineEventSplitIn with {
     briefly "Pipeline events, fanned out to storage and read models"

@@ -71,7 +71,7 @@ context MeterContext as router is {
     }
   }
   adaptor ToAnalyticsExportService to context AnalyticsExportService as flow is { 
-    outlet ToAnalyticsExportServiceOut is command AnalyticsExportService.ExportUsageData
+    inlet ToAnalyticsExportServiceIn is type MeterEvent    outlet ToAnalyticsExportServiceOut is command AnalyticsExportService.ExportUsageData
     handler ToAnalyticsExportServiceHandler is {
       on usageAggregated: event Meter.UsageAggregated is {
         let item0: type AnalyticsExportService.ExportUsageData = prompt("translate the usageAggregated event into a ExportUsageData, aggregation being what makes usage worth exporting")
@@ -112,8 +112,8 @@ context MeterContext as router is {
       |The model's side of the BillingService conversation.
     }
   }
-  adaptor ToBillingService to context BillingService as flow is { 
-    outlet ToBillingServiceOut is type BillingService.BillingServiceRequest
+  adaptor ToBillingService to context BillingService as merge is { 
+    inlet ToBillingServiceIn is type MeterEvent    inlet ToBillingServiceReplies is result BillingService.InvoiceStatusResult    outlet ToBillingServiceOut is type BillingService.BillingServiceRequest
     handler ToBillingServiceHandler is {
       on billingRecordGenerated: event Meter.BillingRecordGenerated is {
         let notice: type BillingService.CreateInvoice = prompt("translate the billingRecordGenerated event into a CreateInvoice for the usage just aggregated and closed into a billing record")
@@ -158,8 +158,8 @@ context MeterContext as router is {
       |The model's side of the EventIngestionService conversation.
     }
   }
-  adaptor ToEventIngestionService to context EventIngestionService as flow is { 
-    outlet ToEventIngestionServiceOut is query EventIngestionService.GetIngestionStats
+  adaptor ToEventIngestionService to context EventIngestionService as merge is { 
+    inlet ToEventIngestionServiceIn is type MeterEvent    inlet ToEventIngestionServiceReplies is result EventIngestionService.IngestionStatsResult    outlet ToEventIngestionServiceOut is query EventIngestionService.GetIngestionStats
     handler ToEventIngestionServiceHandler is {
       on batchEventsRecorded: event Meter.BatchEventsRecorded is {
         let askAnswer: type EventIngestionService.IngestionStatsResult = ask query EventIngestionService.GetIngestionStats of context EventIngestionService
@@ -181,7 +181,7 @@ context MeterContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type MeterEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on usageAlertTriggered: event UsageAlertTriggered is {
         let msg: type NotificationService.SendUsageAlert = prompt("translate the usageAlertTriggered event into a SendUsageAlert for its recipient")
@@ -226,8 +226,8 @@ context MeterContext as router is {
       |The model's side of the SubscriptionService conversation.
     }
   }
-  adaptor ToSubscriptionService to context SubscriptionService as flow is { 
-    outlet ToSubscriptionServiceOut is query SubscriptionService.GetSubscriptionDetails
+  adaptor ToSubscriptionService to context SubscriptionService as merge is { 
+    inlet ToSubscriptionServiceIn is type MeterEvent    inlet ToSubscriptionServiceReplies is result SubscriptionService.SubscriptionDetailsResult    outlet ToSubscriptionServiceOut is query SubscriptionService.GetSubscriptionDetails
     handler ToSubscriptionServiceHandler is {
       on meterCreated: event Meter.MeterCreated is {
         let askAnswer: type SubscriptionService.SubscriptionDetailsResult = ask query SubscriptionService.GetSubscriptionDetails of context SubscriptionService
@@ -839,11 +839,17 @@ context MeterContext as router is {
       |Union of all Meter events for streaming.
     }
   }
-  streamlet MeterEventSplit as flow is {
+  streamlet MeterEventSplit as split is {
+    outlet MeterEventSplitToToSubscriptionService is type MeterEvent
+    outlet MeterEventSplitToToNotificationService is type MeterEvent
+    outlet MeterEventSplitToToEventIngestionService is type MeterEvent
+    outlet MeterEventSplitToToBillingService is type MeterEvent
+    outlet MeterEventSplitToToAnalyticsExportService is type MeterEvent
     inlet MeterEventSplitIn is type MeterEvent    outlet MeterEventSplitToUsageAnalytics is type MeterEvent
     handler MeterEventSplitHandler is {
       on meterCreated: event Meter.MeterCreated is {
         send meterCreated to outlet MeterEventSplitToUsageAnalytics
+        send meterCreated to outlet MeterEventSplitToToSubscriptionService
         tell meterCreated to entity MeterContext.Meter
       }
       on usageEventRecorded: event Meter.UsageEventRecorded is {
@@ -852,10 +858,12 @@ context MeterContext as router is {
       }
       on batchEventsRecorded: event Meter.BatchEventsRecorded is {
         send batchEventsRecorded to outlet MeterEventSplitToUsageAnalytics
+        send batchEventsRecorded to outlet MeterEventSplitToToEventIngestionService
         tell batchEventsRecorded to entity MeterContext.Meter
       }
       on usageAggregated: event Meter.UsageAggregated is {
         send usageAggregated to outlet MeterEventSplitToUsageAnalytics
+        send usageAggregated to outlet MeterEventSplitToToAnalyticsExportService
         tell usageAggregated to entity MeterContext.Meter
       }
       on alertThresholdSet: event Meter.AlertThresholdSet is {
@@ -868,10 +876,13 @@ context MeterContext as router is {
       }
       on usageAlertTriggered: event Meter.UsageAlertTriggered is {
         send usageAlertTriggered to outlet MeterEventSplitToUsageAnalytics
+        send usageAlertTriggered to outlet MeterEventSplitToToNotificationService
         tell usageAlertTriggered to entity MeterContext.Meter
       }
       on billingRecordGenerated: event Meter.BillingRecordGenerated is {
         send billingRecordGenerated to outlet MeterEventSplitToUsageAnalytics
+        send billingRecordGenerated to outlet MeterEventSplitToToNotificationService
+        send billingRecordGenerated to outlet MeterEventSplitToToBillingService
         tell billingRecordGenerated to entity MeterContext.Meter
       }
       on usageAdjusted: event Meter.UsageAdjusted is {
@@ -888,6 +899,7 @@ context MeterContext as router is {
       }
       on meterClosed: event Meter.MeterClosed is {
         send meterClosed to outlet MeterEventSplitToUsageAnalytics
+        send meterClosed to outlet MeterEventSplitToToBillingService
         tell meterClosed to entity MeterContext.Meter
       }
       on other is {
@@ -904,6 +916,21 @@ context MeterContext as router is {
     described as {
       |Fans Meter events out to the repository and projectors.
     }
+  }
+  connector 'ToSubscriptionService Feed' is from outlet MeterContext.MeterEventSplit.MeterEventSplitToToSubscriptionService to inlet MeterContext.ToSubscriptionService.ToSubscriptionServiceIn with {
+    briefly "The Meter events ToSubscriptionService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet MeterContext.MeterEventSplit.MeterEventSplitToToNotificationService to inlet MeterContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Meter events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToEventIngestionService Feed' is from outlet MeterContext.MeterEventSplit.MeterEventSplitToToEventIngestionService to inlet MeterContext.ToEventIngestionService.ToEventIngestionServiceIn with {
+    briefly "The Meter events ToEventIngestionService translates, on their way to it"
+  }
+  connector 'ToBillingService Feed' is from outlet MeterContext.MeterEventSplit.MeterEventSplitToToBillingService to inlet MeterContext.ToBillingService.ToBillingServiceIn with {
+    briefly "The Meter events ToBillingService translates, on their way to it"
+  }
+  connector 'ToAnalyticsExportService Feed' is from outlet MeterContext.MeterEventSplit.MeterEventSplitToToAnalyticsExportService to inlet MeterContext.ToAnalyticsExportService.ToAnalyticsExportServiceIn with {
+    briefly "The Meter events ToAnalyticsExportService translates, on their way to it"
   }
   connector 'MeterEvent Stream' is from outlet MeterContext.Meter.MeterEvents to inlet MeterContext.MeterEventSplit.MeterEventSplitIn with {
     briefly "Meter events, fanned out to storage and read models"

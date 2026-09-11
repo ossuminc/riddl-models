@@ -77,7 +77,7 @@ context PatientContext as router is {
     }
   }
   adaptor ToDocumentStorageService to context DocumentStorageService as flow is { 
-    outlet ToDocumentStorageServiceOut is command DocumentStorageService.StorePatientDocument
+    inlet ToDocumentStorageServiceIn is type PatientEvent    outlet ToDocumentStorageServiceOut is command DocumentStorageService.StorePatientDocument
     handler ToDocumentStorageServiceHandler is {
       on consentRecorded: event ConsentRecorded is {
         let artifact: type DocumentStorageService.StorePatientDocument = prompt("translate the consentRecorded event into a StorePatientDocument keeping the signed consent, which must be producible later")
@@ -119,7 +119,7 @@ context PatientContext as router is {
     }
   }
   adaptor ToIdentityVerificationService to context IdentityVerificationService as flow is { 
-    outlet ToIdentityVerificationServiceOut is command IdentityVerificationService.VerifyPatientIdentity
+    inlet ToIdentityVerificationServiceIn is type PatientEvent    outlet ToIdentityVerificationServiceOut is command IdentityVerificationService.VerifyPatientIdentity
     handler ToIdentityVerificationServiceHandler is {
       on patientRegistered: event PatientRegistered is {
         let check0: type IdentityVerificationService.VerifyPatientIdentity = prompt("translate the patientRegistered event into a VerifyPatientIdentity, misidentification being the error this whole context exists to prevent")
@@ -163,7 +163,7 @@ context PatientContext as router is {
     }
   }
   adaptor ToInsuranceEligibilityService to context InsuranceEligibilityService as flow is { 
-    outlet ToInsuranceEligibilityServiceOut is command InsuranceEligibilityService.CheckEligibility
+    inlet ToInsuranceEligibilityServiceIn is type PatientEvent    outlet ToInsuranceEligibilityServiceOut is command InsuranceEligibilityService.CheckEligibility
     handler ToInsuranceEligibilityServiceHandler is {
       on insuranceAdded: event Patient.InsuranceAdded is {
         let item0: type InsuranceEligibilityService.CheckEligibility = prompt("translate the insuranceAdded event into a CheckEligibility, a policy being worth nothing until it is known to cover")
@@ -208,7 +208,7 @@ context PatientContext as router is {
     }
   }
   adaptor ToMPIService to context MPIService as flow is { 
-    outlet ToMPIServiceOut is type MPIService.MPIServiceCommand
+    inlet ToMPIServiceIn is type PatientEvent    outlet ToMPIServiceOut is type MPIService.MPIServiceCommand
     handler ToMPIServiceHandler is {
       on patientRegistered: event Patient.PatientRegistered is {
         let item0: type MPIService.SearchMPI = prompt("translate the patientRegistered event into a SearchMPI, registration being when a duplicate must be looked for")
@@ -234,7 +234,7 @@ context PatientContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendPatientNotification
+    inlet ToNotificationServiceIn is type PatientEvent    outlet ToNotificationServiceOut is command NotificationService.SendPatientNotification
     handler ToNotificationServiceHandler is {
       on patientRegistered: event PatientRegistered is {
         let notice: type NotificationService.SendPatientNotification = prompt("translate the patientRegistered event into a SendPatientNotification welcoming the patient and giving them the record number they will be asked for")
@@ -658,11 +658,19 @@ context PatientContext as router is {
       |Union of all patient entity events for streaming.
     }
   }
-  streamlet PatientEventSplit as flow is {
+  streamlet PatientEventSplit as split is {
+    outlet PatientEventSplitToToNotificationService is type PatientEvent
+    outlet PatientEventSplitToToMPIService is type PatientEvent
+    outlet PatientEventSplitToToInsuranceEligibilityService is type PatientEvent
+    outlet PatientEventSplitToToIdentityVerificationService is type PatientEvent
+    outlet PatientEventSplitToToDocumentStorageService is type PatientEvent
     inlet PatientEventSplitIn is type PatientEvent    outlet PatientEventSplitToPatientAnalytics is type PatientEvent
     handler PatientEventSplitHandler is {
       on patientRegistered: event Patient.PatientRegistered is {
         send patientRegistered to outlet PatientEventSplitToPatientAnalytics
+        send patientRegistered to outlet PatientEventSplitToToNotificationService
+        send patientRegistered to outlet PatientEventSplitToToMPIService
+        send patientRegistered to outlet PatientEventSplitToToIdentityVerificationService
         tell patientRegistered to entity PatientContext.Patient
       }
       on demographicsUpdated: event Patient.DemographicsUpdated is {
@@ -683,14 +691,17 @@ context PatientContext as router is {
       }
       on insuranceAdded: event Patient.InsuranceAdded is {
         send insuranceAdded to outlet PatientEventSplitToPatientAnalytics
+        send insuranceAdded to outlet PatientEventSplitToToInsuranceEligibilityService
         tell insuranceAdded to entity PatientContext.Patient
       }
       on insuranceUpdated: event Patient.InsuranceUpdated is {
         send insuranceUpdated to outlet PatientEventSplitToPatientAnalytics
+        send insuranceUpdated to outlet PatientEventSplitToToNotificationService
         tell insuranceUpdated to entity PatientContext.Patient
       }
       on consentRecorded: event Patient.ConsentRecorded is {
         send consentRecorded to outlet PatientEventSplitToPatientAnalytics
+        send consentRecorded to outlet PatientEventSplitToToDocumentStorageService
         tell consentRecorded to entity PatientContext.Patient
       }
       on patientDeactivated: event Patient.PatientDeactivated is {
@@ -703,6 +714,8 @@ context PatientContext as router is {
       }
       on patientsMerged: event Patient.PatientsMerged is {
         send patientsMerged to outlet PatientEventSplitToPatientAnalytics
+        send patientsMerged to outlet PatientEventSplitToToNotificationService
+        send patientsMerged to outlet PatientEventSplitToToMPIService
         tell patientsMerged to entity PatientContext.Patient by survivingPatientId
       }
       on other is {
@@ -719,6 +732,21 @@ context PatientContext as router is {
     described as {
       |Fans Patient events out to the repository and projectors.
     }
+  }
+  connector 'ToNotificationService Feed' is from outlet PatientContext.PatientEventSplit.PatientEventSplitToToNotificationService to inlet PatientContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Patient events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToMPIService Feed' is from outlet PatientContext.PatientEventSplit.PatientEventSplitToToMPIService to inlet PatientContext.ToMPIService.ToMPIServiceIn with {
+    briefly "The Patient events ToMPIService translates, on their way to it"
+  }
+  connector 'ToInsuranceEligibilityService Feed' is from outlet PatientContext.PatientEventSplit.PatientEventSplitToToInsuranceEligibilityService to inlet PatientContext.ToInsuranceEligibilityService.ToInsuranceEligibilityServiceIn with {
+    briefly "The Patient events ToInsuranceEligibilityService translates, on their way to it"
+  }
+  connector 'ToIdentityVerificationService Feed' is from outlet PatientContext.PatientEventSplit.PatientEventSplitToToIdentityVerificationService to inlet PatientContext.ToIdentityVerificationService.ToIdentityVerificationServiceIn with {
+    briefly "The Patient events ToIdentityVerificationService translates, on their way to it"
+  }
+  connector 'ToDocumentStorageService Feed' is from outlet PatientContext.PatientEventSplit.PatientEventSplitToToDocumentStorageService to inlet PatientContext.ToDocumentStorageService.ToDocumentStorageServiceIn with {
+    briefly "The Patient events ToDocumentStorageService translates, on their way to it"
   }
   connector 'PatientEvent Stream' is from outlet PatientContext.Patient.PatientEvents2 to inlet PatientContext.PatientEventSplit.PatientEventSplitIn with {
     briefly "Patient events, fanned out to storage and read models"

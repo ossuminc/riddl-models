@@ -64,8 +64,8 @@ context WorkOrderContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'WorkOrderCommand Stream Intake' is from outlet WorkOrderContext.WorkOrderCommandStreamOut to inlet WorkOrderContext.WorkOrder.WorkOrderCommands  connector 'WorkOrderResult Stream Egress' is from outlet WorkOrderContext.WorkOrderRepository.WorkOrderRepositoryResponses to inlet WorkOrderContext.WorkOrderResultStreamIn  adaptor ToBillOfMaterialsService to context BillOfMaterialsService as flow is { 
-    outlet ToBillOfMaterialsServiceOut is query BillOfMaterialsService.GetBOM
+  connector 'WorkOrderCommand Stream Intake' is from outlet WorkOrderContext.WorkOrderCommandStreamOut to inlet WorkOrderContext.WorkOrder.WorkOrderCommands  connector 'WorkOrderResult Stream Egress' is from outlet WorkOrderContext.WorkOrderRepository.WorkOrderRepositoryResponses to inlet WorkOrderContext.WorkOrderResultStreamIn  adaptor ToBillOfMaterialsService to context BillOfMaterialsService as merge is { 
+    inlet ToBillOfMaterialsServiceIn is type WorkOrderEvent    inlet ToBillOfMaterialsServiceReplies is result BillOfMaterialsService.BillOfMaterials    outlet ToBillOfMaterialsServiceOut is query BillOfMaterialsService.GetBOM
     handler ToBillOfMaterialsServiceHandler is {
       on workOrderCreated: event WorkOrder.WorkOrderCreated is {
         let askAnswer: type BillOfMaterialsService.BillOfMaterials = ask query BillOfMaterialsService.GetBOM of context BillOfMaterialsService
@@ -106,8 +106,8 @@ context WorkOrderContext as router is {
       |The model's side of the EquipmentService conversation.
     }
   }
-  adaptor ToEquipmentService to context EquipmentService as flow is { 
-    outlet ToEquipmentServiceOut is type EquipmentService.EquipmentServiceRequest
+  adaptor ToEquipmentService to context EquipmentService as merge is { 
+    inlet ToEquipmentServiceIn is type WorkOrderEvent    inlet ToEquipmentServiceReplies is result EquipmentService.EquipmentStatus    outlet ToEquipmentServiceOut is type EquipmentService.EquipmentServiceRequest
     handler ToEquipmentServiceHandler is {
       on workOrderReleased: event WorkOrder.WorkOrderReleased is {
         let askAnswer: type EquipmentService.EquipmentStatus = ask query EquipmentService.GetEquipmentStatus of context EquipmentService
@@ -165,7 +165,7 @@ context WorkOrderContext as router is {
     }
   }
   adaptor ToInventoryService to context InventoryService as flow is { 
-    outlet ToInventoryServiceOut is type InventoryService.InventoryServiceCommand
+    inlet ToInventoryServiceIn is type WorkOrderEvent    outlet ToInventoryServiceOut is type InventoryService.InventoryServiceCommand
     handler ToInventoryServiceHandler is {
       on workOrderCreated: event WorkOrder.WorkOrderCreated is {
         let claim: type InventoryService.ReserveMaterials = prompt("translate the workOrderCreated event into a ReserveMaterials claiming what the order will consume")
@@ -214,8 +214,8 @@ context WorkOrderContext as router is {
       |The model's side of the QualityManagementService conversation.
     }
   }
-  adaptor ToQualityManagementService to context QualityManagementService as flow is { 
-    outlet ToQualityManagementServiceOut is type QualityManagementService.QualityManagementServiceRequest
+  adaptor ToQualityManagementService to context QualityManagementService as merge is { 
+    inlet ToQualityManagementServiceIn is type WorkOrderEvent    inlet ToQualityManagementServiceReplies is result QualityManagementService.InspectionPlan    outlet ToQualityManagementServiceOut is type QualityManagementService.QualityManagementServiceRequest
     handler ToQualityManagementServiceHandler is {
       on operationCompleted: event WorkOrder.OperationCompleted is {
         let askAnswer: type QualityManagementService.InspectionPlan = ask query QualityManagementService.GetInspectionPlan of context QualityManagementService
@@ -240,8 +240,8 @@ context WorkOrderContext as router is {
       |The model's side of the QualityManagementService conversation.
     }
   }
-  adaptor ToRoutingService to context RoutingService as flow is { 
-    outlet ToRoutingServiceOut is query RoutingService.GetRouting
+  adaptor ToRoutingService to context RoutingService as merge is { 
+    inlet ToRoutingServiceIn is type WorkOrderEvent    inlet ToRoutingServiceReplies is result RoutingService.ManufacturingRouting    outlet ToRoutingServiceOut is query RoutingService.GetRouting
     handler ToRoutingServiceHandler is {
       on workOrderReleased: event WorkOrder.WorkOrderReleased is {
         let askAnswer: type RoutingService.ManufacturingRouting = ask query RoutingService.GetRouting of context RoutingService
@@ -282,8 +282,8 @@ context WorkOrderContext as router is {
       |The model's side of the SchedulingService conversation.
     }
   }
-  adaptor ToSchedulingService to context SchedulingService as flow is { 
-    outlet ToSchedulingServiceOut is type SchedulingService.SchedulingServiceRequest
+  adaptor ToSchedulingService to context SchedulingService as merge is { 
+    inlet ToSchedulingServiceIn is type WorkOrderEvent    inlet ToSchedulingServiceReplies is result SchedulingService.WorkCenterLoad    outlet ToSchedulingServiceOut is type SchedulingService.SchedulingServiceRequest
     handler ToSchedulingServiceHandler is {
       on workOrderReleased: event WorkOrder.WorkOrderReleased is {
         let slot: type SchedulingService.ScheduleWorkOrder = prompt("translate the workOrderReleased event into a ScheduleWorkOrder placing it on the shop calendar, release being where it becomes runnable")
@@ -722,15 +722,27 @@ context WorkOrderContext as router is {
       |Union of WorkOrder events for streaming.
     }
   }
-  streamlet WorkOrderEventSplit as flow is {
+  streamlet WorkOrderEventSplit as split is {
+    outlet WorkOrderEventSplitToToSchedulingService is type WorkOrderEvent
+    outlet WorkOrderEventSplitToToRoutingService is type WorkOrderEvent
+    outlet WorkOrderEventSplitToToQualityManagementService is type WorkOrderEvent
+    outlet WorkOrderEventSplitToToInventoryService is type WorkOrderEvent
+    outlet WorkOrderEventSplitToToEquipmentService is type WorkOrderEvent
+    outlet WorkOrderEventSplitToToBillOfMaterialsService is type WorkOrderEvent
     inlet WorkOrderEventSplitIn is type WorkOrderEvent    outlet WorkOrderEventSplitToProductionAnalytics is type WorkOrderEvent
     handler WorkOrderEventSplitHandler is {
       on workOrderCreated: event WorkOrder.WorkOrderCreated is {
         send workOrderCreated to outlet WorkOrderEventSplitToProductionAnalytics
+        send workOrderCreated to outlet WorkOrderEventSplitToToSchedulingService
+        send workOrderCreated to outlet WorkOrderEventSplitToToInventoryService
+        send workOrderCreated to outlet WorkOrderEventSplitToToBillOfMaterialsService
         tell workOrderCreated to entity WorkOrderContext.WorkOrder
       }
       on workOrderReleased: event WorkOrder.WorkOrderReleased is {
         send workOrderReleased to outlet WorkOrderEventSplitToProductionAnalytics
+        send workOrderReleased to outlet WorkOrderEventSplitToToSchedulingService
+        send workOrderReleased to outlet WorkOrderEventSplitToToRoutingService
+        send workOrderReleased to outlet WorkOrderEventSplitToToEquipmentService
         tell workOrderReleased to entity WorkOrderContext.WorkOrder
       }
       on materialsIssued: event WorkOrder.MaterialsIssued is {
@@ -739,6 +751,7 @@ context WorkOrderContext as router is {
       }
       on workOrderStarted: event WorkOrder.WorkOrderStarted is {
         send workOrderStarted to outlet WorkOrderEventSplitToProductionAnalytics
+        send workOrderStarted to outlet WorkOrderEventSplitToToInventoryService
         tell workOrderStarted to entity WorkOrderContext.WorkOrder
       }
       on operationStarted: event WorkOrder.OperationStarted is {
@@ -747,6 +760,7 @@ context WorkOrderContext as router is {
       }
       on operationCompleted: event WorkOrder.OperationCompleted is {
         send operationCompleted to outlet WorkOrderEventSplitToProductionAnalytics
+        send operationCompleted to outlet WorkOrderEventSplitToToQualityManagementService
         tell operationCompleted to entity WorkOrderContext.WorkOrder
       }
       on laborRecorded: event WorkOrder.LaborRecorded is {
@@ -755,10 +769,12 @@ context WorkOrderContext as router is {
       }
       on qualityRecorded: event WorkOrder.QualityRecorded is {
         send qualityRecorded to outlet WorkOrderEventSplitToProductionAnalytics
+        send qualityRecorded to outlet WorkOrderEventSplitToToQualityManagementService
         tell qualityRecorded to entity WorkOrderContext.WorkOrder
       }
       on workOrderOnHold: event WorkOrder.WorkOrderOnHold is {
         send workOrderOnHold to outlet WorkOrderEventSplitToProductionAnalytics
+        send workOrderOnHold to outlet WorkOrderEventSplitToToEquipmentService
         tell workOrderOnHold to entity WorkOrderContext.WorkOrder
       }
       on holdReleased: event WorkOrder.HoldReleased is {
@@ -767,6 +783,7 @@ context WorkOrderContext as router is {
       }
       on workOrderCompleted: event WorkOrder.WorkOrderCompleted is {
         send workOrderCompleted to outlet WorkOrderEventSplitToProductionAnalytics
+        send workOrderCompleted to outlet WorkOrderEventSplitToToInventoryService
         tell workOrderCompleted to entity WorkOrderContext.WorkOrder
       }
       on workOrderCancelled: event WorkOrder.WorkOrderCancelled is {
@@ -787,6 +804,24 @@ context WorkOrderContext as router is {
     described as {
       |Fans WorkOrder events out to the repository and projectors.
     }
+  }
+  connector 'ToSchedulingService Feed' is from outlet WorkOrderContext.WorkOrderEventSplit.WorkOrderEventSplitToToSchedulingService to inlet WorkOrderContext.ToSchedulingService.ToSchedulingServiceIn with {
+    briefly "The WorkOrder events ToSchedulingService translates, on their way to it"
+  }
+  connector 'ToRoutingService Feed' is from outlet WorkOrderContext.WorkOrderEventSplit.WorkOrderEventSplitToToRoutingService to inlet WorkOrderContext.ToRoutingService.ToRoutingServiceIn with {
+    briefly "The WorkOrder events ToRoutingService translates, on their way to it"
+  }
+  connector 'ToQualityManagementService Feed' is from outlet WorkOrderContext.WorkOrderEventSplit.WorkOrderEventSplitToToQualityManagementService to inlet WorkOrderContext.ToQualityManagementService.ToQualityManagementServiceIn with {
+    briefly "The WorkOrder events ToQualityManagementService translates, on their way to it"
+  }
+  connector 'ToInventoryService Feed' is from outlet WorkOrderContext.WorkOrderEventSplit.WorkOrderEventSplitToToInventoryService to inlet WorkOrderContext.ToInventoryService.ToInventoryServiceIn with {
+    briefly "The WorkOrder events ToInventoryService translates, on their way to it"
+  }
+  connector 'ToEquipmentService Feed' is from outlet WorkOrderContext.WorkOrderEventSplit.WorkOrderEventSplitToToEquipmentService to inlet WorkOrderContext.ToEquipmentService.ToEquipmentServiceIn with {
+    briefly "The WorkOrder events ToEquipmentService translates, on their way to it"
+  }
+  connector 'ToBillOfMaterialsService Feed' is from outlet WorkOrderContext.WorkOrderEventSplit.WorkOrderEventSplitToToBillOfMaterialsService to inlet WorkOrderContext.ToBillOfMaterialsService.ToBillOfMaterialsServiceIn with {
+    briefly "The WorkOrder events ToBillOfMaterialsService translates, on their way to it"
   }
   connector 'WorkOrderEvent Stream' is from outlet WorkOrderContext.WorkOrder.WorkOrderEvents2 to inlet WorkOrderContext.WorkOrderEventSplit.WorkOrderEventSplitIn with {
     briefly "WorkOrder events, fanned out to storage and read models"

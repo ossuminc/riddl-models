@@ -113,8 +113,8 @@ context WarehouseContext as router is {
       |The model's side of the OrderManagementContext conversation.
     }
   }
-  adaptor ToProductCatalogContext to context ProductCatalogContext as flow is { 
-    outlet ToProductCatalogContextOut is query ProductCatalogContext.GetProductDetails
+  adaptor ToProductCatalogContext to context ProductCatalogContext as merge is { 
+    inlet ToProductCatalogContextIn is type InventoryEvent    inlet ToProductCatalogContextReplies is result ProductCatalogContext.ProductDetailsResult    outlet ToProductCatalogContextOut is query ProductCatalogContext.GetProductDetails
     handler ToProductCatalogContextHandler is {
       on inventoryReceived: event Inventory.InventoryReceived is {
         let askAnswer: type ProductCatalogContext.ProductDetailsResult = ask query ProductCatalogContext.GetProductDetails of context ProductCatalogContext
@@ -184,7 +184,7 @@ context WarehouseContext as router is {
     }
   }
   adaptor ToShippingContext to context ShippingContext as flow is { 
-    outlet ToShippingContextOut is command ShippingContext.CreateShipment
+    inlet ToShippingContextIn is type InventoryEvent    outlet ToShippingContextOut is command ShippingContext.CreateShipment
     handler ToShippingContextHandler is {
       on inventoryReserved: event Inventory.InventoryReserved is {
         let item0: type ShippingContext.CreateShipment = prompt("translate the inventoryReserved event into a CreateShipment, reservation being what commits stock to a shipment")
@@ -728,11 +728,14 @@ context WarehouseContext as router is {
       |Union of Inventory events for streaming.
     }
   }
-  streamlet InventoryEventSplit as flow is {
+  streamlet InventoryEventSplit as split is {
+    outlet InventoryEventSplitToToShippingContext is type InventoryEvent
+    outlet InventoryEventSplitToToProductCatalogContext is type InventoryEvent
     inlet InventoryEventSplitIn is type InventoryEvent    outlet InventoryEventSplitToInventoryProjector is type InventoryEvent
     handler InventoryEventSplitHandler is {
       on inventoryReceived: event Inventory.InventoryReceived is {
         send inventoryReceived to outlet InventoryEventSplitToInventoryProjector
+        send inventoryReceived to outlet InventoryEventSplitToToProductCatalogContext
         tell inventoryReceived to entity WarehouseContext.Inventory
       }
       on inventoryAdjusted: event Inventory.InventoryAdjusted is {
@@ -741,6 +744,7 @@ context WarehouseContext as router is {
       }
       on inventoryReserved: event Inventory.InventoryReserved is {
         send inventoryReserved to outlet InventoryEventSplitToInventoryProjector
+        send inventoryReserved to outlet InventoryEventSplitToToShippingContext
         tell inventoryReserved to entity WarehouseContext.Inventory
       }
       on reservationReleased: event Inventory.ReservationReleased is {
@@ -781,6 +785,12 @@ context WarehouseContext as router is {
     described as {
       |Fans Inventory events out to the repository and projectors.
     }
+  }
+  connector 'ToShippingContext Feed' is from outlet WarehouseContext.InventoryEventSplit.InventoryEventSplitToToShippingContext to inlet WarehouseContext.ToShippingContext.ToShippingContextIn with {
+    briefly "The Inventory events ToShippingContext translates, on their way to it"
+  }
+  connector 'ToProductCatalogContext Feed' is from outlet WarehouseContext.InventoryEventSplit.InventoryEventSplitToToProductCatalogContext to inlet WarehouseContext.ToProductCatalogContext.ToProductCatalogContextIn with {
+    briefly "The Inventory events ToProductCatalogContext translates, on their way to it"
   }
   connector 'InventoryEvent Stream' is from outlet WarehouseContext.Inventory.InventoryEvents2 to inlet WarehouseContext.InventoryEventSplit.InventoryEventSplitIn with {
     briefly "Inventory events, fanned out to storage and read models"

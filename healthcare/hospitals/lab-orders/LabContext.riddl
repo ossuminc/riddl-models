@@ -112,8 +112,8 @@ context LabContext as router is {
       |The model's side of the EHRIntegration conversation.
     }
   }
-  adaptor ToEHRIntegration to context EHRIntegration as flow is { 
-    outlet ToEHRIntegrationOut is type EHRIntegration.EHRIntegrationCommand
+  adaptor ToEHRIntegration to context EHRIntegration as merge is { 
+    inlet ToEHRIntegrationIn is type LabOrderEvent    inlet ToEHRIntegrationReplies is result EHRIntegration.PatientOrderHistory    outlet ToEHRIntegrationOut is type EHRIntegration.EHRIntegrationCommand
     handler ToEHRIntegrationHandler is {
       on labOrderPlaced: event LabOrder.LabOrderPlaced is {
         let askAnswer: type EHRIntegration.PatientOrderHistory = ask query EHRIntegration.GetPatientOrders of context EHRIntegration
@@ -161,7 +161,7 @@ context LabContext as router is {
     }
   }
   adaptor ToInsuranceVerification to context InsuranceVerification as flow is { 
-    outlet ToInsuranceVerificationOut is command InsuranceVerification.VerifyLabCoverage
+    inlet ToInsuranceVerificationIn is type LabOrderEvent    outlet ToInsuranceVerificationOut is command InsuranceVerification.VerifyLabCoverage
     handler ToInsuranceVerificationHandler is {
       on labOrderPlaced: event LabOrderPlaced is {
         let check0: type InsuranceVerification.VerifyLabCoverage = prompt("translate the labOrderPlaced event into a VerifyLabCoverage checking the test is covered before it is run")
@@ -203,7 +203,7 @@ context LabContext as router is {
     }
   }
   adaptor ToLabBillingService to context LabBillingService as flow is { 
-    outlet ToLabBillingServiceOut is command LabBillingService.SubmitLabCharge
+    inlet ToLabBillingServiceIn is type LabOrderEvent    outlet ToLabBillingServiceOut is command LabBillingService.SubmitLabCharge
     handler ToLabBillingServiceHandler is {
       on resultVerified: event LabOrder.ResultVerified is {
         let charge: type LabBillingService.SubmitLabCharge = prompt("translate the resultVerified event into a SubmitLabCharge for the test just verified, verification being where the billable work is complete")
@@ -250,7 +250,7 @@ context LabContext as router is {
     }
   }
   adaptor ToLaboratoryInstrumentInterface to context LaboratoryInstrumentInterface as flow is { 
-    outlet ToLaboratoryInstrumentInterfaceOut is type LaboratoryInstrumentInterface.LaboratoryInstrumentInterfaceCommand
+    inlet ToLaboratoryInstrumentInterfaceIn is type LabOrderEvent    outlet ToLaboratoryInstrumentInterfaceOut is type LaboratoryInstrumentInterface.LaboratoryInstrumentInterfaceCommand
     handler ToLaboratoryInstrumentInterfaceHandler is {
       on specimenReceived: event LabOrder.SpecimenReceived is {
         let item0: type LaboratoryInstrumentInterface.SendToAnalyzer = prompt("translate the specimenReceived event into a SendToAnalyzer, a received specimen being what the analyser runs")
@@ -1079,6 +1079,10 @@ context LabContext as router is {
     }
   }
   streamlet LabOrderEventSplit as split is {
+    outlet LabOrderEventSplitToToLaboratoryInstrumentInterface is type LabOrderEvent
+    outlet LabOrderEventSplitToToLabBillingService is type LabOrderEvent
+    outlet LabOrderEventSplitToToInsuranceVerification is type LabOrderEvent
+    outlet LabOrderEventSplitToToEHRIntegration is type LabOrderEvent
     inlet LabOrderEventSplitIn is type LabOrderEvent    outlet LabOrderEventSplitToTurnaroundTimeAnalytics is type LabOrderEvent
     outlet LabOrderEventSplitToVolumeAnalytics is type LabOrderEvent
     outlet LabOrderEventSplitToCriticalValueTracking is type LabOrderEvent
@@ -1087,6 +1091,8 @@ context LabContext as router is {
         send labOrderPlaced to outlet LabOrderEventSplitToTurnaroundTimeAnalytics
         send labOrderPlaced to outlet LabOrderEventSplitToVolumeAnalytics
         send labOrderPlaced to outlet LabOrderEventSplitToCriticalValueTracking
+        send labOrderPlaced to outlet LabOrderEventSplitToToInsuranceVerification
+        send labOrderPlaced to outlet LabOrderEventSplitToToEHRIntegration
         tell labOrderPlaced to entity LabContext.LabOrder
       }
       on specimenCollected: event LabOrder.SpecimenCollected is {
@@ -1099,12 +1105,14 @@ context LabContext as router is {
         send specimenReceived to outlet LabOrderEventSplitToTurnaroundTimeAnalytics
         send specimenReceived to outlet LabOrderEventSplitToVolumeAnalytics
         send specimenReceived to outlet LabOrderEventSplitToCriticalValueTracking
+        send specimenReceived to outlet LabOrderEventSplitToToLaboratoryInstrumentInterface
         tell specimenReceived to entity LabContext.LabOrder
       }
       on testingStarted: event LabOrder.TestingStarted is {
         send testingStarted to outlet LabOrderEventSplitToTurnaroundTimeAnalytics
         send testingStarted to outlet LabOrderEventSplitToVolumeAnalytics
         send testingStarted to outlet LabOrderEventSplitToCriticalValueTracking
+        send testingStarted to outlet LabOrderEventSplitToToLaboratoryInstrumentInterface
         tell testingStarted to entity LabContext.LabOrder
       }
       on resultRecorded: event LabOrder.ResultRecorded is {
@@ -1117,6 +1125,8 @@ context LabContext as router is {
         send resultVerified to outlet LabOrderEventSplitToTurnaroundTimeAnalytics
         send resultVerified to outlet LabOrderEventSplitToVolumeAnalytics
         send resultVerified to outlet LabOrderEventSplitToCriticalValueTracking
+        send resultVerified to outlet LabOrderEventSplitToToLabBillingService
+        send resultVerified to outlet LabOrderEventSplitToToEHRIntegration
         tell resultVerified to entity LabContext.LabOrder
       }
       on criticalValueReported: event LabOrder.CriticalValueReported is {
@@ -1145,6 +1155,18 @@ context LabContext as router is {
     described as {
       |Fans LabOrder events out to the repository and projectors.
     }
+  }
+  connector 'ToLaboratoryInstrumentInterface Feed' is from outlet LabContext.LabOrderEventSplit.LabOrderEventSplitToToLaboratoryInstrumentInterface to inlet LabContext.ToLaboratoryInstrumentInterface.ToLaboratoryInstrumentInterfaceIn with {
+    briefly "The LabOrder events ToLaboratoryInstrumentInterface translates, on their way to it"
+  }
+  connector 'ToLabBillingService Feed' is from outlet LabContext.LabOrderEventSplit.LabOrderEventSplitToToLabBillingService to inlet LabContext.ToLabBillingService.ToLabBillingServiceIn with {
+    briefly "The LabOrder events ToLabBillingService translates, on their way to it"
+  }
+  connector 'ToInsuranceVerification Feed' is from outlet LabContext.LabOrderEventSplit.LabOrderEventSplitToToInsuranceVerification to inlet LabContext.ToInsuranceVerification.ToInsuranceVerificationIn with {
+    briefly "The LabOrder events ToInsuranceVerification translates, on their way to it"
+  }
+  connector 'ToEHRIntegration Feed' is from outlet LabContext.LabOrderEventSplit.LabOrderEventSplitToToEHRIntegration to inlet LabContext.ToEHRIntegration.ToEHRIntegrationIn with {
+    briefly "The LabOrder events ToEHRIntegration translates, on their way to it"
   }
   connector 'LabOrderEvent Stream' is from outlet LabContext.LabOrder.LabOrderEvents2 to inlet LabContext.LabOrderEventSplit.LabOrderEventSplitIn with {
     briefly "LabOrder events, fanned out to storage and read models"

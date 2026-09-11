@@ -62,7 +62,7 @@ context MonitoringContext as router is {
     }
   }
   connector 'NetworkDeviceCommand Stream Intake' is from outlet MonitoringContext.NetworkDeviceCommandStreamOut to inlet MonitoringContext.NetworkDevice.NetworkDeviceCommands  connector 'NetworkDeviceResult Stream Egress' is from outlet MonitoringContext.DeviceRepository.DeviceRepositoryResponses to inlet MonitoringContext.NetworkDeviceResultStreamIn  adaptor ToAlertNotification to context AlertNotification as flow is { 
-    outlet ToAlertNotificationOut is command AlertNotification.SendAlertNotification
+    inlet ToAlertNotificationIn is type NetworkDeviceEvent    outlet ToAlertNotificationOut is command AlertNotification.SendAlertNotification
     handler ToAlertNotificationHandler is {
       on alertRaised: event AlertRaised is {
         let notice: type AlertNotification.SendAlertNotification = prompt("translate the alertRaised event into a SendAlertNotification telling the on-call engineer which device and which threshold, and how severe it is")
@@ -115,7 +115,7 @@ context MonitoringContext as router is {
     }
   }
   adaptor ToConfigBackup to context ConfigBackup as flow is { 
-    outlet ToConfigBackupOut is type ConfigBackup.ConfigBackupCommand
+    inlet ToConfigBackupIn is type NetworkDeviceEvent    outlet ToConfigBackupOut is type ConfigBackup.ConfigBackupCommand
     handler ToConfigBackupHandler is {
       on deviceInfoUpdated: event NetworkDevice.DeviceInfoUpdated is {
         let item0: type ConfigBackup.BackupDeviceConfig = prompt("translate the deviceInfoUpdated event into a BackupDeviceConfig, a changed configuration being what there is to keep")
@@ -165,7 +165,7 @@ context MonitoringContext as router is {
     }
   }
   adaptor ToSNMPCollector to context SNMPCollector as flow is { 
-    outlet ToSNMPCollectorOut is command SNMPCollector.PollDevice
+    inlet ToSNMPCollectorIn is type NetworkDeviceEvent    outlet ToSNMPCollectorOut is command SNMPCollector.PollDevice
     handler ToSNMPCollectorHandler is {
       on deviceRegistered: event NetworkDevice.DeviceRegistered is {
         let item0: type SNMPCollector.PollDevice = prompt("translate the deviceRegistered event into a PollDevice, registration being what puts a device in scope to be polled")
@@ -227,7 +227,7 @@ context MonitoringContext as router is {
     }
   }
   adaptor ToTopologyDiscovery to context TopologyDiscovery as flow is { 
-    outlet ToTopologyDiscoveryOut is command TopologyDiscovery.DiscoverTopology
+    inlet ToTopologyDiscoveryIn is type NetworkDeviceEvent    outlet ToTopologyDiscoveryOut is command TopologyDiscovery.DiscoverTopology
     handler ToTopologyDiscoveryHandler is {
       on deviceRegistered: event NetworkDevice.DeviceRegistered is {
         let item0: type TopologyDiscovery.DiscoverTopology = prompt("translate the deviceRegistered event into a DiscoverTopology, a new device changing what the network looks like")
@@ -658,15 +658,22 @@ context MonitoringContext as router is {
       |persistence.
     }
   }
-  streamlet NetworkDeviceEventSplit as flow is {
+  streamlet NetworkDeviceEventSplit as split is {
+    outlet NetworkDeviceEventSplitToToTopologyDiscovery is type NetworkDeviceEvent
+    outlet NetworkDeviceEventSplitToToSNMPCollector is type NetworkDeviceEvent
+    outlet NetworkDeviceEventSplitToToConfigBackup is type NetworkDeviceEvent
+    outlet NetworkDeviceEventSplitToToAlertNotification is type NetworkDeviceEvent
     inlet NetworkDeviceEventSplitIn is type NetworkDeviceEvent    outlet NetworkDeviceEventSplitToNetworkAnalytics is type NetworkDeviceEvent
     handler NetworkDeviceEventSplitHandler is {
       on deviceRegistered: event NetworkDevice.DeviceRegistered is {
         send deviceRegistered to outlet NetworkDeviceEventSplitToNetworkAnalytics
+        send deviceRegistered to outlet NetworkDeviceEventSplitToToTopologyDiscovery
+        send deviceRegistered to outlet NetworkDeviceEventSplitToToSNMPCollector
         tell deviceRegistered to entity MonitoringContext.NetworkDevice
       }
       on deviceInfoUpdated: event NetworkDevice.DeviceInfoUpdated is {
         send deviceInfoUpdated to outlet NetworkDeviceEventSplitToNetworkAnalytics
+        send deviceInfoUpdated to outlet NetworkDeviceEventSplitToToConfigBackup
         tell deviceInfoUpdated to entity MonitoringContext.NetworkDevice
       }
       on thresholdsConfigured: event NetworkDevice.ThresholdsConfigured is {
@@ -679,6 +686,7 @@ context MonitoringContext as router is {
       }
       on alertRaised: event NetworkDevice.AlertRaised is {
         send alertRaised to outlet NetworkDeviceEventSplitToNetworkAnalytics
+        send alertRaised to outlet NetworkDeviceEventSplitToToAlertNotification
         tell alertRaised to entity MonitoringContext.NetworkDevice
       }
       on alertAcknowledged: event NetworkDevice.AlertAcknowledged is {
@@ -687,6 +695,7 @@ context MonitoringContext as router is {
       }
       on alertResolved: event NetworkDevice.AlertResolved is {
         send alertResolved to outlet NetworkDeviceEventSplitToNetworkAnalytics
+        send alertResolved to outlet NetworkDeviceEventSplitToToAlertNotification
         tell alertResolved to entity MonitoringContext.NetworkDevice
       }
       on maintenanceScheduled: event NetworkDevice.MaintenanceScheduled is {
@@ -699,6 +708,7 @@ context MonitoringContext as router is {
       }
       on deviceMarkedOffline: event NetworkDevice.DeviceMarkedOffline is {
         send deviceMarkedOffline to outlet NetworkDeviceEventSplitToNetworkAnalytics
+        send deviceMarkedOffline to outlet NetworkDeviceEventSplitToToAlertNotification
         tell deviceMarkedOffline to entity MonitoringContext.NetworkDevice
       }
       on deviceDecommissioned: event NetworkDevice.DeviceDecommissioned is {
@@ -719,6 +729,18 @@ context MonitoringContext as router is {
     described as {
       |Fans NetworkDevice events out to the repository and projectors.
     }
+  }
+  connector 'ToTopologyDiscovery Feed' is from outlet MonitoringContext.NetworkDeviceEventSplit.NetworkDeviceEventSplitToToTopologyDiscovery to inlet MonitoringContext.ToTopologyDiscovery.ToTopologyDiscoveryIn with {
+    briefly "The NetworkDevice events ToTopologyDiscovery translates, on their way to it"
+  }
+  connector 'ToSNMPCollector Feed' is from outlet MonitoringContext.NetworkDeviceEventSplit.NetworkDeviceEventSplitToToSNMPCollector to inlet MonitoringContext.ToSNMPCollector.ToSNMPCollectorIn with {
+    briefly "The NetworkDevice events ToSNMPCollector translates, on their way to it"
+  }
+  connector 'ToConfigBackup Feed' is from outlet MonitoringContext.NetworkDeviceEventSplit.NetworkDeviceEventSplitToToConfigBackup to inlet MonitoringContext.ToConfigBackup.ToConfigBackupIn with {
+    briefly "The NetworkDevice events ToConfigBackup translates, on their way to it"
+  }
+  connector 'ToAlertNotification Feed' is from outlet MonitoringContext.NetworkDeviceEventSplit.NetworkDeviceEventSplitToToAlertNotification to inlet MonitoringContext.ToAlertNotification.ToAlertNotificationIn with {
+    briefly "The NetworkDevice events ToAlertNotification translates, on their way to it"
   }
   connector 'NetworkDeviceEvent Stream' is from outlet MonitoringContext.NetworkDevice.NetworkDeviceEvents2 to inlet MonitoringContext.NetworkDeviceEventSplit.NetworkDeviceEventSplitIn with {
     briefly "NetworkDevice events, fanned out to storage and read models"

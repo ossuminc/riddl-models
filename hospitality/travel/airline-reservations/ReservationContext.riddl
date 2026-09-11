@@ -102,7 +102,7 @@ context ReservationContext as router is {
     }
   }
   adaptor ToBoardingService to context BoardingService as flow is { 
-    outlet ToBoardingServiceOut is type BoardingService.BoardingServiceCommand
+    inlet ToBoardingServiceIn is type ReservationEvent    outlet ToBoardingServiceOut is type BoardingService.BoardingServiceCommand
     handler ToBoardingServiceHandler is {
       on passengerCheckedIn: event Reservation.PassengerCheckedIn is {
         let item0: type BoardingService.StartBoarding = prompt("translate the passengerCheckedIn event into a StartBoarding, check-in being what makes a passenger boardable")
@@ -155,7 +155,7 @@ context ReservationContext as router is {
     }
   }
   adaptor ToCheckInService to context CheckInService as flow is { 
-    outlet ToCheckInServiceOut is type CheckInService.CheckInServiceCommand
+    inlet ToCheckInServiceIn is type ReservationEvent    outlet ToCheckInServiceOut is type CheckInService.CheckInServiceCommand
     handler ToCheckInServiceHandler is {
       on reservationConfirmed: event Reservation.ReservationConfirmed is {
         let item0: type CheckInService.OpenCheckIn = prompt("translate the reservationConfirmed event into a OpenCheckIn, confirmation being what entitles a passenger to check in")
@@ -180,8 +180,8 @@ context ReservationContext as router is {
       |The model's side of the CheckInService conversation.
     }
   }
-  adaptor ToFlightSearchService to context FlightSearchService as flow is { 
-    outlet ToFlightSearchServiceOut is type FlightSearchService.FlightSearchServiceRequest
+  adaptor ToFlightSearchService to context FlightSearchService as merge is { 
+    inlet ToFlightSearchServiceIn is type ReservationEvent    inlet ToFlightSearchServiceReplies is type FlightSearchService.FlightSearchServiceReply    outlet ToFlightSearchServiceOut is type FlightSearchService.FlightSearchServiceRequest
     handler ToFlightSearchServiceHandler is {
       on flightSegmentChanged: event Reservation.FlightSegmentChanged is {
         let askAnswer: type FlightSearchService.FlightDetails = ask query FlightSearchService.GetFlightDetails of context FlightSearchService
@@ -207,7 +207,7 @@ context ReservationContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type ReservationEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on reservationConfirmed: event ReservationConfirmed is {
         let confirmation: type NotificationService.SendItineraryConfirmation = prompt("translate the reservationConfirmed event into a SendItineraryConfirmation giving the passenger the itinerary now that the booking is committed rather than merely created")
@@ -276,7 +276,7 @@ context ReservationContext as router is {
     }
   }
   adaptor ToPaymentProcessingService to context PaymentProcessingService as flow is { 
-    outlet ToPaymentProcessingServiceOut is type PaymentProcessingService.PaymentProcessingServiceCommand
+    inlet ToPaymentProcessingServiceIn is type ReservationEvent    outlet ToPaymentProcessingServiceOut is type PaymentProcessingService.PaymentProcessingServiceCommand
     handler ToPaymentProcessingServiceHandler is {
       on reservationConfirmed: event ReservationConfirmed is {
         let msg: type PaymentProcessingService.ProcessReservationPayment = prompt("translate the reservationConfirmed event into a ProcessReservationPayment for its recipient")
@@ -303,8 +303,8 @@ context ReservationContext as router is {
       |The model's side of the PaymentProcessingService conversation.
     }
   }
-  adaptor ToPricingService to context PricingService as flow is { 
-    outlet ToPricingServiceOut is query PricingService.CalculateFare
+  adaptor ToPricingService to context PricingService as merge is { 
+    inlet ToPricingServiceIn is type ReservationEvent    inlet ToPricingServiceReplies is result PricingService.FareCalculation    outlet ToPricingServiceOut is query PricingService.CalculateFare
     handler ToPricingServiceHandler is {
       on seatSelected: event Reservation.SeatSelected is {
         let askAnswer: type PricingService.FareCalculation = ask query PricingService.CalculateFare of context PricingService
@@ -348,8 +348,8 @@ context ReservationContext as router is {
       |The model's side of the SeatInventoryService conversation.
     }
   }
-  adaptor ToSeatInventoryService to context SeatInventoryService as flow is { 
-    outlet ToSeatInventoryServiceOut is type SeatInventoryService.SeatInventoryServiceCommand
+  adaptor ToSeatInventoryService to context SeatInventoryService as merge is { 
+    inlet ToSeatInventoryServiceIn is type ReservationEvent    inlet ToSeatInventoryServiceReplies is result SeatInventoryService.AvailableSeats    outlet ToSeatInventoryServiceOut is type SeatInventoryService.SeatInventoryServiceCommand
     handler ToSeatInventoryServiceHandler is {
       on seatSelected: event Reservation.SeatSelected is {
         let claim: type SeatInventoryService.ReserveSeat = prompt("translate the seatSelected event into a ReserveSeat holding the seat the passenger has just committed to")
@@ -828,15 +828,27 @@ context ReservationContext as router is {
       |persistence.
     }
   }
-  streamlet ReservationEventSplit as flow is {
+  streamlet ReservationEventSplit as split is {
+    outlet ReservationEventSplitToToSeatInventoryService is type ReservationEvent
+    outlet ReservationEventSplitToToPricingService is type ReservationEvent
+    outlet ReservationEventSplitToToPaymentProcessingService is type ReservationEvent
+    outlet ReservationEventSplitToToNotificationService is type ReservationEvent
+    outlet ReservationEventSplitToToFlightSearchService is type ReservationEvent
+    outlet ReservationEventSplitToToCheckInService is type ReservationEvent
+    outlet ReservationEventSplitToToBoardingService is type ReservationEvent
     inlet ReservationEventSplitIn is type ReservationEvent    outlet ReservationEventSplitToAirlineAnalytics is type ReservationEvent
     handler ReservationEventSplitHandler is {
       on reservationCreated: event Reservation.ReservationCreated is {
         send reservationCreated to outlet ReservationEventSplitToAirlineAnalytics
+        send reservationCreated to outlet ReservationEventSplitToToSeatInventoryService
+        send reservationCreated to outlet ReservationEventSplitToToNotificationService
+        send reservationCreated to outlet ReservationEventSplitToToFlightSearchService
         tell reservationCreated to entity ReservationContext.Reservation
       }
       on seatSelected: event Reservation.SeatSelected is {
         send seatSelected to outlet ReservationEventSplitToAirlineAnalytics
+        send seatSelected to outlet ReservationEventSplitToToSeatInventoryService
+        send seatSelected to outlet ReservationEventSplitToToPricingService
         tell seatSelected to entity ReservationContext.Reservation
       }
       on extraBaggageAdded: event Reservation.ExtraBaggageAdded is {
@@ -857,26 +869,39 @@ context ReservationContext as router is {
       }
       on reservationConfirmed: event Reservation.ReservationConfirmed is {
         send reservationConfirmed to outlet ReservationEventSplitToAirlineAnalytics
+        send reservationConfirmed to outlet ReservationEventSplitToToPaymentProcessingService
+        send reservationConfirmed to outlet ReservationEventSplitToToNotificationService
+        send reservationConfirmed to outlet ReservationEventSplitToToCheckInService
         tell reservationConfirmed to entity ReservationContext.Reservation
       }
       on passengerCheckedIn: event Reservation.PassengerCheckedIn is {
         send passengerCheckedIn to outlet ReservationEventSplitToAirlineAnalytics
+        send passengerCheckedIn to outlet ReservationEventSplitToToBoardingService
         tell passengerCheckedIn to entity ReservationContext.Reservation
       }
       on boardingPassIssued: event Reservation.BoardingPassIssued is {
         send boardingPassIssued to outlet ReservationEventSplitToAirlineAnalytics
+        send boardingPassIssued to outlet ReservationEventSplitToToNotificationService
+        send boardingPassIssued to outlet ReservationEventSplitToToBoardingService
         tell boardingPassIssued to entity ReservationContext.Reservation
       }
       on passengerBoarded: event Reservation.PassengerBoarded is {
         send passengerBoarded to outlet ReservationEventSplitToAirlineAnalytics
+        send passengerBoarded to outlet ReservationEventSplitToToCheckInService
+        send passengerBoarded to outlet ReservationEventSplitToToBoardingService
         tell passengerBoarded to entity ReservationContext.Reservation
       }
       on flightSegmentChanged: event Reservation.FlightSegmentChanged is {
         send flightSegmentChanged to outlet ReservationEventSplitToAirlineAnalytics
+        send flightSegmentChanged to outlet ReservationEventSplitToToNotificationService
+        send flightSegmentChanged to outlet ReservationEventSplitToToFlightSearchService
         tell flightSegmentChanged to entity ReservationContext.Reservation
       }
       on reservationCancelled: event Reservation.ReservationCancelled is {
         send reservationCancelled to outlet ReservationEventSplitToAirlineAnalytics
+        send reservationCancelled to outlet ReservationEventSplitToToSeatInventoryService
+        send reservationCancelled to outlet ReservationEventSplitToToPaymentProcessingService
+        send reservationCancelled to outlet ReservationEventSplitToToNotificationService
         tell reservationCancelled to entity ReservationContext.Reservation
       }
       on refundProcessed: event Reservation.RefundProcessed is {
@@ -897,6 +922,27 @@ context ReservationContext as router is {
     described as {
       |Fans Reservation events out to the repository and projectors.
     }
+  }
+  connector 'ToSeatInventoryService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToSeatInventoryService to inlet ReservationContext.ToSeatInventoryService.ToSeatInventoryServiceIn with {
+    briefly "The Reservation events ToSeatInventoryService translates, on their way to it"
+  }
+  connector 'ToPricingService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToPricingService to inlet ReservationContext.ToPricingService.ToPricingServiceIn with {
+    briefly "The Reservation events ToPricingService translates, on their way to it"
+  }
+  connector 'ToPaymentProcessingService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToPaymentProcessingService to inlet ReservationContext.ToPaymentProcessingService.ToPaymentProcessingServiceIn with {
+    briefly "The Reservation events ToPaymentProcessingService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToNotificationService to inlet ReservationContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Reservation events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToFlightSearchService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToFlightSearchService to inlet ReservationContext.ToFlightSearchService.ToFlightSearchServiceIn with {
+    briefly "The Reservation events ToFlightSearchService translates, on their way to it"
+  }
+  connector 'ToCheckInService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToCheckInService to inlet ReservationContext.ToCheckInService.ToCheckInServiceIn with {
+    briefly "The Reservation events ToCheckInService translates, on their way to it"
+  }
+  connector 'ToBoardingService Feed' is from outlet ReservationContext.ReservationEventSplit.ReservationEventSplitToToBoardingService to inlet ReservationContext.ToBoardingService.ToBoardingServiceIn with {
+    briefly "The Reservation events ToBoardingService translates, on their way to it"
   }
   connector 'ReservationEvent Stream' is from outlet ReservationContext.Reservation.ReservationEvents2 to inlet ReservationContext.ReservationEventSplit.ReservationEventSplitIn with {
     briefly "Reservation events, fanned out to storage and read models"

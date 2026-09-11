@@ -66,8 +66,8 @@ context RatingContext as router is {
       |The model's side of the BillingSystem conversation.
     }
   }
-  adaptor ToBillingSystem to context BillingSystem as flow is { 
-    outlet ToBillingSystemOut is type BillingSystem.BillingSystemRequest
+  adaptor ToBillingSystem to context BillingSystem as merge is { 
+    inlet ToBillingSystemIn is type UsageRecordEvent    inlet ToBillingSystemReplies is result BillingSystem.AccountRatePlan    outlet ToBillingSystemOut is type BillingSystem.BillingSystemRequest
     handler ToBillingSystemHandler is {
       on usageRecordValidated: event UsageRecord.UsageRecordValidated is {
         let askAnswer: type BillingSystem.AccountRatePlan = ask query BillingSystem.GetAccountRatePlan of context BillingSystem
@@ -112,8 +112,8 @@ context RatingContext as router is {
       |The model's side of the NetworkMediationSystem conversation.
     }
   }
-  adaptor ToNetworkMediationSystem to context NetworkMediationSystem as flow is { 
-    outlet ToNetworkMediationSystemOut is type NetworkMediationSystem.NetworkMediationSystemRequest
+  adaptor ToNetworkMediationSystem to context NetworkMediationSystem as merge is { 
+    inlet ToNetworkMediationSystemIn is type UsageRecordEvent    inlet ToNetworkMediationSystemReplies is result NetworkMediationSystem.MediationStatus    outlet ToNetworkMediationSystemOut is type NetworkMediationSystem.NetworkMediationSystemRequest
     handler ToNetworkMediationSystemHandler is {
       on usageRecordRejected: event UsageRecord.UsageRecordRejected is {
         let askAnswer: type NetworkMediationSystem.MediationStatus = ask query NetworkMediationSystem.GetMediationStatus of context NetworkMediationSystem
@@ -447,7 +447,9 @@ context RatingContext as router is {
       |persistence.
     }
   }
-  streamlet UsageRecordEventSplit as flow is {
+  streamlet UsageRecordEventSplit as split is {
+    outlet UsageRecordEventSplitToToNetworkMediationSystem is type UsageRecordEvent
+    outlet UsageRecordEventSplitToToBillingSystem is type UsageRecordEvent
     inlet UsageRecordEventSplitIn is type UsageRecordEvent    outlet UsageRecordEventSplitToRatingMetrics is type UsageRecordEvent
     handler UsageRecordEventSplitHandler is {
       on usageRecordSubmitted: event UsageRecord.UsageRecordSubmitted is {
@@ -456,6 +458,8 @@ context RatingContext as router is {
       }
       on usageRecordValidated: event UsageRecord.UsageRecordValidated is {
         send usageRecordValidated to outlet UsageRecordEventSplitToRatingMetrics
+        send usageRecordValidated to outlet UsageRecordEventSplitToToNetworkMediationSystem
+        send usageRecordValidated to outlet UsageRecordEventSplitToToBillingSystem
         tell usageRecordValidated to entity RatingContext.UsageRecord
       }
       on ratePlanApplied: event UsageRecord.RatePlanApplied is {
@@ -464,6 +468,7 @@ context RatingContext as router is {
       }
       on chargesCalculated: event UsageRecord.ChargesCalculated is {
         send chargesCalculated to outlet UsageRecordEventSplitToRatingMetrics
+        send chargesCalculated to outlet UsageRecordEventSplitToToBillingSystem
         tell chargesCalculated to entity RatingContext.UsageRecord
       }
       on usageRecordBilled: event UsageRecord.UsageRecordBilled is {
@@ -476,6 +481,7 @@ context RatingContext as router is {
       }
       on usageRecordRejected: event UsageRecord.UsageRecordRejected is {
         send usageRecordRejected to outlet UsageRecordEventSplitToRatingMetrics
+        send usageRecordRejected to outlet UsageRecordEventSplitToToNetworkMediationSystem
         tell usageRecordRejected to entity RatingContext.UsageRecord
       }
       on other is {
@@ -492,6 +498,12 @@ context RatingContext as router is {
     described as {
       |Fans UsageRecord events out to the repository and projectors.
     }
+  }
+  connector 'ToNetworkMediationSystem Feed' is from outlet RatingContext.UsageRecordEventSplit.UsageRecordEventSplitToToNetworkMediationSystem to inlet RatingContext.ToNetworkMediationSystem.ToNetworkMediationSystemIn with {
+    briefly "The UsageRecord events ToNetworkMediationSystem translates, on their way to it"
+  }
+  connector 'ToBillingSystem Feed' is from outlet RatingContext.UsageRecordEventSplit.UsageRecordEventSplitToToBillingSystem to inlet RatingContext.ToBillingSystem.ToBillingSystemIn with {
+    briefly "The UsageRecord events ToBillingSystem translates, on their way to it"
   }
   connector 'UsageRecordEvent Stream' is from outlet RatingContext.UsageRecord.UsageRecordEvents2 to inlet RatingContext.UsageRecordEventSplit.UsageRecordEventSplitIn with {
     briefly "UsageRecord events, fanned out to storage and read models"

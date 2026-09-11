@@ -94,7 +94,7 @@ context TransactionContext as router is {
     }
   }
   adaptor ToDocumentService to context DocumentService as flow is { 
-    outlet ToDocumentServiceOut is command DocumentService.StoreDocument
+    inlet ToDocumentServiceIn is type TransactionEvent    outlet ToDocumentServiceOut is command DocumentService.StoreDocument
     handler ToDocumentServiceHandler is {
       on contractExecuted: event ContractExecuted is {
         let artifact: type DocumentService.StoreDocument = prompt("translate the contractExecuted event into a StoreDocument keeping the executed contract, the artifact the whole transaction rests on")
@@ -142,7 +142,7 @@ context TransactionContext as router is {
     }
   }
   adaptor ToEscrowService to context EscrowService as flow is { 
-    outlet ToEscrowServiceOut is type EscrowService.EscrowServiceCommand
+    inlet ToEscrowServiceIn is type TransactionEvent    outlet ToEscrowServiceOut is type EscrowService.EscrowServiceCommand
     handler ToEscrowServiceHandler is {
       on escrowEntered: event Transaction.EscrowEntered is {
         let opening: type EscrowService.OpenEscrow = prompt("translate the escrowEntered event into an OpenEscrow standing up the escrow the transaction has just entered")
@@ -194,7 +194,7 @@ context TransactionContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendTransactionNotification
+    inlet ToNotificationServiceIn is type TransactionEvent    outlet ToNotificationServiceOut is command NotificationService.SendTransactionNotification
     handler ToNotificationServiceHandler is {
       on offerAccepted: event OfferAccepted is {
         let notice: type NotificationService.SendTransactionNotification = prompt("translate the offerAccepted event into a SendTransactionNotification telling both parties the offer is accepted and the transaction is live")
@@ -258,7 +258,7 @@ context TransactionContext as router is {
     }
   }
   adaptor ToTitleService to context TitleService as flow is { 
-    outlet ToTitleServiceOut is command TitleService.RequestTitleSearch
+    inlet ToTitleServiceIn is type TransactionEvent    outlet ToTitleServiceOut is command TitleService.RequestTitleSearch
     handler ToTitleServiceHandler is {
       on offerAccepted: event Transaction.OfferAccepted is {
         let item0: type TitleService.RequestTitleSearch = prompt("translate the offerAccepted event into a RequestTitleSearch, acceptance being the first point at which title must be known")
@@ -678,7 +678,11 @@ context TransactionContext as router is {
       |persistence.
     }
   }
-  streamlet TransactionEventSplit as flow is {
+  streamlet TransactionEventSplit as split is {
+    outlet TransactionEventSplitToToTitleService is type TransactionEvent
+    outlet TransactionEventSplitToToNotificationService is type TransactionEvent
+    outlet TransactionEventSplitToToEscrowService is type TransactionEvent
+    outlet TransactionEventSplitToToDocumentService is type TransactionEvent
     inlet TransactionEventSplitIn is type TransactionEvent    outlet TransactionEventSplitToTransactionAnalytics is type TransactionEvent
     handler TransactionEventSplitHandler is {
       on transactionInitiated: event Transaction.TransactionInitiated is {
@@ -691,14 +695,19 @@ context TransactionContext as router is {
       }
       on offerCountered: event Transaction.OfferCountered is {
         send offerCountered to outlet TransactionEventSplitToTransactionAnalytics
+        send offerCountered to outlet TransactionEventSplitToToNotificationService
         tell offerCountered to entity TransactionContext.Transaction
       }
       on offerAccepted: event Transaction.OfferAccepted is {
         send offerAccepted to outlet TransactionEventSplitToTransactionAnalytics
+        send offerAccepted to outlet TransactionEventSplitToToTitleService
+        send offerAccepted to outlet TransactionEventSplitToToNotificationService
         tell offerAccepted to entity TransactionContext.Transaction
       }
       on contractExecuted: event Transaction.ContractExecuted is {
         send contractExecuted to outlet TransactionEventSplitToTransactionAnalytics
+        send contractExecuted to outlet TransactionEventSplitToToNotificationService
+        send contractExecuted to outlet TransactionEventSplitToToDocumentService
         tell contractExecuted to entity TransactionContext.Transaction
       }
       on contingencySatisfied: event Transaction.ContingencySatisfied is {
@@ -711,18 +720,23 @@ context TransactionContext as router is {
       }
       on escrowEntered: event Transaction.EscrowEntered is {
         send escrowEntered to outlet TransactionEventSplitToTransactionAnalytics
+        send escrowEntered to outlet TransactionEventSplitToToEscrowService
         tell escrowEntered to entity TransactionContext.Transaction
       }
       on closingScheduled: event Transaction.ClosingScheduled is {
         send closingScheduled to outlet TransactionEventSplitToTransactionAnalytics
+        send closingScheduled to outlet TransactionEventSplitToToNotificationService
         tell closingScheduled to entity TransactionContext.Transaction
       }
       on closingCompleted: event Transaction.ClosingCompleted is {
         send closingCompleted to outlet TransactionEventSplitToTransactionAnalytics
+        send closingCompleted to outlet TransactionEventSplitToToNotificationService
+        send closingCompleted to outlet TransactionEventSplitToToEscrowService
         tell closingCompleted to entity TransactionContext.Transaction
       }
       on transactionCancelled: event Transaction.TransactionCancelled is {
         send transactionCancelled to outlet TransactionEventSplitToTransactionAnalytics
+        send transactionCancelled to outlet TransactionEventSplitToToNotificationService
         tell transactionCancelled to entity TransactionContext.Transaction
       }
       on other is {
@@ -739,6 +753,18 @@ context TransactionContext as router is {
     described as {
       |Fans Transaction events out to the repository and projectors.
     }
+  }
+  connector 'ToTitleService Feed' is from outlet TransactionContext.TransactionEventSplit.TransactionEventSplitToToTitleService to inlet TransactionContext.ToTitleService.ToTitleServiceIn with {
+    briefly "The Transaction events ToTitleService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet TransactionContext.TransactionEventSplit.TransactionEventSplitToToNotificationService to inlet TransactionContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Transaction events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToEscrowService Feed' is from outlet TransactionContext.TransactionEventSplit.TransactionEventSplitToToEscrowService to inlet TransactionContext.ToEscrowService.ToEscrowServiceIn with {
+    briefly "The Transaction events ToEscrowService translates, on their way to it"
+  }
+  connector 'ToDocumentService Feed' is from outlet TransactionContext.TransactionEventSplit.TransactionEventSplitToToDocumentService to inlet TransactionContext.ToDocumentService.ToDocumentServiceIn with {
+    briefly "The Transaction events ToDocumentService translates, on their way to it"
   }
   connector 'TransactionEvent Stream' is from outlet TransactionContext.Transaction.TransactionEvents2 to inlet TransactionContext.TransactionEventSplit.TransactionEventSplitIn with {
     briefly "Transaction events, fanned out to storage and read models"

@@ -87,7 +87,7 @@ context ClaimsContext as router is {
   include "Claim.riddl"
   // Adaptors for external system integration
   adaptor ToPolicyService to context PolicyService as flow is { 
-    outlet ToPolicyServiceOut is type PolicyService.PolicyServiceCommand
+    inlet ToPolicyServiceIn is type ClaimEvent    outlet ToPolicyServiceOut is type PolicyService.PolicyServiceCommand
     handler ToPolicyServiceHandler is {
       on claimFiled: event Claim.ClaimFiled is {
         let item0: type PolicyService.GetPolicyDetails = prompt("translate the claimFiled event into a GetPolicyDetails, a claim being unassessable without the policy behind it")
@@ -111,7 +111,7 @@ context ClaimsContext as router is {
     }
   }
   adaptor ToFraudDetection to context FraudDetection as flow is { 
-    outlet ToFraudDetectionOut is type FraudDetection.FraudDetectionCommand
+    inlet ToFraudDetectionIn is type ClaimEvent    outlet ToFraudDetectionOut is type FraudDetection.FraudDetectionCommand
     handler ToFraudDetectionHandler is {
       on claimFiled: event Claim.ClaimFiled is {
         let item0: type FraudDetection.AnalyzeClaim = prompt("translate the claimFiled event into a AnalyzeClaim, filing being where the exposure is taken, not where it is reviewed")
@@ -171,7 +171,7 @@ context ClaimsContext as router is {
     }
   }
   adaptor ToPaymentService to context PaymentService as flow is { 
-    outlet ToPaymentServiceOut is type PaymentService.PaymentServiceCommand
+    inlet ToPaymentServiceIn is type ClaimEvent    outlet ToPaymentServiceOut is type PaymentService.PaymentServiceCommand
     handler ToPaymentServiceHandler is {
       on claimApproved: event Claim.ClaimApproved is {
         let request: type PaymentService.RequestPayment = prompt("translate the claimApproved event into a RequestPayment paying the claim the approval makes the insurer liable for")
@@ -861,12 +861,17 @@ context ClaimsContext as router is {
     }
   }
   streamlet ClaimEventSplit as split is {
+    outlet ClaimEventSplitToToPolicyService is type ClaimEvent
+    outlet ClaimEventSplitToToPaymentService is type ClaimEvent
+    outlet ClaimEventSplitToToFraudDetection is type ClaimEvent
     inlet ClaimEventSplitIn is type ClaimEvent    outlet ClaimEventSplitToLossRatioProjector is type ClaimEvent
     outlet ClaimEventSplitToCycleTimeProjector is type ClaimEvent
     handler ClaimEventSplitHandler is {
       on claimFiled: event Claim.ClaimFiled is {
         send claimFiled to outlet ClaimEventSplitToLossRatioProjector
         send claimFiled to outlet ClaimEventSplitToCycleTimeProjector
+        send claimFiled to outlet ClaimEventSplitToToPolicyService
+        send claimFiled to outlet ClaimEventSplitToToFraudDetection
         tell claimFiled to entity ClaimsContext.Claim
       }
       on adjusterAssigned: event Claim.AdjusterAssigned is {
@@ -877,6 +882,7 @@ context ClaimsContext as router is {
       on investigationUpdated: event Claim.InvestigationUpdated is {
         send investigationUpdated to outlet ClaimEventSplitToLossRatioProjector
         send investigationUpdated to outlet ClaimEventSplitToCycleTimeProjector
+        send investigationUpdated to outlet ClaimEventSplitToToFraudDetection
         tell investigationUpdated to entity ClaimsContext.Claim
       }
       on reserveEstablished: event Claim.ReserveEstablished is {
@@ -887,6 +893,7 @@ context ClaimsContext as router is {
       on claimApproved: event Claim.ClaimApproved is {
         send claimApproved to outlet ClaimEventSplitToLossRatioProjector
         send claimApproved to outlet ClaimEventSplitToCycleTimeProjector
+        send claimApproved to outlet ClaimEventSplitToToPaymentService
         tell claimApproved to entity ClaimsContext.Claim
       }
       on paymentIssued: event Claim.PaymentIssued is {
@@ -897,6 +904,7 @@ context ClaimsContext as router is {
       on claimDenied: event Claim.ClaimDenied is {
         send claimDenied to outlet ClaimEventSplitToLossRatioProjector
         send claimDenied to outlet ClaimEventSplitToCycleTimeProjector
+        send claimDenied to outlet ClaimEventSplitToToPaymentService
         tell claimDenied to entity ClaimsContext.Claim
       }
       on claimClosed: event Claim.ClaimClosed is {
@@ -918,6 +926,15 @@ context ClaimsContext as router is {
     described as {
       |Fans Claim events out to the repository and projectors.
     }
+  }
+  connector 'ToPolicyService Feed' is from outlet ClaimsContext.ClaimEventSplit.ClaimEventSplitToToPolicyService to inlet ClaimsContext.ToPolicyService.ToPolicyServiceIn with {
+    briefly "The Claim events ToPolicyService translates, on their way to it"
+  }
+  connector 'ToPaymentService Feed' is from outlet ClaimsContext.ClaimEventSplit.ClaimEventSplitToToPaymentService to inlet ClaimsContext.ToPaymentService.ToPaymentServiceIn with {
+    briefly "The Claim events ToPaymentService translates, on their way to it"
+  }
+  connector 'ToFraudDetection Feed' is from outlet ClaimsContext.ClaimEventSplit.ClaimEventSplitToToFraudDetection to inlet ClaimsContext.ToFraudDetection.ToFraudDetectionIn with {
+    briefly "The Claim events ToFraudDetection translates, on their way to it"
   }
   connector 'ClaimEvent Stream' is from outlet ClaimsContext.Claim.ClaimEvents2 to inlet ClaimsContext.ClaimEventSplit.ClaimEventSplitIn with {
     briefly "Claim events, fanned out to storage and read models"

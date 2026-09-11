@@ -91,7 +91,7 @@ context WalletContext as router is {
     }
   }
   adaptor ToBankTransferService to context BankTransferService as flow is { 
-    outlet ToBankTransferServiceOut is command BankTransferService.InitiateACH
+    inlet ToBankTransferServiceIn is type WalletEvent    outlet ToBankTransferServiceOut is command BankTransferService.InitiateACH
     handler ToBankTransferServiceHandler is {
       on balanceToppedUp: event Wallet.BalanceToppedUp is {
         let item0: type BankTransferService.InitiateACH = prompt("translate the balanceToppedUp event into a InitiateACH, a top-up being what must be funded from the bank")
@@ -133,7 +133,7 @@ context WalletContext as router is {
     }
   }
   adaptor ToFraudService to context FraudService as flow is { 
-    outlet ToFraudServiceOut is command FraudService.ScreenTransaction
+    inlet ToFraudServiceIn is type WalletEvent    outlet ToFraudServiceOut is command FraudService.ScreenTransaction
     handler ToFraudServiceHandler is {
       on paymentMade: event PaymentMade is {
         let item0: type FraudService.ScreenTransaction = prompt("translate the paymentMade event into a ScreenTransaction as the payment is committed")
@@ -175,7 +175,7 @@ context WalletContext as router is {
     }
   }
   adaptor ToIdentityService to context IdentityService as flow is { 
-    outlet ToIdentityServiceOut is command IdentityService.VerifyIdentity
+    inlet ToIdentityServiceIn is type WalletEvent    outlet ToIdentityServiceOut is command IdentityService.VerifyIdentity
     handler ToIdentityServiceHandler is {
       on walletCreated: event WalletCreated is {
         let check0: type IdentityService.VerifyIdentity = prompt("translate the walletCreated event into a VerifyIdentity, a wallet being an instrument that may not be issued unverified")
@@ -197,7 +197,7 @@ context WalletContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendTransactionAlert
+    inlet ToNotificationServiceIn is type WalletEvent    outlet ToNotificationServiceOut is command NotificationService.SendTransactionAlert
     handler ToNotificationServiceHandler is {
       on paymentMade: event PaymentMade is {
         let msg: type NotificationService.SendTransactionAlert = prompt("translate the paymentMade event into a SendTransactionAlert for its recipient")
@@ -239,7 +239,7 @@ context WalletContext as router is {
     }
   }
   adaptor ToPaymentProcessorService to context PaymentProcessorService as flow is { 
-    outlet ToPaymentProcessorServiceOut is command PaymentProcessorService.ProcessPayment
+    inlet ToPaymentProcessorServiceIn is type WalletEvent    outlet ToPaymentProcessorServiceOut is command PaymentProcessorService.ProcessPayment
     handler ToPaymentProcessorServiceHandler is {
       on paymentMade: event Wallet.PaymentMade is {
         let notice: type PaymentProcessorService.ProcessPayment = prompt("translate the paymentMade event into a ProcessPayment moving the money the wallet holder has just committed to paying")
@@ -283,7 +283,7 @@ context WalletContext as router is {
     }
   }
   adaptor ToTokenizationService to context TokenizationService as flow is { 
-    outlet ToTokenizationServiceOut is command TokenizationService.TokenizeCard
+    inlet ToTokenizationServiceIn is type WalletEvent    outlet ToTokenizationServiceOut is command TokenizationService.TokenizeCard
     handler ToTokenizationServiceHandler is {
       on paymentMethodAdded: event PaymentMethodAdded is {
         let check0: type TokenizationService.TokenizeCard = prompt("translate the paymentMethodAdded event into a TokenizeCard so the pan is replaced the moment it enters the model")
@@ -711,15 +711,23 @@ context WalletContext as router is {
       |Maintains wallet platform analytics data.
     }
   }
-  streamlet WalletEventSplit as flow is {
+  streamlet WalletEventSplit as split is {
+    outlet WalletEventSplitToToTokenizationService is type WalletEvent
+    outlet WalletEventSplitToToPaymentProcessorService is type WalletEvent
+    outlet WalletEventSplitToToNotificationService is type WalletEvent
+    outlet WalletEventSplitToToIdentityService is type WalletEvent
+    outlet WalletEventSplitToToFraudService is type WalletEvent
+    outlet WalletEventSplitToToBankTransferService is type WalletEvent
     inlet WalletEventSplitIn is type WalletEvent    outlet WalletEventSplitToWalletAnalytics is type WalletEvent
     handler WalletEventSplitHandler is {
       on walletCreated: event Wallet.WalletCreated is {
         send walletCreated to outlet WalletEventSplitToWalletAnalytics
+        send walletCreated to outlet WalletEventSplitToToIdentityService
         tell walletCreated to entity WalletContext.Wallet
       }
       on paymentMethodAdded: event Wallet.PaymentMethodAdded is {
         send paymentMethodAdded to outlet WalletEventSplitToWalletAnalytics
+        send paymentMethodAdded to outlet WalletEventSplitToToTokenizationService
         tell paymentMethodAdded to entity WalletContext.Wallet
       }
       on paymentMethodRemoved: event Wallet.PaymentMethodRemoved is {
@@ -732,10 +740,14 @@ context WalletContext as router is {
       }
       on balanceToppedUp: event Wallet.BalanceToppedUp is {
         send balanceToppedUp to outlet WalletEventSplitToWalletAnalytics
+        send balanceToppedUp to outlet WalletEventSplitToToBankTransferService
         tell balanceToppedUp to entity WalletContext.Wallet
       }
       on paymentMade: event Wallet.PaymentMade is {
         send paymentMade to outlet WalletEventSplitToWalletAnalytics
+        send paymentMade to outlet WalletEventSplitToToPaymentProcessorService
+        send paymentMade to outlet WalletEventSplitToToNotificationService
+        send paymentMade to outlet WalletEventSplitToToFraudService
         tell paymentMade to entity WalletContext.Wallet
       }
       on fundsTransferred: event Wallet.FundsTransferred is {
@@ -776,6 +788,24 @@ context WalletContext as router is {
     described as {
       |Fans Wallet events out to the repository and projectors.
     }
+  }
+  connector 'ToTokenizationService Feed' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToToTokenizationService to inlet WalletContext.ToTokenizationService.ToTokenizationServiceIn with {
+    briefly "The Wallet events ToTokenizationService translates, on their way to it"
+  }
+  connector 'ToPaymentProcessorService Feed' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToToPaymentProcessorService to inlet WalletContext.ToPaymentProcessorService.ToPaymentProcessorServiceIn with {
+    briefly "The Wallet events ToPaymentProcessorService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToToNotificationService to inlet WalletContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Wallet events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToIdentityService Feed' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToToIdentityService to inlet WalletContext.ToIdentityService.ToIdentityServiceIn with {
+    briefly "The Wallet events ToIdentityService translates, on their way to it"
+  }
+  connector 'ToFraudService Feed' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToToFraudService to inlet WalletContext.ToFraudService.ToFraudServiceIn with {
+    briefly "The Wallet events ToFraudService translates, on their way to it"
+  }
+  connector 'ToBankTransferService Feed' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToToBankTransferService to inlet WalletContext.ToBankTransferService.ToBankTransferServiceIn with {
+    briefly "The Wallet events ToBankTransferService translates, on their way to it"
   }
   connector 'WalletEvent Stream' is from outlet WalletContext.Wallet.WalletEvents2 to inlet WalletContext.WalletEventSplit.WalletEventSplitIn with {
     briefly "Wallet events, fanned out to storage and read models"

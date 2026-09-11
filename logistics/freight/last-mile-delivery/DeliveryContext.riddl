@@ -51,7 +51,7 @@ context DeliveryContext as router is {
     }
   }
   connector 'DeliveryCommand Stream Intake' is from outlet DeliveryContext.DeliveryCommandStreamOut to inlet DeliveryContext.Delivery.DeliveryCommands  connector 'DeliveryOrderResult Stream Egress' is from outlet DeliveryContext.DeliveryRepository.DeliveryRepositoryResponses to inlet DeliveryContext.DeliveryOrderResultStreamIn  adaptor ToCustomerNotification to context CustomerNotification as flow is { 
-    outlet ToCustomerNotificationOut is command CustomerNotification.SendDeliveryNotification
+    inlet ToCustomerNotificationIn is type DeliveryEvent    outlet ToCustomerNotificationOut is command CustomerNotification.SendDeliveryNotification
     handler ToCustomerNotificationHandler is {
       on etaUpdated: event ETAUpdated is {
         when prompt("the new ETA differs materially from what the customer was last told, rather than drifting by minutes") then
@@ -118,7 +118,7 @@ context DeliveryContext as router is {
     }
   }
   adaptor ToDriverMobile to context DriverMobile as flow is { 
-    outlet ToDriverMobileOut is command DriverMobile.SendRouteToDriver
+    inlet ToDriverMobileIn is type DeliveryEvent    outlet ToDriverMobileOut is command DriverMobile.SendRouteToDriver
     handler ToDriverMobileHandler is {
       on assignedToRoute: event Delivery.AssignedToRoute is {
         let item0: type DriverMobile.SendRouteToDriver = prompt("translate the assignedToRoute event into a SendRouteToDriver, assignment being when a driver has somewhere to go")
@@ -163,7 +163,7 @@ context DeliveryContext as router is {
     }
   }
   adaptor ToGeocodingService to context GeocodingService as flow is { 
-    outlet ToGeocodingServiceOut is type GeocodingService.GeocodingServiceCommand
+    inlet ToGeocodingServiceIn is type DeliveryEvent    outlet ToGeocodingServiceOut is type GeocodingService.GeocodingServiceCommand
     handler ToGeocodingServiceHandler is {
       on deliveryCreated: event Delivery.DeliveryCreated is {
         let item0: type GeocodingService.GeocodeAddress = prompt("translate the deliveryCreated event into a GeocodeAddress, an address being unroutable as text")
@@ -212,7 +212,7 @@ context DeliveryContext as router is {
     }
   }
   adaptor ToProofCapture to context ProofCapture as flow is { 
-    outlet ToProofCaptureOut is type ProofCapture.ProofCaptureCommand
+    inlet ToProofCaptureIn is type DeliveryEvent    outlet ToProofCaptureOut is type ProofCapture.ProofCaptureCommand
     handler ToProofCaptureHandler is {
       on deliveryCompleted: event Delivery.DeliveryCompleted is {
         let item0: type ProofCapture.CaptureSignature = prompt("translate the deliveryCompleted event into a CaptureSignature, delivery being the moment proof can be taken")
@@ -263,7 +263,7 @@ context DeliveryContext as router is {
     }
   }
   adaptor ToRouteOptimization to context RouteOptimization as flow is { 
-    outlet ToRouteOptimizationOut is type RouteOptimization.RouteOptimizationCommand
+    inlet ToRouteOptimizationIn is type DeliveryEvent    outlet ToRouteOptimizationOut is type RouteOptimization.RouteOptimizationCommand
     handler ToRouteOptimizationHandler is {
       on assignedToRoute: event Delivery.AssignedToRoute is {
         let plan: type RouteOptimization.OptimizeRoute = prompt("translate the assignedToRoute event into an OptimizeRoute re-planning the run now this drop is on it")
@@ -654,43 +654,61 @@ context DeliveryContext as router is {
       |Union of Delivery events for streaming.
     }
   }
-  streamlet DeliveryEventSplit as flow is {
+  streamlet DeliveryEventSplit as split is {
+    outlet DeliveryEventSplitToToRouteOptimization is type DeliveryEvent
+    outlet DeliveryEventSplitToToProofCapture is type DeliveryEvent
+    outlet DeliveryEventSplitToToGeocodingService is type DeliveryEvent
+    outlet DeliveryEventSplitToToDriverMobile is type DeliveryEvent
+    outlet DeliveryEventSplitToToCustomerNotification is type DeliveryEvent
     inlet DeliveryEventSplitIn is type DeliveryEvent    outlet DeliveryEventSplitToDeliveryAnalytics is type DeliveryEvent
     handler DeliveryEventSplitHandler is {
       on deliveryCreated: event Delivery.DeliveryCreated is {
         send deliveryCreated to outlet DeliveryEventSplitToDeliveryAnalytics
+        send deliveryCreated to outlet DeliveryEventSplitToToGeocodingService
         tell deliveryCreated to entity DeliveryContext.Delivery
       }
       on assignedToRoute: event Delivery.AssignedToRoute is {
         send assignedToRoute to outlet DeliveryEventSplitToDeliveryAnalytics
+        send assignedToRoute to outlet DeliveryEventSplitToToRouteOptimization
+        send assignedToRoute to outlet DeliveryEventSplitToToDriverMobile
         tell assignedToRoute to entity DeliveryContext.Delivery
       }
       on markedOutForDelivery: event Delivery.MarkedOutForDelivery is {
         send markedOutForDelivery to outlet DeliveryEventSplitToDeliveryAnalytics
+        send markedOutForDelivery to outlet DeliveryEventSplitToToCustomerNotification
         tell markedOutForDelivery to entity DeliveryContext.Delivery
       }
       on eTAUpdated: event Delivery.ETAUpdated is {
         send eTAUpdated to outlet DeliveryEventSplitToDeliveryAnalytics
+        send eTAUpdated to outlet DeliveryEventSplitToToCustomerNotification
         tell eTAUpdated to entity DeliveryContext.Delivery
       }
       on deliveryAttempted: event Delivery.DeliveryAttempted is {
         send deliveryAttempted to outlet DeliveryEventSplitToDeliveryAnalytics
+        send deliveryAttempted to outlet DeliveryEventSplitToToRouteOptimization
+        send deliveryAttempted to outlet DeliveryEventSplitToToGeocodingService
         tell deliveryAttempted to entity DeliveryContext.Delivery
       }
       on deliveryCompleted: event Delivery.DeliveryCompleted is {
         send deliveryCompleted to outlet DeliveryEventSplitToDeliveryAnalytics
+        send deliveryCompleted to outlet DeliveryEventSplitToToProofCapture
+        send deliveryCompleted to outlet DeliveryEventSplitToToCustomerNotification
         tell deliveryCompleted to entity DeliveryContext.Delivery
       }
       on deliveryFailed: event Delivery.DeliveryFailed is {
         send deliveryFailed to outlet DeliveryEventSplitToDeliveryAnalytics
+        send deliveryFailed to outlet DeliveryEventSplitToToProofCapture
+        send deliveryFailed to outlet DeliveryEventSplitToToCustomerNotification
         tell deliveryFailed to entity DeliveryContext.Delivery
       }
       on deliveryRescheduled: event Delivery.DeliveryRescheduled is {
         send deliveryRescheduled to outlet DeliveryEventSplitToDeliveryAnalytics
+        send deliveryRescheduled to outlet DeliveryEventSplitToToCustomerNotification
         tell deliveryRescheduled to entity DeliveryContext.Delivery
       }
       on returnInitiated: event Delivery.ReturnInitiated is {
         send returnInitiated to outlet DeliveryEventSplitToDeliveryAnalytics
+        send returnInitiated to outlet DeliveryEventSplitToToCustomerNotification
         tell returnInitiated to entity DeliveryContext.Delivery
       }
       on other is {
@@ -707,6 +725,21 @@ context DeliveryContext as router is {
     described as {
       |Fans Delivery events out to the repository and projectors.
     }
+  }
+  connector 'ToRouteOptimization Feed' is from outlet DeliveryContext.DeliveryEventSplit.DeliveryEventSplitToToRouteOptimization to inlet DeliveryContext.ToRouteOptimization.ToRouteOptimizationIn with {
+    briefly "The Delivery events ToRouteOptimization translates, on their way to it"
+  }
+  connector 'ToProofCapture Feed' is from outlet DeliveryContext.DeliveryEventSplit.DeliveryEventSplitToToProofCapture to inlet DeliveryContext.ToProofCapture.ToProofCaptureIn with {
+    briefly "The Delivery events ToProofCapture translates, on their way to it"
+  }
+  connector 'ToGeocodingService Feed' is from outlet DeliveryContext.DeliveryEventSplit.DeliveryEventSplitToToGeocodingService to inlet DeliveryContext.ToGeocodingService.ToGeocodingServiceIn with {
+    briefly "The Delivery events ToGeocodingService translates, on their way to it"
+  }
+  connector 'ToDriverMobile Feed' is from outlet DeliveryContext.DeliveryEventSplit.DeliveryEventSplitToToDriverMobile to inlet DeliveryContext.ToDriverMobile.ToDriverMobileIn with {
+    briefly "The Delivery events ToDriverMobile translates, on their way to it"
+  }
+  connector 'ToCustomerNotification Feed' is from outlet DeliveryContext.DeliveryEventSplit.DeliveryEventSplitToToCustomerNotification to inlet DeliveryContext.ToCustomerNotification.ToCustomerNotificationIn with {
+    briefly "The Delivery events ToCustomerNotification translates, on their way to it"
   }
   connector 'DeliveryEvent Stream' is from outlet DeliveryContext.Delivery.DeliveryEvents2 to inlet DeliveryContext.DeliveryEventSplit.DeliveryEventSplitIn with {
     briefly "Delivery events, fanned out to storage and read models"

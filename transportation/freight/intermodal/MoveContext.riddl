@@ -95,8 +95,8 @@ context MoveContext as router is {
       |The model's side of the ChassisPoolService conversation.
     }
   }
-  adaptor ToChassisPoolService to context ChassisPoolService as flow is { 
-    outlet ToChassisPoolServiceOut is type ChassisPoolService.ChassisPoolServiceRequest
+  adaptor ToChassisPoolService to context ChassisPoolService as merge is { 
+    inlet ToChassisPoolServiceIn is type MoveEvent    inlet ToChassisPoolServiceReplies is result ChassisPoolService.ChassisAvailabilityResult    outlet ToChassisPoolServiceOut is type ChassisPoolService.ChassisPoolServiceRequest
     handler ToChassisPoolServiceHandler is {
       on destinationDrayScheduled: event Move.DestinationDrayScheduled is {
         let askAnswer: type ChassisPoolService.ChassisAvailabilityResult = ask query ChassisPoolService.GetChassisAvailability of context ChassisPoolService
@@ -148,7 +148,7 @@ context MoveContext as router is {
     }
   }
   adaptor ToDrayCarrierService to context DrayCarrierService as flow is { 
-    outlet ToDrayCarrierServiceOut is command DrayCarrierService.RequestDray
+    inlet ToDrayCarrierServiceIn is type MoveEvent    outlet ToDrayCarrierServiceOut is command DrayCarrierService.RequestDray
     handler ToDrayCarrierServiceHandler is {
       on originDrayScheduled: event Move.OriginDrayScheduled is {
         let item0: type DrayCarrierService.RequestDray = prompt("translate the originDrayScheduled event into a RequestDray, the origin leg being one road move")
@@ -173,8 +173,8 @@ context MoveContext as router is {
       |The model's side of the DrayCarrierService conversation.
     }
   }
-  adaptor ToIntermodalRatingService to context IntermodalRatingService as flow is { 
-    outlet ToIntermodalRatingServiceOut is query IntermodalRatingService.GetRates
+  adaptor ToIntermodalRatingService to context IntermodalRatingService as merge is { 
+    inlet ToIntermodalRatingServiceIn is type MoveEvent    inlet ToIntermodalRatingServiceReplies is result IntermodalRatingService.RatesResult    outlet ToIntermodalRatingServiceOut is query IntermodalRatingService.GetRates
     handler ToIntermodalRatingServiceHandler is {
       on moveCreated: event Move.MoveCreated is {
         let askAnswer: type IntermodalRatingService.RatesResult = ask query IntermodalRatingService.GetRates of context IntermodalRatingService
@@ -225,8 +225,8 @@ context MoveContext as router is {
       |The model's side of the RailCarrierService conversation.
     }
   }
-  adaptor ToRailCarrierService to context RailCarrierService as flow is { 
-    outlet ToRailCarrierServiceOut is type RailCarrierService.RailCarrierServiceRequest
+  adaptor ToRailCarrierService to context RailCarrierService as merge is { 
+    inlet ToRailCarrierServiceIn is type MoveEvent    inlet ToRailCarrierServiceReplies is result RailCarrierService.AvailabilityResult    outlet ToRailCarrierServiceOut is type RailCarrierService.RailCarrierServiceRequest
     handler ToRailCarrierServiceHandler is {
       on terminalIngateRecorded: event Move.TerminalIngateRecorded is {
         let askAnswer: type RailCarrierService.AvailabilityResult = ask query RailCarrierService.GetAvailability of context RailCarrierService
@@ -284,7 +284,7 @@ context MoveContext as router is {
     }
   }
   adaptor ToTerminalOperatingSystem to context TerminalOperatingSystem as flow is { 
-    outlet ToTerminalOperatingSystemOut is command TerminalOperatingSystem.RequestIngate
+    inlet ToTerminalOperatingSystemIn is type MoveEvent    outlet ToTerminalOperatingSystemOut is command TerminalOperatingSystem.RequestIngate
     handler ToTerminalOperatingSystemHandler is {
       on originDrayScheduled: event Move.OriginDrayScheduled is {
         let item0: type TerminalOperatingSystem.RequestIngate = prompt("translate the originDrayScheduled event into a RequestIngate, the terminal needing warning before the box arrives at its gate")
@@ -725,19 +725,30 @@ context MoveContext as router is {
       |persistence.
     }
   }
-  streamlet MoveEventSplit as flow is {
+  streamlet MoveEventSplit as split is {
+    outlet MoveEventSplitToToTerminalOperatingSystem is type MoveEvent
+    outlet MoveEventSplitToToRailCarrierService is type MoveEvent
+    outlet MoveEventSplitToToIntermodalRatingService is type MoveEvent
+    outlet MoveEventSplitToToDrayCarrierService is type MoveEvent
+    outlet MoveEventSplitToToChassisPoolService is type MoveEvent
     inlet MoveEventSplitIn is type MoveEvent    outlet MoveEventSplitToIntermodalAnalytics is type MoveEvent
     handler MoveEventSplitHandler is {
       on moveCreated: event Move.MoveCreated is {
         send moveCreated to outlet MoveEventSplitToIntermodalAnalytics
+        send moveCreated to outlet MoveEventSplitToToRailCarrierService
+        send moveCreated to outlet MoveEventSplitToToIntermodalRatingService
         tell moveCreated to entity MoveContext.Move
       }
       on originDrayScheduled: event Move.OriginDrayScheduled is {
         send originDrayScheduled to outlet MoveEventSplitToIntermodalAnalytics
+        send originDrayScheduled to outlet MoveEventSplitToToTerminalOperatingSystem
+        send originDrayScheduled to outlet MoveEventSplitToToDrayCarrierService
+        send originDrayScheduled to outlet MoveEventSplitToToChassisPoolService
         tell originDrayScheduled to entity MoveContext.Move
       }
       on terminalIngateRecorded: event Move.TerminalIngateRecorded is {
         send terminalIngateRecorded to outlet MoveEventSplitToIntermodalAnalytics
+        send terminalIngateRecorded to outlet MoveEventSplitToToRailCarrierService
         tell terminalIngateRecorded to entity MoveContext.Move
       }
       on assignedToTrain: event Move.AssignedToTrain is {
@@ -758,6 +769,8 @@ context MoveContext as router is {
       }
       on destinationDrayScheduled: event Move.DestinationDrayScheduled is {
         send destinationDrayScheduled to outlet MoveEventSplitToIntermodalAnalytics
+        send destinationDrayScheduled to outlet MoveEventSplitToToDrayCarrierService
+        send destinationDrayScheduled to outlet MoveEventSplitToToChassisPoolService
         tell destinationDrayScheduled to entity MoveContext.Move
       }
       on deliveryRecorded: event Move.DeliveryRecorded is {
@@ -786,6 +799,21 @@ context MoveContext as router is {
     described as {
       |Fans Move events out to the repository and projectors.
     }
+  }
+  connector 'ToTerminalOperatingSystem Feed' is from outlet MoveContext.MoveEventSplit.MoveEventSplitToToTerminalOperatingSystem to inlet MoveContext.ToTerminalOperatingSystem.ToTerminalOperatingSystemIn with {
+    briefly "The Move events ToTerminalOperatingSystem translates, on their way to it"
+  }
+  connector 'ToRailCarrierService Feed' is from outlet MoveContext.MoveEventSplit.MoveEventSplitToToRailCarrierService to inlet MoveContext.ToRailCarrierService.ToRailCarrierServiceIn with {
+    briefly "The Move events ToRailCarrierService translates, on their way to it"
+  }
+  connector 'ToIntermodalRatingService Feed' is from outlet MoveContext.MoveEventSplit.MoveEventSplitToToIntermodalRatingService to inlet MoveContext.ToIntermodalRatingService.ToIntermodalRatingServiceIn with {
+    briefly "The Move events ToIntermodalRatingService translates, on their way to it"
+  }
+  connector 'ToDrayCarrierService Feed' is from outlet MoveContext.MoveEventSplit.MoveEventSplitToToDrayCarrierService to inlet MoveContext.ToDrayCarrierService.ToDrayCarrierServiceIn with {
+    briefly "The Move events ToDrayCarrierService translates, on their way to it"
+  }
+  connector 'ToChassisPoolService Feed' is from outlet MoveContext.MoveEventSplit.MoveEventSplitToToChassisPoolService to inlet MoveContext.ToChassisPoolService.ToChassisPoolServiceIn with {
+    briefly "The Move events ToChassisPoolService translates, on their way to it"
   }
   connector 'MoveEvent Stream' is from outlet MoveContext.Move.MoveEvents2 to inlet MoveContext.MoveEventSplit.MoveEventSplitIn with {
     briefly "Move events, fanned out to storage and read models"

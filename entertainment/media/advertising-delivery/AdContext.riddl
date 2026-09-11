@@ -84,7 +84,7 @@ context AdContext as router is {
     }
   }
   adaptor ToBillingService to context BillingService as flow is { 
-    outlet ToBillingServiceOut is command BillingService.RecordBillableEvent
+    inlet ToBillingServiceIn is type AdImpressionEvent    outlet ToBillingServiceOut is command BillingService.RecordBillableEvent
     handler ToBillingServiceHandler is {
       on impressionRecorded: event AdImpression.ImpressionRecorded is {
         let item0: type BillingService.RecordBillableEvent = prompt("translate the impressionRecorded event into a RecordBillableEvent, an impression being what an advertiser pays for")
@@ -129,8 +129,8 @@ context AdContext as router is {
       |The model's side of the CampaignService conversation.
     }
   }
-  adaptor ToCampaignService to context CampaignService as flow is { 
-    outlet ToCampaignServiceOut is query CampaignService.GetCampaign
+  adaptor ToCampaignService to context CampaignService as merge is { 
+    inlet ToCampaignServiceIn is type AdImpressionEvent    inlet ToCampaignServiceReplies is result CampaignService.GetCampaignResult    outlet ToCampaignServiceOut is query CampaignService.GetCampaign
     handler ToCampaignServiceHandler is {
       on impressionRecorded: event AdImpression.ImpressionRecorded is {
         let askAnswer: type CampaignService.GetCampaignResult = ask query CampaignService.GetCampaign of context CampaignService
@@ -172,7 +172,7 @@ context AdContext as router is {
     }
   }
   adaptor ToFraudDetectionService to context FraudDetectionService as flow is { 
-    outlet ToFraudDetectionServiceOut is command FraudDetectionService.CheckImpression
+    inlet ToFraudDetectionServiceIn is type AdImpressionEvent    outlet ToFraudDetectionServiceOut is command FraudDetectionService.CheckImpression
     handler ToFraudDetectionServiceHandler is {
       on impressionRecorded: event ImpressionRecorded is {
         let item0: type FraudDetectionService.CheckImpression = prompt("translate the impressionRecorded event into a CheckImpression, since an impression is only worth paying for if it was real")
@@ -589,11 +589,17 @@ context AdContext as router is {
       |Maintains advertising analytics data.
     }
   }
-  streamlet AdImpressionEventSplit as flow is {
+  streamlet AdImpressionEventSplit as split is {
+    outlet AdImpressionEventSplitToToFraudDetectionService is type AdImpressionEvent
+    outlet AdImpressionEventSplitToToCampaignService is type AdImpressionEvent
+    outlet AdImpressionEventSplitToToBillingService is type AdImpressionEvent
     inlet AdImpressionEventSplitIn is type AdImpressionEvent    outlet AdImpressionEventSplitToAdAnalytics is type AdImpressionEvent
     handler AdImpressionEventSplitHandler is {
       on impressionRecorded: event AdImpression.ImpressionRecorded is {
         send impressionRecorded to outlet AdImpressionEventSplitToAdAnalytics
+        send impressionRecorded to outlet AdImpressionEventSplitToToFraudDetectionService
+        send impressionRecorded to outlet AdImpressionEventSplitToToCampaignService
+        send impressionRecorded to outlet AdImpressionEventSplitToToBillingService
         tell impressionRecorded to entity AdContext.AdImpression
       }
       on adStarted: event AdImpression.AdStarted is {
@@ -614,6 +620,7 @@ context AdContext as router is {
       }
       on adClicked: event AdImpression.AdClicked is {
         send adClicked to outlet AdImpressionEventSplitToAdAnalytics
+        send adClicked to outlet AdImpressionEventSplitToToBillingService
         tell adClicked to entity AdContext.AdImpression
       }
       on adErrorOccurred: event AdImpression.AdErrorOccurred is {
@@ -634,6 +641,15 @@ context AdContext as router is {
     described as {
       |Fans AdImpression events out to the repository and projectors.
     }
+  }
+  connector 'ToFraudDetectionService Feed' is from outlet AdContext.AdImpressionEventSplit.AdImpressionEventSplitToToFraudDetectionService to inlet AdContext.ToFraudDetectionService.ToFraudDetectionServiceIn with {
+    briefly "The AdImpression events ToFraudDetectionService translates, on their way to it"
+  }
+  connector 'ToCampaignService Feed' is from outlet AdContext.AdImpressionEventSplit.AdImpressionEventSplitToToCampaignService to inlet AdContext.ToCampaignService.ToCampaignServiceIn with {
+    briefly "The AdImpression events ToCampaignService translates, on their way to it"
+  }
+  connector 'ToBillingService Feed' is from outlet AdContext.AdImpressionEventSplit.AdImpressionEventSplitToToBillingService to inlet AdContext.ToBillingService.ToBillingServiceIn with {
+    briefly "The AdImpression events ToBillingService translates, on their way to it"
   }
   connector 'AdImpressionEvent Stream' is from outlet AdContext.AdImpression.AdImpressionEvents2 to inlet AdContext.AdImpressionEventSplit.AdImpressionEventSplitIn with {
     briefly "AdImpression events, fanned out to storage and read models"

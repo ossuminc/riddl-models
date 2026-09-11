@@ -58,8 +58,8 @@ context RevenueAssuranceContext as router is {
       |The model's side of the BillingSystem conversation.
     }
   }
-  adaptor ToBillingSystem to context BillingSystem as flow is { 
-    outlet ToBillingSystemOut is type BillingSystem.BillingSystemRequest
+  adaptor ToBillingSystem to context BillingSystem as merge is { 
+    inlet ToBillingSystemIn is type AuditCaseEvent    inlet ToBillingSystemReplies is result BillingSystem.BillingRecordsResult    outlet ToBillingSystemOut is type BillingSystem.BillingSystemRequest
     handler ToBillingSystemHandler is {
       on caseResolved: event AuditCase.CaseResolved is {
         let notice: type BillingSystem.AdjustBilling = prompt("translate the caseResolved event into an AdjustBilling correcting what the resolved discrepancy shows was billed wrongly")
@@ -84,8 +84,8 @@ context RevenueAssuranceContext as router is {
       |The model's side of the BillingSystem conversation.
     }
   }
-  adaptor ToNetworkUsageSystem to context NetworkUsageSystem as flow is { 
-    outlet ToNetworkUsageSystemOut is type NetworkUsageSystem.NetworkUsageSystemRequest
+  adaptor ToNetworkUsageSystem to context NetworkUsageSystem as merge is { 
+    inlet ToNetworkUsageSystemIn is type AuditCaseEvent    inlet ToNetworkUsageSystemReplies is type NetworkUsageSystem.NetworkUsageSystemReply    outlet ToNetworkUsageSystemOut is type NetworkUsageSystem.NetworkUsageSystemRequest
     handler ToNetworkUsageSystemHandler is {
       on discrepancyRecorded: event AuditCase.DiscrepancyRecorded is {
         let askAnswer: type NetworkUsageSystem.UnbilledServicesResult = ask query NetworkUsageSystem.GetUnbilledServices of context NetworkUsageSystem
@@ -425,19 +425,24 @@ context RevenueAssuranceContext as router is {
       |persistence.
     }
   }
-  streamlet AuditCaseEventSplit as flow is {
+  streamlet AuditCaseEventSplit as split is {
+    outlet AuditCaseEventSplitToToNetworkUsageSystem is type AuditCaseEvent
+    outlet AuditCaseEventSplitToToBillingSystem is type AuditCaseEvent
     inlet AuditCaseEventSplitIn is type AuditCaseEvent    outlet AuditCaseEventSplitToRevenueAssuranceMetrics is type AuditCaseEvent
     handler AuditCaseEventSplitHandler is {
       on auditCaseOpened: event AuditCase.AuditCaseOpened is {
         send auditCaseOpened to outlet AuditCaseEventSplitToRevenueAssuranceMetrics
+        send auditCaseOpened to outlet AuditCaseEventSplitToToBillingSystem
         tell auditCaseOpened to entity RevenueAssuranceContext.AuditCase
       }
       on recordsReconciled: event AuditCase.RecordsReconciled is {
         send recordsReconciled to outlet AuditCaseEventSplitToRevenueAssuranceMetrics
+        send recordsReconciled to outlet AuditCaseEventSplitToToNetworkUsageSystem
         tell recordsReconciled to entity RevenueAssuranceContext.AuditCase
       }
       on discrepancyRecorded: event AuditCase.DiscrepancyRecorded is {
         send discrepancyRecorded to outlet AuditCaseEventSplitToRevenueAssuranceMetrics
+        send discrepancyRecorded to outlet AuditCaseEventSplitToToNetworkUsageSystem
         tell discrepancyRecorded to entity RevenueAssuranceContext.AuditCase
       }
       on caseEscalated: event AuditCase.CaseEscalated is {
@@ -446,6 +451,7 @@ context RevenueAssuranceContext as router is {
       }
       on caseResolved: event AuditCase.CaseResolved is {
         send caseResolved to outlet AuditCaseEventSplitToRevenueAssuranceMetrics
+        send caseResolved to outlet AuditCaseEventSplitToToBillingSystem
         tell caseResolved to entity RevenueAssuranceContext.AuditCase
       }
       on caseClosed: event AuditCase.CaseClosed is {
@@ -470,6 +476,12 @@ context RevenueAssuranceContext as router is {
     described as {
       |Fans AuditCase events out to the repository and projectors.
     }
+  }
+  connector 'ToNetworkUsageSystem Feed' is from outlet RevenueAssuranceContext.AuditCaseEventSplit.AuditCaseEventSplitToToNetworkUsageSystem to inlet RevenueAssuranceContext.ToNetworkUsageSystem.ToNetworkUsageSystemIn with {
+    briefly "The AuditCase events ToNetworkUsageSystem translates, on their way to it"
+  }
+  connector 'ToBillingSystem Feed' is from outlet RevenueAssuranceContext.AuditCaseEventSplit.AuditCaseEventSplitToToBillingSystem to inlet RevenueAssuranceContext.ToBillingSystem.ToBillingSystemIn with {
+    briefly "The AuditCase events ToBillingSystem translates, on their way to it"
   }
   connector 'AuditCaseEvent Stream' is from outlet RevenueAssuranceContext.AuditCase.AuditCaseEvents2 to inlet RevenueAssuranceContext.AuditCaseEventSplit.AuditCaseEventSplitIn with {
     briefly "AuditCase events, fanned out to storage and read models"

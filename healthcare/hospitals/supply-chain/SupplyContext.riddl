@@ -67,7 +67,7 @@ context SupplyContext as router is {
     }
   }
   adaptor ToClinicalUsage to context ClinicalUsage as flow is { 
-    outlet ToClinicalUsageOut is command ClinicalUsage.ReportConsumption
+    inlet ToClinicalUsageIn is type SupplyOrderEvent    outlet ToClinicalUsageOut is command ClinicalUsage.ReportConsumption
     handler ToClinicalUsageHandler is {
       on suppliesIssued: event SupplyOrder.SuppliesIssued is {
         let item0: type ClinicalUsage.ReportConsumption = prompt("translate the suppliesIssued event into a ReportConsumption, issue being when supplies leave the store and are used")
@@ -115,7 +115,7 @@ context SupplyContext as router is {
     }
   }
   adaptor ToFinanceAP to context FinanceAP as flow is { 
-    outlet ToFinanceAPOut is command FinanceAP.NotifyReceipt
+    inlet ToFinanceAPIn is type SupplyOrderEvent    outlet ToFinanceAPOut is command FinanceAP.NotifyReceipt
     handler ToFinanceAPHandler is {
       on shipmentReceived: event SupplyOrder.ShipmentReceived is {
         let item0: type FinanceAP.NotifyReceipt = prompt("translate the shipmentReceived event into a NotifyReceipt, receipt being the leg of the three-way match accounts payable is missing")
@@ -160,7 +160,7 @@ context SupplyContext as router is {
     }
   }
   adaptor ToVendorCatalog to context VendorCatalog as flow is { 
-    outlet ToVendorCatalogOut is type VendorCatalog.VendorCatalogCommand
+    inlet ToVendorCatalogIn is type SupplyOrderEvent    outlet ToVendorCatalogOut is type VendorCatalog.VendorCatalogCommand
     handler ToVendorCatalogHandler is {
       on requisitionCreated: event SupplyOrder.RequisitionCreated is {
         let item0: type VendorCatalog.LookupVendorItem = prompt("translate the requisitionCreated event into a LookupVendorItem, a requisition naming a want rather than a catalogue item")
@@ -617,11 +617,15 @@ context SupplyContext as router is {
       |persistence.
     }
   }
-  streamlet SupplyOrderEventSplit as flow is {
+  streamlet SupplyOrderEventSplit as split is {
+    outlet SupplyOrderEventSplitToToVendorCatalog is type SupplyOrderEvent
+    outlet SupplyOrderEventSplitToToFinanceAP is type SupplyOrderEvent
+    outlet SupplyOrderEventSplitToToClinicalUsage is type SupplyOrderEvent
     inlet SupplyOrderEventSplitIn is type SupplyOrderEvent    outlet SupplyOrderEventSplitToInventoryMetricsProjector is type SupplyOrderEvent
     handler SupplyOrderEventSplitHandler is {
       on requisitionCreated: event SupplyOrder.RequisitionCreated is {
         send requisitionCreated to outlet SupplyOrderEventSplitToInventoryMetricsProjector
+        send requisitionCreated to outlet SupplyOrderEventSplitToToVendorCatalog
         tell requisitionCreated to entity SupplyContext.SupplyOrder
       }
       on requisitionApproved: event SupplyOrder.RequisitionApproved is {
@@ -630,14 +634,17 @@ context SupplyContext as router is {
       }
       on orderPlaced: event SupplyOrder.OrderPlaced is {
         send orderPlaced to outlet SupplyOrderEventSplitToInventoryMetricsProjector
+        send orderPlaced to outlet SupplyOrderEventSplitToToVendorCatalog
         tell orderPlaced to entity SupplyContext.SupplyOrder
       }
       on shipmentReceived: event SupplyOrder.ShipmentReceived is {
         send shipmentReceived to outlet SupplyOrderEventSplitToInventoryMetricsProjector
+        send shipmentReceived to outlet SupplyOrderEventSplitToToFinanceAP
         tell shipmentReceived to entity SupplyContext.SupplyOrder
       }
       on suppliesIssued: event SupplyOrder.SuppliesIssued is {
         send suppliesIssued to outlet SupplyOrderEventSplitToInventoryMetricsProjector
+        send suppliesIssued to outlet SupplyOrderEventSplitToToClinicalUsage
         tell suppliesIssued to entity SupplyContext.SupplyOrder
       }
       on other is {
@@ -654,6 +661,15 @@ context SupplyContext as router is {
     described as {
       |Fans SupplyOrder events out to the repository and projectors.
     }
+  }
+  connector 'ToVendorCatalog Feed' is from outlet SupplyContext.SupplyOrderEventSplit.SupplyOrderEventSplitToToVendorCatalog to inlet SupplyContext.ToVendorCatalog.ToVendorCatalogIn with {
+    briefly "The SupplyOrder events ToVendorCatalog translates, on their way to it"
+  }
+  connector 'ToFinanceAP Feed' is from outlet SupplyContext.SupplyOrderEventSplit.SupplyOrderEventSplitToToFinanceAP to inlet SupplyContext.ToFinanceAP.ToFinanceAPIn with {
+    briefly "The SupplyOrder events ToFinanceAP translates, on their way to it"
+  }
+  connector 'ToClinicalUsage Feed' is from outlet SupplyContext.SupplyOrderEventSplit.SupplyOrderEventSplitToToClinicalUsage to inlet SupplyContext.ToClinicalUsage.ToClinicalUsageIn with {
+    briefly "The SupplyOrder events ToClinicalUsage translates, on their way to it"
   }
   connector 'SupplyOrderEvent Stream' is from outlet SupplyContext.SupplyOrder.SupplyOrderEvents2 to inlet SupplyContext.SupplyOrderEventSplit.SupplyOrderEventSplitIn with {
     briefly "SupplyOrder events, fanned out to storage and read models"

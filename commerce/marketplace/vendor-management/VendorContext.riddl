@@ -89,7 +89,7 @@ context VendorContext as router is {
     }
   }
   adaptor ToComplianceService to context ComplianceService as flow is { 
-    outlet ToComplianceServiceOut is command ComplianceService.VerifyTaxId
+    inlet ToComplianceServiceIn is type VendorEvent    outlet ToComplianceServiceOut is command ComplianceService.VerifyTaxId
     handler ToComplianceServiceHandler is {
       on applicationSubmitted: event ApplicationSubmitted is {
         let item0: type ComplianceService.VerifyTaxId = prompt("translate the applicationSubmitted event into a VerifyTaxId checking the tax identity the vendor asserts")
@@ -185,7 +185,7 @@ context VendorContext as router is {
     }
   }
   adaptor NotificationAdapter to context NotificationService as flow is { 
-    outlet NotificationAdapterOut is command NotificationService.SendEmail
+    inlet NotificationAdapterIn is type VendorEvent    outlet NotificationAdapterOut is command NotificationService.SendEmail
     handler VendorNotifications is {
       on vendorApproved: event Vendor.VendorApproved is {
         let notice: type NotificationService.SendEmail = prompt("translate the vendorApproved event into a SendEmail telling the vendor they may begin selling")
@@ -606,19 +606,24 @@ context VendorContext as router is {
       |persistence.
     }
   }
-  streamlet VendorEventSplit as flow is {
+  streamlet VendorEventSplit as split is {
+    outlet VendorEventSplitToToComplianceService is type VendorEvent
+    outlet VendorEventSplitToNotificationAdapter is type VendorEvent
     inlet VendorEventSplitIn is type VendorEvent    outlet VendorEventSplitToVendorAnalytics is type VendorEvent
     handler VendorEventSplitHandler is {
       on applicationSubmitted: event Vendor.ApplicationSubmitted is {
         send applicationSubmitted to outlet VendorEventSplitToVendorAnalytics
+        send applicationSubmitted to outlet VendorEventSplitToToComplianceService
         tell applicationSubmitted to entity VendorContext.Vendor
       }
       on vendorApproved: event Vendor.VendorApproved is {
         send vendorApproved to outlet VendorEventSplitToVendorAnalytics
+        send vendorApproved to outlet VendorEventSplitToNotificationAdapter
         tell vendorApproved to entity VendorContext.Vendor
       }
       on vendorRejected: event Vendor.VendorRejected is {
         send vendorRejected to outlet VendorEventSplitToVendorAnalytics
+        send vendorRejected to outlet VendorEventSplitToNotificationAdapter
         tell vendorRejected to entity VendorContext.Vendor
       }
       on vendorInfoUpdated: event Vendor.VendorInfoUpdated is {
@@ -631,6 +636,7 @@ context VendorContext as router is {
       }
       on vendorSuspended: event Vendor.VendorSuspended is {
         send vendorSuspended to outlet VendorEventSplitToVendorAnalytics
+        send vendorSuspended to outlet VendorEventSplitToNotificationAdapter
         tell vendorSuspended to entity VendorContext.Vendor
       }
       on vendorReinstated: event Vendor.VendorReinstated is {
@@ -639,6 +645,7 @@ context VendorContext as router is {
       }
       on vendorTerminated: event Vendor.VendorTerminated is {
         send vendorTerminated to outlet VendorEventSplitToVendorAnalytics
+        send vendorTerminated to outlet VendorEventSplitToNotificationAdapter
         tell vendorTerminated to entity VendorContext.Vendor
       }
       on performanceUpdated: event Vendor.PerformanceUpdated is {
@@ -659,6 +666,12 @@ context VendorContext as router is {
     described as {
       |Fans Vendor events out to the repository and projectors.
     }
+  }
+  connector 'ToComplianceService Feed' is from outlet VendorContext.VendorEventSplit.VendorEventSplitToToComplianceService to inlet VendorContext.ToComplianceService.ToComplianceServiceIn with {
+    briefly "The Vendor events ToComplianceService translates, on their way to it"
+  }
+  connector 'NotificationAdapter Feed' is from outlet VendorContext.VendorEventSplit.VendorEventSplitToNotificationAdapter to inlet VendorContext.NotificationAdapter.NotificationAdapterIn with {
+    briefly "The Vendor events NotificationAdapter translates, on their way to it"
   }
   connector 'VendorEvent Stream' is from outlet VendorContext.Vendor.VendorEvents2 to inlet VendorContext.VendorEventSplit.VendorEventSplitIn with {
     briefly "Vendor events, fanned out to storage and read models"

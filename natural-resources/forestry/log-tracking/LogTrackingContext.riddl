@@ -67,8 +67,8 @@ context LogTrackingContext as router is {
       |The model's side of the RegulatorySystem conversation.
     }
   }
-  adaptor ToRegulatorySystem to context RegulatorySystem as flow is { 
-    outlet ToRegulatorySystemOut is type RegulatorySystem.RegulatorySystemRequest
+  adaptor ToRegulatorySystem to context RegulatorySystem as merge is { 
+    inlet ToRegulatorySystemIn is type TimberLogEvent    inlet ToRegulatorySystemReplies is result RegulatorySystem.PermitVerification    outlet ToRegulatorySystemOut is type RegulatorySystem.RegulatorySystemRequest
     handler ToRegulatorySystemHandler is {
       on logRegistered: event TimberLog.LogRegistered is {
         let askAnswer: type RegulatorySystem.PermitVerification = ask query RegulatorySystem.VerifyPermit of context RegulatorySystem
@@ -115,8 +115,8 @@ context LogTrackingContext as router is {
       |The model's side of the SawmillSystem conversation.
     }
   }
-  adaptor ToSawmillSystem to context SawmillSystem as flow is { 
-    outlet ToSawmillSystemOut is type SawmillSystem.SawmillSystemRequest
+  adaptor ToSawmillSystem to context SawmillSystem as merge is { 
+    inlet ToSawmillSystemIn is type TimberLogEvent    inlet ToSawmillSystemReplies is result SawmillSystem.MillCapacity    outlet ToSawmillSystemOut is type SawmillSystem.SawmillSystemRequest
     handler ToSawmillSystemHandler is {
       on logScaled: event TimberLog.LogScaled is {
         let askAnswer: type SawmillSystem.MillCapacity = ask query SawmillSystem.GetMillCapacity of context SawmillSystem
@@ -161,8 +161,8 @@ context LogTrackingContext as router is {
       |The model's side of the TransportSystem conversation.
     }
   }
-  adaptor ToTransportSystem to context TransportSystem as flow is { 
-    outlet ToTransportSystemOut is type TransportSystem.TransportSystemRequest
+  adaptor ToTransportSystem to context TransportSystem as merge is { 
+    inlet ToTransportSystemIn is type TimberLogEvent    inlet ToTransportSystemReplies is result TransportSystem.TransportStatus    outlet ToTransportSystemOut is type TransportSystem.TransportSystemRequest
     handler ToTransportSystemHandler is {
       on logInTransit: event TimberLog.LogInTransit is {
         let askAnswer: type TransportSystem.TransportStatus = ask query TransportSystem.GetTransportStatus of context TransportSystem
@@ -524,23 +524,32 @@ context LogTrackingContext as router is {
       |persistence.
     }
   }
-  streamlet TimberLogEventSplit as flow is {
+  streamlet TimberLogEventSplit as split is {
+    outlet TimberLogEventSplitToToTransportSystem is type TimberLogEvent
+    outlet TimberLogEventSplitToToSawmillSystem is type TimberLogEvent
+    outlet TimberLogEventSplitToToRegulatorySystem is type TimberLogEvent
     inlet TimberLogEventSplitIn is type TimberLogEvent    outlet TimberLogEventSplitToLogTrackingMetrics is type TimberLogEvent
     handler TimberLogEventSplitHandler is {
       on logRegistered: event TimberLog.LogRegistered is {
         send logRegistered to outlet TimberLogEventSplitToLogTrackingMetrics
+        send logRegistered to outlet TimberLogEventSplitToToRegulatorySystem
         tell logRegistered to entity LogTrackingContext.TimberLog
       }
       on logScaled: event TimberLog.LogScaled is {
         send logScaled to outlet TimberLogEventSplitToLogTrackingMetrics
+        send logScaled to outlet TimberLogEventSplitToToTransportSystem
+        send logScaled to outlet TimberLogEventSplitToToSawmillSystem
+        send logScaled to outlet TimberLogEventSplitToToRegulatorySystem
         tell logScaled to entity LogTrackingContext.TimberLog
       }
       on logLoaded: event TimberLog.LogLoaded is {
         send logLoaded to outlet TimberLogEventSplitToLogTrackingMetrics
+        send logLoaded to outlet TimberLogEventSplitToToSawmillSystem
         tell logLoaded to entity LogTrackingContext.TimberLog
       }
       on logInTransit: event TimberLog.LogInTransit is {
         send logInTransit to outlet TimberLogEventSplitToLogTrackingMetrics
+        send logInTransit to outlet TimberLogEventSplitToToTransportSystem
         tell logInTransit to entity LogTrackingContext.TimberLog
       }
       on logDelivered: event TimberLog.LogDelivered is {
@@ -573,6 +582,15 @@ context LogTrackingContext as router is {
     described as {
       |Fans TimberLog events out to the repository and projectors.
     }
+  }
+  connector 'ToTransportSystem Feed' is from outlet LogTrackingContext.TimberLogEventSplit.TimberLogEventSplitToToTransportSystem to inlet LogTrackingContext.ToTransportSystem.ToTransportSystemIn with {
+    briefly "The TimberLog events ToTransportSystem translates, on their way to it"
+  }
+  connector 'ToSawmillSystem Feed' is from outlet LogTrackingContext.TimberLogEventSplit.TimberLogEventSplitToToSawmillSystem to inlet LogTrackingContext.ToSawmillSystem.ToSawmillSystemIn with {
+    briefly "The TimberLog events ToSawmillSystem translates, on their way to it"
+  }
+  connector 'ToRegulatorySystem Feed' is from outlet LogTrackingContext.TimberLogEventSplit.TimberLogEventSplitToToRegulatorySystem to inlet LogTrackingContext.ToRegulatorySystem.ToRegulatorySystemIn with {
+    briefly "The TimberLog events ToRegulatorySystem translates, on their way to it"
   }
   connector 'TimberLogEvent Stream' is from outlet LogTrackingContext.TimberLog.TimberLogEvents2 to inlet LogTrackingContext.TimberLogEventSplit.TimberLogEventSplitIn with {
     briefly "TimberLog events, fanned out to storage and read models"

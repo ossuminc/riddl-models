@@ -77,7 +77,7 @@ context CarePlanContext as router is {
     }
   }
   adaptor ToHIEService to context HIEService as flow is { 
-    outlet ToHIEServiceOut is command HIEService.ShareCarePlan
+    inlet ToHIEServiceIn is type CarePlanEvent    outlet ToHIEServiceOut is command HIEService.ShareCarePlan
     handler ToHIEServiceHandler is {
       on carePlanActivated: event CarePlan.CarePlanActivated is {
         let item0: type HIEService.ShareCarePlan = prompt("translate the carePlanActivated event into a ShareCarePlan, activation being when other providers need to see it")
@@ -99,7 +99,7 @@ context CarePlanContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendCareTeamNotification
+    inlet ToNotificationServiceIn is type CarePlanEvent    outlet ToNotificationServiceOut is command NotificationService.SendCareTeamNotification
     handler ToNotificationServiceHandler is {
       on referralStatusUpdated: event ReferralStatusUpdated is {
         let notice: type NotificationService.SendCareTeamNotification = prompt("translate the referralStatusUpdated event into a SendCareTeamNotification telling the care team where the referral now stands, since the next step waits on it")
@@ -136,8 +136,8 @@ context CarePlanContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor ToPatientService to context PatientService as flow is { 
-    outlet ToPatientServiceOut is query PatientService.GetPatientConditions
+  adaptor ToPatientService to context PatientService as merge is { 
+    inlet ToPatientServiceIn is type CarePlanEvent    inlet ToPatientServiceReplies is result PatientService.PatientConditions    outlet ToPatientServiceOut is query PatientService.GetPatientConditions
     handler ToPatientServiceHandler is {
       on carePlanCreated: event CarePlan.CarePlanCreated is {
         let askAnswer: type PatientService.PatientConditions = ask query PatientService.GetPatientConditions of context PatientService
@@ -158,8 +158,8 @@ context CarePlanContext as router is {
       |The model's side of the PatientService conversation.
     }
   }
-  adaptor ToProviderDirectoryService to context ProviderDirectoryService as flow is { 
-    outlet ToProviderDirectoryServiceOut is query ProviderDirectoryService.FindSpecialist
+  adaptor ToProviderDirectoryService to context ProviderDirectoryService as merge is { 
+    inlet ToProviderDirectoryServiceIn is type CarePlanEvent    inlet ToProviderDirectoryServiceReplies is result ProviderDirectoryService.SpecialistList    outlet ToProviderDirectoryServiceOut is query ProviderDirectoryService.FindSpecialist
     handler ToProviderDirectoryServiceHandler is {
       on referralCreated: event CarePlan.ReferralCreated is {
         let askAnswer: type ProviderDirectoryService.SpecialistList = ask query ProviderDirectoryService.FindSpecialist of context ProviderDirectoryService
@@ -206,7 +206,7 @@ context CarePlanContext as router is {
     }
   }
   adaptor ToReferralManagementService to context ReferralManagementService as flow is { 
-    outlet ToReferralManagementServiceOut is command ReferralManagementService.SendReferral
+    inlet ToReferralManagementServiceIn is type CarePlanEvent    outlet ToReferralManagementServiceOut is command ReferralManagementService.SendReferral
     handler ToReferralManagementServiceHandler is {
       on referralCreated: event CarePlan.ReferralCreated is {
         let item0: type ReferralManagementService.SendReferral = prompt("translate the referralCreated event into a SendReferral, the referral being the thing itself")
@@ -615,15 +615,22 @@ context CarePlanContext as router is {
       |Union of all care plan entity events for streaming.
     }
   }
-  streamlet CarePlanEventSplit as flow is {
+  streamlet CarePlanEventSplit as split is {
+    outlet CarePlanEventSplitToToReferralManagementService is type CarePlanEvent
+    outlet CarePlanEventSplitToToProviderDirectoryService is type CarePlanEvent
+    outlet CarePlanEventSplitToToPatientService is type CarePlanEvent
+    outlet CarePlanEventSplitToToNotificationService is type CarePlanEvent
+    outlet CarePlanEventSplitToToHIEService is type CarePlanEvent
     inlet CarePlanEventSplitIn is type CarePlanEvent    outlet CarePlanEventSplitToCareCoordinationAnalytics is type CarePlanEvent
     handler CarePlanEventSplitHandler is {
       on carePlanCreated: event CarePlan.CarePlanCreated is {
         send carePlanCreated to outlet CarePlanEventSplitToCareCoordinationAnalytics
+        send carePlanCreated to outlet CarePlanEventSplitToToPatientService
         tell carePlanCreated to entity CarePlanContext.CarePlan
       }
       on careTeamMemberAdded: event CarePlan.CareTeamMemberAdded is {
         send careTeamMemberAdded to outlet CarePlanEventSplitToCareCoordinationAnalytics
+        send careTeamMemberAdded to outlet CarePlanEventSplitToToNotificationService
         tell careTeamMemberAdded to entity CarePlanContext.CarePlan
       }
       on careTeamMemberRemoved: event CarePlan.CareTeamMemberRemoved is {
@@ -636,6 +643,7 @@ context CarePlanContext as router is {
       }
       on goalStatusUpdated: event CarePlan.GoalStatusUpdated is {
         send goalStatusUpdated to outlet CarePlanEventSplitToCareCoordinationAnalytics
+        send goalStatusUpdated to outlet CarePlanEventSplitToToNotificationService
         tell goalStatusUpdated to entity CarePlanContext.CarePlan
       }
       on taskAdded: event CarePlan.TaskAdded is {
@@ -644,18 +652,24 @@ context CarePlanContext as router is {
       }
       on taskCompleted: event CarePlan.TaskCompleted is {
         send taskCompleted to outlet CarePlanEventSplitToCareCoordinationAnalytics
+        send taskCompleted to outlet CarePlanEventSplitToToNotificationService
         tell taskCompleted to entity CarePlanContext.CarePlan
       }
       on referralCreated: event CarePlan.ReferralCreated is {
         send referralCreated to outlet CarePlanEventSplitToCareCoordinationAnalytics
+        send referralCreated to outlet CarePlanEventSplitToToReferralManagementService
+        send referralCreated to outlet CarePlanEventSplitToToProviderDirectoryService
         tell referralCreated to entity CarePlanContext.CarePlan
       }
       on referralStatusUpdated: event CarePlan.ReferralStatusUpdated is {
         send referralStatusUpdated to outlet CarePlanEventSplitToCareCoordinationAnalytics
+        send referralStatusUpdated to outlet CarePlanEventSplitToToNotificationService
         tell referralStatusUpdated to entity CarePlanContext.CarePlan
       }
       on carePlanActivated: event CarePlan.CarePlanActivated is {
         send carePlanActivated to outlet CarePlanEventSplitToCareCoordinationAnalytics
+        send carePlanActivated to outlet CarePlanEventSplitToToNotificationService
+        send carePlanActivated to outlet CarePlanEventSplitToToHIEService
         tell carePlanActivated to entity CarePlanContext.CarePlan
       }
       on carePlanCompleted: event CarePlan.CarePlanCompleted is {
@@ -676,6 +690,21 @@ context CarePlanContext as router is {
     described as {
       |Fans CarePlan events out to the repository and projectors.
     }
+  }
+  connector 'ToReferralManagementService Feed' is from outlet CarePlanContext.CarePlanEventSplit.CarePlanEventSplitToToReferralManagementService to inlet CarePlanContext.ToReferralManagementService.ToReferralManagementServiceIn with {
+    briefly "The CarePlan events ToReferralManagementService translates, on their way to it"
+  }
+  connector 'ToProviderDirectoryService Feed' is from outlet CarePlanContext.CarePlanEventSplit.CarePlanEventSplitToToProviderDirectoryService to inlet CarePlanContext.ToProviderDirectoryService.ToProviderDirectoryServiceIn with {
+    briefly "The CarePlan events ToProviderDirectoryService translates, on their way to it"
+  }
+  connector 'ToPatientService Feed' is from outlet CarePlanContext.CarePlanEventSplit.CarePlanEventSplitToToPatientService to inlet CarePlanContext.ToPatientService.ToPatientServiceIn with {
+    briefly "The CarePlan events ToPatientService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet CarePlanContext.CarePlanEventSplit.CarePlanEventSplitToToNotificationService to inlet CarePlanContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The CarePlan events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToHIEService Feed' is from outlet CarePlanContext.CarePlanEventSplit.CarePlanEventSplitToToHIEService to inlet CarePlanContext.ToHIEService.ToHIEServiceIn with {
+    briefly "The CarePlan events ToHIEService translates, on their way to it"
   }
   connector 'CarePlanEvent Stream' is from outlet CarePlanContext.CarePlan.CarePlanEvents2 to inlet CarePlanContext.CarePlanEventSplit.CarePlanEventSplitIn with {
     briefly "CarePlan events, fanned out to storage and read models"

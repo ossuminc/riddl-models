@@ -642,7 +642,7 @@ context IncidentContext as router is {
   }
   // Adaptor for alerting service integration
   adaptor ToSlackIntegration to context SlackIntegration as flow is { 
-    outlet ToSlackIntegrationOut is type SlackIntegration.SlackIntegrationCommand
+    inlet ToSlackIntegrationIn is type IncidentEvent    outlet ToSlackIntegrationOut is type SlackIntegration.SlackIntegrationCommand
     handler ToSlackIntegrationHandler is {
       on incidentCreated: event Incident.IncidentCreated is {
         let item0: type SlackIntegration.CreateIncidentChannel = prompt("translate the incidentCreated event into a CreateIncidentChannel, responders needing somewhere to talk before they can respond")
@@ -673,8 +673,8 @@ context IncidentContext as router is {
       |The model's side of the SlackIntegration conversation.
     }
   }
-  adaptor ToPagerDutyIntegration to context PagerDutyIntegration as flow is { 
-    outlet ToPagerDutyIntegrationOut is type PagerDutyIntegration.PagerDutyIntegrationCommand
+  adaptor ToPagerDutyIntegration to context PagerDutyIntegration as merge is { 
+    inlet ToPagerDutyIntegrationIn is type IncidentEvent    inlet ToPagerDutyIntegrationReplies is result PagerDutyIntegration.OnCallResult    outlet ToPagerDutyIntegrationOut is type PagerDutyIntegration.PagerDutyIntegrationCommand
     handler ToPagerDutyIntegrationHandler is {
       on incidentCreated: event Incident.IncidentCreated is {
         let onCall: type PagerDutyIntegration.OnCallResult = ask query PagerDutyIntegration.GetCurrentOnCall of context PagerDutyIntegration
@@ -770,12 +770,16 @@ context IncidentContext as router is {
     }
   }
   streamlet IncidentEventSplit as split is {
+    outlet IncidentEventSplitToToSlackIntegration is type IncidentEvent
+    outlet IncidentEventSplitToToPagerDutyIntegration is type IncidentEvent
     inlet IncidentEventSplitIn is type IncidentEvent    outlet IncidentEventSplitToIncidentMetricsProjector is type IncidentEvent
     outlet IncidentEventSplitToIncidentTrendsProjector is type IncidentEvent
     handler IncidentEventSplitHandler is {
       on incidentCreated: event Incident.IncidentCreated is {
         send incidentCreated to outlet IncidentEventSplitToIncidentMetricsProjector
         send incidentCreated to outlet IncidentEventSplitToIncidentTrendsProjector
+        send incidentCreated to outlet IncidentEventSplitToToSlackIntegration
+        send incidentCreated to outlet IncidentEventSplitToToPagerDutyIntegration
         tell incidentCreated to entity IncidentContext.Incident
       }
       on incidentAcknowledged: event Incident.IncidentAcknowledged is {
@@ -786,11 +790,13 @@ context IncidentContext as router is {
       on incidentEscalated: event Incident.IncidentEscalated is {
         send incidentEscalated to outlet IncidentEventSplitToIncidentMetricsProjector
         send incidentEscalated to outlet IncidentEventSplitToIncidentTrendsProjector
+        send incidentEscalated to outlet IncidentEventSplitToToPagerDutyIntegration
         tell incidentEscalated to entity IncidentContext.Incident
       }
       on incidentStatusUpdated: event Incident.IncidentStatusUpdated is {
         send incidentStatusUpdated to outlet IncidentEventSplitToIncidentMetricsProjector
         send incidentStatusUpdated to outlet IncidentEventSplitToIncidentTrendsProjector
+        send incidentStatusUpdated to outlet IncidentEventSplitToToSlackIntegration
         tell incidentStatusUpdated to entity IncidentContext.Incident
       }
       on incidentCommanderAssigned: event Incident.IncidentCommanderAssigned is {
@@ -816,6 +822,7 @@ context IncidentContext as router is {
       on incidentClosed: event Incident.IncidentClosed is {
         send incidentClosed to outlet IncidentEventSplitToIncidentMetricsProjector
         send incidentClosed to outlet IncidentEventSplitToIncidentTrendsProjector
+        send incidentClosed to outlet IncidentEventSplitToToSlackIntegration
         tell incidentClosed to entity IncidentContext.Incident
       }
       on other is {
@@ -832,6 +839,12 @@ context IncidentContext as router is {
     described as {
       |Fans Incident events out to the repository and projectors.
     }
+  }
+  connector 'ToSlackIntegration Feed' is from outlet IncidentContext.IncidentEventSplit.IncidentEventSplitToToSlackIntegration to inlet IncidentContext.ToSlackIntegration.ToSlackIntegrationIn with {
+    briefly "The Incident events ToSlackIntegration translates, on their way to it"
+  }
+  connector 'ToPagerDutyIntegration Feed' is from outlet IncidentContext.IncidentEventSplit.IncidentEventSplitToToPagerDutyIntegration to inlet IncidentContext.ToPagerDutyIntegration.ToPagerDutyIntegrationIn with {
+    briefly "The Incident events ToPagerDutyIntegration translates, on their way to it"
   }
   connector 'IncidentEvent Stream' is from outlet IncidentContext.Incident.IncidentEvents2 to inlet IncidentContext.IncidentEventSplit.IncidentEventSplitIn with {
     briefly "Incident events, fanned out to storage and read models"

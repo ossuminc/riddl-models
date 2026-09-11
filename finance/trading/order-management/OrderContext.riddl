@@ -62,8 +62,8 @@ context OrderContext as router is {
   connector 'TradingAnalytics Storage' is from outlet OrderContext.TradingAnalytics.TradingAnalyticsToRepository to inlet OrderContext.OrderRepository.OrderRepositoryFromTradingAnalytics with {
     briefly "TradingAnalytics projections on their way to OrderRepository"
   }
-  connector 'TradingOrderCommand Stream Intake' is from outlet OrderContext.TradingOrderCommandStreamOut to inlet OrderContext.TradingOrder.TradingOrderCommands  connector 'MarketplaceOrderResult Stream Egress' is from outlet OrderContext.OrderRepository.OrderRepositoryResponses to inlet OrderContext.MarketplaceOrderResultStreamIn  adaptor ToAccountService to context AccountService as flow is { 
-    outlet ToAccountServiceOut is query AccountService.GetAccountInfo
+  connector 'TradingOrderCommand Stream Intake' is from outlet OrderContext.TradingOrderCommandStreamOut to inlet OrderContext.TradingOrder.TradingOrderCommands  connector 'MarketplaceOrderResult Stream Egress' is from outlet OrderContext.OrderRepository.OrderRepositoryResponses to inlet OrderContext.MarketplaceOrderResultStreamIn  adaptor ToAccountService to context AccountService as merge is { 
+    inlet ToAccountServiceIn is type TradingOrderEvent    inlet ToAccountServiceReplies is result AccountService.AccountInfo    outlet ToAccountServiceOut is query AccountService.GetAccountInfo
     handler ToAccountServiceHandler is {
       on orderPlaced: event TradingOrder.OrderPlaced is {
         let askAnswer: type AccountService.AccountInfo = ask query AccountService.GetAccountInfo of context AccountService
@@ -107,7 +107,7 @@ context OrderContext as router is {
     }
   }
   adaptor ToComplianceService to context ComplianceService as flow is { 
-    outlet ToComplianceServiceOut is command ComplianceService.CheckCompliance
+    inlet ToComplianceServiceIn is type TradingOrderEvent    outlet ToComplianceServiceOut is command ComplianceService.CheckCompliance
     handler ToComplianceServiceHandler is {
       on orderPlaced: event OrderPlaced is {
         let item0: type ComplianceService.CheckCompliance = prompt("translate the orderPlaced event into a CheckCompliance, an order having to clear the rules before it works")
@@ -154,7 +154,7 @@ context OrderContext as router is {
     }
   }
   adaptor ToExecutionVenueService to context ExecutionVenueService as flow is { 
-    outlet ToExecutionVenueServiceOut is command ExecutionVenueService.RouteOrder
+    inlet ToExecutionVenueServiceIn is type TradingOrderEvent    outlet ToExecutionVenueServiceOut is command ExecutionVenueService.RouteOrder
     handler ToExecutionVenueServiceHandler is {
       on orderPlaced: event TradingOrder.OrderPlaced is {
         let item0: type ExecutionVenueService.RouteOrder = prompt("translate the orderPlaced event into a RouteOrder, a placed order needing a venue to reach")
@@ -196,7 +196,7 @@ context OrderContext as router is {
     }
   }
   adaptor ToMarketDataService to context MarketDataService as flow is { 
-    outlet ToMarketDataServiceOut is command MarketDataService.GetQuote
+    inlet ToMarketDataServiceIn is type TradingOrderEvent    outlet ToMarketDataServiceOut is command MarketDataService.GetQuote
     handler ToMarketDataServiceHandler is {
       on orderPlaced: event TradingOrder.OrderPlaced is {
         let item0: type MarketDataService.GetQuote = prompt("translate the orderPlaced event into a GetQuote, an order being unroutable without a current market")
@@ -218,7 +218,7 @@ context OrderContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendOrderNotification
+    inlet ToNotificationServiceIn is type TradingOrderEvent    outlet ToNotificationServiceOut is command NotificationService.SendOrderNotification
     handler ToNotificationServiceHandler is {
       on orderFilled: event OrderFilled is {
         let notice: type NotificationService.SendOrderNotification = prompt("translate the orderFilled event into a SendOrderNotification telling the trader the order is fully filled and at what average price")
@@ -276,7 +276,7 @@ context OrderContext as router is {
     }
   }
   adaptor ToRiskManagementService to context RiskManagementService as flow is { 
-    outlet ToRiskManagementServiceOut is command RiskManagementService.CheckOrderRisk
+    inlet ToRiskManagementServiceIn is type TradingOrderEvent    outlet ToRiskManagementServiceOut is command RiskManagementService.CheckOrderRisk
     handler ToRiskManagementServiceHandler is {
       on orderPlaced: event OrderPlaced is {
         let item0: type RiskManagementService.CheckOrderRisk = prompt("translate the orderPlaced event into a CheckOrderRisk measuring what the order would expose the book to")
@@ -660,11 +660,22 @@ context OrderContext as router is {
       |Maintains trading order analytics data.
     }
   }
-  streamlet TradingOrderEventSplit as flow is {
+  streamlet TradingOrderEventSplit as split is {
+    outlet TradingOrderEventSplitToToRiskManagementService is type TradingOrderEvent
+    outlet TradingOrderEventSplitToToNotificationService is type TradingOrderEvent
+    outlet TradingOrderEventSplitToToMarketDataService is type TradingOrderEvent
+    outlet TradingOrderEventSplitToToExecutionVenueService is type TradingOrderEvent
+    outlet TradingOrderEventSplitToToComplianceService is type TradingOrderEvent
+    outlet TradingOrderEventSplitToToAccountService is type TradingOrderEvent
     inlet TradingOrderEventSplitIn is type TradingOrderEvent    outlet TradingOrderEventSplitToTradingAnalytics is type TradingOrderEvent
     handler TradingOrderEventSplitHandler is {
       on orderPlaced: event TradingOrder.OrderPlaced is {
         send orderPlaced to outlet TradingOrderEventSplitToTradingAnalytics
+        send orderPlaced to outlet TradingOrderEventSplitToToRiskManagementService
+        send orderPlaced to outlet TradingOrderEventSplitToToMarketDataService
+        send orderPlaced to outlet TradingOrderEventSplitToToExecutionVenueService
+        send orderPlaced to outlet TradingOrderEventSplitToToComplianceService
+        send orderPlaced to outlet TradingOrderEventSplitToToAccountService
         tell orderPlaced to entity OrderContext.TradingOrder
       }
       on orderAcknowledged: event TradingOrder.OrderAcknowledged is {
@@ -677,6 +688,7 @@ context OrderContext as router is {
       }
       on orderFilled: event TradingOrder.OrderFilled is {
         send orderFilled to outlet TradingOrderEventSplitToTradingAnalytics
+        send orderFilled to outlet TradingOrderEventSplitToToNotificationService
         tell orderFilled to entity OrderContext.TradingOrder
       }
       on orderAmended: event TradingOrder.OrderAmended is {
@@ -685,18 +697,22 @@ context OrderContext as router is {
       }
       on orderCanceled: event TradingOrder.OrderCanceled is {
         send orderCanceled to outlet TradingOrderEventSplitToTradingAnalytics
+        send orderCanceled to outlet TradingOrderEventSplitToToNotificationService
         tell orderCanceled to entity OrderContext.TradingOrder
       }
       on orderRejected: event TradingOrder.OrderRejected is {
         send orderRejected to outlet TradingOrderEventSplitToTradingAnalytics
+        send orderRejected to outlet TradingOrderEventSplitToToNotificationService
         tell orderRejected to entity OrderContext.TradingOrder
       }
       on orderExpired: event TradingOrder.OrderExpired is {
         send orderExpired to outlet TradingOrderEventSplitToTradingAnalytics
+        send orderExpired to outlet TradingOrderEventSplitToToNotificationService
         tell orderExpired to entity OrderContext.TradingOrder
       }
       on orderSuspended: event TradingOrder.OrderSuspended is {
         send orderSuspended to outlet TradingOrderEventSplitToTradingAnalytics
+        send orderSuspended to outlet TradingOrderEventSplitToToNotificationService
         tell orderSuspended to entity OrderContext.TradingOrder
       }
       on orderResumed: event TradingOrder.OrderResumed is {
@@ -717,6 +733,24 @@ context OrderContext as router is {
     described as {
       |Fans TradingOrder events out to the repository and projectors.
     }
+  }
+  connector 'ToRiskManagementService Feed' is from outlet OrderContext.TradingOrderEventSplit.TradingOrderEventSplitToToRiskManagementService to inlet OrderContext.ToRiskManagementService.ToRiskManagementServiceIn with {
+    briefly "The TradingOrder events ToRiskManagementService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet OrderContext.TradingOrderEventSplit.TradingOrderEventSplitToToNotificationService to inlet OrderContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The TradingOrder events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToMarketDataService Feed' is from outlet OrderContext.TradingOrderEventSplit.TradingOrderEventSplitToToMarketDataService to inlet OrderContext.ToMarketDataService.ToMarketDataServiceIn with {
+    briefly "The TradingOrder events ToMarketDataService translates, on their way to it"
+  }
+  connector 'ToExecutionVenueService Feed' is from outlet OrderContext.TradingOrderEventSplit.TradingOrderEventSplitToToExecutionVenueService to inlet OrderContext.ToExecutionVenueService.ToExecutionVenueServiceIn with {
+    briefly "The TradingOrder events ToExecutionVenueService translates, on their way to it"
+  }
+  connector 'ToComplianceService Feed' is from outlet OrderContext.TradingOrderEventSplit.TradingOrderEventSplitToToComplianceService to inlet OrderContext.ToComplianceService.ToComplianceServiceIn with {
+    briefly "The TradingOrder events ToComplianceService translates, on their way to it"
+  }
+  connector 'ToAccountService Feed' is from outlet OrderContext.TradingOrderEventSplit.TradingOrderEventSplitToToAccountService to inlet OrderContext.ToAccountService.ToAccountServiceIn with {
+    briefly "The TradingOrder events ToAccountService translates, on their way to it"
   }
   connector 'TradingOrderEvent Stream' is from outlet OrderContext.TradingOrder.TradingOrderEvents to inlet OrderContext.TradingOrderEventSplit.TradingOrderEventSplitIn with {
     briefly "TradingOrder events, fanned out to storage and read models"

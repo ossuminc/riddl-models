@@ -71,7 +71,7 @@ context TenantContext as router is {
     }
   }
   adaptor ToBillingIntegrationService to context BillingIntegrationService as flow is { 
-    outlet ToBillingIntegrationServiceOut is type BillingIntegrationService.BillingIntegrationServiceCommand
+    inlet ToBillingIntegrationServiceIn is type TenantEvent    outlet ToBillingIntegrationServiceOut is type BillingIntegrationService.BillingIntegrationServiceCommand
     handler ToBillingIntegrationServiceHandler is {
       on tenantCreated: event Tenant.TenantCreated is {
         let account: type BillingIntegrationService.CreateBillingAccount = prompt("translate the tenantCreated event into a CreateBillingAccount for the tenant just brought into being")
@@ -120,7 +120,7 @@ context TenantContext as router is {
     }
   }
   adaptor ToDNSManagementService to context DNSManagementService as flow is { 
-    outlet ToDNSManagementServiceOut is command DNSManagementService.ConfigureCustomDomain
+    inlet ToDNSManagementServiceIn is type TenantEvent    outlet ToDNSManagementServiceOut is command DNSManagementService.ConfigureCustomDomain
     handler ToDNSManagementServiceHandler is {
       on tenantConfigured: event Tenant.TenantConfigured is {
         let item0: type DNSManagementService.ConfigureCustomDomain = prompt("translate the tenantConfigured event into a ConfigureCustomDomain, configuration being where the tenant's domain is settled")
@@ -165,7 +165,7 @@ context TenantContext as router is {
     }
   }
   adaptor ToIdentityProviderService to context IdentityProviderService as flow is { 
-    outlet ToIdentityProviderServiceOut is type IdentityProviderService.IdentityProviderServiceCommand
+    inlet ToIdentityProviderServiceIn is type TenantEvent    outlet ToIdentityProviderServiceOut is type IdentityProviderService.IdentityProviderServiceCommand
     handler ToIdentityProviderServiceHandler is {
       on tenantCreated: event TenantCreated is {
         let check0: type IdentityProviderService.ConfigureSSO = prompt("translate the tenantCreated event into a ConfigureSSO wiring the tenant's own sign-on from the outset")
@@ -214,7 +214,7 @@ context TenantContext as router is {
     }
   }
   adaptor ToInfrastructureOrchestrator to context InfrastructureOrchestrator as flow is { 
-    outlet ToInfrastructureOrchestratorOut is command InfrastructureOrchestrator.ProvisionInfrastructure
+    inlet ToInfrastructureOrchestratorIn is type TenantEvent    outlet ToInfrastructureOrchestratorOut is command InfrastructureOrchestrator.ProvisionInfrastructure
     handler ToInfrastructureOrchestratorHandler is {
       on tenantCreated: event Tenant.TenantCreated is {
         let item0: type InfrastructureOrchestrator.ProvisionInfrastructure = prompt("translate the tenantCreated event into a ProvisionInfrastructure, a new tenant needing somewhere to run")
@@ -255,8 +255,8 @@ context TenantContext as router is {
       |The model's side of the MonitoringService conversation.
     }
   }
-  adaptor ToMonitoringService to context MonitoringService as flow is { 
-    outlet ToMonitoringServiceOut is type MonitoringService.MonitoringServiceRequest
+  adaptor ToMonitoringService to context MonitoringService as merge is { 
+    inlet ToMonitoringServiceIn is type TenantEvent    inlet ToMonitoringServiceReplies is result MonitoringService.TenantMetrics    outlet ToMonitoringServiceOut is type MonitoringService.MonitoringServiceRequest
     handler ToMonitoringServiceHandler is {
       on resourceScaled: event Tenant.ResourceScaled is {
         let askAnswer: type MonitoringService.TenantMetrics = ask query MonitoringService.GetTenantMetrics of context MonitoringService
@@ -603,27 +603,39 @@ context TenantContext as router is {
       |Union of all Tenant events for streaming.
     }
   }
-  streamlet TenantEventSplit as flow is {
+  streamlet TenantEventSplit as split is {
+    outlet TenantEventSplitToToMonitoringService is type TenantEvent
+    outlet TenantEventSplitToToInfrastructureOrchestrator is type TenantEvent
+    outlet TenantEventSplitToToIdentityProviderService is type TenantEvent
+    outlet TenantEventSplitToToDNSManagementService is type TenantEvent
+    outlet TenantEventSplitToToBillingIntegrationService is type TenantEvent
     inlet TenantEventSplitIn is type TenantEvent    outlet TenantEventSplitToTenantAnalytics is type TenantEvent
     handler TenantEventSplitHandler is {
       on tenantCreated: event Tenant.TenantCreated is {
         send tenantCreated to outlet TenantEventSplitToTenantAnalytics
+        send tenantCreated to outlet TenantEventSplitToToInfrastructureOrchestrator
+        send tenantCreated to outlet TenantEventSplitToToIdentityProviderService
+        send tenantCreated to outlet TenantEventSplitToToBillingIntegrationService
         tell tenantCreated to entity TenantContext.Tenant
       }
       on tenantConfigured: event Tenant.TenantConfigured is {
         send tenantConfigured to outlet TenantEventSplitToTenantAnalytics
+        send tenantConfigured to outlet TenantEventSplitToToDNSManagementService
         tell tenantConfigured to entity TenantContext.Tenant
       }
       on resourceProvisioned: event Tenant.ResourceProvisioned is {
         send resourceProvisioned to outlet TenantEventSplitToTenantAnalytics
+        send resourceProvisioned to outlet TenantEventSplitToToMonitoringService
         tell resourceProvisioned to entity TenantContext.Tenant
       }
       on resourceScaled: event Tenant.ResourceScaled is {
         send resourceScaled to outlet TenantEventSplitToTenantAnalytics
+        send resourceScaled to outlet TenantEventSplitToToMonitoringService
         tell resourceScaled to entity TenantContext.Tenant
       }
       on tierUpgraded: event Tenant.TierUpgraded is {
         send tierUpgraded to outlet TenantEventSplitToTenantAnalytics
+        send tierUpgraded to outlet TenantEventSplitToToBillingIntegrationService
         tell tierUpgraded to entity TenantContext.Tenant
       }
       on tenantSuspended: event Tenant.TenantSuspended is {
@@ -652,6 +664,21 @@ context TenantContext as router is {
     described as {
       |Fans Tenant events out to the repository and projectors.
     }
+  }
+  connector 'ToMonitoringService Feed' is from outlet TenantContext.TenantEventSplit.TenantEventSplitToToMonitoringService to inlet TenantContext.ToMonitoringService.ToMonitoringServiceIn with {
+    briefly "The Tenant events ToMonitoringService translates, on their way to it"
+  }
+  connector 'ToInfrastructureOrchestrator Feed' is from outlet TenantContext.TenantEventSplit.TenantEventSplitToToInfrastructureOrchestrator to inlet TenantContext.ToInfrastructureOrchestrator.ToInfrastructureOrchestratorIn with {
+    briefly "The Tenant events ToInfrastructureOrchestrator translates, on their way to it"
+  }
+  connector 'ToIdentityProviderService Feed' is from outlet TenantContext.TenantEventSplit.TenantEventSplitToToIdentityProviderService to inlet TenantContext.ToIdentityProviderService.ToIdentityProviderServiceIn with {
+    briefly "The Tenant events ToIdentityProviderService translates, on their way to it"
+  }
+  connector 'ToDNSManagementService Feed' is from outlet TenantContext.TenantEventSplit.TenantEventSplitToToDNSManagementService to inlet TenantContext.ToDNSManagementService.ToDNSManagementServiceIn with {
+    briefly "The Tenant events ToDNSManagementService translates, on their way to it"
+  }
+  connector 'ToBillingIntegrationService Feed' is from outlet TenantContext.TenantEventSplit.TenantEventSplitToToBillingIntegrationService to inlet TenantContext.ToBillingIntegrationService.ToBillingIntegrationServiceIn with {
+    briefly "The Tenant events ToBillingIntegrationService translates, on their way to it"
   }
   connector 'TenantEvent Stream' is from outlet TenantContext.Tenant.TenantEvents to inlet TenantContext.TenantEventSplit.TenantEventSplitIn with {
     briefly "Tenant events, fanned out to storage and read models"

@@ -70,7 +70,7 @@ context TicketContext as router is {
   include "Ticket.riddl"
   // Adaptors for external system integration
   adaptor ToVenueManagement to context VenueManagement as flow is { 
-    outlet ToVenueManagementOut is type VenueManagement.VenueManagementCommand
+    inlet ToVenueManagementIn is type TicketEvent    outlet ToVenueManagementOut is type VenueManagement.VenueManagementCommand
     handler ToVenueManagementHandler is {
       on eventCreated: event Ticket.EventCreated is {
         let item0: type VenueManagement.ReserveVenue = prompt("translate the eventCreated event into a ReserveVenue, the event being what creates the need for a hall")
@@ -166,7 +166,7 @@ context TicketContext as router is {
     }
   }
   adaptor ToPaymentGateway to context PaymentGateway as flow is { 
-    outlet ToPaymentGatewayOut is type PaymentGateway.PaymentGatewayCommand
+    inlet ToPaymentGatewayIn is type TicketEvent    outlet ToPaymentGatewayOut is type PaymentGateway.PaymentGatewayCommand
     handler ToPaymentGatewayHandler is {
       on ticketPurchased: event TicketPurchased is {
         let notice: type PaymentGateway.ProcessPayment = prompt("translate the ticketPurchased event into a ProcessPayment taking the buyer's payment for the ticket they have just committed to")
@@ -192,7 +192,7 @@ context TicketContext as router is {
     }
   }
   adaptor MarketingAdapter to context MarketingService as flow is { 
-    outlet MarketingAdapterOut is type MarketingService.MarketingCommand
+    inlet MarketingAdapterIn is type TicketEvent    outlet MarketingAdapterOut is type MarketingService.MarketingCommand
     handler OutboundMarketing is {
       on eventCreated: event Ticket.EventCreated is {
         let announcement: type MarketingService.AnnounceEvent = prompt("translate the eventCreated event into an AnnounceEvent putting the new show in front of the audience")
@@ -713,19 +713,27 @@ context TicketContext as router is {
       | sales velocity, revenue, and inventory levels in real-time.
     }
   }
-  streamlet TicketEventSplit as flow is {
+  streamlet TicketEventSplit as split is {
+    outlet TicketEventSplitToToVenueManagement is type TicketEvent
+    outlet TicketEventSplitToToPaymentGateway is type TicketEvent
+    outlet TicketEventSplitToMarketingAdapter is type TicketEvent
     inlet TicketEventSplitIn is type TicketEvent    outlet TicketEventSplitToSalesMetrics is type TicketEvent
     handler TicketEventSplitHandler is {
       on eventCreated: event Ticket.EventCreated is {
         send eventCreated to outlet TicketEventSplitToSalesMetrics
+        send eventCreated to outlet TicketEventSplitToToVenueManagement
+        send eventCreated to outlet TicketEventSplitToMarketingAdapter
         tell eventCreated to entity TicketContext.Ticket
       }
       on ticketsReleased: event Ticket.TicketsReleased is {
         send ticketsReleased to outlet TicketEventSplitToSalesMetrics
+        send ticketsReleased to outlet TicketEventSplitToMarketingAdapter
         tell ticketsReleased to entity TicketContext.Ticket
       }
       on ticketPurchased: event Ticket.TicketPurchased is {
         send ticketPurchased to outlet TicketEventSplitToSalesMetrics
+        send ticketPurchased to outlet TicketEventSplitToToPaymentGateway
+        send ticketPurchased to outlet TicketEventSplitToMarketingAdapter
         tell ticketPurchased to entity TicketContext.Ticket
       }
       on ticketReserved: event Ticket.TicketReserved is {
@@ -734,10 +742,12 @@ context TicketContext as router is {
       }
       on ticketTransferred: event Ticket.TicketTransferred is {
         send ticketTransferred to outlet TicketEventSplitToSalesMetrics
+        send ticketTransferred to outlet TicketEventSplitToMarketingAdapter
         tell ticketTransferred to entity TicketContext.Ticket
       }
       on ticketRefunded: event Ticket.TicketRefunded is {
         send ticketRefunded to outlet TicketEventSplitToSalesMetrics
+        send ticketRefunded to outlet TicketEventSplitToToPaymentGateway
         tell ticketRefunded to entity TicketContext.Ticket
       }
       on reservationCancelled: event Ticket.ReservationCancelled is {
@@ -762,6 +772,15 @@ context TicketContext as router is {
     described as {
       |Fans Ticket events out to the repository and projectors.
     }
+  }
+  connector 'ToVenueManagement Feed' is from outlet TicketContext.TicketEventSplit.TicketEventSplitToToVenueManagement to inlet TicketContext.ToVenueManagement.ToVenueManagementIn with {
+    briefly "The Ticket events ToVenueManagement translates, on their way to it"
+  }
+  connector 'ToPaymentGateway Feed' is from outlet TicketContext.TicketEventSplit.TicketEventSplitToToPaymentGateway to inlet TicketContext.ToPaymentGateway.ToPaymentGatewayIn with {
+    briefly "The Ticket events ToPaymentGateway translates, on their way to it"
+  }
+  connector 'MarketingAdapter Feed' is from outlet TicketContext.TicketEventSplit.TicketEventSplitToMarketingAdapter to inlet TicketContext.MarketingAdapter.MarketingAdapterIn with {
+    briefly "The Ticket events MarketingAdapter translates, on their way to it"
   }
   connector 'TicketEvent Stream' is from outlet TicketContext.Ticket.TicketEvents2 to inlet TicketContext.TicketEventSplit.TicketEventSplitIn with {
     briefly "Ticket events, fanned out to storage and read models"

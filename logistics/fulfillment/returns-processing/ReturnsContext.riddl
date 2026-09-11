@@ -60,7 +60,7 @@ context ReturnsContext as router is {
     }
   }
   connector 'ReturnCommand Stream Intake' is from outlet ReturnsContext.ReturnCommandStreamOut to inlet ReturnsContext.Return.ReturnCommands  connector 'ReturnResult Stream Egress' is from outlet ReturnsContext.ReturnsRepository.ReturnsRepositoryResponses to inlet ReturnsContext.ReturnResultStreamIn  adaptor ToCustomerNotification to context CustomerNotification as flow is { 
-    outlet ToCustomerNotificationOut is type CustomerNotification.CustomerNotificationCommand
+    inlet ToCustomerNotificationIn is type ReturnEvent    outlet ToCustomerNotificationOut is type CustomerNotification.CustomerNotificationCommand
     handler ToCustomerNotificationHandler is {
       on returnRequested: event ReturnRequested is {
         let ack: type CustomerNotification.SendReturnAcknowledgement = prompt("translate the returnRequested event into a SendReturnAcknowledgement telling the customer the request has been received, not that it is committed")
@@ -118,7 +118,7 @@ context ReturnsContext as router is {
     }
   }
   adaptor ToInventoryManagement to context InventoryManagement as flow is { 
-    outlet ToInventoryManagementOut is type InventoryManagement.InventoryManagementCommand
+    inlet ToInventoryManagementIn is type ReturnEvent    outlet ToInventoryManagementOut is type InventoryManagement.InventoryManagementCommand
     handler ToInventoryManagementHandler is {
       on itemInspected: event Return.ItemInspected is {
         let restock: type InventoryManagement.RestockInventory = prompt("translate the itemInspected event into a RestockInventory putting goods confirmed saleable back into stock")
@@ -166,7 +166,7 @@ context ReturnsContext as router is {
     }
   }
   adaptor ToPaymentGateway to context PaymentGateway as flow is { 
-    outlet ToPaymentGatewayOut is type PaymentGateway.PaymentGatewayCommand
+    inlet ToPaymentGatewayIn is type ReturnEvent    outlet ToPaymentGatewayOut is type PaymentGateway.PaymentGatewayCommand
     handler ToPaymentGatewayHandler is {
       on itemInspected: event ItemInspected is {
         let notice: type PaymentGateway.ProcessRefund = prompt("translate the itemInspected event into a ProcessRefund returning the customer's money now that the item has been inspected and the return stands")
@@ -213,8 +213,8 @@ context ReturnsContext as router is {
       |The model's side of the ShippingCarrier conversation.
     }
   }
-  adaptor ToShippingCarrier to context ShippingCarrier as flow is { 
-    outlet ToShippingCarrierOut is type ShippingCarrier.ShippingCarrierRequest
+  adaptor ToShippingCarrier to context ShippingCarrier as merge is { 
+    inlet ToShippingCarrierIn is type ReturnEvent    inlet ToShippingCarrierReplies is result ShippingCarrier.TrackingStatus    outlet ToShippingCarrierOut is type ShippingCarrier.ShippingCarrierRequest
     handler ToShippingCarrierHandler is {
       on shipmentRecorded: event Return.ShipmentRecorded is {
         let askAnswer: type ShippingCarrier.TrackingStatus = ask query ShippingCarrier.GetTrackingStatus of context ShippingCarrier
@@ -622,15 +622,21 @@ context ReturnsContext as router is {
       |Union of Return events for streaming.
     }
   }
-  streamlet ReturnEventSplit as flow is {
+  streamlet ReturnEventSplit as split is {
+    outlet ReturnEventSplitToToShippingCarrier is type ReturnEvent
+    outlet ReturnEventSplitToToPaymentGateway is type ReturnEvent
+    outlet ReturnEventSplitToToInventoryManagement is type ReturnEvent
+    outlet ReturnEventSplitToToCustomerNotification is type ReturnEvent
     inlet ReturnEventSplitIn is type ReturnEvent    outlet ReturnEventSplitToReturnsAnalytics is type ReturnEvent
     handler ReturnEventSplitHandler is {
       on returnRequested: event Return.ReturnRequested is {
         send returnRequested to outlet ReturnEventSplitToReturnsAnalytics
+        send returnRequested to outlet ReturnEventSplitToToCustomerNotification
         tell returnRequested to entity ReturnsContext.Return
       }
       on returnAuthorized: event Return.ReturnAuthorized is {
         send returnAuthorized to outlet ReturnEventSplitToReturnsAnalytics
+        send returnAuthorized to outlet ReturnEventSplitToToShippingCarrier
         tell returnAuthorized to entity ReturnsContext.Return
       }
       on labelGenerated: event Return.LabelGenerated is {
@@ -639,30 +645,39 @@ context ReturnsContext as router is {
       }
       on shipmentRecorded: event Return.ShipmentRecorded is {
         send shipmentRecorded to outlet ReturnEventSplitToReturnsAnalytics
+        send shipmentRecorded to outlet ReturnEventSplitToToShippingCarrier
         tell shipmentRecorded to entity ReturnsContext.Return
       }
       on returnReceived: event Return.ReturnReceived is {
         send returnReceived to outlet ReturnEventSplitToReturnsAnalytics
+        send returnReceived to outlet ReturnEventSplitToToCustomerNotification
         tell returnReceived to entity ReturnsContext.Return
       }
       on itemInspected: event Return.ItemInspected is {
         send itemInspected to outlet ReturnEventSplitToReturnsAnalytics
+        send itemInspected to outlet ReturnEventSplitToToPaymentGateway
+        send itemInspected to outlet ReturnEventSplitToToInventoryManagement
         tell itemInspected to entity ReturnsContext.Return
       }
       on returnApproved: event Return.ReturnApproved is {
         send returnApproved to outlet ReturnEventSplitToReturnsAnalytics
+        send returnApproved to outlet ReturnEventSplitToToPaymentGateway
+        send returnApproved to outlet ReturnEventSplitToToCustomerNotification
         tell returnApproved to entity ReturnsContext.Return
       }
       on returnRejected: event Return.ReturnRejected is {
         send returnRejected to outlet ReturnEventSplitToReturnsAnalytics
+        send returnRejected to outlet ReturnEventSplitToToCustomerNotification
         tell returnRejected to entity ReturnsContext.Return
       }
       on refundProcessed: event Return.RefundProcessed is {
         send refundProcessed to outlet ReturnEventSplitToReturnsAnalytics
+        send refundProcessed to outlet ReturnEventSplitToToCustomerNotification
         tell refundProcessed to entity ReturnsContext.Return
       }
       on itemDisposed: event Return.ItemDisposed is {
         send itemDisposed to outlet ReturnEventSplitToReturnsAnalytics
+        send itemDisposed to outlet ReturnEventSplitToToInventoryManagement
         tell itemDisposed to entity ReturnsContext.Return
       }
       on other is {
@@ -679,6 +694,18 @@ context ReturnsContext as router is {
     described as {
       |Fans Return events out to the repository and projectors.
     }
+  }
+  connector 'ToShippingCarrier Feed' is from outlet ReturnsContext.ReturnEventSplit.ReturnEventSplitToToShippingCarrier to inlet ReturnsContext.ToShippingCarrier.ToShippingCarrierIn with {
+    briefly "The Return events ToShippingCarrier translates, on their way to it"
+  }
+  connector 'ToPaymentGateway Feed' is from outlet ReturnsContext.ReturnEventSplit.ReturnEventSplitToToPaymentGateway to inlet ReturnsContext.ToPaymentGateway.ToPaymentGatewayIn with {
+    briefly "The Return events ToPaymentGateway translates, on their way to it"
+  }
+  connector 'ToInventoryManagement Feed' is from outlet ReturnsContext.ReturnEventSplit.ReturnEventSplitToToInventoryManagement to inlet ReturnsContext.ToInventoryManagement.ToInventoryManagementIn with {
+    briefly "The Return events ToInventoryManagement translates, on their way to it"
+  }
+  connector 'ToCustomerNotification Feed' is from outlet ReturnsContext.ReturnEventSplit.ReturnEventSplitToToCustomerNotification to inlet ReturnsContext.ToCustomerNotification.ToCustomerNotificationIn with {
+    briefly "The Return events ToCustomerNotification translates, on their way to it"
   }
   connector 'ReturnEvent Stream' is from outlet ReturnsContext.Return.ReturnEvents2 to inlet ReturnsContext.ReturnEventSplit.ReturnEventSplitIn with {
     briefly "Return events, fanned out to storage and read models"

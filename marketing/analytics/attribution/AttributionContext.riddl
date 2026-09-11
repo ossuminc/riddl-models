@@ -55,8 +55,8 @@ context AttributionContext as router is {
       |The model's side of the CRMSystem conversation.
     }
   }
-  adaptor ToCRMSystem to context CRMSystem as flow is { 
-    outlet ToCRMSystemOut is type CRMSystem.CRMSystemRequest
+  adaptor ToCRMSystem to context CRMSystem as merge is { 
+    inlet ToCRMSystemIn is type ConversionPathEvent    inlet ToCRMSystemReplies is result CRMSystem.CustomerJourneyData    outlet ToCRMSystemOut is type CRMSystem.CRMSystemRequest
     handler ToCRMSystemHandler is {
       on conversionRecorded: event ConversionPath.ConversionRecorded is {
         let askAnswer: type CRMSystem.CustomerJourneyData = ask query CRMSystem.GetCustomerJourney of context CRMSystem
@@ -101,8 +101,8 @@ context AttributionContext as router is {
       |The model's side of the WebAnalytics conversation.
     }
   }
-  adaptor ToWebAnalytics to context WebAnalytics as flow is { 
-    outlet ToWebAnalyticsOut is type WebAnalytics.WebAnalyticsRequest
+  adaptor ToWebAnalytics to context WebAnalytics as merge is { 
+    inlet ToWebAnalyticsIn is type ConversionPathEvent    inlet ToWebAnalyticsReplies is result WebAnalytics.PageViewData    outlet ToWebAnalyticsOut is type WebAnalytics.WebAnalyticsRequest
     handler ToWebAnalyticsHandler is {
       on conversionPathCreated: event ConversionPath.ConversionPathCreated is {
         let askAnswer: type WebAnalytics.PageViewData = ask query WebAnalytics.GetPageViews of context WebAnalytics
@@ -408,23 +408,29 @@ context AttributionContext as router is {
       |persistence.
     }
   }
-  streamlet ConversionPathEventSplit as flow is {
+  streamlet ConversionPathEventSplit as split is {
+    outlet ConversionPathEventSplitToToWebAnalytics is type ConversionPathEvent
+    outlet ConversionPathEventSplitToToCRMSystem is type ConversionPathEvent
     inlet ConversionPathEventSplitIn is type ConversionPathEvent    outlet ConversionPathEventSplitToAttributionMetrics is type ConversionPathEvent
     handler ConversionPathEventSplitHandler is {
       on conversionPathCreated: event ConversionPath.ConversionPathCreated is {
         send conversionPathCreated to outlet ConversionPathEventSplitToAttributionMetrics
+        send conversionPathCreated to outlet ConversionPathEventSplitToToWebAnalytics
         tell conversionPathCreated to entity AttributionContext.ConversionPath
       }
       on touchpointRecorded: event ConversionPath.TouchpointRecorded is {
         send touchpointRecorded to outlet ConversionPathEventSplitToAttributionMetrics
+        send touchpointRecorded to outlet ConversionPathEventSplitToToWebAnalytics
         tell touchpointRecorded to entity AttributionContext.ConversionPath
       }
       on conversionRecorded: event ConversionPath.ConversionRecorded is {
         send conversionRecorded to outlet ConversionPathEventSplitToAttributionMetrics
+        send conversionRecorded to outlet ConversionPathEventSplitToToCRMSystem
         tell conversionRecorded to entity AttributionContext.ConversionPath
       }
       on attributionModelApplied: event ConversionPath.AttributionModelApplied is {
         send attributionModelApplied to outlet ConversionPathEventSplitToAttributionMetrics
+        send attributionModelApplied to outlet ConversionPathEventSplitToToCRMSystem
         tell attributionModelApplied to entity AttributionContext.ConversionPath
       }
       on pathExpired: event ConversionPath.PathExpired is {
@@ -449,6 +455,12 @@ context AttributionContext as router is {
     described as {
       |Fans ConversionPath events out to the repository and projectors.
     }
+  }
+  connector 'ToWebAnalytics Feed' is from outlet AttributionContext.ConversionPathEventSplit.ConversionPathEventSplitToToWebAnalytics to inlet AttributionContext.ToWebAnalytics.ToWebAnalyticsIn with {
+    briefly "The ConversionPath events ToWebAnalytics translates, on their way to it"
+  }
+  connector 'ToCRMSystem Feed' is from outlet AttributionContext.ConversionPathEventSplit.ConversionPathEventSplitToToCRMSystem to inlet AttributionContext.ToCRMSystem.ToCRMSystemIn with {
+    briefly "The ConversionPath events ToCRMSystem translates, on their way to it"
   }
   connector 'ConversionPathEvent Stream' is from outlet AttributionContext.ConversionPath.ConversionPathEvents2 to inlet AttributionContext.ConversionPathEventSplit.ConversionPathEventSplitIn with {
     briefly "ConversionPath events, fanned out to storage and read models"

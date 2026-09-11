@@ -68,7 +68,7 @@ context PolicyContext as router is {
     }
   }
   adaptor ToBillingService to context BillingService as flow is { 
-    outlet ToBillingServiceOut is type BillingService.BillingServiceCommand
+    inlet ToBillingServiceIn is type PolicyEvent    outlet ToBillingServiceOut is type BillingService.BillingServiceCommand
     handler ToBillingServiceHandler is {
       on policyIssued: event Policy.PolicyIssued is {
         let setup: type BillingService.SetupBilling = prompt("translate the policyIssued event into a SetupBilling starting the billing arrangement for the policy just put on risk")
@@ -120,7 +120,7 @@ context PolicyContext as router is {
     }
   }
   adaptor ToDocumentService to context DocumentService as flow is { 
-    outlet ToDocumentServiceOut is type DocumentService.DocumentServiceCommand
+    inlet ToDocumentServiceIn is type PolicyEvent    outlet ToDocumentServiceOut is type DocumentService.DocumentServiceCommand
     handler ToDocumentServiceHandler is {
       on policyIssued: event PolicyIssued is {
         let artifact: type DocumentService.GeneratePolicyDocuments = prompt("translate the policyIssued event into a GeneratePolicyDocuments producing the schedule and wording the insured is entitled to")
@@ -170,7 +170,7 @@ context PolicyContext as router is {
     }
   }
   adaptor ToRatingEngine to context RatingEngine as flow is { 
-    outlet ToRatingEngineOut is type RatingEngine.RatingEngineCommand
+    inlet ToRatingEngineIn is type PolicyEvent    outlet ToRatingEngineOut is type RatingEngine.RatingEngineCommand
     handler ToRatingEngineHandler is {
       on policyIssued: event Policy.PolicyIssued is {
         let item0: type RatingEngine.RatePolicy = prompt("translate the policyIssued event into a RatePolicy, issuance being what must be priced")
@@ -622,15 +622,23 @@ context PolicyContext as router is {
       | dashboards, reporting, and portfolio analysis.
     }
   }
-  streamlet PolicyEventSplit as flow is {
+  streamlet PolicyEventSplit as split is {
+    outlet PolicyEventSplitToToRatingEngine is type PolicyEvent
+    outlet PolicyEventSplitToToDocumentService is type PolicyEvent
+    outlet PolicyEventSplitToToBillingService is type PolicyEvent
     inlet PolicyEventSplitIn is type PolicyEvent    outlet PolicyEventSplitToPolicyMetricsProjector is type PolicyEvent
     handler PolicyEventSplitHandler is {
       on policyIssued: event Policy.PolicyIssued is {
         send policyIssued to outlet PolicyEventSplitToPolicyMetricsProjector
+        send policyIssued to outlet PolicyEventSplitToToRatingEngine
+        send policyIssued to outlet PolicyEventSplitToToDocumentService
+        send policyIssued to outlet PolicyEventSplitToToBillingService
         tell policyIssued to entity PolicyContext.Policy
       }
       on endorsementAdded: event Policy.EndorsementAdded is {
         send endorsementAdded to outlet PolicyEventSplitToPolicyMetricsProjector
+        send endorsementAdded to outlet PolicyEventSplitToToRatingEngine
+        send endorsementAdded to outlet PolicyEventSplitToToBillingService
         tell endorsementAdded to entity PolicyContext.Policy
       }
       on renewalProcessed: event Policy.RenewalProcessed is {
@@ -643,6 +651,8 @@ context PolicyContext as router is {
       }
       on policyCancelled: event Policy.PolicyCancelled is {
         send policyCancelled to outlet PolicyEventSplitToPolicyMetricsProjector
+        send policyCancelled to outlet PolicyEventSplitToToDocumentService
+        send policyCancelled to outlet PolicyEventSplitToToBillingService
         tell policyCancelled to entity PolicyContext.Policy
       }
       on policyReinstated: event Policy.PolicyReinstated is {
@@ -655,6 +665,8 @@ context PolicyContext as router is {
       }
       on renewalOfferGenerated: event Policy.RenewalOfferGenerated is {
         send renewalOfferGenerated to outlet PolicyEventSplitToPolicyMetricsProjector
+        send renewalOfferGenerated to outlet PolicyEventSplitToToRatingEngine
+        send renewalOfferGenerated to outlet PolicyEventSplitToToDocumentService
         tell renewalOfferGenerated to entity PolicyContext.Policy
       }
       on other is {
@@ -671,6 +683,15 @@ context PolicyContext as router is {
     described as {
       |Fans Policy events out to the repository and projectors.
     }
+  }
+  connector 'ToRatingEngine Feed' is from outlet PolicyContext.PolicyEventSplit.PolicyEventSplitToToRatingEngine to inlet PolicyContext.ToRatingEngine.ToRatingEngineIn with {
+    briefly "The Policy events ToRatingEngine translates, on their way to it"
+  }
+  connector 'ToDocumentService Feed' is from outlet PolicyContext.PolicyEventSplit.PolicyEventSplitToToDocumentService to inlet PolicyContext.ToDocumentService.ToDocumentServiceIn with {
+    briefly "The Policy events ToDocumentService translates, on their way to it"
+  }
+  connector 'ToBillingService Feed' is from outlet PolicyContext.PolicyEventSplit.PolicyEventSplitToToBillingService to inlet PolicyContext.ToBillingService.ToBillingServiceIn with {
+    briefly "The Policy events ToBillingService translates, on their way to it"
   }
   connector 'PolicyEvent Stream' is from outlet PolicyContext.Policy.PolicyEvents2 to inlet PolicyContext.PolicyEventSplit.PolicyEventSplitIn with {
     briefly "Policy events, fanned out to storage and read models"

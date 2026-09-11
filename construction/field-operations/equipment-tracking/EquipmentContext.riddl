@@ -107,7 +107,7 @@ context EquipmentContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type EquipmentEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on locationUpdated: event LocationUpdated is {
         let msg: type NotificationService.SendLocationAlert = prompt("translate the locationUpdated event into a SendLocationAlert for its recipient")
@@ -157,7 +157,7 @@ context EquipmentContext as router is {
   }
   // Adaptor for maintenance system integration
   adaptor MaintenanceAdapter to context MaintenanceService as flow is { 
-    outlet MaintenanceAdapterOut is command MaintenanceService.CreateWorkOrder
+    inlet MaintenanceAdapterIn is type EquipmentEvent    outlet MaintenanceAdapterOut is command MaintenanceService.CreateWorkOrder
     handler MaintenanceIntegration is {
       on markedOutOfService: event Equipment.MarkedOutOfService is {
         let item0: type MaintenanceService.CreateWorkOrder = prompt("translate the markedOutOfService event into a CreateWorkOrder, equipment leaving service being what there is to fix")
@@ -547,7 +547,9 @@ context EquipmentContext as router is {
       |persistence.
     }
   }
-  streamlet EquipmentEventSplit as flow is {
+  streamlet EquipmentEventSplit as split is {
+    outlet EquipmentEventSplitToToNotificationService is type EquipmentEvent
+    outlet EquipmentEventSplitToMaintenanceAdapter is type EquipmentEvent
     inlet EquipmentEventSplitIn is type EquipmentEvent    outlet EquipmentEventSplitToFleetAnalytics is type EquipmentEvent
     handler EquipmentEventSplitHandler is {
       on equipmentRegistered: event Equipment.EquipmentRegistered is {
@@ -564,6 +566,7 @@ context EquipmentContext as router is {
       }
       on locationUpdated: event Equipment.LocationUpdated is {
         send locationUpdated to outlet EquipmentEventSplitToFleetAnalytics
+        send locationUpdated to outlet EquipmentEventSplitToToNotificationService
         tell locationUpdated to entity EquipmentContext.Equipment
       }
       on meterReadingRecorded: event Equipment.MeterReadingRecorded is {
@@ -572,6 +575,7 @@ context EquipmentContext as router is {
       }
       on maintenanceScheduled: event Equipment.MaintenanceScheduled is {
         send maintenanceScheduled to outlet EquipmentEventSplitToFleetAnalytics
+        send maintenanceScheduled to outlet EquipmentEventSplitToToNotificationService
         tell maintenanceScheduled to entity EquipmentContext.Equipment
       }
       on maintenanceCompleted: event Equipment.MaintenanceCompleted is {
@@ -580,6 +584,7 @@ context EquipmentContext as router is {
       }
       on markedOutOfService: event Equipment.MarkedOutOfService is {
         send markedOutOfService to outlet EquipmentEventSplitToFleetAnalytics
+        send markedOutOfService to outlet EquipmentEventSplitToMaintenanceAdapter
         tell markedOutOfService to entity EquipmentContext.Equipment
       }
       on returnedToService: event Equipment.ReturnedToService is {
@@ -604,6 +609,12 @@ context EquipmentContext as router is {
     described as {
       |Fans Equipment events out to the repository and projectors.
     }
+  }
+  connector 'ToNotificationService Feed' is from outlet EquipmentContext.EquipmentEventSplit.EquipmentEventSplitToToNotificationService to inlet EquipmentContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Equipment events ToNotificationService translates, on their way to it"
+  }
+  connector 'MaintenanceAdapter Feed' is from outlet EquipmentContext.EquipmentEventSplit.EquipmentEventSplitToMaintenanceAdapter to inlet EquipmentContext.MaintenanceAdapter.MaintenanceAdapterIn with {
+    briefly "The Equipment events MaintenanceAdapter translates, on their way to it"
   }
   connector 'EquipmentEvent Stream' is from outlet EquipmentContext.Equipment.EquipmentEvents2 to inlet EquipmentContext.EquipmentEventSplit.EquipmentEventSplitIn with {
     briefly "Equipment events, fanned out to storage and read models"

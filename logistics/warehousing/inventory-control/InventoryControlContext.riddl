@@ -64,8 +64,8 @@ context InventoryControlContext as router is {
       |The model's side of the ERPSystem conversation.
     }
   }
-  adaptor ToERPSystem to context ERPSystem as flow is { 
-    outlet ToERPSystemOut is type ERPSystem.ERPSystemRequest
+  adaptor ToERPSystem to context ERPSystem as merge is { 
+    inlet ToERPSystemIn is type InventoryItemEvent    inlet ToERPSystemReplies is result ERPSystem.ProductInfo    outlet ToERPSystemOut is type ERPSystem.ERPSystemRequest
     handler ToERPSystemHandler is {
       on inventoryItemCreated: event InventoryItem.InventoryItemCreated is {
         let askAnswer: type ERPSystem.ProductInfo = ask query ERPSystem.GetProductInfo of context ERPSystem
@@ -110,8 +110,8 @@ context InventoryControlContext as router is {
       |The model's side of the PurchasingSystem conversation.
     }
   }
-  adaptor ToPurchasingSystem to context PurchasingSystem as flow is { 
-    outlet ToPurchasingSystemOut is type PurchasingSystem.PurchasingSystemRequest
+  adaptor ToPurchasingSystem to context PurchasingSystem as merge is { 
+    inlet ToPurchasingSystemIn is type InventoryItemEvent    inlet ToPurchasingSystemReplies is result PurchasingSystem.PurchaseOrderStatus    outlet ToPurchasingSystemOut is type PurchasingSystem.PurchasingSystemRequest
     handler ToPurchasingSystemHandler is {
       on cycleCountRecorded: event InventoryItem.CycleCountRecorded is {
         let askAnswer: type PurchasingSystem.PurchaseOrderStatus = ask query PurchasingSystem.GetPurchaseOrderStatus of context PurchasingSystem
@@ -491,15 +491,19 @@ context InventoryControlContext as router is {
       |Union of InventoryItem events for streaming.
     }
   }
-  streamlet InventoryItemEventSplit as flow is {
+  streamlet InventoryItemEventSplit as split is {
+    outlet InventoryItemEventSplitToToPurchasingSystem is type InventoryItemEvent
+    outlet InventoryItemEventSplitToToERPSystem is type InventoryItemEvent
     inlet InventoryItemEventSplitIn is type InventoryItemEvent    outlet InventoryItemEventSplitToInventoryAccuracyMetrics is type InventoryItemEvent
     handler InventoryItemEventSplitHandler is {
       on inventoryItemCreated: event InventoryItem.InventoryItemCreated is {
         send inventoryItemCreated to outlet InventoryItemEventSplitToInventoryAccuracyMetrics
+        send inventoryItemCreated to outlet InventoryItemEventSplitToToERPSystem
         tell inventoryItemCreated to entity InventoryControlContext.InventoryItem
       }
       on quantityAdjusted: event InventoryItem.QuantityAdjusted is {
         send quantityAdjusted to outlet InventoryItemEventSplitToInventoryAccuracyMetrics
+        send quantityAdjusted to outlet InventoryItemEventSplitToToERPSystem
         tell quantityAdjusted to entity InventoryControlContext.InventoryItem
       }
       on stockReserved: event InventoryItem.StockReserved is {
@@ -512,6 +516,7 @@ context InventoryControlContext as router is {
       }
       on cycleCountRecorded: event InventoryItem.CycleCountRecorded is {
         send cycleCountRecorded to outlet InventoryItemEventSplitToInventoryAccuracyMetrics
+        send cycleCountRecorded to outlet InventoryItemEventSplitToToPurchasingSystem
         tell cycleCountRecorded to entity InventoryControlContext.InventoryItem
       }
       on itemRelocated: event InventoryItem.ItemRelocated is {
@@ -520,6 +525,7 @@ context InventoryControlContext as router is {
       }
       on replenishmentTriggered: event InventoryItem.ReplenishmentTriggered is {
         send replenishmentTriggered to outlet InventoryItemEventSplitToInventoryAccuracyMetrics
+        send replenishmentTriggered to outlet InventoryItemEventSplitToToPurchasingSystem
         tell replenishmentTriggered to entity InventoryControlContext.InventoryItem
       }
       on stockQuarantined: event InventoryItem.StockQuarantined is {
@@ -544,6 +550,12 @@ context InventoryControlContext as router is {
     described as {
       |Fans InventoryItem events out to the repository and projectors.
     }
+  }
+  connector 'ToPurchasingSystem Feed' is from outlet InventoryControlContext.InventoryItemEventSplit.InventoryItemEventSplitToToPurchasingSystem to inlet InventoryControlContext.ToPurchasingSystem.ToPurchasingSystemIn with {
+    briefly "The InventoryItem events ToPurchasingSystem translates, on their way to it"
+  }
+  connector 'ToERPSystem Feed' is from outlet InventoryControlContext.InventoryItemEventSplit.InventoryItemEventSplitToToERPSystem to inlet InventoryControlContext.ToERPSystem.ToERPSystemIn with {
+    briefly "The InventoryItem events ToERPSystem translates, on their way to it"
   }
   connector 'InventoryItemEvent Stream' is from outlet InventoryControlContext.InventoryItem.InventoryItemEvents2 to inlet InventoryControlContext.InventoryItemEventSplit.InventoryItemEventSplitIn with {
     briefly "InventoryItem events, fanned out to storage and read models"

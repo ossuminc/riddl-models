@@ -70,8 +70,8 @@ context PortfolioContext as router is {
       |The model's side of the MarketDataFeed conversation.
     }
   }
-  adaptor ToMarketDataFeed to context MarketDataFeed as flow is { 
-    outlet ToMarketDataFeedOut is type MarketDataFeed.MarketDataFeedRequest
+  adaptor ToMarketDataFeed to context MarketDataFeed as merge is { 
+    inlet ToMarketDataFeedIn is type PortfolioEvent    inlet ToMarketDataFeedReplies is type MarketDataFeed.MarketDataFeedReply    outlet ToMarketDataFeedOut is type MarketDataFeed.MarketDataFeedRequest
     handler ToMarketDataFeedHandler is {
       on benchmarkCompared: event Portfolio.BenchmarkCompared is {
         let askAnswer: type MarketDataFeed.BenchmarkReturn = ask query MarketDataFeed.GetBenchmarkReturn of context MarketDataFeed
@@ -125,7 +125,7 @@ context PortfolioContext as router is {
     }
   }
   adaptor ToTradingSystem to context TradingSystem as flow is { 
-    outlet ToTradingSystemOut is type TradingSystem.TradingSystemCommand
+    inlet ToTradingSystemIn is type PortfolioEvent    outlet ToTradingSystemOut is type TradingSystem.TradingSystemCommand
     handler ToTradingSystemHandler is {
       on portfolioRebalanced: event Portfolio.PortfolioRebalanced is {
         let item0: type TradingSystem.SubmitOrder = prompt("translate the portfolioRebalanced event into a SubmitOrder, a rebalance being what the trades implement")
@@ -483,7 +483,9 @@ context PortfolioContext as router is {
       |Investment portfolio analytics.
     }
   }
-  streamlet PortfolioEventSplit as flow is {
+  streamlet PortfolioEventSplit as split is {
+    outlet PortfolioEventSplitToToTradingSystem is type PortfolioEvent
+    outlet PortfolioEventSplitToToMarketDataFeed is type PortfolioEvent
     inlet PortfolioEventSplitIn is type PortfolioEvent    outlet PortfolioEventSplitToPortfolioMetrics is type PortfolioEvent
     handler PortfolioEventSplitHandler is {
       on portfolioCreated: event Portfolio.PortfolioCreated is {
@@ -496,6 +498,7 @@ context PortfolioContext as router is {
       }
       on portfolioRebalanced: event Portfolio.PortfolioRebalanced is {
         send portfolioRebalanced to outlet PortfolioEventSplitToPortfolioMetrics
+        send portfolioRebalanced to outlet PortfolioEventSplitToToTradingSystem
         tell portfolioRebalanced to entity PortfolioContext.Portfolio
       }
       on tradeExecuted: event Portfolio.TradeExecuted is {
@@ -504,6 +507,7 @@ context PortfolioContext as router is {
       }
       on tradeFilled: event Portfolio.TradeFilled is {
         send tradeFilled to outlet PortfolioEventSplitToPortfolioMetrics
+        send tradeFilled to outlet PortfolioEventSplitToToMarketDataFeed
         tell tradeFilled to entity PortfolioContext.Portfolio
       }
       on riskAnalyzed: event Portfolio.RiskAnalyzed is {
@@ -512,10 +516,12 @@ context PortfolioContext as router is {
       }
       on benchmarkCompared: event Portfolio.BenchmarkCompared is {
         send benchmarkCompared to outlet PortfolioEventSplitToPortfolioMetrics
+        send benchmarkCompared to outlet PortfolioEventSplitToToMarketDataFeed
         tell benchmarkCompared to entity PortfolioContext.Portfolio
       }
       on portfolioSuspended: event Portfolio.PortfolioSuspended is {
         send portfolioSuspended to outlet PortfolioEventSplitToPortfolioMetrics
+        send portfolioSuspended to outlet PortfolioEventSplitToToTradingSystem
         tell portfolioSuspended to entity PortfolioContext.Portfolio
       }
       on portfolioClosed: event Portfolio.PortfolioClosed is {
@@ -536,6 +542,12 @@ context PortfolioContext as router is {
     described as {
       |Fans Portfolio events out to the repository and projectors.
     }
+  }
+  connector 'ToTradingSystem Feed' is from outlet PortfolioContext.PortfolioEventSplit.PortfolioEventSplitToToTradingSystem to inlet PortfolioContext.ToTradingSystem.ToTradingSystemIn with {
+    briefly "The Portfolio events ToTradingSystem translates, on their way to it"
+  }
+  connector 'ToMarketDataFeed Feed' is from outlet PortfolioContext.PortfolioEventSplit.PortfolioEventSplitToToMarketDataFeed to inlet PortfolioContext.ToMarketDataFeed.ToMarketDataFeedIn with {
+    briefly "The Portfolio events ToMarketDataFeed translates, on their way to it"
   }
   connector 'PortfolioEvent Stream' is from outlet PortfolioContext.Portfolio.PortfolioEvents2 to inlet PortfolioContext.PortfolioEventSplit.PortfolioEventSplitIn with {
     briefly "Portfolio events, fanned out to storage and read models"

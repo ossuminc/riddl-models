@@ -76,8 +76,8 @@ context VCPortfolioContext as router is {
       |The model's side of the LegalSystem conversation.
     }
   }
-  adaptor ToLegalSystem to context LegalSystem as flow is { 
-    outlet ToLegalSystemOut is type LegalSystem.LegalSystemRequest
+  adaptor ToLegalSystem to context LegalSystem as merge is { 
+    inlet ToLegalSystemIn is type PortfolioInvestmentEvent    inlet ToLegalSystemReplies is result LegalSystem.ComplianceStatus    outlet ToLegalSystemOut is type LegalSystem.LegalSystemRequest
     handler ToLegalSystemHandler is {
       on boardSeatAssigned: event PortfolioInvestment.BoardSeatAssigned is {
         let askAnswer: type LegalSystem.ComplianceStatus = ask query LegalSystem.GetComplianceStatus of context LegalSystem
@@ -102,8 +102,8 @@ context VCPortfolioContext as router is {
       |The model's side of the LegalSystem conversation.
     }
   }
-  adaptor ToMarketIntelligence to context MarketIntelligence as flow is { 
-    outlet ToMarketIntelligenceOut is type MarketIntelligence.MarketIntelligenceRequest
+  adaptor ToMarketIntelligence to context MarketIntelligence as merge is { 
+    inlet ToMarketIntelligenceIn is type PortfolioInvestmentEvent    inlet ToMarketIntelligenceReplies is type MarketIntelligence.MarketIntelligenceReply    outlet ToMarketIntelligenceOut is type MarketIntelligence.MarketIntelligenceRequest
     handler ToMarketIntelligenceHandler is {
       on investmentMarkedDown: event PortfolioInvestment.InvestmentMarkedDown is {
         let askAnswer: type MarketIntelligence.CompanyValuation = ask query MarketIntelligence.GetCompanyValuation of context MarketIntelligence
@@ -538,11 +538,14 @@ context VCPortfolioContext as router is {
       |Fund-level portfolio performance analytics.
     }
   }
-  streamlet PortfolioInvestmentEventSplit as flow is {
+  streamlet PortfolioInvestmentEventSplit as split is {
+    outlet PortfolioInvestmentEventSplitToToMarketIntelligence is type PortfolioInvestmentEvent
+    outlet PortfolioInvestmentEventSplitToToLegalSystem is type PortfolioInvestmentEvent
     inlet PortfolioInvestmentEventSplitIn is type PortfolioInvestmentEvent    outlet PortfolioInvestmentEventSplitToPortfolioAnalytics is type PortfolioInvestmentEvent
     handler PortfolioInvestmentEventSplitHandler is {
       on investmentRecorded: event PortfolioInvestment.InvestmentRecorded is {
         send investmentRecorded to outlet PortfolioInvestmentEventSplitToPortfolioAnalytics
+        send investmentRecorded to outlet PortfolioInvestmentEventSplitToToLegalSystem
         tell investmentRecorded to entity VCPortfolioContext.PortfolioInvestment
       }
       on dueDiligenceAdvanced: event PortfolioInvestment.DueDiligenceAdvanced is {
@@ -559,6 +562,7 @@ context VCPortfolioContext as router is {
       }
       on boardSeatAssigned: event PortfolioInvestment.BoardSeatAssigned is {
         send boardSeatAssigned to outlet PortfolioInvestmentEventSplitToPortfolioAnalytics
+        send boardSeatAssigned to outlet PortfolioInvestmentEventSplitToToLegalSystem
         tell boardSeatAssigned to entity VCPortfolioContext.PortfolioInvestment
       }
       on boardSeatRemoved: event PortfolioInvestment.BoardSeatRemoved is {
@@ -575,10 +579,12 @@ context VCPortfolioContext as router is {
       }
       on metricRecorded: event PortfolioInvestment.MetricRecorded is {
         send metricRecorded to outlet PortfolioInvestmentEventSplitToPortfolioAnalytics
+        send metricRecorded to outlet PortfolioInvestmentEventSplitToToMarketIntelligence
         tell metricRecorded to entity VCPortfolioContext.PortfolioInvestment
       }
       on investmentMarkedDown: event PortfolioInvestment.InvestmentMarkedDown is {
         send investmentMarkedDown to outlet PortfolioInvestmentEventSplitToPortfolioAnalytics
+        send investmentMarkedDown to outlet PortfolioInvestmentEventSplitToToMarketIntelligence
         tell investmentMarkedDown to entity VCPortfolioContext.PortfolioInvestment
       }
       on exitRecorded: event PortfolioInvestment.ExitRecorded is {
@@ -603,6 +609,12 @@ context VCPortfolioContext as router is {
     described as {
       |Fans PortfolioInvestment events out to the repository and projectors.
     }
+  }
+  connector 'ToMarketIntelligence Feed' is from outlet VCPortfolioContext.PortfolioInvestmentEventSplit.PortfolioInvestmentEventSplitToToMarketIntelligence to inlet VCPortfolioContext.ToMarketIntelligence.ToMarketIntelligenceIn with {
+    briefly "The PortfolioInvestment events ToMarketIntelligence translates, on their way to it"
+  }
+  connector 'ToLegalSystem Feed' is from outlet VCPortfolioContext.PortfolioInvestmentEventSplit.PortfolioInvestmentEventSplitToToLegalSystem to inlet VCPortfolioContext.ToLegalSystem.ToLegalSystemIn with {
+    briefly "The PortfolioInvestment events ToLegalSystem translates, on their way to it"
   }
   connector 'PortfolioInvestmentEvent Stream' is from outlet VCPortfolioContext.PortfolioInvestment.PortfolioInvestmentEvents2 to inlet VCPortfolioContext.PortfolioInvestmentEventSplit.PortfolioInvestmentEventSplitIn with {
     briefly "PortfolioInvestment events, fanned out to storage and read models"

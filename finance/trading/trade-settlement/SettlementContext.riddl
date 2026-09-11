@@ -104,7 +104,7 @@ context SettlementContext as router is {
     }
   }
   adaptor ToCashService to context CashService as flow is { 
-    outlet ToCashServiceOut is command CashService.UpdateCashBalance
+    inlet ToCashServiceIn is type SettlementEvent    outlet ToCashServiceOut is command CashService.UpdateCashBalance
     handler ToCashServiceHandler is {
       on settlementConfirmed: event Settlement.SettlementConfirmed is {
         let item0: type CashService.UpdateCashBalance = prompt("translate the settlementConfirmed event into a UpdateCashBalance, confirmation being when the cash actually moves")
@@ -152,7 +152,7 @@ context SettlementContext as router is {
     }
   }
   adaptor ToClearinghouseService to context ClearinghouseService as flow is { 
-    outlet ToClearinghouseServiceOut is command ClearinghouseService.SubmitForClearing
+    inlet ToClearinghouseServiceIn is type SettlementEvent    outlet ToClearinghouseServiceOut is command ClearinghouseService.SubmitForClearing
     handler ToClearinghouseServiceHandler is {
       on tradeAffirmed: event Settlement.TradeAffirmed is {
         let item0: type ClearinghouseService.SubmitForClearing = prompt("translate the tradeAffirmed event into a SubmitForClearing, affirmation being what makes a trade clearable")
@@ -203,7 +203,7 @@ context SettlementContext as router is {
     }
   }
   adaptor ToCustodianService to context CustodianService as flow is { 
-    outlet ToCustodianServiceOut is command CustodianService.SendSettlementInstruction
+    inlet ToCustodianServiceIn is type SettlementEvent    outlet ToCustodianServiceOut is command CustodianService.SendSettlementInstruction
     handler ToCustodianServiceHandler is {
       on tradeAffirmed: event Settlement.TradeAffirmed is {
         let notice: type CustodianService.SendSettlementInstruction = prompt("translate the tradeAffirmed event into a SendSettlementInstruction to the custodian, affirmation being where both parties agree what settles")
@@ -225,7 +225,7 @@ context SettlementContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendSettlementNotification
+    inlet ToNotificationServiceIn is type SettlementEvent    outlet ToNotificationServiceOut is command NotificationService.SendSettlementNotification
     handler ToNotificationServiceHandler is {
       on settlementFailed: event SettlementFailed is {
         let notice: type NotificationService.SendSettlementNotification = prompt("translate the settlementFailed event into a SendSettlementNotification telling the counterparty the settlement failed and what has to happen before it can be retried")
@@ -279,7 +279,7 @@ context SettlementContext as router is {
     }
   }
   adaptor ToPositionService to context PositionService as flow is { 
-    outlet ToPositionServiceOut is command PositionService.UpdatePosition
+    inlet ToPositionServiceIn is type SettlementEvent    outlet ToPositionServiceOut is command PositionService.UpdatePosition
     handler ToPositionServiceHandler is {
       on settlementConfirmed: event Settlement.SettlementConfirmed is {
         let item0: type PositionService.UpdatePosition = prompt("translate the settlementConfirmed event into a UpdatePosition, and when the position actually changes")
@@ -327,7 +327,7 @@ context SettlementContext as router is {
     }
   }
   adaptor ToTradeMatchingService to context TradeMatchingService as flow is { 
-    outlet ToTradeMatchingServiceOut is command TradeMatchingService.SubmitForMatching
+    inlet ToTradeMatchingServiceIn is type SettlementEvent    outlet ToTradeMatchingServiceOut is command TradeMatchingService.SubmitForMatching
     handler ToTradeMatchingServiceHandler is {
       on settlementInitiated: event Settlement.SettlementInitiated is {
         let item0: type TradeMatchingService.SubmitForMatching = prompt("translate the settlementInitiated event into a SubmitForMatching, initiation being when a trade needs its other side found")
@@ -733,11 +733,18 @@ context SettlementContext as router is {
       |Maintains trade settlement analytics data.
     }
   }
-  streamlet SettlementEventSplit as flow is {
+  streamlet SettlementEventSplit as split is {
+    outlet SettlementEventSplitToToTradeMatchingService is type SettlementEvent
+    outlet SettlementEventSplitToToPositionService is type SettlementEvent
+    outlet SettlementEventSplitToToNotificationService is type SettlementEvent
+    outlet SettlementEventSplitToToCustodianService is type SettlementEvent
+    outlet SettlementEventSplitToToClearinghouseService is type SettlementEvent
+    outlet SettlementEventSplitToToCashService is type SettlementEvent
     inlet SettlementEventSplitIn is type SettlementEvent    outlet SettlementEventSplitToSettlementAnalytics is type SettlementEvent
     handler SettlementEventSplitHandler is {
       on settlementInitiated: event Settlement.SettlementInitiated is {
         send settlementInitiated to outlet SettlementEventSplitToSettlementAnalytics
+        send settlementInitiated to outlet SettlementEventSplitToToTradeMatchingService
         tell settlementInitiated to entity SettlementContext.Settlement
       }
       on tradeMatched: event Settlement.TradeMatched is {
@@ -746,6 +753,8 @@ context SettlementContext as router is {
       }
       on tradeAffirmed: event Settlement.TradeAffirmed is {
         send tradeAffirmed to outlet SettlementEventSplitToSettlementAnalytics
+        send tradeAffirmed to outlet SettlementEventSplitToToCustodianService
+        send tradeAffirmed to outlet SettlementEventSplitToToClearinghouseService
         tell tradeAffirmed to entity SettlementContext.Settlement
       }
       on instructionsSent: event Settlement.InstructionsSent is {
@@ -754,6 +763,9 @@ context SettlementContext as router is {
       }
       on settlementConfirmed: event Settlement.SettlementConfirmed is {
         send settlementConfirmed to outlet SettlementEventSplitToSettlementAnalytics
+        send settlementConfirmed to outlet SettlementEventSplitToToPositionService
+        send settlementConfirmed to outlet SettlementEventSplitToToNotificationService
+        send settlementConfirmed to outlet SettlementEventSplitToToCashService
         tell settlementConfirmed to entity SettlementContext.Settlement
       }
       on partialSettlementRecorded: event Settlement.PartialSettlementRecorded is {
@@ -762,6 +774,7 @@ context SettlementContext as router is {
       }
       on settlementFailed: event Settlement.SettlementFailed is {
         send settlementFailed to outlet SettlementEventSplitToSettlementAnalytics
+        send settlementFailed to outlet SettlementEventSplitToToNotificationService
         tell settlementFailed to entity SettlementContext.Settlement
       }
       on settlementRetried: event Settlement.SettlementRetried is {
@@ -770,10 +783,12 @@ context SettlementContext as router is {
       }
       on settlementCanceled: event Settlement.SettlementCanceled is {
         send settlementCanceled to outlet SettlementEventSplitToSettlementAnalytics
+        send settlementCanceled to outlet SettlementEventSplitToToNotificationService
         tell settlementCanceled to entity SettlementContext.Settlement
       }
       on settlementOnHold: event Settlement.SettlementOnHold is {
         send settlementOnHold to outlet SettlementEventSplitToSettlementAnalytics
+        send settlementOnHold to outlet SettlementEventSplitToToNotificationService
         tell settlementOnHold to entity SettlementContext.Settlement
       }
       on holdReleased: event Settlement.HoldReleased is {
@@ -794,6 +809,24 @@ context SettlementContext as router is {
     described as {
       |Fans Settlement events out to the repository and projectors.
     }
+  }
+  connector 'ToTradeMatchingService Feed' is from outlet SettlementContext.SettlementEventSplit.SettlementEventSplitToToTradeMatchingService to inlet SettlementContext.ToTradeMatchingService.ToTradeMatchingServiceIn with {
+    briefly "The Settlement events ToTradeMatchingService translates, on their way to it"
+  }
+  connector 'ToPositionService Feed' is from outlet SettlementContext.SettlementEventSplit.SettlementEventSplitToToPositionService to inlet SettlementContext.ToPositionService.ToPositionServiceIn with {
+    briefly "The Settlement events ToPositionService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet SettlementContext.SettlementEventSplit.SettlementEventSplitToToNotificationService to inlet SettlementContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Settlement events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToCustodianService Feed' is from outlet SettlementContext.SettlementEventSplit.SettlementEventSplitToToCustodianService to inlet SettlementContext.ToCustodianService.ToCustodianServiceIn with {
+    briefly "The Settlement events ToCustodianService translates, on their way to it"
+  }
+  connector 'ToClearinghouseService Feed' is from outlet SettlementContext.SettlementEventSplit.SettlementEventSplitToToClearinghouseService to inlet SettlementContext.ToClearinghouseService.ToClearinghouseServiceIn with {
+    briefly "The Settlement events ToClearinghouseService translates, on their way to it"
+  }
+  connector 'ToCashService Feed' is from outlet SettlementContext.SettlementEventSplit.SettlementEventSplitToToCashService to inlet SettlementContext.ToCashService.ToCashServiceIn with {
+    briefly "The Settlement events ToCashService translates, on their way to it"
   }
   connector 'SettlementEvent Stream' is from outlet SettlementContext.Settlement.SettlementEvents2 to inlet SettlementContext.SettlementEventSplit.SettlementEventSplitIn with {
     briefly "Settlement events, fanned out to storage and read models"

@@ -73,8 +73,8 @@ context HarvestPlanningContext as router is {
       |The model's side of the ContractorRegistry conversation.
     }
   }
-  adaptor ToContractorRegistry to context ContractorRegistry as flow is { 
-    outlet ToContractorRegistryOut is type ContractorRegistry.ContractorRegistryRequest
+  adaptor ToContractorRegistry to context ContractorRegistry as merge is { 
+    inlet ToContractorRegistryIn is type HarvestBlockEvent    inlet ToContractorRegistryReplies is result ContractorRegistry.AvailableContractors    outlet ToContractorRegistryOut is type ContractorRegistry.ContractorRegistryRequest
     handler ToContractorRegistryHandler is {
       on harvestScheduled: event HarvestBlock.HarvestScheduled is {
         let askAnswer: type ContractorRegistry.AvailableContractors = ask query ContractorRegistry.FindAvailableContractors of context ContractorRegistry
@@ -121,8 +121,8 @@ context HarvestPlanningContext as router is {
       |The model's side of the EnvironmentalAgency conversation.
     }
   }
-  adaptor ToEnvironmentalAgency to context EnvironmentalAgency as flow is { 
-    outlet ToEnvironmentalAgencyOut is type EnvironmentalAgency.EnvironmentalAgencyRequest
+  adaptor ToEnvironmentalAgency to context EnvironmentalAgency as merge is { 
+    inlet ToEnvironmentalAgencyIn is type HarvestBlockEvent    inlet ToEnvironmentalAgencyReplies is result EnvironmentalAgency.SpeciesAtRiskReport    outlet ToEnvironmentalAgencyOut is type EnvironmentalAgency.EnvironmentalAgencyRequest
     handler ToEnvironmentalAgencyHandler is {
       on blockDelineated: event HarvestBlock.BlockDelineated is {
         let askAnswer: type EnvironmentalAgency.SpeciesAtRiskReport = ask query EnvironmentalAgency.GetSpeciesAtRisk of context EnvironmentalAgency
@@ -534,7 +534,9 @@ context HarvestPlanningContext as router is {
       |persistence.
     }
   }
-  streamlet HarvestBlockEventSplit as flow is {
+  streamlet HarvestBlockEventSplit as split is {
+    outlet HarvestBlockEventSplitToToEnvironmentalAgency is type HarvestBlockEvent
+    outlet HarvestBlockEventSplitToToContractorRegistry is type HarvestBlockEvent
     inlet HarvestBlockEventSplitIn is type HarvestBlockEvent    outlet HarvestBlockEventSplitToHarvestMetrics is type HarvestBlockEvent
     handler HarvestBlockEventSplitHandler is {
       on harvestBlockCreated: event HarvestBlock.HarvestBlockCreated is {
@@ -543,10 +545,12 @@ context HarvestPlanningContext as router is {
       }
       on blockDelineated: event HarvestBlock.BlockDelineated is {
         send blockDelineated to outlet HarvestBlockEventSplitToHarvestMetrics
+        send blockDelineated to outlet HarvestBlockEventSplitToToEnvironmentalAgency
         tell blockDelineated to entity HarvestPlanningContext.HarvestBlock
       }
       on environmentalReviewSubmitted: event HarvestBlock.EnvironmentalReviewSubmitted is {
         send environmentalReviewSubmitted to outlet HarvestBlockEventSplitToHarvestMetrics
+        send environmentalReviewSubmitted to outlet HarvestBlockEventSplitToToEnvironmentalAgency
         tell environmentalReviewSubmitted to entity HarvestPlanningContext.HarvestBlock
       }
       on reviewOutcomeRecorded: event HarvestBlock.ReviewOutcomeRecorded is {
@@ -555,10 +559,12 @@ context HarvestPlanningContext as router is {
       }
       on harvestScheduled: event HarvestBlock.HarvestScheduled is {
         send harvestScheduled to outlet HarvestBlockEventSplitToHarvestMetrics
+        send harvestScheduled to outlet HarvestBlockEventSplitToToContractorRegistry
         tell harvestScheduled to entity HarvestPlanningContext.HarvestBlock
       }
       on contractorAssigned: event HarvestBlock.ContractorAssigned is {
         send contractorAssigned to outlet HarvestBlockEventSplitToHarvestMetrics
+        send contractorAssigned to outlet HarvestBlockEventSplitToToContractorRegistry
         tell contractorAssigned to entity HarvestPlanningContext.HarvestBlock
       }
       on harvestBegan: event HarvestBlock.HarvestBegan is {
@@ -591,6 +597,12 @@ context HarvestPlanningContext as router is {
     described as {
       |Fans HarvestBlock events out to the repository and projectors.
     }
+  }
+  connector 'ToEnvironmentalAgency Feed' is from outlet HarvestPlanningContext.HarvestBlockEventSplit.HarvestBlockEventSplitToToEnvironmentalAgency to inlet HarvestPlanningContext.ToEnvironmentalAgency.ToEnvironmentalAgencyIn with {
+    briefly "The HarvestBlock events ToEnvironmentalAgency translates, on their way to it"
+  }
+  connector 'ToContractorRegistry Feed' is from outlet HarvestPlanningContext.HarvestBlockEventSplit.HarvestBlockEventSplitToToContractorRegistry to inlet HarvestPlanningContext.ToContractorRegistry.ToContractorRegistryIn with {
+    briefly "The HarvestBlock events ToContractorRegistry translates, on their way to it"
   }
   connector 'HarvestBlockEvent Stream' is from outlet HarvestPlanningContext.HarvestBlock.HarvestBlockEvents2 to inlet HarvestPlanningContext.HarvestBlockEventSplit.HarvestBlockEventSplitIn with {
     briefly "HarvestBlock events, fanned out to storage and read models"

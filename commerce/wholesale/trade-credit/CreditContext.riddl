@@ -93,7 +93,7 @@ context CreditContext as router is {
     }
   }
   adaptor ToLegalService to context LegalService as flow is { 
-    outlet ToLegalServiceOut is command LegalService.EscalateToCollections
+    inlet ToLegalServiceIn is type CreditAccountEvent    outlet ToLegalServiceOut is command LegalService.EscalateToCollections
     handler ToLegalServiceHandler is {
       on accountSuspended: event CreditAccount.AccountSuspended is {
         let item0: type LegalService.EscalateToCollections = prompt("translate the accountSuspended event into a EscalateToCollections, the debt having outrun ordinary credit control when the account is suspended")
@@ -115,7 +115,7 @@ context CreditContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type CreditAccountEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on creditApproved: event CreditApproved is {
         let notice: type NotificationService.SendCreditNotice = prompt("translate the creditApproved event into a SendCreditNotice telling the buyer what credit line they have been granted and on what terms")
@@ -156,7 +156,7 @@ context CreditContext as router is {
   include "CreditAccount.riddl"
   // Adaptors for external system integration
   adaptor CreditBureauAdapter to context CreditBureauService as flow is { 
-    outlet CreditBureauAdapterOut is command CreditBureauService.RequestCreditReport
+    inlet CreditBureauAdapterIn is type CreditAccountEvent    outlet CreditBureauAdapterOut is command CreditBureauService.RequestCreditReport
     handler CreditChecks is {
       on creditApplied: event CreditAccount.CreditApplied is {
         let item0: type CreditBureauService.RequestCreditReport = prompt("translate the creditApplied event into a RequestCreditReport, the application being what raises the question of creditworthiness")
@@ -564,19 +564,25 @@ context CreditContext as router is {
       |persistence.
     }
   }
-  streamlet CreditAccountEventSplit as flow is {
+  streamlet CreditAccountEventSplit as split is {
+    outlet CreditAccountEventSplitToToNotificationService is type CreditAccountEvent
+    outlet CreditAccountEventSplitToToLegalService is type CreditAccountEvent
+    outlet CreditAccountEventSplitToCreditBureauAdapter is type CreditAccountEvent
     inlet CreditAccountEventSplitIn is type CreditAccountEvent    outlet CreditAccountEventSplitToCreditAnalytics is type CreditAccountEvent
     handler CreditAccountEventSplitHandler is {
       on creditApplied: event CreditAccount.CreditApplied is {
         send creditApplied to outlet CreditAccountEventSplitToCreditAnalytics
+        send creditApplied to outlet CreditAccountEventSplitToCreditBureauAdapter
         tell creditApplied to entity CreditContext.CreditAccount
       }
       on creditApproved: event CreditAccount.CreditApproved is {
         send creditApproved to outlet CreditAccountEventSplitToCreditAnalytics
+        send creditApproved to outlet CreditAccountEventSplitToToNotificationService
         tell creditApproved to entity CreditContext.CreditAccount
       }
       on creditDenied: event CreditAccount.CreditDenied is {
         send creditDenied to outlet CreditAccountEventSplitToCreditAnalytics
+        send creditDenied to outlet CreditAccountEventSplitToToNotificationService
         tell creditDenied to entity CreditContext.CreditAccount
       }
       on invoicePosted: event CreditAccount.InvoicePosted is {
@@ -589,10 +595,13 @@ context CreditContext as router is {
       }
       on creditLimitAdjusted: event CreditAccount.CreditLimitAdjusted is {
         send creditLimitAdjusted to outlet CreditAccountEventSplitToCreditAnalytics
+        send creditLimitAdjusted to outlet CreditAccountEventSplitToToNotificationService
         tell creditLimitAdjusted to entity CreditContext.CreditAccount
       }
       on accountSuspended: event CreditAccount.AccountSuspended is {
         send accountSuspended to outlet CreditAccountEventSplitToCreditAnalytics
+        send accountSuspended to outlet CreditAccountEventSplitToToNotificationService
+        send accountSuspended to outlet CreditAccountEventSplitToToLegalService
         tell accountSuspended to entity CreditContext.CreditAccount
       }
       on accountReinstated: event CreditAccount.AccountReinstated is {
@@ -601,6 +610,7 @@ context CreditContext as router is {
       }
       on collectionActionRecorded: event CreditAccount.CollectionActionRecorded is {
         send collectionActionRecorded to outlet CreditAccountEventSplitToCreditAnalytics
+        send collectionActionRecorded to outlet CreditAccountEventSplitToToNotificationService
         tell collectionActionRecorded to entity CreditContext.CreditAccount
       }
       on other is {
@@ -617,6 +627,15 @@ context CreditContext as router is {
     described as {
       |Fans CreditAccount events out to the repository and projectors.
     }
+  }
+  connector 'ToNotificationService Feed' is from outlet CreditContext.CreditAccountEventSplit.CreditAccountEventSplitToToNotificationService to inlet CreditContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The CreditAccount events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToLegalService Feed' is from outlet CreditContext.CreditAccountEventSplit.CreditAccountEventSplitToToLegalService to inlet CreditContext.ToLegalService.ToLegalServiceIn with {
+    briefly "The CreditAccount events ToLegalService translates, on their way to it"
+  }
+  connector 'CreditBureauAdapter Feed' is from outlet CreditContext.CreditAccountEventSplit.CreditAccountEventSplitToCreditBureauAdapter to inlet CreditContext.CreditBureauAdapter.CreditBureauAdapterIn with {
+    briefly "The CreditAccount events CreditBureauAdapter translates, on their way to it"
   }
   connector 'CreditAccountEvent Stream' is from outlet CreditContext.CreditAccount.CreditAccountEvents2 to inlet CreditContext.CreditAccountEventSplit.CreditAccountEventSplitIn with {
     briefly "CreditAccount events, fanned out to storage and read models"

@@ -91,7 +91,7 @@ context ForecastContext as router is {
     }
   }
   adaptor ToERPIntegration to context ERPIntegration as flow is { 
-    outlet ToERPIntegrationOut is type ERPIntegration.ERPIntegrationCommand
+    inlet ToERPIntegrationIn is type ForecastEvent    outlet ToERPIntegrationOut is type ERPIntegration.ERPIntegrationCommand
     handler ToERPIntegrationHandler is {
       on forecastCreated: event Forecast.ForecastCreated is {
         let item0: type ERPIntegration.FetchHistoricalDemand = prompt("translate the forecastCreated event into a FetchHistoricalDemand, a forecast having nothing to extrapolate from until history arrives")
@@ -140,7 +140,7 @@ context ForecastContext as router is {
     }
   }
   adaptor ToForecastingEngine to context ForecastingEngine as flow is { 
-    outlet ToForecastingEngineOut is type ForecastingEngine.ForecastingEngineCommand
+    inlet ToForecastingEngineIn is type ForecastEvent    outlet ToForecastingEngineOut is type ForecastingEngine.ForecastingEngineCommand
     handler ToForecastingEngineHandler is {
       on forecastCreated: event Forecast.ForecastCreated is {
         let item0: type ForecastingEngine.GenerateMLForecast = prompt("translate the forecastCreated event into a GenerateMLForecast, a new forecast having nothing in it until a model runs")
@@ -187,7 +187,7 @@ context ForecastContext as router is {
     }
   }
   adaptor ToMarketIntelligence to context MarketIntelligence as flow is { 
-    outlet ToMarketIntelligenceOut is type MarketIntelligence.MarketIntelligenceCommand
+    inlet ToMarketIntelligenceIn is type ForecastEvent    outlet ToMarketIntelligenceOut is type MarketIntelligence.MarketIntelligenceCommand
     handler ToMarketIntelligenceHandler is {
       on forecastCreated: event Forecast.ForecastCreated is {
         let item0: type MarketIntelligence.GetMarketTrends = prompt("translate the forecastCreated event into a GetMarketTrends, history alone missing what the market is about to do")
@@ -236,7 +236,7 @@ context ForecastContext as router is {
     }
   }
   adaptor ToSalesInput to context SalesInput as flow is { 
-    outlet ToSalesInputOut is command SalesInput.RequestSalesForecast
+    inlet ToSalesInputIn is type ForecastEvent    outlet ToSalesInputOut is command SalesInput.RequestSalesForecast
     handler ToSalesInputHandler is {
       on forecastCreated: event Forecast.ForecastCreated is {
         let item0: type SalesInput.RequestSalesForecast = prompt("translate the forecastCreated event into a RequestSalesForecast, consensus needing the field's own number alongside the statistical one")
@@ -676,11 +676,19 @@ context ForecastContext as router is {
       |Union of Forecast events for streaming.
     }
   }
-  streamlet ForecastEventSplit as flow is {
+  streamlet ForecastEventSplit as split is {
+    outlet ForecastEventSplitToToSalesInput is type ForecastEvent
+    outlet ForecastEventSplitToToMarketIntelligence is type ForecastEvent
+    outlet ForecastEventSplitToToForecastingEngine is type ForecastEvent
+    outlet ForecastEventSplitToToERPIntegration is type ForecastEvent
     inlet ForecastEventSplitIn is type ForecastEvent    outlet ForecastEventSplitToForecastAnalytics is type ForecastEvent
     handler ForecastEventSplitHandler is {
       on forecastCreated: event Forecast.ForecastCreated is {
         send forecastCreated to outlet ForecastEventSplitToForecastAnalytics
+        send forecastCreated to outlet ForecastEventSplitToToSalesInput
+        send forecastCreated to outlet ForecastEventSplitToToMarketIntelligence
+        send forecastCreated to outlet ForecastEventSplitToToForecastingEngine
+        send forecastCreated to outlet ForecastEventSplitToToERPIntegration
         tell forecastCreated to entity ForecastContext.Forecast
       }
       on statisticalForecastGenerated: event Forecast.StatisticalForecastGenerated is {
@@ -705,6 +713,7 @@ context ForecastContext as router is {
       }
       on forecastApproved: event Forecast.ForecastApproved is {
         send forecastApproved to outlet ForecastEventSplitToForecastAnalytics
+        send forecastApproved to outlet ForecastEventSplitToToERPIntegration
         tell forecastApproved to entity ForecastContext.Forecast
       }
       on forecastActivated: event Forecast.ForecastActivated is {
@@ -741,6 +750,18 @@ context ForecastContext as router is {
     described as {
       |Fans Forecast events out to the repository and projectors.
     }
+  }
+  connector 'ToSalesInput Feed' is from outlet ForecastContext.ForecastEventSplit.ForecastEventSplitToToSalesInput to inlet ForecastContext.ToSalesInput.ToSalesInputIn with {
+    briefly "The Forecast events ToSalesInput translates, on their way to it"
+  }
+  connector 'ToMarketIntelligence Feed' is from outlet ForecastContext.ForecastEventSplit.ForecastEventSplitToToMarketIntelligence to inlet ForecastContext.ToMarketIntelligence.ToMarketIntelligenceIn with {
+    briefly "The Forecast events ToMarketIntelligence translates, on their way to it"
+  }
+  connector 'ToForecastingEngine Feed' is from outlet ForecastContext.ForecastEventSplit.ForecastEventSplitToToForecastingEngine to inlet ForecastContext.ToForecastingEngine.ToForecastingEngineIn with {
+    briefly "The Forecast events ToForecastingEngine translates, on their way to it"
+  }
+  connector 'ToERPIntegration Feed' is from outlet ForecastContext.ForecastEventSplit.ForecastEventSplitToToERPIntegration to inlet ForecastContext.ToERPIntegration.ToERPIntegrationIn with {
+    briefly "The Forecast events ToERPIntegration translates, on their way to it"
   }
   connector 'ForecastEvent Stream' is from outlet ForecastContext.Forecast.ForecastEvents2 to inlet ForecastContext.ForecastEventSplit.ForecastEventSplitIn with {
     briefly "Forecast events, fanned out to storage and read models"

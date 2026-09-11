@@ -74,7 +74,7 @@ context AccountContext as router is {
     }
   }
   adaptor ToCoreBankingService to context CoreBankingService as flow is { 
-    outlet ToCoreBankingServiceOut is command CoreBankingService.PostToLedger
+    inlet ToCoreBankingServiceIn is type AccountEvent    outlet ToCoreBankingServiceOut is command CoreBankingService.PostToLedger
     handler ToCoreBankingServiceHandler is {
       on transactionRecorded: event Account.TransactionRecorded is {
         let item0: type CoreBankingService.PostToLedger = prompt("translate the transactionRecorded event into a PostToLedger, a recorded transaction being what the ledger must show")
@@ -117,8 +117,8 @@ context AccountContext as router is {
       |The model's side of the CustomerService conversation.
     }
   }
-  adaptor ToCustomerService to context CustomerService as flow is { 
-    outlet ToCustomerServiceOut is query CustomerService.GetCustomer
+  adaptor ToCustomerService to context CustomerService as merge is { 
+    inlet ToCustomerServiceIn is type AccountEvent    inlet ToCustomerServiceReplies is result CustomerService.CustomerResult    outlet ToCustomerServiceOut is query CustomerService.GetCustomer
     handler ToCustomerServiceHandler is {
       on accountOpened: event Account.AccountOpened is {
         let askAnswer: type CustomerService.CustomerResult = ask query CustomerService.GetCustomer of context CustomerService
@@ -160,7 +160,7 @@ context AccountContext as router is {
     }
   }
   adaptor ToFraudDetectionService to context FraudDetectionService as flow is { 
-    outlet ToFraudDetectionServiceOut is command FraudDetectionService.ScreenTransaction
+    inlet ToFraudDetectionServiceIn is type AccountEvent    outlet ToFraudDetectionServiceOut is command FraudDetectionService.ScreenTransaction
     handler ToFraudDetectionServiceHandler is {
       on transactionRecorded: event TransactionRecorded is {
         let item0: type FraudDetectionService.ScreenTransaction = prompt("translate the transactionRecorded event into a ScreenTransaction, exposure beginning the moment money moves")
@@ -182,7 +182,7 @@ context AccountContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendAccountNotification
+    inlet ToNotificationServiceIn is type AccountEvent    outlet ToNotificationServiceOut is command NotificationService.SendAccountNotification
     handler ToNotificationServiceHandler is {
       on accountFrozen: event AccountFrozen is {
         let notice: type NotificationService.SendAccountNotification = prompt("translate the accountFrozen event into a SendAccountNotification telling the account holder their account is frozen, why, and that transactions will be refused")
@@ -240,7 +240,7 @@ context AccountContext as router is {
     }
   }
   adaptor ToRegulatoryService to context RegulatoryService as flow is { 
-    outlet ToRegulatoryServiceOut is command RegulatoryService.ReportTransaction
+    inlet ToRegulatoryServiceIn is type AccountEvent    outlet ToRegulatoryServiceOut is command RegulatoryService.ReportTransaction
     handler ToRegulatoryServiceHandler is {
       on transactionRecorded: event TransactionRecorded is {
         let item0: type RegulatoryService.ReportTransaction = prompt("translate the transactionRecorded event into a ReportTransaction, reportable movements being reportable as they happen")
@@ -625,11 +625,17 @@ context AccountContext as router is {
       |Maintains banking account analytics data.
     }
   }
-  streamlet AccountEventSplit as flow is {
+  streamlet AccountEventSplit as split is {
+    outlet AccountEventSplitToToRegulatoryService is type AccountEvent
+    outlet AccountEventSplitToToNotificationService is type AccountEvent
+    outlet AccountEventSplitToToFraudDetectionService is type AccountEvent
+    outlet AccountEventSplitToToCustomerService is type AccountEvent
+    outlet AccountEventSplitToToCoreBankingService is type AccountEvent
     inlet AccountEventSplitIn is type AccountEvent    outlet AccountEventSplitToAccountAnalytics is type AccountEvent
     handler AccountEventSplitHandler is {
       on accountOpened: event Account.AccountOpened is {
         send accountOpened to outlet AccountEventSplitToAccountAnalytics
+        send accountOpened to outlet AccountEventSplitToToCustomerService
         tell accountOpened to entity AccountContext.Account
       }
       on accountInfoUpdated: event Account.AccountInfoUpdated is {
@@ -642,6 +648,9 @@ context AccountContext as router is {
       }
       on transactionRecorded: event Account.TransactionRecorded is {
         send transactionRecorded to outlet AccountEventSplitToAccountAnalytics
+        send transactionRecorded to outlet AccountEventSplitToToRegulatoryService
+        send transactionRecorded to outlet AccountEventSplitToToFraudDetectionService
+        send transactionRecorded to outlet AccountEventSplitToToCoreBankingService
         tell transactionRecorded to entity AccountContext.Account
       }
       on transferProcessed: event Account.TransferProcessed is {
@@ -650,22 +659,27 @@ context AccountContext as router is {
       }
       on limitSet: event Account.LimitSet is {
         send limitSet to outlet AccountEventSplitToAccountAnalytics
+        send limitSet to outlet AccountEventSplitToToNotificationService
         tell limitSet to entity AccountContext.Account
       }
       on feeApplied: event Account.FeeApplied is {
         send feeApplied to outlet AccountEventSplitToAccountAnalytics
+        send feeApplied to outlet AccountEventSplitToToNotificationService
         tell feeApplied to entity AccountContext.Account
       }
       on accountFrozen: event Account.AccountFrozen is {
         send accountFrozen to outlet AccountEventSplitToAccountAnalytics
+        send accountFrozen to outlet AccountEventSplitToToNotificationService
         tell accountFrozen to entity AccountContext.Account
       }
       on accountUnfrozen: event Account.AccountUnfrozen is {
         send accountUnfrozen to outlet AccountEventSplitToAccountAnalytics
+        send accountUnfrozen to outlet AccountEventSplitToToNotificationService
         tell accountUnfrozen to entity AccountContext.Account
       }
       on accountClosed: event Account.AccountClosed is {
         send accountClosed to outlet AccountEventSplitToAccountAnalytics
+        send accountClosed to outlet AccountEventSplitToToNotificationService
         tell accountClosed to entity AccountContext.Account
       }
       on other is {
@@ -682,6 +696,21 @@ context AccountContext as router is {
     described as {
       |Fans Account events out to the repository and projectors.
     }
+  }
+  connector 'ToRegulatoryService Feed' is from outlet AccountContext.AccountEventSplit.AccountEventSplitToToRegulatoryService to inlet AccountContext.ToRegulatoryService.ToRegulatoryServiceIn with {
+    briefly "The Account events ToRegulatoryService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet AccountContext.AccountEventSplit.AccountEventSplitToToNotificationService to inlet AccountContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Account events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToFraudDetectionService Feed' is from outlet AccountContext.AccountEventSplit.AccountEventSplitToToFraudDetectionService to inlet AccountContext.ToFraudDetectionService.ToFraudDetectionServiceIn with {
+    briefly "The Account events ToFraudDetectionService translates, on their way to it"
+  }
+  connector 'ToCustomerService Feed' is from outlet AccountContext.AccountEventSplit.AccountEventSplitToToCustomerService to inlet AccountContext.ToCustomerService.ToCustomerServiceIn with {
+    briefly "The Account events ToCustomerService translates, on their way to it"
+  }
+  connector 'ToCoreBankingService Feed' is from outlet AccountContext.AccountEventSplit.AccountEventSplitToToCoreBankingService to inlet AccountContext.ToCoreBankingService.ToCoreBankingServiceIn with {
+    briefly "The Account events ToCoreBankingService translates, on their way to it"
   }
   connector 'AccountEvent Stream' is from outlet AccountContext.Account.AccountEvents2 to inlet AccountContext.AccountEventSplit.AccountEventSplitIn with {
     briefly "Account events, fanned out to storage and read models"

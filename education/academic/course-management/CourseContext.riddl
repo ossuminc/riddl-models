@@ -77,7 +77,7 @@ context CourseContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type CourseEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on studentEnrolled: event StudentEnrolled is {
         let msg: type NotificationService.SendEnrollmentConfirmation = prompt("translate the studentEnrolled event into a SendEnrollmentConfirmation for the customer")
@@ -127,7 +127,7 @@ context CourseContext as router is {
     }
   }
   adaptor ToRoomSchedulingService to context RoomSchedulingService as flow is { 
-    outlet ToRoomSchedulingServiceOut is command RoomSchedulingService.ReserveRoom
+    inlet ToRoomSchedulingServiceIn is type CourseEvent    outlet ToRoomSchedulingServiceOut is command RoomSchedulingService.ReserveRoom
     handler ToRoomSchedulingServiceHandler is {
       on sectionScheduled: event Course.SectionScheduled is {
         let request: type RoomSchedulingService.ReserveRoom = prompt("translate the sectionScheduled event into a ReserveRoom holding the teaching space the section needs")
@@ -538,7 +538,9 @@ context CourseContext as router is {
       |persistence.
     }
   }
-  streamlet CourseEventSplit as flow is {
+  streamlet CourseEventSplit as split is {
+    outlet CourseEventSplitToToRoomSchedulingService is type CourseEvent
+    outlet CourseEventSplitToToNotificationService is type CourseEvent
     inlet CourseEventSplitIn is type CourseEvent    outlet CourseEventSplitToEnrollmentAnalytics is type CourseEvent
     handler CourseEventSplitHandler is {
       on courseCreated: event Course.CourseCreated is {
@@ -559,18 +561,22 @@ context CourseContext as router is {
       }
       on sectionScheduled: event Course.SectionScheduled is {
         send sectionScheduled to outlet CourseEventSplitToEnrollmentAnalytics
+        send sectionScheduled to outlet CourseEventSplitToToRoomSchedulingService
         tell sectionScheduled to entity CourseContext.Course
       }
       on sectionCancelled: event Course.SectionCancelled is {
         send sectionCancelled to outlet CourseEventSplitToEnrollmentAnalytics
+        send sectionCancelled to outlet CourseEventSplitToToNotificationService
         tell sectionCancelled to entity CourseContext.Course
       }
       on studentEnrolled: event Course.StudentEnrolled is {
         send studentEnrolled to outlet CourseEventSplitToEnrollmentAnalytics
+        send studentEnrolled to outlet CourseEventSplitToToNotificationService
         tell studentEnrolled to entity CourseContext.Course
       }
       on studentDropped: event Course.StudentDropped is {
         send studentDropped to outlet CourseEventSplitToEnrollmentAnalytics
+        send studentDropped to outlet CourseEventSplitToToNotificationService
         tell studentDropped to entity CourseContext.Course
       }
       on gradeRecorded: event Course.GradeRecorded is {
@@ -595,6 +601,12 @@ context CourseContext as router is {
     described as {
       |Fans Course events out to the repository and projectors.
     }
+  }
+  connector 'ToRoomSchedulingService Feed' is from outlet CourseContext.CourseEventSplit.CourseEventSplitToToRoomSchedulingService to inlet CourseContext.ToRoomSchedulingService.ToRoomSchedulingServiceIn with {
+    briefly "The Course events ToRoomSchedulingService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet CourseContext.CourseEventSplit.CourseEventSplitToToNotificationService to inlet CourseContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Course events ToNotificationService translates, on their way to it"
   }
   connector 'CourseEvent Stream' is from outlet CourseContext.Course.CourseEvents2 to inlet CourseContext.CourseEventSplit.CourseEventSplitIn with {
     briefly "Course events, fanned out to storage and read models"

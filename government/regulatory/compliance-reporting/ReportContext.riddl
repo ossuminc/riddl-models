@@ -94,7 +94,7 @@ context ReportContext as router is {
     }
   }
   adaptor ToAuditManagementService to context AuditManagementService as flow is { 
-    outlet ToAuditManagementServiceOut is type AuditManagementService.AuditManagementServiceCommand
+    inlet ToAuditManagementServiceIn is type ReportEvent    outlet ToAuditManagementServiceOut is type AuditManagementService.AuditManagementServiceCommand
     handler ToAuditManagementServiceHandler is {
       on findingRecorded: event Report.FindingRecorded is {
         let item0: type AuditManagementService.ScheduleAudit = prompt("translate the findingRecorded event into a ScheduleAudit, a recorded finding being what there is to audit")
@@ -145,7 +145,7 @@ context ReportContext as router is {
     }
   }
   adaptor ToDataCollectionService to context DataCollectionService as flow is { 
-    outlet ToDataCollectionServiceOut is command DataCollectionService.CollectReportData
+    inlet ToDataCollectionServiceIn is type ReportEvent    outlet ToDataCollectionServiceOut is command DataCollectionService.CollectReportData
     handler ToDataCollectionServiceHandler is {
       on reportCreated: event Report.ReportCreated is {
         let item0: type DataCollectionService.CollectReportData = prompt("translate the reportCreated event into a CollectReportData, a report being an empty shell until its data is gathered")
@@ -186,8 +186,8 @@ context ReportContext as router is {
       |The model's side of the DocumentManagementService conversation.
     }
   }
-  adaptor ToDocumentManagementService to context DocumentManagementService as flow is { 
-    outlet ToDocumentManagementServiceOut is type DocumentManagementService.DocumentManagementServiceRequest
+  adaptor ToDocumentManagementService to context DocumentManagementService as merge is { 
+    inlet ToDocumentManagementServiceIn is type ReportEvent    inlet ToDocumentManagementServiceReplies is result DocumentManagementService.DocumentContent    outlet ToDocumentManagementServiceOut is type DocumentManagementService.DocumentManagementServiceRequest
     handler ToDocumentManagementServiceHandler is {
       on reportApproved: event ReportApproved is {
         let artifact: type DocumentManagementService.StoreDocument = prompt("translate the reportApproved event into a StoreDocument keeping the approved filing as it went out")
@@ -213,7 +213,7 @@ context ReportContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type ReportEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on reportCreated: event ReportCreated is {
         when prompt("the report's compliance requirement states a due date") then
@@ -260,8 +260,8 @@ context ReportContext as router is {
       |The model's side of the RegulatoryCalendarService conversation.
     }
   }
-  adaptor ToRegulatoryCalendarService to context RegulatoryCalendarService as flow is { 
-    outlet ToRegulatoryCalendarServiceOut is type RegulatoryCalendarService.RegulatoryCalendarServiceRequest
+  adaptor ToRegulatoryCalendarService to context RegulatoryCalendarService as merge is { 
+    inlet ToRegulatoryCalendarServiceIn is type ReportEvent    inlet ToRegulatoryCalendarServiceReplies is result RegulatoryCalendarService.UpcomingDeadlines    outlet ToRegulatoryCalendarServiceOut is type RegulatoryCalendarService.RegulatoryCalendarServiceRequest
     handler ToRegulatoryCalendarServiceHandler is {
       on reportCreated: event Report.ReportCreated is {
         let askAnswer: type RegulatoryCalendarService.UpcomingDeadlines = ask query RegulatoryCalendarService.GetUpcomingDeadlines of context RegulatoryCalendarService
@@ -309,8 +309,8 @@ context ReportContext as router is {
       |The model's side of the RegulatoryPortalService conversation.
     }
   }
-  adaptor ToRegulatoryPortalService to context RegulatoryPortalService as flow is { 
-    outlet ToRegulatoryPortalServiceOut is type RegulatoryPortalService.RegulatoryPortalServiceRequest
+  adaptor ToRegulatoryPortalService to context RegulatoryPortalService as merge is { 
+    inlet ToRegulatoryPortalServiceIn is type ReportEvent    inlet ToRegulatoryPortalServiceReplies is result RegulatoryPortalService.FilingStatus    outlet ToRegulatoryPortalServiceOut is type RegulatoryPortalService.RegulatoryPortalServiceRequest
     handler ToRegulatoryPortalServiceHandler is {
       on reportSubmitted: event Report.ReportSubmitted is {
         let askAnswer: type RegulatoryPortalService.FilingStatus = ask query RegulatoryPortalService.GetFilingStatus of context RegulatoryPortalService
@@ -739,15 +739,25 @@ context ReportContext as router is {
       |persistence.
     }
   }
-  streamlet ReportEventSplit as flow is {
+  streamlet ReportEventSplit as split is {
+    outlet ReportEventSplitToToRegulatoryPortalService is type ReportEvent
+    outlet ReportEventSplitToToRegulatoryCalendarService is type ReportEvent
+    outlet ReportEventSplitToToNotificationService is type ReportEvent
+    outlet ReportEventSplitToToDocumentManagementService is type ReportEvent
+    outlet ReportEventSplitToToDataCollectionService is type ReportEvent
+    outlet ReportEventSplitToToAuditManagementService is type ReportEvent
     inlet ReportEventSplitIn is type ReportEvent    outlet ReportEventSplitToComplianceAnalytics is type ReportEvent
     handler ReportEventSplitHandler is {
       on reportCreated: event Report.ReportCreated is {
         send reportCreated to outlet ReportEventSplitToComplianceAnalytics
+        send reportCreated to outlet ReportEventSplitToToRegulatoryCalendarService
+        send reportCreated to outlet ReportEventSplitToToNotificationService
+        send reportCreated to outlet ReportEventSplitToToDataCollectionService
         tell reportCreated to entity ReportContext.Report
       }
       on sectionAdded: event Report.SectionAdded is {
         send sectionAdded to outlet ReportEventSplitToComplianceAnalytics
+        send sectionAdded to outlet ReportEventSplitToToDocumentManagementService
         tell sectionAdded to entity ReportContext.Report
       }
       on sectionUpdated: event Report.SectionUpdated is {
@@ -760,6 +770,7 @@ context ReportContext as router is {
       }
       on reportApproved: event Report.ReportApproved is {
         send reportApproved to outlet ReportEventSplitToComplianceAnalytics
+        send reportApproved to outlet ReportEventSplitToToDocumentManagementService
         tell reportApproved to entity ReportContext.Report
       }
       on reportRejected: event Report.ReportRejected is {
@@ -768,6 +779,8 @@ context ReportContext as router is {
       }
       on reportSubmitted: event Report.ReportSubmitted is {
         send reportSubmitted to outlet ReportEventSplitToComplianceAnalytics
+        send reportSubmitted to outlet ReportEventSplitToToRegulatoryPortalService
+        send reportSubmitted to outlet ReportEventSplitToToNotificationService
         tell reportSubmitted to entity ReportContext.Report
       }
       on acknowledgmentReceived: event Report.AcknowledgmentReceived is {
@@ -780,10 +793,12 @@ context ReportContext as router is {
       }
       on findingRecorded: event Report.FindingRecorded is {
         send findingRecorded to outlet ReportEventSplitToComplianceAnalytics
+        send findingRecorded to outlet ReportEventSplitToToAuditManagementService
         tell findingRecorded to entity ReportContext.Report
       }
       on findingResolved: event Report.FindingResolved is {
         send findingResolved to outlet ReportEventSplitToComplianceAnalytics
+        send findingResolved to outlet ReportEventSplitToToAuditManagementService
         tell findingResolved to entity ReportContext.Report
       }
       on other is {
@@ -800,6 +815,24 @@ context ReportContext as router is {
     described as {
       |Fans Report events out to the repository and projectors.
     }
+  }
+  connector 'ToRegulatoryPortalService Feed' is from outlet ReportContext.ReportEventSplit.ReportEventSplitToToRegulatoryPortalService to inlet ReportContext.ToRegulatoryPortalService.ToRegulatoryPortalServiceIn with {
+    briefly "The Report events ToRegulatoryPortalService translates, on their way to it"
+  }
+  connector 'ToRegulatoryCalendarService Feed' is from outlet ReportContext.ReportEventSplit.ReportEventSplitToToRegulatoryCalendarService to inlet ReportContext.ToRegulatoryCalendarService.ToRegulatoryCalendarServiceIn with {
+    briefly "The Report events ToRegulatoryCalendarService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet ReportContext.ReportEventSplit.ReportEventSplitToToNotificationService to inlet ReportContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Report events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToDocumentManagementService Feed' is from outlet ReportContext.ReportEventSplit.ReportEventSplitToToDocumentManagementService to inlet ReportContext.ToDocumentManagementService.ToDocumentManagementServiceIn with {
+    briefly "The Report events ToDocumentManagementService translates, on their way to it"
+  }
+  connector 'ToDataCollectionService Feed' is from outlet ReportContext.ReportEventSplit.ReportEventSplitToToDataCollectionService to inlet ReportContext.ToDataCollectionService.ToDataCollectionServiceIn with {
+    briefly "The Report events ToDataCollectionService translates, on their way to it"
+  }
+  connector 'ToAuditManagementService Feed' is from outlet ReportContext.ReportEventSplit.ReportEventSplitToToAuditManagementService to inlet ReportContext.ToAuditManagementService.ToAuditManagementServiceIn with {
+    briefly "The Report events ToAuditManagementService translates, on their way to it"
   }
   connector 'ReportEvent Stream' is from outlet ReportContext.Report.ReportEvents2 to inlet ReportContext.ReportEventSplit.ReportEventSplitIn with {
     briefly "Report events, fanned out to storage and read models"

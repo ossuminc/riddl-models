@@ -76,8 +76,8 @@ context AutomationContext as router is {
       |The model's side of the CRMSystem conversation.
     }
   }
-  adaptor ToCRMSystem to context CRMSystem as flow is { 
-    outlet ToCRMSystemOut is type CRMSystem.CRMSystemRequest
+  adaptor ToCRMSystem to context CRMSystem as merge is { 
+    inlet ToCRMSystemIn is type AutomationWorkflowEvent    inlet ToCRMSystemReplies is type CRMSystem.CRMSystemReply    outlet ToCRMSystemOut is type CRMSystem.CRMSystemRequest
     handler ToCRMSystemHandler is {
       on leadEnrolled: event AutomationWorkflow.LeadEnrolled is {
         let askAnswer: type CRMSystem.LeadInfo = ask query CRMSystem.GetLeadInfo of context CRMSystem
@@ -134,8 +134,8 @@ context AutomationContext as router is {
       |The model's side of the EmailDelivery conversation.
     }
   }
-  adaptor ToEmailDelivery to context EmailDelivery as flow is { 
-    outlet ToEmailDeliveryOut is type EmailDelivery.EmailDeliveryRequest
+  adaptor ToEmailDelivery to context EmailDelivery as merge is { 
+    inlet ToEmailDeliveryIn is type AutomationWorkflowEvent    inlet ToEmailDeliveryReplies is result EmailDelivery.DeliveryStatus    outlet ToEmailDeliveryOut is type EmailDelivery.EmailDeliveryRequest
     handler ToEmailDeliveryHandler is {
       on workflowCompleted: event AutomationWorkflow.WorkflowCompleted is {
         let askAnswer: type EmailDelivery.DeliveryStatus = ask query EmailDelivery.GetDeliveryStatus of context EmailDelivery
@@ -563,7 +563,9 @@ context AutomationContext as router is {
       |persistence.
     }
   }
-  streamlet AutomationWorkflowEventSplit as flow is {
+  streamlet AutomationWorkflowEventSplit as split is {
+    outlet AutomationWorkflowEventSplitToToEmailDelivery is type AutomationWorkflowEvent
+    outlet AutomationWorkflowEventSplitToToCRMSystem is type AutomationWorkflowEvent
     inlet AutomationWorkflowEventSplitIn is type AutomationWorkflowEvent    outlet AutomationWorkflowEventSplitToAutomationMetrics is type AutomationWorkflowEvent
     handler AutomationWorkflowEventSplitHandler is {
       on workflowCreated: event AutomationWorkflow.WorkflowCreated is {
@@ -572,6 +574,7 @@ context AutomationContext as router is {
       }
       on workflowActivated: event AutomationWorkflow.WorkflowActivated is {
         send workflowActivated to outlet AutomationWorkflowEventSplitToAutomationMetrics
+        send workflowActivated to outlet AutomationWorkflowEventSplitToToCRMSystem
         tell workflowActivated to entity AutomationContext.AutomationWorkflow
       }
       on workflowPaused: event AutomationWorkflow.WorkflowPaused is {
@@ -584,10 +587,13 @@ context AutomationContext as router is {
       }
       on leadEnrolled: event AutomationWorkflow.LeadEnrolled is {
         send leadEnrolled to outlet AutomationWorkflowEventSplitToAutomationMetrics
+        send leadEnrolled to outlet AutomationWorkflowEventSplitToToCRMSystem
         tell leadEnrolled to entity AutomationContext.AutomationWorkflow
       }
       on leadStepAdvanced: event AutomationWorkflow.LeadStepAdvanced is {
         send leadStepAdvanced to outlet AutomationWorkflowEventSplitToAutomationMetrics
+        send leadStepAdvanced to outlet AutomationWorkflowEventSplitToToEmailDelivery
+        send leadStepAdvanced to outlet AutomationWorkflowEventSplitToToCRMSystem
         tell leadStepAdvanced to entity AutomationContext.AutomationWorkflow
       }
       on leadRemoved: event AutomationWorkflow.LeadRemoved is {
@@ -604,6 +610,7 @@ context AutomationContext as router is {
       }
       on workflowCompleted: event AutomationWorkflow.WorkflowCompleted is {
         send workflowCompleted to outlet AutomationWorkflowEventSplitToAutomationMetrics
+        send workflowCompleted to outlet AutomationWorkflowEventSplitToToEmailDelivery
         tell workflowCompleted to entity AutomationContext.AutomationWorkflow
       }
       on workflowArchived: event AutomationWorkflow.WorkflowArchived is {
@@ -624,6 +631,12 @@ context AutomationContext as router is {
     described as {
       |Fans AutomationWorkflow events out to the repository and projectors.
     }
+  }
+  connector 'ToEmailDelivery Feed' is from outlet AutomationContext.AutomationWorkflowEventSplit.AutomationWorkflowEventSplitToToEmailDelivery to inlet AutomationContext.ToEmailDelivery.ToEmailDeliveryIn with {
+    briefly "The AutomationWorkflow events ToEmailDelivery translates, on their way to it"
+  }
+  connector 'ToCRMSystem Feed' is from outlet AutomationContext.AutomationWorkflowEventSplit.AutomationWorkflowEventSplitToToCRMSystem to inlet AutomationContext.ToCRMSystem.ToCRMSystemIn with {
+    briefly "The AutomationWorkflow events ToCRMSystem translates, on their way to it"
   }
   connector 'AutomationWorkflowEvent Stream' is from outlet AutomationContext.AutomationWorkflow.AutomationWorkflowEvents2 to inlet AutomationContext.AutomationWorkflowEventSplit.AutomationWorkflowEventSplitIn with {
     briefly "AutomationWorkflow events, fanned out to storage and read models"

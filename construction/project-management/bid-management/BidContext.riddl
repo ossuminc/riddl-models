@@ -71,7 +71,7 @@ context BidContext as router is {
     }
   }
   adaptor ToContractService to context ContractService as flow is { 
-    outlet ToContractServiceOut is command ContractService.GenerateContract
+    inlet ToContractServiceIn is type BidEvent    outlet ToContractServiceOut is command ContractService.GenerateContract
     handler ToContractServiceHandler is {
       on bidAwarded: event Bid.BidAwarded is {
         let item0: type ContractService.GenerateContract = prompt("translate the bidAwarded event into a GenerateContract, the award being what creates the instrument")
@@ -126,7 +126,7 @@ context BidContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type BidEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on proposalSubmitted: event ProposalSubmitted is {
         let notice: type NotificationService.NotifyBidReceived = prompt("translate the proposalSubmitted event into a NotifyBidReceived acknowledging to the bidder that their proposal arrived, which is not a decision")
@@ -555,7 +555,9 @@ context BidContext as router is {
       |persistence.
     }
   }
-  streamlet BidEventSplit as flow is {
+  streamlet BidEventSplit as split is {
+    outlet BidEventSplitToToNotificationService is type BidEvent
+    outlet BidEventSplitToToContractService is type BidEvent
     inlet BidEventSplitIn is type BidEvent    outlet BidEventSplitToBidAnalytics is type BidEvent
     handler BidEventSplitHandler is {
       on bidCreated: event Bid.BidCreated is {
@@ -564,6 +566,7 @@ context BidContext as router is {
       }
       on proposalSubmitted: event Bid.ProposalSubmitted is {
         send proposalSubmitted to outlet BidEventSplitToBidAnalytics
+        send proposalSubmitted to outlet BidEventSplitToToNotificationService
         tell proposalSubmitted to entity BidContext.Bid
       }
       on proposalRevised: event Bid.ProposalRevised is {
@@ -584,14 +587,18 @@ context BidContext as router is {
       }
       on bidShortlisted: event Bid.BidShortlisted is {
         send bidShortlisted to outlet BidEventSplitToBidAnalytics
+        send bidShortlisted to outlet BidEventSplitToToNotificationService
         tell bidShortlisted to entity BidContext.Bid
       }
       on bidAwarded: event Bid.BidAwarded is {
         send bidAwarded to outlet BidEventSplitToBidAnalytics
+        send bidAwarded to outlet BidEventSplitToToNotificationService
+        send bidAwarded to outlet BidEventSplitToToContractService
         tell bidAwarded to entity BidContext.Bid
       }
       on bidRejected: event Bid.BidRejected is {
         send bidRejected to outlet BidEventSplitToBidAnalytics
+        send bidRejected to outlet BidEventSplitToToNotificationService
         tell bidRejected to entity BidContext.Bid
       }
       on other is {
@@ -608,6 +615,12 @@ context BidContext as router is {
     described as {
       |Fans Bid events out to the repository and projectors.
     }
+  }
+  connector 'ToNotificationService Feed' is from outlet BidContext.BidEventSplit.BidEventSplitToToNotificationService to inlet BidContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Bid events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToContractService Feed' is from outlet BidContext.BidEventSplit.BidEventSplitToToContractService to inlet BidContext.ToContractService.ToContractServiceIn with {
+    briefly "The Bid events ToContractService translates, on their way to it"
   }
   connector 'BidEvent Stream' is from outlet BidContext.Bid.BidEvents2 to inlet BidContext.BidEventSplit.BidEventSplitIn with {
     briefly "Bid events, fanned out to storage and read models"

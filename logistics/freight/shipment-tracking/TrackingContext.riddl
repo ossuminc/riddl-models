@@ -79,7 +79,7 @@ context TrackingContext as router is {
     }
   }
   adaptor ToCarrierIntegration to context CarrierIntegration as flow is { 
-    outlet ToCarrierIntegrationOut is type CarrierIntegration.CarrierIntegrationCommand
+    inlet ToCarrierIntegrationIn is type ShipmentEvent    outlet ToCarrierIntegrationOut is type CarrierIntegration.CarrierIntegrationCommand
     handler ToCarrierIntegrationHandler is {
       on shipmentCreated: event Shipment.ShipmentCreated is {
         let item0: type CarrierIntegration.RequestPickup = prompt("translate the shipmentCreated event into a RequestPickup, the shipment being what a collection is arranged for")
@@ -128,7 +128,7 @@ context TrackingContext as router is {
     }
   }
   adaptor ToGeolocationService to context GeolocationService as flow is { 
-    outlet ToGeolocationServiceOut is type GeolocationService.GeolocationServiceCommand
+    inlet ToGeolocationServiceIn is type ShipmentEvent    outlet ToGeolocationServiceOut is type GeolocationService.GeolocationServiceCommand
     handler ToGeolocationServiceHandler is {
       on shipmentCreated: event Shipment.ShipmentCreated is {
         let item0: type GeolocationService.GeocodeAddress = prompt("translate the shipmentCreated event into a GeocodeAddress, an address being unroutable as text")
@@ -154,7 +154,7 @@ context TrackingContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendShipmentNotification
+    inlet ToNotificationServiceIn is type ShipmentEvent    outlet ToNotificationServiceOut is command NotificationService.SendShipmentNotification
     handler ToNotificationServiceHandler is {
       on exceptionReported: event ExceptionReported is {
         let notice: type NotificationService.SendShipmentNotification = prompt("translate the exceptionReported event into a SendShipmentNotification telling the shipper something has gone wrong with the shipment and what it is")
@@ -579,15 +579,22 @@ context TrackingContext as router is {
       |Union of Shipment events for streaming.
     }
   }
-  streamlet ShipmentEventSplit as flow is {
+  streamlet ShipmentEventSplit as split is {
+    outlet ShipmentEventSplitToToNotificationService is type ShipmentEvent
+    outlet ShipmentEventSplitToToGeolocationService is type ShipmentEvent
+    outlet ShipmentEventSplitToToCarrierIntegration is type ShipmentEvent
     inlet ShipmentEventSplitIn is type ShipmentEvent    outlet ShipmentEventSplitToShipmentAnalytics is type ShipmentEvent
     handler ShipmentEventSplitHandler is {
       on shipmentCreated: event Shipment.ShipmentCreated is {
         send shipmentCreated to outlet ShipmentEventSplitToShipmentAnalytics
+        send shipmentCreated to outlet ShipmentEventSplitToToGeolocationService
+        send shipmentCreated to outlet ShipmentEventSplitToToCarrierIntegration
         tell shipmentCreated to entity TrackingContext.Shipment
       }
       on pickupRecorded: event Shipment.PickupRecorded is {
         send pickupRecorded to outlet ShipmentEventSplitToShipmentAnalytics
+        send pickupRecorded to outlet ShipmentEventSplitToToGeolocationService
+        send pickupRecorded to outlet ShipmentEventSplitToToCarrierIntegration
         tell pickupRecorded to entity TrackingContext.Shipment
       }
       on trackingEventAdded: event Shipment.TrackingEventAdded is {
@@ -600,26 +607,32 @@ context TrackingContext as router is {
       }
       on eTAUpdated: event Shipment.ETAUpdated is {
         send eTAUpdated to outlet ShipmentEventSplitToShipmentAnalytics
+        send eTAUpdated to outlet ShipmentEventSplitToToNotificationService
         tell eTAUpdated to entity TrackingContext.Shipment
       }
       on markedOutForDelivery: event Shipment.MarkedOutForDelivery is {
         send markedOutForDelivery to outlet ShipmentEventSplitToShipmentAnalytics
+        send markedOutForDelivery to outlet ShipmentEventSplitToToNotificationService
         tell markedOutForDelivery to entity TrackingContext.Shipment
       }
       on deliveryRecorded: event Shipment.DeliveryRecorded is {
         send deliveryRecorded to outlet ShipmentEventSplitToShipmentAnalytics
+        send deliveryRecorded to outlet ShipmentEventSplitToToNotificationService
         tell deliveryRecorded to entity TrackingContext.Shipment
       }
       on exceptionReported: event Shipment.ExceptionReported is {
         send exceptionReported to outlet ShipmentEventSplitToShipmentAnalytics
+        send exceptionReported to outlet ShipmentEventSplitToToNotificationService
         tell exceptionReported to entity TrackingContext.Shipment
       }
       on exceptionResolved: event Shipment.ExceptionResolved is {
         send exceptionResolved to outlet ShipmentEventSplitToShipmentAnalytics
+        send exceptionResolved to outlet ShipmentEventSplitToToNotificationService
         tell exceptionResolved to entity TrackingContext.Shipment
       }
       on returnInitiated: event Shipment.ReturnInitiated is {
         send returnInitiated to outlet ShipmentEventSplitToShipmentAnalytics
+        send returnInitiated to outlet ShipmentEventSplitToToNotificationService
         tell returnInitiated to entity TrackingContext.Shipment
       }
       on other is {
@@ -636,6 +649,15 @@ context TrackingContext as router is {
     described as {
       |Fans Shipment events out to the repository and projectors.
     }
+  }
+  connector 'ToNotificationService Feed' is from outlet TrackingContext.ShipmentEventSplit.ShipmentEventSplitToToNotificationService to inlet TrackingContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Shipment events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToGeolocationService Feed' is from outlet TrackingContext.ShipmentEventSplit.ShipmentEventSplitToToGeolocationService to inlet TrackingContext.ToGeolocationService.ToGeolocationServiceIn with {
+    briefly "The Shipment events ToGeolocationService translates, on their way to it"
+  }
+  connector 'ToCarrierIntegration Feed' is from outlet TrackingContext.ShipmentEventSplit.ShipmentEventSplitToToCarrierIntegration to inlet TrackingContext.ToCarrierIntegration.ToCarrierIntegrationIn with {
+    briefly "The Shipment events ToCarrierIntegration translates, on their way to it"
   }
   connector 'ShipmentStreamEvent Stream' is from outlet TrackingContext.Shipment.ShipmentEvents2 to inlet TrackingContext.ShipmentEventSplit.ShipmentEventSplitIn with {
     briefly "Shipment events, fanned out to storage and read models"

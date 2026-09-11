@@ -73,8 +73,8 @@ context RecruitingContext as router is {
       |The model's side of the BackgroundCheckService conversation.
     }
   }
-  adaptor ToBackgroundCheckService to context BackgroundCheckService as flow is { 
-    outlet ToBackgroundCheckServiceOut is type BackgroundCheckService.BackgroundCheckServiceRequest
+  adaptor ToBackgroundCheckService to context BackgroundCheckService as merge is { 
+    inlet ToBackgroundCheckServiceIn is type JobRequisitionEvent    inlet ToBackgroundCheckServiceReplies is result BackgroundCheckService.CheckStatus    outlet ToBackgroundCheckServiceOut is type BackgroundCheckService.BackgroundCheckServiceRequest
     handler ToBackgroundCheckServiceHandler is {
       on candidateAdded: event CandidateAdded is {
         let check0: type BackgroundCheckService.InitiateBackgroundCheck = prompt("translate the candidateAdded event into an InitiateBackgroundCheck starting the vetting the offer will depend on")
@@ -122,8 +122,8 @@ context RecruitingContext as router is {
       |The model's side of the JobBoardIntegration conversation.
     }
   }
-  adaptor ToJobBoardIntegration to context JobBoardIntegration as flow is { 
-    outlet ToJobBoardIntegrationOut is type JobBoardIntegration.JobBoardIntegrationCommand
+  adaptor ToJobBoardIntegration to context JobBoardIntegration as merge is { 
+    inlet ToJobBoardIntegrationIn is type JobRequisitionEvent    inlet ToJobBoardIntegrationReplies is result JobBoardIntegration.BoardApplications    outlet ToJobBoardIntegrationOut is type JobBoardIntegration.JobBoardIntegrationCommand
     handler ToJobBoardIntegrationHandler is {
       on requisitionApproved: event JobRequisition.RequisitionApproved is {
         let askAnswer: type JobBoardIntegration.BoardApplications = ask query JobBoardIntegration.GetApplicationsFromBoard of context JobBoardIntegration
@@ -603,7 +603,9 @@ context RecruitingContext as router is {
       |persistence.
     }
   }
-  streamlet JobRequisitionEventSplit as flow is {
+  streamlet JobRequisitionEventSplit as split is {
+    outlet JobRequisitionEventSplitToToJobBoardIntegration is type JobRequisitionEvent
+    outlet JobRequisitionEventSplitToToBackgroundCheckService is type JobRequisitionEvent
     inlet JobRequisitionEventSplitIn is type JobRequisitionEvent    outlet JobRequisitionEventSplitToRecruitingMetrics is type JobRequisitionEvent
     handler JobRequisitionEventSplitHandler is {
       on requisitionCreated: event JobRequisition.RequisitionCreated is {
@@ -612,10 +614,12 @@ context RecruitingContext as router is {
       }
       on requisitionApproved: event JobRequisition.RequisitionApproved is {
         send requisitionApproved to outlet JobRequisitionEventSplitToRecruitingMetrics
+        send requisitionApproved to outlet JobRequisitionEventSplitToToJobBoardIntegration
         tell requisitionApproved to entity RecruitingContext.JobRequisition
       }
       on candidateAdded: event JobRequisition.CandidateAdded is {
         send candidateAdded to outlet JobRequisitionEventSplitToRecruitingMetrics
+        send candidateAdded to outlet JobRequisitionEventSplitToToBackgroundCheckService
         tell candidateAdded to entity RecruitingContext.JobRequisition
       }
       on candidateScreened: event JobRequisition.CandidateScreened is {
@@ -632,6 +636,7 @@ context RecruitingContext as router is {
       }
       on offerExtended: event JobRequisition.OfferExtended is {
         send offerExtended to outlet JobRequisitionEventSplitToRecruitingMetrics
+        send offerExtended to outlet JobRequisitionEventSplitToToBackgroundCheckService
         tell offerExtended to entity RecruitingContext.JobRequisition
       }
       on offerAccepted: event JobRequisition.OfferAccepted is {
@@ -656,6 +661,7 @@ context RecruitingContext as router is {
       }
       on requisitionFilled: event JobRequisition.RequisitionFilled is {
         send requisitionFilled to outlet JobRequisitionEventSplitToRecruitingMetrics
+        send requisitionFilled to outlet JobRequisitionEventSplitToToJobBoardIntegration
         tell requisitionFilled to entity RecruitingContext.JobRequisition
       }
       on other is {
@@ -672,6 +678,12 @@ context RecruitingContext as router is {
     described as {
       |Fans JobRequisition events out to the repository and projectors.
     }
+  }
+  connector 'ToJobBoardIntegration Feed' is from outlet RecruitingContext.JobRequisitionEventSplit.JobRequisitionEventSplitToToJobBoardIntegration to inlet RecruitingContext.ToJobBoardIntegration.ToJobBoardIntegrationIn with {
+    briefly "The JobRequisition events ToJobBoardIntegration translates, on their way to it"
+  }
+  connector 'ToBackgroundCheckService Feed' is from outlet RecruitingContext.JobRequisitionEventSplit.JobRequisitionEventSplitToToBackgroundCheckService to inlet RecruitingContext.ToBackgroundCheckService.ToBackgroundCheckServiceIn with {
+    briefly "The JobRequisition events ToBackgroundCheckService translates, on their way to it"
   }
   connector 'JobRequisitionEvent Stream' is from outlet RecruitingContext.JobRequisition.JobRequisitionEvents2 to inlet RecruitingContext.JobRequisitionEventSplit.JobRequisitionEventSplitIn with {
     briefly "JobRequisition events, fanned out to storage and read models"

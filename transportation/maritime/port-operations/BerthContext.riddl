@@ -102,7 +102,7 @@ context BerthContext as router is {
     }
   }
   adaptor ToCustomsService to context CustomsService as flow is { 
-    outlet ToCustomsServiceOut is command CustomsService.SubmitArrivalNotification
+    inlet ToCustomsServiceIn is type BerthEvent    outlet ToCustomsServiceOut is command CustomsService.SubmitArrivalNotification
     handler ToCustomsServiceHandler is {
       on vesselArrived: event PortCall.VesselArrived is {
         let item0: type CustomsService.SubmitArrivalNotification = prompt("translate the vesselArrived event into a SubmitArrivalNotification, arrival being the fact the notification declares")
@@ -151,8 +151,8 @@ context BerthContext as router is {
       |The model's side of the PilotCoordinationService conversation.
     }
   }
-  adaptor ToPilotCoordinationService to context PilotCoordinationService as flow is { 
-    outlet ToPilotCoordinationServiceOut is type PilotCoordinationService.PilotCoordinationServiceRequest
+  adaptor ToPilotCoordinationService to context PilotCoordinationService as merge is { 
+    inlet ToPilotCoordinationServiceIn is type BerthEvent    inlet ToPilotCoordinationServiceReplies is result PilotCoordinationService.AvailablePilotsResult    outlet ToPilotCoordinationServiceOut is type PilotCoordinationService.PilotCoordinationServiceRequest
     handler ToPilotCoordinationServiceHandler is {
       on berthRequested: event PortCall.BerthRequested is {
         let askAnswer: type PilotCoordinationService.AvailablePilotsResult = ask query PilotCoordinationService.GetAvailablePilots of context PilotCoordinationService
@@ -201,7 +201,7 @@ context BerthContext as router is {
     }
   }
   adaptor ToPortBillingService to context PortBillingService as flow is { 
-    outlet ToPortBillingServiceOut is command PortBillingService.GenerateInvoice
+    inlet ToPortBillingServiceIn is type BerthEvent    outlet ToPortBillingServiceOut is command PortBillingService.GenerateInvoice
     handler ToPortBillingServiceHandler is {
       on portChargesGenerated: event PortCall.PortChargesGenerated is {
         let notice: type PortBillingService.GenerateInvoice = prompt("translate the portChargesGenerated event into a GenerateInvoice for the port call whose charges have just been totalled")
@@ -245,8 +245,8 @@ context BerthContext as router is {
       |The model's side of the TerminalOperatingSystem conversation.
     }
   }
-  adaptor ToTerminalOperatingSystem to context TerminalOperatingSystem as flow is { 
-    outlet ToTerminalOperatingSystemOut is type TerminalOperatingSystem.TerminalOperatingSystemRequest
+  adaptor ToTerminalOperatingSystem to context TerminalOperatingSystem as merge is { 
+    inlet ToTerminalOperatingSystemIn is type BerthEvent    inlet ToTerminalOperatingSystemReplies is result TerminalOperatingSystem.YardCapacityResult    outlet ToTerminalOperatingSystemOut is type TerminalOperatingSystem.TerminalOperatingSystemRequest
     handler ToTerminalOperatingSystemHandler is {
       on cargoOperationsStarted: event PortCall.CargoOperationsStarted is {
         let askAnswer: type TerminalOperatingSystem.YardCapacityResult = ask query TerminalOperatingSystem.GetYardCapacity of context TerminalOperatingSystem
@@ -299,8 +299,8 @@ context BerthContext as router is {
       |The model's side of the TowageService conversation.
     }
   }
-  adaptor ToTowageService to context TowageService as flow is { 
-    outlet ToTowageServiceOut is type TowageService.TowageServiceRequest
+  adaptor ToTowageService to context TowageService as merge is { 
+    inlet ToTowageServiceIn is type BerthEvent    inlet ToTowageServiceReplies is result TowageService.AvailableTugsResult    outlet ToTowageServiceOut is type TowageService.TowageServiceRequest
     handler ToTowageServiceHandler is {
       on vesselArrived: event PortCall.VesselArrived is {
         let askAnswer: type TowageService.AvailableTugsResult = ask query TowageService.GetAvailableTugs of context TowageService
@@ -348,8 +348,8 @@ context BerthContext as router is {
       |The model's side of the VesselTrafficService conversation.
     }
   }
-  adaptor ToVesselTrafficService to context VesselTrafficService as flow is { 
-    outlet ToVesselTrafficServiceOut is query VesselTrafficService.GetVesselPosition
+  adaptor ToVesselTrafficService to context VesselTrafficService as merge is { 
+    inlet ToVesselTrafficServiceIn is type BerthEvent    inlet ToVesselTrafficServiceReplies is result VesselTrafficService.VesselPositionResult    outlet ToVesselTrafficServiceOut is query VesselTrafficService.GetVesselPosition
     handler ToVesselTrafficServiceHandler is {
       on berthRequested: event PortCall.BerthRequested is {
         let askAnswer: type VesselTrafficService.VesselPositionResult = ask query VesselTrafficService.GetVesselPosition of context VesselTrafficService
@@ -850,7 +850,13 @@ context BerthContext as router is {
       |persistence.
     }
   }
-  streamlet BerthEventSplit as flow is {
+  streamlet BerthEventSplit as split is {
+    outlet BerthEventSplitToToVesselTrafficService is type BerthEvent
+    outlet BerthEventSplitToToTowageService is type BerthEvent
+    outlet BerthEventSplitToToTerminalOperatingSystem is type BerthEvent
+    outlet BerthEventSplitToToPortBillingService is type BerthEvent
+    outlet BerthEventSplitToToPilotCoordinationService is type BerthEvent
+    outlet BerthEventSplitToToCustomsService is type BerthEvent
     inlet BerthEventSplitIn is type BerthEvent    outlet BerthEventSplitToPortAnalytics is type BerthEvent
     handler BerthEventSplitHandler is {
       on berthCreated: event Berth.BerthCreated is {
@@ -863,10 +869,14 @@ context BerthContext as router is {
       }
       on berthRequested: event PortCall.BerthRequested is {
         send berthRequested to outlet BerthEventSplitToPortAnalytics
+        send berthRequested to outlet BerthEventSplitToToVesselTrafficService
+        send berthRequested to outlet BerthEventSplitToToPilotCoordinationService
         tell berthRequested to entity BerthContext.Berth
       }
       on berthAssignmentConfirmed: event PortCall.BerthAssignmentConfirmed is {
         send berthAssignmentConfirmed to outlet BerthEventSplitToPortAnalytics
+        send berthAssignmentConfirmed to outlet BerthEventSplitToToTowageService
+        send berthAssignmentConfirmed to outlet BerthEventSplitToToPilotCoordinationService
         tell berthAssignmentConfirmed to entity BerthContext.Berth
       }
       on pilotAssigned: event PortCall.PilotAssigned is {
@@ -879,14 +889,18 @@ context BerthContext as router is {
       }
       on vesselArrived: event PortCall.VesselArrived is {
         send vesselArrived to outlet BerthEventSplitToPortAnalytics
+        send vesselArrived to outlet BerthEventSplitToToTowageService
+        send vesselArrived to outlet BerthEventSplitToToCustomsService
         tell vesselArrived to entity BerthContext.Berth
       }
       on mooringCompleted: event PortCall.MooringCompleted is {
         send mooringCompleted to outlet BerthEventSplitToPortAnalytics
+        send mooringCompleted to outlet BerthEventSplitToToTerminalOperatingSystem
         tell mooringCompleted to entity BerthContext.Berth
       }
       on cargoOperationsStarted: event PortCall.CargoOperationsStarted is {
         send cargoOperationsStarted to outlet BerthEventSplitToPortAnalytics
+        send cargoOperationsStarted to outlet BerthEventSplitToToTerminalOperatingSystem
         tell cargoOperationsStarted to entity BerthContext.Berth
       }
       on cargoOperationsCompleted: event PortCall.CargoOperationsCompleted is {
@@ -899,6 +913,7 @@ context BerthContext as router is {
       }
       on portChargesGenerated: event PortCall.PortChargesGenerated is {
         send portChargesGenerated to outlet BerthEventSplitToPortAnalytics
+        send portChargesGenerated to outlet BerthEventSplitToToPortBillingService
         tell portChargesGenerated to entity BerthContext.Berth
       }
       on portCallCancelled: event PortCall.PortCallCancelled is {
@@ -923,6 +938,24 @@ context BerthContext as router is {
     described as {
       |Fans Berth events out to the repository and projectors.
     }
+  }
+  connector 'ToVesselTrafficService Feed' is from outlet BerthContext.BerthEventSplit.BerthEventSplitToToVesselTrafficService to inlet BerthContext.ToVesselTrafficService.ToVesselTrafficServiceIn with {
+    briefly "The PortCall events ToVesselTrafficService translates, on their way to it"
+  }
+  connector 'ToTowageService Feed' is from outlet BerthContext.BerthEventSplit.BerthEventSplitToToTowageService to inlet BerthContext.ToTowageService.ToTowageServiceIn with {
+    briefly "The PortCall events ToTowageService translates, on their way to it"
+  }
+  connector 'ToTerminalOperatingSystem Feed' is from outlet BerthContext.BerthEventSplit.BerthEventSplitToToTerminalOperatingSystem to inlet BerthContext.ToTerminalOperatingSystem.ToTerminalOperatingSystemIn with {
+    briefly "The PortCall events ToTerminalOperatingSystem translates, on their way to it"
+  }
+  connector 'ToPortBillingService Feed' is from outlet BerthContext.BerthEventSplit.BerthEventSplitToToPortBillingService to inlet BerthContext.ToPortBillingService.ToPortBillingServiceIn with {
+    briefly "The PortCall events ToPortBillingService translates, on their way to it"
+  }
+  connector 'ToPilotCoordinationService Feed' is from outlet BerthContext.BerthEventSplit.BerthEventSplitToToPilotCoordinationService to inlet BerthContext.ToPilotCoordinationService.ToPilotCoordinationServiceIn with {
+    briefly "The PortCall events ToPilotCoordinationService translates, on their way to it"
+  }
+  connector 'ToCustomsService Feed' is from outlet BerthContext.BerthEventSplit.BerthEventSplitToToCustomsService to inlet BerthContext.ToCustomsService.ToCustomsServiceIn with {
+    briefly "The PortCall events ToCustomsService translates, on their way to it"
   }
   connector 'BerthEvent Stream' is from outlet BerthContext.Berth.BerthEvents2 to inlet BerthContext.BerthEventSplit.BerthEventSplitIn with {
     briefly "Berth events, fanned out to storage and read models"

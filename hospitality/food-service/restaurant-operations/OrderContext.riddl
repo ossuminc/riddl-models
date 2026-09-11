@@ -97,7 +97,7 @@ context OrderContext as router is {
     }
   }
   adaptor ToKitchenDisplayService to context KitchenDisplayService as flow is { 
-    outlet ToKitchenDisplayServiceOut is type KitchenDisplayService.KitchenDisplayServiceCommand
+    inlet ToKitchenDisplayServiceIn is type TableOrderEvent    outlet ToKitchenDisplayServiceOut is type KitchenDisplayService.KitchenDisplayServiceCommand
     handler ToKitchenDisplayServiceHandler is {
       on orderSubmitted: event TableOrder.OrderSubmitted is {
         let item0: type KitchenDisplayService.SendTicket = prompt("translate the orderSubmitted event into a SendTicket, submission being when the kitchen is given work")
@@ -142,8 +142,8 @@ context OrderContext as router is {
       |The model's side of the MenuService conversation.
     }
   }
-  adaptor ToMenuService to context MenuService as flow is { 
-    outlet ToMenuServiceOut is type MenuService.MenuServiceRequest
+  adaptor ToMenuService to context MenuService as merge is { 
+    inlet ToMenuServiceIn is type TableOrderEvent    inlet ToMenuServiceReplies is type MenuService.MenuServiceReply    outlet ToMenuServiceOut is type MenuService.MenuServiceRequest
     handler ToMenuServiceHandler is {
       on itemAdded: event TableOrder.ItemAdded is {
         let askAnswer: type MenuService.ItemDetails = ask query MenuService.GetItemDetails of context MenuService
@@ -199,7 +199,7 @@ context OrderContext as router is {
     }
   }
   adaptor ToPaymentProcessingService to context PaymentProcessingService as flow is { 
-    outlet ToPaymentProcessingServiceOut is type PaymentProcessingService.PaymentProcessingServiceCommand
+    inlet ToPaymentProcessingServiceIn is type TableOrderEvent    outlet ToPaymentProcessingServiceOut is type PaymentProcessingService.PaymentProcessingServiceCommand
     handler ToPaymentProcessingServiceHandler is {
       on paymentProcessed: event PaymentProcessed is {
         let notice: type PaymentProcessingService.ProcessCardPayment = prompt("translate the paymentProcessed event into a ProcessCardPayment taking the amount just tendered on the guest's card")
@@ -248,7 +248,7 @@ context OrderContext as router is {
     }
   }
   adaptor ToReceiptPrintingService to context ReceiptPrintingService as flow is { 
-    outlet ToReceiptPrintingServiceOut is type ReceiptPrintingService.ReceiptPrintingServiceCommand
+    inlet ToReceiptPrintingServiceIn is type TableOrderEvent    outlet ToReceiptPrintingServiceOut is type ReceiptPrintingService.ReceiptPrintingServiceCommand
     handler ToReceiptPrintingServiceHandler is {
       on paymentProcessed: event TableOrder.PaymentProcessed is {
         let item0: type ReceiptPrintingService.PrintReceipt = prompt("translate the paymentProcessed event into a PrintReceipt, payment being what a receipt evidences")
@@ -295,8 +295,8 @@ context OrderContext as router is {
       |The model's side of the ReservationService conversation.
     }
   }
-  adaptor ToReservationService to context ReservationService as flow is { 
-    outlet ToReservationServiceOut is type ReservationService.ReservationServiceRequest
+  adaptor ToReservationService to context ReservationService as merge is { 
+    inlet ToReservationServiceIn is type TableOrderEvent    inlet ToReservationServiceReplies is result ReservationService.ReservationDetails    outlet ToReservationServiceOut is type ReservationService.ReservationServiceRequest
     handler ToReservationServiceHandler is {
       on orderCreated: event TableOrder.OrderCreated is {
         let askAnswer: type ReservationService.ReservationDetails = ask query ReservationService.GetReservation of context ReservationService
@@ -342,8 +342,8 @@ context OrderContext as router is {
       |The model's side of the TableManagementService conversation.
     }
   }
-  adaptor ToTableManagementService to context TableManagementService as flow is { 
-    outlet ToTableManagementServiceOut is type TableManagementService.TableManagementServiceCommand
+  adaptor ToTableManagementService to context TableManagementService as merge is { 
+    inlet ToTableManagementServiceIn is type TableOrderEvent    inlet ToTableManagementServiceReplies is result TableManagementService.AvailableTables    outlet ToTableManagementServiceOut is type TableManagementService.TableManagementServiceCommand
     handler ToTableManagementServiceHandler is {
       on orderCreated: event TableOrder.OrderCreated is {
         let askAnswer: type TableManagementService.AvailableTables = ask query TableManagementService.GetAvailableTables of context TableManagementService
@@ -852,15 +852,25 @@ context OrderContext as router is {
       |persistence.
     }
   }
-  streamlet TableOrderEventSplit as flow is {
+  streamlet TableOrderEventSplit as split is {
+    outlet TableOrderEventSplitToToTableManagementService is type TableOrderEvent
+    outlet TableOrderEventSplitToToReservationService is type TableOrderEvent
+    outlet TableOrderEventSplitToToReceiptPrintingService is type TableOrderEvent
+    outlet TableOrderEventSplitToToPaymentProcessingService is type TableOrderEvent
+    outlet TableOrderEventSplitToToMenuService is type TableOrderEvent
+    outlet TableOrderEventSplitToToKitchenDisplayService is type TableOrderEvent
     inlet TableOrderEventSplitIn is type TableOrderEvent    outlet TableOrderEventSplitToRestaurantAnalytics is type TableOrderEvent
     handler TableOrderEventSplitHandler is {
       on orderCreated: event TableOrder.OrderCreated is {
         send orderCreated to outlet TableOrderEventSplitToRestaurantAnalytics
+        send orderCreated to outlet TableOrderEventSplitToToTableManagementService
+        send orderCreated to outlet TableOrderEventSplitToToReservationService
+        send orderCreated to outlet TableOrderEventSplitToToMenuService
         tell orderCreated to entity OrderContext.TableOrder
       }
       on itemAdded: event TableOrder.ItemAdded is {
         send itemAdded to outlet TableOrderEventSplitToRestaurantAnalytics
+        send itemAdded to outlet TableOrderEventSplitToToMenuService
         tell itemAdded to entity OrderContext.TableOrder
       }
       on itemModified: event TableOrder.ItemModified is {
@@ -873,6 +883,9 @@ context OrderContext as router is {
       }
       on orderSubmitted: event TableOrder.OrderSubmitted is {
         send orderSubmitted to outlet TableOrderEventSplitToRestaurantAnalytics
+        send orderSubmitted to outlet TableOrderEventSplitToToReceiptPrintingService
+        send orderSubmitted to outlet TableOrderEventSplitToToMenuService
+        send orderSubmitted to outlet TableOrderEventSplitToToKitchenDisplayService
         tell orderSubmitted to entity OrderContext.TableOrder
       }
       on itemPreparing: event TableOrder.ItemPreparing is {
@@ -881,6 +894,7 @@ context OrderContext as router is {
       }
       on itemReady: event TableOrder.ItemReady is {
         send itemReady to outlet TableOrderEventSplitToRestaurantAnalytics
+        send itemReady to outlet TableOrderEventSplitToToKitchenDisplayService
         tell itemReady to entity OrderContext.TableOrder
       }
       on itemServed: event TableOrder.ItemServed is {
@@ -897,6 +911,8 @@ context OrderContext as router is {
       }
       on paymentProcessed: event TableOrder.PaymentProcessed is {
         send paymentProcessed to outlet TableOrderEventSplitToRestaurantAnalytics
+        send paymentProcessed to outlet TableOrderEventSplitToToReceiptPrintingService
+        send paymentProcessed to outlet TableOrderEventSplitToToPaymentProcessingService
         tell paymentProcessed to entity OrderContext.TableOrder
       }
       on billSplit: event TableOrder.BillSplit is {
@@ -905,10 +921,13 @@ context OrderContext as router is {
       }
       on orderClosed: event TableOrder.OrderClosed is {
         send orderClosed to outlet TableOrderEventSplitToRestaurantAnalytics
+        send orderClosed to outlet TableOrderEventSplitToToTableManagementService
         tell orderClosed to entity OrderContext.TableOrder
       }
       on orderCancelled: event TableOrder.OrderCancelled is {
         send orderCancelled to outlet TableOrderEventSplitToRestaurantAnalytics
+        send orderCancelled to outlet TableOrderEventSplitToToTableManagementService
+        send orderCancelled to outlet TableOrderEventSplitToToPaymentProcessingService
         tell orderCancelled to entity OrderContext.TableOrder
       }
       on other is {
@@ -925,6 +944,24 @@ context OrderContext as router is {
     described as {
       |Fans TableOrder events out to the repository and projectors.
     }
+  }
+  connector 'ToTableManagementService Feed' is from outlet OrderContext.TableOrderEventSplit.TableOrderEventSplitToToTableManagementService to inlet OrderContext.ToTableManagementService.ToTableManagementServiceIn with {
+    briefly "The TableOrder events ToTableManagementService translates, on their way to it"
+  }
+  connector 'ToReservationService Feed' is from outlet OrderContext.TableOrderEventSplit.TableOrderEventSplitToToReservationService to inlet OrderContext.ToReservationService.ToReservationServiceIn with {
+    briefly "The TableOrder events ToReservationService translates, on their way to it"
+  }
+  connector 'ToReceiptPrintingService Feed' is from outlet OrderContext.TableOrderEventSplit.TableOrderEventSplitToToReceiptPrintingService to inlet OrderContext.ToReceiptPrintingService.ToReceiptPrintingServiceIn with {
+    briefly "The TableOrder events ToReceiptPrintingService translates, on their way to it"
+  }
+  connector 'ToPaymentProcessingService Feed' is from outlet OrderContext.TableOrderEventSplit.TableOrderEventSplitToToPaymentProcessingService to inlet OrderContext.ToPaymentProcessingService.ToPaymentProcessingServiceIn with {
+    briefly "The TableOrder events ToPaymentProcessingService translates, on their way to it"
+  }
+  connector 'ToMenuService Feed' is from outlet OrderContext.TableOrderEventSplit.TableOrderEventSplitToToMenuService to inlet OrderContext.ToMenuService.ToMenuServiceIn with {
+    briefly "The TableOrder events ToMenuService translates, on their way to it"
+  }
+  connector 'ToKitchenDisplayService Feed' is from outlet OrderContext.TableOrderEventSplit.TableOrderEventSplitToToKitchenDisplayService to inlet OrderContext.ToKitchenDisplayService.ToKitchenDisplayServiceIn with {
+    briefly "The TableOrder events ToKitchenDisplayService translates, on their way to it"
   }
   connector 'TableOrderEvent Stream' is from outlet OrderContext.TableOrder.TableOrderEvents2 to inlet OrderContext.TableOrderEventSplit.TableOrderEventSplitIn with {
     briefly "TableOrder events, fanned out to storage and read models"

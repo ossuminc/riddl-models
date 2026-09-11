@@ -47,8 +47,8 @@ context ClaimContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'ClaimCommand Stream Intake' is from outlet ClaimContext.ClaimCommandStreamOut to inlet ClaimContext.Claim.ClaimCommands  connector 'ClaimResult Stream Egress' is from outlet ClaimContext.ClaimRepository.ClaimRepositoryResponses to inlet ClaimContext.ClaimResultStreamIn  adaptor ToAuthorizationService to context AuthorizationService as flow is { 
-    outlet ToAuthorizationServiceOut is query AuthorizationService.CheckAuthorization
+  connector 'ClaimCommand Stream Intake' is from outlet ClaimContext.ClaimCommandStreamOut to inlet ClaimContext.Claim.ClaimCommands  connector 'ClaimResult Stream Egress' is from outlet ClaimContext.ClaimRepository.ClaimRepositoryResponses to inlet ClaimContext.ClaimResultStreamIn  adaptor ToAuthorizationService to context AuthorizationService as merge is { 
+    inlet ToAuthorizationServiceIn is type ClaimEvent    inlet ToAuthorizationServiceReplies is result AuthorizationService.AuthorizationResult    outlet ToAuthorizationServiceOut is query AuthorizationService.CheckAuthorization
     handler ToAuthorizationServiceHandler is {
       on claimSubmitted: event Claim.ClaimSubmitted is {
         let askAnswer: type AuthorizationService.AuthorizationResult = ask query AuthorizationService.CheckAuthorization of context AuthorizationService
@@ -69,8 +69,8 @@ context ClaimContext as router is {
       |The model's side of the AuthorizationService conversation.
     }
   }
-  adaptor ToBenefitsService to context BenefitsService as flow is { 
-    outlet ToBenefitsServiceOut is query BenefitsService.GetBenefits
+  adaptor ToBenefitsService to context BenefitsService as merge is { 
+    inlet ToBenefitsServiceIn is type ClaimEvent    inlet ToBenefitsServiceReplies is result BenefitsService.BenefitInfo    outlet ToBenefitsServiceOut is query BenefitsService.GetBenefits
     handler ToBenefitsServiceHandler is {
       on claimSubmitted: event Claim.ClaimSubmitted is {
         let askAnswer: type BenefitsService.BenefitInfo = ask query BenefitsService.GetBenefits of context BenefitsService
@@ -91,8 +91,8 @@ context ClaimContext as router is {
       |The model's side of the BenefitsService conversation.
     }
   }
-  adaptor ToEligibilityService to context EligibilityService as flow is { 
-    outlet ToEligibilityServiceOut is query EligibilityService.CheckEligibility
+  adaptor ToEligibilityService to context EligibilityService as merge is { 
+    inlet ToEligibilityServiceIn is type ClaimEvent    inlet ToEligibilityServiceReplies is result EligibilityService.EligibilityResult    outlet ToEligibilityServiceOut is query EligibilityService.CheckEligibility
     handler ToEligibilityServiceHandler is {
       on claimSubmitted: event Claim.ClaimSubmitted is {
         let askAnswer: type EligibilityService.EligibilityResult = ask query EligibilityService.CheckEligibility of context EligibilityService
@@ -114,7 +114,7 @@ context ClaimContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendClaimNotification
+    inlet ToNotificationServiceIn is type ClaimEvent    outlet ToNotificationServiceOut is command NotificationService.SendClaimNotification
     handler ToNotificationServiceHandler is {
       on claimApproved: event ClaimApproved is {
         let notice: type NotificationService.SendClaimNotification = prompt("translate the claimApproved event into a SendClaimNotification telling the provider the claim is approved and what will be paid")
@@ -172,7 +172,7 @@ context ClaimContext as router is {
     }
   }
   adaptor ToPaymentService to context PaymentService as flow is { 
-    outlet ToPaymentServiceOut is command PaymentService.IssuePayment
+    inlet ToPaymentServiceIn is type ClaimEvent    outlet ToPaymentServiceOut is command PaymentService.IssuePayment
     handler ToPaymentServiceHandler is {
       on claimApproved: event Claim.ClaimApproved is {
         let notice: type PaymentService.IssuePayment = prompt("translate the claimApproved event into an IssuePayment paying the approved benefit, since approval is where the payer becomes liable for it")
@@ -193,8 +193,8 @@ context ClaimContext as router is {
       |The model's side of the PaymentService conversation.
     }
   }
-  adaptor ToProviderContractService to context ProviderContractService as flow is { 
-    outlet ToProviderContractServiceOut is query ProviderContractService.GetContractRates
+  adaptor ToProviderContractService to context ProviderContractService as merge is { 
+    inlet ToProviderContractServiceIn is type ClaimEvent    inlet ToProviderContractServiceReplies is result ProviderContractService.ContractRates    outlet ToProviderContractServiceOut is query ProviderContractService.GetContractRates
     handler ToProviderContractServiceHandler is {
       on claimAdjudicated: event Claim.ClaimAdjudicated is {
         let askAnswer: type ProviderContractService.ContractRates = ask query ProviderContractService.GetContractRates of context ProviderContractService
@@ -599,19 +599,30 @@ context ClaimContext as router is {
       |persistence.
     }
   }
-  streamlet ClaimEventSplit as flow is {
+  streamlet ClaimEventSplit as split is {
+    outlet ClaimEventSplitToToProviderContractService is type ClaimEvent
+    outlet ClaimEventSplitToToPaymentService is type ClaimEvent
+    outlet ClaimEventSplitToToNotificationService is type ClaimEvent
+    outlet ClaimEventSplitToToEligibilityService is type ClaimEvent
+    outlet ClaimEventSplitToToBenefitsService is type ClaimEvent
+    outlet ClaimEventSplitToToAuthorizationService is type ClaimEvent
     inlet ClaimEventSplitIn is type ClaimEvent    outlet ClaimEventSplitToClaimsAnalytics is type ClaimEvent
     handler ClaimEventSplitHandler is {
       on claimSubmitted: event Claim.ClaimSubmitted is {
         send claimSubmitted to outlet ClaimEventSplitToClaimsAnalytics
+        send claimSubmitted to outlet ClaimEventSplitToToEligibilityService
+        send claimSubmitted to outlet ClaimEventSplitToToBenefitsService
+        send claimSubmitted to outlet ClaimEventSplitToToAuthorizationService
         tell claimSubmitted to entity ClaimContext.Claim
       }
       on claimAdjudicated: event Claim.ClaimAdjudicated is {
         send claimAdjudicated to outlet ClaimEventSplitToClaimsAnalytics
+        send claimAdjudicated to outlet ClaimEventSplitToToProviderContractService
         tell claimAdjudicated to entity ClaimContext.Claim
       }
       on claimPended: event Claim.ClaimPended is {
         send claimPended to outlet ClaimEventSplitToClaimsAnalytics
+        send claimPended to outlet ClaimEventSplitToToNotificationService
         tell claimPended to entity ClaimContext.Claim
       }
       on pendResolved: event Claim.PendResolved is {
@@ -620,14 +631,18 @@ context ClaimContext as router is {
       }
       on claimApproved: event Claim.ClaimApproved is {
         send claimApproved to outlet ClaimEventSplitToClaimsAnalytics
+        send claimApproved to outlet ClaimEventSplitToToPaymentService
+        send claimApproved to outlet ClaimEventSplitToToNotificationService
         tell claimApproved to entity ClaimContext.Claim
       }
       on claimDenied: event Claim.ClaimDenied is {
         send claimDenied to outlet ClaimEventSplitToClaimsAnalytics
+        send claimDenied to outlet ClaimEventSplitToToNotificationService
         tell claimDenied to entity ClaimContext.Claim
       }
       on claimPaid: event Claim.ClaimPaid is {
         send claimPaid to outlet ClaimEventSplitToClaimsAnalytics
+        send claimPaid to outlet ClaimEventSplitToToNotificationService
         tell claimPaid to entity ClaimContext.Claim
       }
       on claimAppealed: event Claim.ClaimAppealed is {
@@ -636,6 +651,7 @@ context ClaimContext as router is {
       }
       on appealResolved: event Claim.AppealResolved is {
         send appealResolved to outlet ClaimEventSplitToClaimsAnalytics
+        send appealResolved to outlet ClaimEventSplitToToNotificationService
         tell appealResolved to entity ClaimContext.Claim
       }
       on claimVoided: event Claim.ClaimVoided is {
@@ -656,6 +672,24 @@ context ClaimContext as router is {
     described as {
       |Fans Claim events out to the repository and projectors.
     }
+  }
+  connector 'ToProviderContractService Feed' is from outlet ClaimContext.ClaimEventSplit.ClaimEventSplitToToProviderContractService to inlet ClaimContext.ToProviderContractService.ToProviderContractServiceIn with {
+    briefly "The Claim events ToProviderContractService translates, on their way to it"
+  }
+  connector 'ToPaymentService Feed' is from outlet ClaimContext.ClaimEventSplit.ClaimEventSplitToToPaymentService to inlet ClaimContext.ToPaymentService.ToPaymentServiceIn with {
+    briefly "The Claim events ToPaymentService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet ClaimContext.ClaimEventSplit.ClaimEventSplitToToNotificationService to inlet ClaimContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Claim events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToEligibilityService Feed' is from outlet ClaimContext.ClaimEventSplit.ClaimEventSplitToToEligibilityService to inlet ClaimContext.ToEligibilityService.ToEligibilityServiceIn with {
+    briefly "The Claim events ToEligibilityService translates, on their way to it"
+  }
+  connector 'ToBenefitsService Feed' is from outlet ClaimContext.ClaimEventSplit.ClaimEventSplitToToBenefitsService to inlet ClaimContext.ToBenefitsService.ToBenefitsServiceIn with {
+    briefly "The Claim events ToBenefitsService translates, on their way to it"
+  }
+  connector 'ToAuthorizationService Feed' is from outlet ClaimContext.ClaimEventSplit.ClaimEventSplitToToAuthorizationService to inlet ClaimContext.ToAuthorizationService.ToAuthorizationServiceIn with {
+    briefly "The Claim events ToAuthorizationService translates, on their way to it"
   }
   connector 'ClaimEvent Stream' is from outlet ClaimContext.Claim.ClaimEvents2 to inlet ClaimContext.ClaimEventSplit.ClaimEventSplitIn with {
     briefly "Claim events, fanned out to storage and read models"

@@ -102,7 +102,7 @@ context POSContext as router is {
     }
   }
   adaptor ToPaymentGateway to context PaymentGateway as flow is { 
-    outlet ToPaymentGatewayOut is type PaymentGateway.PaymentGatewayCommand
+    inlet ToPaymentGatewayIn is type TransactionEvent    outlet ToPaymentGatewayOut is type PaymentGateway.PaymentGatewayCommand
     handler ToPaymentGatewayHandler is {
       on transactionVoided: event TransactionVoided is {
         let notice: type PaymentGateway.RefundPayment = prompt("translate the transactionVoided event into a RefundPayment returning anything already tendered on a transaction that has been voided")
@@ -177,7 +177,7 @@ context POSContext as router is {
     }
   }
   adaptor ToReceiptService to context ReceiptService as flow is { 
-    outlet ToReceiptServiceOut is type ReceiptService.ReceiptServiceCommand
+    inlet ToReceiptServiceIn is type TransactionEvent    outlet ToReceiptServiceOut is type ReceiptService.ReceiptServiceCommand
     handler ToReceiptServiceHandler is {
       on transactionCompleted: event Transaction.TransactionCompleted is {
         let item0: type ReceiptService.GenerateReceipt = prompt("translate the transactionCompleted event into a GenerateReceipt, completion being when there is a total to print")
@@ -217,7 +217,7 @@ context POSContext as router is {
   include "Transaction.riddl"
   // Adaptors for external system integration
   adaptor InventoryAdapter to context InventoryService as flow is { 
-    outlet InventoryAdapterOut is command InventoryService.DeductStock
+    inlet InventoryAdapterIn is type TransactionEvent    outlet InventoryAdapterOut is command InventoryService.DeductStock
     handler InventoryUpdates is {
       on transactionCompleted: event Transaction.TransactionCompleted is {
         let movement: type InventoryService.DeductStock = prompt("translate the transactionCompleted event into a DeductStock taking the sold goods out of stock, the sale being final at completion")
@@ -604,7 +604,10 @@ context POSContext as router is {
       |persistence.
     }
   }
-  streamlet TransactionEventSplit as flow is {
+  streamlet TransactionEventSplit as split is {
+    outlet TransactionEventSplitToToReceiptService is type TransactionEvent
+    outlet TransactionEventSplitToToPaymentGateway is type TransactionEvent
+    outlet TransactionEventSplitToInventoryAdapter is type TransactionEvent
     inlet TransactionEventSplitIn is type TransactionEvent    outlet TransactionEventSplitToSalesAnalytics is type TransactionEvent
     handler TransactionEventSplitHandler is {
       on transactionStarted: event Transaction.TransactionStarted is {
@@ -625,14 +628,19 @@ context POSContext as router is {
       }
       on paymentProcessed: event Transaction.PaymentProcessed is {
         send paymentProcessed to outlet TransactionEventSplitToSalesAnalytics
+        send paymentProcessed to outlet TransactionEventSplitToToPaymentGateway
         tell paymentProcessed to entity POSContext.Transaction
       }
       on transactionCompleted: event Transaction.TransactionCompleted is {
         send transactionCompleted to outlet TransactionEventSplitToSalesAnalytics
+        send transactionCompleted to outlet TransactionEventSplitToToReceiptService
+        send transactionCompleted to outlet TransactionEventSplitToToPaymentGateway
+        send transactionCompleted to outlet TransactionEventSplitToInventoryAdapter
         tell transactionCompleted to entity POSContext.Transaction
       }
       on transactionVoided: event Transaction.TransactionVoided is {
         send transactionVoided to outlet TransactionEventSplitToSalesAnalytics
+        send transactionVoided to outlet TransactionEventSplitToToPaymentGateway
         tell transactionVoided to entity POSContext.Transaction
       }
       on transactionSuspended: event Transaction.TransactionSuspended is {
@@ -657,6 +665,15 @@ context POSContext as router is {
     described as {
       |Fans Transaction events out to the repository and projectors.
     }
+  }
+  connector 'ToReceiptService Feed' is from outlet POSContext.TransactionEventSplit.TransactionEventSplitToToReceiptService to inlet POSContext.ToReceiptService.ToReceiptServiceIn with {
+    briefly "The Transaction events ToReceiptService translates, on their way to it"
+  }
+  connector 'ToPaymentGateway Feed' is from outlet POSContext.TransactionEventSplit.TransactionEventSplitToToPaymentGateway to inlet POSContext.ToPaymentGateway.ToPaymentGatewayIn with {
+    briefly "The Transaction events ToPaymentGateway translates, on their way to it"
+  }
+  connector 'InventoryAdapter Feed' is from outlet POSContext.TransactionEventSplit.TransactionEventSplitToInventoryAdapter to inlet POSContext.InventoryAdapter.InventoryAdapterIn with {
+    briefly "The Transaction events InventoryAdapter translates, on their way to it"
   }
   connector 'TransactionEvent Stream' is from outlet POSContext.Transaction.TransactionEvents2 to inlet POSContext.TransactionEventSplit.TransactionEventSplitIn with {
     briefly "Transaction events, fanned out to storage and read models"

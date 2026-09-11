@@ -54,7 +54,7 @@ context TreatyContext as router is {
     briefly "CessionMetricsProjector projections on their way to storage"
   }
   connector 'TreatyCommand Stream Intake' is from outlet TreatyContext.TreatyCommandStreamOut to inlet TreatyContext.Treaty.TreatyCommands  connector 'TreatyQueryResult Stream Egress' is from outlet TreatyContext.TreatyRepository.TreatyRepositoryResponses to inlet TreatyContext.TreatyQueryResultStreamIn  adaptor ToAccountingService to context AccountingService as flow is { 
-    outlet ToAccountingServiceOut is type AccountingService.AccountingServiceCommand
+    inlet ToAccountingServiceIn is type TreatyEvent    outlet ToAccountingServiceOut is type AccountingService.AccountingServiceCommand
     handler ToAccountingServiceHandler is {
       on cessionRecorded: event Treaty.CessionRecorded is {
         let receipt: type AccountingService.RecordPremiumReceipt = prompt("translate the cessionRecorded event into a RecordPremiumReceipt booking the premium the cession cedes to us")
@@ -84,7 +84,7 @@ context TreatyContext as router is {
     }
   }
   adaptor ToCedingSystem to context CedingSystem as flow is { 
-    outlet ToCedingSystemOut is type CedingSystem.CedingSystemCommand
+    inlet ToCedingSystemIn is type TreatyEvent    outlet ToCedingSystemOut is type CedingSystem.CedingSystemCommand
     handler ToCedingSystemHandler is {
       on treatyExecuted: event Treaty.TreatyExecuted is {
         let item0: type CedingSystem.RequestPolicyData = prompt("translate the treatyExecuted event into a RequestPolicyData, an executed treaty being what must now be administered")
@@ -110,7 +110,7 @@ context TreatyContext as router is {
     }
   }
   adaptor ToActuarialService to context ActuarialService as flow is { 
-    outlet ToActuarialServiceOut is type ActuarialService.ActuarialServiceCommand
+    inlet ToActuarialServiceIn is type TreatyEvent    outlet ToActuarialServiceOut is type ActuarialService.ActuarialServiceCommand
     handler ToActuarialServiceHandler is {
       on cessionRecorded: event Treaty.CessionRecorded is {
         let item0: type ActuarialService.RequestReserveEstimate = prompt("translate the cessionRecorded event into a RequestReserveEstimate, a cession being what changes the exposure to reserve against")
@@ -1011,6 +1011,9 @@ context TreatyContext as router is {
     }
   }
   streamlet TreatyEventSplit as split is {
+    outlet TreatyEventSplitToToCedingSystem is type TreatyEvent
+    outlet TreatyEventSplitToToActuarialService is type TreatyEvent
+    outlet TreatyEventSplitToToAccountingService is type TreatyEvent
     inlet TreatyEventSplitIn is type TreatyEvent    outlet TreatyEventSplitToCessionMetricsProjector is type TreatyEvent
     outlet TreatyEventSplitToBordereauSummaryProjector is type TreatyEvent
     outlet TreatyEventSplitToSettlementLedgerProjector is type TreatyEvent
@@ -1019,30 +1022,38 @@ context TreatyContext as router is {
         send treatyNegotiationStarted to outlet TreatyEventSplitToCessionMetricsProjector
         send treatyNegotiationStarted to outlet TreatyEventSplitToBordereauSummaryProjector
         send treatyNegotiationStarted to outlet TreatyEventSplitToSettlementLedgerProjector
+        send treatyNegotiationStarted to outlet TreatyEventSplitToToActuarialService
         tell treatyNegotiationStarted to entity TreatyContext.Treaty
       }
       on treatyExecuted: event Treaty.TreatyExecuted is {
         send treatyExecuted to outlet TreatyEventSplitToCessionMetricsProjector
         send treatyExecuted to outlet TreatyEventSplitToBordereauSummaryProjector
         send treatyExecuted to outlet TreatyEventSplitToSettlementLedgerProjector
+        send treatyExecuted to outlet TreatyEventSplitToToCedingSystem
         tell treatyExecuted to entity TreatyContext.Treaty
       }
       on cessionRecorded: event Treaty.CessionRecorded is {
         send cessionRecorded to outlet TreatyEventSplitToCessionMetricsProjector
         send cessionRecorded to outlet TreatyEventSplitToBordereauSummaryProjector
         send cessionRecorded to outlet TreatyEventSplitToSettlementLedgerProjector
+        send cessionRecorded to outlet TreatyEventSplitToToCedingSystem
+        send cessionRecorded to outlet TreatyEventSplitToToActuarialService
+        send cessionRecorded to outlet TreatyEventSplitToToAccountingService
         tell cessionRecorded to entity TreatyContext.Treaty
       }
       on bordereauReceived: event Treaty.BordereauReceived is {
         send bordereauReceived to outlet TreatyEventSplitToCessionMetricsProjector
         send bordereauReceived to outlet TreatyEventSplitToBordereauSummaryProjector
         send bordereauReceived to outlet TreatyEventSplitToSettlementLedgerProjector
+        send bordereauReceived to outlet TreatyEventSplitToToActuarialService
+        send bordereauReceived to outlet TreatyEventSplitToToAccountingService
         tell bordereauReceived to entity TreatyContext.Treaty
       }
       on settlementProcessed: event Treaty.SettlementProcessed is {
         send settlementProcessed to outlet TreatyEventSplitToCessionMetricsProjector
         send settlementProcessed to outlet TreatyEventSplitToBordereauSummaryProjector
         send settlementProcessed to outlet TreatyEventSplitToSettlementLedgerProjector
+        send settlementProcessed to outlet TreatyEventSplitToToAccountingService
         tell settlementProcessed to entity TreatyContext.Treaty
       }
       on treatyRenewed: event Treaty.TreatyRenewed is {
@@ -1083,6 +1094,15 @@ context TreatyContext as router is {
     described as {
       |Fans Treaty events out to the repository and projectors.
     }
+  }
+  connector 'ToCedingSystem Feed' is from outlet TreatyContext.TreatyEventSplit.TreatyEventSplitToToCedingSystem to inlet TreatyContext.ToCedingSystem.ToCedingSystemIn with {
+    briefly "The Treaty events ToCedingSystem translates, on their way to it"
+  }
+  connector 'ToActuarialService Feed' is from outlet TreatyContext.TreatyEventSplit.TreatyEventSplitToToActuarialService to inlet TreatyContext.ToActuarialService.ToActuarialServiceIn with {
+    briefly "The Treaty events ToActuarialService translates, on their way to it"
+  }
+  connector 'ToAccountingService Feed' is from outlet TreatyContext.TreatyEventSplit.TreatyEventSplitToToAccountingService to inlet TreatyContext.ToAccountingService.ToAccountingServiceIn with {
+    briefly "The Treaty events ToAccountingService translates, on their way to it"
   }
   connector 'TreatyEvent Stream' is from outlet TreatyContext.Treaty.TreatyEvents2 to inlet TreatyContext.TreatyEventSplit.TreatyEventSplitIn with {
     briefly "Treaty events, fanned out to storage and read models"

@@ -146,7 +146,7 @@ context StoreContext as router is {
     }
   }
   adaptor ToReportingService to context ReportingService as flow is { 
-    outlet ToReportingServiceOut is command ReportingService.GenerateDailyReport
+    inlet ToReportingServiceIn is type StoreEvent    outlet ToReportingServiceOut is command ReportingService.GenerateDailyReport
     handler ToReportingServiceHandler is {
       on storeClosed: event Store.StoreClosed is {
         let item0: type ReportingService.GenerateDailyReport = prompt("translate the storeClosed event into a GenerateDailyReport, the day's close being when there is a day to report on")
@@ -191,7 +191,7 @@ context StoreContext as router is {
   include "Store.riddl"
   // Adaptors for external system integration
   adaptor SecurityAdapter to context SecurityService as flow is { 
-    outlet SecurityAdapterOut is type SecurityService.SecurityServiceCommand
+    inlet SecurityAdapterIn is type StoreEvent    outlet SecurityAdapterOut is type SecurityService.SecurityServiceCommand
     handler SecurityNotifications is {
       on storeOpened: event Store.StoreOpened is {
         let item0: type SecurityService.NotifyStoreStatus = prompt("translate the storeOpened event into a NotifyStoreStatus, opening changing whether the premises are attended")
@@ -573,15 +573,20 @@ context StoreContext as router is {
       |persistence.
     }
   }
-  streamlet StoreEventSplit as flow is {
+  streamlet StoreEventSplit as split is {
+    outlet StoreEventSplitToToReportingService is type StoreEvent
+    outlet StoreEventSplitToSecurityAdapter is type StoreEvent
     inlet StoreEventSplitIn is type StoreEvent    outlet StoreEventSplitToOperationsAnalytics is type StoreEvent
     handler StoreEventSplitHandler is {
       on storeOpened: event Store.StoreOpened is {
         send storeOpened to outlet StoreEventSplitToOperationsAnalytics
+        send storeOpened to outlet StoreEventSplitToSecurityAdapter
         tell storeOpened to entity StoreContext.Store
       }
       on storeClosed: event Store.StoreClosed is {
         send storeClosed to outlet StoreEventSplitToOperationsAnalytics
+        send storeClosed to outlet StoreEventSplitToToReportingService
+        send storeClosed to outlet StoreEventSplitToSecurityAdapter
         tell storeClosed to entity StoreContext.Store
       }
       on shiftStarted: event Store.ShiftStarted is {
@@ -602,6 +607,7 @@ context StoreContext as router is {
       }
       on incidentRecorded: event Store.IncidentRecorded is {
         send incidentRecorded to outlet StoreEventSplitToOperationsAnalytics
+        send incidentRecorded to outlet StoreEventSplitToSecurityAdapter
         tell incidentRecorded to entity StoreContext.Store
       }
       on taskAssigned: event Store.TaskAssigned is {
@@ -626,6 +632,12 @@ context StoreContext as router is {
     described as {
       |Fans Store events out to the repository and projectors.
     }
+  }
+  connector 'ToReportingService Feed' is from outlet StoreContext.StoreEventSplit.StoreEventSplitToToReportingService to inlet StoreContext.ToReportingService.ToReportingServiceIn with {
+    briefly "The Store events ToReportingService translates, on their way to it"
+  }
+  connector 'SecurityAdapter Feed' is from outlet StoreContext.StoreEventSplit.StoreEventSplitToSecurityAdapter to inlet StoreContext.SecurityAdapter.SecurityAdapterIn with {
+    briefly "The Store events SecurityAdapter translates, on their way to it"
   }
   connector 'StoreEvent Stream' is from outlet StoreContext.Store.StoreEvents2 to inlet StoreContext.StoreEventSplit.StoreEventSplitIn with {
     briefly "Store events, fanned out to storage and read models"

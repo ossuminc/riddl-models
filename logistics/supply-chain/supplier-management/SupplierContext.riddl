@@ -67,8 +67,8 @@ context SupplierContext as router is {
       |The model's side of the ComplianceRegistry conversation.
     }
   }
-  adaptor ToComplianceRegistry to context ComplianceRegistry as flow is { 
-    outlet ToComplianceRegistryOut is type ComplianceRegistry.ComplianceRegistryRequest
+  adaptor ToComplianceRegistry to context ComplianceRegistry as merge is { 
+    inlet ToComplianceRegistryIn is type SupplierEvent    inlet ToComplianceRegistryReplies is result ComplianceRegistry.ComplianceResult    outlet ToComplianceRegistryOut is type ComplianceRegistry.ComplianceRegistryRequest
     handler ToComplianceRegistryHandler is {
       on certificationAdded: event CertificationAdded is {
         let item0: type ComplianceRegistry.SubmitComplianceReport = prompt("translate the certificationAdded event into a SubmitComplianceReport registering the certification the supplier now claims")
@@ -113,8 +113,8 @@ context SupplierContext as router is {
       |The model's side of the ProcurementSystem conversation.
     }
   }
-  adaptor ToProcurementSystem to context ProcurementSystem as flow is { 
-    outlet ToProcurementSystemOut is type ProcurementSystem.ProcurementSystemRequest
+  adaptor ToProcurementSystem to context ProcurementSystem as merge is { 
+    inlet ToProcurementSystemIn is type SupplierEvent    inlet ToProcurementSystemReplies is result ProcurementSystem.SupplierSpend    outlet ToProcurementSystemOut is type ProcurementSystem.ProcurementSystemRequest
     handler ToProcurementSystemHandler is {
       on performanceRecorded: event Supplier.PerformanceRecorded is {
         let askAnswer: type ProcurementSystem.SupplierSpend = ask query ProcurementSystem.GetSupplierSpend of context ProcurementSystem
@@ -506,11 +506,14 @@ context SupplierContext as router is {
       |Union of Supplier events for streaming.
     }
   }
-  streamlet SupplierEventSplit as flow is {
+  streamlet SupplierEventSplit as split is {
+    outlet SupplierEventSplitToToProcurementSystem is type SupplierEvent
+    outlet SupplierEventSplitToToComplianceRegistry is type SupplierEvent
     inlet SupplierEventSplitIn is type SupplierEvent    outlet SupplierEventSplitToSupplierMetrics is type SupplierEvent
     handler SupplierEventSplitHandler is {
       on supplierRegistered: event Supplier.SupplierRegistered is {
         send supplierRegistered to outlet SupplierEventSplitToSupplierMetrics
+        send supplierRegistered to outlet SupplierEventSplitToToComplianceRegistry
         tell supplierRegistered to entity SupplierContext.Supplier
       }
       on supplierQualified: event Supplier.SupplierQualified is {
@@ -523,14 +526,17 @@ context SupplierContext as router is {
       }
       on contractAssigned: event Supplier.ContractAssigned is {
         send contractAssigned to outlet SupplierEventSplitToSupplierMetrics
+        send contractAssigned to outlet SupplierEventSplitToToProcurementSystem
         tell contractAssigned to entity SupplierContext.Supplier
       }
       on performanceRecorded: event Supplier.PerformanceRecorded is {
         send performanceRecorded to outlet SupplierEventSplitToSupplierMetrics
+        send performanceRecorded to outlet SupplierEventSplitToToProcurementSystem
         tell performanceRecorded to entity SupplierContext.Supplier
       }
       on certificationAdded: event Supplier.CertificationAdded is {
         send certificationAdded to outlet SupplierEventSplitToSupplierMetrics
+        send certificationAdded to outlet SupplierEventSplitToToComplianceRegistry
         tell certificationAdded to entity SupplierContext.Supplier
       }
       on riskAssessed: event Supplier.RiskAssessed is {
@@ -563,6 +569,12 @@ context SupplierContext as router is {
     described as {
       |Fans Supplier events out to the repository and projectors.
     }
+  }
+  connector 'ToProcurementSystem Feed' is from outlet SupplierContext.SupplierEventSplit.SupplierEventSplitToToProcurementSystem to inlet SupplierContext.ToProcurementSystem.ToProcurementSystemIn with {
+    briefly "The Supplier events ToProcurementSystem translates, on their way to it"
+  }
+  connector 'ToComplianceRegistry Feed' is from outlet SupplierContext.SupplierEventSplit.SupplierEventSplitToToComplianceRegistry to inlet SupplierContext.ToComplianceRegistry.ToComplianceRegistryIn with {
+    briefly "The Supplier events ToComplianceRegistry translates, on their way to it"
   }
   connector 'SupplierEvent Stream' is from outlet SupplierContext.Supplier.SupplierEvents2 to inlet SupplierContext.SupplierEventSplit.SupplierEventSplitIn with {
     briefly "Supplier events, fanned out to storage and read models"

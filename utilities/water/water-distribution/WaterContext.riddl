@@ -42,7 +42,7 @@ context WaterContext as router is {
     }
   }
   connector 'DistributionZoneCommand Stream Intake' is from outlet WaterContext.DistributionZoneCommandStreaOut to inlet WaterContext.DistributionZone.DistributionZoneCommands  connector 'DistributionZoneResult Stream Egress' is from outlet WaterContext.WaterRepository.WaterRepositoryResponses to inlet WaterContext.DistributionZoneResultStreamIn  adaptor ToCustomerNotificationService to context CustomerNotificationService as flow is { 
-    outlet ToCustomerNotificationServiceOut is type CustomerNotificationService.CustomerNotificationServiceCommand
+    inlet ToCustomerNotificationServiceIn is type DistributionZoneEvent    outlet ToCustomerNotificationServiceOut is type CustomerNotificationService.CustomerNotificationServiceCommand
     handler ToCustomerNotificationServiceHandler is {
       on maintenanceScheduled: event MaintenanceScheduled is {
         let alert: type CustomerNotificationService.SendMaintenanceAlert = prompt("translate the maintenanceScheduled event into a SendMaintenanceAlert telling the affected customers when their water will be interrupted and for how long, not that a work order exists")
@@ -95,7 +95,7 @@ context WaterContext as router is {
     }
   }
   adaptor ToLaboratoryService to context LaboratoryService as flow is { 
-    outlet ToLaboratoryServiceOut is command LaboratoryService.SubmitSampleForTesting
+    inlet ToLaboratoryServiceIn is type DistributionZoneEvent    outlet ToLaboratoryServiceOut is command LaboratoryService.SubmitSampleForTesting
     handler ToLaboratoryServiceHandler is {
       on qualitySampleSubmitted: event DistributionZone.QualitySampleSubmitted is {
         let item0: type LaboratoryService.SubmitSampleForTesting = prompt("translate the qualitySampleSubmitted event into a SubmitSampleForTesting, the sample being what the laboratory tests")
@@ -137,7 +137,7 @@ context WaterContext as router is {
     }
   }
   adaptor ToRegulatoryReportingService to context RegulatoryReportingService as flow is { 
-    outlet ToRegulatoryReportingServiceOut is type RegulatoryReportingService.RegulatoryReportingServiceCommand
+    inlet ToRegulatoryReportingServiceIn is type DistributionZoneEvent    outlet ToRegulatoryReportingServiceOut is type RegulatoryReportingService.RegulatoryReportingServiceCommand
     handler ToRegulatoryReportingServiceHandler is {
       on qualitySampleSubmitted: event QualitySampleSubmitted is {
         let item0: type RegulatoryReportingService.SubmitAnnualReport = prompt("translate the qualitySampleSubmitted event into a SubmitAnnualReport contributing the sample to the year's return")
@@ -546,7 +546,10 @@ context WaterContext as router is {
       |persistence.
     }
   }
-  streamlet DistributionZoneEventSplit as flow is {
+  streamlet DistributionZoneEventSplit as split is {
+    outlet DistributionZoneEventSplitToToRegulatoryReportingService is type DistributionZoneEvent
+    outlet DistributionZoneEventSplitToToLaboratoryService is type DistributionZoneEvent
+    outlet DistributionZoneEventSplitToToCustomerNotificationService is type DistributionZoneEvent
     inlet DistributionZoneEventSplitIn is type DistributionZoneEvent    outlet DistributionZoneEventSplitToWaterQualityAnalytics is type DistributionZoneEvent
     handler DistributionZoneEventSplitHandler is {
       on zoneCreated: event DistributionZone.ZoneCreated is {
@@ -559,6 +562,8 @@ context WaterContext as router is {
       }
       on qualitySampleSubmitted: event DistributionZone.QualitySampleSubmitted is {
         send qualitySampleSubmitted to outlet DistributionZoneEventSplitToWaterQualityAnalytics
+        send qualitySampleSubmitted to outlet DistributionZoneEventSplitToToRegulatoryReportingService
+        send qualitySampleSubmitted to outlet DistributionZoneEventSplitToToLaboratoryService
         tell qualitySampleSubmitted to entity WaterContext.DistributionZone
       }
       on leakReported: event DistributionZone.LeakReported is {
@@ -567,14 +572,17 @@ context WaterContext as router is {
       }
       on maintenanceScheduled: event DistributionZone.MaintenanceScheduled is {
         send maintenanceScheduled to outlet DistributionZoneEventSplitToWaterQualityAnalytics
+        send maintenanceScheduled to outlet DistributionZoneEventSplitToToCustomerNotificationService
         tell maintenanceScheduled to entity WaterContext.DistributionZone
       }
       on boilWaterAdvisoryIssued: event DistributionZone.BoilWaterAdvisoryIssued is {
         send boilWaterAdvisoryIssued to outlet DistributionZoneEventSplitToWaterQualityAnalytics
+        send boilWaterAdvisoryIssued to outlet DistributionZoneEventSplitToToCustomerNotificationService
         tell boilWaterAdvisoryIssued to entity WaterContext.DistributionZone
       }
       on boilWaterAdvisoryLifted: event DistributionZone.BoilWaterAdvisoryLifted is {
         send boilWaterAdvisoryLifted to outlet DistributionZoneEventSplitToWaterQualityAnalytics
+        send boilWaterAdvisoryLifted to outlet DistributionZoneEventSplitToToCustomerNotificationService
         tell boilWaterAdvisoryLifted to entity WaterContext.DistributionZone
       }
       on reservoirLevelUpdated: event DistributionZone.ReservoirLevelUpdated is {
@@ -595,6 +603,15 @@ context WaterContext as router is {
     described as {
       |Fans DistributionZone events out to the repository and projectors.
     }
+  }
+  connector 'ToRegulatoryReportingService Feed' is from outlet WaterContext.DistributionZoneEventSplit.DistributionZoneEventSplitToToRegulatoryReportingService to inlet WaterContext.ToRegulatoryReportingService.ToRegulatoryReportingServiceIn with {
+    briefly "The DistributionZone events ToRegulatoryReportingService translates, on their way to it"
+  }
+  connector 'ToLaboratoryService Feed' is from outlet WaterContext.DistributionZoneEventSplit.DistributionZoneEventSplitToToLaboratoryService to inlet WaterContext.ToLaboratoryService.ToLaboratoryServiceIn with {
+    briefly "The DistributionZone events ToLaboratoryService translates, on their way to it"
+  }
+  connector 'ToCustomerNotificationService Feed' is from outlet WaterContext.DistributionZoneEventSplit.DistributionZoneEventSplitToToCustomerNotificationService to inlet WaterContext.ToCustomerNotificationService.ToCustomerNotificationServiceIn with {
+    briefly "The DistributionZone events ToCustomerNotificationService translates, on their way to it"
   }
   connector 'DistributionZoneEvent Stream' is from outlet WaterContext.DistributionZone.DistributionZoneEvents2 to inlet WaterContext.DistributionZoneEventSplit.DistributionZoneEventSplitIn with {
     briefly "DistributionZone events, fanned out to storage and read models"

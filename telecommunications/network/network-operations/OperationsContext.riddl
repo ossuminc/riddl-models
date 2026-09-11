@@ -75,8 +75,8 @@ context OperationsContext as router is {
       |The model's side of the CapacityPlanningSystem conversation.
     }
   }
-  adaptor ToCapacityPlanningSystem to context CapacityPlanningSystem as flow is { 
-    outlet ToCapacityPlanningSystemOut is query CapacityPlanningSystem.GetCapacityForecast
+  adaptor ToCapacityPlanningSystem to context CapacityPlanningSystem as merge is { 
+    inlet ToCapacityPlanningSystemIn is type NetworkIncidentEvent    inlet ToCapacityPlanningSystemReplies is result CapacityPlanningSystem.CapacityForecast    outlet ToCapacityPlanningSystemOut is query CapacityPlanningSystem.GetCapacityForecast
     handler ToCapacityPlanningSystemHandler is {
       on incidentEscalated: event NetworkIncident.IncidentEscalated is {
         let askAnswer: type CapacityPlanningSystem.CapacityForecast = ask query CapacityPlanningSystem.GetCapacityForecast of context CapacityPlanningSystem
@@ -121,7 +121,7 @@ context OperationsContext as router is {
     }
   }
   adaptor ToChangeManagementSystem to context ChangeManagementSystem as flow is { 
-    outlet ToChangeManagementSystemOut is command ChangeManagementSystem.SubmitChangeRequest
+    inlet ToChangeManagementSystemIn is type NetworkIncidentEvent    outlet ToChangeManagementSystemOut is command ChangeManagementSystem.SubmitChangeRequest
     handler ToChangeManagementSystemHandler is {
       on mitigationStarted: event NetworkIncident.MitigationStarted is {
         let item0: type ChangeManagementSystem.SubmitChangeRequest = prompt("translate the mitigationStarted event into a SubmitChangeRequest, mitigation touching the network being a change that must be recorded")
@@ -167,8 +167,8 @@ context OperationsContext as router is {
       |The model's side of the NetworkMonitoringSystem conversation.
     }
   }
-  adaptor ToNetworkMonitoringSystem to context NetworkMonitoringSystem as flow is { 
-    outlet ToNetworkMonitoringSystemOut is query NetworkMonitoringSystem.GetElementHealth
+  adaptor ToNetworkMonitoringSystem to context NetworkMonitoringSystem as merge is { 
+    inlet ToNetworkMonitoringSystemIn is type NetworkIncidentEvent    inlet ToNetworkMonitoringSystemReplies is result NetworkMonitoringSystem.ElementHealthStatus    outlet ToNetworkMonitoringSystemOut is query NetworkMonitoringSystem.GetElementHealth
     handler ToNetworkMonitoringSystemHandler is {
       on incidentCreated: event NetworkIncident.IncidentCreated is {
         let askAnswer: type NetworkMonitoringSystem.ElementHealthStatus = ask query NetworkMonitoringSystem.GetElementHealth of context NetworkMonitoringSystem
@@ -532,11 +532,15 @@ context OperationsContext as router is {
       |persistence.
     }
   }
-  streamlet NetworkIncidentEventSplit as flow is {
+  streamlet NetworkIncidentEventSplit as split is {
+    outlet NetworkIncidentEventSplitToToNetworkMonitoringSystem is type NetworkIncidentEvent
+    outlet NetworkIncidentEventSplitToToChangeManagementSystem is type NetworkIncidentEvent
+    outlet NetworkIncidentEventSplitToToCapacityPlanningSystem is type NetworkIncidentEvent
     inlet NetworkIncidentEventSplitIn is type NetworkIncidentEvent    outlet NetworkIncidentEventSplitToOperationsMetrics is type NetworkIncidentEvent
     handler NetworkIncidentEventSplitHandler is {
       on incidentCreated: event NetworkIncident.IncidentCreated is {
         send incidentCreated to outlet NetworkIncidentEventSplitToOperationsMetrics
+        send incidentCreated to outlet NetworkIncidentEventSplitToToNetworkMonitoringSystem
         tell incidentCreated to entity OperationsContext.NetworkIncident
       }
       on incidentAcknowledged: event NetworkIncident.IncidentAcknowledged is {
@@ -549,10 +553,12 @@ context OperationsContext as router is {
       }
       on incidentEscalated: event NetworkIncident.IncidentEscalated is {
         send incidentEscalated to outlet NetworkIncidentEventSplitToOperationsMetrics
+        send incidentEscalated to outlet NetworkIncidentEventSplitToToCapacityPlanningSystem
         tell incidentEscalated to entity OperationsContext.NetworkIncident
       }
       on mitigationStarted: event NetworkIncident.MitigationStarted is {
         send mitigationStarted to outlet NetworkIncidentEventSplitToOperationsMetrics
+        send mitigationStarted to outlet NetworkIncidentEventSplitToToChangeManagementSystem
         tell mitigationStarted to entity OperationsContext.NetworkIncident
       }
       on incidentResolved: event NetworkIncident.IncidentResolved is {
@@ -581,6 +587,15 @@ context OperationsContext as router is {
     described as {
       |Fans NetworkIncident events out to the repository and projectors.
     }
+  }
+  connector 'ToNetworkMonitoringSystem Feed' is from outlet OperationsContext.NetworkIncidentEventSplit.NetworkIncidentEventSplitToToNetworkMonitoringSystem to inlet OperationsContext.ToNetworkMonitoringSystem.ToNetworkMonitoringSystemIn with {
+    briefly "The NetworkIncident events ToNetworkMonitoringSystem translates, on their way to it"
+  }
+  connector 'ToChangeManagementSystem Feed' is from outlet OperationsContext.NetworkIncidentEventSplit.NetworkIncidentEventSplitToToChangeManagementSystem to inlet OperationsContext.ToChangeManagementSystem.ToChangeManagementSystemIn with {
+    briefly "The NetworkIncident events ToChangeManagementSystem translates, on their way to it"
+  }
+  connector 'ToCapacityPlanningSystem Feed' is from outlet OperationsContext.NetworkIncidentEventSplit.NetworkIncidentEventSplitToToCapacityPlanningSystem to inlet OperationsContext.ToCapacityPlanningSystem.ToCapacityPlanningSystemIn with {
+    briefly "The NetworkIncident events ToCapacityPlanningSystem translates, on their way to it"
   }
   connector 'NetworkIncidentEvent Stream' is from outlet OperationsContext.NetworkIncident.NetworkIncidentEvents2 to inlet OperationsContext.NetworkIncidentEventSplit.NetworkIncidentEventSplitIn with {
     briefly "NetworkIncident events, fanned out to storage and read models"

@@ -112,8 +112,8 @@ context VesselContext as router is {
       |The model's side of the AISService conversation.
     }
   }
-  adaptor ToAISService to context AISService as flow is { 
-    outlet ToAISServiceOut is query AISService.GetVesselAIS
+  adaptor ToAISService to context AISService as merge is { 
+    inlet ToAISServiceIn is type VesselEvent    inlet ToAISServiceReplies is result AISService.VesselAISResult    outlet ToAISServiceOut is query AISService.GetVesselAIS
     handler ToAISServiceHandler is {
       on positionUpdated: event Vessel.PositionUpdated is {
         let askAnswer: type AISService.VesselAISResult = ask query AISService.GetVesselAIS of context AISService
@@ -206,8 +206,8 @@ context VesselContext as router is {
       |The model's side of the CharterPartyService conversation.
     }
   }
-  adaptor ToCharterPartyService to context CharterPartyService as flow is { 
-    outlet ToCharterPartyServiceOut is query CharterPartyService.GetCharterParty
+  adaptor ToCharterPartyService to context CharterPartyService as merge is { 
+    inlet ToCharterPartyServiceIn is type VesselEvent    inlet ToCharterPartyServiceReplies is result CharterPartyService.CharterPartyResult    outlet ToCharterPartyServiceOut is query CharterPartyService.GetCharterParty
     handler ToCharterPartyServiceHandler is {
       on voyageCreated: event Voyage.VoyageCreated is {
         let askAnswer: type CharterPartyService.CharterPartyResult = ask query CharterPartyService.GetCharterParty of context CharterPartyService
@@ -256,8 +256,8 @@ context VesselContext as router is {
       |The model's side of the ClassificationSocietyService conversation.
     }
   }
-  adaptor ToClassificationSocietyService to context ClassificationSocietyService as flow is { 
-    outlet ToClassificationSocietyServiceOut is query ClassificationSocietyService.GetCertificateStatus
+  adaptor ToClassificationSocietyService to context ClassificationSocietyService as merge is { 
+    inlet ToClassificationSocietyServiceIn is type VesselEvent    inlet ToClassificationSocietyServiceReplies is result ClassificationSocietyService.CertificateStatusResult    outlet ToClassificationSocietyServiceOut is query ClassificationSocietyService.GetCertificateStatus
     handler ToClassificationSocietyServiceHandler is {
       on certificateRenewed: event Vessel.CertificateRenewed is {
         let askAnswer: type ClassificationSocietyService.CertificateStatusResult = ask query ClassificationSocietyService.GetCertificateStatus of context ClassificationSocietyService
@@ -349,8 +349,8 @@ context VesselContext as router is {
       |The model's side of the WeatherService conversation.
     }
   }
-  adaptor ToWeatherService to context WeatherService as flow is { 
-    outlet ToWeatherServiceOut is type WeatherService.WeatherServiceRequest
+  adaptor ToWeatherService to context WeatherService as merge is { 
+    inlet ToWeatherServiceIn is type VesselEvent    inlet ToWeatherServiceReplies is result WeatherService.RouteWeatherResult    outlet ToWeatherServiceOut is type WeatherService.WeatherServiceRequest
     handler ToWeatherServiceHandler is {
       on voyageCreated: event Voyage.VoyageCreated is {
         let askAnswer: type WeatherService.RouteWeatherResult = ask query WeatherService.GetRouteWeather of context WeatherService
@@ -902,7 +902,11 @@ context VesselContext as router is {
       |persistence.
     }
   }
-  streamlet VesselEventSplit as flow is {
+  streamlet VesselEventSplit as split is {
+    outlet VesselEventSplitToToWeatherService is type VesselEvent
+    outlet VesselEventSplitToToClassificationSocietyService is type VesselEvent
+    outlet VesselEventSplitToToCharterPartyService is type VesselEvent
+    outlet VesselEventSplitToToAISService is type VesselEvent
     inlet VesselEventSplitIn is type VesselEvent    outlet VesselEventSplitToFleetAnalytics is type VesselEvent
     handler VesselEventSplitHandler is {
       on vesselRegistered: event Vessel.VesselRegistered is {
@@ -915,10 +919,13 @@ context VesselContext as router is {
       }
       on positionUpdated: event Vessel.PositionUpdated is {
         send positionUpdated to outlet VesselEventSplitToFleetAnalytics
+        send positionUpdated to outlet VesselEventSplitToToAISService
         tell positionUpdated to entity VesselContext.Vessel
       }
       on voyageCreated: event Voyage.VoyageCreated is {
         send voyageCreated to outlet VesselEventSplitToFleetAnalytics
+        send voyageCreated to outlet VesselEventSplitToToWeatherService
+        send voyageCreated to outlet VesselEventSplitToToCharterPartyService
         tell voyageCreated to entity VesselContext.Vessel
       }
       on voyageUpdated: event Voyage.VoyageUpdated is {
@@ -931,6 +938,7 @@ context VesselContext as router is {
       }
       on portDepartureRecorded: event Voyage.PortDepartureRecorded is {
         send portDepartureRecorded to outlet VesselEventSplitToFleetAnalytics
+        send portDepartureRecorded to outlet VesselEventSplitToToWeatherService
         tell portDepartureRecorded to entity VesselContext.Vessel
       }
       on voyageCompleted: event Voyage.VoyageCompleted is {
@@ -951,6 +959,7 @@ context VesselContext as router is {
       }
       on certificateRenewed: event Vessel.CertificateRenewed is {
         send certificateRenewed to outlet VesselEventSplitToFleetAnalytics
+        send certificateRenewed to outlet VesselEventSplitToToClassificationSocietyService
         tell certificateRenewed to entity VesselContext.Vessel
       }
       on bunkerReportSubmitted: event Vessel.BunkerReportSubmitted is {
@@ -979,6 +988,18 @@ context VesselContext as router is {
     described as {
       |Fans Vessel events out to the repository and projectors.
     }
+  }
+  connector 'ToWeatherService Feed' is from outlet VesselContext.VesselEventSplit.VesselEventSplitToToWeatherService to inlet VesselContext.ToWeatherService.ToWeatherServiceIn with {
+    briefly "The Voyage events ToWeatherService translates, on their way to it"
+  }
+  connector 'ToClassificationSocietyService Feed' is from outlet VesselContext.VesselEventSplit.VesselEventSplitToToClassificationSocietyService to inlet VesselContext.ToClassificationSocietyService.ToClassificationSocietyServiceIn with {
+    briefly "The Vessel events ToClassificationSocietyService translates, on their way to it"
+  }
+  connector 'ToCharterPartyService Feed' is from outlet VesselContext.VesselEventSplit.VesselEventSplitToToCharterPartyService to inlet VesselContext.ToCharterPartyService.ToCharterPartyServiceIn with {
+    briefly "The Voyage events ToCharterPartyService translates, on their way to it"
+  }
+  connector 'ToAISService Feed' is from outlet VesselContext.VesselEventSplit.VesselEventSplitToToAISService to inlet VesselContext.ToAISService.ToAISServiceIn with {
+    briefly "The Vessel events ToAISService translates, on their way to it"
   }
   connector 'VesselEvent Stream' is from outlet VesselContext.Vessel.VesselEvents2 to inlet VesselContext.VesselEventSplit.VesselEventSplitIn with {
     briefly "Vessel events, fanned out to storage and read models"

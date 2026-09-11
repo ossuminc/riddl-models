@@ -125,8 +125,8 @@ context VehicleContext as router is {
       |The model's side of the DriverManagementService conversation.
     }
   }
-  adaptor ToDriverManagementService to context DriverManagementService as flow is { 
-    outlet ToDriverManagementServiceOut is type DriverManagementService.DriverManagementServiceRequest
+  adaptor ToDriverManagementService to context DriverManagementService as merge is { 
+    inlet ToDriverManagementServiceIn is type VehicleEvent    inlet ToDriverManagementServiceReplies is type DriverManagementService.DriverManagementServiceReply    outlet ToDriverManagementServiceOut is type DriverManagementService.DriverManagementServiceRequest
     handler ToDriverManagementServiceHandler is {
       on driverUnassigned: event Vehicle.DriverUnassigned is {
         let askAnswer: type DriverManagementService.AvailableDrivers = ask query DriverManagementService.GetAvailableDrivers of context DriverManagementService
@@ -181,7 +181,7 @@ context VehicleContext as router is {
     }
   }
   adaptor ToFuelCardService to context FuelCardService as flow is { 
-    outlet ToFuelCardServiceOut is command FuelCardService.AuthorizeFuelPurchase
+    inlet ToFuelCardServiceIn is type VehicleEvent    outlet ToFuelCardServiceOut is command FuelCardService.AuthorizeFuelPurchase
     handler ToFuelCardServiceHandler is {
       on fuelLevelUpdated: event Vehicle.FuelLevelUpdated is {
         let item0: type FuelCardService.AuthorizeFuelPurchase = prompt("translate the fuelLevelUpdated event into a AuthorizeFuelPurchase, a low tank being what a fuel card is for")
@@ -231,7 +231,7 @@ context VehicleContext as router is {
     }
   }
   adaptor ToGpsTrackingService to context GpsTrackingService as flow is { 
-    outlet ToGpsTrackingServiceOut is type GpsTrackingService.GpsTrackingServiceCommand
+    inlet ToGpsTrackingServiceIn is type VehicleEvent    outlet ToGpsTrackingServiceOut is type GpsTrackingService.GpsTrackingServiceCommand
     handler ToGpsTrackingServiceHandler is {
       on tripStarted: event Vehicle.TripStarted is {
         let item0: type GpsTrackingService.StartTracking = prompt("translate the tripStarted event into a StartTracking, a trip being what there is to follow")
@@ -276,8 +276,8 @@ context VehicleContext as router is {
       |The model's side of the InsuranceService conversation.
     }
   }
-  adaptor ToInsuranceService to context InsuranceService as flow is { 
-    outlet ToInsuranceServiceOut is type InsuranceService.InsuranceServiceRequest
+  adaptor ToInsuranceService to context InsuranceService as merge is { 
+    inlet ToInsuranceServiceIn is type VehicleEvent    inlet ToInsuranceServiceReplies is result InsuranceService.VehicleCoverage    outlet ToInsuranceServiceOut is type InsuranceService.InsuranceServiceRequest
     handler ToInsuranceServiceHandler is {
       on vehicleRegistered: event Vehicle.VehicleRegistered is {
         let askAnswer: type InsuranceService.VehicleCoverage = ask query InsuranceService.GetVehicleCoverage of context InsuranceService
@@ -838,11 +838,16 @@ context VehicleContext as router is {
       |persistence.
     }
   }
-  streamlet VehicleEventSplit as flow is {
+  streamlet VehicleEventSplit as split is {
+    outlet VehicleEventSplitToToInsuranceService is type VehicleEvent
+    outlet VehicleEventSplitToToGpsTrackingService is type VehicleEvent
+    outlet VehicleEventSplitToToFuelCardService is type VehicleEvent
+    outlet VehicleEventSplitToToDriverManagementService is type VehicleEvent
     inlet VehicleEventSplitIn is type VehicleEvent    outlet VehicleEventSplitToFleetAnalytics is type VehicleEvent
     handler VehicleEventSplitHandler is {
       on vehicleRegistered: event Vehicle.VehicleRegistered is {
         send vehicleRegistered to outlet VehicleEventSplitToFleetAnalytics
+        send vehicleRegistered to outlet VehicleEventSplitToToInsuranceService
         tell vehicleRegistered to entity VehicleContext.Vehicle
       }
       on locationUpdated: event Vehicle.LocationUpdated is {
@@ -855,22 +860,28 @@ context VehicleContext as router is {
       }
       on fuelLevelUpdated: event Vehicle.FuelLevelUpdated is {
         send fuelLevelUpdated to outlet VehicleEventSplitToFleetAnalytics
+        send fuelLevelUpdated to outlet VehicleEventSplitToToFuelCardService
         tell fuelLevelUpdated to entity VehicleContext.Vehicle
       }
       on driverAssigned: event Vehicle.DriverAssigned is {
         send driverAssigned to outlet VehicleEventSplitToFleetAnalytics
+        send driverAssigned to outlet VehicleEventSplitToToDriverManagementService
         tell driverAssigned to entity VehicleContext.Vehicle
       }
       on driverUnassigned: event Vehicle.DriverUnassigned is {
         send driverUnassigned to outlet VehicleEventSplitToFleetAnalytics
+        send driverUnassigned to outlet VehicleEventSplitToToDriverManagementService
         tell driverUnassigned to entity VehicleContext.Vehicle
       }
       on tripStarted: event Vehicle.TripStarted is {
         send tripStarted to outlet VehicleEventSplitToFleetAnalytics
+        send tripStarted to outlet VehicleEventSplitToToGpsTrackingService
         tell tripStarted to entity VehicleContext.Vehicle
       }
       on tripEnded: event Vehicle.TripEnded is {
         send tripEnded to outlet VehicleEventSplitToFleetAnalytics
+        send tripEnded to outlet VehicleEventSplitToToGpsTrackingService
+        send tripEnded to outlet VehicleEventSplitToToDriverManagementService
         tell tripEnded to entity VehicleContext.Vehicle
       }
       on maintenanceScheduled: event Vehicle.MaintenanceScheduled is {
@@ -887,6 +898,7 @@ context VehicleContext as router is {
       }
       on alertRaised: event Vehicle.AlertRaised is {
         send alertRaised to outlet VehicleEventSplitToFleetAnalytics
+        send alertRaised to outlet VehicleEventSplitToToInsuranceService
         tell alertRaised to entity VehicleContext.Vehicle
       }
       on alertAcknowledged: event Vehicle.AlertAcknowledged is {
@@ -911,6 +923,18 @@ context VehicleContext as router is {
     described as {
       |Fans Vehicle events out to the repository and projectors.
     }
+  }
+  connector 'ToInsuranceService Feed' is from outlet VehicleContext.VehicleEventSplit.VehicleEventSplitToToInsuranceService to inlet VehicleContext.ToInsuranceService.ToInsuranceServiceIn with {
+    briefly "The Vehicle events ToInsuranceService translates, on their way to it"
+  }
+  connector 'ToGpsTrackingService Feed' is from outlet VehicleContext.VehicleEventSplit.VehicleEventSplitToToGpsTrackingService to inlet VehicleContext.ToGpsTrackingService.ToGpsTrackingServiceIn with {
+    briefly "The Vehicle events ToGpsTrackingService translates, on their way to it"
+  }
+  connector 'ToFuelCardService Feed' is from outlet VehicleContext.VehicleEventSplit.VehicleEventSplitToToFuelCardService to inlet VehicleContext.ToFuelCardService.ToFuelCardServiceIn with {
+    briefly "The Vehicle events ToFuelCardService translates, on their way to it"
+  }
+  connector 'ToDriverManagementService Feed' is from outlet VehicleContext.VehicleEventSplit.VehicleEventSplitToToDriverManagementService to inlet VehicleContext.ToDriverManagementService.ToDriverManagementServiceIn with {
+    briefly "The Vehicle events ToDriverManagementService translates, on their way to it"
   }
   connector 'VehicleEvent Stream' is from outlet VehicleContext.Vehicle.VehicleEvents2 to inlet VehicleContext.VehicleEventSplit.VehicleEventSplitIn with {
     briefly "Vehicle events, fanned out to storage and read models"

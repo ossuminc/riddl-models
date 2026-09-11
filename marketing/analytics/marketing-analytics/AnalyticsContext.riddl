@@ -41,8 +41,8 @@ context AnalyticsContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'AnalyticsReportCommand Stream Intake' is from outlet AnalyticsContext.AnalyticsReportCommandStreamOut to inlet AnalyticsContext.AnalyticsReport.AnalyticsReportCommands  connector 'AnalyticsReportResult Stream Egress' is from outlet AnalyticsContext.AnalyticsRepository.AnalyticsRepositoryResponses to inlet AnalyticsContext.AnalyticsReportResultStreamIn  adaptor ToAdPlatform to context AdPlatform as flow is { 
-    outlet ToAdPlatformOut is type AdPlatform.AdPlatformRequest
+  connector 'AnalyticsReportCommand Stream Intake' is from outlet AnalyticsContext.AnalyticsReportCommandStreamOut to inlet AnalyticsContext.AnalyticsReport.AnalyticsReportCommands  connector 'AnalyticsReportResult Stream Egress' is from outlet AnalyticsContext.AnalyticsRepository.AnalyticsRepositoryResponses to inlet AnalyticsContext.AnalyticsReportResultStreamIn  adaptor ToAdPlatform to context AdPlatform as merge is { 
+    inlet ToAdPlatformIn is type AnalyticsReportEvent    inlet ToAdPlatformReplies is type AdPlatform.AdPlatformReply    outlet ToAdPlatformOut is type AdPlatform.AdPlatformRequest
     handler ToAdPlatformHandler is {
       on channelMetricsAdded: event AnalyticsReport.ChannelMetricsAdded is {
         let askAnswer: type AdPlatform.AudienceInsights = ask query AdPlatform.GetAudienceInsights of context AdPlatform
@@ -67,8 +67,8 @@ context AnalyticsContext as router is {
       |The model's side of the AdPlatform conversation.
     }
   }
-  adaptor ToCRMSystem to context CRMSystem as flow is { 
-    outlet ToCRMSystemOut is type CRMSystem.CRMSystemRequest
+  adaptor ToCRMSystem to context CRMSystem as merge is { 
+    inlet ToCRMSystemIn is type AnalyticsReportEvent    inlet ToCRMSystemReplies is type CRMSystem.CRMSystemReply    outlet ToCRMSystemOut is type CRMSystem.CRMSystemRequest
     handler ToCRMSystemHandler is {
       on attributionResultsAdded: event AnalyticsReport.AttributionResultsAdded is {
         let askAnswer: type CRMSystem.ConversionRecords = ask query CRMSystem.GetConversionData of context CRMSystem
@@ -114,7 +114,7 @@ context AnalyticsContext as router is {
     }
   }
   adaptor ToDataWarehouse to context DataWarehouse as flow is { 
-    outlet ToDataWarehouseOut is command DataWarehouse.ExportReportData
+    inlet ToDataWarehouseIn is type AnalyticsReportEvent    outlet ToDataWarehouseOut is command DataWarehouse.ExportReportData
     handler ToDataWarehouseHandler is {
       on reportCompleted: event AnalyticsReport.ReportCompleted is {
         let export: type DataWarehouse.ExportReportData = prompt("translate the reportCompleted event into an ExportReportData pushing the finished figures to the warehouse, completion being where they stop changing")
@@ -135,8 +135,8 @@ context AnalyticsContext as router is {
       |The model's side of the DataWarehouse conversation.
     }
   }
-  adaptor ToWebAnalytics to context WebAnalytics as flow is { 
-    outlet ToWebAnalyticsOut is type WebAnalytics.WebAnalyticsRequest
+  adaptor ToWebAnalytics to context WebAnalytics as merge is { 
+    inlet ToWebAnalyticsIn is type AnalyticsReportEvent    inlet ToWebAnalyticsReplies is type WebAnalytics.WebAnalyticsReply    outlet ToWebAnalyticsOut is type WebAnalytics.WebAnalyticsRequest
     handler ToWebAnalyticsHandler is {
       on reportCompleted: event AnalyticsReport.ReportCompleted is {
         let askAnswer: type WebAnalytics.GoalCompletions = ask query WebAnalytics.GetGoalCompletions of context WebAnalytics
@@ -504,31 +504,42 @@ context AnalyticsContext as router is {
       |persistence.
     }
   }
-  streamlet AnalyticsReportEventSplit as flow is {
+  streamlet AnalyticsReportEventSplit as split is {
+    outlet AnalyticsReportEventSplitToToWebAnalytics is type AnalyticsReportEvent
+    outlet AnalyticsReportEventSplitToToDataWarehouse is type AnalyticsReportEvent
+    outlet AnalyticsReportEventSplitToToCRMSystem is type AnalyticsReportEvent
+    outlet AnalyticsReportEventSplitToToAdPlatform is type AnalyticsReportEvent
     inlet AnalyticsReportEventSplitIn is type AnalyticsReportEvent    outlet AnalyticsReportEventSplitToPerformanceDashboard is type AnalyticsReportEvent
     handler AnalyticsReportEventSplitHandler is {
       on reportCreated: event AnalyticsReport.ReportCreated is {
         send reportCreated to outlet AnalyticsReportEventSplitToPerformanceDashboard
+        send reportCreated to outlet AnalyticsReportEventSplitToToCRMSystem
         tell reportCreated to entity AnalyticsContext.AnalyticsReport
       }
       on reportGenerationStarted: event AnalyticsReport.ReportGenerationStarted is {
         send reportGenerationStarted to outlet AnalyticsReportEventSplitToPerformanceDashboard
+        send reportGenerationStarted to outlet AnalyticsReportEventSplitToToWebAnalytics
         tell reportGenerationStarted to entity AnalyticsContext.AnalyticsReport
       }
       on channelMetricsAdded: event AnalyticsReport.ChannelMetricsAdded is {
         send channelMetricsAdded to outlet AnalyticsReportEventSplitToPerformanceDashboard
+        send channelMetricsAdded to outlet AnalyticsReportEventSplitToToAdPlatform
         tell channelMetricsAdded to entity AnalyticsContext.AnalyticsReport
       }
       on campaignPerformanceAdded: event AnalyticsReport.CampaignPerformanceAdded is {
         send campaignPerformanceAdded to outlet AnalyticsReportEventSplitToPerformanceDashboard
+        send campaignPerformanceAdded to outlet AnalyticsReportEventSplitToToAdPlatform
         tell campaignPerformanceAdded to entity AnalyticsContext.AnalyticsReport
       }
       on attributionResultsAdded: event AnalyticsReport.AttributionResultsAdded is {
         send attributionResultsAdded to outlet AnalyticsReportEventSplitToPerformanceDashboard
+        send attributionResultsAdded to outlet AnalyticsReportEventSplitToToCRMSystem
         tell attributionResultsAdded to entity AnalyticsContext.AnalyticsReport
       }
       on reportCompleted: event AnalyticsReport.ReportCompleted is {
         send reportCompleted to outlet AnalyticsReportEventSplitToPerformanceDashboard
+        send reportCompleted to outlet AnalyticsReportEventSplitToToWebAnalytics
+        send reportCompleted to outlet AnalyticsReportEventSplitToToDataWarehouse
         tell reportCompleted to entity AnalyticsContext.AnalyticsReport
       }
       on reportFailed: event AnalyticsReport.ReportFailed is {
@@ -553,6 +564,18 @@ context AnalyticsContext as router is {
     described as {
       |Fans AnalyticsReport events out to the repository and projectors.
     }
+  }
+  connector 'ToWebAnalytics Feed' is from outlet AnalyticsContext.AnalyticsReportEventSplit.AnalyticsReportEventSplitToToWebAnalytics to inlet AnalyticsContext.ToWebAnalytics.ToWebAnalyticsIn with {
+    briefly "The AnalyticsReport events ToWebAnalytics translates, on their way to it"
+  }
+  connector 'ToDataWarehouse Feed' is from outlet AnalyticsContext.AnalyticsReportEventSplit.AnalyticsReportEventSplitToToDataWarehouse to inlet AnalyticsContext.ToDataWarehouse.ToDataWarehouseIn with {
+    briefly "The AnalyticsReport events ToDataWarehouse translates, on their way to it"
+  }
+  connector 'ToCRMSystem Feed' is from outlet AnalyticsContext.AnalyticsReportEventSplit.AnalyticsReportEventSplitToToCRMSystem to inlet AnalyticsContext.ToCRMSystem.ToCRMSystemIn with {
+    briefly "The AnalyticsReport events ToCRMSystem translates, on their way to it"
+  }
+  connector 'ToAdPlatform Feed' is from outlet AnalyticsContext.AnalyticsReportEventSplit.AnalyticsReportEventSplitToToAdPlatform to inlet AnalyticsContext.ToAdPlatform.ToAdPlatformIn with {
+    briefly "The AnalyticsReport events ToAdPlatform translates, on their way to it"
   }
   connector 'AnalyticsReportEvent Stream' is from outlet AnalyticsContext.AnalyticsReport.AnalyticsReportEvents2 to inlet AnalyticsContext.AnalyticsReportEventSplit.AnalyticsReportEventSplitIn with {
     briefly "AnalyticsReport events, fanned out to storage and read models"

@@ -77,7 +77,7 @@ context WalletContext as router is {
     }
   }
   adaptor ToFraudDetectionService to context FraudDetectionService as flow is { 
-    outlet ToFraudDetectionServiceOut is command FraudDetectionService.CheckTransaction
+    inlet ToFraudDetectionServiceIn is type WalletEvent    outlet ToFraudDetectionServiceOut is command FraudDetectionService.CheckTransaction
     handler ToFraudDetectionServiceHandler is {
       on tradeInitiated: event TradeInitiated is {
         let item0: type FraudDetectionService.CheckTransaction = prompt("translate the tradeInitiated event into a CheckTransaction, a trade being the moment value can be moved illegitimately")
@@ -121,7 +121,7 @@ context WalletContext as router is {
     }
   }
   adaptor ToIAPService to context IAPService as flow is { 
-    outlet ToIAPServiceOut is command IAPService.ProcessPurchase
+    inlet ToIAPServiceIn is type WalletEvent    outlet ToIAPServiceOut is command IAPService.ProcessPurchase
     handler ToIAPServiceHandler is {
       on itemPurchased: event Wallet.ItemPurchased is {
         let item0: type IAPService.ProcessPurchase = prompt("translate the itemPurchased event into a ProcessPurchase, the purchase being what the store must actually take money for")
@@ -142,8 +142,8 @@ context WalletContext as router is {
       |The model's side of the IAPService conversation.
     }
   }
-  adaptor ToItemCatalogService to context ItemCatalogService as flow is { 
-    outlet ToItemCatalogServiceOut is query ItemCatalogService.GetStoreItems
+  adaptor ToItemCatalogService to context ItemCatalogService as merge is { 
+    inlet ToItemCatalogServiceIn is type WalletEvent    inlet ToItemCatalogServiceReplies is result ItemCatalogService.StoreCatalog    outlet ToItemCatalogServiceOut is query ItemCatalogService.GetStoreItems
     handler ToItemCatalogServiceHandler is {
       on itemPurchased: event Wallet.ItemPurchased is {
         let askAnswer: type ItemCatalogService.StoreCatalog = ask query ItemCatalogService.GetStoreItems of context ItemCatalogService
@@ -165,7 +165,7 @@ context WalletContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendTransactionNotification
+    inlet ToNotificationServiceIn is type WalletEvent    outlet ToNotificationServiceOut is command NotificationService.SendTransactionNotification
     handler ToNotificationServiceHandler is {
       on tradeCompleted: event TradeCompleted is {
         let notice: type NotificationService.SendTransactionNotification = prompt("translate the tradeCompleted event into a SendTransactionNotification telling both players the trade went through and what each now holds")
@@ -217,7 +217,7 @@ context WalletContext as router is {
     }
   }
   adaptor ToTradeEscrowService to context TradeEscrowService as flow is { 
-    outlet ToTradeEscrowServiceOut is type TradeEscrowService.TradeEscrowServiceCommand
+    inlet ToTradeEscrowServiceIn is type WalletEvent    outlet ToTradeEscrowServiceOut is type TradeEscrowService.TradeEscrowServiceCommand
     handler ToTradeEscrowServiceHandler is {
       on tradeInitiated: event Wallet.TradeInitiated is {
         let item0: type TradeEscrowService.EscrowItems = prompt("translate the tradeInitiated event into a EscrowItems, a trade being what puts items beyond either party's reach")
@@ -583,7 +583,12 @@ context WalletContext as router is {
       |Maintains game economy analytics data.
     }
   }
-  streamlet WalletEventSplit as flow is {
+  streamlet WalletEventSplit as split is {
+    outlet WalletEventSplitToToTradeEscrowService is type WalletEvent
+    outlet WalletEventSplitToToNotificationService is type WalletEvent
+    outlet WalletEventSplitToToItemCatalogService is type WalletEvent
+    outlet WalletEventSplitToToIAPService is type WalletEvent
+    outlet WalletEventSplitToToFraudDetectionService is type WalletEvent
     inlet WalletEventSplitIn is type WalletEvent    outlet WalletEventSplitToEconomyAnalytics is type WalletEvent
     handler WalletEventSplitHandler is {
       on walletCreated: event Wallet.WalletCreated is {
@@ -600,6 +605,7 @@ context WalletContext as router is {
       }
       on currencyTransferred: event Wallet.CurrencyTransferred is {
         send currencyTransferred to outlet WalletEventSplitToEconomyAnalytics
+        send currencyTransferred to outlet WalletEventSplitToToNotificationService
         tell currencyTransferred to entity WalletContext.Wallet by walletId
       }
       on itemAdded: event Wallet.ItemAdded is {
@@ -612,14 +618,21 @@ context WalletContext as router is {
       }
       on itemPurchased: event Wallet.ItemPurchased is {
         send itemPurchased to outlet WalletEventSplitToEconomyAnalytics
+        send itemPurchased to outlet WalletEventSplitToToNotificationService
+        send itemPurchased to outlet WalletEventSplitToToItemCatalogService
+        send itemPurchased to outlet WalletEventSplitToToIAPService
         tell itemPurchased to entity WalletContext.Wallet
       }
       on tradeInitiated: event Wallet.TradeInitiated is {
         send tradeInitiated to outlet WalletEventSplitToEconomyAnalytics
+        send tradeInitiated to outlet WalletEventSplitToToTradeEscrowService
+        send tradeInitiated to outlet WalletEventSplitToToFraudDetectionService
         tell tradeInitiated to entity WalletContext.Wallet
       }
       on tradeCompleted: event Wallet.TradeCompleted is {
         send tradeCompleted to outlet WalletEventSplitToEconomyAnalytics
+        send tradeCompleted to outlet WalletEventSplitToToTradeEscrowService
+        send tradeCompleted to outlet WalletEventSplitToToNotificationService
         tell tradeCompleted to entity WalletContext.Wallet
       }
       on other is {
@@ -636,6 +649,21 @@ context WalletContext as router is {
     described as {
       |Fans Wallet events out to the repository and projectors.
     }
+  }
+  connector 'ToTradeEscrowService Feed' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToToTradeEscrowService to inlet WalletContext.ToTradeEscrowService.ToTradeEscrowServiceIn with {
+    briefly "The Wallet events ToTradeEscrowService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToToNotificationService to inlet WalletContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Wallet events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToItemCatalogService Feed' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToToItemCatalogService to inlet WalletContext.ToItemCatalogService.ToItemCatalogServiceIn with {
+    briefly "The Wallet events ToItemCatalogService translates, on their way to it"
+  }
+  connector 'ToIAPService Feed' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToToIAPService to inlet WalletContext.ToIAPService.ToIAPServiceIn with {
+    briefly "The Wallet events ToIAPService translates, on their way to it"
+  }
+  connector 'ToFraudDetectionService Feed' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToToFraudDetectionService to inlet WalletContext.ToFraudDetectionService.ToFraudDetectionServiceIn with {
+    briefly "The Wallet events ToFraudDetectionService translates, on their way to it"
   }
   connector 'WalletEvent Stream' is from outlet WalletContext.Wallet.WalletEvents2 to inlet WalletContext.WalletEventSplit.WalletEventSplitIn with {
     briefly "Wallet events, fanned out to storage and read models"

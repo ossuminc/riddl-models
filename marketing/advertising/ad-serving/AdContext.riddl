@@ -64,8 +64,8 @@ context AdContext as router is {
       |The model's side of the AdExchange conversation.
     }
   }
-  adaptor ToAdExchange to context AdExchange as flow is { 
-    outlet ToAdExchangeOut is type AdExchange.AdExchangeRequest
+  adaptor ToAdExchange to context AdExchange as merge is { 
+    inlet ToAdExchangeIn is type AdEvent    inlet ToAdExchangeReplies is result AdExchange.BidRequest    outlet ToAdExchangeOut is type AdExchange.AdExchangeRequest
     handler ToAdExchangeHandler is {
       on adActivated: event Advertisement.AdActivated is {
         let askAnswer: type AdExchange.BidRequest = ask query AdExchange.GetBidRequest of context AdExchange
@@ -90,8 +90,8 @@ context AdContext as router is {
       |The model's side of the AdExchange conversation.
     }
   }
-  adaptor ToAdVerification to context AdVerification as flow is { 
-    outlet ToAdVerificationOut is type AdVerification.AdVerificationRequest
+  adaptor ToAdVerification to context AdVerification as merge is { 
+    inlet ToAdVerificationIn is type AdEvent    inlet ToAdVerificationReplies is result AdVerification.VerificationResult    outlet ToAdVerificationOut is type AdVerification.AdVerificationRequest
     handler ToAdVerificationHandler is {
       on adCreated: event AdCreated is {
         let check0: type AdVerification.VerifyImpression = prompt("translate the adCreated event into a VerifyImpression so delivery of this creative is independently measured")
@@ -137,7 +137,7 @@ context AdContext as router is {
     }
   }
   adaptor ToCDN to context CDN as flow is { 
-    outlet ToCDNOut is type CDN.CDNCommand
+    inlet ToCDNIn is type AdEvent    outlet ToCDNOut is type CDN.CDNCommand
     handler ToCDNHandler is {
       on adActivated: event Advertisement.AdActivated is {
         let item0: type CDN.CacheCreative = prompt("translate the adActivated event into a CacheCreative, activation being what makes the creative worth distributing")
@@ -162,8 +162,8 @@ context AdContext as router is {
       |The model's side of the CDN conversation.
     }
   }
-  adaptor ToDataManagementPlatform to context DataManagementPlatform as flow is { 
-    outlet ToDataManagementPlatformOut is type DataManagementPlatform.DataManagementPlatformRequest
+  adaptor ToDataManagementPlatform to context DataManagementPlatform as merge is { 
+    inlet ToDataManagementPlatformIn is type AdEvent    inlet ToDataManagementPlatformReplies is result DataManagementPlatform.AudienceSegments    outlet ToDataManagementPlatformOut is type DataManagementPlatform.DataManagementPlatformRequest
     handler ToDataManagementPlatformHandler is {
       on targetingUpdated: event Advertisement.TargetingUpdated is {
         let askAnswer: type DataManagementPlatform.AudienceSegments = ask query DataManagementPlatform.GetAudienceSegments of context DataManagementPlatform
@@ -547,23 +547,32 @@ context AdContext as router is {
       |persistence.
     }
   }
-  streamlet AdEventSplit as flow is {
+  streamlet AdEventSplit as split is {
+    outlet AdEventSplitToToDataManagementPlatform is type AdEvent
+    outlet AdEventSplitToToCDN is type AdEvent
+    outlet AdEventSplitToToAdVerification is type AdEvent
+    outlet AdEventSplitToToAdExchange is type AdEvent
     inlet AdEventSplitIn is type AdEvent    outlet AdEventSplitToAdPerformance is type AdEvent
     handler AdEventSplitHandler is {
       on adCreated: event Advertisement.AdCreated is {
         send adCreated to outlet AdEventSplitToAdPerformance
+        send adCreated to outlet AdEventSplitToToAdVerification
         tell adCreated to entity AdContext.Advertisement
       }
       on targetingUpdated: event Advertisement.TargetingUpdated is {
         send targetingUpdated to outlet AdEventSplitToAdPerformance
+        send targetingUpdated to outlet AdEventSplitToToDataManagementPlatform
         tell targetingUpdated to entity AdContext.Advertisement
       }
       on bidUpdated: event Advertisement.BidUpdated is {
         send bidUpdated to outlet AdEventSplitToAdPerformance
+        send bidUpdated to outlet AdEventSplitToToAdExchange
         tell bidUpdated to entity AdContext.Advertisement
       }
       on adActivated: event Advertisement.AdActivated is {
         send adActivated to outlet AdEventSplitToAdPerformance
+        send adActivated to outlet AdEventSplitToToCDN
+        send adActivated to outlet AdEventSplitToToAdExchange
         tell adActivated to entity AdContext.Advertisement
       }
       on adPaused: event Advertisement.AdPaused is {
@@ -572,10 +581,12 @@ context AdContext as router is {
       }
       on impressionRecorded: event Advertisement.ImpressionRecorded is {
         send impressionRecorded to outlet AdEventSplitToAdPerformance
+        send impressionRecorded to outlet AdEventSplitToToAdVerification
         tell impressionRecorded to entity AdContext.Advertisement
       }
       on clickRecorded: event Advertisement.ClickRecorded is {
         send clickRecorded to outlet AdEventSplitToAdPerformance
+        send clickRecorded to outlet AdEventSplitToToDataManagementPlatform
         tell clickRecorded to entity AdContext.Advertisement
       }
       on adCompleted: event Advertisement.AdCompleted is {
@@ -584,6 +595,7 @@ context AdContext as router is {
       }
       on adArchived: event Advertisement.AdArchived is {
         send adArchived to outlet AdEventSplitToAdPerformance
+        send adArchived to outlet AdEventSplitToToCDN
         tell adArchived to entity AdContext.Advertisement
       }
       on other is {
@@ -600,6 +612,18 @@ context AdContext as router is {
     described as {
       |Fans Ad events out to the repository and projectors.
     }
+  }
+  connector 'ToDataManagementPlatform Feed' is from outlet AdContext.AdEventSplit.AdEventSplitToToDataManagementPlatform to inlet AdContext.ToDataManagementPlatform.ToDataManagementPlatformIn with {
+    briefly "The Advertisement events ToDataManagementPlatform translates, on their way to it"
+  }
+  connector 'ToCDN Feed' is from outlet AdContext.AdEventSplit.AdEventSplitToToCDN to inlet AdContext.ToCDN.ToCDNIn with {
+    briefly "The Advertisement events ToCDN translates, on their way to it"
+  }
+  connector 'ToAdVerification Feed' is from outlet AdContext.AdEventSplit.AdEventSplitToToAdVerification to inlet AdContext.ToAdVerification.ToAdVerificationIn with {
+    briefly "The Advertisement events ToAdVerification translates, on their way to it"
+  }
+  connector 'ToAdExchange Feed' is from outlet AdContext.AdEventSplit.AdEventSplitToToAdExchange to inlet AdContext.ToAdExchange.ToAdExchangeIn with {
+    briefly "The Advertisement events ToAdExchange translates, on their way to it"
   }
   connector 'AdEvent Stream' is from outlet AdContext.Advertisement.AdEvents2 to inlet AdContext.AdEventSplit.AdEventSplitIn with {
     briefly "Ad events, fanned out to storage and read models"
