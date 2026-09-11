@@ -1,5 +1,11 @@
 // Last Mile Delivery - Delivery Context
 context DeliveryContext as router is {
+  inlet DeliveryContextFromRouteOptimization is command Delivery.UpdateETA with {
+    briefly "What FromRouteOptimization makes of that service's news"
+  }
+  connector 'FromRouteOptimization Intake' is from outlet DeliveryContext.FromRouteOptimization.FromRouteOptimizationToDeliveryContext to inlet DeliveryContext.DeliveryContextFromRouteOptimization with {
+    briefly "What FromRouteOptimization makes of that news, on its way in"
+  }
   inlet DeliveryCommandStreamIn is type DeliveryCommand  outlet DeliveryCommandStreamOut is type DeliveryCommand
   inlet DeliveryOrderResultStreamIn is result Delivery.DeliveryResult  outlet DeliveryOrderResultStreamOut is result Delivery.DeliveryResult
   handler DeliveryContextBoundary is {
@@ -88,13 +94,13 @@ context DeliveryContext as router is {
       |The model's side of the CustomerNotification conversation.
     }
   }
-  adaptor FromDriverMobile from context DriverMobile is { 
-    handler FromDriverMobileHandler is {
-      on event DriverMobile.DriverLocationUpdated is {
-        do "the model receives driver location updated"
+  adaptor FromDriverMobile from context DriverMobile as flow is { 
+    inlet FromDriverMobileIn is type DriverMobile.DriverMobileEvent    handler FromDriverMobileHandler is {
+      on driverLocationUpdated: event DriverMobile.DriverLocationUpdated is {
+        do "the driver moved; the ETA is recalculated by the optimiser, not on every ping"
       }
-      on event DriverMobile.RouteReceived is {
-        do "the model receives route received"
+      on routeReceived: event DriverMobile.RouteReceived is {
+        do "the driver has the route; assigning it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromDriverMobile"
@@ -133,13 +139,13 @@ context DeliveryContext as router is {
       |The model's side of the DriverMobile conversation.
     }
   }
-  adaptor FromGeocodingService from context GeocodingService is { 
-    handler FromGeocodingServiceHandler is {
-      on event GeocodingService.AddressGeocoded is {
-        do "the model receives address geocoded"
+  adaptor FromGeocodingService from context GeocodingService as flow is { 
+    inlet FromGeocodingServiceIn is type GeocodingService.GeocodingServiceEvent    handler FromGeocodingServiceHandler is {
+      on addressGeocoded: event GeocodingService.AddressGeocoded is {
+        do "the address has coordinates; the delivery keeps the address and the optimiser uses the point"
       }
-      on event GeocodingService.LocationResolved is {
-        do "the model receives location resolved"
+      on locationResolved: event GeocodingService.LocationResolved is {
+        do "the attempt has a place name; the attempt itself was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromGeocodingService"
@@ -182,13 +188,13 @@ context DeliveryContext as router is {
       |The model's side of the GeocodingService conversation.
     }
   }
-  adaptor FromProofCapture from context ProofCapture is { 
-    handler FromProofCaptureHandler is {
-      on event ProofCapture.PhotoCaptured is {
-        do "the model receives photo captured"
+  adaptor FromProofCapture from context ProofCapture as flow is { 
+    inlet FromProofCaptureIn is type ProofCapture.ProofCaptureEvent    handler FromProofCaptureHandler is {
+      on photoCaptured: event ProofCapture.PhotoCaptured is {
+        do "the photo is stored; the failed attempt it evidences was recorded here"
       }
-      on event ProofCapture.SignatureCaptured is {
-        do "the model receives signature captured"
+      on signatureCaptured: event ProofCapture.SignatureCaptured is {
+        do "the signature is stored; completing the delivery was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromProofCapture"
@@ -231,13 +237,15 @@ context DeliveryContext as router is {
       |The model's side of the ProofCapture conversation.
     }
   }
-  adaptor FromRouteOptimization from context RouteOptimization is { 
+  adaptor FromRouteOptimization from context RouteOptimization as flow is { 
+    inlet FromRouteOptimizationIn is type RouteOptimization.RouteOptimizationEvent    outlet FromRouteOptimizationToDeliveryContext is command Delivery.UpdateETA
     handler FromRouteOptimizationHandler is {
-      on event RouteOptimization.ETAsRecalculated is {
-        do "the model receives et as recalculated"
+      on eTAsRecalculated: event RouteOptimization.ETAsRecalculated is {
+        let item0: type Delivery.UpdateETA = prompt("translate the eTAsRecalculated event into a UpdateETA, the optimiser's recalculated ETA is the one the delivery must show")
+        send item0 to outlet DeliveryContext.FromRouteOptimization.FromRouteOptimizationToDeliveryContext
       }
-      on event RouteOptimization.RouteOptimized is {
-        do "the model receives route optimized"
+      on routeOptimized: event RouteOptimization.RouteOptimized is {
+        do "the route is optimised; the assignment that asked for it was recorded first"
       }
       on other is {
         error "Unexpected message for adaptor FromRouteOptimization"

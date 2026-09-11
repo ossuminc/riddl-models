@@ -1,6 +1,12 @@
 // Fund Context
 // Bounded context for fund accounting operations
 context FundContext as router is {
+  inlet FundContextFromMarketDataContext is command Fund.CalculateNAV with {
+    briefly "What FromMarketDataContext makes of that service's news"
+  }
+  connector 'FromMarketDataContext Intake' is from outlet FundContext.FromMarketDataContext.FromMarketDataContextToFundContext to inlet FundContext.FundContextFromMarketDataContext with {
+    briefly "What FromMarketDataContext makes of that news, on its way in"
+  }
   connector 'RegulatoryReportingProjector Storage' is from outlet FundContext.RegulatoryReportingProjector.RegulatoryReportingProjectorToRepository to inlet FundContext.FundRepository.FundRepositoryFromRegulatoryReportingProjector with {
     briefly "RegulatoryReportingProjector messages on their way to FundRepository"
     described as {
@@ -48,13 +54,13 @@ context FundContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'FundCommand Stream Intake' is from outlet FundContext.FundCommandStreamOut to inlet FundContext.Fund.FundCommands  connector 'FundInfoResult Stream Egress' is from outlet FundContext.FundRepository.FundRepositoryResponses to inlet FundContext.FundInfoResultStreamIn  adaptor FromComplianceContext from context ComplianceContext is { 
-    handler FromComplianceContextHandler is {
-      on event ComplianceContext.ComplianceCheckCompleted is {
-        do "the model receives compliance check completed"
+  connector 'FundCommand Stream Intake' is from outlet FundContext.FundCommandStreamOut to inlet FundContext.Fund.FundCommands  connector 'FundInfoResult Stream Egress' is from outlet FundContext.FundRepository.FundRepositoryResponses to inlet FundContext.FundInfoResultStreamIn  adaptor FromComplianceContext from context ComplianceContext as flow is { 
+    inlet FromComplianceContextIn is type ComplianceContext.ComplianceContextEvent    handler FromComplianceContextHandler is {
+      on complianceCheckCompleted: event ComplianceContext.ComplianceCheckCompleted is {
+        do "the check is done; a person reads the result"
       }
-      on event ComplianceContext.ViolationDetected is {
-        do "the model receives violation detected"
+      on violationDetected: event ComplianceContext.ViolationDetected is {
+        do "a breach is flagged; whether to suspend the fund is compliance's decision, not the detector's"
       }
       on other is {
         error "Unexpected message for adaptor FromComplianceContext"
@@ -71,13 +77,13 @@ context FundContext as router is {
       |The model's side of the ComplianceContext conversation.
     }
   }
-  adaptor FromCustodianContext from context CustodianContext is { 
-    handler FromCustodianContextHandler is {
-      on event CustodianContext.PositionsReceived is {
-        do "the model receives positions received"
+  adaptor FromCustodianContext from context CustodianContext as flow is { 
+    inlet FromCustodianContextIn is type CustodianContext.CustodianContextEvent    handler FromCustodianContextHandler is {
+      on positionsReceived: event CustodianContext.PositionsReceived is {
+        do "the custodian's positions are in; reconciling holdings against them is the accountant's act"
       }
-      on event CustodianContext.TransactionSettled is {
-        do "the model receives transaction settled"
+      on transactionSettled: event CustodianContext.TransactionSettled is {
+        do "the trade has settled; the transaction was recorded when it was made"
       }
       on other is {
         error "Unexpected message for adaptor FromCustodianContext"
@@ -94,13 +100,15 @@ context FundContext as router is {
       |The model's side of the CustodianContext conversation.
     }
   }
-  adaptor FromMarketDataContext from context MarketDataContext is { 
+  adaptor FromMarketDataContext from context MarketDataContext as flow is { 
+    inlet FromMarketDataContextIn is type MarketDataContext.MarketDataContextEvent    outlet FromMarketDataContextToFundContext is command Fund.CalculateNAV
     handler FromMarketDataContextHandler is {
-      on event MarketDataContext.EndOfDayPricesPublished is {
-        do "the model receives end of day prices published"
+      on endOfDayPricesPublished: event MarketDataContext.EndOfDayPricesPublished is {
+        let item0: type Fund.CalculateNAV = prompt("translate the endOfDayPricesPublished event into a CalculateNAV, end-of-day prices for the valuation date are what a NAV is struck from")
+        send item0 to outlet FundContext.FromMarketDataContext.FromMarketDataContextToFundContext
       }
-      on event MarketDataContext.PriceUpdated is {
-        do "the model receives price updated"
+      on priceUpdated: event MarketDataContext.PriceUpdated is {
+        do "an intraday price moved; the NAV is struck at the close, not on every tick"
       }
       on other is {
         error "Unexpected message for adaptor FromMarketDataContext"
@@ -117,13 +125,13 @@ context FundContext as router is {
       |The model's side of the MarketDataContext conversation.
     }
   }
-  adaptor FromTransferAgentContext from context TransferAgentContext is { 
-    handler FromTransferAgentContextHandler is {
-      on event TransferAgentContext.DividendDeclared is {
-        do "the model receives dividend declared"
+  adaptor FromTransferAgentContext from context TransferAgentContext as flow is { 
+    inlet FromTransferAgentContextIn is type TransferAgentContext.TransferAgentContextEvent    handler FromTransferAgentContextHandler is {
+      on dividendDeclared: event TransferAgentContext.DividendDeclared is {
+        do "a dividend is declared; it enters the fund as a transaction when it is paid"
       }
-      on event TransferAgentContext.ShareholderRegistered is {
-        do "the model receives shareholder registered"
+      on shareholderRegistered: event TransferAgentContext.ShareholderRegistered is {
+        do "the register has the holder; the subscription that created them was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromTransferAgentContext"

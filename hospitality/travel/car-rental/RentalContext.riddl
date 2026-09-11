@@ -1,5 +1,17 @@
 // Car Rental - Rental Context
 context RentalContext as router is {
+  inlet RentalContextFromDriverVerificationService is command Rental.CancelRental with {
+    briefly "What FromDriverVerificationService makes of that service's news"
+  }
+  connector 'FromDriverVerificationService Intake' is from outlet RentalContext.FromDriverVerificationService.FromDriverVerificationServiceToRentalContext to inlet RentalContext.RentalContextFromDriverVerificationService with {
+    briefly "What FromDriverVerificationService makes of that news, on its way in"
+  }
+  inlet RentalContextFromPaymentProcessingService is command Rental.AuthorizePayment with {
+    briefly "What FromPaymentProcessingService makes of that service's news"
+  }
+  connector 'FromPaymentProcessingService Intake' is from outlet RentalContext.FromPaymentProcessingService.FromPaymentProcessingServiceToRentalContext to inlet RentalContext.RentalContextFromPaymentProcessingService with {
+    briefly "What FromPaymentProcessingService makes of that news, on its way in"
+  }
   inlet RentalCommandStreamIn is type RentalCommand  outlet RentalCommandStreamOut is type RentalCommand
   inlet RentalResultStreamIn is result Rental.RentalResult  outlet RentalResultStreamOut is result Rental.RentalResult
   handler RentalContextBoundary is {
@@ -55,13 +67,15 @@ context RentalContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'RentalCommand Stream Intake' is from outlet RentalContext.RentalCommandStreamOut to inlet RentalContext.Rental.RentalCommands  connector 'RentalResult Stream Egress' is from outlet RentalContext.RentalRepository.RentalRepositoryResponses to inlet RentalContext.RentalResultStreamIn  adaptor FromDriverVerificationService from context DriverVerificationService is { 
+  connector 'RentalCommand Stream Intake' is from outlet RentalContext.RentalCommandStreamOut to inlet RentalContext.Rental.RentalCommands  connector 'RentalResult Stream Egress' is from outlet RentalContext.RentalRepository.RentalRepositoryResponses to inlet RentalContext.RentalResultStreamIn  adaptor FromDriverVerificationService from context DriverVerificationService as flow is { 
+    inlet FromDriverVerificationServiceIn is type DriverVerificationService.DriverVerificationServiceEvent    outlet FromDriverVerificationServiceToRentalContext is command Rental.CancelRental
     handler FromDriverVerificationServiceHandler is {
-      on event DriverVerificationService.DriverVerified is {
-        do "the model receives driver verified"
+      on driverVerified: event DriverVerificationService.DriverVerified is {
+        do "the driver may rent; the counter still hands over the vehicle"
       }
-      on event DriverVerificationService.VerificationFailed is {
-        do "the model receives verification failed"
+      on verificationFailed: event DriverVerificationService.VerificationFailed is {
+        let item0: type Rental.CancelRental = prompt("translate the verificationFailed event into a CancelRental, a driver who cannot be verified cannot take the car, so the rental is cancelled")
+        send item0 to outlet RentalContext.FromDriverVerificationService.FromDriverVerificationServiceToRentalContext
       }
       on other is {
         error "Unexpected message for adaptor FromDriverVerificationService"
@@ -100,13 +114,13 @@ context RentalContext as router is {
       |The model's side of the DriverVerificationService conversation.
     }
   }
-  adaptor FromFleetMaintenanceService from context FleetMaintenanceService is { 
-    handler FromFleetMaintenanceServiceHandler is {
-      on event FleetMaintenanceService.DamageReported is {
-        do "the model receives damage reported"
+  adaptor FromFleetMaintenanceService from context FleetMaintenanceService as flow is { 
+    inlet FromFleetMaintenanceServiceIn is type FleetMaintenanceService.FleetMaintenanceServiceEvent    handler FromFleetMaintenanceServiceHandler is {
+      on damageReported: event FleetMaintenanceService.DamageReported is {
+        do "maintenance has the damage report; assessing the damage was recorded here"
       }
-      on event FleetMaintenanceService.InspectionScheduled is {
-        do "the model receives inspection scheduled"
+      on inspectionScheduled: event FleetMaintenanceService.InspectionScheduled is {
+        do "the inspection is booked; the check-in that asked for it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromFleetMaintenanceService"
@@ -149,10 +163,10 @@ context RentalContext as router is {
       |The model's side of the FleetMaintenanceService conversation.
     }
   }
-  adaptor FromInsuranceProviderService from context InsuranceProviderService is { 
-    handler FromInsuranceProviderServiceHandler is {
-      on event InsuranceProviderService.CoverageActivated is {
-        do "the model receives coverage activated"
+  adaptor FromInsuranceProviderService from context InsuranceProviderService as flow is { 
+    inlet FromInsuranceProviderServiceIn is event InsuranceProviderService.CoverageActivated    handler FromInsuranceProviderServiceHandler is {
+      on coverageActivated: event InsuranceProviderService.CoverageActivated is {
+        do "the cover is live; selecting it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromInsuranceProviderService"
@@ -231,16 +245,18 @@ context RentalContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromPaymentProcessingService from context PaymentProcessingService is { 
+  adaptor FromPaymentProcessingService from context PaymentProcessingService as flow is { 
+    inlet FromPaymentProcessingServiceIn is type PaymentProcessingService.PaymentProcessingServiceEvent    outlet FromPaymentProcessingServiceToRentalContext is command Rental.AuthorizePayment
     handler FromPaymentProcessingServiceHandler is {
-      on event PaymentProcessingService.PaymentCaptured is {
-        do "the model receives payment captured"
+      on paymentCaptured: event PaymentProcessingService.PaymentCaptured is {
+        do "the money is taken; the final charges were recorded here"
       }
-      on event PaymentProcessingService.RefundProcessed is {
-        do "the model receives refund processed"
+      on refundProcessed: event PaymentProcessingService.RefundProcessed is {
+        do "the refund has gone; cancelling was recorded here"
       }
-      on event PaymentProcessingService.RentalPaymentAuthorized is {
-        do "the model receives rental payment authorized"
+      on rentalPaymentAuthorized: event PaymentProcessingService.RentalPaymentAuthorized is {
+        let item0: type Rental.AuthorizePayment = prompt("translate the rentalPaymentAuthorized event into a AuthorizePayment, a card actually held is what the rental records as authorised")
+        send item0 to outlet RentalContext.FromPaymentProcessingService.FromPaymentProcessingServiceToRentalContext
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentProcessingService"
@@ -311,13 +327,13 @@ context RentalContext as router is {
       |The model's side of the PricingService conversation.
     }
   }
-  adaptor FromVehicleAvailabilityService from context VehicleAvailabilityService is { 
-    handler FromVehicleAvailabilityServiceHandler is {
-      on event VehicleAvailabilityService.VehicleReleased is {
-        do "the model receives vehicle released"
+  adaptor FromVehicleAvailabilityService from context VehicleAvailabilityService as flow is { 
+    inlet FromVehicleAvailabilityServiceIn is type VehicleAvailabilityService.VehicleAvailabilityServiceEvent    handler FromVehicleAvailabilityServiceHandler is {
+      on vehicleReleased: event VehicleAvailabilityService.VehicleReleased is {
+        do "the vehicle is available again; the check-in or cancellation that freed it was recorded here"
       }
-      on event VehicleAvailabilityService.VehicleReserved is {
-        do "the model receives vehicle reserved"
+      on vehicleReserved: event VehicleAvailabilityService.VehicleReserved is {
+        do "the vehicle is held; creating the rental was recorded before it was asked for"
       }
       on other is {
         error "Unexpected message for adaptor FromVehicleAvailabilityService"

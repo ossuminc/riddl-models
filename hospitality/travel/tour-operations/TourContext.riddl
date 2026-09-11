@@ -1,5 +1,11 @@
 // Tour Operations - Tour Context
 context TourContext as router is {
+  inlet TourContextFromPaymentProcessingService is command TourBooking.ProcessRefund with {
+    briefly "What FromPaymentProcessingService makes of that service's news"
+  }
+  connector 'FromPaymentProcessingService Intake' is from outlet TourContext.FromPaymentProcessingService.FromPaymentProcessingServiceToTourContext to inlet TourContext.TourContextFromPaymentProcessingService with {
+    briefly "What FromPaymentProcessingService makes of that news, on its way in"
+  }
   inlet TourBookingCommandStreamIn is type TourBookingCommand  outlet TourBookingCommandStreamOut is type TourBookingCommand
   inlet BookingResultStreamIn is result TourBooking.TourBookingResult  outlet BookingResultStreamOut is result TourBooking.TourBookingResult
   handler TourContextBoundary is {
@@ -56,13 +62,13 @@ context TourContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'TourBookingCommand Stream Intake' is from outlet TourContext.TourBookingCommandStreamOut to inlet TourContext.TourBooking.TourBookingCommands  connector 'BookingResult Stream Egress' is from outlet TourContext.BookingRepository.BookingRepositoryResponses to inlet TourContext.BookingResultStreamIn  adaptor FromDepartureAvailabilityService from context DepartureAvailabilityService is { 
-    handler FromDepartureAvailabilityServiceHandler is {
-      on event DepartureAvailabilityService.SpotsReleased is {
-        do "the model receives spots released"
+  connector 'TourBookingCommand Stream Intake' is from outlet TourContext.TourBookingCommandStreamOut to inlet TourContext.TourBooking.TourBookingCommands  connector 'BookingResult Stream Egress' is from outlet TourContext.BookingRepository.BookingRepositoryResponses to inlet TourContext.BookingResultStreamIn  adaptor FromDepartureAvailabilityService from context DepartureAvailabilityService as flow is { 
+    inlet FromDepartureAvailabilityServiceIn is type DepartureAvailabilityService.DepartureAvailabilityServiceEvent    handler FromDepartureAvailabilityServiceHandler is {
+      on spotsReleased: event DepartureAvailabilityService.SpotsReleased is {
+        do "the spots are open again; removing the participant or cancelling was recorded here"
       }
-      on event DepartureAvailabilityService.SpotsReserved is {
-        do "the model receives spots reserved"
+      on spotsReserved: event DepartureAvailabilityService.SpotsReserved is {
+        do "the spots are held; adding the participant was recorded before they were asked for"
       }
       on other is {
         error "Unexpected message for adaptor FromDepartureAvailabilityService"
@@ -113,10 +119,10 @@ context TourContext as router is {
       |The model's side of the DepartureAvailabilityService conversation.
     }
   }
-  adaptor FromGuideAssignmentService from context GuideAssignmentService is { 
-    handler FromGuideAssignmentServiceHandler is {
-      on event GuideAssignmentService.GuideAssigned is {
-        do "the model receives guide assigned"
+  adaptor FromGuideAssignmentService from context GuideAssignmentService as flow is { 
+    inlet FromGuideAssignmentServiceIn is event GuideAssignmentService.GuideAssigned    handler FromGuideAssignmentServiceHandler is {
+      on guideAssigned: event GuideAssignmentService.GuideAssigned is {
+        do "the guide is assigned; the booking holds no guide of its own"
       }
       on other is {
         error "Unexpected message for adaptor FromGuideAssignmentService"
@@ -189,16 +195,18 @@ context TourContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromPaymentProcessingService from context PaymentProcessingService is { 
+  adaptor FromPaymentProcessingService from context PaymentProcessingService as flow is { 
+    inlet FromPaymentProcessingServiceIn is type PaymentProcessingService.PaymentProcessingServiceEvent    outlet FromPaymentProcessingServiceToTourContext is command TourBooking.ProcessRefund
     handler FromPaymentProcessingServiceHandler is {
-      on event PaymentProcessingService.PaymentFailed is {
-        do "the model receives payment failed"
+      on paymentFailed: event PaymentProcessingService.PaymentFailed is {
+        do "an unpaid booking stays as it is; the customer is asked again"
       }
-      on event PaymentProcessingService.PaymentSucceeded is {
-        do "the model receives payment succeeded"
+      on paymentSucceeded: event PaymentProcessingService.PaymentSucceeded is {
+        do "the money is taken; the deposit or final payment was recorded before it was asked for"
       }
-      on event PaymentProcessingService.RefundSucceeded is {
-        do "the model receives refund succeeded"
+      on refundSucceeded: event PaymentProcessingService.RefundSucceeded is {
+        let item0: type TourBooking.ProcessRefund = prompt("translate the refundSucceeded event into a ProcessRefund, money actually returned is what the booking records as refunded")
+        send item0 to outlet TourContext.FromPaymentProcessingService.FromPaymentProcessingServiceToTourContext
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentProcessingService"
@@ -271,13 +279,13 @@ context TourContext as router is {
       |The model's side of the TourCatalogService conversation.
     }
   }
-  adaptor FromWaiverManagementService from context WaiverManagementService is { 
-    handler FromWaiverManagementServiceHandler is {
-      on event WaiverManagementService.WaiverSent is {
-        do "the model receives waiver sent"
+  adaptor FromWaiverManagementService from context WaiverManagementService as flow is { 
+    inlet FromWaiverManagementServiceIn is type WaiverManagementService.WaiverManagementServiceEvent    handler FromWaiverManagementServiceHandler is {
+      on waiverSent: event WaiverManagementService.WaiverSent is {
+        do "the participant has the waiver; sending it was recorded here"
       }
-      on event WaiverManagementService.WaiverSigned is {
-        do "the model receives waiver signed"
+      on waiverSignedEvent: event WaiverManagementService.WaiverSigned is {
+        do "the waiver is signed; check-in is where it is needed and a person does that"
       }
       on other is {
         error "Unexpected message for adaptor FromWaiverManagementService"

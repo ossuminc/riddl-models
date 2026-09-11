@@ -1,5 +1,22 @@
 // Airline Reservations - Reservation Context
 context ReservationContext as router is {
+  inlet ReservationContextFromBoardingService is command Reservation.BoardFlight with {
+    briefly "What FromBoardingService makes of that service's news"
+  }
+  connector 'FromBoardingService Intake' is from outlet ReservationContext.FromBoardingService.FromBoardingServiceToReservationContext to inlet ReservationContext.ReservationContextFromBoardingService with {
+    briefly "What FromBoardingService makes of that news, on its way in"
+  }
+  type FromPaymentProcessingServiceCommand is one of {
+    Reservation.ProcessPayment or Reservation.ProcessRefund
+  } with {
+    briefly "What FromPaymentProcessingService turns that service's news into"
+  }
+  inlet ReservationContextFromPaymentProcessingService is type ReservationContext.FromPaymentProcessingServiceCommand with {
+    briefly "What FromPaymentProcessingService makes of that service's news"
+  }
+  connector 'FromPaymentProcessingService Intake' is from outlet ReservationContext.FromPaymentProcessingService.FromPaymentProcessingServiceToReservationContext to inlet ReservationContext.ReservationContextFromPaymentProcessingService with {
+    briefly "What FromPaymentProcessingService makes of that news, on its way in"
+  }
   inlet ReservationCommandStreamIn is type ReservationCommand  outlet ReservationCommandStreamOut is type ReservationCommand
   inlet ReservationBoardViewStreamIn is result Reservation.ReservationResult  outlet ReservationBoardViewStreamOut is result Reservation.ReservationResult
   handler ReservationContextBoundary is {
@@ -56,16 +73,18 @@ context ReservationContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'ReservationCommand Stream Intake' is from outlet ReservationContext.ReservationCommandStreamOut to inlet ReservationContext.Reservation.ReservationCommands  connector 'ReservationBoardView Stream Egress' is from outlet ReservationContext.ReservationRepository.ReservationRepositoryResponses to inlet ReservationContext.ReservationBoardViewStreamIn  adaptor FromBoardingService from context BoardingService is { 
+  connector 'ReservationCommand Stream Intake' is from outlet ReservationContext.ReservationCommandStreamOut to inlet ReservationContext.Reservation.ReservationCommands  connector 'ReservationBoardView Stream Egress' is from outlet ReservationContext.ReservationRepository.ReservationRepositoryResponses to inlet ReservationContext.ReservationBoardViewStreamIn  adaptor FromBoardingService from context BoardingService as flow is { 
+    inlet FromBoardingServiceIn is type BoardingService.BoardingServiceEvent    outlet FromBoardingServiceToReservationContext is command Reservation.BoardFlight
     handler FromBoardingServiceHandler is {
-      on event BoardingService.BoardingCompleted is {
-        do "the model receives boarding completed"
+      on boardingCompleted: event BoardingService.BoardingCompleted is {
+        do "boarding is closed out; the passenger boarding was recorded here first"
       }
-      on event BoardingService.BoardingPassScanned is {
-        do "the model receives boarding pass scanned"
+      on boardingPassScanned: event BoardingService.BoardingPassScanned is {
+        let item0: type Reservation.BoardFlight = prompt("translate the boardingPassScanned event into a BoardFlight, a boarding pass scanned at the gate is the passenger actually boarding")
+        send item0 to outlet ReservationContext.FromBoardingService.FromBoardingServiceToReservationContext
       }
-      on event BoardingService.BoardingStarted is {
-        do "the model receives boarding started"
+      on boardingStarted: event BoardingService.BoardingStarted is {
+        do "the gate is boarding; the check-in that opened it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromBoardingService"
@@ -112,13 +131,13 @@ context ReservationContext as router is {
       |The model's side of the BoardingService conversation.
     }
   }
-  adaptor FromCheckInService from context CheckInService is { 
-    handler FromCheckInServiceHandler is {
-      on event CheckInService.CheckInClosed is {
-        do "the model receives check in closed"
+  adaptor FromCheckInService from context CheckInService as flow is { 
+    inlet FromCheckInServiceIn is type CheckInService.CheckInServiceEvent    handler FromCheckInServiceHandler is {
+      on checkInClosed: event CheckInService.CheckInClosed is {
+        do "check-in is closed; the boarding that closed it was recorded here"
       }
-      on event CheckInService.CheckInOpened is {
-        do "the model receives check in opened"
+      on checkInOpened: event CheckInService.CheckInOpened is {
+        do "check-in is open for the flight; the passenger checks in when they choose"
       }
       on other is {
         error "Unexpected message for adaptor FromCheckInService"
@@ -227,16 +246,19 @@ context ReservationContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromPaymentProcessingService from context PaymentProcessingService is { 
+  adaptor FromPaymentProcessingService from context PaymentProcessingService as flow is { 
+    inlet FromPaymentProcessingServiceIn is type PaymentProcessingService.PaymentProcessingServiceEvent    outlet FromPaymentProcessingServiceToReservationContext is type ReservationContext.FromPaymentProcessingServiceCommand
     handler FromPaymentProcessingServiceHandler is {
-      on event PaymentProcessingService.PaymentFailed is {
-        do "the model receives payment failed"
+      on paymentFailed: event PaymentProcessingService.PaymentFailed is {
+        do "an unpaid reservation stays as it is; the passenger is asked again"
       }
-      on event PaymentProcessingService.PaymentSucceeded is {
-        do "the model receives payment succeeded"
+      on paymentSucceeded: event PaymentProcessingService.PaymentSucceeded is {
+        let item0: type Reservation.ProcessPayment = prompt("translate the paymentSucceeded event into a ProcessPayment, money actually taken is what the reservation records as paid")
+        send item0 to outlet ReservationContext.FromPaymentProcessingService.FromPaymentProcessingServiceToReservationContext
       }
-      on event PaymentProcessingService.RefundSucceeded is {
-        do "the model receives refund succeeded"
+      on refundSucceeded: event PaymentProcessingService.RefundSucceeded is {
+        let item0: type Reservation.ProcessRefund = prompt("translate the refundSucceeded event into a ProcessRefund, money actually returned is what the reservation records as refunded")
+        send item0 to outlet ReservationContext.FromPaymentProcessingService.FromPaymentProcessingServiceToReservationContext
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentProcessingService"
@@ -303,13 +325,13 @@ context ReservationContext as router is {
       |The model's side of the PricingService conversation.
     }
   }
-  adaptor FromSeatInventoryService from context SeatInventoryService is { 
-    handler FromSeatInventoryServiceHandler is {
-      on event SeatInventoryService.SeatReleased is {
-        do "the model receives seat released"
+  adaptor FromSeatInventoryService from context SeatInventoryService as flow is { 
+    inlet FromSeatInventoryServiceIn is type SeatInventoryService.SeatInventoryServiceEvent    handler FromSeatInventoryServiceHandler is {
+      on seatReleased: event SeatInventoryService.SeatReleased is {
+        do "the seat is back in inventory; cancelling was recorded here"
       }
-      on event SeatInventoryService.SeatReserved is {
-        do "the model receives seat reserved"
+      on seatReserved: event SeatInventoryService.SeatReserved is {
+        do "the seat is held; selecting it was recorded before it was asked for"
       }
       on other is {
         error "Unexpected message for adaptor FromSeatInventoryService"

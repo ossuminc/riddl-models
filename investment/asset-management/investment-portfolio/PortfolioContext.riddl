@@ -1,5 +1,11 @@
 // Investment Portfolio - Portfolio Context
 context PortfolioContext as router is {
+  inlet PortfolioContextFromTradingSystem is command Portfolio.RecordTradeFill with {
+    briefly "What FromTradingSystem makes of that service's news"
+  }
+  connector 'FromTradingSystem Intake' is from outlet PortfolioContext.FromTradingSystem.FromTradingSystemToPortfolioContext to inlet PortfolioContext.PortfolioContextFromTradingSystem with {
+    briefly "What FromTradingSystem makes of that news, on its way in"
+  }
   inlet PortfolioCommandStreamIn is type PortfolioCommand  outlet PortfolioCommandStreamOut is type PortfolioCommand
   inlet PortfolioCompanyResultStreamIn is result Portfolio.PortfolioResult  outlet PortfolioCompanyResultStreamOut is result Portfolio.PortfolioResult
   handler PortfolioContextBoundary is {
@@ -44,10 +50,10 @@ context PortfolioContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'PortfolioCommand Stream Intake' is from outlet PortfolioContext.PortfolioCommandStreamOut to inlet PortfolioContext.Portfolio.PortfolioCommands  connector 'PortfolioCompanyResult Stream Egress' is from outlet PortfolioContext.PortfolioRepository.PortfolioRepositoryResponses to inlet PortfolioContext.PortfolioCompanyResultStreamIn  adaptor FromMarketDataFeed from context MarketDataFeed is { 
-    handler FromMarketDataFeedHandler is {
-      on event MarketDataFeed.PriceUpdated is {
-        do "the model receives price updated"
+  connector 'PortfolioCommand Stream Intake' is from outlet PortfolioContext.PortfolioCommandStreamOut to inlet PortfolioContext.Portfolio.PortfolioCommands  connector 'PortfolioCompanyResult Stream Egress' is from outlet PortfolioContext.PortfolioRepository.PortfolioRepositoryResponses to inlet PortfolioContext.PortfolioCompanyResultStreamIn  adaptor FromMarketDataFeed from context MarketDataFeed as flow is { 
+    inlet FromMarketDataFeedIn is event MarketDataFeed.PriceUpdated    handler FromMarketDataFeedHandler is {
+      on priceUpdated: event MarketDataFeed.PriceUpdated is {
+        do "a price moved; the portfolio is revalued when it is analysed or rebalanced, not on every tick"
       }
       on other is {
         error "Unexpected message for adaptor FromMarketDataFeed"
@@ -90,16 +96,18 @@ context PortfolioContext as router is {
       |The model's side of the MarketDataFeed conversation.
     }
   }
-  adaptor FromTradingSystem from context TradingSystem is { 
+  adaptor FromTradingSystem from context TradingSystem as flow is { 
+    inlet FromTradingSystemIn is type TradingSystem.TradingSystemEvent    outlet FromTradingSystemToPortfolioContext is command Portfolio.RecordTradeFill
     handler FromTradingSystemHandler is {
-      on event TradingSystem.OrderFilled is {
-        do "the model receives order filled"
+      on orderFilled: event TradingSystem.OrderFilled is {
+        let item0: type Portfolio.RecordTradeFill = prompt("translate the orderFilled event into a RecordTradeFill, a fill from the market is what the portfolio records against its order")
+        send item0 to outlet PortfolioContext.FromTradingSystem.FromTradingSystemToPortfolioContext
       }
-      on event TradingSystem.OrderRejected is {
-        do "the model receives order rejected"
+      on orderRejected: event TradingSystem.OrderRejected is {
+        do "the market refused the order; the rebalance stands until it is redone"
       }
-      on event TradingSystem.OrderSubmitted is {
-        do "the model receives order submitted"
+      on orderSubmitted: event TradingSystem.OrderSubmitted is {
+        do "the market has the order; the rebalance that raised it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromTradingSystem"

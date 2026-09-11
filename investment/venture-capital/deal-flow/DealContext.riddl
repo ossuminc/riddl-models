@@ -1,5 +1,11 @@
 // Deal Flow - Deal Context
 context DealContext as router is {
+  inlet DealContextFromLegalDocumentService is command Deal.RecordTermSheetResponse with {
+    briefly "What FromLegalDocumentService makes of that service's news"
+  }
+  connector 'FromLegalDocumentService Intake' is from outlet DealContext.FromLegalDocumentService.FromLegalDocumentServiceToDealContext to inlet DealContext.DealContextFromLegalDocumentService with {
+    briefly "What FromLegalDocumentService makes of that news, on its way in"
+  }
   inlet DealCommandStreamIn is type DealCommand  outlet DealCommandStreamOut is type DealCommand
   inlet DealResultStreamIn is result Deal.DealResult  outlet DealResultStreamOut is result Deal.DealResult
   handler DealContextBoundary is {
@@ -56,13 +62,13 @@ context DealContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'DealCommand Stream Intake' is from outlet DealContext.DealCommandStreamOut to inlet DealContext.Deal.DealCommands  connector 'DealResult Stream Egress' is from outlet DealContext.DealRepository.DealRepositoryResponses to inlet DealContext.DealResultStreamIn  adaptor FromCalendarService from context CalendarService is { 
-    handler FromCalendarServiceHandler is {
-      on event CalendarService.MeetingScheduled is {
-        do "the model receives meeting scheduled"
+  connector 'DealCommand Stream Intake' is from outlet DealContext.DealCommandStreamOut to inlet DealContext.Deal.DealCommands  connector 'DealResult Stream Egress' is from outlet DealContext.DealRepository.DealRepositoryResponses to inlet DealContext.DealResultStreamIn  adaptor FromCalendarService from context CalendarService as flow is { 
+    inlet FromCalendarServiceIn is type CalendarService.CalendarServiceEvent    handler FromCalendarServiceHandler is {
+      on meetingScheduled: event CalendarService.MeetingScheduled is {
+        do "the meeting is in the calendar; recording it here came first"
       }
-      on event CalendarService.ReminderSent is {
-        do "the model receives reminder sent"
+      on reminderSent: event CalendarService.ReminderSent is {
+        do "the reminder has gone; the deal's own state is unchanged"
       }
       on other is {
         error "Unexpected message for adaptor FromCalendarService"
@@ -129,13 +135,13 @@ context DealContext as router is {
       |The model's side of the CompanyResearchService conversation.
     }
   }
-  adaptor FromCrmIntegrationService from context CrmIntegrationService is { 
-    handler FromCrmIntegrationServiceHandler is {
-      on event CrmIntegrationService.ContactSynced is {
-        do "the model receives contact synced"
+  adaptor FromCrmIntegrationService from context CrmIntegrationService as flow is { 
+    inlet FromCrmIntegrationServiceIn is type CrmIntegrationService.CrmIntegrationServiceEvent    handler FromCrmIntegrationServiceHandler is {
+      on contactSynced: event CrmIntegrationService.ContactSynced is {
+        do "the CRM has the contact; creating the deal was recorded here"
       }
-      on event CrmIntegrationService.InteractionLogged is {
-        do "the model receives interaction logged"
+      on interactionLogged: event CrmIntegrationService.InteractionLogged is {
+        do "the CRM has the interaction; the meeting was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromCrmIntegrationService"
@@ -178,10 +184,10 @@ context DealContext as router is {
       |The model's side of the CrmIntegrationService conversation.
     }
   }
-  adaptor FromDocumentManagementService from context DocumentManagementService is { 
-    handler FromDocumentManagementServiceHandler is {
-      on event DocumentManagementService.DocumentUploaded is {
-        do "the model receives document uploaded"
+  adaptor FromDocumentManagementService from context DocumentManagementService as flow is { 
+    inlet FromDocumentManagementServiceIn is event DocumentManagementService.DocumentUploaded    handler FromDocumentManagementServiceHandler is {
+      on documentUploaded: event DocumentManagementService.DocumentUploaded is {
+        do "the document is stored; the note was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromDocumentManagementService"
@@ -224,16 +230,18 @@ context DealContext as router is {
       |The model's side of the DocumentManagementService conversation.
     }
   }
-  adaptor FromLegalDocumentService from context LegalDocumentService is { 
+  adaptor FromLegalDocumentService from context LegalDocumentService as flow is { 
+    inlet FromLegalDocumentServiceIn is type LegalDocumentService.LegalDocumentServiceEvent    outlet FromLegalDocumentServiceToDealContext is command Deal.RecordTermSheetResponse
     handler FromLegalDocumentServiceHandler is {
-      on event LegalDocumentService.DocumentSigned is {
-        do "the model receives document signed"
+      on documentSigned: event LegalDocumentService.DocumentSigned is {
+        let item0: type Deal.RecordTermSheetResponse = prompt("translate the documentSigned event into a RecordTermSheetResponse, a signed term sheet is the founder's acceptance of it")
+        send item0 to outlet DealContext.FromLegalDocumentService.FromLegalDocumentServiceToDealContext
       }
-      on event LegalDocumentService.SignatureRequested is {
-        do "the model receives signature requested"
+      on signatureRequested: event LegalDocumentService.SignatureRequested is {
+        do "the signature has been asked for; issuing the term sheet was recorded here"
       }
-      on event LegalDocumentService.TermSheetGenerated is {
-        do "the model receives term sheet generated"
+      on termSheetGenerated: event LegalDocumentService.TermSheetGenerated is {
+        do "the term sheet document exists; proposing terms was recorded here and issuing it is a decision"
       }
       on other is {
         error "Unexpected message for adaptor FromLegalDocumentService"

@@ -1,5 +1,11 @@
 // Shipment Tracking - Tracking Context
 context TrackingContext as router is {
+  inlet TrackingContextFromCarrierIntegration is command Shipment.AddTrackingEvent with {
+    briefly "What FromCarrierIntegration makes of that service's news"
+  }
+  connector 'FromCarrierIntegration Intake' is from outlet TrackingContext.FromCarrierIntegration.FromCarrierIntegrationToTrackingContext to inlet TrackingContext.TrackingContextFromCarrierIntegration with {
+    briefly "What FromCarrierIntegration makes of that news, on its way in"
+  }
   inlet ShipmentCommandStreamIn is type ShipmentCommand  outlet ShipmentCommandStreamOut is type ShipmentCommand
   inlet ShipmentResultStreamIn is result Shipment.ShipmentResult  outlet ShipmentResultStreamOut is result Shipment.ShipmentResult
   handler TrackingContextBoundary is {
@@ -47,13 +53,15 @@ context TrackingContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'ShipmentCommand Stream Intake' is from outlet TrackingContext.ShipmentCommandStreamOut to inlet TrackingContext.Shipment.ShipmentCommands  connector 'ShipmentResult Stream Egress' is from outlet TrackingContext.ShipmentRepository.ShipmentRepositoryResponses to inlet TrackingContext.ShipmentResultStreamIn  adaptor FromCarrierIntegration from context CarrierIntegration is { 
+  connector 'ShipmentCommand Stream Intake' is from outlet TrackingContext.ShipmentCommandStreamOut to inlet TrackingContext.Shipment.ShipmentCommands  connector 'ShipmentResult Stream Egress' is from outlet TrackingContext.ShipmentRepository.ShipmentRepositoryResponses to inlet TrackingContext.ShipmentResultStreamIn  adaptor FromCarrierIntegration from context CarrierIntegration as flow is { 
+    inlet FromCarrierIntegrationIn is type CarrierIntegration.CarrierIntegrationEvent    outlet FromCarrierIntegrationToTrackingContext is command Shipment.AddTrackingEvent
     handler FromCarrierIntegrationHandler is {
-      on event CarrierIntegration.PickupScheduled is {
-        do "the model receives pickup scheduled"
+      on pickupScheduled: event CarrierIntegration.PickupScheduled is {
+        do "the carrier will collect; the pickup is recorded when it happens"
       }
-      on event CarrierIntegration.TrackingUpdateReceived is {
-        do "the model receives tracking update received"
+      on trackingUpdateReceived: event CarrierIntegration.TrackingUpdateReceived is {
+        let item0: type Shipment.AddTrackingEvent = prompt("translate the trackingUpdateReceived event into a AddTrackingEvent, what the carrier reports is the tracking history the shipment shows")
+        send item0 to outlet TrackingContext.FromCarrierIntegration.FromCarrierIntegrationToTrackingContext
       }
       on other is {
         error "Unexpected message for adaptor FromCarrierIntegration"
@@ -96,13 +104,13 @@ context TrackingContext as router is {
       |The model's side of the CarrierIntegration conversation.
     }
   }
-  adaptor FromGeolocationService from context GeolocationService is { 
-    handler FromGeolocationServiceHandler is {
-      on event GeolocationService.AddressGeocoded is {
-        do "the model receives address geocoded"
+  adaptor FromGeolocationService from context GeolocationService as flow is { 
+    inlet FromGeolocationServiceIn is type GeolocationService.GeolocationServiceEvent    handler FromGeolocationServiceHandler is {
+      on addressGeocoded: event GeolocationService.AddressGeocoded is {
+        do "the address has coordinates; the shipment keeps the address"
       }
-      on event GeolocationService.RouteCalculated is {
-        do "the model receives route calculated"
+      on routeCalculated: event GeolocationService.RouteCalculated is {
+        do "the route is planned; the ETA is updated as the carrier reports progress"
       }
       on other is {
         error "Unexpected message for adaptor FromGeolocationService"
