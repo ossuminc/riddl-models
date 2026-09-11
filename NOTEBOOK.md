@@ -11,28 +11,29 @@ announcement); check `riddlc info` against `build.sbt` before believing any
 number. No published tag carries [1.25]; take the override off at the first
 that does.
 
-**Errors 0. Missing 749 + 104 -> 1 + 0** (the [1.25] drain, BACKLOG #38, commits
-001d98bf .. f70a38a2). Verified by running at the close: prettify / validate /
-bastify 189/189, `uc` 0, round-trip 189/189 at 0, sweep canaried on -47.
+**Errors 0, Missing 1, Completeness 4, everything else 0** — the [1.25] drain
+(BACKLOG #38) is CLOSED, task file in `task/done/`. The last commit of it,
+04be7395, made every one of the 368 asks forward its answer. Verified at the
+close: prettify / validate / bastify 189/189, `uc` 0, round-trip 189/189 at 0,
+census 0 of 782, sweep canaried on -47.
 
-**What is red, and why it stays red until someone rules:** 409
-`stream-ports-without-shape` (inbound adaptors with no transmission; Reid ruled
-no `as sink`), 4 `stream-inlet-not-received` (error-sink contexts, filed
-upstream), 1 Missing (NightlyCloseOut, a clock-driven void, BACKLOG #30).
-`checkTests` fails on reactive-bbq's R10 alone. Sweep by rule is the census;
-`sbt v` is green and says nothing about any of this.
+**What is red, and why it stays red — both RULED, not awaiting anyone:** 4
+`stream-inlet-not-received` on error-sink contexts (Reid: riddl exempts them;
+filed, `../riddl/task/2026-09-11-error-sink-context-cannot-be-complete.md`) and
+1 Missing on NightlyCloseOut (Reid: leave as written; BACKLOG #30). `checkTests`
+fails on reactive-bbq's R10 alone, on exactly those. `sbt v` is green and says
+nothing about any of this; sweep by rule is the census.
 
-### In flight — nothing is being edited; three things await Reid
+### In flight — nothing. Next is bookkeeping, not modelling
 
-1. **#38 item 4b** — the translation each asking clause performs with its answer.
-   368 asks, census in `scripts/inbound-events/ask-census.tsv`, grouped by kind of
-   answer. Needs family rulings like #36's; then it is a script.
-2. **The 409 style nudges** — zero standard vs the `as sink` ruling.
-3. **Two rule conflicts filed with riddl** (error-sink contexts; the ask-reply one
-   was answered same day by 8d2cc13e5). The scheduled-void one is #30's.
-
-`task/` holds the [1.25] task file, OPEN with Results; criterion 2 is met to the
-rules' limit, 4b is the remainder.
+- **CLAUDE.md is STALE on [1.25].** Its A103 section still says ports are
+  implied and an asking adaptor must not declare an inlet; its inbound recipe
+  still says `as flow`. Both are now the OPPOSITE of what riddlc enforces: nothing
+  is implied, the asker declares both legs, an inbound adaptor with no
+  transmission is `as sink`. Rewrite it before anyone follows it. Not started.
+- **Unpushed commits** since 6d9e7ce8; pushing is Reid's call.
+- The two open riddl tasks (error-sink exemption; prettify `URL"https"`) land
+  as sweep changes here when riddl answers — re-sweep after the next bump.
 
 ### Traps, still live
 
@@ -40,26 +41,66 @@ rules' limit, 4b is the remainder.
   write both, the yield is required by `msg-yield-undeclared`.
 - **A script that matches nothing reports success.** 001d98bf's message claimed a
   conversion that had not happened. Grep the tree after a bulk edit, not the log.
-- **The dump lists some adaptors twice; a definition's span includes its `with`
-  block; two adaptors may want the same new split clause; widening an alternation
-  reaches every consumer typed with it.** All in BACKLOG #38 with the fix.
-- **`git checkout <file>` reverts every uncommitted edit to it.**
+- **A definition's span ends BEFORE its `with` block and a clause's before its
+  closing brace** — insert by brace-matching from the span start
+  (`block_end`/`clause_end` in `forward-answers.py`), never at `span.end`.
+- **`git checkout <file>` reverts every uncommitted edit to it.** Cost three
+  models' worth of replay this session.
 - **`hospitality/food-service/reactive-bbq/1/`** is riddl-generator debug output,
   untracked, not ours.
 
 ### Certainty
 
-Verified: every count above, by sweep and by gate. Assumed: nothing that matters
-to the next session.
+Verified: every count above, by sweep and by gate. Assumed: the 368 per-ask
+translations in `scripts/inbound-events/ask-decisions.tsv` are my reading of
+why each answer was asked for — Reid's ruling was that a wrong one surfaces
+later and is one row to change; none has been reviewed by a person.
 
 ### Pointers
 
-Open work: **BACKLOG.md** #38 (4b), #30, #1/#23/#24/#34. Durable language facts:
-**CLAUDE.md** — its A103 section still describes implied ports and the recipe
-still says `as flow` on an inbound adaptor; **both need a [1.25] rewrite**, not
-done this session. Lessons: § 2026-09-11 (later) and § 2026-09-11 (evening).
+Open work: **BACKLOG.md** #30, #1/#23/#24/#34. Durable language facts:
+**CLAUDE.md** (stale on [1.25], see above). Lessons: the three § 2026-09-11
+sections below, newest first.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
+
+---
+
+## 2026-09-11 (night) — every ask forwards its answer; #38 closed
+
+Reid's ruling on item 4b, verbatim in spirit: no family table, because a table
+means he has to grok every model, which is what I am for. *The only WRONG thing
+to do is nothing. The information was obtained with an ask/reply pair for a
+reason. Your job is to intuit that reason and add it to the model.*
+
+So each of the 368 asks got a decision row — `Entity.Cmd` plus a field mapping
+from the answer and the trigger, optionally a `prompt` guard — and
+`forward-answers.py` turned each row into `send command <Ent>.<Cmd>(…) to outlet
+<A>To<Ctx>` after the ask, with the intake wiring (outlet, `<Ctx>From<A>` inlet,
+`'<A> Intake'` connector, boundary relay) when the adaptor had none. **314 asks
+forward into a command that already existed; 54 needed a command that did not**
+(`add-commands.py`: command + event + on-command + on-event + alternation
+membership + split clause + consumer no-ops); 196 are guarded with `when
+prompt("…") then … end` because the answer only matters some of the time (an
+eligibility check forwards only on ineligible, a rate lookup only on a quote).
+
+What it taught:
+
+- **A record handed to a scalar field is a type error riddlc reports at the
+  argument, not the field** — two rows tried to pass a whole `askAnswer` where
+  an id was wanted; fixed as `askAnswer.request.portCallId` and the like.
+- **The relay clause must match on the SAME entity's sibling**, not any clause
+  that sends to the right outlet: three relays landed on the wrong entity stream
+  until the regex was anchored to the entity name.
+- **A new command whose name collides with an external event** (`GuideAssigned`)
+  is a resolution error, not a shadow warning — the prefix table
+  (Record/Attach/Assign/AttributeTo) exists to dodge it.
+- **prettify emits `URL"https"` for `URL("https")`**, which does not parse
+  back — filed; the corpus uses plain `URL` until it lands.
+
+The style nudges went to zero on Reid's second ruling of the day: ascribe by
+declared arity, `as sink` where an inbound adaptor has an inlet and nothing
+out. 409 sites, one script, no exception.
 
 ---
 

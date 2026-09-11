@@ -1073,56 +1073,29 @@ every rule abstains on the side it cannot read. riddl commit 2c2b8d5b2, pinned
 here as `2.1.1-45-a6a9588c` (f37a9447). The measurements this item carried are
 now history; the work it created is **#38**.
 
-## 38. The [1.25] drain — DONE to the rules' limit 2026-09-11; 4b open
+## 38. The [1.25] drain — CLOSED 2026-09-11 to the rules' limit
 
-**Missing 749 + 104 -> 1 + 0** on `2.1.1-47-d63cc2c3` (001d98bf .. f70a38a2). Errors 0.
-Task file `task/2026-09-11-implied-ports-abolished-26-endpoints-388-ascriptions.md`
-has the per-item Results.
+**Missing 749 + 104 -> 1 + 0; errors 0; every ask forwards its answer (368/368, 54
+via new commands).** Task file in `task/done/` with the per-item Results. The
+rulings that shaped it: delete-then-`as sink` for inbound adaptors (reversed in the
+evening: 409 ascribed by declared arity, style 0); the asking adaptor owns both
+legs (riddl 8d2cc13e5); a translator forwards its answer, the only wrong thing
+being nothing (Reid, evening) — decisions in `scripts/inbound-events/ask-decisions.tsv`,
+one row per ask, a wrong call is one row to change.
 
-### Open
+**What stays red, both ruled:** NightlyCloseOut (1 Missing; a scheduled action,
+#30's question) and 4 error-sink contexts (`stream-inlet-not-received`; riddl to
+exempt them, filed). reactive-bbq's R10 test fails on exactly those.
 
-1. **4b — what each asking clause DOES with its answer.** 368 asks, 298 adaptors,
-   119 models, every one `let askAnswer = ask ...; do "<the need>"`. The channel is
-   built (result inlet on the asker, result outlet on the answerer, connector);
-   the translation — `tell command <local>(… from askAnswer …) to context <ours>`
-   on an outlet back — is a per-site judgement. **Census:
-   `scripts/inbound-events/ask-census.tsv`**, grouped: 185 details/info lookups,
-   51 availability, 39 status, 30 price, 29 check/verify, 23 schedule/route, 11
-   other. Wants family rulings as #36 had; then a script.
-2. **409 `stream-ports-without-shape`** on inbound adaptors with an inlet and no
-   transmission. Reid ruled `as sink` is a lie for them; riddlc nudges anyway. Either
-   the zero standard admits this class, or riddl's nudge exempts an adaptor whose
-   declared arity is sink and whose handler transmits nothing. Reid's call; not
-   filed.
-3. **NightlyCloseOut** (reactive-bbq): clock-driven void, red both with and without
-   its `on other` under -47. Belongs to **#30** (temporal semantics), which now has a
-   concrete rule conflict to cite.
-4. **Error-sink contexts** (4): filed as
-   `../riddl/task/2026-09-11-error-sink-context-cannot-be-complete.md`.
-5. **reactive-bbq R10** (zero warnings) stays red on 3 + 4; `checkTests` fails on
-   that one case. Everything else in the suite passes.
+**Tooling, tracked in `scripts/inbound-events/`:** `drain-inlets.py`,
+`drain-external.py`, `insert-split.py`, `cross-stream.py`, `forward-answers.py`,
+`add-commands.py`, `ask-decisions.tsv`, `ask-census.tsv`. Every one edits by span
+from `dump --json`; the last two find insertion points by brace-matching from the
+span START, because a definition's span ends before its `with` block and a clause's
+before its closing brace.
 
-### Tooling, all tracked in `scripts/inbound-events/`
-
-`drain-inlets.py` (the split leg, per owner entity, with the reply leg for askers,
-new split clauses shared between adaptors, alternation membership for events the
-entity never published), `drain-external.py` (hand-written From-adaptors' channel),
-`insert-split.py` (the standard EventSplit where an entity fed a projection
-directly), `cross-stream.py` (a cross-context stream through the source context's
-boundary relay), and `apply.py` now reverts on errors only and ascribes by arity.
-
-### Traps, paid for this time
-
-- **A yield answers the SENDER; only a send reaches the outlet.** Converting the
-  yield breaks `msg-yield-undeclared`; the shape is both. A script's regex that
-  matched nothing reported success (001d98bf's message was wrong; 3ec25f3c fixed it).
-- **The dump lists some adaptors twice** — dedupe by path or every leg doubles.
-- **Two adaptors wanting the same missing split clause** must share one.
-- **Widening an alternation reaches every consumer typed with it**; a projector then
-  needs a clause (or `on other`) for the new member.
-- **A `with` block is inside the definition's span for connectors and contexts**;
-  "insert after the span" lands inside the next definition. Insert BEFORE.
-- **`git checkout <file>` mid-task**: still the trap it was this morning.
+**Not done, flagged:** CLAUDE.md's A103 section and inbound recipe still describe
+implied ports and `as flow` on inbound adaptors; needs a [1.25] rewrite.
 
 ## 34. Delete Course's roster; decide what `LearnerEnrolled.enrollmentId` is
 
