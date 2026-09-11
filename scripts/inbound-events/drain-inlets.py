@@ -36,7 +36,7 @@ def line_start(txt,off): return txt.rfind("\n",0,off)+1
 def indent_of(txt,off):
     ls=line_start(txt,off); return re.match(r"[ \t]*",txt[ls:]).group(0)
 want=collections.defaultdict(set)
-for l in open("/tmp/sweep47.jsonl"):
+for l in open(os.environ.get("SWEEP","/tmp/sweep47c.jsonl")):
     r=json.loads(l)
     if r["rule"]=="stream-processor-no-inlet" and r["message"].startswith("Adaptor"):
         want[r["model"]].add(re.match(r"Adaptor '(\w+)'",r["message"]).group(1))
@@ -52,7 +52,7 @@ for model in models:
     hdr_delta=collections.defaultdict(lambda:[0,0])  # processor path -> [d_in,d_out]
     ext_reply=collections.defaultdict(set)  # ext ctx path -> result paths to carry
     ext_reply_to=collections.defaultdict(list)  # ext ctx path -> (adaptor path, inlet name)
-    touched=0
+    touched=0; altdone=set(); newclauses={}; newclause_meta={}
     for aname in sorted(want.get(model,[])):
         seen=set()
         for a in [x for x in ns if x.get("kind")=="adaptor" and x["id"]==aname and not (x["path"] in seen or seen.add(x["path"]))]:
@@ -60,72 +60,111 @@ for model in models:
             atxt=snap[a["file"]]; s0,s1=a["span"]["start"]["offset"],a["span"]["end"]["offset"]; ablock=atxt[s0:s1]
             evs=[c for c in ns if c.get("kind")=="on-event" and c.get("path","").startswith(a["path"]+".")]
             evp={(c.get("message") or {}).get("resolved") for c in evs}
-            owners={x.rsplit(".",1)[0] for x in evp if x}
-            if len(owners)!=1 or byp.get(list(owners)[0],{}).get("kind")!="entity" or byp[list(owners)[0]]["parent"]!=ctx:
-                print(f"SKIP {model.split('/')[-1]}/{aname}: not own-entity ({[o.split('.')[-1] for o in owners]})"); skipped+=1; continue
-            E=byp[list(owners)[0]]
-            splits=[s for s in ns if s.get("kind") in ("split","router","flow") and s.get("parent")==ctx
-                    and {(c.get("message") or {}).get("resolved") for c in ns if c.get("kind")=="on-event" and c.get("path","").startswith(s["path"]+".")} >= evp]
-            if not splits: print(f"SKIP {model.split('/')[-1]}/{aname}: no split covers its events"); skipped+=1; continue
-            S=splits[0]; sin=[p for p in ns if p.get("kind")=="inlet" and p.get("parent")==S["path"]]
-            if len(sin)!=1: print(f"SKIP {model.split('/')[-1]}/{aname}: split has {len(sin)} inlets"); skipped+=1; continue
-            sty=sin[0]["type"]; tyref=sty["ref"]; tykw="type" if byp.get(sty.get("resolved"),{}).get("kind")=="type" else "event"
-            if tykw=="event": tyref=sty["ref"]
-            # --- the adaptor's events inlet
+            byowner=collections.defaultdict(set)
+            for x in evp:
+                if x: byowner[x.rsplit(".",1)[0]].add(x)
+            bad=[o for o in byowner if byp.get(o,{}).get("kind")!="entity" or byp[o]["parent"]!=ctx]
+            if bad or not byowner:
+                print(f"SKIP {model.split('/')[-1]}/{aname}: not own-entity ({[o.split('.')[-1] for o in byowner]})"); skipped+=1; continue
             hm=re.match(r"adaptor \w+ (?:from|to) context [\w.]+( as \w+)? is \{[ \t]*\n", ablock); assert hm, ablock[:80]
             him=re.search(r"^(\s*)(inlet|outlet|handler) ", ablock[hm.end():], re.M); ind=him.group(1) if him else "    "
-            inlet_name=f"{aname}In"
-            decl=f"{ind}inlet {inlet_name} is {tykw} {tyref}\n"
-            hdr_delta[a["path"]][0]+=1
-            # --- the split's new leg
-            stxt=snap[S["file"]]; ss=S["span"]["start"]["offset"]; sblock=stxt[ss:S["span"]["end"]["offset"]]
-            newout=f"{S['id']}To{aname}"
-            sfirst=next(p for p in ns if p.get("kind") in ("inlet","outlet") and p.get("parent")==S["path"])
-            sind=indent_of(stxt,sfirst["span"]["start"]["offset"])
-            edits[S["file"]].append((sfirst["span"]["start"]["offset"],sfirst["span"]["start"]["offset"],f"outlet {newout} is {tykw} {tyref}\n{sind}"))
-            hdr_delta[S["path"]][1]+=1
-            for cl in ns:
-                if cl.get("kind")=="on-event" and cl.get("path","").startswith(S["path"]+".") and (cl.get("message") or {}).get("resolved") in evp:
-                    b=cl.get("binding") if isinstance(cl.get("binding"),str) else (cl.get("binding") or {}).get("id")
-                    body=stxt[cl["span"]["start"]["offset"]:cl["span"]["end"]["offset"]]
-                    sends=list(re.finditer(r"^(\s*)send \w+ to outlet [\w.]+\n", body, re.M))
-                    if not b or not sends: print(f"SKIP {model.split('/')[-1]}/{aname}: split clause without binding/send"); break
-                    lm=sends[-1]; at=cl["span"]["start"]["offset"]+lm.end()
-                    edits[S["file"]].append((at,at,f"{lm.group(1)}send {b} to outlet {newout}\n"))
-            else:
-                # connector: placed before the connector that feeds the split, in that file
-                feed=[c for c in conns if (c.get("to") or {}).get("resolved")==sin[0]["path"]]
+            decl=""; plan=[]
+            for own,oevs in byowner.items():
+                E=byp[own]
+                cands=[]
+                for s in ns:
+                    if s.get("kind") in ("split","router","flow") and s.get("parent")==ctx:
+                        sh={(c.get("message") or {}).get("resolved") for c in ns if c.get("kind")=="on-event" and c.get("path","").startswith(s["path"]+".")}
+                        oall={n["path"] for n in ns if n.get("kind")=="event" and n.get("parent")==own}
+                        if sh & oall: cands.append((len(sh & oevs),s,sh))
+                if not cands: plan=None; print(f"SKIP {model.split('/')[-1]}/{aname}: no split for {E['id']}"); break
+                cands.sort(key=lambda x:-x[0]); _,S,sh=cands[0]
+                sin=[p for p in ns if p.get("kind")=="inlet" and p.get("parent")==S["path"]]
+                if len(sin)!=1: plan=None; print(f"SKIP {model.split('/')[-1]}/{aname}: split {S['id']} has {len(sin)} inlets"); break
+                plan.append((E,S,sin[0],oevs,sh))
+            if plan is None: skipped+=1; continue
+            merged={}
+            for E,S,sinlet,oevs,sh in plan:
+                if S["path"] in merged: merged[S["path"]][3]|=oevs
+                else: merged[S["path"]]=[E,S,sinlet,set(oevs),sh]
+            plan=[tuple(v) for v in merged.values()]
+            multi=len(plan)>1
+            for E,S,sinlet,oevs,sh in plan:
+                sty=sinlet["type"]; tyref=sty["ref"]; tyn=byp.get(sty.get("resolved")); tykw="type" if tyn and tyn.get("kind")=="type" else "event"
+                inlet_name=f"{aname}From{E['id']}In" if multi else f"{aname}In"
+                decl+=f"{ind}inlet {inlet_name} is {tykw} {tyref}\n"; hdr_delta[a["path"]][0]+=1
+                stxt=snap[S["file"]]; ss=S["span"]["start"]["offset"]
+                newout=f"{S['id']}To{aname}"
+                sfirst=next(p for p in ns if p.get("kind") in ("inlet","outlet") and p.get("parent")==S["path"])
+                sind=indent_of(stxt,sfirst["span"]["start"]["offset"])
+                edits[S["file"]].append((sfirst["span"]["start"]["offset"],sfirst["span"]["start"]["offset"],f"outlet {newout} is {tykw} {tyref}\n{sind}"))
+                hdr_delta[S["path"]][1]+=1
+                # events the split already handles: one more send
+                lastcl=None
+                for cl in ns:
+                    if cl.get("kind")=="on-event" and cl.get("path","").startswith(S["path"]+"."):
+                        lastcl=cl
+                        if (cl.get("message") or {}).get("resolved") in oevs:
+                            b=cl.get("binding") if isinstance(cl.get("binding"),str) else (cl.get("binding") or {}).get("id")
+                            body=stxt[cl["span"]["start"]["offset"]:cl["span"]["end"]["offset"]]
+                            sends=list(re.finditer(r"^(\s*)send \w+ to outlet [\w.]+\n", body, re.M))
+                            if b and sends:
+                                lm=sends[-1]; at=cl["span"]["start"]["offset"]+lm.end()
+                                edits[S["file"]].append((at,at,f"{lm.group(1)}send {b} to outlet {newout}\n"))
+                            else:
+                                at=cl["span"]["end"]["offset"]-1; cind=indent_of(stxt,cl["span"]["start"]["offset"])
+                                edits[S["file"]].append((at,at,f"  send {b} to outlet {newout}\n{cind}"))
+                # events the split does not handle: a new clause, sending to the new leg only
+                missing=sorted(oevs-sh)
+                if missing and lastcl:
+                    cind=indent_of(stxt,lastcl["span"]["start"]["offset"])
+                    for ev in missing:
+                        en=ev.split(".")[-1]; b=en[0].lower()+en[1:]
+                        key=(S["path"],ev)
+                        if key in newclauses:
+                            newclauses[key].append(newout)   # a later adaptor shares the clause
+                        else:
+                            newclauses[key]=[newout]; newclause_meta[key]=(S["file"],lastcl["span"]["end"]["offset"],cind,E["id"],en,b)
+                    # and membership in the alternation the outlet carries, where it is missing
+                    if tyn and tyn.get("kind")=="type":
+                        tt=snap[tyn["file"]]; t0,t1=tyn["span"]["start"]["offset"],tyn["span"]["end"]["offset"]; tsrc=tt[t0:t1]
+                        for ev in missing:
+                            en=ev.split(".")[-1]
+                            if not re.search(rf"\b{en}\b", tsrc) and (tyn["path"],en) not in altdone and not altdone.add((tyn["path"],en)):
+                                m=re.search(r"\n(\s*)\}", tsrc); assert m
+                                edits[tyn["file"]].append((t0+m.start(),t0+m.start(),f" or {E['id']}.{en}"))
+                                print(f"ALT  {model.split('/')[-1]}/{aname}: {E['id']}.{en} added to {tyn['id']}")
+                feed=[c for c in conns if (c.get("to") or {}).get("resolved")==sinlet["path"]]
                 if feed:
                     C=feed[0]; cf=snap[C["file"]]; at=line_start(cf,C["span"]["start"]["offset"]); cind=indent_of(cf,C["span"]["start"]["offset"])
                 else:
                     cf=snap[ctxn["file"]]; at=ctxn["span"]["end"]["offset"]-1; cind="  "; C={"file":ctxn["file"]}
-                edits[C["file"]].append((at,at,f"{cind}connector '{aname} Feed' is from outlet {ctxn['id']}.{S['id']}.{newout} to inlet {ctxn['id']}.{aname}.{inlet_name} with {{\n{cind}  briefly \"The {E['id']} events {aname} translates, on their way to it\"\n{cind}}}\n"))
-                # --- the reply leg, if the adaptor asks
-                asks=re.findall(r"ask query ([\w.]+) of context ([\w.]+)", ablock)
-                if asks:
-                    results=[]; xpaths=set()
-                    for q,x in asks:
-                        qn=[n for n in ns if n.get("kind")=="query" and n.get("path","").endswith("."+q.split(".")[-1]) and byp.get(n["parent"],{}).get("id")==x.split(".")[-1]]
-                        if not qn: print(f"SKIP-ASK {model.split('/')[-1]}/{aname}: query {q} not found"); continue
-                        qn=qn[0]; rep=(qn.get("replies") or {}).get("resolved") if isinstance(qn.get("replies"),dict) else None
-                        if not rep:
-                            # read it from source
-                            qs=snap[qn["file"]][qn["span"]["start"]["offset"]:qn["span"]["start"]["offset"]+200]
-                            mm=re.search(r"replies result ([\w.]+)", qs); rep=mm and (qn["parent"]+"."+mm.group(1).split(".")[-1])
-                        if not rep: print(f"SKIP-ASK {model.split('/')[-1]}/{aname}: {q} declares no replies"); continue
-                        results.append(rep); xpaths.add(qn["parent"])
-                    if len(xpaths)>1: print(f"SKIP-ASK {model.split('/')[-1]}/{aname}: asks more than one context")
-                    elif results:
-                        X=byp[list(xpaths)[0]]; rs=sorted(set(results))
-                        if len(rs)==1: rty=f"result {X['id']}.{rs[0].split('.')[-1]}"; xty=f"result {rs[0].split('.')[-1]}"
-                        else:
-                            rty=f"type {X['id']}.{X['id']}Reply"; xty=f"type {X['id']}Reply"
-                            ext_reply[X["path"]]|=set(rs)
-                        rin=f"{aname}Replies"
-                        decl+=f"{ind}inlet {rin} is {rty}\n"; hdr_delta[a["path"]][0]+=1
-                        ext_reply_to[X["path"]].append((a,rin,xty,rs))
-            if any(x[1]==-1 for x in []): pass
+                edits[C["file"]].append((at,at,f"{cind}connector '{aname}{' '+E['id'] if multi else ''} Feed' is from outlet {ctxn['id']}.{S['id']}.{newout} to inlet {ctxn['id']}.{aname}.{inlet_name} with {{\n{cind}  briefly \"The {E['id']} events {aname} translates, on their way to it\"\n{cind}}}\n"))
+            # --- the reply leg, if the adaptor asks
+            asks=re.findall(r"ask query ([\w.]+) of context ([\w.]+)", ablock)
+            if asks:
+                results=[]; xpaths=set()
+                for q,x in asks:
+                    qn=[n for n in ns if n.get("kind")=="query" and n.get("path","").endswith("."+q.split(".")[-1]) and byp.get(n["parent"],{}).get("id")==x.split(".")[-1]]
+                    if not qn: print(f"SKIP-ASK {model.split('/')[-1]}/{aname}: query {q} not found"); continue
+                    qn=qn[0]; qs=snap[qn["file"]][qn["span"]["start"]["offset"]:qn["span"]["start"]["offset"]+200]
+                    mm=re.search(r"replies result ([\w.]+)", qs); rep=mm and (qn["parent"]+"."+mm.group(1).split(".")[-1])
+                    if not rep: print(f"SKIP-ASK {model.split('/')[-1]}/{aname}: {q} declares no replies"); continue
+                    results.append(rep); xpaths.add(qn["parent"])
+                if len(xpaths)>1: print(f"SKIP-ASK {model.split('/')[-1]}/{aname}: asks more than one context")
+                elif results:
+                    X=byp[list(xpaths)[0]]; rs=sorted(set(results))
+                    if len(rs)==1: rty=f"result {X['id']}.{rs[0].split('.')[-1]}"; xty=f"result {rs[0].split('.')[-1]}"
+                    else:
+                        rty=f"type {X['id']}.{X['id']}Reply"; xty=f"type {X['id']}Reply"; ext_reply[X["path"]]|=set(rs)
+                    rin=f"{aname}Replies"
+                    decl+=f"{ind}inlet {rin} is {rty}\n"; hdr_delta[a["path"]][0]+=1
+                    ext_reply_to[X["path"]].append((a,rin,xty,rs))
             edits[a["file"]].append((s0+hm.end(),s0+hm.end(),decl)); touched+=1
+    for key,outs in newclauses.items():
+        f,at,cind,eid,en,b=newclause_meta[key]
+        sends="".join(f"\n{cind}  send {b} to outlet {o}" for o in outs)
+        edits[f].append((at,at,f"\n{cind}on {b}: event {eid}.{en} is {{{sends}\n{cind}}}"))
     # --- external contexts: reply outlet (+ alternation type) and the domain connector
     for xp,items in ext_reply_to.items():
         X=byp[xp]; xtxt=snap[X["file"]]; xs=X["span"]["start"]["offset"]; xblock=xtxt[xs:X["span"]["end"]["offset"]]
@@ -137,9 +176,10 @@ for model in models:
             pre+=f"{xi}type {X['id']}Reply is one of {{\n{xi}  {' or '.join(r.split('.')[-1] for r in rs)}\n{xi}}} with {{\n{xi}  briefly \"Everything this service answers\"\n{xi}}}\n"
             xty=f"type {X['id']}Reply"
         else: xty=items[0][2]
-        if not [p for p in ns if p.get("kind")=="outlet" and p.get("parent")==xp and p["id"]==f"{X['id']}RepliesOut"]:
-            pre+=f"{xi}outlet {X['id']}RepliesOut is {xty} with {{\n{xi}  briefly \"What this service answers, on its way back\"\n{xi}}}\n"
-            hdr_delta[xp][1]+=1
+        if [p for p in ns if p.get("kind")=="outlet" and p.get("parent")==xp and p["id"]==f"{X['id']}RepliesOut"]:
+            print(f"NOTE {model.split('/')[-1]}/{X['id']}: RepliesOut already exists and is taken; a second asker needs its own"); continue
+        pre+=f"{xi}outlet {X['id']}RepliesOut is {xty} with {{\n{xi}  briefly \"What this service answers, on its way back\"\n{xi}}}\n"
+        hdr_delta[xp][1]+=1
         edits[X["file"]].append((xs+hm.end(),xs+hm.end(),pre))
         if len(items)>1: print(f"NOTE {model.split('/')[-1]}/{X['id']}: {len(items)} askers -> one outlet cannot feed two connectors"); 
         et=snap[e]; em=re.search(r"^(\s*)domain [\w.]+ is \{\n", et, re.M); di=em.group(1)+"  "

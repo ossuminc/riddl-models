@@ -210,7 +210,7 @@ context RentalContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type RentalEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on rentalCreated: event RentalCreated is {
         let ack: type NotificationService.SendReservationAcknowledgement = prompt("translate the rentalCreated event into a SendReservationAcknowledgement telling the customer their booking is held")
@@ -801,6 +801,9 @@ context RentalContext as router is {
         tell command RentalContext.RentalRepository.PersistRentalCancelled(rentalId = rentalCancelled.rentalId) to repository RentalContext.RentalRepository
         do "Update cancellation metrics"
       }
+      on returnReminderRaised: event Rental.ReturnReminderRaised is {
+        do "a return reminder raised changes nothing this projection keeps"
+      }
     } with {
       briefly "Maintains rental analytics"
       described as {
@@ -815,7 +818,7 @@ context RentalContext as router is {
   }
   // ---- Event publication for Rental ----
   type RentalEvent is one of {
-    RentalContext.Rental.RentalCreated or RentalContext.Rental.AddOnAdded or RentalContext.Rental.InsuranceSelected or RentalContext.Rental.PaymentAuthorized or RentalContext.Rental.VehicleCheckedOut or RentalContext.Rental.RentalExtended or RentalContext.Rental.ReturnLocationModified or RentalContext.Rental.VehicleCheckedIn or RentalContext.Rental.DamagesAssessed or RentalContext.Rental.FinalChargesProcessed or RentalContext.Rental.RentalCompleted or RentalContext.Rental.RentalCancelled
+    RentalContext.Rental.RentalCreated or RentalContext.Rental.AddOnAdded or RentalContext.Rental.InsuranceSelected or RentalContext.Rental.PaymentAuthorized or RentalContext.Rental.VehicleCheckedOut or RentalContext.Rental.RentalExtended or RentalContext.Rental.ReturnLocationModified or RentalContext.Rental.VehicleCheckedIn or RentalContext.Rental.DamagesAssessed or RentalContext.Rental.FinalChargesProcessed or RentalContext.Rental.RentalCompleted or RentalContext.Rental.RentalCancelled or Rental.ReturnReminderRaised
   } with {
     briefly "Rental event alternation"
     described as {
@@ -824,6 +827,7 @@ context RentalContext as router is {
     }
   }
   streamlet RentalEventSplit as split is {
+    outlet RentalEventSplitToToNotificationService is type RentalEvent
     outlet RentalEventSplitToToVehicleAvailabilityService is type RentalEvent
     outlet RentalEventSplitToToPricingService is type RentalEvent
     outlet RentalEventSplitToToPaymentProcessingService is type RentalEvent
@@ -839,6 +843,7 @@ context RentalContext as router is {
         send rentalCreated to outlet RentalEventSplitToToPaymentProcessingService
         send rentalCreated to outlet RentalEventSplitToToInsuranceProviderService
         send rentalCreated to outlet RentalEventSplitToToDriverVerificationService
+        send rentalCreated to outlet RentalEventSplitToToNotificationService
         tell rentalCreated to entity RentalContext.Rental
       }
       on addOnAdded: event Rental.AddOnAdded is {
@@ -852,6 +857,7 @@ context RentalContext as router is {
       }
       on paymentAuthorized: event Rental.PaymentAuthorized is {
         send paymentAuthorized to outlet RentalEventSplitToRentalAnalytics
+        send paymentAuthorized to outlet RentalEventSplitToToNotificationService
         tell paymentAuthorized to entity RentalContext.Rental
       }
       on vehicleCheckedOut: event Rental.VehicleCheckedOut is {
@@ -880,6 +886,7 @@ context RentalContext as router is {
       on finalChargesProcessed: event Rental.FinalChargesProcessed is {
         send finalChargesProcessed to outlet RentalEventSplitToRentalAnalytics
         send finalChargesProcessed to outlet RentalEventSplitToToPaymentProcessingService
+        send finalChargesProcessed to outlet RentalEventSplitToToNotificationService
         tell finalChargesProcessed to entity RentalContext.Rental
       }
       on rentalCompleted: event Rental.RentalCompleted is {
@@ -891,6 +898,9 @@ context RentalContext as router is {
         send rentalCancelled to outlet RentalEventSplitToToVehicleAvailabilityService
         send rentalCancelled to outlet RentalEventSplitToToPaymentProcessingService
         tell rentalCancelled to entity RentalContext.Rental
+      }
+      on returnReminderRaised: event Rental.ReturnReminderRaised is {
+        send returnReminderRaised to outlet RentalEventSplitToToNotificationService
       }
       on other is {
         error "Unexpected message for processor RentalEventSplit"
@@ -924,6 +934,9 @@ context RentalContext as router is {
   }
   connector 'ToDriverVerificationService Feed' is from outlet RentalContext.RentalEventSplit.RentalEventSplitToToDriverVerificationService to inlet RentalContext.ToDriverVerificationService.ToDriverVerificationServiceIn with {
     briefly "The Rental events ToDriverVerificationService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet RentalContext.RentalEventSplit.RentalEventSplitToToNotificationService to inlet RentalContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Rental events ToNotificationService translates, on their way to it"
   }
   connector 'RentalEvent Stream' is from outlet RentalContext.Rental.RentalEvents2 to inlet RentalContext.RentalEventSplit.RentalEventSplitIn with {
     briefly "Rental events, fanned out to storage and read models"

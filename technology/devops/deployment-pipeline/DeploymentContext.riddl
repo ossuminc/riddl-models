@@ -189,8 +189,8 @@ context DeploymentContext as router is {
       |The model's side of the MonitoringService conversation.
     }
   }
-  adaptor ToMonitoringService to context MonitoringService as flow is { 
-    outlet ToMonitoringServiceOut is type MonitoringService.MonitoringServiceCommand
+  adaptor ToMonitoringService to context MonitoringService as merge is { 
+    inlet ToMonitoringServiceFromDeploymentIn is type DeploymentEvent    inlet ToMonitoringServiceFromEnvironmentIn is type EnvironmentEvent    outlet ToMonitoringServiceOut is type MonitoringService.MonitoringServiceCommand
     handler ToMonitoringServiceHandler is {
       on deploymentStarted: event Deployment.DeploymentStarted is {
         let item0: type MonitoringService.CheckServiceHealth = prompt("translate the deploymentStarted event into a CheckServiceHealth, a deployment in flight being what must be watched")
@@ -1009,6 +1009,7 @@ context DeploymentContext as router is {
     }
   }
   streamlet DeploymentEventSplit as split is {
+    outlet DeploymentEventSplitToToMonitoringService is type DeploymentEvent
     outlet DeploymentEventSplitToToInfrastructureService is type DeploymentEvent
     outlet DeploymentEventSplitToToArtifactRegistry is type DeploymentEvent
     inlet DeploymentEventSplitIn is type DeploymentEvent    outlet DeploymentEventSplitToDeploymentMetricsProjector is type DeploymentEvent
@@ -1030,6 +1031,7 @@ context DeploymentContext as router is {
         send deploymentStarted to outlet DeploymentEventSplitToDeploymentMetricsProjector
         send deploymentStarted to outlet DeploymentEventSplitToToInfrastructureService
         send deploymentStarted to outlet DeploymentEventSplitToToArtifactRegistry
+        send deploymentStarted to outlet DeploymentEventSplitToToMonitoringService
         tell deploymentStarted to entity DeploymentContext.Deployment
       }
       on deploymentVerified: event Deployment.DeploymentVerified is {
@@ -1065,11 +1067,13 @@ context DeploymentContext as router is {
       |Fans Deployment events out to the repository and projectors.
     }
   }
-  streamlet EnvironmentEventSplit as flow is {
+  streamlet EnvironmentEventSplit as split is {
+    outlet EnvironmentEventSplitToToMonitoringService is type EnvironmentEvent
     inlet EnvironmentEventSplitIn is type EnvironmentEvent    outlet EnvironmentEventSplitToDeploymentMetricsProjector is type EnvironmentEvent
     handler EnvironmentEventSplitHandler is {
       on environmentRegistered: event Environment.EnvironmentRegistered is {
         send environmentRegistered to outlet EnvironmentEventSplitToDeploymentMetricsProjector
+        send environmentRegistered to outlet EnvironmentEventSplitToToMonitoringService
         tell environmentRegistered to entity DeploymentContext.Environment
       }
       on environmentArtifactUpdated: event Environment.EnvironmentArtifactUpdated is {
@@ -1097,11 +1101,17 @@ context DeploymentContext as router is {
   connector 'ToArtifactRegistry Feed' is from outlet DeploymentContext.DeploymentEventSplit.DeploymentEventSplitToToArtifactRegistry to inlet DeploymentContext.ToArtifactRegistry.ToArtifactRegistryIn with {
     briefly "The Deployment events ToArtifactRegistry translates, on their way to it"
   }
+  connector 'ToMonitoringService Deployment Feed' is from outlet DeploymentContext.DeploymentEventSplit.DeploymentEventSplitToToMonitoringService to inlet DeploymentContext.ToMonitoringService.ToMonitoringServiceFromDeploymentIn with {
+    briefly "The Deployment events ToMonitoringService translates, on their way to it"
+  }
   connector 'DeploymentEvent Stream' is from outlet DeploymentContext.Deployment.DeploymentEvents to inlet DeploymentContext.DeploymentEventSplit.DeploymentEventSplitIn with {
     briefly "Deployment events, fanned out to storage and read models"
   }
   connector 'DeploymentEvent Feed' is from outlet DeploymentContext.DeploymentEventSplit.DeploymentEventSplitToDeploymentMetricsProjector to inlet DeploymentContext.DeploymentMetricsProjector.DeploymentMetricsProjectorFromDeployment with {
     briefly "DeploymentEvent feeding the DeploymentMetricsProjector projection"
+  }
+  connector 'ToMonitoringService Environment Feed' is from outlet DeploymentContext.EnvironmentEventSplit.EnvironmentEventSplitToToMonitoringService to inlet DeploymentContext.ToMonitoringService.ToMonitoringServiceFromEnvironmentIn with {
+    briefly "The Environment events ToMonitoringService translates, on their way to it"
   }
   connector 'EnvironmentEvent Stream' is from outlet DeploymentContext.Environment.EnvironmentEvents to inlet DeploymentContext.EnvironmentEventSplit.EnvironmentEventSplitIn with {
     briefly "Environment events, fanned out to storage and read models"

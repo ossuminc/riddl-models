@@ -191,7 +191,7 @@ context CompetencyContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type CompetencyEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on assessmentReminderRaised: event Competency.AssessmentReminderRaised is {
         let reminder: type NotificationService.SendAssessmentReminder = prompt("translate the assessmentReminderRaised event into a SendAssessmentReminder telling the employee their assessment is falling due; the schedule was set when the competency was assigned and the assignment was re-checked at fire time, so this sends without deciding again")
@@ -614,6 +614,9 @@ context CompetencyContext as router is {
         tell command CompetencyContext.CompetencyRepository.PersistSkillGapsIdentified(employeeId = skillGapsIdentified.employeeId) to repository CompetencyContext.CompetencyRepository
         do "Update gap metrics"
       }
+      on assessmentReminderRaised: event Competency.AssessmentReminderRaised is {
+        do "a assessment reminder raised changes nothing this projection keeps"
+      }
     } with {
       briefly "Maintains competency analytics"
       described as {
@@ -628,7 +631,7 @@ context CompetencyContext as router is {
   }
   // ---- Event publication for Competency ----
   type CompetencyEvent is one of {
-    CompetencyContext.Competency.CompetencyCreated or CompetencyContext.Competency.CompetencyUpdated or CompetencyContext.Competency.FrameworkCreated or CompetencyContext.Competency.CompetencyAssigned or CompetencyContext.Competency.AssessmentRecorded or CompetencyContext.Competency.AssessmentStatusUpdated or CompetencyContext.Competency.DevelopmentPlanCreated or CompetencyContext.Competency.DevelopmentActivityAdded or CompetencyContext.Competency.DevelopmentActivityCompleted or CompetencyContext.Competency.CompetencyLevelUpdated or CompetencyContext.Competency.SkillGapsIdentified
+    CompetencyContext.Competency.CompetencyCreated or CompetencyContext.Competency.CompetencyUpdated or CompetencyContext.Competency.FrameworkCreated or CompetencyContext.Competency.CompetencyAssigned or CompetencyContext.Competency.AssessmentRecorded or CompetencyContext.Competency.AssessmentStatusUpdated or CompetencyContext.Competency.DevelopmentPlanCreated or CompetencyContext.Competency.DevelopmentActivityAdded or CompetencyContext.Competency.DevelopmentActivityCompleted or CompetencyContext.Competency.CompetencyLevelUpdated or CompetencyContext.Competency.SkillGapsIdentified or Competency.AssessmentReminderRaised
   } with {
     briefly "Competency event alternation"
     described as {
@@ -637,6 +640,7 @@ context CompetencyContext as router is {
     }
   }
   streamlet CompetencyEventSplit as split is {
+    outlet CompetencyEventSplitToToNotificationService is type CompetencyEvent
     outlet CompetencyEventSplitToToLearningService is type CompetencyEvent
     outlet CompetencyEventSplitToToCareerService is type CompetencyEvent
     inlet CompetencyEventSplitIn is type CompetencyEvent    outlet CompetencyEventSplitToCompetencyAnalytics is type CompetencyEvent
@@ -659,6 +663,7 @@ context CompetencyContext as router is {
       }
       on assessmentRecorded: event Competency.AssessmentRecorded is {
         send assessmentRecorded to outlet CompetencyEventSplitToCompetencyAnalytics
+        send assessmentRecorded to outlet CompetencyEventSplitToToNotificationService
         tell assessmentRecorded to entity CompetencyContext.Competency
       }
       on assessmentStatusUpdated: event Competency.AssessmentStatusUpdated is {
@@ -667,6 +672,7 @@ context CompetencyContext as router is {
       }
       on developmentPlanCreated: event Competency.DevelopmentPlanCreated is {
         send developmentPlanCreated to outlet CompetencyEventSplitToCompetencyAnalytics
+        send developmentPlanCreated to outlet CompetencyEventSplitToToNotificationService
         tell developmentPlanCreated to entity CompetencyContext.Competency
       }
       on developmentActivityAdded: event Competency.DevelopmentActivityAdded is {
@@ -685,7 +691,11 @@ context CompetencyContext as router is {
         send skillGapsIdentified to outlet CompetencyEventSplitToCompetencyAnalytics
         send skillGapsIdentified to outlet CompetencyEventSplitToToLearningService
         send skillGapsIdentified to outlet CompetencyEventSplitToToCareerService
+        send skillGapsIdentified to outlet CompetencyEventSplitToToNotificationService
         tell skillGapsIdentified to entity CompetencyContext.Competency
+      }
+      on assessmentReminderRaised: event Competency.AssessmentReminderRaised is {
+        send assessmentReminderRaised to outlet CompetencyEventSplitToToNotificationService
       }
       on other is {
         error "Unexpected message for processor CompetencyEventSplit"
@@ -707,6 +717,9 @@ context CompetencyContext as router is {
   }
   connector 'ToCareerService Feed' is from outlet CompetencyContext.CompetencyEventSplit.CompetencyEventSplitToToCareerService to inlet CompetencyContext.ToCareerService.ToCareerServiceIn with {
     briefly "The Competency events ToCareerService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet CompetencyContext.CompetencyEventSplit.CompetencyEventSplitToToNotificationService to inlet CompetencyContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Competency events ToNotificationService translates, on their way to it"
   }
   connector 'CompetencyEvent Stream' is from outlet CompetencyContext.Competency.CompetencyEvents2 to inlet CompetencyContext.CompetencyEventSplit.CompetencyEventSplitIn with {
     briefly "Competency events, fanned out to storage and read models"

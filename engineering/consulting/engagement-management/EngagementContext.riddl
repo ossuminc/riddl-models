@@ -181,7 +181,7 @@ context EngagementContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type EngagementEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on milestoneReminderRaised: event Engagement.MilestoneReminderRaised is {
         let reminder: type NotificationService.SendMilestoneReminder = prompt("translate the milestoneReminderRaised event into a SendMilestoneReminder telling the client the milestone is falling due; the schedule was set when the milestone was added and the engagement was re-checked at fire time, so this sends without deciding again")
@@ -725,6 +725,9 @@ context EngagementContext as router is {
         tell command EngagementContext.EngagementRepository.PersistEngagementCompleted(engagementId = engagementCompleted.engagementId) to repository EngagementContext.EngagementRepository
         do "Update revenue metrics"
       }
+      on milestoneReminderRaised: event Engagement.MilestoneReminderRaised is {
+        do "a milestone reminder raised changes nothing this projection keeps"
+      }
     } with {
       briefly "Maintains engagement analytics"
       described as {
@@ -739,7 +742,7 @@ context EngagementContext as router is {
   }
   // ---- Event publication for Engagement ----
   type EngagementEvent is one of {
-    EngagementContext.Engagement.EngagementCreated or EngagementContext.Engagement.EngagementUpdated or EngagementContext.Engagement.EngagementApproved or EngagementContext.Engagement.EngagementStarted or EngagementContext.Engagement.TeamMemberAssigned or EngagementContext.Engagement.TeamMemberRemoved or EngagementContext.Engagement.DeliverableAdded or EngagementContext.Engagement.DeliverableStatusUpdated or EngagementContext.Engagement.MilestoneAdded or EngagementContext.Engagement.MilestoneCompleted or EngagementContext.Engagement.TimeRecorded or EngagementContext.Engagement.TimeEntryApproved or EngagementContext.Engagement.EngagementPutOnHold or EngagementContext.Engagement.EngagementResumed or EngagementContext.Engagement.EngagementCompleted
+    EngagementContext.Engagement.EngagementCreated or EngagementContext.Engagement.EngagementUpdated or EngagementContext.Engagement.EngagementApproved or EngagementContext.Engagement.EngagementStarted or EngagementContext.Engagement.TeamMemberAssigned or EngagementContext.Engagement.TeamMemberRemoved or EngagementContext.Engagement.DeliverableAdded or EngagementContext.Engagement.DeliverableStatusUpdated or EngagementContext.Engagement.MilestoneAdded or EngagementContext.Engagement.MilestoneCompleted or EngagementContext.Engagement.TimeRecorded or EngagementContext.Engagement.TimeEntryApproved or EngagementContext.Engagement.EngagementPutOnHold or EngagementContext.Engagement.EngagementResumed or EngagementContext.Engagement.EngagementCompleted or Engagement.MilestoneReminderRaised
   } with {
     briefly "Engagement event alternation"
     described as {
@@ -748,6 +751,7 @@ context EngagementContext as router is {
     }
   }
   streamlet EngagementEventSplit as split is {
+    outlet EngagementEventSplitToToNotificationService is type EngagementEvent
     outlet EngagementEventSplitToToResourceService is type EngagementEvent
     outlet EngagementEventSplitToToDocumentService is type EngagementEvent
     outlet EngagementEventSplitToToBillingService is type EngagementEvent
@@ -767,6 +771,7 @@ context EngagementContext as router is {
       }
       on engagementStarted: event Engagement.EngagementStarted is {
         send engagementStarted to outlet EngagementEventSplitToEngagementAnalytics
+        send engagementStarted to outlet EngagementEventSplitToToNotificationService
         tell engagementStarted to entity EngagementContext.Engagement
       }
       on teamMemberAssigned: event Engagement.TeamMemberAssigned is {
@@ -785,6 +790,7 @@ context EngagementContext as router is {
       }
       on deliverableStatusUpdated: event Engagement.DeliverableStatusUpdated is {
         send deliverableStatusUpdated to outlet EngagementEventSplitToEngagementAnalytics
+        send deliverableStatusUpdated to outlet EngagementEventSplitToToNotificationService
         tell deliverableStatusUpdated to entity EngagementContext.Engagement
       }
       on milestoneAdded: event Engagement.MilestoneAdded is {
@@ -806,15 +812,21 @@ context EngagementContext as router is {
       }
       on engagementPutOnHold: event Engagement.EngagementPutOnHold is {
         send engagementPutOnHold to outlet EngagementEventSplitToEngagementAnalytics
+        send engagementPutOnHold to outlet EngagementEventSplitToToNotificationService
         tell engagementPutOnHold to entity EngagementContext.Engagement
       }
       on engagementResumed: event Engagement.EngagementResumed is {
         send engagementResumed to outlet EngagementEventSplitToEngagementAnalytics
+        send engagementResumed to outlet EngagementEventSplitToToNotificationService
         tell engagementResumed to entity EngagementContext.Engagement
       }
       on engagementCompleted: event Engagement.EngagementCompleted is {
         send engagementCompleted to outlet EngagementEventSplitToEngagementAnalytics
+        send engagementCompleted to outlet EngagementEventSplitToToNotificationService
         tell engagementCompleted to entity EngagementContext.Engagement
+      }
+      on milestoneReminderRaised: event Engagement.MilestoneReminderRaised is {
+        send milestoneReminderRaised to outlet EngagementEventSplitToToNotificationService
       }
       on other is {
         error "Unexpected message for processor EngagementEventSplit"
@@ -839,6 +851,9 @@ context EngagementContext as router is {
   }
   connector 'ToBillingService Feed' is from outlet EngagementContext.EngagementEventSplit.EngagementEventSplitToToBillingService to inlet EngagementContext.ToBillingService.ToBillingServiceIn with {
     briefly "The Engagement events ToBillingService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet EngagementContext.EngagementEventSplit.EngagementEventSplitToToNotificationService to inlet EngagementContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Engagement events ToNotificationService translates, on their way to it"
   }
   connector 'EngagementEvent Stream' is from outlet EngagementContext.Engagement.EngagementEvents2 to inlet EngagementContext.EngagementEventSplit.EngagementEventSplitIn with {
     briefly "Engagement events, fanned out to storage and read models"

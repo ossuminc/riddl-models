@@ -41,8 +41,8 @@ context AdContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'AdImpressionCommand Stream Intake' is from outlet AdContext.AdImpressionCommandStreamOut to inlet AdContext.AdImpression.AdImpressionCommands  connector 'AdImpressionResult Stream Egress' is from outlet AdContext.AdRepository.AdRepositoryResponses to inlet AdContext.AdImpressionResultStreamIn  adaptor ToAdDecisionService to context AdDecisionService as flow is { 
-    outlet ToAdDecisionServiceOut is query AdDecisionService.RequestAd
+  connector 'AdImpressionCommand Stream Intake' is from outlet AdContext.AdImpressionCommandStreamOut to inlet AdContext.AdImpression.AdImpressionCommands  connector 'AdImpressionResult Stream Egress' is from outlet AdContext.AdRepository.AdRepositoryResponses to inlet AdContext.AdImpressionResultStreamIn  adaptor ToAdDecisionService to context AdDecisionService as merge is { 
+    inlet ToAdDecisionServiceIn is type AdImpressionEvent    inlet ToAdDecisionServiceReplies is result AdDecisionService.AdDecision    outlet ToAdDecisionServiceOut is query AdDecisionService.RequestAd
     handler ToAdDecisionServiceHandler is {
       on impressionOpportunityOpened: event AdImpression.ImpressionOpportunityOpened is {
         let askAnswer: type AdDecisionService.AdDecision = ask query AdDecisionService.RequestAd of context AdDecisionService
@@ -214,7 +214,7 @@ context AdContext as router is {
     }
   }
   adaptor ToRTBExchange to context RTBExchange as flow is { 
-    outlet ToRTBExchangeOut is command RTBExchange.SendBidRequest
+    inlet ToRTBExchangeIn is type AdImpressionEvent    outlet ToRTBExchangeOut is command RTBExchange.SendBidRequest
     handler ToRTBExchangeHandler is {
       on impressionOpportunityOpened: event AdImpression.ImpressionOpportunityOpened is {
         let item0: type RTBExchange.SendBidRequest = prompt("translate the impressionOpportunityOpened event into a SendBidRequest, a slot coming free being what is auctioned, before any ad has been chosen")
@@ -235,8 +235,8 @@ context AdContext as router is {
       |The model's side of the RTBExchange conversation.
     }
   }
-  adaptor ToTargetingService to context TargetingService as flow is { 
-    outlet ToTargetingServiceOut is query TargetingService.EvaluateTargeting
+  adaptor ToTargetingService to context TargetingService as merge is { 
+    inlet ToTargetingServiceIn is type AdImpressionEvent    inlet ToTargetingServiceReplies is result TargetingService.TargetingResult    outlet ToTargetingServiceOut is query TargetingService.EvaluateTargeting
     handler ToTargetingServiceHandler is {
       on impressionOpportunityOpened: event AdImpression.ImpressionOpportunityOpened is {
         let askAnswer: type TargetingService.TargetingResult = ask query TargetingService.EvaluateTargeting of context TargetingService
@@ -590,6 +590,9 @@ context AdContext as router is {
     }
   }
   streamlet AdImpressionEventSplit as split is {
+    outlet AdImpressionEventSplitToToTargetingService is type AdImpressionEvent
+    outlet AdImpressionEventSplitToToRTBExchange is type AdImpressionEvent
+    outlet AdImpressionEventSplitToToAdDecisionService is type AdImpressionEvent
     outlet AdImpressionEventSplitToToFraudDetectionService is type AdImpressionEvent
     outlet AdImpressionEventSplitToToCampaignService is type AdImpressionEvent
     outlet AdImpressionEventSplitToToBillingService is type AdImpressionEvent
@@ -627,6 +630,11 @@ context AdContext as router is {
         send adErrorOccurred to outlet AdImpressionEventSplitToAdAnalytics
         tell adErrorOccurred to entity AdContext.AdImpression
       }
+      on impressionOpportunityOpened: event AdImpression.ImpressionOpportunityOpened is {
+        send impressionOpportunityOpened to outlet AdImpressionEventSplitToToAdDecisionService
+        send impressionOpportunityOpened to outlet AdImpressionEventSplitToToRTBExchange
+        send impressionOpportunityOpened to outlet AdImpressionEventSplitToToTargetingService
+      }
       on other is {
         error "Unexpected message for processor AdImpressionEventSplit"
       }
@@ -650,6 +658,15 @@ context AdContext as router is {
   }
   connector 'ToBillingService Feed' is from outlet AdContext.AdImpressionEventSplit.AdImpressionEventSplitToToBillingService to inlet AdContext.ToBillingService.ToBillingServiceIn with {
     briefly "The AdImpression events ToBillingService translates, on their way to it"
+  }
+  connector 'ToTargetingService Feed' is from outlet AdContext.AdImpressionEventSplit.AdImpressionEventSplitToToTargetingService to inlet AdContext.ToTargetingService.ToTargetingServiceIn with {
+    briefly "The AdImpression events ToTargetingService translates, on their way to it"
+  }
+  connector 'ToRTBExchange Feed' is from outlet AdContext.AdImpressionEventSplit.AdImpressionEventSplitToToRTBExchange to inlet AdContext.ToRTBExchange.ToRTBExchangeIn with {
+    briefly "The AdImpression events ToRTBExchange translates, on their way to it"
+  }
+  connector 'ToAdDecisionService Feed' is from outlet AdContext.AdImpressionEventSplit.AdImpressionEventSplitToToAdDecisionService to inlet AdContext.ToAdDecisionService.ToAdDecisionServiceIn with {
+    briefly "The AdImpression events ToAdDecisionService translates, on their way to it"
   }
   connector 'AdImpressionEvent Stream' is from outlet AdContext.AdImpression.AdImpressionEvents2 to inlet AdContext.AdImpressionEventSplit.AdImpressionEventSplitIn with {
     briefly "AdImpression events, fanned out to storage and read models"

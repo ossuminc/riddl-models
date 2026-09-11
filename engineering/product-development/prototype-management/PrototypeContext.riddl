@@ -79,7 +79,7 @@ context PrototypeContext as router is {
     }
   }
   adaptor ToDefectTrackingService to context DefectTrackingService as flow is { 
-    outlet ToDefectTrackingServiceOut is command DefectTrackingService.CreateDefect
+    inlet ToDefectTrackingServiceIn is type PrototypeEvent    outlet ToDefectTrackingServiceOut is command DefectTrackingService.CreateDefect
     handler ToDefectTrackingServiceHandler is {
       on testFailed: event Prototype.TestFailed is {
         let item0: type DefectTrackingService.CreateDefect = prompt("translate the testFailed event into a CreateDefect, a failed test being what a defect records")
@@ -101,7 +101,7 @@ context PrototypeContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
+    inlet ToNotificationServiceIn is type PrototypeEvent    outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
     handler ToNotificationServiceHandler is {
       on testFailed: event TestFailed is {
         let alert: type NotificationService.SendTestAlert = prompt("translate the testFailed event into a SendTestAlert telling the engineers on the prototype which test failed, so the failure is seen without waiting for someone to read the results")
@@ -593,6 +593,9 @@ context PrototypeContext as router is {
         tell command PrototypeContext.PrototypeRepository.PersistPrototypeValidated(prototypeId = prototypeValidated.prototypeId) to repository PrototypeContext.PrototypeRepository
         do "Update validation metrics"
       }
+      on testFailed: event Prototype.TestFailed is {
+        do "a test failed changes nothing this projection keeps"
+      }
     } with {
       briefly "Maintains prototype analytics"
       described as {
@@ -607,7 +610,7 @@ context PrototypeContext as router is {
   }
   // ---- Event publication for Prototype ----
   type PrototypeEvent is one of {
-    PrototypeContext.Prototype.PrototypeCreated or PrototypeContext.Prototype.PrototypeUpdated or PrototypeContext.Prototype.BuildStarted or PrototypeContext.Prototype.BuildStatusUpdated or PrototypeContext.Prototype.ComponentReceived or PrototypeContext.Prototype.TestPlanCreated or PrototypeContext.Prototype.TestExecuted or PrototypeContext.Prototype.TestResultRecorded or PrototypeContext.Prototype.PrototypeValidated or PrototypeContext.Prototype.PrototypeRetired
+    PrototypeContext.Prototype.PrototypeCreated or PrototypeContext.Prototype.PrototypeUpdated or PrototypeContext.Prototype.BuildStarted or PrototypeContext.Prototype.BuildStatusUpdated or PrototypeContext.Prototype.ComponentReceived or PrototypeContext.Prototype.TestPlanCreated or PrototypeContext.Prototype.TestExecuted or PrototypeContext.Prototype.TestResultRecorded or PrototypeContext.Prototype.PrototypeValidated or PrototypeContext.Prototype.PrototypeRetired or Prototype.TestFailed
   } with {
     briefly "Prototype event alternation"
     described as {
@@ -616,6 +619,8 @@ context PrototypeContext as router is {
     }
   }
   streamlet PrototypeEventSplit as split is {
+    outlet PrototypeEventSplitToToNotificationService is type PrototypeEvent
+    outlet PrototypeEventSplitToToDefectTrackingService is type PrototypeEvent
     outlet PrototypeEventSplitToToTestEquipmentService is type PrototypeEvent
     outlet PrototypeEventSplitToToProcurementService is type PrototypeEvent
     inlet PrototypeEventSplitIn is type PrototypeEvent    outlet PrototypeEventSplitToPrototypeAnalytics is type PrototypeEvent
@@ -631,10 +636,12 @@ context PrototypeContext as router is {
       on buildStarted: event Prototype.BuildStarted is {
         send buildStarted to outlet PrototypeEventSplitToPrototypeAnalytics
         send buildStarted to outlet PrototypeEventSplitToToProcurementService
+        send buildStarted to outlet PrototypeEventSplitToToNotificationService
         tell buildStarted to entity PrototypeContext.Prototype
       }
       on buildStatusUpdated: event Prototype.BuildStatusUpdated is {
         send buildStatusUpdated to outlet PrototypeEventSplitToPrototypeAnalytics
+        send buildStatusUpdated to outlet PrototypeEventSplitToToNotificationService
         tell buildStatusUpdated to entity PrototypeContext.Prototype
       }
       on componentReceived: event Prototype.ComponentReceived is {
@@ -656,11 +663,16 @@ context PrototypeContext as router is {
       }
       on prototypeValidated: event Prototype.PrototypeValidated is {
         send prototypeValidated to outlet PrototypeEventSplitToPrototypeAnalytics
+        send prototypeValidated to outlet PrototypeEventSplitToToNotificationService
         tell prototypeValidated to entity PrototypeContext.Prototype
       }
       on prototypeRetired: event Prototype.PrototypeRetired is {
         send prototypeRetired to outlet PrototypeEventSplitToPrototypeAnalytics
         tell prototypeRetired to entity PrototypeContext.Prototype
+      }
+      on testFailed: event Prototype.TestFailed is {
+        send testFailed to outlet PrototypeEventSplitToToDefectTrackingService
+        send testFailed to outlet PrototypeEventSplitToToNotificationService
       }
       on other is {
         error "Unexpected message for processor PrototypeEventSplit"
@@ -682,6 +694,12 @@ context PrototypeContext as router is {
   }
   connector 'ToProcurementService Feed' is from outlet PrototypeContext.PrototypeEventSplit.PrototypeEventSplitToToProcurementService to inlet PrototypeContext.ToProcurementService.ToProcurementServiceIn with {
     briefly "The Prototype events ToProcurementService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet PrototypeContext.PrototypeEventSplit.PrototypeEventSplitToToNotificationService to inlet PrototypeContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Prototype events ToNotificationService translates, on their way to it"
+  }
+  connector 'ToDefectTrackingService Feed' is from outlet PrototypeContext.PrototypeEventSplit.PrototypeEventSplitToToDefectTrackingService to inlet PrototypeContext.ToDefectTrackingService.ToDefectTrackingServiceIn with {
+    briefly "The Prototype events ToDefectTrackingService translates, on their way to it"
   }
   connector 'PrototypeEvent Stream' is from outlet PrototypeContext.Prototype.PrototypeEvents2 to inlet PrototypeContext.PrototypeEventSplit.PrototypeEventSplitIn with {
     briefly "Prototype events, fanned out to storage and read models"

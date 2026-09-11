@@ -132,7 +132,7 @@ context EncounterContext as router is {
     }
   }
   adaptor ToNotificationService to context NotificationService as flow is { 
-    outlet ToNotificationServiceOut is command NotificationService.SendProviderAlert
+    inlet ToNotificationServiceIn is type EncounterEvent    outlet ToNotificationServiceOut is command NotificationService.SendProviderAlert
     handler ToNotificationServiceHandler is {
       on criticalVitalsDetected: event CriticalVitalsDetected is {
         let alert: type NotificationService.SendProviderAlert = prompt("translate the criticalVitalsDetected event into a SendProviderAlert paging the provider on the encounter with the readings that breached the safe range, so a clinician sees them immediately")
@@ -605,6 +605,9 @@ context EncounterContext as router is {
       on diagnosisAdded: event Encounter.DiagnosisAdded is {
         tell command EncounterContext.EncounterRepository.PersistDiagnosisAdded(encounterId = diagnosisAdded.encounterId) to repository EncounterContext.EncounterRepository
       }
+      on criticalVitalsDetected: event Encounter.CriticalVitalsDetected is {
+        do "a critical vitals detected changes nothing this projection keeps"
+      }
     } with {
       briefly "Maintains encounter analytics"
       described as {
@@ -618,7 +621,7 @@ context EncounterContext as router is {
     }
   }
   type EncounterEvent is one of {
-    EncounterContext.Encounter.EncounterStarted or EncounterContext.Encounter.VitalsRecorded or EncounterContext.Encounter.ChiefComplaintRecorded or EncounterContext.Encounter.ClinicalNoteAdded or EncounterContext.Encounter.DiagnosisAdded or EncounterContext.Encounter.ProcedureRecorded or EncounterContext.Encounter.OrderPlaced or EncounterContext.Encounter.NoteSigned or EncounterContext.Encounter.EncounterCompleted or EncounterContext.Encounter.EncounterCanceled
+    EncounterContext.Encounter.EncounterStarted or EncounterContext.Encounter.VitalsRecorded or EncounterContext.Encounter.ChiefComplaintRecorded or EncounterContext.Encounter.ClinicalNoteAdded or EncounterContext.Encounter.DiagnosisAdded or EncounterContext.Encounter.ProcedureRecorded or EncounterContext.Encounter.OrderPlaced or EncounterContext.Encounter.NoteSigned or EncounterContext.Encounter.EncounterCompleted or EncounterContext.Encounter.EncounterCanceled or Encounter.CriticalVitalsDetected
   } with {
     briefly "Encounter events"
     described as {
@@ -626,6 +629,7 @@ context EncounterContext as router is {
     }
   }
   streamlet EncounterEventSplit as split is {
+    outlet EncounterEventSplitToToNotificationService is type EncounterEvent
     outlet EncounterEventSplitToToSchedulingService is type EncounterEvent
     outlet EncounterEventSplitToToPatientRecordService is type EncounterEvent
     outlet EncounterEventSplitToToOrderEntryService is type EncounterEvent
@@ -678,6 +682,9 @@ context EncounterContext as router is {
         send encounterCanceled to outlet EncounterEventSplitToEncounterAnalytics
         tell encounterCanceled to entity EncounterContext.Encounter
       }
+      on criticalVitalsDetected: event Encounter.CriticalVitalsDetected is {
+        send criticalVitalsDetected to outlet EncounterEventSplitToToNotificationService
+      }
       on other is {
         error "Unexpected message for processor EncounterEventSplit"
       }
@@ -707,6 +714,9 @@ context EncounterContext as router is {
   }
   connector 'ToBillingService Feed' is from outlet EncounterContext.EncounterEventSplit.EncounterEventSplitToToBillingService to inlet EncounterContext.ToBillingService.ToBillingServiceIn with {
     briefly "The Encounter events ToBillingService translates, on their way to it"
+  }
+  connector 'ToNotificationService Feed' is from outlet EncounterContext.EncounterEventSplit.EncounterEventSplitToToNotificationService to inlet EncounterContext.ToNotificationService.ToNotificationServiceIn with {
+    briefly "The Encounter events ToNotificationService translates, on their way to it"
   }
   connector 'EncounterEvent Stream' is from outlet EncounterContext.Encounter.EncounterEvents2 to inlet EncounterContext.EncounterEventSplit.EncounterEventSplitIn with {
     briefly "Encounter events, fanned out to storage and read models"

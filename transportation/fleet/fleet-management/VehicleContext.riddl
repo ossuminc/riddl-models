@@ -80,7 +80,7 @@ context VehicleContext as router is {
     }
   }
   connector 'VehicleCommand Stream Intake' is from outlet VehicleContext.VehicleCommandStreamOut to inlet VehicleContext.Vehicle.VehicleCommands  connector 'VehicleResult Stream Egress' is from outlet VehicleContext.VehicleRepository.VehicleRepositoryResponses to inlet VehicleContext.VehicleResultStreamIn  adaptor ToAlertNotificationService to context AlertNotificationService as flow is { 
-    outlet ToAlertNotificationServiceOut is type AlertNotificationService.AlertNotificationServiceCommand
+    inlet ToAlertNotificationServiceIn is type VehicleEvent    outlet ToAlertNotificationServiceOut is type AlertNotificationService.AlertNotificationServiceCommand
     handler ToAlertNotificationServiceHandler is {
       on alertRaised: event AlertRaised is {
         let msg: type AlertNotificationService.SendAlert = prompt("translate the alertRaised event into a SendAlert for its recipient")
@@ -327,8 +327,8 @@ context VehicleContext as router is {
       |The model's side of the MaintenanceServiceProvider conversation.
     }
   }
-  adaptor ToMaintenanceServiceProvider to context MaintenanceServiceProvider as flow is { 
-    outlet ToMaintenanceServiceProviderOut is type MaintenanceServiceProvider.MaintenanceServiceProviderRequest
+  adaptor ToMaintenanceServiceProvider to context MaintenanceServiceProvider as merge is { 
+    inlet ToMaintenanceServiceProviderIn is type VehicleEvent    inlet ToMaintenanceServiceProviderReplies is result MaintenanceServiceProvider.AvailableSlots    outlet ToMaintenanceServiceProviderOut is type MaintenanceServiceProvider.MaintenanceServiceProviderRequest
     handler ToMaintenanceServiceProviderHandler is {
       on maintenanceReminderRaised: event Vehicle.MaintenanceReminderRaised is {
         let askAnswer: type MaintenanceServiceProvider.AvailableSlots = ask query MaintenanceServiceProvider.GetAvailableSlots of context MaintenanceServiceProvider
@@ -816,6 +816,9 @@ context VehicleContext as router is {
         tell command VehicleContext.VehicleRepository.PersistAlertAcknowledged(vehicleId = alertAcknowledged.vehicleId) to repository VehicleContext.VehicleRepository
         do "Update acknowledged alerts"
       }
+      on maintenanceReminderRaised: event Vehicle.MaintenanceReminderRaised is {
+        do "a maintenance reminder raised changes nothing this projection keeps"
+      }
     } with {
       briefly "Maintains fleet analytics"
       described as {
@@ -830,7 +833,7 @@ context VehicleContext as router is {
   }
   // ---- Event publication for Vehicle ----
   type VehicleEvent is one of {
-    VehicleContext.Vehicle.VehicleRegistered or VehicleContext.Vehicle.LocationUpdated or VehicleContext.Vehicle.OdometerUpdated or VehicleContext.Vehicle.FuelLevelUpdated or VehicleContext.Vehicle.DriverAssigned or VehicleContext.Vehicle.DriverUnassigned or VehicleContext.Vehicle.TripStarted or VehicleContext.Vehicle.TripEnded or VehicleContext.Vehicle.MaintenanceScheduled or VehicleContext.Vehicle.MaintenanceStarted or VehicleContext.Vehicle.MaintenanceCompleted or VehicleContext.Vehicle.AlertRaised or VehicleContext.Vehicle.AlertAcknowledged or VehicleContext.Vehicle.VehicleDecommissioned
+    VehicleContext.Vehicle.VehicleRegistered or VehicleContext.Vehicle.LocationUpdated or VehicleContext.Vehicle.OdometerUpdated or VehicleContext.Vehicle.FuelLevelUpdated or VehicleContext.Vehicle.DriverAssigned or VehicleContext.Vehicle.DriverUnassigned or VehicleContext.Vehicle.TripStarted or VehicleContext.Vehicle.TripEnded or VehicleContext.Vehicle.MaintenanceScheduled or VehicleContext.Vehicle.MaintenanceStarted or VehicleContext.Vehicle.MaintenanceCompleted or VehicleContext.Vehicle.AlertRaised or VehicleContext.Vehicle.AlertAcknowledged or VehicleContext.Vehicle.VehicleDecommissioned or Vehicle.MaintenanceReminderRaised
   } with {
     briefly "Vehicle event alternation"
     described as {
@@ -839,6 +842,8 @@ context VehicleContext as router is {
     }
   }
   streamlet VehicleEventSplit as split is {
+    outlet VehicleEventSplitToToMaintenanceServiceProvider is type VehicleEvent
+    outlet VehicleEventSplitToToAlertNotificationService is type VehicleEvent
     outlet VehicleEventSplitToToInsuranceService is type VehicleEvent
     outlet VehicleEventSplitToToGpsTrackingService is type VehicleEvent
     outlet VehicleEventSplitToToFuelCardService is type VehicleEvent
@@ -886,6 +891,7 @@ context VehicleContext as router is {
       }
       on maintenanceScheduled: event Vehicle.MaintenanceScheduled is {
         send maintenanceScheduled to outlet VehicleEventSplitToFleetAnalytics
+        send maintenanceScheduled to outlet VehicleEventSplitToToMaintenanceServiceProvider
         tell maintenanceScheduled to entity VehicleContext.Vehicle
       }
       on maintenanceStarted: event Vehicle.MaintenanceStarted is {
@@ -899,6 +905,7 @@ context VehicleContext as router is {
       on alertRaised: event Vehicle.AlertRaised is {
         send alertRaised to outlet VehicleEventSplitToFleetAnalytics
         send alertRaised to outlet VehicleEventSplitToToInsuranceService
+        send alertRaised to outlet VehicleEventSplitToToAlertNotificationService
         tell alertRaised to entity VehicleContext.Vehicle
       }
       on alertAcknowledged: event Vehicle.AlertAcknowledged is {
@@ -908,6 +915,10 @@ context VehicleContext as router is {
       on vehicleDecommissioned: event Vehicle.VehicleDecommissioned is {
         send vehicleDecommissioned to outlet VehicleEventSplitToFleetAnalytics
         tell vehicleDecommissioned to entity VehicleContext.Vehicle
+      }
+      on maintenanceReminderRaised: event Vehicle.MaintenanceReminderRaised is {
+        send maintenanceReminderRaised to outlet VehicleEventSplitToToAlertNotificationService
+        send maintenanceReminderRaised to outlet VehicleEventSplitToToMaintenanceServiceProvider
       }
       on other is {
         error "Unexpected message for processor VehicleEventSplit"
@@ -935,6 +946,12 @@ context VehicleContext as router is {
   }
   connector 'ToDriverManagementService Feed' is from outlet VehicleContext.VehicleEventSplit.VehicleEventSplitToToDriverManagementService to inlet VehicleContext.ToDriverManagementService.ToDriverManagementServiceIn with {
     briefly "The Vehicle events ToDriverManagementService translates, on their way to it"
+  }
+  connector 'ToMaintenanceServiceProvider Feed' is from outlet VehicleContext.VehicleEventSplit.VehicleEventSplitToToMaintenanceServiceProvider to inlet VehicleContext.ToMaintenanceServiceProvider.ToMaintenanceServiceProviderIn with {
+    briefly "The Vehicle events ToMaintenanceServiceProvider translates, on their way to it"
+  }
+  connector 'ToAlertNotificationService Feed' is from outlet VehicleContext.VehicleEventSplit.VehicleEventSplitToToAlertNotificationService to inlet VehicleContext.ToAlertNotificationService.ToAlertNotificationServiceIn with {
+    briefly "The Vehicle events ToAlertNotificationService translates, on their way to it"
   }
   connector 'VehicleEvent Stream' is from outlet VehicleContext.Vehicle.VehicleEvents2 to inlet VehicleContext.VehicleEventSplit.VehicleEventSplitIn with {
     briefly "Vehicle events, fanned out to storage and read models"

@@ -107,8 +107,8 @@ context OrderContext as router is {
   include "Return.riddl"
   include "OrderFulfillmentSaga.riddl"
   // Adaptors for external system integration
-  adaptor ToShippingCarrier to context ShippingCarrier as flow is { 
-    outlet ToShippingCarrierOut is type ShippingCarrier.ShippingCarrierCommand
+  adaptor ToShippingCarrier to context ShippingCarrier as merge is { 
+    inlet ToShippingCarrierFromShipmentIn is type ShipmentStreamEvent    inlet ToShippingCarrierFromOrderIn is type OrderEvent    outlet ToShippingCarrierOut is type ShippingCarrier.ShippingCarrierCommand
     handler ToShippingCarrierHandler is {
       on shipmentCreated: event Shipment.ShipmentCreated is {
         let item0: type ShippingCarrier.CreateShipment = prompt("translate the shipmentCreated event into a CreateShipment, the shipment being what creates the need for a carrier")
@@ -159,8 +159,8 @@ context OrderContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor ToCustomerService to context CustomerService as flow is { 
-    outlet ToCustomerServiceOut is type CustomerService.CustomerServiceCommand
+  adaptor ToCustomerService to context CustomerService as merge is { 
+    inlet ToCustomerServiceFromShipmentIn is type ShipmentStreamEvent    inlet ToCustomerServiceFromOrderIn is type OrderEvent    outlet ToCustomerServiceOut is type CustomerService.CustomerServiceCommand
     handler ToCustomerServiceHandler is {
       on orderPlaced: event Order.OrderPlaced is {
         let item0: type CustomerService.SendOrderConfirmation = prompt("translate the orderPlaced event into a SendOrderConfirmation, the customer needing to know their order stands")
@@ -906,6 +906,8 @@ context OrderContext as router is {
     }
   }
   streamlet OrderEventSplit as split is {
+    outlet OrderEventSplitToToShippingCarrier is type OrderEvent
+    outlet OrderEventSplitToToCustomerService is type OrderEvent
     outlet OrderEventSplitToToPaymentGateway is type OrderEvent
     outlet OrderEventSplitToToInventoryService is type OrderEvent
     inlet OrderEventSplitIn is type OrderEvent    outlet OrderEventSplitToOrderAnalytics is type OrderEvent
@@ -914,6 +916,7 @@ context OrderContext as router is {
         send orderPlaced to outlet OrderEventSplitToOrderAnalytics
         send orderPlaced to outlet OrderEventSplitToToPaymentGateway
         send orderPlaced to outlet OrderEventSplitToToInventoryService
+        send orderPlaced to outlet OrderEventSplitToToCustomerService
         tell orderPlaced to entity OrderContext.Order
       }
       on paymentConfirmed: event Order.PaymentConfirmed is {
@@ -926,6 +929,7 @@ context OrderContext as router is {
       }
       on orderShipped: event Order.OrderShipped is {
         send orderShipped to outlet OrderEventSplitToOrderAnalytics
+        send orderShipped to outlet OrderEventSplitToToCustomerService
         tell orderShipped to entity OrderContext.Order
       }
       on orderDelivered: event Order.OrderDelivered is {
@@ -936,6 +940,8 @@ context OrderContext as router is {
         send orderCancelled to outlet OrderEventSplitToOrderAnalytics
         send orderCancelled to outlet OrderEventSplitToToPaymentGateway
         send orderCancelled to outlet OrderEventSplitToToInventoryService
+        send orderCancelled to outlet OrderEventSplitToToShippingCarrier
+        send orderCancelled to outlet OrderEventSplitToToCustomerService
         tell orderCancelled to entity OrderContext.Order
       }
       on other is {
@@ -991,11 +997,14 @@ context OrderContext as router is {
       |Fans Return events out to the repository and projectors.
     }
   }
-  streamlet ShipmentEventSplit as flow is {
+  streamlet ShipmentEventSplit as split is {
+    outlet ShipmentEventSplitToToShippingCarrier is type ShipmentStreamEvent
+    outlet ShipmentEventSplitToToCustomerService is type ShipmentStreamEvent
     inlet ShipmentEventSplitIn is type ShipmentStreamEvent    outlet ShipmentEventSplitToOrderAnalytics is type ShipmentStreamEvent
     handler ShipmentEventSplitHandler is {
       on shipmentCreated: event Shipment.ShipmentCreated is {
         send shipmentCreated to outlet ShipmentEventSplitToOrderAnalytics
+        send shipmentCreated to outlet ShipmentEventSplitToToShippingCarrier
         tell shipmentCreated to entity OrderContext.Shipment
       }
       on trackingUpdated: event Shipment.TrackingUpdated is {
@@ -1008,6 +1017,7 @@ context OrderContext as router is {
       }
       on shipmentFailed: event Shipment.ShipmentFailed is {
         send shipmentFailed to outlet ShipmentEventSplitToOrderAnalytics
+        send shipmentFailed to outlet ShipmentEventSplitToToCustomerService
         tell shipmentFailed to entity OrderContext.Shipment
       }
       on other is {
@@ -1031,6 +1041,12 @@ context OrderContext as router is {
   connector 'ToInventoryService Feed' is from outlet OrderContext.OrderEventSplit.OrderEventSplitToToInventoryService to inlet OrderContext.ToInventoryService.ToInventoryServiceIn with {
     briefly "The Order events ToInventoryService translates, on their way to it"
   }
+  connector 'ToShippingCarrier Order Feed' is from outlet OrderContext.OrderEventSplit.OrderEventSplitToToShippingCarrier to inlet OrderContext.ToShippingCarrier.ToShippingCarrierFromOrderIn with {
+    briefly "The Order events ToShippingCarrier translates, on their way to it"
+  }
+  connector 'ToCustomerService Order Feed' is from outlet OrderContext.OrderEventSplit.OrderEventSplitToToCustomerService to inlet OrderContext.ToCustomerService.ToCustomerServiceFromOrderIn with {
+    briefly "The Order events ToCustomerService translates, on their way to it"
+  }
   connector 'OrderEvent Stream' is from outlet OrderContext.Order.OrderEvents2 to inlet OrderContext.OrderEventSplit.OrderEventSplitIn with {
     briefly "Order events, fanned out to storage and read models"
   }
@@ -1042,6 +1058,12 @@ context OrderContext as router is {
   }
   connector 'ReturnEvent Feed' is from outlet OrderContext.ReturnEventSplit.ReturnEventSplitToOrderAnalytics to inlet OrderContext.OrderAnalytics.OrderAnalyticsFromReturn with {
     briefly "ReturnEvent feeding the OrderAnalytics projection"
+  }
+  connector 'ToShippingCarrier Shipment Feed' is from outlet OrderContext.ShipmentEventSplit.ShipmentEventSplitToToShippingCarrier to inlet OrderContext.ToShippingCarrier.ToShippingCarrierFromShipmentIn with {
+    briefly "The Shipment events ToShippingCarrier translates, on their way to it"
+  }
+  connector 'ToCustomerService Shipment Feed' is from outlet OrderContext.ShipmentEventSplit.ShipmentEventSplitToToCustomerService to inlet OrderContext.ToCustomerService.ToCustomerServiceFromShipmentIn with {
+    briefly "The Shipment events ToCustomerService translates, on their way to it"
   }
   connector 'ShipmentStreamEvent Stream' is from outlet OrderContext.Shipment.ShipmentEvents2 to inlet OrderContext.ShipmentEventSplit.ShipmentEventSplitIn with {
     briefly "Shipment events, fanned out to storage and read models"
