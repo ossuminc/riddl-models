@@ -1,5 +1,17 @@
 // Order Management - Order Context
 context OrderContext as router is {
+  inlet OrderContextFromComplianceService is command TradingOrder.AcknowledgeOrder with {
+    briefly "What FromComplianceService makes of that service's news"
+  }
+  connector 'FromComplianceService Intake' is from outlet OrderContext.FromComplianceService.FromComplianceServiceToOrderContext to inlet OrderContext.OrderContextFromComplianceService with {
+    briefly "What FromComplianceService makes of that news, on its way in"
+  }
+  inlet OrderContextFromExecutionVenueService is command TradingOrder.FillOrder with {
+    briefly "What FromExecutionVenueService makes of that service's news"
+  }
+  connector 'FromExecutionVenueService Intake' is from outlet OrderContext.FromExecutionVenueService.FromExecutionVenueServiceToOrderContext to inlet OrderContext.OrderContextFromExecutionVenueService with {
+    briefly "What FromExecutionVenueService makes of that news, on its way in"
+  }
   inlet TradingOrderCommandStreamIn is type TradingOrderCommand  outlet TradingOrderCommandStreamOut is type TradingOrderCommand
   inlet MarketplaceOrderResultStreamIn is result TradingOrder.TradingOrderResult  outlet MarketplaceOrderResultStreamOut is result TradingOrder.TradingOrderResult
   handler OrderContextBoundary is {
@@ -72,10 +84,12 @@ context OrderContext as router is {
       |The model's side of the AccountService conversation.
     }
   }
-  adaptor FromComplianceService from context ComplianceService is { 
+  adaptor FromComplianceService from context ComplianceService as flow is { 
+    inlet FromComplianceServiceIn is event ComplianceService.ComplianceCheckCompleted    outlet FromComplianceServiceToOrderContext is command TradingOrder.AcknowledgeOrder
     handler FromComplianceServiceHandler is {
-      on event ComplianceService.ComplianceCheckCompleted is {
-        do "the model receives compliance check completed"
+      on complianceCheckCompleted: event ComplianceService.ComplianceCheckCompleted is {
+        let item0: type TradingOrder.AcknowledgeOrder = prompt("translate the complianceCheckCompleted event into a AcknowledgeOrder, an order cannot be acknowledged to the client until compliance has cleared it")
+        send item0 to outlet OrderContext.FromComplianceService.FromComplianceServiceToOrderContext
       }
       on other is {
         error "Unexpected message for adaptor FromComplianceService"
@@ -114,13 +128,15 @@ context OrderContext as router is {
       |The model's side of the ComplianceService conversation.
     }
   }
-  adaptor FromExecutionVenueService from context ExecutionVenueService is { 
+  adaptor FromExecutionVenueService from context ExecutionVenueService as flow is { 
+    inlet FromExecutionVenueServiceIn is type ExecutionVenueService.ExecutionVenueServiceEvent    outlet FromExecutionVenueServiceToOrderContext is command TradingOrder.FillOrder
     handler FromExecutionVenueServiceHandler is {
-      on event ExecutionVenueService.OrderRouted is {
-        do "the model receives order routed"
+      on orderRouted: event ExecutionVenueService.OrderRouted is {
+        do "the venue has the order; routing it was recorded here when it was sent"
       }
-      on event ExecutionVenueService.VenueExecution is {
-        do "the model receives venue execution"
+      on venueExecution: event ExecutionVenueService.VenueExecution is {
+        let item0: type TradingOrder.FillOrder = prompt("translate the venueExecution event into a FillOrder, an execution at the venue is the fill the order must record")
+        send item0 to outlet OrderContext.FromExecutionVenueService.FromExecutionVenueServiceToOrderContext
       }
       on other is {
         error "Unexpected message for adaptor FromExecutionVenueService"
@@ -159,10 +175,10 @@ context OrderContext as router is {
       |The model's side of the ExecutionVenueService conversation.
     }
   }
-  adaptor FromMarketDataService from context MarketDataService is { 
-    handler FromMarketDataServiceHandler is {
-      on event MarketDataService.QuoteReceived is {
-        do "the model receives quote received"
+  adaptor FromMarketDataService from context MarketDataService as flow is { 
+    inlet FromMarketDataServiceIn is event MarketDataService.QuoteReceived    handler FromMarketDataServiceHandler is {
+      on quoteReceived: event MarketDataService.QuoteReceived is {
+        do "the quote informs pricing; the order's own state does not turn on it"
       }
       on other is {
         error "Unexpected message for adaptor FromMarketDataService"
@@ -239,10 +255,10 @@ context OrderContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromRiskManagementService from context RiskManagementService is { 
-    handler FromRiskManagementServiceHandler is {
-      on event RiskManagementService.RiskCheckCompleted is {
-        do "the model receives risk check completed"
+  adaptor FromRiskManagementService from context RiskManagementService as flow is { 
+    inlet FromRiskManagementServiceIn is event RiskManagementService.RiskCheckCompleted    handler FromRiskManagementServiceHandler is {
+      on riskCheckCompleted: event RiskManagementService.RiskCheckCompleted is {
+        do "risk has looked; it is compliance clearing that lets the order be acknowledged"
       }
       on other is {
         error "Unexpected message for adaptor FromRiskManagementService"

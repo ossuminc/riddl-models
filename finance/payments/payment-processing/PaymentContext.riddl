@@ -1,5 +1,11 @@
 // Payment Processing - Payment Context
 context PaymentContext as router is {
+  inlet PaymentContextFromThreeDSecureService is command Payment.RecordAuthentication with {
+    briefly "What FromThreeDSecureService makes of that service's news"
+  }
+  connector 'FromThreeDSecureService Intake' is from outlet PaymentContext.FromThreeDSecureService.FromThreeDSecureServiceToPaymentContext to inlet PaymentContext.PaymentContextFromThreeDSecureService with {
+    briefly "What FromThreeDSecureService makes of that news, on its way in"
+  }
   inlet PaymentCommandStreamIn is type PaymentCommand  outlet PaymentCommandStreamOut is type PaymentCommand
   inlet PaymentResultStreamIn is result Payment.PaymentResult  outlet PaymentResultStreamOut is result Payment.PaymentResult
   handler PaymentContextBoundary is {
@@ -47,10 +53,10 @@ context PaymentContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'PaymentCommand Stream Intake' is from outlet PaymentContext.PaymentCommandStreamOut to inlet PaymentContext.Payment.PaymentCommands  connector 'PaymentResult Stream Egress' is from outlet PaymentContext.PaymentRepository.PaymentRepositoryResponses to inlet PaymentContext.PaymentResultStreamIn  adaptor FromCardNetworkService from context CardNetworkService is { 
-    handler FromCardNetworkServiceHandler is {
-      on event CardNetworkService.AuthResponseReceived is {
-        do "the model receives auth response received"
+  connector 'PaymentCommand Stream Intake' is from outlet PaymentContext.PaymentCommandStreamOut to inlet PaymentContext.Payment.PaymentCommands  connector 'PaymentResult Stream Egress' is from outlet PaymentContext.PaymentRepository.PaymentRepositoryResponses to inlet PaymentContext.PaymentResultStreamIn  adaptor FromCardNetworkService from context CardNetworkService as flow is { 
+    inlet FromCardNetworkServiceIn is event CardNetworkService.AuthResponseReceived    handler FromCardNetworkServiceHandler is {
+      on authResponseReceived: event CardNetworkService.AuthResponseReceived is {
+        do "the network has answered; authorising or declining follows from what it says"
       }
       on other is {
         error "Unexpected message for adaptor FromCardNetworkService"
@@ -89,10 +95,10 @@ context PaymentContext as router is {
       |The model's side of the CardNetworkService conversation.
     }
   }
-  adaptor FromFraudService from context FraudService is { 
-    handler FromFraudServiceHandler is {
-      on event FraudService.FraudScreenCompleted is {
-        do "the model receives fraud screen completed"
+  adaptor FromFraudService from context FraudService as flow is { 
+    inlet FromFraudServiceIn is event FraudService.FraudScreenCompleted    handler FromFraudServiceHandler is {
+      on fraudScreenCompleted: event FraudService.FraudScreenCompleted is {
+        do "fraud has looked; authorisation proceeds on the network's answer"
       }
       on other is {
         error "Unexpected message for adaptor FromFraudService"
@@ -191,10 +197,10 @@ context PaymentContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromSettlementService from context SettlementService is { 
-    handler FromSettlementServiceHandler is {
-      on event SettlementService.SettlementSubmitted is {
-        do "the model receives settlement submitted"
+  adaptor FromSettlementService from context SettlementService as flow is { 
+    inlet FromSettlementServiceIn is event SettlementService.SettlementSubmitted    handler FromSettlementServiceHandler is {
+      on settlementSubmitted: event SettlementService.SettlementSubmitted is {
+        do "settlement has the batch; the payment was captured before it was sent"
       }
       on other is {
         error "Unexpected message for adaptor FromSettlementService"
@@ -233,10 +239,12 @@ context PaymentContext as router is {
       |The model's side of the SettlementService conversation.
     }
   }
-  adaptor FromThreeDSecureService from context ThreeDSecureService is { 
+  adaptor FromThreeDSecureService from context ThreeDSecureService as flow is { 
+    inlet FromThreeDSecureServiceIn is event ThreeDSecureService.AuthenticationCompleted    outlet FromThreeDSecureServiceToPaymentContext is command Payment.RecordAuthentication
     handler FromThreeDSecureServiceHandler is {
-      on event ThreeDSecureService.AuthenticationCompleted is {
-        do "the model receives authentication completed"
+      on authenticationCompleted: event ThreeDSecureService.AuthenticationCompleted is {
+        let item0: type Payment.RecordAuthentication = prompt("translate the authenticationCompleted event into a RecordAuthentication, the three-domain-secure outcome is exactly what the payment's authentication record holds")
+        send item0 to outlet PaymentContext.FromThreeDSecureService.FromThreeDSecureServiceToPaymentContext
       }
       on other is {
         error "Unexpected message for adaptor FromThreeDSecureService"

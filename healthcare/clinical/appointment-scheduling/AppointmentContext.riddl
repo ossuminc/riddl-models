@@ -1,5 +1,11 @@
 // Appointment Scheduling - Appointment Context
 context AppointmentContext as router is {
+  inlet AppointmentContextFromWaitlistService is command Appointment.ScheduleAppointment with {
+    briefly "What FromWaitlistService makes of that service's news"
+  }
+  connector 'FromWaitlistService Intake' is from outlet AppointmentContext.FromWaitlistService.FromWaitlistServiceToAppointmentContext to inlet AppointmentContext.AppointmentContextFromWaitlistService with {
+    briefly "What FromWaitlistService makes of that news, on its way in"
+  }
   inlet AppointmentCommandStreamIn is type AppointmentCommand  outlet AppointmentCommandStreamOut is type AppointmentCommand
   inlet AppointmentResultStreamIn is result Appointment.AppointmentResult  outlet AppointmentResultStreamOut is result Appointment.AppointmentResult
   handler AppointmentContextBoundary is {
@@ -97,10 +103,10 @@ context AppointmentContext as router is {
       |The model's side of the PatientService conversation.
     }
   }
-  adaptor FromProviderScheduleService from context ProviderScheduleService is { 
-    handler FromProviderScheduleServiceHandler is {
-      on event ProviderScheduleService.TimeBlocked is {
-        do "the model receives time blocked"
+  adaptor FromProviderScheduleService from context ProviderScheduleService as flow is { 
+    inlet FromProviderScheduleServiceIn is event ProviderScheduleService.TimeBlocked    handler FromProviderScheduleServiceHandler is {
+      on timeBlocked: event ProviderScheduleService.TimeBlocked is {
+        do "the provider's time is blocked; appointments already booked are unaffected"
       }
       on other is {
         error "Unexpected message for adaptor FromProviderScheduleService"
@@ -143,10 +149,10 @@ context AppointmentContext as router is {
       |The model's side of the ProviderScheduleService conversation.
     }
   }
-  adaptor FromReminderService from context ReminderService is { 
-    handler FromReminderServiceHandler is {
-      on event ReminderService.ReminderSent is {
-        do "the model receives reminder sent"
+  adaptor FromReminderService from context ReminderService as flow is { 
+    inlet FromReminderServiceIn is event ReminderService.ReminderSent    handler FromReminderServiceHandler is {
+      on reminderSent: event ReminderService.ReminderSent is {
+        do "the reminder is out; the appointment is unchanged by it"
       }
       on other is {
         error "Unexpected message for adaptor FromReminderService"
@@ -185,13 +191,15 @@ context AppointmentContext as router is {
       |The model's side of the ReminderService conversation.
     }
   }
-  adaptor FromWaitlistService from context WaitlistService is { 
+  adaptor FromWaitlistService from context WaitlistService as flow is { 
+    inlet FromWaitlistServiceIn is type WaitlistService.WaitlistServiceEvent    outlet FromWaitlistServiceToAppointmentContext is command Appointment.ScheduleAppointment
     handler FromWaitlistServiceHandler is {
-      on event WaitlistService.AddedToWaitlist is {
-        do "the model receives added to waitlist"
+      on addedToWaitlist: event WaitlistService.AddedToWaitlist is {
+        do "the patient is on the list; they have no appointment until a slot is offered"
       }
-      on event WaitlistService.SlotAvailable is {
-        do "the model receives slot available"
+      on slotAvailable: event WaitlistService.SlotAvailable is {
+        let item0: type Appointment.ScheduleAppointment = prompt("translate the slotAvailable event into a ScheduleAppointment, a slot opening is what lets someone on the waitlist actually be booked")
+        send item0 to outlet AppointmentContext.FromWaitlistService.FromWaitlistServiceToAppointmentContext
       }
       on other is {
         error "Unexpected message for adaptor FromWaitlistService"

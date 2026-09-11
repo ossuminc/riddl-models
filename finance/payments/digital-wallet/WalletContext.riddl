@@ -1,5 +1,17 @@
 // Digital Wallet - Wallet Context
 context WalletContext as router is {
+  inlet WalletContextFromBankTransferService is command Wallet.ReceiveFunds with {
+    briefly "What FromBankTransferService makes of that service's news"
+  }
+  connector 'FromBankTransferService Intake' is from outlet WalletContext.FromBankTransferService.FromBankTransferServiceToWalletContext to inlet WalletContext.WalletContextFromBankTransferService with {
+    briefly "What FromBankTransferService makes of that news, on its way in"
+  }
+  inlet WalletContextFromTokenizationService is command Wallet.AddPaymentMethod with {
+    briefly "What FromTokenizationService makes of that service's news"
+  }
+  connector 'FromTokenizationService Intake' is from outlet WalletContext.FromTokenizationService.FromTokenizationServiceToWalletContext to inlet WalletContext.WalletContextFromTokenizationService with {
+    briefly "What FromTokenizationService makes of that news, on its way in"
+  }
   inlet WalletCommandStreamIn is type WalletCommand  outlet WalletCommandStreamOut is type WalletCommand
   inlet WalletResultStreamIn is result Wallet.WalletResult  outlet WalletResultStreamOut is result Wallet.WalletResult
   handler WalletContextBoundary is {
@@ -53,13 +65,15 @@ context WalletContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'WalletCommand Stream Intake' is from outlet WalletContext.WalletCommandStreamOut to inlet WalletContext.Wallet.WalletCommands  connector 'WalletResult Stream Egress' is from outlet WalletContext.WalletRepository.WalletRepositoryResponses to inlet WalletContext.WalletResultStreamIn  adaptor FromBankTransferService from context BankTransferService is { 
+  connector 'WalletCommand Stream Intake' is from outlet WalletContext.WalletCommandStreamOut to inlet WalletContext.Wallet.WalletCommands  connector 'WalletResult Stream Egress' is from outlet WalletContext.WalletRepository.WalletRepositoryResponses to inlet WalletContext.WalletResultStreamIn  adaptor FromBankTransferService from context BankTransferService as flow is { 
+    inlet FromBankTransferServiceIn is type BankTransferService.BankTransferServiceEvent    outlet FromBankTransferServiceToWalletContext is command Wallet.ReceiveFunds
     handler FromBankTransferServiceHandler is {
-      on event BankTransferService.ACHCompleted is {
-        do "the model receives ach completed"
+      on aCHCompleted: event BankTransferService.ACHCompleted is {
+        let item0: type Wallet.ReceiveFunds = prompt("translate the aCHCompleted event into a ReceiveFunds, money that has actually arrived is what the wallet's balance reflects")
+        send item0 to outlet WalletContext.FromBankTransferService.FromBankTransferServiceToWalletContext
       }
-      on event BankTransferService.ACHInitiated is {
-        do "the model receives ach initiated"
+      on aCHInitiated: event BankTransferService.ACHInitiated is {
+        do "the transfer is under way; the wallet records the balance when it lands"
       }
       on other is {
         error "Unexpected message for adaptor FromBankTransferService"
@@ -98,10 +112,10 @@ context WalletContext as router is {
       |The model's side of the BankTransferService conversation.
     }
   }
-  adaptor FromFraudService from context FraudService is { 
-    handler FromFraudServiceHandler is {
-      on event FraudService.FraudScreened is {
-        do "the model receives fraud screened"
+  adaptor FromFraudService from context FraudService as flow is { 
+    inlet FromFraudServiceIn is event FraudService.FraudScreened    handler FromFraudServiceHandler is {
+      on fraudScreened: event FraudService.FraudScreened is {
+        do "fraud has looked; the payment proceeds on its own terms"
       }
       on other is {
         error "Unexpected message for adaptor FromFraudService"
@@ -140,10 +154,10 @@ context WalletContext as router is {
       |The model's side of the FraudService conversation.
     }
   }
-  adaptor FromIdentityService from context IdentityService is { 
-    handler FromIdentityServiceHandler is {
-      on event IdentityService.IdentityVerified is {
-        do "the model receives identity verified"
+  adaptor FromIdentityService from context IdentityService as flow is { 
+    inlet FromIdentityServiceIn is event IdentityService.IdentityVerified    handler FromIdentityServiceHandler is {
+      on identityVerified: event IdentityService.IdentityVerified is {
+        do "identity is confirmed; opening or restoring the wallet is a separate act"
       }
       on other is {
         error "Unexpected message for adaptor FromIdentityService"
@@ -204,10 +218,10 @@ context WalletContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromPaymentProcessorService from context PaymentProcessorService is { 
-    handler FromPaymentProcessorServiceHandler is {
-      on event PaymentProcessorService.PaymentProcessed is {
-        do "the model receives payment processed"
+  adaptor FromPaymentProcessorService from context PaymentProcessorService as flow is { 
+    inlet FromPaymentProcessorServiceIn is event PaymentProcessorService.PaymentProcessed    handler FromPaymentProcessorServiceHandler is {
+      on paymentProcessed: event PaymentProcessorService.PaymentProcessed is {
+        do "the processor has taken it; the wallet recorded the payment when it was made"
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentProcessorService"
@@ -246,10 +260,12 @@ context WalletContext as router is {
       |The model's side of the PaymentProcessorService conversation.
     }
   }
-  adaptor FromTokenizationService from context TokenizationService is { 
+  adaptor FromTokenizationService from context TokenizationService as flow is { 
+    inlet FromTokenizationServiceIn is event TokenizationService.CardTokenized    outlet FromTokenizationServiceToWalletContext is command Wallet.AddPaymentMethod
     handler FromTokenizationServiceHandler is {
-      on event TokenizationService.CardTokenized is {
-        do "the model receives card tokenized"
+      on cardTokenized: event TokenizationService.CardTokenized is {
+        let item0: type Wallet.AddPaymentMethod = prompt("translate the cardTokenized event into a AddPaymentMethod, a tokenised card is what can actually be stored as a payment method")
+        send item0 to outlet WalletContext.FromTokenizationService.FromTokenizationServiceToWalletContext
       }
       on other is {
         error "Unexpected message for adaptor FromTokenizationService"

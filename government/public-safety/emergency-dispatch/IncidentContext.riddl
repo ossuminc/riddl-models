@@ -1,5 +1,23 @@
 // Emergency Dispatch - Incident Context
 context IncidentContext as router is {
+  inlet IncidentContextFromE911Service is command Incident.CreateIncident with {
+    briefly "What FromE911Service makes of that service's news"
+  }
+  connector 'FromE911Service Intake' is from outlet IncidentContext.FromE911Service.FromE911ServiceToIncidentContext to inlet IncidentContext.IncidentContextFromE911Service with {
+    briefly "What FromE911Service makes of that news, on its way in"
+  }
+  inlet IncidentContextFromMDTService is command Incident.MarkUnitEnRoute with {
+    briefly "What FromMDTService makes of that service's news"
+  }
+  connector 'FromMDTService Intake' is from outlet IncidentContext.FromMDTService.FromMDTServiceToIncidentContext to inlet IncidentContext.IncidentContextFromMDTService with {
+    briefly "What FromMDTService makes of that news, on its way in"
+  }
+  inlet IncidentContextFromRadioService is command Incident.UpgradePriority with {
+    briefly "What FromRadioService makes of that service's news"
+  }
+  connector 'FromRadioService Intake' is from outlet IncidentContext.FromRadioService.FromRadioServiceToIncidentContext to inlet IncidentContext.IncidentContextFromRadioService with {
+    briefly "What FromRadioService makes of that news, on its way in"
+  }
   connector 'ResponseTimeAnalytics Storage' is from outlet IncidentContext.ResponseTimeAnalytics.ResponseTimeAnalyticsToRepository to inlet IncidentContext.IncidentRepository.IncidentRepositoryFromResponseTimeAnalytics with {
     briefly "ResponseTimeAnalytics messages on their way to IncidentRepository"
     described as {
@@ -65,10 +83,10 @@ context IncidentContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'IncidentCommand Stream Intake' is from outlet IncidentContext.IncidentCommandStreamOut to inlet IncidentContext.Incident.IncidentCommands  connector 'IncidentQueryResult Stream Egress' is from outlet IncidentContext.IncidentRepository.IncidentRepositoryResponses to inlet IncidentContext.IncidentQueryResultStreamIn  adaptor FromAVLService from context AVLService is { 
-    handler FromAVLServiceHandler is {
-      on event AVLService.UnitLocationUpdated is {
-        do "the model receives unit location updated"
+  connector 'IncidentCommand Stream Intake' is from outlet IncidentContext.IncidentCommandStreamOut to inlet IncidentContext.Incident.IncidentCommands  connector 'IncidentQueryResult Stream Egress' is from outlet IncidentContext.IncidentRepository.IncidentRepositoryResponses to inlet IncidentContext.IncidentQueryResultStreamIn  adaptor FromAVLService from context AVLService as flow is { 
+    inlet FromAVLServiceIn is event AVLService.UnitLocationUpdated    handler FromAVLServiceHandler is {
+      on unitLocationUpdated: event AVLService.UnitLocationUpdated is {
+        do "unit positions move constantly; the incident's own record does not change with them"
       }
       on other is {
         error "Unexpected message for adaptor FromAVLService"
@@ -111,16 +129,18 @@ context IncidentContext as router is {
       |The model's side of the AVLService conversation.
     }
   }
-  adaptor FromE911Service from context E911Service is { 
+  adaptor FromE911Service from context E911Service as flow is { 
+    inlet FromE911ServiceIn is type E911Service.E911ServiceEvent    outlet FromE911ServiceToIncidentContext is command Incident.CreateIncident
     handler FromE911ServiceHandler is {
-      on event E911Service.CallAnswered is {
-        do "the model receives call answered"
+      on callAnswered: event E911Service.CallAnswered is {
+        do "the call is answered; the incident is created from what the caller says"
       }
-      on event E911Service.CallEnded is {
-        do "the model receives call ended"
+      on callEnded: event E911Service.CallEnded is {
+        do "the call ending does not end the incident it created"
       }
-      on event E911Service.IncomingCall is {
-        do "the model receives incoming call"
+      on incomingCall: event E911Service.IncomingCall is {
+        let item0: type Incident.CreateIncident = prompt("translate the incomingCall event into a CreateIncident, a call coming in is what an incident is opened from")
+        send item0 to outlet IncidentContext.FromE911Service.FromE911ServiceToIncidentContext
       }
       on other is {
         error "Unexpected message for adaptor FromE911Service"
@@ -193,13 +213,15 @@ context IncidentContext as router is {
       |The model's side of the GISService conversation.
     }
   }
-  adaptor FromMDTService from context MDTService is { 
+  adaptor FromMDTService from context MDTService as flow is { 
+    inlet FromMDTServiceIn is type MDTService.MDTServiceEvent    outlet FromMDTServiceToIncidentContext is command Incident.MarkUnitEnRoute
     handler FromMDTServiceHandler is {
-      on event MDTService.DispatchAcknowledged is {
-        do "the model receives dispatch acknowledged"
+      on dispatchAcknowledged: event MDTService.DispatchAcknowledged is {
+        let item0: type Incident.MarkUnitEnRoute = prompt("translate the dispatchAcknowledged event into a MarkUnitEnRoute, a unit acknowledging the dispatch is a unit on its way")
+        send item0 to outlet IncidentContext.FromMDTService.FromMDTServiceToIncidentContext
       }
-      on event MDTService.MessageReceived is {
-        do "the model receives message received"
+      on messageReceived: event MDTService.MessageReceived is {
+        do "the unit has the message; the incident log already holds what was sent"
       }
       on other is {
         error "Unexpected message for adaptor FromMDTService"
@@ -268,13 +290,15 @@ context IncidentContext as router is {
       |The model's side of the RMSService conversation.
     }
   }
-  adaptor FromRadioService from context RadioService is { 
+  adaptor FromRadioService from context RadioService as flow is { 
+    inlet FromRadioServiceIn is type RadioService.RadioServiceEvent    outlet FromRadioServiceToIncidentContext is command Incident.UpgradePriority
     handler FromRadioServiceHandler is {
-      on event RadioService.EmergencyButtonPressed is {
-        do "the model receives emergency button pressed"
+      on emergencyButtonPressed: event RadioService.EmergencyButtonPressed is {
+        let item0: type Incident.UpgradePriority = prompt("translate the emergencyButtonPressed event into a UpgradePriority, an officer pressing emergency is the strongest priority signal there is")
+        send item0 to outlet IncidentContext.FromRadioService.FromRadioServiceToIncidentContext
       }
-      on event RadioService.TalkgroupAssigned is {
-        do "the model receives talkgroup assigned"
+      on talkgroupAssigned: event RadioService.TalkgroupAssigned is {
+        do "the talkgroup is assigned; the incident recorded asking for it"
       }
       on other is {
         error "Unexpected message for adaptor FromRadioService"

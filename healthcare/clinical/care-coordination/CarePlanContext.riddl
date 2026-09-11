@@ -1,5 +1,11 @@
 // Care Coordination - Care Plan Context
 context CarePlanContext as router is {
+  inlet CarePlanContextFromReferralManagementService is command CarePlan.UpdateReferralStatus with {
+    briefly "What FromReferralManagementService makes of that service's news"
+  }
+  connector 'FromReferralManagementService Intake' is from outlet CarePlanContext.FromReferralManagementService.FromReferralManagementServiceToCarePlanContext to inlet CarePlanContext.CarePlanContextFromReferralManagementService with {
+    briefly "What FromReferralManagementService makes of that news, on its way in"
+  }
   inlet CarePlanCommandStreamIn is type CarePlanCommand  outlet CarePlanCommandStreamOut is type CarePlanCommand
   inlet CarePlanResultStreamIn is result CarePlan.CarePlanResult  outlet CarePlanResultStreamOut is result CarePlan.CarePlanResult
   handler CarePlanContextBoundary is {
@@ -50,10 +56,10 @@ context CarePlanContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'CarePlanCommand Stream Intake' is from outlet CarePlanContext.CarePlanCommandStreamOut to inlet CarePlanContext.CarePlan.CarePlanCommands  connector 'CarePlanResult Stream Egress' is from outlet CarePlanContext.CarePlanRepository.CarePlanRepositoryResponses to inlet CarePlanContext.CarePlanResultStreamIn  adaptor FromHIEService from context HIEService is { 
-    handler FromHIEServiceHandler is {
-      on event HIEService.CarePlanShared is {
-        do "the model receives care plan shared"
+  connector 'CarePlanCommand Stream Intake' is from outlet CarePlanContext.CarePlanCommandStreamOut to inlet CarePlanContext.CarePlan.CarePlanCommands  connector 'CarePlanResult Stream Egress' is from outlet CarePlanContext.CarePlanRepository.CarePlanRepositoryResponses to inlet CarePlanContext.CarePlanResultStreamIn  adaptor FromHIEService from context HIEService as flow is { 
+    inlet FromHIEServiceIn is event HIEService.CarePlanShared    handler FromHIEServiceHandler is {
+      on carePlanShared: event HIEService.CarePlanShared is {
+        do "the exchange has the plan; sharing it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromHIEService"
@@ -174,13 +180,15 @@ context CarePlanContext as router is {
       |The model's side of the ProviderDirectoryService conversation.
     }
   }
-  adaptor FromReferralManagementService from context ReferralManagementService is { 
+  adaptor FromReferralManagementService from context ReferralManagementService as flow is { 
+    inlet FromReferralManagementServiceIn is type ReferralManagementService.ReferralManagementServiceEvent    outlet FromReferralManagementServiceToCarePlanContext is command CarePlan.UpdateReferralStatus
     handler FromReferralManagementServiceHandler is {
-      on event ReferralManagementService.ReferralAcknowledged is {
-        do "the model receives referral acknowledged"
+      on referralAcknowledged: event ReferralManagementService.ReferralAcknowledged is {
+        let item0: type CarePlan.UpdateReferralStatus = prompt("translate the referralAcknowledged event into a UpdateReferralStatus, the receiving provider acknowledging is exactly what the referral's status records")
+        send item0 to outlet CarePlanContext.FromReferralManagementService.FromReferralManagementServiceToCarePlanContext
       }
-      on event ReferralManagementService.ReferralSent is {
-        do "the model receives referral sent"
+      on referralSent: event ReferralManagementService.ReferralSent is {
+        do "the referral is out; the care plan recorded making it"
       }
       on other is {
         error "Unexpected message for adaptor FromReferralManagementService"

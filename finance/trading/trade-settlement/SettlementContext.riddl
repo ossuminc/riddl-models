@@ -1,5 +1,38 @@
 // Trade Settlement - Settlement Context
 context SettlementContext as router is {
+  type FromClearinghouseServiceCommand is one of {
+    Settlement.ConfirmSettlement or Settlement.FailSettlement
+  } with {
+    briefly "What FromClearinghouseService turns that service's news into"
+  }
+  inlet SettlementContextFromClearinghouseService is type SettlementContext.FromClearinghouseServiceCommand with {
+    briefly "What FromClearinghouseService makes of that service's news"
+  }
+  connector 'FromClearinghouseService Intake' is from outlet SettlementContext.FromClearinghouseService.FromClearinghouseServiceToSettlementContext to inlet SettlementContext.SettlementContextFromClearinghouseService with {
+    briefly "What FromClearinghouseService makes of that news, on its way in"
+  }
+  type FromCustodianServiceCommand is one of {
+    Settlement.ConfirmSettlement or Settlement.FailSettlement
+  } with {
+    briefly "What FromCustodianService turns that service's news into"
+  }
+  inlet SettlementContextFromCustodianService is type SettlementContext.FromCustodianServiceCommand with {
+    briefly "What FromCustodianService makes of that service's news"
+  }
+  connector 'FromCustodianService Intake' is from outlet SettlementContext.FromCustodianService.FromCustodianServiceToSettlementContext to inlet SettlementContext.SettlementContextFromCustodianService with {
+    briefly "What FromCustodianService makes of that news, on its way in"
+  }
+  type FromTradeMatchingServiceCommand is one of {
+    Settlement.HoldSettlement or Settlement.MatchTrade
+  } with {
+    briefly "What FromTradeMatchingService turns that service's news into"
+  }
+  inlet SettlementContextFromTradeMatchingService is type SettlementContext.FromTradeMatchingServiceCommand with {
+    briefly "What FromTradeMatchingService makes of that service's news"
+  }
+  connector 'FromTradeMatchingService Intake' is from outlet SettlementContext.FromTradeMatchingService.FromTradeMatchingServiceToSettlementContext to inlet SettlementContext.SettlementContextFromTradeMatchingService with {
+    briefly "What FromTradeMatchingService makes of that news, on its way in"
+  }
   inlet SettlementCommandStreamIn is type SettlementCommand  outlet SettlementCommandStreamOut is type SettlementCommand
   inlet SettlementResultStreamIn is result Settlement.SettlementResult  outlet SettlementResultStreamOut is result Settlement.SettlementResult
   handler SettlementContextBoundary is {
@@ -50,10 +83,10 @@ context SettlementContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'SettlementCommand Stream Intake' is from outlet SettlementContext.SettlementCommandStreamOut to inlet SettlementContext.Settlement.SettlementCommands  connector 'SettlementResult Stream Egress' is from outlet SettlementContext.SettlementRepository.SettlementRepositoryResponses to inlet SettlementContext.SettlementResultStreamIn  adaptor FromCashService from context CashService is { 
-    handler FromCashServiceHandler is {
-      on event CashService.CashBalanceUpdated is {
-        do "the model receives cash balance updated"
+  connector 'SettlementCommand Stream Intake' is from outlet SettlementContext.SettlementCommandStreamOut to inlet SettlementContext.Settlement.SettlementCommands  connector 'SettlementResult Stream Egress' is from outlet SettlementContext.SettlementRepository.SettlementRepositoryResponses to inlet SettlementContext.SettlementResultStreamIn  adaptor FromCashService from context CashService as flow is { 
+    inlet FromCashServiceIn is event CashService.CashBalanceUpdated    handler FromCashServiceHandler is {
+      on cashBalanceUpdated: event CashService.CashBalanceUpdated is {
+        do "the cash book agrees; settlement recorded the movement when it instructed it"
       }
       on other is {
         error "Unexpected message for adaptor FromCashService"
@@ -92,13 +125,16 @@ context SettlementContext as router is {
       |The model's side of the CashService conversation.
     }
   }
-  adaptor FromClearinghouseService from context ClearinghouseService is { 
+  adaptor FromClearinghouseService from context ClearinghouseService as flow is { 
+    inlet FromClearinghouseServiceIn is type ClearinghouseService.ClearinghouseServiceEvent    outlet FromClearinghouseServiceToSettlementContext is type SettlementContext.FromClearinghouseServiceCommand
     handler FromClearinghouseServiceHandler is {
-      on event ClearinghouseService.ClearingAccepted is {
-        do "the model receives clearing accepted"
+      on clearingAccepted: event ClearinghouseService.ClearingAccepted is {
+        let item0: type Settlement.ConfirmSettlement = prompt("translate the clearingAccepted event into a ConfirmSettlement, the clearinghouse accepting is what confirms the settlement")
+        send item0 to outlet SettlementContext.FromClearinghouseService.FromClearinghouseServiceToSettlementContext
       }
-      on event ClearinghouseService.ClearingRejected is {
-        do "the model receives clearing rejected"
+      on clearingRejected: event ClearinghouseService.ClearingRejected is {
+        let item0: type Settlement.FailSettlement = prompt("translate the clearingRejected event into a FailSettlement, a rejected submission is a failed settlement, not a pending one")
+        send item0 to outlet SettlementContext.FromClearinghouseService.FromClearinghouseServiceToSettlementContext
       }
       on other is {
         error "Unexpected message for adaptor FromClearinghouseService"
@@ -137,16 +173,19 @@ context SettlementContext as router is {
       |The model's side of the ClearinghouseService conversation.
     }
   }
-  adaptor FromCustodianService from context CustodianService is { 
+  adaptor FromCustodianService from context CustodianService as flow is { 
+    inlet FromCustodianServiceIn is type CustodianService.CustodianServiceEvent    outlet FromCustodianServiceToSettlementContext is type SettlementContext.FromCustodianServiceCommand
     handler FromCustodianServiceHandler is {
-      on event CustodianService.InstructionAcknowledged is {
-        do "the model receives instruction acknowledged"
+      on instructionAcknowledged: event CustodianService.InstructionAcknowledged is {
+        do "the custodian has the instruction; what matters next is whether they execute it"
       }
-      on event CustodianService.SettlementExecuted is {
-        do "the model receives settlement executed"
+      on settlementExecuted: event CustodianService.SettlementExecuted is {
+        let item0: type Settlement.ConfirmSettlement = prompt("translate the settlementExecuted event into a ConfirmSettlement, the custodian executing is the settlement actually happening")
+        send item0 to outlet SettlementContext.FromCustodianService.FromCustodianServiceToSettlementContext
       }
-      on event CustodianService.SettlementFailedAtCustodian is {
-        do "the model receives settlement failed at custodian"
+      on settlementFailedAtCustodian: event CustodianService.SettlementFailedAtCustodian is {
+        let item0: type Settlement.FailSettlement = prompt("translate the settlementFailedAtCustodian event into a FailSettlement, a settlement the custodian could not execute has failed")
+        send item0 to outlet SettlementContext.FromCustodianService.FromCustodianServiceToSettlementContext
       }
       on other is {
         error "Unexpected message for adaptor FromCustodianService"
@@ -219,10 +258,10 @@ context SettlementContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromPositionService from context PositionService is { 
-    handler FromPositionServiceHandler is {
-      on event PositionService.PositionUpdated is {
-        do "the model receives position updated"
+  adaptor FromPositionService from context PositionService as flow is { 
+    inlet FromPositionServiceIn is event PositionService.PositionUpdated    handler FromPositionServiceHandler is {
+      on positionUpdated: event PositionService.PositionUpdated is {
+        do "positions agree; settlement recorded the movement when it instructed it"
       }
       on other is {
         error "Unexpected message for adaptor FromPositionService"
@@ -261,13 +300,16 @@ context SettlementContext as router is {
       |The model's side of the PositionService conversation.
     }
   }
-  adaptor FromTradeMatchingService from context TradeMatchingService is { 
+  adaptor FromTradeMatchingService from context TradeMatchingService as flow is { 
+    inlet FromTradeMatchingServiceIn is type TradeMatchingService.TradeMatchingServiceEvent    outlet FromTradeMatchingServiceToSettlementContext is type SettlementContext.FromTradeMatchingServiceCommand
     handler FromTradeMatchingServiceHandler is {
-      on event TradeMatchingService.NoMatchFound is {
-        do "the model receives no match found"
+      on noMatchFound: event TradeMatchingService.NoMatchFound is {
+        let item0: type Settlement.HoldSettlement = prompt("translate the noMatchFound event into a HoldSettlement, an unmatched trade cannot settle, so it is held rather than sent on")
+        send item0 to outlet SettlementContext.FromTradeMatchingService.FromTradeMatchingServiceToSettlementContext
       }
-      on event TradeMatchingService.TradeMatchFound is {
-        do "the model receives trade match found"
+      on tradeMatchFound: event TradeMatchingService.TradeMatchFound is {
+        let item0: type Settlement.MatchTrade = prompt("translate the tradeMatchFound event into a MatchTrade, a match found is exactly what the settlement's matched state records")
+        send item0 to outlet SettlementContext.FromTradeMatchingService.FromTradeMatchingServiceToSettlementContext
       }
       on other is {
         error "Unexpected message for adaptor FromTradeMatchingService"

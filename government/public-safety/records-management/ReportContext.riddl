@@ -1,5 +1,17 @@
 // Records Management - Report Context
 context ReportContext as router is {
+  inlet ReportContextFromEvidenceLabService is command Report.AddEvidence with {
+    briefly "What FromEvidenceLabService makes of that service's news"
+  }
+  connector 'FromEvidenceLabService Intake' is from outlet ReportContext.FromEvidenceLabService.FromEvidenceLabServiceToReportContext to inlet ReportContext.ReportContextFromEvidenceLabService with {
+    briefly "What FromEvidenceLabService makes of that news, on its way in"
+  }
+  inlet ReportContextFromProsecutorService is command Report.LinkToCase with {
+    briefly "What FromProsecutorService makes of that service's news"
+  }
+  connector 'FromProsecutorService Intake' is from outlet ReportContext.FromProsecutorService.FromProsecutorServiceToReportContext to inlet ReportContext.ReportContextFromProsecutorService with {
+    briefly "What FromProsecutorService makes of that news, on its way in"
+  }
   connector 'EvidenceInventory Storage' is from outlet ReportContext.EvidenceInventory.EvidenceInventoryToRepository to inlet ReportContext.ReportRepository.ReportRepositoryFromEvidenceInventory with {
     briefly "EvidenceInventory messages on their way to ReportRepository"
     described as {
@@ -77,16 +89,16 @@ context ReportContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'ReportCommand Stream Intake' is from outlet ReportContext.ReportCommandStreamOut to inlet ReportContext.Report.ReportCommands  connector 'ReportResult Stream Egress' is from outlet ReportContext.ReportRepository.ReportRepositoryResponses to inlet ReportContext.ReportResultStreamIn  adaptor FromCourtService from context CourtService is { 
-    handler FromCourtServiceHandler is {
-      on event CourtService.ProtectiveOrderIssued is {
-        do "the model receives protective order issued"
+  connector 'ReportCommand Stream Intake' is from outlet ReportContext.ReportCommandStreamOut to inlet ReportContext.Report.ReportCommands  connector 'ReportResult Stream Egress' is from outlet ReportContext.ReportRepository.ReportRepositoryResponses to inlet ReportContext.ReportResultStreamIn  adaptor FromCourtService from context CourtService as flow is { 
+    inlet FromCourtServiceIn is type CourtService.CourtServiceEvent    handler FromCourtServiceHandler is {
+      on protectiveOrderIssued: event CourtService.ProtectiveOrderIssued is {
+        do "the order is the court's instrument; the report records the offence, not the court's orders"
       }
-      on event CourtService.WarrantIssued is {
-        do "the model receives warrant issued"
+      on warrantIssued: event CourtService.WarrantIssued is {
+        do "a warrant is the court's instrument; the report's own arrest record is separate"
       }
-      on event CourtService.WarrantRecalled is {
-        do "the model receives warrant recalled"
+      on warrantRecalled: event CourtService.WarrantRecalled is {
+        do "a recalled warrant changes what officers may do, not what the report says happened"
       }
       on other is {
         error "Unexpected message for adaptor FromCourtService"
@@ -129,13 +141,15 @@ context ReportContext as router is {
       |The model's side of the DMVService conversation.
     }
   }
-  adaptor FromEvidenceLabService from context EvidenceLabService is { 
+  adaptor FromEvidenceLabService from context EvidenceLabService as flow is { 
+    inlet FromEvidenceLabServiceIn is type EvidenceLabService.EvidenceLabServiceEvent    outlet FromEvidenceLabServiceToReportContext is command Report.AddEvidence
     handler FromEvidenceLabServiceHandler is {
-      on event EvidenceLabService.AnalysisCompleted is {
-        do "the model receives analysis completed"
+      on analysisCompleted: event EvidenceLabService.AnalysisCompleted is {
+        do "the analysis is done; its findings reach the report when someone adds them as evidence"
       }
-      on event EvidenceLabService.AnalysisReceived is {
-        do "the model receives analysis received"
+      on analysisReceived: event EvidenceLabService.AnalysisReceived is {
+        let item0: type Report.AddEvidence = prompt("translate the analysisReceived event into a AddEvidence, lab findings returned are evidence the report must carry")
+        send item0 to outlet ReportContext.FromEvidenceLabService.FromEvidenceLabServiceToReportContext
       }
       on other is {
         error "Unexpected message for adaptor FromEvidenceLabService"
@@ -174,10 +188,10 @@ context ReportContext as router is {
       |The model's side of the EvidenceLabService conversation.
     }
   }
-  adaptor FromJailService from context JailService is { 
-    handler FromJailServiceHandler is {
-      on event JailService.InmateReleased is {
-        do "the model receives inmate released"
+  adaptor FromJailService from context JailService as flow is { 
+    inlet FromJailServiceIn is event JailService.InmateReleased    handler FromJailServiceHandler is {
+      on inmateReleased: event JailService.InmateReleased is {
+        do "release is the jail's act; the report's arrest record stands regardless"
       }
       on other is {
         error "Unexpected message for adaptor FromJailService"
@@ -246,16 +260,18 @@ context ReportContext as router is {
       |The model's side of the NCICService conversation.
     }
   }
-  adaptor FromProsecutorService from context ProsecutorService is { 
+  adaptor FromProsecutorService from context ProsecutorService as flow is { 
+    inlet FromProsecutorServiceIn is type ProsecutorService.ProsecutorServiceEvent    outlet FromProsecutorServiceToReportContext is command Report.LinkToCase
     handler FromProsecutorServiceHandler is {
-      on event ProsecutorService.CaseDeclinedNotification is {
-        do "the model receives case declined notification"
+      on caseDeclinedNotification: event ProsecutorService.CaseDeclinedNotification is {
+        do "a declined case leaves the report as it is; nothing in it was wrong"
       }
-      on event ProsecutorService.CasePacketReceived is {
-        do "the model receives case packet received"
+      on casePacketReceived: event ProsecutorService.CasePacketReceived is {
+        do "the prosecutor has the packet; the report was approved before it was sent"
       }
-      on event ProsecutorService.ChargesFiledNotification is {
-        do "the model receives charges filed notification"
+      on chargesFiledNotification: event ProsecutorService.ChargesFiledNotification is {
+        let item0: type Report.LinkToCase = prompt("translate the chargesFiledNotification event into a LinkToCase, charges filed give the report a prosecution to be linked to")
+        send item0 to outlet ReportContext.FromProsecutorService.FromProsecutorServiceToReportContext
       }
       on other is {
         error "Unexpected message for adaptor FromProsecutorService"
