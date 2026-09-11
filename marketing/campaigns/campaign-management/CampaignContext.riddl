@@ -1,5 +1,23 @@
 // Campaign Management Bounded Context
 context CampaignContext as router is {
+  inlet CampaignContextFromAudienceContext is command Campaign.RemoveTargetAudience with {
+    briefly "What FromAudienceContext makes of that service's news"
+  }
+  connector 'FromAudienceContext Intake' is from outlet CampaignContext.FromAudienceContext.FromAudienceContextToCampaignContext to inlet CampaignContext.CampaignContextFromAudienceContext with {
+    briefly "What FromAudienceContext makes of that news, on its way in"
+  }
+  inlet CampaignContextFromBillingContext is command Campaign.PauseCampaign with {
+    briefly "What FromBillingContext makes of that service's news"
+  }
+  connector 'FromBillingContext Intake' is from outlet CampaignContext.FromBillingContext.FromBillingContextToCampaignContext to inlet CampaignContext.CampaignContextFromBillingContext with {
+    briefly "What FromBillingContext makes of that news, on its way in"
+  }
+  inlet CampaignContextFromChannelContext is command Campaign.RecordPerformanceUpdate with {
+    briefly "What FromChannelContext makes of that service's news"
+  }
+  connector 'FromChannelContext Intake' is from outlet CampaignContext.FromChannelContext.FromChannelContextToCampaignContext to inlet CampaignContext.CampaignContextFromChannelContext with {
+    briefly "What FromChannelContext makes of that news, on its way in"
+  }
   connector 'CampaignPerformanceProjector Storage' is from outlet CampaignContext.CampaignPerformanceProjector.CampaignPerformanceProjectorToRepository to inlet CampaignContext.CampaignRepository.CampaignRepositoryFromCampaignPerformanceProjector with {
     briefly "CampaignPerformanceProjector messages on their way to CampaignRepository"
     described as {
@@ -59,16 +77,16 @@ context CampaignContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'CampaignCommand Stream Intake' is from outlet CampaignContext.CampaignCommandStreamOut to inlet CampaignContext.Campaign.CampaignCommands  connector 'CampaignResult Stream Egress' is from outlet CampaignContext.CampaignRepository.CampaignRepositoryResponses to inlet CampaignContext.CampaignResultStreamIn  adaptor FromAnalyticsContext from context AnalyticsContext is { 
-    handler FromAnalyticsContextHandler is {
-      on event AnalyticsContext.AnalyticsReportGenerated is {
-        do "the model receives analytics report generated"
+  connector 'CampaignCommand Stream Intake' is from outlet CampaignContext.CampaignCommandStreamOut to inlet CampaignContext.Campaign.CampaignCommands  connector 'CampaignResult Stream Egress' is from outlet CampaignContext.CampaignRepository.CampaignRepositoryResponses to inlet CampaignContext.CampaignResultStreamIn  adaptor FromAnalyticsContext from context AnalyticsContext as flow is { 
+    inlet FromAnalyticsContextIn is type AnalyticsContext.AnalyticsContextEvent    handler FromAnalyticsContextHandler is {
+      on analyticsReportGenerated: event AnalyticsContext.AnalyticsReportGenerated is {
+        do "the report exists; a manager reads it"
       }
-      on event AnalyticsContext.AnomalyDetected is {
-        do "the model receives anomaly detected"
+      on anomalyDetected: event AnalyticsContext.AnomalyDetected is {
+        do "an anomaly is flagged; pausing the campaign is the manager's call"
       }
-      on event AnalyticsContext.OptimizationRecommended is {
-        do "the model receives optimization recommended"
+      on optimizationRecommended: event AnalyticsContext.OptimizationRecommended is {
+        do "analytics recommends a change; reallocating budget is the manager's decision"
       }
       on other is {
         error "Unexpected message for adaptor FromAnalyticsContext"
@@ -85,13 +103,15 @@ context CampaignContext as router is {
       |The model's side of the AnalyticsContext conversation.
     }
   }
-  adaptor FromAudienceContext from context AudienceContext is { 
+  adaptor FromAudienceContext from context AudienceContext as flow is { 
+    inlet FromAudienceContextIn is type AudienceContext.AudienceContextEvent    outlet FromAudienceContextToCampaignContext is command Campaign.RemoveTargetAudience
     handler FromAudienceContextHandler is {
-      on event AudienceContext.AudienceDeactivated is {
-        do "the model receives audience deactivated"
+      on audienceDeactivated: event AudienceContext.AudienceDeactivated is {
+        let item0: type Campaign.RemoveTargetAudience = prompt("translate the audienceDeactivated event into a RemoveTargetAudience, a deactivated audience can no longer be targeted, so the campaign drops it")
+        send item0 to outlet CampaignContext.FromAudienceContext.FromAudienceContextToCampaignContext
       }
-      on event AudienceContext.AudienceUpdated is {
-        do "the model receives audience updated"
+      on audienceUpdated: event AudienceContext.AudienceUpdated is {
+        do "the audience changed; the campaign targets it by reference and needs nothing"
       }
       on other is {
         error "Unexpected message for adaptor FromAudienceContext"
@@ -108,16 +128,18 @@ context CampaignContext as router is {
       |The model's side of the AudienceContext conversation.
     }
   }
-  adaptor FromBillingContext from context BillingContext is { 
+  adaptor FromBillingContext from context BillingContext as flow is { 
+    inlet FromBillingContextIn is type BillingContext.BillingContextEvent    outlet FromBillingContextToCampaignContext is command Campaign.PauseCampaign
     handler FromBillingContextHandler is {
-      on event BillingContext.BudgetExhausted is {
-        do "the model receives budget exhausted"
+      on budgetExhausted: event BillingContext.BudgetExhausted is {
+        let item0: type Campaign.PauseCampaign = prompt("translate the budgetExhausted event into a PauseCampaign, a campaign with no budget left cannot keep spending, so it pauses")
+        send item0 to outlet CampaignContext.FromBillingContext.FromBillingContextToCampaignContext
       }
-      on event BillingContext.BudgetReplenished is {
-        do "the model receives budget replenished"
+      on budgetReplenished: event BillingContext.BudgetReplenished is {
+        do "there is budget again; resuming the campaign is the manager's call"
       }
-      on event BillingContext.PaymentFailed is {
-        do "the model receives payment failed"
+      on paymentFailed: event BillingContext.PaymentFailed is {
+        do "the payment did not go through; billing asks again and the campaign runs on what budget remains"
       }
       on other is {
         error "Unexpected message for adaptor FromBillingContext"
@@ -134,16 +156,18 @@ context CampaignContext as router is {
       |The model's side of the BillingContext conversation.
     }
   }
-  adaptor FromChannelContext from context ChannelContext is { 
+  adaptor FromChannelContext from context ChannelContext as flow is { 
+    inlet FromChannelContextIn is type ChannelContext.ChannelContextEvent    outlet FromChannelContextToCampaignContext is command Campaign.RecordPerformanceUpdate
     handler FromChannelContextHandler is {
-      on event ChannelContext.ChannelDeliveryStarted is {
-        do "the model receives channel delivery started"
+      on channelDeliveryStarted: event ChannelContext.ChannelDeliveryStarted is {
+        do "the channel is delivering; launching was recorded here"
       }
-      on event ChannelContext.ChannelDeliveryStopped is {
-        do "the model receives channel delivery stopped"
+      on channelDeliveryStopped: event ChannelContext.ChannelDeliveryStopped is {
+        do "the channel has stopped; the pause or completion that stopped it was recorded here"
       }
-      on event ChannelContext.ChannelMetricsReceived is {
-        do "the model receives channel metrics received"
+      on channelMetricsReceived: event ChannelContext.ChannelMetricsReceived is {
+        let item0: type Campaign.RecordPerformanceUpdate = prompt("translate the channelMetricsReceived event into a RecordPerformanceUpdate, the channel's metrics are the performance the campaign records for that channel")
+        send item0 to outlet CampaignContext.FromChannelContext.FromChannelContextToCampaignContext
       }
       on other is {
         error "Unexpected message for adaptor FromChannelContext"
@@ -160,13 +184,13 @@ context CampaignContext as router is {
       |The model's side of the ChannelContext conversation.
     }
   }
-  adaptor FromNotificationContext from context NotificationContext is { 
-    handler FromNotificationContextHandler is {
-      on event NotificationContext.NotificationFailed is {
-        do "the model receives notification failed"
+  adaptor FromNotificationContext from context NotificationContext as flow is { 
+    inlet FromNotificationContextIn is type NotificationContext.NotificationContextEvent    handler FromNotificationContextHandler is {
+      on notificationFailed: event NotificationContext.NotificationFailed is {
+        do "the alert did not reach anyone; the campaign's own state is unchanged"
       }
-      on event NotificationContext.NotificationSent is {
-        do "the model receives notification sent"
+      on notificationSent: event NotificationContext.NotificationSent is {
+        do "the alert has gone; the metrics or pause that raised it were recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromNotificationContext"

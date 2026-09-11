@@ -1,5 +1,11 @@
 // Payroll Processing - Payroll Context
 context PayrollContext as router is {
+  inlet PayrollContextFromBankingService is command PayrollRun.CompletePayroll with {
+    briefly "What FromBankingService makes of that service's news"
+  }
+  connector 'FromBankingService Intake' is from outlet PayrollContext.FromBankingService.FromBankingServiceToPayrollContext to inlet PayrollContext.PayrollContextFromBankingService with {
+    briefly "What FromBankingService makes of that news, on its way in"
+  }
   inlet PayrollRunCommandStreamIn is type PayrollRunCommand  outlet PayrollRunCommandStreamOut is type PayrollRunCommand
   inlet PayrollRunResultStreamIn is result PayrollRun.PayrollRunResult  outlet PayrollRunResultStreamOut is result PayrollRun.PayrollRunResult
   handler PayrollContextBoundary is {
@@ -47,13 +53,15 @@ context PayrollContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'PayrollRunCommand Stream Intake' is from outlet PayrollContext.PayrollRunCommandStreamOut to inlet PayrollContext.PayrollRun.PayrollRunCommands  connector 'PayrollRunResult Stream Egress' is from outlet PayrollContext.PayrollRepository.PayrollRepositoryResponses to inlet PayrollContext.PayrollRunResultStreamIn  adaptor FromBankingService from context BankingService is { 
+  connector 'PayrollRunCommand Stream Intake' is from outlet PayrollContext.PayrollRunCommandStreamOut to inlet PayrollContext.PayrollRun.PayrollRunCommands  connector 'PayrollRunResult Stream Egress' is from outlet PayrollContext.PayrollRepository.PayrollRepositoryResponses to inlet PayrollContext.PayrollRunResultStreamIn  adaptor FromBankingService from context BankingService as flow is { 
+    inlet FromBankingServiceIn is type BankingService.BankingServiceEvent    outlet FromBankingServiceToPayrollContext is command PayrollRun.CompletePayroll
     handler FromBankingServiceHandler is {
-      on event BankingService.ACHBatchSettled is {
-        do "the model receives ach batch settled"
+      on aCHBatchSettled: event BankingService.ACHBatchSettled is {
+        let item0: type PayrollRun.CompletePayroll = prompt("translate the aCHBatchSettled event into a CompletePayroll, money landed in employees' accounts is what completes the run")
+        send item0 to outlet PayrollContext.FromBankingService.FromBankingServiceToPayrollContext
       }
-      on event BankingService.ACHBatchSubmitted is {
-        do "the model receives ach batch submitted"
+      on aCHBatchSubmitted: event BankingService.ACHBatchSubmitted is {
+        do "the bank has the batch; approving the payroll was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromBankingService"
@@ -92,10 +100,10 @@ context PayrollContext as router is {
       |The model's side of the BankingService conversation.
     }
   }
-  adaptor FromGeneralLedger from context GeneralLedger is { 
-    handler FromGeneralLedgerHandler is {
-      on event GeneralLedger.JournalEntryPosted is {
-        do "the model receives journal entry posted"
+  adaptor FromGeneralLedger from context GeneralLedger as flow is { 
+    inlet FromGeneralLedgerIn is event GeneralLedger.JournalEntryPosted    handler FromGeneralLedgerHandler is {
+      on journalEntryPosted: event GeneralLedger.JournalEntryPosted is {
+        do "the ledger has the entry; approving the payroll was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromGeneralLedger"

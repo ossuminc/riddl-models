@@ -1,5 +1,11 @@
 // Contract Lifecycle - Contract Context
 context ContractContext as router is {
+  inlet ContractContextFromESignatureService is command Contract.RecordSignature with {
+    briefly "What FromESignatureService makes of that service's news"
+  }
+  connector 'FromESignatureService Intake' is from outlet ContractContext.FromESignatureService.FromESignatureServiceToContractContext to inlet ContractContext.ContractContextFromESignatureService with {
+    briefly "What FromESignatureService makes of that news, on its way in"
+  }
   inlet ContractCommandStreamIn is type ContractCommand  outlet ContractCommandStreamOut is type ContractCommand
   inlet ContractResultStreamIn is result Contract.ContractResult  outlet ContractResultStreamOut is result Contract.ContractResult
   handler ContractContextBoundary is {
@@ -65,10 +71,10 @@ context ContractContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'ContractCommand Stream Intake' is from outlet ContractContext.ContractCommandStreamOut to inlet ContractContext.Contract.ContractCommands  connector 'ContractResult Stream Egress' is from outlet ContractContext.ContractRepository.ContractRepositoryResponses to inlet ContractContext.ContractResultStreamIn  adaptor FromDocumentRepository from context DocumentRepository is { 
-    handler FromDocumentRepositoryHandler is {
-      on event DocumentRepository.DocumentStored is {
-        do "the model receives document stored"
+  connector 'ContractCommand Stream Intake' is from outlet ContractContext.ContractCommandStreamOut to inlet ContractContext.Contract.ContractCommands  connector 'ContractResult Stream Egress' is from outlet ContractContext.ContractRepository.ContractRepositoryResponses to inlet ContractContext.ContractResultStreamIn  adaptor FromDocumentRepository from context DocumentRepository as flow is { 
+    inlet FromDocumentRepositoryIn is event DocumentRepository.DocumentStored    handler FromDocumentRepositoryHandler is {
+      on documentStored: event DocumentRepository.DocumentStored is {
+        do "the contract is stored; creating it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromDocumentRepository"
@@ -115,13 +121,15 @@ context ContractContext as router is {
       |The model's side of the DocumentRepository conversation.
     }
   }
-  adaptor FromESignatureService from context ESignatureService is { 
+  adaptor FromESignatureService from context ESignatureService as flow is { 
+    inlet FromESignatureServiceIn is type ESignatureService.ESignatureServiceEvent    outlet FromESignatureServiceToContractContext is command Contract.RecordSignature
     handler FromESignatureServiceHandler is {
-      on event ESignatureService.EnvelopeCompleted is {
-        do "the model receives envelope completed"
+      on envelopeCompleted: event ESignatureService.EnvelopeCompleted is {
+        do "every party has signed; activating the contract follows its effective date"
       }
-      on event ESignatureService.EnvelopeSigned is {
-        do "the model receives envelope signed"
+      on envelopeSigned: event ESignatureService.EnvelopeSigned is {
+        let item0: type Contract.RecordSignature = prompt("translate the envelopeSigned event into a RecordSignature, a signature on the envelope is one the contract records")
+        send item0 to outlet ContractContext.FromESignatureService.FromESignatureServiceToContractContext
       }
       on other is {
         error "Unexpected message for adaptor FromESignatureService"
