@@ -1,5 +1,17 @@
 // Outage Management - Outage Context
 context OutageContext as router is {
+  inlet OutageContextFromCrewDispatchSystem is command OutageEvent.DispatchCrew with {
+    briefly "What FromCrewDispatchSystem makes of that service's news"
+  }
+  connector 'FromCrewDispatchSystem Intake' is from outlet OutageContext.FromCrewDispatchSystem.FromCrewDispatchSystemToOutageContext to inlet OutageContext.OutageContextFromCrewDispatchSystem with {
+    briefly "What FromCrewDispatchSystem makes of that news, on its way in"
+  }
+  inlet OutageContextFromSCADASystem is command OutageEvent.ReportOutage with {
+    briefly "What FromSCADASystem makes of that service's news"
+  }
+  connector 'FromSCADASystem Intake' is from outlet OutageContext.FromSCADASystem.FromSCADASystemToOutageContext to inlet OutageContext.OutageContextFromSCADASystem with {
+    briefly "What FromSCADASystem makes of that news, on its way in"
+  }
   inlet OutageEventCommandStreamIn is type OutageEventCommand  outlet OutageEventCommandStreamOut is type OutageEventCommand
   inlet OutageEventResultStreamIn is result OutageEvent.OutageEventResult  outlet OutageEventResultStreamOut is result OutageEvent.OutageEventResult
   handler OutageContextBoundary is {
@@ -47,13 +59,15 @@ context OutageContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'OutageEventCommand Stream Intake' is from outlet OutageContext.OutageEventCommandStreamOut to inlet OutageContext.OutageEvent.OutageEventCommands  connector 'OutageEventResult Stream Egress' is from outlet OutageContext.OutageRepository.OutageRepositoryResponses to inlet OutageContext.OutageEventResultStreamIn  adaptor FromCrewDispatchSystem from context CrewDispatchSystem is { 
+  connector 'OutageEventCommand Stream Intake' is from outlet OutageContext.OutageEventCommandStreamOut to inlet OutageContext.OutageEvent.OutageEventCommands  connector 'OutageEventResult Stream Egress' is from outlet OutageContext.OutageRepository.OutageRepositoryResponses to inlet OutageContext.OutageEventResultStreamIn  adaptor FromCrewDispatchSystem from context CrewDispatchSystem as flow is { 
+    inlet FromCrewDispatchSystemIn is type CrewDispatchSystem.CrewDispatchSystemEvent    outlet FromCrewDispatchSystemToOutageContext is command OutageEvent.DispatchCrew
     handler FromCrewDispatchSystemHandler is {
-      on event CrewDispatchSystem.CrewAssigned is {
-        do "the model receives crew assigned"
+      on crewAssigned: event CrewDispatchSystem.CrewAssigned is {
+        let item0: type OutageEvent.DispatchCrew = prompt("translate the crewAssigned event into a DispatchCrew, the crew dispatch assigns is the one the outage records as dispatched")
+        send item0 to outlet OutageContext.FromCrewDispatchSystem.FromCrewDispatchSystemToOutageContext
       }
-      on event CrewDispatchSystem.CrewReleased is {
-        do "the model receives crew released"
+      on crewReleased: event CrewDispatchSystem.CrewReleased is {
+        do "the crew is free; restoring power was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromCrewDispatchSystem"
@@ -98,13 +112,15 @@ context OutageContext as router is {
       |The model's side of the CrewDispatchSystem conversation.
     }
   }
-  adaptor FromSCADASystem from context SCADASystem is { 
+  adaptor FromSCADASystem from context SCADASystem as flow is { 
+    inlet FromSCADASystemIn is type SCADASystem.SCADASystemEvent    outlet FromSCADASystemToOutageContext is command OutageEvent.ReportOutage
     handler FromSCADASystemHandler is {
-      on event SCADASystem.FeederIsolated is {
-        do "the model receives feeder isolated"
+      on feederIsolated: event SCADASystem.FeederIsolated is {
+        do "the feeder is isolated; confirming the outage was recorded here and restoration follows"
       }
-      on event SCADASystem.OutageDetected is {
-        do "the model receives outage detected"
+      on outageDetected: event SCADASystem.OutageDetected is {
+        let item0: type OutageEvent.ReportOutage = prompt("translate the outageDetected event into a ReportOutage, an outage SCADA detects is reported by the instrument that saw it")
+        send item0 to outlet OutageContext.FromSCADASystem.FromSCADASystemToOutageContext
       }
       on other is {
         error "Unexpected message for adaptor FromSCADASystem"

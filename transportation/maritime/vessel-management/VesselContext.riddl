@@ -1,5 +1,23 @@
 // Vessel Management - Vessel Context
 context VesselContext as router is {
+  inlet VesselContextFromAISService is command Vessel.UpdatePosition with {
+    briefly "What FromAISService makes of that service's news"
+  }
+  connector 'FromAISService Intake' is from outlet VesselContext.FromAISService.FromAISServiceToVesselContext to inlet VesselContext.VesselContextFromAISService with {
+    briefly "What FromAISService makes of that news, on its way in"
+  }
+  inlet VesselContextFromClassificationSocietyService is command Vessel.AddCertificate with {
+    briefly "What FromClassificationSocietyService makes of that service's news"
+  }
+  connector 'FromClassificationSocietyService Intake' is from outlet VesselContext.FromClassificationSocietyService.FromClassificationSocietyServiceToVesselContext to inlet VesselContext.VesselContextFromClassificationSocietyService with {
+    briefly "What FromClassificationSocietyService makes of that news, on its way in"
+  }
+  inlet VesselContextFromCrewManagementService is command Vessel.AddCrewMember with {
+    briefly "What FromCrewManagementService makes of that service's news"
+  }
+  connector 'FromCrewManagementService Intake' is from outlet VesselContext.FromCrewManagementService.FromCrewManagementServiceToVesselContext to inlet VesselContext.VesselContextFromCrewManagementService with {
+    briefly "What FromCrewManagementService makes of that news, on its way in"
+  }
   inlet VoyageCommandStreamIn is type VoyageCommand  outlet VoyageCommandStreamOut is type VoyageCommand
   inlet VesselCommandStreamIn is type VesselCommand  outlet VesselCommandStreamOut is type VesselCommand
   inlet VesselResultStreamIn is result Vessel.VesselResult  outlet VesselResultStreamOut is result Vessel.VesselResult
@@ -69,13 +87,15 @@ context VesselContext as router is {
   connector 'VoyageEvent Feed' is from outlet VesselContext.Voyage.VoyageEvents to inlet VesselContext.FleetAnalytics.FleetAnalyticsFromVoyage with {
     briefly "Voyage events feeding the FleetAnalytics projection"
   }
-  connector 'VoyageCommand Stream Intake' is from outlet VesselContext.VoyageCommandStreamOut to inlet VesselContext.Voyage.VoyageCommands  connector 'VesselCommand Stream Intake' is from outlet VesselContext.VesselCommandStreamOut to inlet VesselContext.Vessel.VesselCommands  connector 'VesselResult Stream Egress' is from outlet VesselContext.VesselRepository.VesselRepositoryResponses to inlet VesselContext.VesselResultStreamIn  adaptor FromAISService from context AISService is { 
+  connector 'VoyageCommand Stream Intake' is from outlet VesselContext.VoyageCommandStreamOut to inlet VesselContext.Voyage.VoyageCommands  connector 'VesselCommand Stream Intake' is from outlet VesselContext.VesselCommandStreamOut to inlet VesselContext.Vessel.VesselCommands  connector 'VesselResult Stream Egress' is from outlet VesselContext.VesselRepository.VesselRepositoryResponses to inlet VesselContext.VesselResultStreamIn  adaptor FromAISService from context AISService as flow is { 
+    inlet FromAISServiceIn is type AISService.AISServiceEvent    outlet FromAISServiceToVesselContext is command Vessel.UpdatePosition
     handler FromAISServiceHandler is {
-      on event AISService.GeofenceAlert is {
-        do "the model receives geofence alert"
+      on geofenceAlert: event AISService.GeofenceAlert is {
+        do "the vessel crossed a fence; what that means for the voyage is the operator's call"
       }
-      on event AISService.PositionReportReceived is {
-        do "the model receives position report received"
+      on positionReportReceived: event AISService.PositionReportReceived is {
+        let item0: type Vessel.UpdatePosition = prompt("translate the positionReportReceived event into a UpdatePosition, the AIS fix is where the vessel is")
+        send item0 to outlet VesselContext.FromAISService.FromAISServiceToVesselContext
       }
       on other is {
         error "Unexpected message for adaptor FromAISService"
@@ -114,13 +134,13 @@ context VesselContext as router is {
       |The model's side of the AISService conversation.
     }
   }
-  adaptor FromBunkerSupplierService from context BunkerSupplierService is { 
-    handler FromBunkerSupplierServiceHandler is {
-      on event BunkerSupplierService.BunkerDelivered is {
-        do "the model receives bunker delivered"
+  adaptor FromBunkerSupplierService from context BunkerSupplierService as flow is { 
+    inlet FromBunkerSupplierServiceIn is type BunkerSupplierService.BunkerSupplierServiceEvent    handler FromBunkerSupplierServiceHandler is {
+      on bunkerDelivered: event BunkerSupplierService.BunkerDelivered is {
+        do "the bunkers are on board; the vessel's own bunker report records the quantities"
       }
-      on event BunkerSupplierService.BunkerOrderConfirmed is {
-        do "the model receives bunker order confirmed"
+      on bunkerOrderConfirmed: event BunkerSupplierService.BunkerOrderConfirmed is {
+        do "the supplier has the order; the bunker report that raised it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromBunkerSupplierService"
@@ -163,13 +183,13 @@ context VesselContext as router is {
       |The model's side of the BunkerSupplierService conversation.
     }
   }
-  adaptor FromCharterPartyService from context CharterPartyService is { 
-    handler FromCharterPartyServiceHandler is {
-      on event CharterPartyService.CharterCommenced is {
-        do "the model receives charter commenced"
+  adaptor FromCharterPartyService from context CharterPartyService as flow is { 
+    inlet FromCharterPartyServiceIn is type CharterPartyService.CharterPartyServiceEvent    handler FromCharterPartyServiceHandler is {
+      on charterCommenced: event CharterPartyService.CharterCommenced is {
+        do "the charter has started; the vessel's status carries trade, not employment"
       }
-      on event CharterPartyService.CharterTerminated is {
-        do "the model receives charter terminated"
+      on charterTerminated: event CharterPartyService.CharterTerminated is {
+        do "the charter has ended; the vessel's status carries trade, not employment"
       }
       on other is {
         error "Unexpected message for adaptor FromCharterPartyService"
@@ -208,16 +228,18 @@ context VesselContext as router is {
       |The model's side of the CharterPartyService conversation.
     }
   }
-  adaptor FromClassificationSocietyService from context ClassificationSocietyService is { 
+  adaptor FromClassificationSocietyService from context ClassificationSocietyService as flow is { 
+    inlet FromClassificationSocietyServiceIn is type ClassificationSocietyService.ClassificationSocietyServiceEvent    outlet FromClassificationSocietyServiceToVesselContext is command Vessel.AddCertificate
     handler FromClassificationSocietyServiceHandler is {
-      on event ClassificationSocietyService.CertificateIssued is {
-        do "the model receives certificate issued"
+      on certificateIssued: event ClassificationSocietyService.CertificateIssued is {
+        let item0: type Vessel.AddCertificate = prompt("translate the certificateIssued event into a AddCertificate, a certificate class issues is one the vessel carries")
+        send item0 to outlet VesselContext.FromClassificationSocietyService.FromClassificationSocietyServiceToVesselContext
       }
-      on event ClassificationSocietyService.ClassSuspended is {
-        do "the model receives class suspended"
+      on classSuspended: event ClassificationSocietyService.ClassSuspended is {
+        do "class is suspended; whether the vessel trades is the owner's decision with the flag"
       }
-      on event ClassificationSocietyService.SurveyDue is {
-        do "the model receives survey due"
+      on surveyDue: event ClassificationSocietyService.SurveyDue is {
+        do "a survey is due; scheduling it is the superintendent's act"
       }
       on other is {
         error "Unexpected message for adaptor FromClassificationSocietyService"
@@ -256,13 +278,15 @@ context VesselContext as router is {
       |The model's side of the ClassificationSocietyService conversation.
     }
   }
-  adaptor FromCrewManagementService from context CrewManagementService is { 
+  adaptor FromCrewManagementService from context CrewManagementService as flow is { 
+    inlet FromCrewManagementServiceIn is type CrewManagementService.CrewManagementServiceEvent    outlet FromCrewManagementServiceToVesselContext is command Vessel.AddCrewMember
     handler FromCrewManagementServiceHandler is {
-      on event CrewManagementService.CertificateExpiring is {
-        do "the model receives certificate expiring"
+      on certificateExpiring: event CrewManagementService.CertificateExpiring is {
+        do "a crew certificate is expiring; the crew manager arranges renewal or relief"
       }
-      on event CrewManagementService.CrewChangeConfirmed is {
-        do "the model receives crew change confirmed"
+      on crewChangeConfirmed: event CrewManagementService.CrewChangeConfirmed is {
+        let item0: type Vessel.AddCrewMember = prompt("translate the crewChangeConfirmed event into a AddCrewMember, the relief the crew manager confirms is who joins the vessel")
+        send item0 to outlet VesselContext.FromCrewManagementService.FromCrewManagementServiceToVesselContext
       }
       on other is {
         error "Unexpected message for adaptor FromCrewManagementService"
@@ -305,10 +329,10 @@ context VesselContext as router is {
       |The model's side of the CrewManagementService conversation.
     }
   }
-  adaptor FromWeatherService from context WeatherService is { 
-    handler FromWeatherServiceHandler is {
-      on event WeatherService.WeatherWarningIssued is {
-        do "the model receives weather warning issued"
+  adaptor FromWeatherService from context WeatherService as flow is { 
+    inlet FromWeatherServiceIn is event WeatherService.WeatherWarningIssued    handler FromWeatherServiceHandler is {
+      on weatherWarningIssued: event WeatherService.WeatherWarningIssued is {
+        do "a warning is out; routing around it is the master's decision"
       }
       on other is {
         error "Unexpected message for adaptor FromWeatherService"

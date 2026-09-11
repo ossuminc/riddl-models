@@ -1,5 +1,17 @@
 // Ride Sharing - Ride Context
 context RideContext as router is {
+  inlet RideContextFromDriverMatchingService is command Ride.DriverEnRoute with {
+    briefly "What FromDriverMatchingService makes of that service's news"
+  }
+  connector 'FromDriverMatchingService Intake' is from outlet RideContext.FromDriverMatchingService.FromDriverMatchingServiceToRideContext to inlet RideContext.RideContextFromDriverMatchingService with {
+    briefly "What FromDriverMatchingService makes of that news, on its way in"
+  }
+  inlet RideContextFromPaymentService is command Ride.ProcessPayment with {
+    briefly "What FromPaymentService makes of that service's news"
+  }
+  connector 'FromPaymentService Intake' is from outlet RideContext.FromPaymentService.FromPaymentServiceToRideContext to inlet RideContext.RideContextFromPaymentService with {
+    briefly "What FromPaymentService makes of that news, on its way in"
+  }
   inlet RideCommandStreamIn is type RideCommand  outlet RideCommandStreamOut is type RideCommand
   inlet RideResultStreamIn is result Ride.RideResult  outlet RideResultStreamOut is result Ride.RideResult
   handler RideContextBoundary is {
@@ -50,10 +62,12 @@ context RideContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'RideCommand Stream Intake' is from outlet RideContext.RideCommandStreamOut to inlet RideContext.Ride.RideCommands  connector 'RideResult Stream Egress' is from outlet RideContext.RideRepository.RideRepositoryResponses to inlet RideContext.RideResultStreamIn  adaptor FromDriverMatchingService from context DriverMatchingService is { 
+  connector 'RideCommand Stream Intake' is from outlet RideContext.RideCommandStreamOut to inlet RideContext.Ride.RideCommands  connector 'RideResult Stream Egress' is from outlet RideContext.RideRepository.RideRepositoryResponses to inlet RideContext.RideResultStreamIn  adaptor FromDriverMatchingService from context DriverMatchingService as flow is { 
+    inlet FromDriverMatchingServiceIn is event DriverMatchingService.DriverDispatched    outlet FromDriverMatchingServiceToRideContext is command Ride.DriverEnRoute
     handler FromDriverMatchingServiceHandler is {
-      on event DriverMatchingService.DriverDispatched is {
-        do "the model receives driver dispatched"
+      on driverDispatched: event DriverMatchingService.DriverDispatched is {
+        let item0: type Ride.DriverEnRoute = prompt("translate the driverDispatched event into a DriverEnRoute, a driver the matcher has dispatched is on their way")
+        send item0 to outlet RideContext.FromDriverMatchingService.FromDriverMatchingServiceToRideContext
       }
       on other is {
         error "Unexpected message for adaptor FromDriverMatchingService"
@@ -188,16 +202,18 @@ context RideContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromPaymentService from context PaymentService is { 
+  adaptor FromPaymentService from context PaymentService as flow is { 
+    inlet FromPaymentServiceIn is type PaymentService.PaymentServiceEvent    outlet FromPaymentServiceToRideContext is command Ride.ProcessPayment
     handler FromPaymentServiceHandler is {
-      on event PaymentService.ChargeFailed is {
-        do "the model receives charge failed"
+      on chargeFailed: event PaymentService.ChargeFailed is {
+        do "the charge failed; payment retries and the trip stands"
       }
-      on event PaymentService.DriverPaid is {
-        do "the model receives driver paid"
+      on driverPaid: event PaymentService.DriverPaid is {
+        do "the driver has been paid; completing the trip was recorded here"
       }
-      on event PaymentService.RideCharged is {
-        do "the model receives ride charged"
+      on rideCharged: event PaymentService.RideCharged is {
+        let item0: type Ride.ProcessPayment = prompt("translate the rideCharged event into a ProcessPayment, money actually taken for the trip is what the ride records as paid")
+        send item0 to outlet RideContext.FromPaymentService.FromPaymentServiceToRideContext
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentService"
@@ -264,13 +280,13 @@ context RideContext as router is {
       |The model's side of the RoutingService conversation.
     }
   }
-  adaptor FromSafetyService from context SafetyService is { 
-    handler FromSafetyServiceHandler is {
-      on event SafetyService.IncidentReported is {
-        do "the model receives incident reported"
+  adaptor FromSafetyService from context SafetyService as flow is { 
+    inlet FromSafetyServiceIn is type SafetyService.SafetyServiceEvent    handler FromSafetyServiceHandler is {
+      on incidentReported: event SafetyService.IncidentReported is {
+        do "safety has the report; recording the incident here came first"
       }
-      on event SafetyService.TripShared is {
-        do "the model receives trip shared"
+      on tripShared: event SafetyService.TripShared is {
+        do "the contact can follow the trip; the ride's own state is unchanged"
       }
       on other is {
         error "Unexpected message for adaptor FromSafetyService"

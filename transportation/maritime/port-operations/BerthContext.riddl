@@ -1,5 +1,17 @@
 // Port Operations - Berth Context
 context BerthContext as router is {
+  inlet BerthContextFromPilotCoordinationService is command PortCall.AssignPilot with {
+    briefly "What FromPilotCoordinationService makes of that service's news"
+  }
+  connector 'FromPilotCoordinationService Intake' is from outlet BerthContext.FromPilotCoordinationService.FromPilotCoordinationServiceToBerthContext to inlet BerthContext.BerthContextFromPilotCoordinationService with {
+    briefly "What FromPilotCoordinationService makes of that news, on its way in"
+  }
+  inlet BerthContextFromTowageService is command PortCall.OrderTugs with {
+    briefly "What FromTowageService makes of that service's news"
+  }
+  connector 'FromTowageService Intake' is from outlet BerthContext.FromTowageService.FromTowageServiceToBerthContext to inlet BerthContext.BerthContextFromTowageService with {
+    briefly "What FromTowageService makes of that news, on its way in"
+  }
   inlet PortCallCommandStreamIn is type PortCallCommand  outlet PortCallCommandStreamOut is type PortCallCommand
   inlet BerthCommandStreamIn is type BerthCommand  outlet BerthCommandStreamOut is type BerthCommand
   inlet BerthResultStreamIn is result Berth.BerthResult  outlet BerthResultStreamOut is result Berth.BerthResult
@@ -63,16 +75,16 @@ context BerthContext as router is {
   connector 'PortCallEvent Feed' is from outlet BerthContext.PortCall.PortCallEvents to inlet BerthContext.PortAnalytics.PortAnalyticsFromPortCall with {
     briefly "PortCall events feeding the PortAnalytics projection"
   }
-  connector 'PortCallCommand Stream Intake' is from outlet BerthContext.PortCallCommandStreamOut to inlet BerthContext.PortCall.PortCallCommands  connector 'BerthCommand Stream Intake' is from outlet BerthContext.BerthCommandStreamOut to inlet BerthContext.Berth.BerthCommands  connector 'BerthResult Stream Egress' is from outlet BerthContext.BerthRepository.BerthRepositoryResponses to inlet BerthContext.BerthResultStreamIn  adaptor FromCustomsService from context CustomsService is { 
-    handler FromCustomsServiceHandler is {
-      on event CustomsService.ArrivalNotificationAcknowledged is {
-        do "the model receives arrival notification acknowledged"
+  connector 'PortCallCommand Stream Intake' is from outlet BerthContext.PortCallCommandStreamOut to inlet BerthContext.PortCall.PortCallCommands  connector 'BerthCommand Stream Intake' is from outlet BerthContext.BerthCommandStreamOut to inlet BerthContext.Berth.BerthCommands  connector 'BerthResult Stream Egress' is from outlet BerthContext.BerthRepository.BerthRepositoryResponses to inlet BerthContext.BerthResultStreamIn  adaptor FromCustomsService from context CustomsService as flow is { 
+    inlet FromCustomsServiceIn is type CustomsService.CustomsServiceEvent    handler FromCustomsServiceHandler is {
+      on arrivalNotificationAcknowledged: event CustomsService.ArrivalNotificationAcknowledged is {
+        do "customs has the notification; recording the arrival came first"
       }
-      on event CustomsService.ClearanceGranted is {
-        do "the model receives clearance granted"
+      on clearanceGranted: event CustomsService.ClearanceGranted is {
+        do "customs has cleared the vessel; cargo operations start when the terminal does"
       }
-      on event CustomsService.ClearanceHeld is {
-        do "the model receives clearance held"
+      on clearanceHeld: event CustomsService.ClearanceHeld is {
+        do "customs holds the vessel; the agent resolves it with customs, not the port call"
       }
       on other is {
         error "Unexpected message for adaptor FromCustomsService"
@@ -111,16 +123,18 @@ context BerthContext as router is {
       |The model's side of the CustomsService conversation.
     }
   }
-  adaptor FromPilotCoordinationService from context PilotCoordinationService is { 
+  adaptor FromPilotCoordinationService from context PilotCoordinationService as flow is { 
+    inlet FromPilotCoordinationServiceIn is type PilotCoordinationService.PilotCoordinationServiceEvent    outlet FromPilotCoordinationServiceToBerthContext is command PortCall.AssignPilot
     handler FromPilotCoordinationServiceHandler is {
-      on event PilotCoordinationService.PilotAssignmentConfirmed is {
-        do "the model receives pilot assignment confirmed"
+      on pilotAssignmentConfirmed: event PilotCoordinationService.PilotAssignmentConfirmed is {
+        let item0: type PortCall.AssignPilot = prompt("translate the pilotAssignmentConfirmed event into a AssignPilot, the pilot the coordination service confirms is the one the port call records as assigned")
+        send item0 to outlet BerthContext.FromPilotCoordinationService.FromPilotCoordinationServiceToBerthContext
       }
-      on event PilotCoordinationService.PilotDisembarked is {
-        do "the model receives pilot disembarked"
+      on pilotDisembarked: event PilotCoordinationService.PilotDisembarked is {
+        do "the pilot is off; the port call's own state is unchanged"
       }
-      on event PilotCoordinationService.PilotOnBoard is {
-        do "the model receives pilot on board"
+      on pilotOnBoard: event PilotCoordinationService.PilotOnBoard is {
+        do "the pilot is aboard; mooring is recorded when the lines are fast"
       }
       on other is {
         error "Unexpected message for adaptor FromPilotCoordinationService"
@@ -163,13 +177,13 @@ context BerthContext as router is {
       |The model's side of the PilotCoordinationService conversation.
     }
   }
-  adaptor FromPortBillingService from context PortBillingService is { 
-    handler FromPortBillingServiceHandler is {
-      on event PortBillingService.InvoiceGenerated is {
-        do "the model receives invoice generated"
+  adaptor FromPortBillingService from context PortBillingService as flow is { 
+    inlet FromPortBillingServiceIn is type PortBillingService.PortBillingServiceEvent    handler FromPortBillingServiceHandler is {
+      on invoiceGenerated: event PortBillingService.InvoiceGenerated is {
+        do "the invoice exists; generating the charges was recorded here"
       }
-      on event PortBillingService.PaymentReceived is {
-        do "the model receives payment received"
+      on paymentReceived: event PortBillingService.PaymentReceived is {
+        do "the charges are paid; the port call holds no payment record of its own"
       }
       on other is {
         error "Unexpected message for adaptor FromPortBillingService"
@@ -208,13 +222,13 @@ context BerthContext as router is {
       |The model's side of the PortBillingService conversation.
     }
   }
-  adaptor FromTerminalOperatingSystem from context TerminalOperatingSystem is { 
-    handler FromTerminalOperatingSystemHandler is {
-      on event TerminalOperatingSystem.CargoOperationScheduled is {
-        do "the model receives cargo operation scheduled"
+  adaptor FromTerminalOperatingSystem from context TerminalOperatingSystem as flow is { 
+    inlet FromTerminalOperatingSystemIn is type TerminalOperatingSystem.TerminalOperatingSystemEvent    handler FromTerminalOperatingSystemHandler is {
+      on cargoOperationScheduled: event TerminalOperatingSystem.CargoOperationScheduled is {
+        do "the terminal has a slot; cargo operations are recorded when they start"
       }
-      on event TerminalOperatingSystem.CraneMoveCompleted is {
-        do "the model receives crane move completed"
+      on craneMoveCompleted: event TerminalOperatingSystem.CraneMoveCompleted is {
+        do "a lift is done; the port call records the operation's start and end, not each move"
       }
       on other is {
         error "Unexpected message for adaptor FromTerminalOperatingSystem"
@@ -257,16 +271,18 @@ context BerthContext as router is {
       |The model's side of the TerminalOperatingSystem conversation.
     }
   }
-  adaptor FromTowageService from context TowageService is { 
+  adaptor FromTowageService from context TowageService as flow is { 
+    inlet FromTowageServiceIn is type TowageService.TowageServiceEvent    outlet FromTowageServiceToBerthContext is command PortCall.OrderTugs
     handler FromTowageServiceHandler is {
-      on event TowageService.TugOperationCompleted is {
-        do "the model receives tug operation completed"
+      on tugOperationCompleted: event TowageService.TugOperationCompleted is {
+        do "the tugs have let go; the port call's own state is unchanged"
       }
-      on event TowageService.TugOperationStarted is {
-        do "the model receives tug operation started"
+      on tugOperationStarted: event TowageService.TugOperationStarted is {
+        do "the tugs are made fast; mooring is recorded when the lines are"
       }
-      on event TowageService.TugsConfirmed is {
-        do "the model receives tugs confirmed"
+      on tugsConfirmed: event TowageService.TugsConfirmed is {
+        let item0: type PortCall.OrderTugs = prompt("translate the tugsConfirmed event into a OrderTugs, the tugs the towage service confirms are the ones the port call records as ordered")
+        send item0 to outlet BerthContext.FromTowageService.FromTowageServiceToBerthContext
       }
       on other is {
         error "Unexpected message for adaptor FromTowageService"
@@ -309,13 +325,13 @@ context BerthContext as router is {
       |The model's side of the TowageService conversation.
     }
   }
-  adaptor FromVesselTrafficService from context VesselTrafficService is { 
-    handler FromVesselTrafficServiceHandler is {
-      on event VesselTrafficService.VesselApproaching is {
-        do "the model receives vessel approaching"
+  adaptor FromVesselTrafficService from context VesselTrafficService as flow is { 
+    inlet FromVesselTrafficServiceIn is type VesselTrafficService.VesselTrafficServiceEvent    handler FromVesselTrafficServiceHandler is {
+      on vesselApproaching: event VesselTrafficService.VesselApproaching is {
+        do "the vessel is approaching; the berth is confirmed before it arrives"
       }
-      on event VesselTrafficService.VesselInPortLimits is {
-        do "the model receives vessel in port limits"
+      on vesselInPortLimits: event VesselTrafficService.VesselInPortLimits is {
+        do "the vessel is inside port limits; arrival is recorded at the berth"
       }
       on other is {
         error "Unexpected message for adaptor FromVesselTrafficService"

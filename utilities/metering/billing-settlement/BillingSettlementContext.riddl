@@ -1,5 +1,17 @@
 // Billing Settlement - Billing Settlement Context
 context BillingSettlementContext as router is {
+  inlet BillingSettlementContextFromMeterDataSystem is command BillingAccount.CalculateUsage with {
+    briefly "What FromMeterDataSystem makes of that service's news"
+  }
+  connector 'FromMeterDataSystem Intake' is from outlet BillingSettlementContext.FromMeterDataSystem.FromMeterDataSystemToBillingSettlementContext to inlet BillingSettlementContext.BillingSettlementContextFromMeterDataSystem with {
+    briefly "What FromMeterDataSystem makes of that news, on its way in"
+  }
+  inlet BillingSettlementContextFromPaymentProcessor is command BillingAccount.RecordPayment with {
+    briefly "What FromPaymentProcessor makes of that service's news"
+  }
+  connector 'FromPaymentProcessor Intake' is from outlet BillingSettlementContext.FromPaymentProcessor.FromPaymentProcessorToBillingSettlementContext to inlet BillingSettlementContext.BillingSettlementContextFromPaymentProcessor with {
+    briefly "What FromPaymentProcessor makes of that news, on its way in"
+  }
   inlet BillingAccountCommandStreamIn is type BillingAccountCommand  outlet BillingAccountCommandStreamOut is type BillingAccountCommand
   inlet BillingAccountResultStreamIn is result BillingAccount.BillingAccountResult  outlet BillingAccountResultStreamOut is result BillingAccount.BillingAccountResult
   handler BillingSettlementContextBoundary is {
@@ -41,10 +53,10 @@ context BillingSettlementContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'BillingAccountCommand Stream Intake' is from outlet BillingSettlementContext.BillingAccountCommandStreamOut to inlet BillingSettlementContext.BillingAccount.BillingAccountCommands  connector 'BillingAccountResult Stream Egress' is from outlet BillingSettlementContext.BillingRepository.BillingRepositoryResponses to inlet BillingSettlementContext.BillingAccountResultStreamIn  adaptor FromEnergySupplierGateway from context EnergySupplierGateway is { 
-    handler FromEnergySupplierGatewayHandler is {
-      on event EnergySupplierGateway.SettlementConfirmed is {
-        do "the model receives settlement confirmed"
+  connector 'BillingAccountCommand Stream Intake' is from outlet BillingSettlementContext.BillingAccountCommandStreamOut to inlet BillingSettlementContext.BillingAccount.BillingAccountCommands  connector 'BillingAccountResult Stream Egress' is from outlet BillingSettlementContext.BillingRepository.BillingRepositoryResponses to inlet BillingSettlementContext.BillingAccountResultStreamIn  adaptor FromEnergySupplierGateway from context EnergySupplierGateway as flow is { 
+    inlet FromEnergySupplierGatewayIn is event EnergySupplierGateway.SettlementConfirmed    handler FromEnergySupplierGatewayHandler is {
+      on settlementConfirmed: event EnergySupplierGateway.SettlementConfirmed is {
+        do "the supplier has confirmed; initiating settlement was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromEnergySupplierGateway"
@@ -87,10 +99,12 @@ context BillingSettlementContext as router is {
       |The model's side of the EnergySupplierGateway conversation.
     }
   }
-  adaptor FromMeterDataSystem from context MeterDataSystem is { 
+  adaptor FromMeterDataSystem from context MeterDataSystem as flow is { 
+    inlet FromMeterDataSystemIn is event MeterDataSystem.MeterDataValidated    outlet FromMeterDataSystemToBillingSettlementContext is command BillingAccount.CalculateUsage
     handler FromMeterDataSystemHandler is {
-      on event MeterDataSystem.MeterDataValidated is {
-        do "the model receives meter data validated"
+      on meterDataValidated: event MeterDataSystem.MeterDataValidated is {
+        let item0: type BillingAccount.CalculateUsage = prompt("translate the meterDataValidated event into a CalculateUsage, validated meter data is what usage is calculated from")
+        send item0 to outlet BillingSettlementContext.FromMeterDataSystem.FromMeterDataSystemToBillingSettlementContext
       }
       on other is {
         error "Unexpected message for adaptor FromMeterDataSystem"
@@ -133,13 +147,15 @@ context BillingSettlementContext as router is {
       |The model's side of the MeterDataSystem conversation.
     }
   }
-  adaptor FromPaymentProcessor from context PaymentProcessor is { 
+  adaptor FromPaymentProcessor from context PaymentProcessor as flow is { 
+    inlet FromPaymentProcessorIn is type PaymentProcessor.PaymentProcessorEvent    outlet FromPaymentProcessorToBillingSettlementContext is command BillingAccount.RecordPayment
     handler FromPaymentProcessorHandler is {
-      on event PaymentProcessor.PaymentProcessed is {
-        do "the model receives payment processed"
+      on paymentProcessed: event PaymentProcessor.PaymentProcessed is {
+        let item0: type BillingAccount.RecordPayment = prompt("translate the paymentProcessed event into a RecordPayment, money the processor actually took is what the account records as paid")
+        send item0 to outlet BillingSettlementContext.FromPaymentProcessor.FromPaymentProcessorToBillingSettlementContext
       }
-      on event PaymentProcessor.RefundIssued is {
-        do "the model receives refund issued"
+      on refundIssued: event PaymentProcessor.RefundIssued is {
+        do "the refund has gone; disputing the bill was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentProcessor"

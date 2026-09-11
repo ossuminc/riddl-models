@@ -1,5 +1,27 @@
 // Intermodal - Move Context
 context MoveContext as router is {
+  type FromRailCarrierServiceCommand is one of {
+    Move.AssignToTrain or Move.RecordTrainArrival or Move.RecordTrainDeparture
+  } with {
+    briefly "What FromRailCarrierService turns that service's news into"
+  }
+  inlet MoveContextFromRailCarrierService is type MoveContext.FromRailCarrierServiceCommand with {
+    briefly "What FromRailCarrierService makes of that service's news"
+  }
+  connector 'FromRailCarrierService Intake' is from outlet MoveContext.FromRailCarrierService.FromRailCarrierServiceToMoveContext to inlet MoveContext.MoveContextFromRailCarrierService with {
+    briefly "What FromRailCarrierService makes of that news, on its way in"
+  }
+  type FromTerminalOperatingSystemCommand is one of {
+    Move.RecordTerminalIngate or Move.RecordTerminalOutgate
+  } with {
+    briefly "What FromTerminalOperatingSystem turns that service's news into"
+  }
+  inlet MoveContextFromTerminalOperatingSystem is type MoveContext.FromTerminalOperatingSystemCommand with {
+    briefly "What FromTerminalOperatingSystem makes of that service's news"
+  }
+  connector 'FromTerminalOperatingSystem Intake' is from outlet MoveContext.FromTerminalOperatingSystem.FromTerminalOperatingSystemToMoveContext to inlet MoveContext.MoveContextFromTerminalOperatingSystem with {
+    briefly "What FromTerminalOperatingSystem makes of that news, on its way in"
+  }
   inlet MoveCommandStreamIn is type MoveCommand  outlet MoveCommandStreamOut is type MoveCommand
   inlet MoveResultStreamIn is result Move.MoveResult  outlet MoveResultStreamOut is result Move.MoveResult
   handler MoveContextBoundary is {
@@ -50,13 +72,13 @@ context MoveContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'MoveCommand Stream Intake' is from outlet MoveContext.MoveCommandStreamOut to inlet MoveContext.Move.MoveCommands  connector 'MoveResult Stream Egress' is from outlet MoveContext.MoveRepository.MoveRepositoryResponses to inlet MoveContext.MoveResultStreamIn  adaptor FromChassisPoolService from context ChassisPoolService is { 
-    handler FromChassisPoolServiceHandler is {
-      on event ChassisPoolService.ChassisReserved is {
-        do "the model receives chassis reserved"
+  connector 'MoveCommand Stream Intake' is from outlet MoveContext.MoveCommandStreamOut to inlet MoveContext.Move.MoveCommands  connector 'MoveResult Stream Egress' is from outlet MoveContext.MoveRepository.MoveRepositoryResponses to inlet MoveContext.MoveResultStreamIn  adaptor FromChassisPoolService from context ChassisPoolService as flow is { 
+    inlet FromChassisPoolServiceIn is type ChassisPoolService.ChassisPoolServiceEvent    handler FromChassisPoolServiceHandler is {
+      on chassisReserved: event ChassisPoolService.ChassisReserved is {
+        do "the chassis is held; scheduling the origin dray was recorded here"
       }
-      on event ChassisPoolService.ChassisReturned is {
-        do "the model receives chassis returned"
+      on chassisReturned: event ChassisPoolService.ChassisReturned is {
+        do "the chassis is back in the pool; the move's own state is unchanged"
       }
       on other is {
         error "Unexpected message for adaptor FromChassisPoolService"
@@ -99,16 +121,16 @@ context MoveContext as router is {
       |The model's side of the ChassisPoolService conversation.
     }
   }
-  adaptor FromDrayCarrierService from context DrayCarrierService is { 
-    handler FromDrayCarrierServiceHandler is {
-      on event DrayCarrierService.DrayCompleted is {
-        do "the model receives dray completed"
+  adaptor FromDrayCarrierService from context DrayCarrierService as flow is { 
+    inlet FromDrayCarrierServiceIn is type DrayCarrierService.DrayCarrierServiceEvent    handler FromDrayCarrierServiceHandler is {
+      on drayCompleted: event DrayCarrierService.DrayCompleted is {
+        do "the dray is done; the ingate or delivery it ends in is recorded by the terminal or consignee"
       }
-      on event DrayCarrierService.DrayConfirmed is {
-        do "the model receives dray confirmed"
+      on drayConfirmed: event DrayCarrierService.DrayConfirmed is {
+        do "the dray is booked; scheduling it was recorded here"
       }
-      on event DrayCarrierService.DrayDispatched is {
-        do "the model receives dray dispatched"
+      on drayDispatched: event DrayCarrierService.DrayDispatched is {
+        do "the truck is on its way; the move waits on the gate"
       }
       on other is {
         error "Unexpected message for adaptor FromDrayCarrierService"
@@ -173,16 +195,20 @@ context MoveContext as router is {
       |The model's side of the IntermodalRatingService conversation.
     }
   }
-  adaptor FromRailCarrierService from context RailCarrierService is { 
+  adaptor FromRailCarrierService from context RailCarrierService as flow is { 
+    inlet FromRailCarrierServiceIn is type RailCarrierService.RailCarrierServiceEvent    outlet FromRailCarrierServiceToMoveContext is type MoveContext.FromRailCarrierServiceCommand
     handler FromRailCarrierServiceHandler is {
-      on event RailCarrierService.RailBookingConfirmed is {
-        do "the model receives rail booking confirmed"
+      on railBookingConfirmed: event RailCarrierService.RailBookingConfirmed is {
+        let item0: type Move.AssignToTrain = prompt("translate the railBookingConfirmed event into a AssignToTrain, the train the rail carrier confirms is the one the move is assigned to")
+        send item0 to outlet MoveContext.FromRailCarrierService.FromRailCarrierServiceToMoveContext
       }
-      on event RailCarrierService.TrainArrived is {
-        do "the model receives train arrived"
+      on trainArrived: event RailCarrierService.TrainArrived is {
+        let item0: type Move.RecordTrainArrival = prompt("translate the trainArrived event into a RecordTrainArrival, the carrier reporting the train in is the arrival the move records")
+        send item0 to outlet MoveContext.FromRailCarrierService.FromRailCarrierServiceToMoveContext
       }
-      on event RailCarrierService.TrainDeparted is {
-        do "the model receives train departed"
+      on trainDeparted: event RailCarrierService.TrainDeparted is {
+        let item0: type Move.RecordTrainDeparture = prompt("translate the trainDeparted event into a RecordTrainDeparture, the carrier reporting the train out is the departure the move records")
+        send item0 to outlet MoveContext.FromRailCarrierService.FromRailCarrierServiceToMoveContext
       }
       on other is {
         error "Unexpected message for adaptor FromRailCarrierService"
@@ -225,19 +251,22 @@ context MoveContext as router is {
       |The model's side of the RailCarrierService conversation.
     }
   }
-  adaptor FromTerminalOperatingSystem from context TerminalOperatingSystem is { 
+  adaptor FromTerminalOperatingSystem from context TerminalOperatingSystem as flow is { 
+    inlet FromTerminalOperatingSystemIn is type TerminalOperatingSystem.TerminalOperatingSystemEvent    outlet FromTerminalOperatingSystemToMoveContext is type MoveContext.FromTerminalOperatingSystemCommand
     handler FromTerminalOperatingSystemHandler is {
-      on event TerminalOperatingSystem.ContainerIngated is {
-        do "the model receives container ingated"
+      on containerIngated: event TerminalOperatingSystem.ContainerIngated is {
+        let item0: type Move.RecordTerminalIngate = prompt("translate the containerIngated event into a RecordTerminalIngate, the terminal gating the container in is the ingate the move records")
+        send item0 to outlet MoveContext.FromTerminalOperatingSystem.FromTerminalOperatingSystemToMoveContext
       }
-      on event TerminalOperatingSystem.ContainerLoaded is {
-        do "the model receives container loaded"
+      on containerLoaded: event TerminalOperatingSystem.ContainerLoaded is {
+        do "the container is on the train; the move records the train's departure, not the lift"
       }
-      on event TerminalOperatingSystem.ContainerOutgated is {
-        do "the model receives container outgated"
+      on containerOutgated: event TerminalOperatingSystem.ContainerOutgated is {
+        let item0: type Move.RecordTerminalOutgate = prompt("translate the containerOutgated event into a RecordTerminalOutgate, the terminal gating the container out is the outgate the move records")
+        send item0 to outlet MoveContext.FromTerminalOperatingSystem.FromTerminalOperatingSystemToMoveContext
       }
-      on event TerminalOperatingSystem.ContainerUnloaded is {
-        do "the model receives container unloaded"
+      on containerUnloaded: event TerminalOperatingSystem.ContainerUnloaded is {
+        do "the container is off the train; the move records the outgate, not the lift"
       }
       on other is {
         error "Unexpected message for adaptor FromTerminalOperatingSystem"
