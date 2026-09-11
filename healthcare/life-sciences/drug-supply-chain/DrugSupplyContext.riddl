@@ -26,6 +26,7 @@ context DrugSupplyContext as router is {
   }
   inlet DrugBatchCommandStreamIn is type DrugBatchCommand  outlet DrugBatchCommandStreamOut is type DrugBatchCommand
   inlet DrugBatchResultStreamIn is result DrugBatch.DrugBatchResult  outlet DrugBatchResultStreamOut is result DrugBatch.DrugBatchResult
+  inlet SerializationMetricsViewStreamIn is result SerializationMetricsView  outlet SerializationMetricsViewStreamOut is result SerializationMetricsView
   handler DrugSupplyContextBoundary is {
     on manufactureBatch: command DrugBatch.ManufactureBatch is {
       forward manufactureBatch to outlet DrugSupplyContext.DrugBatchCommandStreamOut
@@ -54,6 +55,9 @@ context DrugSupplyContext as router is {
     on drugBatchResult: result DrugBatch.DrugBatchResult is {
       send drugBatchResult to outlet DrugSupplyContext.DrugBatchResultStreamOut
     }
+    on serializationMetricsView: result SerializationMetricsView is {
+      send serializationMetricsView to outlet DrugSupplyContext.SerializationMetricsViewStreamOut
+    }
     on other is {
       error "Unexpected message at the DrugSupplyContext boundary"
     }
@@ -67,6 +71,9 @@ context DrugSupplyContext as router is {
   }
   connector 'SerializationMetricsProjector To SerializationRepository Storage' is from outlet DrugSupplyContext.SerializationMetricsProjector.SerializationMetricsProjectorToSerializationRepository to inlet DrugSupplyContext.SerializationRepository.SerializationRepositoryFromSerializationMetricsProjector with {
     briefly "SerializationMetricsProjector projections on their way to storage"
+  }
+  connector 'SerializationMetricsView Stream Egress' is from outlet DrugSupplyContext.SerializationRepository.SerializationRepositoryResponses to inlet DrugSupplyContext.SerializationMetricsViewStreamIn with {
+    briefly "Serialization metrics on their way out to the application"
   }
   connector 'DrugBatchCommand Stream Intake' is from outlet DrugSupplyContext.DrugBatchCommandStreamOut to inlet DrugSupplyContext.DrugBatch.DrugBatchCommands  connector 'DrugBatchResult Stream Egress' is from outlet DrugSupplyContext.BatchRepository.BatchRepositoryResponses to inlet DrugSupplyContext.DrugBatchResultStreamIn  adaptor FromManufacturingSystem from context ManufacturingSystem as flow is { 
     inlet FromManufacturingSystemIn is type ManufacturingSystem.ManufacturingSystemEvent    outlet FromManufacturingSystemToDrugSupplyContext is command DrugBatch.ManufactureBatch
@@ -372,8 +379,9 @@ context DrugSupplyContext as router is {
       |reach it directly; the projector turns each event into one of these.
     }
   }
-  repository SerializationRepository as sink is {
-    inlet SerializationRepositoryFromSerializationMetricsProjector is type SerializationRepositoryCommand    command PersistAuthenticityVerified is {
+  repository SerializationRepository as flow is {
+    inlet SerializationRepositoryFromSerializationMetricsProjector is type SerializationRepositoryCommand    outlet SerializationRepositoryResponses is result SerializationMetricsView
+    command PersistAuthenticityVerified is {
       batchId: BatchId with {
         briefly "Row addressed"
         described as {

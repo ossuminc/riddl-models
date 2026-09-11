@@ -159,7 +159,11 @@ for model, rs in sorted(bym.items()):
                 oty=f"command {cmds[0]}" if len(cmds)==1 else f"type {pl['ocid']}.From{ctx}Command"
                 pl["oty"]=oty
                 ports+=f"{ai}outlet From{ctx}To{pl['ocid']} is {oty}\n"
-            rep=f"adaptor From{ctx} from context {hm.group(1)} as flow is {{\n"+ports
+            # [1.25]: ascribe by DECLARED arity. A prose-only From adaptor has an inlet
+            # and no transmission; Reid ruled it must not be written `as sink`, so it
+            # carries no ascription until an outlet is authored.
+            asc=" as flow" if pl["tells"] else ""
+            rep=f"adaptor From{ctx} from context {hm.group(1)}{asc} is {{\n"+ports
             edits.append((ad["file"], s0, s0+hm.end(), rep))
         apply_edits(d, edits)
 
@@ -237,7 +241,8 @@ for model, rs in sorted(bym.items()):
     if not err:
         p=subprocess.run([R,"--provide-tips","--no-ansi-messages","validate",e.name],
                          cwd=d,capture_output=True,text=True)
-        bad=[l for l in (p.stdout+p.stderr).splitlines() if re.match(r"^\[[a-z-]+\]",l.strip())]
+        # errors only: since [1.25] the corpus legitimately carries Missing and style findings while it drains
+        bad=[l for l in (p.stdout+p.stderr).splitlines() if re.match(r"^\[error\]",l.strip())]
         if bad: err="\n  ".join(bad[:6])
     if err:
         if not os.environ.get("KEEP"):
