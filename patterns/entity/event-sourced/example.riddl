@@ -19,10 +19,15 @@ domain Banking is {
       |A monetary amount, to two decimal places.
     }
   }
-  context Accounts as flow is {
+  context Accounts as router is {
     inlet AccountsCommandsIn is type Account.AccountCommand
     outlet AccountsCommandsFwd is type Account.AccountCommand
+    inlet AccountResultStreamIn is result Account.AccountResult
+    outlet AccountResultStreamOut is result Account.AccountResult
     handler AccountsBoundary is {
+      on accountResult: result Account.AccountResult is {
+        send accountResult to outlet Accounts.AccountResultStreamOut
+      }
       on openAccount: command Account.OpenAccount is {
         forward openAccount to outlet Accounts.AccountsCommandsFwd
       }
@@ -51,6 +56,9 @@ domain Banking is {
     }
     connector AppCommandsToAccountIntake is from outlet Accounts.AccountsCommandsFwd to inlet Accounts.Account.AccountCommands with {
       briefly "Boundary to the aggregate"
+    }
+    connector 'AccountResult Stream Egress' is from outlet Accounts.AccountRepository.AccountRepositoryResponses to inlet Accounts.AccountResultStreamIn with {
+      briefly "Query results on their way out to the application"
     }
     type AccountId is Id(Accounts.Account) with {
       briefly "Account identifier"
@@ -455,8 +463,9 @@ domain Banking is {
         |is a result.
       }
     }
-    repository AccountRepository as sink is {
+    repository AccountRepository as flow is {
       inlet AccountRepositoryFromProjection is type AccountRepositoryCommand
+      outlet AccountRepositoryResponses is result Account.AccountResult
       record StoredAccount is {
         accountId: Accounts.AccountId with {
           briefly "accountId"
@@ -605,25 +614,41 @@ domain Banking is {
         |Builds the stored account view from the entity's events.
       }
     }
-    streamlet AccountEventSource as source is {
+    streamlet AccountEventSource as split is {
+      inlet AccountEventsToPublish is type Account.AccountEvent
+      outlet AccountEventsForProjection is type Account.AccountEvent
       outlet PublishedAccountEvents is type Account.AccountEvent
       handler AccountEventEmitter is {
         on accountOpened: event Account.AccountOpened is {
-          send accountOpened to outlet PublishedAccountEvents
+          send accountOpened to outlet Accounts.AccountEventSource.AccountEventsForProjection
+          send accountOpened to outlet Accounts.AccountEventSource.PublishedAccountEvents
+        }
+        on moneyDeposited: event Account.MoneyDeposited is {
+          send moneyDeposited to outlet Accounts.AccountEventSource.AccountEventsForProjection
+          send moneyDeposited to outlet Accounts.AccountEventSource.PublishedAccountEvents
+        }
+        on moneyWithdrawn: event Account.MoneyWithdrawn is {
+          send moneyWithdrawn to outlet Accounts.AccountEventSource.AccountEventsForProjection
+          send moneyWithdrawn to outlet Accounts.AccountEventSource.PublishedAccountEvents
+        }
+        on accountClosed: event Account.AccountClosed is {
+          send accountClosed to outlet Accounts.AccountEventSource.AccountEventsForProjection
+          send accountClosed to outlet Accounts.AccountEventSource.PublishedAccountEvents
         }
         on other is {
-          error "Unexpected message for source AccountEventSource"
+          error "Unexpected message for split AccountEventSource"
         }
       } with {
-        briefly "Account event emitter"
+        briefly "Account event fan-out"
         described as {
-          |Publishes account events beyond this context.
+          |Every event the entity emits goes two ways: to the projection that
+          |builds the read model, and out of the context for anyone listening.
         }
       }
     } with {
-      briefly "Account event source"
+      briefly "Account event fan-out"
       described as {
-        |Publishes the account event stream.
+        |Fans the account event stream out to the projection and to publication.
       }
     }
     streamlet AccountEventSink as flow is {
@@ -649,6 +674,9 @@ domain Banking is {
         |Terminates the published account event stream.
       }
     }
+    connector AccountEventsToFanOut is from outlet Accounts.Account.AccountEvents to inlet Accounts.AccountEventSource.AccountEventsToPublish with {
+      briefly "The entity's events on their way to the fan-out"
+    }
     connector PublishedEventsToSink is {
       from outlet Accounts.AccountEventSource.PublishedAccountEvents to
         inlet Accounts.AccountEventSink.IncomingAccountEvents
@@ -659,7 +687,7 @@ domain Banking is {
       }
     }
     connector AccountEventsToProjection is {
-      from outlet Accounts.Account.AccountEvents to
+      from outlet Accounts.AccountEventSource.AccountEventsForProjection to
         inlet Accounts.AccountProjection.AccountProjectionFromAccount
     } with {
       briefly "Account events to the projection"
@@ -682,7 +710,7 @@ domain Banking is {
       |The bounded context owning account behaviour and its persistence.
     }
   }
-  application context BankingApp as source is {
+  application context BankingApp as flow is {
     inlet ErrorSink is record Riddl.GeneratorError with {
       option error-sink()
       briefly "Hard error destination"
@@ -691,6 +719,7 @@ domain Banking is {
       }
     }
     outlet AppAccountCommands is type Accounts.Account.AccountCommand
+    inlet AppAccountResults is result Accounts.Account.AccountResult
     group AccountScreen is {
       input OpenAccountInput acquires command Accounts.Account.OpenAccount with {
         briefly "Open account control"
@@ -705,6 +734,9 @@ domain Banking is {
       }
     }
     handler BankingAppHandler is {
+      on accountResult: result Accounts.Account.AccountResult is {
+        do "show the account on the screen that asked for it"
+      }
       on other is {
         error "Unexpected message for application context BankingApp"
       }
@@ -719,6 +751,9 @@ domain Banking is {
     described as {
       |The UI-bearing application that originates account commands.
     }
+  }
+  persistent connector 'AccountResult Stream' is from outlet Accounts.AccountResultStreamOut to inlet BankingApp.AppAccountResults with {
+    briefly "Query results back to the application"
   }
   persistent connector AppCommandsToAccount is {
     from outlet BankingApp.AppAccountCommands to

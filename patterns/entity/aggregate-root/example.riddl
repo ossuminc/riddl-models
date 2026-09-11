@@ -14,10 +14,15 @@ domain Commerce is {
       |Ossum Inc., authors and maintainers of this pattern library.
     }
   }
-  context Shopping as flow is {
+  context Shopping as router is {
     inlet ShoppingCommandsIn is type Cart.CartCommand
     outlet ShoppingCommandsFwd is type Cart.CartCommand
+    inlet CartResultStreamIn is result Cart.CartResult
+    outlet CartResultStreamOut is result Cart.CartResult
     handler ShoppingBoundary is {
+      on cartResult: result Cart.CartResult is {
+        send cartResult to outlet Shopping.CartResultStreamOut
+      }
       on addLineItem: command Cart.AddLineItem is {
         send addLineItem to outlet Shopping.ShoppingCommandsFwd
       }
@@ -39,6 +44,9 @@ domain Commerce is {
     }
     connector AppCommandsToCartIntake is from outlet Shopping.ShoppingCommandsFwd to inlet Shopping.Cart.CartCommands with {
       briefly "Boundary to the aggregate"
+    }
+    connector 'CartResult Stream Egress' is from outlet Shopping.CartRepository.CartRepositoryResponses to inlet Shopping.CartResultStreamIn with {
+      briefly "Query results on their way out to the application"
     }
     type ProductId is UUID with {
       briefly "Product identifier"
@@ -406,8 +414,9 @@ domain Commerce is {
         |of a command is a database update, the effect of a query is a result.
       }
     }
-    repository CartRepository as sink is {
+    repository CartRepository as flow is {
       inlet CartRepositoryFromProjection is type CartRepositoryCommand
+      outlet CartRepositoryResponses is result Cart.CartResult
       record StoredCart is {
         cartId: Shopping.CartId with {
           briefly "cartId"
@@ -580,7 +589,7 @@ domain Commerce is {
       |The bounded context owning the cart aggregate and its persistence.
     }
   }
-  application context CommerceApp as source is {
+  application context CommerceApp as flow is {
     inlet ErrorSink is record Riddl.GeneratorError with {
       option error-sink()
       briefly "Hard error destination"
@@ -589,6 +598,7 @@ domain Commerce is {
       }
     }
     outlet AppCartCommands is type Shopping.Cart.CartCommand
+    inlet AppCartResults is result Shopping.Cart.CartResult
     group CartScreen is {
       input AddLineItemInput acquires command Shopping.Cart.AddLineItem with {
         briefly "Add to cart control"
@@ -609,6 +619,9 @@ domain Commerce is {
       }
     }
     handler CommerceAppHandler is {
+      on cartResult: result Shopping.Cart.CartResult is {
+        do "show the cart on the screen that asked for it"
+      }
       on other is {
         error "Unexpected message for application context CommerceApp"
       }
@@ -623,6 +636,9 @@ domain Commerce is {
     described as {
       |The UI-bearing application that originates cart commands.
     }
+  }
+  persistent connector 'CartResult Stream' is from outlet Shopping.CartResultStreamOut to inlet CommerceApp.AppCartResults with {
+    briefly "Query results back to the application"
   }
   persistent connector AppCommandsToCart is {
     from outlet CommerceApp.AppCartCommands to
