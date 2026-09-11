@@ -1,5 +1,27 @@
 // Prescription Management - Bounded Context
 context PrescriptionContext as router is {
+  type FromEPrescribingNetworkCommand is one of {
+    Prescription.ReceivePrescription or Prescription.TransferPrescription
+  } with {
+    briefly "What FromEPrescribingNetwork turns that service's news into"
+  }
+  inlet PrescriptionContextFromEPrescribingNetwork is type PrescriptionContext.FromEPrescribingNetworkCommand with {
+    briefly "What FromEPrescribingNetwork makes of that service's news"
+  }
+  connector 'FromEPrescribingNetwork Intake' is from outlet PrescriptionContext.FromEPrescribingNetwork.FromEPrescribingNetworkToPrescriptionContext to inlet PrescriptionContext.PrescriptionContextFromEPrescribingNetwork with {
+    briefly "What FromEPrescribingNetwork makes of that news, on its way in"
+  }
+  type FromPrescriberVerificationCommand is one of {
+    Prescription.PlaceOnHold or Prescription.VerifyPrescription
+  } with {
+    briefly "What FromPrescriberVerification turns that service's news into"
+  }
+  inlet PrescriptionContextFromPrescriberVerification is type PrescriptionContext.FromPrescriberVerificationCommand with {
+    briefly "What FromPrescriberVerification makes of that service's news"
+  }
+  connector 'FromPrescriberVerification Intake' is from outlet PrescriptionContext.FromPrescriberVerification.FromPrescriberVerificationToPrescriptionContext to inlet PrescriptionContext.PrescriptionContextFromPrescriberVerification with {
+    briefly "What FromPrescriberVerification makes of that news, on its way in"
+  }
   connector 'HoldAnalysisProjector Storage' is from outlet PrescriptionContext.HoldAnalysisProjector.HoldAnalysisProjectorToRepository to inlet PrescriptionContext.PrescriptionRepository.PrescriptionRepositoryFromHoldAnalysisProjector with {
     briefly "HoldAnalysisProjector messages on their way to PrescriptionRepository"
     described as {
@@ -53,13 +75,16 @@ context PrescriptionContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'PrescriptionCommand Stream Intake' is from outlet PrescriptionContext.PrescriptionCommandStreamOut to inlet PrescriptionContext.Prescription.PrescriptionCommands  connector 'PrescriptionQueryResult Stream Egress' is from outlet PrescriptionContext.PrescriptionRepository.PrescriptionRepositoryResponses to inlet PrescriptionContext.PrescriptionQueryResultStreaIn  adaptor FromEPrescribingNetwork from context EPrescribingNetwork is { 
+  connector 'PrescriptionCommand Stream Intake' is from outlet PrescriptionContext.PrescriptionCommandStreamOut to inlet PrescriptionContext.Prescription.PrescriptionCommands  connector 'PrescriptionQueryResult Stream Egress' is from outlet PrescriptionContext.PrescriptionRepository.PrescriptionRepositoryResponses to inlet PrescriptionContext.PrescriptionQueryResultStreaIn  adaptor FromEPrescribingNetwork from context EPrescribingNetwork as flow is { 
+    inlet FromEPrescribingNetworkIn is type EPrescribingNetwork.EPrescribingNetworkEvent    outlet FromEPrescribingNetworkToPrescriptionContext is type PrescriptionContext.FromEPrescribingNetworkCommand
     handler FromEPrescribingNetworkHandler is {
-      on event EPrescribingNetwork.NewPrescriptionReceived is {
-        do "the model receives new prescription received"
+      on newPrescriptionReceived: event EPrescribingNetwork.NewPrescriptionReceived is {
+        let item0: type Prescription.ReceivePrescription = prompt("translate the newPrescriptionReceived event into a ReceivePrescription, a prescription arriving on the network is what the pharmacy receives")
+        send item0 to outlet PrescriptionContext.FromEPrescribingNetwork.FromEPrescribingNetworkToPrescriptionContext
       }
-      on event EPrescribingNetwork.TransferCompleted is {
-        do "the model receives transfer completed"
+      on transferCompleted: event EPrescribingNetwork.TransferCompleted is {
+        let item0: type Prescription.TransferPrescription = prompt("translate the transferCompleted event into a TransferPrescription, a transfer the network has completed is what the prescription records")
+        send item0 to outlet PrescriptionContext.FromEPrescribingNetwork.FromEPrescribingNetworkToPrescriptionContext
       }
       on other is {
         error "Unexpected message for adaptor FromEPrescribingNetwork"
@@ -76,13 +101,13 @@ context PrescriptionContext as router is {
       |The model's side of the EPrescribingNetwork conversation.
     }
   }
-  adaptor FromInsuranceAdjudication from context InsuranceAdjudication is { 
-    handler FromInsuranceAdjudicationHandler is {
-      on event InsuranceAdjudication.ClaimAdjudicated is {
-        do "the model receives claim adjudicated"
+  adaptor FromInsuranceAdjudication from context InsuranceAdjudication as flow is { 
+    inlet FromInsuranceAdjudicationIn is type InsuranceAdjudication.InsuranceAdjudicationEvent    handler FromInsuranceAdjudicationHandler is {
+      on claimAdjudicated: event InsuranceAdjudication.ClaimAdjudicated is {
+        do "adjudication settles what the payer covers; the prescription's own state is unchanged"
       }
-      on event InsuranceAdjudication.PriorAuthDecided is {
-        do "the model receives prior auth decided"
+      on priorAuthDecided: event InsuranceAdjudication.PriorAuthDecided is {
+        do "a prior authorisation decision either clears the way or does not; releasing a hold is the pharmacist's act"
       }
       on other is {
         error "Unexpected message for adaptor FromInsuranceAdjudication"
@@ -99,13 +124,16 @@ context PrescriptionContext as router is {
       |The model's side of the InsuranceAdjudication conversation.
     }
   }
-  adaptor FromPrescriberVerification from context PrescriberVerification is { 
+  adaptor FromPrescriberVerification from context PrescriberVerification as flow is { 
+    inlet FromPrescriberVerificationIn is type PrescriberVerification.PrescriberVerificationEvent    outlet FromPrescriberVerificationToPrescriptionContext is type PrescriptionContext.FromPrescriberVerificationCommand
     handler FromPrescriberVerificationHandler is {
-      on event PrescriberVerification.PrescriberVerified is {
-        do "the model receives prescriber verified"
+      on prescriberVerified: event PrescriberVerification.PrescriberVerified is {
+        let item0: type Prescription.VerifyPrescription = prompt("translate the prescriberVerified event into a VerifyPrescription, a verified prescriber is what the prescription's verification records")
+        send item0 to outlet PrescriptionContext.FromPrescriberVerification.FromPrescriberVerificationToPrescriptionContext
       }
-      on event PrescriberVerification.VerificationFailed is {
-        do "the model receives verification failed"
+      on verificationFailed: event PrescriberVerification.VerificationFailed is {
+        let item0: type Prescription.PlaceOnHold = prompt("translate the verificationFailed event into a PlaceOnHold, a prescription whose prescriber cannot be verified must not be filled")
+        send item0 to outlet PrescriptionContext.FromPrescriberVerification.FromPrescriberVerificationToPrescriptionContext
       }
       on other is {
         error "Unexpected message for adaptor FromPrescriberVerification"

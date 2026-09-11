@@ -1,5 +1,11 @@
 // Supply Context - the main bounded context for hospital supply chain
 context SupplyContext as router is {
+  inlet SupplyContextFromClinicalUsage is command SupplyOrder.CreateRequisition with {
+    briefly "What FromClinicalUsage makes of that service's news"
+  }
+  connector 'FromClinicalUsage Intake' is from outlet SupplyContext.FromClinicalUsage.FromClinicalUsageToSupplyContext to inlet SupplyContext.SupplyContextFromClinicalUsage with {
+    briefly "What FromClinicalUsage makes of that news, on its way in"
+  }
   inlet SupplyOrderCommandStreamIn is type SupplyOrderCommand  outlet SupplyOrderCommandStreamOut is type SupplyOrderCommand
   inlet StockItemResultStreamIn is result SupplyOrder.SupplyOrderResult  outlet StockItemResultStreamOut is result SupplyOrder.SupplyOrderResult
   handler SupplyContextBoundary is {
@@ -32,13 +38,15 @@ context SupplyContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'SupplyOrderCommand Stream Intake' is from outlet SupplyContext.SupplyOrderCommandStreamOut to inlet SupplyContext.SupplyOrder.SupplyOrderCommands  connector 'StockItemResult Stream Egress' is from outlet SupplyContext.InventoryRepository.InventoryRepositoryResponses to inlet SupplyContext.StockItemResultStreamIn  adaptor FromClinicalUsage from context ClinicalUsage is { 
+  connector 'SupplyOrderCommand Stream Intake' is from outlet SupplyContext.SupplyOrderCommandStreamOut to inlet SupplyContext.SupplyOrder.SupplyOrderCommands  connector 'StockItemResult Stream Egress' is from outlet SupplyContext.InventoryRepository.InventoryRepositoryResponses to inlet SupplyContext.StockItemResultStreamIn  adaptor FromClinicalUsage from context ClinicalUsage as flow is { 
+    inlet FromClinicalUsageIn is type ClinicalUsage.ClinicalUsageEvent    outlet FromClinicalUsageToSupplyContext is command SupplyOrder.CreateRequisition
     handler FromClinicalUsageHandler is {
-      on event ClinicalUsage.ParLevelBreach is {
-        do "the model receives par level breach"
+      on parLevelBreach: event ClinicalUsage.ParLevelBreach is {
+        let item0: type SupplyOrder.CreateRequisition = prompt("translate the parLevelBreach event into a CreateRequisition, stock below par is what a requisition exists to correct")
+        send item0 to outlet SupplyContext.FromClinicalUsage.FromClinicalUsageToSupplyContext
       }
-      on event ClinicalUsage.SupplyConsumed is {
-        do "the model receives supply consumed"
+      on supplyConsumed: event ClinicalUsage.SupplyConsumed is {
+        do "consumption is reported; issuing the supplies was recorded here"
       }
       on event ClinicalUsage.SupplyRequested is {
         do "raise a requisition for the items the clinical area asked for"
@@ -80,16 +88,16 @@ context SupplyContext as router is {
       |The model's side of the ClinicalUsage conversation.
     }
   }
-  adaptor FromFinanceAP from context FinanceAP is { 
-    handler FromFinanceAPHandler is {
-      on event FinanceAP.InvoiceReceived is {
-        do "the model receives invoice received"
+  adaptor FromFinanceAP from context FinanceAP as flow is { 
+    inlet FromFinanceAPIn is type FinanceAP.FinanceAPEvent    handler FromFinanceAPHandler is {
+      on invoiceReceived: event FinanceAP.InvoiceReceived is {
+        do "accounts payable has the invoice; receiving the shipment was recorded here"
       }
-      on event FinanceAP.MatchException is {
-        do "the model receives match exception"
+      on matchException: event FinanceAP.MatchException is {
+        do "a mismatch between order, receipt and invoice is resolved by people, not by the order"
       }
-      on event FinanceAP.PaymentScheduled is {
-        do "the model receives payment scheduled"
+      on paymentScheduled: event FinanceAP.PaymentScheduled is {
+        do "payment timing is finance's business; the order is complete when it is received"
       }
       on other is {
         error "Unexpected message for adaptor FromFinanceAP"
@@ -128,13 +136,13 @@ context SupplyContext as router is {
       |The model's side of the FinanceAP conversation.
     }
   }
-  adaptor FromVendorCatalog from context VendorCatalog is { 
-    handler FromVendorCatalogHandler is {
-      on event VendorCatalog.CatalogUpdated is {
-        do "the model receives catalog updated"
+  adaptor FromVendorCatalog from context VendorCatalog as flow is { 
+    inlet FromVendorCatalogIn is type VendorCatalog.VendorCatalogEvent    handler FromVendorCatalogHandler is {
+      on catalogUpdated: event VendorCatalog.CatalogUpdated is {
+        do "catalogue changes apply to requisitions yet to be made"
       }
-      on event VendorCatalog.PriceChanged is {
-        do "the model receives price changed"
+      on priceChanged: event VendorCatalog.PriceChanged is {
+        do "a new price applies to the next order, not to one already placed"
       }
       on other is {
         error "Unexpected message for adaptor FromVendorCatalog"

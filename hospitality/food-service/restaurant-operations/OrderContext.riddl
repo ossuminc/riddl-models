@@ -1,5 +1,17 @@
 // Restaurant Operations - Order Context
 context OrderContext as router is {
+  inlet OrderContextFromKitchenDisplayService is command TableOrder.MarkItemReady with {
+    briefly "What FromKitchenDisplayService makes of that service's news"
+  }
+  connector 'FromKitchenDisplayService Intake' is from outlet OrderContext.FromKitchenDisplayService.FromKitchenDisplayServiceToOrderContext to inlet OrderContext.OrderContextFromKitchenDisplayService with {
+    briefly "What FromKitchenDisplayService makes of that news, on its way in"
+  }
+  inlet OrderContextFromReservationService is command TableOrder.CreateOrder with {
+    briefly "What FromReservationService makes of that service's news"
+  }
+  connector 'FromReservationService Intake' is from outlet OrderContext.FromReservationService.FromReservationServiceToOrderContext to inlet OrderContext.OrderContextFromReservationService with {
+    briefly "What FromReservationService makes of that news, on its way in"
+  }
   inlet TableOrderCommandStreamIn is type TableOrderCommand  outlet TableOrderCommandStreamOut is type TableOrderCommand
   inlet MarketplaceOrderResultStreamIn is result TableOrder.TableOrderResult  outlet MarketplaceOrderResultStreamOut is result TableOrder.TableOrderResult
   handler OrderContextBoundary is {
@@ -59,13 +71,15 @@ context OrderContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'TableOrderCommand Stream Intake' is from outlet OrderContext.TableOrderCommandStreamOut to inlet OrderContext.TableOrder.TableOrderCommands  connector 'MarketplaceOrderResult Stream Egress' is from outlet OrderContext.OrderRepository.OrderRepositoryResponses to inlet OrderContext.MarketplaceOrderResultStreamIn  adaptor FromKitchenDisplayService from context KitchenDisplayService is { 
+  connector 'TableOrderCommand Stream Intake' is from outlet OrderContext.TableOrderCommandStreamOut to inlet OrderContext.TableOrder.TableOrderCommands  connector 'MarketplaceOrderResult Stream Egress' is from outlet OrderContext.OrderRepository.OrderRepositoryResponses to inlet OrderContext.MarketplaceOrderResultStreamIn  adaptor FromKitchenDisplayService from context KitchenDisplayService as flow is { 
+    inlet FromKitchenDisplayServiceIn is type KitchenDisplayService.KitchenDisplayServiceEvent    outlet FromKitchenDisplayServiceToOrderContext is command TableOrder.MarkItemReady
     handler FromKitchenDisplayServiceHandler is {
-      on event KitchenDisplayService.TicketBumped is {
-        do "the model receives ticket bumped"
+      on ticketBumped: event KitchenDisplayService.TicketBumped is {
+        let item0: type TableOrder.MarkItemReady = prompt("translate the ticketBumped event into a MarkItemReady, the kitchen bumping the ticket is the food being ready")
+        send item0 to outlet OrderContext.FromKitchenDisplayService.FromKitchenDisplayServiceToOrderContext
       }
-      on event KitchenDisplayService.TicketDisplayed is {
-        do "the model receives ticket displayed"
+      on ticketDisplayed: event KitchenDisplayService.TicketDisplayed is {
+        do "the kitchen has the ticket; submitting the order was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromKitchenDisplayService"
@@ -108,10 +122,10 @@ context OrderContext as router is {
       |The model's side of the KitchenDisplayService conversation.
     }
   }
-  adaptor FromMenuService from context MenuService is { 
-    handler FromMenuServiceHandler is {
-      on event MenuService.AvailabilityUpdated is {
-        do "the model receives availability updated"
+  adaptor FromMenuService from context MenuService as flow is { 
+    inlet FromMenuServiceIn is event MenuService.AvailabilityUpdated    handler FromMenuServiceHandler is {
+      on availabilityUpdated: event MenuService.AvailabilityUpdated is {
+        do "availability changes what can be ordered next; an order already placed stands"
       }
       on other is {
         error "Unexpected message for adaptor FromMenuService"
@@ -158,16 +172,16 @@ context OrderContext as router is {
       |The model's side of the MenuService conversation.
     }
   }
-  adaptor FromPaymentProcessingService from context PaymentProcessingService is { 
-    handler FromPaymentProcessingServiceHandler is {
-      on event PaymentProcessingService.CardPaymentFailed is {
-        do "the model receives card payment failed"
+  adaptor FromPaymentProcessingService from context PaymentProcessingService as flow is { 
+    inlet FromPaymentProcessingServiceIn is type PaymentProcessingService.PaymentProcessingServiceEvent    handler FromPaymentProcessingServiceHandler is {
+      on cardPaymentFailed: event PaymentProcessingService.CardPaymentFailed is {
+        do "a declined card leaves the bill open for another tender"
       }
-      on event PaymentProcessingService.CardPaymentProcessed is {
-        do "the model receives card payment processed"
+      on cardPaymentProcessed: event PaymentProcessingService.CardPaymentProcessed is {
+        do "the card has cleared; the order recorded taking payment"
       }
-      on event PaymentProcessingService.RefundProcessed is {
-        do "the model receives refund processed"
+      on refundProcessed: event PaymentProcessingService.RefundProcessed is {
+        do "the refund has gone; voiding was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentProcessingService"
@@ -210,13 +224,13 @@ context OrderContext as router is {
       |The model's side of the PaymentProcessingService conversation.
     }
   }
-  adaptor FromReceiptPrintingService from context ReceiptPrintingService is { 
-    handler FromReceiptPrintingServiceHandler is {
-      on event ReceiptPrintingService.KitchenTicketPrinted is {
-        do "the model receives kitchen ticket printed"
+  adaptor FromReceiptPrintingService from context ReceiptPrintingService as flow is { 
+    inlet FromReceiptPrintingServiceIn is type ReceiptPrintingService.ReceiptPrintingServiceEvent    handler FromReceiptPrintingServiceHandler is {
+      on kitchenTicketPrinted: event ReceiptPrintingService.KitchenTicketPrinted is {
+        do "the kitchen copy is printed; the order was already submitted"
       }
-      on event ReceiptPrintingService.ReceiptPrinted is {
-        do "the model receives receipt printed"
+      on receiptPrinted: event ReceiptPrintingService.ReceiptPrinted is {
+        do "the receipt is printed; closing the order was the act"
       }
       on other is {
         error "Unexpected message for adaptor FromReceiptPrintingService"
@@ -259,10 +273,12 @@ context OrderContext as router is {
       |The model's side of the ReceiptPrintingService conversation.
     }
   }
-  adaptor FromReservationService from context ReservationService is { 
+  adaptor FromReservationService from context ReservationService as flow is { 
+    inlet FromReservationServiceIn is event ReservationService.ReservationSeated    outlet FromReservationServiceToOrderContext is command TableOrder.CreateOrder
     handler FromReservationServiceHandler is {
-      on event ReservationService.ReservationSeated is {
-        do "the model receives reservation seated"
+      on reservationSeated: event ReservationService.ReservationSeated is {
+        let item0: type TableOrder.CreateOrder = prompt("translate the reservationSeated event into a CreateOrder, a party seated is what a table order is opened for")
+        send item0 to outlet OrderContext.FromReservationService.FromReservationServiceToOrderContext
       }
       on other is {
         error "Unexpected message for adaptor FromReservationService"
@@ -303,13 +319,13 @@ context OrderContext as router is {
       |The model's side of the ReservationService conversation.
     }
   }
-  adaptor FromTableManagementService from context TableManagementService is { 
-    handler FromTableManagementServiceHandler is {
-      on event TableManagementService.TableAssigned is {
-        do "the model receives table assigned"
+  adaptor FromTableManagementService from context TableManagementService as flow is { 
+    inlet FromTableManagementServiceIn is type TableManagementService.TableManagementServiceEvent    handler FromTableManagementServiceHandler is {
+      on tableAssigned: event TableManagementService.TableAssigned is {
+        do "the table is assigned; the order is opened when the party is seated"
       }
-      on event TableManagementService.TableReleased is {
-        do "the model receives table released"
+      on tableReleased: event TableManagementService.TableReleased is {
+        do "the table is free; closing the order was the act"
       }
       on other is {
         error "Unexpected message for adaptor FromTableManagementService"

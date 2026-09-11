@@ -1,5 +1,23 @@
 // Venue Management - Venue Context
 context VenueContext as router is {
+  inlet VenueContextFromCateringService is command Booking.SetCatering with {
+    briefly "What FromCateringService makes of that service's news"
+  }
+  connector 'FromCateringService Intake' is from outlet VenueContext.FromCateringService.FromCateringServiceToVenueContext to inlet VenueContext.VenueContextFromCateringService with {
+    briefly "What FromCateringService makes of that news, on its way in"
+  }
+  inlet VenueContextFromResourceInventoryService is command Booking.AddResource with {
+    briefly "What FromResourceInventoryService makes of that service's news"
+  }
+  connector 'FromResourceInventoryService Intake' is from outlet VenueContext.FromResourceInventoryService.FromResourceInventoryServiceToVenueContext to inlet VenueContext.VenueContextFromResourceInventoryService with {
+    briefly "What FromResourceInventoryService makes of that news, on its way in"
+  }
+  inlet VenueContextFromSpaceAvailabilityService is command Booking.ConfirmBooking with {
+    briefly "What FromSpaceAvailabilityService makes of that service's news"
+  }
+  connector 'FromSpaceAvailabilityService Intake' is from outlet VenueContext.FromSpaceAvailabilityService.FromSpaceAvailabilityServiceToVenueContext to inlet VenueContext.VenueContextFromSpaceAvailabilityService with {
+    briefly "What FromSpaceAvailabilityService makes of that news, on its way in"
+  }
   inlet BookingCommandStreamIn is type BookingCommand  outlet BookingCommandStreamOut is type BookingCommand
   inlet BookingResultStreamIn is result Booking.BookingResult  outlet BookingResultStreamOut is result Booking.BookingResult
   handler VenueContextBoundary is {
@@ -53,13 +71,15 @@ context VenueContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'BookingCommand Stream Intake' is from outlet VenueContext.BookingCommandStreamOut to inlet VenueContext.Booking.BookingCommands  connector 'BookingResult Stream Egress' is from outlet VenueContext.BookingRepository.BookingRepositoryResponses to inlet VenueContext.BookingResultStreamIn  adaptor FromCateringService from context CateringService is { 
+  connector 'BookingCommand Stream Intake' is from outlet VenueContext.BookingCommandStreamOut to inlet VenueContext.Booking.BookingCommands  connector 'BookingResult Stream Egress' is from outlet VenueContext.BookingRepository.BookingRepositoryResponses to inlet VenueContext.BookingResultStreamIn  adaptor FromCateringService from context CateringService as flow is { 
+    inlet FromCateringServiceIn is type CateringService.CateringServiceEvent    outlet FromCateringServiceToVenueContext is command Booking.SetCatering
     handler FromCateringServiceHandler is {
-      on event CateringService.CateringBooked is {
-        do "the model receives catering booked"
+      on cateringBooked: event CateringService.CateringBooked is {
+        let item0: type Booking.SetCatering = prompt("translate the cateringBooked event into a SetCatering, catering actually booked is what the booking's catering record holds")
+        send item0 to outlet VenueContext.FromCateringService.FromCateringServiceToVenueContext
       }
-      on event CateringService.CateringCancelled is {
-        do "the model receives catering cancelled"
+      on cateringCancelled: event CateringService.CateringCancelled is {
+        do "the catering is off; the booking recorded cancelling it"
       }
       on other is {
         error "Unexpected message for adaptor FromCateringService"
@@ -104,13 +124,13 @@ context VenueContext as router is {
       |The model's side of the CateringService conversation.
     }
   }
-  adaptor FromFacilitiesManagementService from context FacilitiesManagementService is { 
-    handler FromFacilitiesManagementServiceHandler is {
-      on event FacilitiesManagementService.SetupScheduled is {
-        do "the model receives setup scheduled"
+  adaptor FromFacilitiesManagementService from context FacilitiesManagementService as flow is { 
+    inlet FromFacilitiesManagementServiceIn is type FacilitiesManagementService.FacilitiesManagementServiceEvent    handler FromFacilitiesManagementServiceHandler is {
+      on setupScheduled: event FacilitiesManagementService.SetupScheduled is {
+        do "setup is scheduled; the event starts when the booking says so"
       }
-      on event FacilitiesManagementService.TeardownScheduled is {
-        do "the model receives teardown scheduled"
+      on teardownScheduled: event FacilitiesManagementService.TeardownScheduled is {
+        do "teardown is scheduled; the event completes on its own terms"
       }
       on other is {
         error "Unexpected message for adaptor FromFacilitiesManagementService"
@@ -181,16 +201,16 @@ context VenueContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromPaymentProcessingService from context PaymentProcessingService is { 
-    handler FromPaymentProcessingServiceHandler is {
-      on event PaymentProcessingService.PaymentFailed is {
-        do "the model receives payment failed"
+  adaptor FromPaymentProcessingService from context PaymentProcessingService as flow is { 
+    inlet FromPaymentProcessingServiceIn is type PaymentProcessingService.PaymentProcessingServiceEvent    handler FromPaymentProcessingServiceHandler is {
+      on paymentFailed: event PaymentProcessingService.PaymentFailed is {
+        do "an unpaid booking stays unconfirmed; the client is asked again"
       }
-      on event PaymentProcessingService.PaymentProcessed is {
-        do "the model receives payment processed"
+      on paymentProcessed: event PaymentProcessingService.PaymentProcessed is {
+        do "the payment has cleared; the deposit or final payment was recorded here"
       }
-      on event PaymentProcessingService.RefundProcessed is {
-        do "the model receives refund processed"
+      on refundProcessed: event PaymentProcessingService.RefundProcessed is {
+        do "the refund has gone; cancelling was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentProcessingService"
@@ -259,13 +279,15 @@ context VenueContext as router is {
       |The model's side of the PricingService conversation.
     }
   }
-  adaptor FromResourceInventoryService from context ResourceInventoryService is { 
+  adaptor FromResourceInventoryService from context ResourceInventoryService as flow is { 
+    inlet FromResourceInventoryServiceIn is type ResourceInventoryService.ResourceInventoryServiceEvent    outlet FromResourceInventoryServiceToVenueContext is command Booking.AddResource
     handler FromResourceInventoryServiceHandler is {
-      on event ResourceInventoryService.ResourcesReleased is {
-        do "the model receives resources released"
+      on resourcesReleased: event ResourceInventoryService.ResourcesReleased is {
+        do "resources are given back; removing them was recorded here"
       }
-      on event ResourceInventoryService.ResourcesReserved is {
-        do "the model receives resources reserved"
+      on resourcesReserved: event ResourceInventoryService.ResourcesReserved is {
+        let item0: type Booking.AddResource = prompt("translate the resourcesReserved event into a AddResource, a resource actually held is what the booking can claim")
+        send item0 to outlet VenueContext.FromResourceInventoryService.FromResourceInventoryServiceToVenueContext
       }
       on other is {
         error "Unexpected message for adaptor FromResourceInventoryService"
@@ -312,13 +334,15 @@ context VenueContext as router is {
       |The model's side of the ResourceInventoryService conversation.
     }
   }
-  adaptor FromSpaceAvailabilityService from context SpaceAvailabilityService is { 
+  adaptor FromSpaceAvailabilityService from context SpaceAvailabilityService as flow is { 
+    inlet FromSpaceAvailabilityServiceIn is type SpaceAvailabilityService.SpaceAvailabilityServiceEvent    outlet FromSpaceAvailabilityServiceToVenueContext is command Booking.ConfirmBooking
     handler FromSpaceAvailabilityServiceHandler is {
-      on event SpaceAvailabilityService.SpaceReleased is {
-        do "the model receives space released"
+      on spaceReleased: event SpaceAvailabilityService.SpaceReleased is {
+        do "the space is released; cancelling was recorded here"
       }
-      on event SpaceAvailabilityService.SpaceReserved is {
-        do "the model receives space reserved"
+      on spaceReserved: event SpaceAvailabilityService.SpaceReserved is {
+        let item0: type Booking.ConfirmBooking = prompt("translate the spaceReserved event into a ConfirmBooking, a booking without the space actually held is not confirmed")
+        send item0 to outlet VenueContext.FromSpaceAvailabilityService.FromSpaceAvailabilityServiceToVenueContext
       }
       on other is {
         error "Unexpected message for adaptor FromSpaceAvailabilityService"

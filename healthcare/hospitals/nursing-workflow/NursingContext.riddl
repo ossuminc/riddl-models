@@ -1,6 +1,29 @@
 // NursingContext - Bounded Context for Nursing Workflow
 // Contains repository and projectors for nursing operations
 context NursingContext as router is {
+  inlet NursingContextFromADTService is command NurseShift.AssignPatients with {
+    briefly "What FromADTService makes of that service's news"
+  }
+  connector 'FromADTService Intake' is from outlet NursingContext.FromADTService.FromADTServiceToNursingContext to inlet NursingContext.NursingContextFromADTService with {
+    briefly "What FromADTService makes of that news, on its way in"
+  }
+  inlet NursingContextFromMedicationAdministration is command NurseShift.CreateTask with {
+    briefly "What FromMedicationAdministration makes of that service's news"
+  }
+  connector 'FromMedicationAdministration Intake' is from outlet NursingContext.FromMedicationAdministration.FromMedicationAdministrationToNursingContext to inlet NursingContext.NursingContextFromMedicationAdministration with {
+    briefly "What FromMedicationAdministration makes of that news, on its way in"
+  }
+  type FromOrderManagementCommand is one of {
+    NurseShift.CreateTask or NurseShift.HoldTask
+  } with {
+    briefly "What FromOrderManagement turns that service's news into"
+  }
+  inlet NursingContextFromOrderManagement is type NursingContext.FromOrderManagementCommand with {
+    briefly "What FromOrderManagement makes of that service's news"
+  }
+  connector 'FromOrderManagement Intake' is from outlet NursingContext.FromOrderManagement.FromOrderManagementToNursingContext to inlet NursingContext.NursingContextFromOrderManagement with {
+    briefly "What FromOrderManagement makes of that news, on its way in"
+  }
   connector 'HandoffMetricsProjector Storage' is from outlet NursingContext.HandoffMetricsProjector.HandoffMetricsProjectorToRepository to inlet NursingContext.NursingRepository.NursingRepositoryFromHandoffMetricsProjector with {
     briefly "HandoffMetricsProjector messages on their way to NursingRepository"
     described as {
@@ -57,16 +80,19 @@ context NursingContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'NurseShiftCommand Stream Intake' is from outlet NursingContext.NurseShiftCommandStreamOut to inlet NursingContext.NurseShift.NurseShiftCommands  connector 'NurseShiftResult Stream Egress' is from outlet NursingContext.NursingRepository.NursingRepositoryResponses to inlet NursingContext.NurseShiftResultStreamIn  adaptor FromADTService from context ADTService is { 
+  connector 'NurseShiftCommand Stream Intake' is from outlet NursingContext.NurseShiftCommandStreamOut to inlet NursingContext.NurseShift.NurseShiftCommands  connector 'NurseShiftResult Stream Egress' is from outlet NursingContext.NursingRepository.NursingRepositoryResponses to inlet NursingContext.NurseShiftResultStreamIn  adaptor FromADTService from context ADTService as flow is { 
+    inlet FromADTServiceIn is type ADTService.ADTServiceEvent    outlet FromADTServiceToNursingContext is command NurseShift.AssignPatients
     handler FromADTServiceHandler is {
-      on event ADTService.PatientAdmitted is {
-        do "the model receives patient admitted"
+      on patientAdmitted: event ADTService.PatientAdmitted is {
+        let item0: type NurseShift.AssignPatients = prompt("translate the patientAdmitted event into a AssignPatients, a patient admitted to the unit is one the shift must take on")
+        send item0 to outlet NursingContext.FromADTService.FromADTServiceToNursingContext
       }
-      on event ADTService.PatientDischarged is {
-        do "the model receives patient discharged"
+      on patientDischarged: event ADTService.PatientDischarged is {
+        do "a discharged patient leaves the unit's care; the shift's record closes with its tasks"
       }
-      on event ADTService.PatientTransferred is {
-        do "the model receives patient transferred"
+      on patientTransferred: event ADTService.PatientTransferred is {
+        let item0: type NurseShift.AssignPatients = prompt("translate the patientTransferred event into a AssignPatients, a transfer changes who this shift is responsible for")
+        send item0 to outlet NursingContext.FromADTService.FromADTServiceToNursingContext
       }
       on other is {
         error "Unexpected message for adaptor FromADTService"
@@ -109,16 +135,18 @@ context NursingContext as router is {
       |The model's side of the ADTService conversation.
     }
   }
-  adaptor FromMedicationAdministration from context MedicationAdministration is { 
+  adaptor FromMedicationAdministration from context MedicationAdministration as flow is { 
+    inlet FromMedicationAdministrationIn is type MedicationAdministration.MedicationAdministrationEvent    outlet FromMedicationAdministrationToNursingContext is command NurseShift.CreateTask
     handler FromMedicationAdministrationHandler is {
-      on event MedicationAdministration.MedicationAdministered is {
-        do "the model receives medication administered"
+      on medicationAdministered: event MedicationAdministration.MedicationAdministered is {
+        do "the dose is given and documented; the shift recorded doing it"
       }
-      on event MedicationAdministration.MedicationDue is {
-        do "the model receives medication due"
+      on medicationDue: event MedicationAdministration.MedicationDue is {
+        let item0: type NurseShift.CreateTask = prompt("translate the medicationDue event into a CreateTask, medication coming due is work the shift must have on its list")
+        send item0 to outlet NursingContext.FromMedicationAdministration.FromMedicationAdministrationToNursingContext
       }
-      on event MedicationAdministration.MedicationHeld is {
-        do "the model receives medication held"
+      on medicationHeld: event MedicationAdministration.MedicationHeld is {
+        do "the hold is documented; the shift recorded deciding it"
       }
       on other is {
         error "Unexpected message for adaptor FromMedicationAdministration"
@@ -169,16 +197,19 @@ context NursingContext as router is {
       |The model's side of the MedicationAdministration conversation.
     }
   }
-  adaptor FromOrderManagement from context OrderManagement is { 
+  adaptor FromOrderManagement from context OrderManagement as flow is { 
+    inlet FromOrderManagementIn is type OrderManagement.OrderManagementEvent    outlet FromOrderManagementToNursingContext is type NursingContext.FromOrderManagementCommand
     handler FromOrderManagementHandler is {
-      on event OrderManagement.NursingOrderCreated is {
-        do "the model receives nursing order created"
+      on nursingOrderCreated: event OrderManagement.NursingOrderCreated is {
+        let item0: type NurseShift.CreateTask = prompt("translate the nursingOrderCreated event into a CreateTask, a new nursing order is work the shift must carry out")
+        send item0 to outlet NursingContext.FromOrderManagement.FromOrderManagementToNursingContext
       }
-      on event OrderManagement.NursingOrderDiscontinued is {
-        do "the model receives nursing order discontinued"
+      on nursingOrderDiscontinued: event OrderManagement.NursingOrderDiscontinued is {
+        let item0: type NurseShift.HoldTask = prompt("translate the nursingOrderDiscontinued event into a HoldTask, an order withdrawn means the task must not be performed")
+        send item0 to outlet NursingContext.FromOrderManagement.FromOrderManagementToNursingContext
       }
-      on event OrderManagement.NursingOrderModified is {
-        do "the model receives nursing order modified"
+      on nursingOrderModified: event OrderManagement.NursingOrderModified is {
+        do "a modified order changes what the task requires; the task itself already exists"
       }
       on other is {
         error "Unexpected message for adaptor FromOrderManagement"

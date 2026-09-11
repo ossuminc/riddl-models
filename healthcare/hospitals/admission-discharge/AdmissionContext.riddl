@@ -1,5 +1,17 @@
 // Hospital Admission/Discharge - Admission Context
 context AdmissionContext as router is {
+  inlet AdmissionContextFromBedManagementService is command Admission.AssignBed with {
+    briefly "What FromBedManagementService makes of that service's news"
+  }
+  connector 'FromBedManagementService Intake' is from outlet AdmissionContext.FromBedManagementService.FromBedManagementServiceToAdmissionContext to inlet AdmissionContext.AdmissionContextFromBedManagementService with {
+    briefly "What FromBedManagementService makes of that news, on its way in"
+  }
+  inlet AdmissionContextFromClinicalService is command Admission.InitiateDischarge with {
+    briefly "What FromClinicalService makes of that service's news"
+  }
+  connector 'FromClinicalService Intake' is from outlet AdmissionContext.FromClinicalService.FromClinicalServiceToAdmissionContext to inlet AdmissionContext.AdmissionContextFromClinicalService with {
+    briefly "What FromClinicalService makes of that news, on its way in"
+  }
   connector 'ThroughputProjector Storage 2' is from outlet AdmissionContext.ThroughputProjector.ThroughputProjectorToBedCensusRepository2 to inlet AdmissionContext.BedCensusRepository.BedCensusRepositoryFromThroughputProjector with {
     briefly "ThroughputProjector messages on their way to BedCensusRepository"
     described as {
@@ -65,13 +77,15 @@ context AdmissionContext as router is {
   connector 'BedOccupancyProjector To BedCensusRepository Storage' is from outlet AdmissionContext.BedOccupancyProjector.BedOccupancyProjectorToBedCensusRepository to inlet AdmissionContext.BedCensusRepository.BedCensusRepositoryFromBedOccupancyProjector with {
     briefly "BedOccupancyProjector commands on their way to BedCensusRepository"
   }
-  connector 'AdmissionCommand Stream Intake' is from outlet AdmissionContext.AdmissionCommandStreamOut to inlet AdmissionContext.Admission.AdmissionCommands  connector 'AdmissionResult Stream Egress' is from outlet AdmissionContext.AdmissionRepository.AdmissionRepositoryResponses to inlet AdmissionContext.AdmissionResultStreamIn  adaptor FromBedManagementService from context BedManagementService is { 
+  connector 'AdmissionCommand Stream Intake' is from outlet AdmissionContext.AdmissionCommandStreamOut to inlet AdmissionContext.Admission.AdmissionCommands  connector 'AdmissionResult Stream Egress' is from outlet AdmissionContext.AdmissionRepository.AdmissionRepositoryResponses to inlet AdmissionContext.AdmissionResultStreamIn  adaptor FromBedManagementService from context BedManagementService as flow is { 
+    inlet FromBedManagementServiceIn is type BedManagementService.BedManagementServiceEvent    outlet FromBedManagementServiceToAdmissionContext is command Admission.AssignBed
     handler FromBedManagementServiceHandler is {
-      on event BedManagementService.BedReserved is {
-        do "the model receives bed reserved"
+      on bedReserved: event BedManagementService.BedReserved is {
+        let item0: type Admission.AssignBed = prompt("translate the bedReserved event into a AssignBed, a bed actually held is what the admission is assigned to")
+        send item0 to outlet AdmissionContext.FromBedManagementService.FromBedManagementServiceToAdmissionContext
       }
-      on event BedManagementService.HousekeepingComplete is {
-        do "the model receives housekeeping complete"
+      on housekeepingComplete: event BedManagementService.HousekeepingComplete is {
+        do "the room is clean; assigning the next patient to it is a separate act"
       }
       on other is {
         error "Unexpected message for adaptor FromBedManagementService"
@@ -116,10 +130,10 @@ context AdmissionContext as router is {
       |The model's side of the BedManagementService conversation.
     }
   }
-  adaptor FromBillingService from context BillingService is { 
-    handler FromBillingServiceHandler is {
-      on event BillingService.BillingSubmitted is {
-        do "the model receives billing submitted"
+  adaptor FromBillingService from context BillingService as flow is { 
+    inlet FromBillingServiceIn is event BillingService.BillingSubmitted    handler FromBillingServiceHandler is {
+      on billingSubmitted: event BillingService.BillingSubmitted is {
+        do "billing has the admission; submitting it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromBillingService"
@@ -158,16 +172,18 @@ context AdmissionContext as router is {
       |The model's side of the BillingService conversation.
     }
   }
-  adaptor FromClinicalService from context ClinicalService is { 
+  adaptor FromClinicalService from context ClinicalService as flow is { 
+    inlet FromClinicalServiceIn is type ClinicalService.ClinicalServiceEvent    outlet FromClinicalServiceToAdmissionContext is command Admission.InitiateDischarge
     handler FromClinicalServiceHandler is {
-      on event ClinicalService.AdmissionOrdersCreated is {
-        do "the model receives admission orders created"
+      on admissionOrdersCreated: event ClinicalService.AdmissionOrdersCreated is {
+        do "the orders exist in the clinical system; the admission recorded asking for them"
       }
-      on event ClinicalService.ClinicalNoteDocumented is {
-        do "the model receives clinical note documented"
+      on clinicalNoteDocumented: event ClinicalService.ClinicalNoteDocumented is {
+        do "the note is filed; the admission recorded documenting it"
       }
-      on event ClinicalService.DischargeOrdersCreated is {
-        do "the model receives discharge orders created"
+      on dischargeOrdersCreated: event ClinicalService.DischargeOrdersCreated is {
+        let item0: type Admission.InitiateDischarge = prompt("translate the dischargeOrdersCreated event into a InitiateDischarge, discharge orders written are what starts the discharge")
+        send item0 to outlet AdmissionContext.FromClinicalService.FromClinicalServiceToAdmissionContext
       }
       on other is {
         error "Unexpected message for adaptor FromClinicalService"
@@ -256,10 +272,10 @@ context AdmissionContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromPatientRegistration from context PatientRegistration is { 
-    handler FromPatientRegistrationHandler is {
-      on event PatientRegistration.InsuranceVerified is {
-        do "the model receives insurance verified"
+  adaptor FromPatientRegistration from context PatientRegistration as flow is { 
+    inlet FromPatientRegistrationIn is event PatientRegistration.InsuranceVerified    handler FromPatientRegistrationHandler is {
+      on insuranceVerified: event PatientRegistration.InsuranceVerified is {
+        do "insurance checks out; billing weighs it at discharge"
       }
       on other is {
         error "Unexpected message for adaptor FromPatientRegistration"

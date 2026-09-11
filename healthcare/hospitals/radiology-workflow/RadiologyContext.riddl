@@ -1,6 +1,23 @@
 // RadiologyContext - Main Bounded Context
 // Contains the primary entities, repositories, and projectors for radiology workflow
 context RadiologyContext as router is {
+  inlet RadiologyContextFromPACSIntegration is command ImagingExam.CompleteAcquisition with {
+    briefly "What FromPACSIntegration makes of that service's news"
+  }
+  connector 'FromPACSIntegration Intake' is from outlet RadiologyContext.FromPACSIntegration.FromPACSIntegrationToRadiologyContext to inlet RadiologyContext.RadiologyContextFromPACSIntegration with {
+    briefly "What FromPACSIntegration makes of that news, on its way in"
+  }
+  type FromSpeechRecognitionCommand is one of {
+    ImagingExam.AddAddendum or ImagingExam.CreateDraftReport
+  } with {
+    briefly "What FromSpeechRecognition turns that service's news into"
+  }
+  inlet RadiologyContextFromSpeechRecognition is type RadiologyContext.FromSpeechRecognitionCommand with {
+    briefly "What FromSpeechRecognition makes of that service's news"
+  }
+  connector 'FromSpeechRecognition Intake' is from outlet RadiologyContext.FromSpeechRecognition.FromSpeechRecognitionToRadiologyContext to inlet RadiologyContext.RadiologyContextFromSpeechRecognition with {
+    briefly "What FromSpeechRecognition makes of that news, on its way in"
+  }
   connector 'RadiologistProductivityProjector Storage' is from outlet RadiologyContext.RadiologistProductivityProjector.RadiologistProductivityProjectorToRepository to inlet RadiologyContext.ExamRepository.ExamRepositoryFromRadiologistProductivityProjector with {
     briefly "RadiologistProductivityProjector messages on their way to ExamRepository"
     described as {
@@ -63,13 +80,15 @@ context RadiologyContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'ImagingExamCommand Stream Intake' is from outlet RadiologyContext.ImagingExamCommandStreamOut to inlet RadiologyContext.ImagingExam.ImagingExamCommands  connector 'ImagingExamResult Stream Egress' is from outlet RadiologyContext.ExamRepository.ExamRepositoryResponses to inlet RadiologyContext.ImagingExamResultStreamIn  adaptor FromPACSIntegration from context PACSIntegration is { 
+  connector 'ImagingExamCommand Stream Intake' is from outlet RadiologyContext.ImagingExamCommandStreamOut to inlet RadiologyContext.ImagingExam.ImagingExamCommands  connector 'ImagingExamResult Stream Egress' is from outlet RadiologyContext.ExamRepository.ExamRepositoryResponses to inlet RadiologyContext.ImagingExamResultStreamIn  adaptor FromPACSIntegration from context PACSIntegration as flow is { 
+    inlet FromPACSIntegrationIn is type PACSIntegration.PACSIntegrationEvent    outlet FromPACSIntegrationToRadiologyContext is command ImagingExam.CompleteAcquisition
     handler FromPACSIntegrationHandler is {
-      on event PACSIntegration.ImagesRetrieved is {
-        do "the model receives images retrieved"
+      on imagesRetrieved: event PACSIntegration.ImagesRetrieved is {
+        do "the priors are here; the radiologist reads them, the exam does not change"
       }
-      on event PACSIntegration.ImagesStored is {
-        do "the model receives images stored"
+      on imagesStored: event PACSIntegration.ImagesStored is {
+        let item0: type ImagingExam.CompleteAcquisition = prompt("translate the imagesStored event into a CompleteAcquisition, images safely stored is what completes the acquisition")
+        send item0 to outlet RadiologyContext.FromPACSIntegration.FromPACSIntegrationToRadiologyContext
       }
       on other is {
         error "Unexpected message for adaptor FromPACSIntegration"
@@ -116,13 +135,13 @@ context RadiologyContext as router is {
       |The model's side of the PACSIntegration conversation.
     }
   }
-  adaptor FromRISIntegration from context RISIntegration is { 
-    handler FromRISIntegrationHandler is {
-      on event RISIntegration.ExamScheduledInRIS is {
-        do "the model receives exam scheduled in ris"
+  adaptor FromRISIntegration from context RISIntegration as flow is { 
+    inlet FromRISIntegrationIn is type RISIntegration.RISIntegrationEvent    handler FromRISIntegrationHandler is {
+      on examScheduledInRIS: event RISIntegration.ExamScheduledInRIS is {
+        do "the scheduling system has the booking; the exam recorded scheduling it"
       }
-      on event RISIntegration.WorklistUpdated is {
-        do "the model receives worklist updated"
+      on worklistUpdated: event RISIntegration.WorklistUpdated is {
+        do "the modality worklist follows the exam's own state rather than changing it"
       }
       on other is {
         error "Unexpected message for adaptor FromRISIntegration"
@@ -169,16 +188,19 @@ context RadiologyContext as router is {
       |The model's side of the RISIntegration conversation.
     }
   }
-  adaptor FromSpeechRecognition from context SpeechRecognition is { 
+  adaptor FromSpeechRecognition from context SpeechRecognition as flow is { 
+    inlet FromSpeechRecognitionIn is type SpeechRecognition.SpeechRecognitionEvent    outlet FromSpeechRecognitionToRadiologyContext is type RadiologyContext.FromSpeechRecognitionCommand
     handler FromSpeechRecognitionHandler is {
-      on event SpeechRecognition.DictationCompleted is {
-        do "the model receives dictation completed"
+      on dictationCompleted: event SpeechRecognition.DictationCompleted is {
+        let item0: type ImagingExam.CreateDraftReport = prompt("translate the dictationCompleted event into a CreateDraftReport, finished dictation is what the draft report is made from")
+        send item0 to outlet RadiologyContext.FromSpeechRecognition.FromSpeechRecognitionToRadiologyContext
       }
-      on event SpeechRecognition.DictationStarted is {
-        do "the model receives dictation started"
+      on dictationStarted: event SpeechRecognition.DictationStarted is {
+        do "dictation has begun; the report exists when it is drafted"
       }
-      on event SpeechRecognition.TranscriptionCorrected is {
-        do "the model receives transcription corrected"
+      on transcriptionCorrected: event SpeechRecognition.TranscriptionCorrected is {
+        let item0: type ImagingExam.AddAddendum = prompt("translate the transcriptionCorrected event into a AddAddendum, a correction after the fact is an addendum, not a silent edit")
+        send item0 to outlet RadiologyContext.FromSpeechRecognition.FromSpeechRecognitionToRadiologyContext
       }
       on other is {
         error "Unexpected message for adaptor FromSpeechRecognition"

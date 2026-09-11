@@ -1,5 +1,11 @@
 // Patient Registration - Patient Context
 context PatientContext as router is {
+  inlet PatientContextFromInsuranceEligibilityService is command Patient.UpdateInsurance with {
+    briefly "What FromInsuranceEligibilityService makes of that service's news"
+  }
+  connector 'FromInsuranceEligibilityService Intake' is from outlet PatientContext.FromInsuranceEligibilityService.FromInsuranceEligibilityServiceToPatientContext to inlet PatientContext.PatientContextFromInsuranceEligibilityService with {
+    briefly "What FromInsuranceEligibilityService makes of that news, on its way in"
+  }
   inlet PatientCommandStreamIn is type PatientCommand  outlet PatientCommandStreamOut is type PatientCommand
   inlet PatientResultStreamIn is result Patient.PatientResult  outlet PatientResultStreamOut is result Patient.PatientResult
   handler PatientContextBoundary is {
@@ -50,10 +56,10 @@ context PatientContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'PatientCommand Stream Intake' is from outlet PatientContext.PatientCommandStreamOut to inlet PatientContext.Patient.PatientCommands  connector 'PatientResult Stream Egress' is from outlet PatientContext.PatientRepository.PatientRepositoryResponses to inlet PatientContext.PatientResultStreamIn  adaptor FromDocumentStorageService from context DocumentStorageService is { 
-    handler FromDocumentStorageServiceHandler is {
-      on event DocumentStorageService.DocumentStored is {
-        do "the model receives document stored"
+  connector 'PatientCommand Stream Intake' is from outlet PatientContext.PatientCommandStreamOut to inlet PatientContext.Patient.PatientCommands  connector 'PatientResult Stream Egress' is from outlet PatientContext.PatientRepository.PatientRepositoryResponses to inlet PatientContext.PatientResultStreamIn  adaptor FromDocumentStorageService from context DocumentStorageService as flow is { 
+    inlet FromDocumentStorageServiceIn is event DocumentStorageService.DocumentStored    handler FromDocumentStorageServiceHandler is {
+      on documentStored: event DocumentStorageService.DocumentStored is {
+        do "the document is safe; the patient record already says what it was for"
       }
       on other is {
         error "Unexpected message for adaptor FromDocumentStorageService"
@@ -92,10 +98,10 @@ context PatientContext as router is {
       |The model's side of the DocumentStorageService conversation.
     }
   }
-  adaptor FromIdentityVerificationService from context IdentityVerificationService is { 
-    handler FromIdentityVerificationServiceHandler is {
-      on event IdentityVerificationService.IdentityVerified is {
-        do "the model receives identity verified"
+  adaptor FromIdentityVerificationService from context IdentityVerificationService as flow is { 
+    inlet FromIdentityVerificationServiceIn is event IdentityVerificationService.IdentityVerified    handler FromIdentityVerificationServiceHandler is {
+      on identityVerified: event IdentityVerificationService.IdentityVerified is {
+        do "identity is confirmed; registering the patient is a separate act"
       }
       on other is {
         error "Unexpected message for adaptor FromIdentityVerificationService"
@@ -134,10 +140,12 @@ context PatientContext as router is {
       |The model's side of the IdentityVerificationService conversation.
     }
   }
-  adaptor FromInsuranceEligibilityService from context InsuranceEligibilityService is { 
+  adaptor FromInsuranceEligibilityService from context InsuranceEligibilityService as flow is { 
+    inlet FromInsuranceEligibilityServiceIn is event InsuranceEligibilityService.EligibilityChecked    outlet FromInsuranceEligibilityServiceToPatientContext is command Patient.UpdateInsurance
     handler FromInsuranceEligibilityServiceHandler is {
-      on event InsuranceEligibilityService.EligibilityChecked is {
-        do "the model receives eligibility checked"
+      on eligibilityChecked: event InsuranceEligibilityService.EligibilityChecked is {
+        let item0: type Patient.UpdateInsurance = prompt("translate the eligibilityChecked event into a UpdateInsurance, what eligibility actually returns is the insurance the patient record must hold")
+        send item0 to outlet PatientContext.FromInsuranceEligibilityService.FromInsuranceEligibilityServiceToPatientContext
       }
       on other is {
         error "Unexpected message for adaptor FromInsuranceEligibilityService"
@@ -176,13 +184,13 @@ context PatientContext as router is {
       |The model's side of the InsuranceEligibilityService conversation.
     }
   }
-  adaptor FromMPIService from context MPIService is { 
-    handler FromMPIServiceHandler is {
-      on event MPIService.LinkedToMPI is {
-        do "the model receives linked to mpi"
+  adaptor FromMPIService from context MPIService as flow is { 
+    inlet FromMPIServiceIn is type MPIService.MPIServiceEvent    handler FromMPIServiceHandler is {
+      on linkedToMPI: event MPIService.LinkedToMPI is {
+        do "the master index link exists; the patient was registered before it was linked"
       }
-      on event MPIService.MPISearchResults is {
-        do "the model receives mpi search results"
+      on mPISearchResults: event MPIService.MPISearchResults is {
+        do "search results propose candidates; merging two patients is a decision someone makes"
       }
       on other is {
         error "Unexpected message for adaptor FromMPIService"

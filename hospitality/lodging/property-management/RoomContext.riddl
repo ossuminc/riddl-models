@@ -1,5 +1,23 @@
 // Property Management - Room Context
 context RoomContext as router is {
+  inlet RoomContextFromHousekeepingManagementService is command Room.AssignHousekeeper with {
+    briefly "What FromHousekeepingManagementService makes of that service's news"
+  }
+  connector 'FromHousekeepingManagementService Intake' is from outlet RoomContext.FromHousekeepingManagementService.FromHousekeepingManagementServiceToRoomContext to inlet RoomContext.RoomContextFromHousekeepingManagementService with {
+    briefly "What FromHousekeepingManagementService makes of that news, on its way in"
+  }
+  inlet RoomContextFromMaintenanceManagementService is command WorkOrder.AssignWorkOrder with {
+    briefly "What FromMaintenanceManagementService makes of that service's news"
+  }
+  connector 'FromMaintenanceManagementService Intake' is from outlet RoomContext.FromMaintenanceManagementService.FromMaintenanceManagementServiceToRoomContext to inlet RoomContext.RoomContextFromMaintenanceManagementService with {
+    briefly "What FromMaintenanceManagementService makes of that news, on its way in"
+  }
+  inlet RoomContextFromReservationService is command Room.UpdateRoomStatus with {
+    briefly "What FromReservationService makes of that service's news"
+  }
+  connector 'FromReservationService Intake' is from outlet RoomContext.FromReservationService.FromReservationServiceToRoomContext to inlet RoomContext.RoomContextFromReservationService with {
+    briefly "What FromReservationService makes of that news, on its way in"
+  }
   inlet WorkOrderCommandStreamIn is type WorkOrderCommand  outlet WorkOrderCommandStreamOut is type WorkOrderCommand
   inlet RoomCommandStreamIn is type RoomCommand  outlet RoomCommandStreamOut is type RoomCommand
   inlet RoomResultStreamIn is result Room.RoomResult  outlet RoomResultStreamOut is result Room.RoomResult
@@ -78,10 +96,12 @@ context RoomContext as router is {
   connector 'WorkOrderEvent Feed' is from outlet RoomContext.WorkOrder.WorkOrderEvents to inlet RoomContext.HousekeepingAnalytics.HousekeepingAnalyticsFromWorkOrder with {
     briefly "WorkOrder events feeding the HousekeepingAnalytics projection"
   }
-  connector 'WorkOrderCommand Stream Intake' is from outlet RoomContext.WorkOrderCommandStreamOut to inlet RoomContext.WorkOrder.WorkOrderCommands  connector 'RoomCommand Stream Intake' is from outlet RoomContext.RoomCommandStreamOut to inlet RoomContext.Room.RoomCommands  connector 'RoomResult Stream Egress' is from outlet RoomContext.RoomRepository.RoomRepositoryResponses to inlet RoomContext.RoomResultStreamIn  adaptor FromHousekeepingManagementService from context HousekeepingManagementService is { 
+  connector 'WorkOrderCommand Stream Intake' is from outlet RoomContext.WorkOrderCommandStreamOut to inlet RoomContext.WorkOrder.WorkOrderCommands  connector 'RoomCommand Stream Intake' is from outlet RoomContext.RoomCommandStreamOut to inlet RoomContext.Room.RoomCommands  connector 'RoomResult Stream Egress' is from outlet RoomContext.RoomRepository.RoomRepositoryResponses to inlet RoomContext.RoomResultStreamIn  adaptor FromHousekeepingManagementService from context HousekeepingManagementService as flow is { 
+    inlet FromHousekeepingManagementServiceIn is event HousekeepingManagementService.AssignmentsOptimized    outlet FromHousekeepingManagementServiceToRoomContext is command Room.AssignHousekeeper
     handler FromHousekeepingManagementServiceHandler is {
-      on event HousekeepingManagementService.AssignmentsOptimized is {
-        do "the model receives assignments optimized"
+      on assignmentsOptimized: event HousekeepingManagementService.AssignmentsOptimized is {
+        let item0: type Room.AssignHousekeeper = prompt("translate the assignmentsOptimized event into a AssignHousekeeper, an optimised plan is who actually cleans which room")
+        send item0 to outlet RoomContext.FromHousekeepingManagementService.FromHousekeepingManagementServiceToRoomContext
       }
       on other is {
         error "Unexpected message for adaptor FromHousekeepingManagementService"
@@ -124,10 +144,10 @@ context RoomContext as router is {
       |The model's side of the HousekeepingManagementService conversation.
     }
   }
-  adaptor FromInventoryService from context InventoryService is { 
-    handler FromInventoryServiceHandler is {
-      on event InventoryService.SuppliesOrdered is {
-        do "the model receives supplies ordered"
+  adaptor FromInventoryService from context InventoryService as flow is { 
+    inlet FromInventoryServiceIn is event InventoryService.SuppliesOrdered    handler FromInventoryServiceHandler is {
+      on suppliesOrdered: event InventoryService.SuppliesOrdered is {
+        do "supplies are on order; work waiting on parts resumes when they arrive"
       }
       on other is {
         error "Unexpected message for adaptor FromInventoryService"
@@ -168,13 +188,15 @@ context RoomContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor FromMaintenanceManagementService from context MaintenanceManagementService is { 
+  adaptor FromMaintenanceManagementService from context MaintenanceManagementService as flow is { 
+    inlet FromMaintenanceManagementServiceIn is type MaintenanceManagementService.MaintenanceManagementServiceEvent    outlet FromMaintenanceManagementServiceToRoomContext is command WorkOrder.AssignWorkOrder
     handler FromMaintenanceManagementServiceHandler is {
-      on event MaintenanceManagementService.TechnicianAssigned is {
-        do "the model receives technician assigned"
+      on technicianAssigned: event MaintenanceManagementService.TechnicianAssigned is {
+        let item0: type WorkOrder.AssignWorkOrder = prompt("translate the technicianAssigned event into a AssignWorkOrder, whoever is actually assigned is who the work order belongs to")
+        send item0 to outlet RoomContext.FromMaintenanceManagementService.FromMaintenanceManagementServiceToRoomContext
       }
-      on event MaintenanceManagementService.WorkOrderCreated is {
-        do "the model receives work order created"
+      on workOrderCreated: event MaintenanceManagementService.WorkOrderCreated is {
+        do "maintenance has the work order; raising it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromMaintenanceManagementService"
@@ -219,10 +241,10 @@ context RoomContext as router is {
       |The model's side of the MaintenanceManagementService conversation.
     }
   }
-  adaptor FromQualityManagementService from context QualityManagementService is { 
-    handler FromQualityManagementServiceHandler is {
-      on event QualityManagementService.QualityIssueRecorded is {
-        do "the model receives quality issue recorded"
+  adaptor FromQualityManagementService from context QualityManagementService as flow is { 
+    inlet FromQualityManagementServiceIn is event QualityManagementService.QualityIssueRecorded    handler FromQualityManagementServiceHandler is {
+      on qualityIssueRecorded: event QualityManagementService.QualityIssueRecorded is {
+        do "the issue is logged centrally; the room's own inspection recorded it"
       }
       on other is {
         error "Unexpected message for adaptor FromQualityManagementService"
@@ -263,13 +285,15 @@ context RoomContext as router is {
       |The model's side of the QualityManagementService conversation.
     }
   }
-  adaptor FromReservationService from context ReservationService is { 
+  adaptor FromReservationService from context ReservationService as flow is { 
+    inlet FromReservationServiceIn is type ReservationService.ReservationServiceEvent    outlet FromReservationServiceToRoomContext is command Room.UpdateRoomStatus
     handler FromReservationServiceHandler is {
-      on event ReservationService.GuestCheckedOut is {
-        do "the model receives guest checked out"
+      on guestCheckedOut: event ReservationService.GuestCheckedOut is {
+        let item0: type Room.UpdateRoomStatus = prompt("translate the guestCheckedOut event into a UpdateRoomStatus, a room the guest has left is one that needs turning over")
+        send item0 to outlet RoomContext.FromReservationService.FromReservationServiceToRoomContext
       }
-      on event ReservationService.GuestCheckingIn is {
-        do "the model receives guest checking in"
+      on guestCheckingIn: event ReservationService.GuestCheckingIn is {
+        do "a guest arriving needs the room ready; readiness is tracked by the room's own status"
       }
       on other is {
         error "Unexpected message for adaptor FromReservationService"
@@ -308,13 +332,13 @@ context RoomContext as router is {
       |The model's side of the ReservationService conversation.
     }
   }
-  adaptor FromStaffSchedulingService from context StaffSchedulingService is { 
-    handler FromStaffSchedulingServiceHandler is {
-      on event StaffSchedulingService.StaffClockIn is {
-        do "the model receives staff clock in"
+  adaptor FromStaffSchedulingService from context StaffSchedulingService as flow is { 
+    inlet FromStaffSchedulingServiceIn is type StaffSchedulingService.StaffSchedulingServiceEvent    handler FromStaffSchedulingServiceHandler is {
+      on staffClockIn: event StaffSchedulingService.StaffClockIn is {
+        do "who is on shift shapes assignment; the room's state does not change"
       }
-      on event StaffSchedulingService.StaffClockOut is {
-        do "the model receives staff clock out"
+      on staffClockOut: event StaffSchedulingService.StaffClockOut is {
+        do "a housekeeper going off shift leaves their assignments to whoever plans the next"
       }
       on other is {
         error "Unexpected message for adaptor FromStaffSchedulingService"

@@ -1,5 +1,29 @@
 // Dispensing Context - Bounded context for medication dispensing operations
 context DispensingContext as router is {
+  inlet DispensingContextFromDrugDatabase is command Fill.CounselPatient with {
+    briefly "What FromDrugDatabase makes of that service's news"
+  }
+  connector 'FromDrugDatabase Intake' is from outlet DispensingContext.FromDrugDatabase.FromDrugDatabaseToDispensingContext to inlet DispensingContext.DispensingContextFromDrugDatabase with {
+    briefly "What FromDrugDatabase makes of that news, on its way in"
+  }
+  inlet DispensingContextFromInventoryService is command Fill.ReturnToStock with {
+    briefly "What FromInventoryService makes of that service's news"
+  }
+  connector 'FromInventoryService Intake' is from outlet DispensingContext.FromInventoryService.FromInventoryServiceToDispensingContext to inlet DispensingContext.DispensingContextFromInventoryService with {
+    briefly "What FromInventoryService makes of that news, on its way in"
+  }
+  inlet DispensingContextFromPOSBilling is command Fill.CompletePickup with {
+    briefly "What FromPOSBilling makes of that service's news"
+  }
+  connector 'FromPOSBilling Intake' is from outlet DispensingContext.FromPOSBilling.FromPOSBillingToDispensingContext to inlet DispensingContext.DispensingContextFromPOSBilling with {
+    briefly "What FromPOSBilling makes of that news, on its way in"
+  }
+  inlet DispensingContextFromPrescriptionService is command Fill.InitiateFill with {
+    briefly "What FromPrescriptionService makes of that service's news"
+  }
+  connector 'FromPrescriptionService Intake' is from outlet DispensingContext.FromPrescriptionService.FromPrescriptionServiceToDispensingContext to inlet DispensingContext.DispensingContextFromPrescriptionService with {
+    briefly "What FromPrescriptionService makes of that news, on its way in"
+  }
   inlet FillCommandStreamIn is type FillCommand  outlet FillCommandStreamOut is type FillCommand
   inlet FillResultStreamIn is result Fill.FillResult  outlet FillResultStreamOut is result Fill.FillResult
   handler DispensingContextBoundary is {
@@ -41,13 +65,15 @@ context DispensingContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'FillCommand Stream Intake' is from outlet DispensingContext.FillCommandStreamOut to inlet DispensingContext.Fill.FillCommands  connector 'FillResult Stream Egress' is from outlet DispensingContext.FillRepository.FillRepositoryResponses to inlet DispensingContext.FillResultStreamIn  adaptor FromDrugDatabase from context DrugDatabase is { 
+  connector 'FillCommand Stream Intake' is from outlet DispensingContext.FillCommandStreamOut to inlet DispensingContext.Fill.FillCommands  connector 'FillResult Stream Egress' is from outlet DispensingContext.FillRepository.FillRepositoryResponses to inlet DispensingContext.FillResultStreamIn  adaptor FromDrugDatabase from context DrugDatabase as flow is { 
+    inlet FromDrugDatabaseIn is type DrugDatabase.DrugDatabaseEvent    outlet FromDrugDatabaseToDispensingContext is command Fill.CounselPatient
     handler FromDrugDatabaseHandler is {
-      on event DrugDatabase.DrugImageRequested is {
-        do "the model receives drug image requested"
+      on drugImageRequested: event DrugDatabase.DrugImageRequested is {
+        do "an image request is the pharmacist checking the right drug; the fill is unchanged"
       }
-      on event DrugDatabase.DrugInteractionDetected is {
-        do "the model receives drug interaction detected"
+      on drugInteractionDetected: event DrugDatabase.DrugInteractionDetected is {
+        let item0: type Fill.CounselPatient = prompt("translate the drugInteractionDetected event into a CounselPatient, an interaction found is something the patient must be counselled about")
+        send item0 to outlet DispensingContext.FromDrugDatabase.FromDrugDatabaseToDispensingContext
       }
       on other is {
         error "Unexpected message for adaptor FromDrugDatabase"
@@ -64,22 +90,24 @@ context DispensingContext as router is {
       |The model's side of the DrugDatabase conversation.
     }
   }
-  adaptor FromInventoryService from context InventoryService is { 
+  adaptor FromInventoryService from context InventoryService as flow is { 
+    inlet FromInventoryServiceIn is type InventoryService.InventoryServiceEvent    outlet FromInventoryServiceToDispensingContext is command Fill.ReturnToStock
     handler FromInventoryServiceHandler is {
-      on event InventoryService.ExpirationAlert is {
-        do "the model receives expiration alert"
+      on expirationAlert: event InventoryService.ExpirationAlert is {
+        do "expiring stock is removed by the pharmacy; a fill in progress selects a different lot"
       }
-      on event InventoryService.LowStockAlert is {
-        do "the model receives low stock alert"
+      on lowStockAlert: event InventoryService.LowStockAlert is {
+        do "low stock is the pharmacy's problem to order against; this fill is unaffected"
       }
-      on event InventoryService.StockDispensed is {
-        do "the model receives stock dispensed"
+      on stockDispensed: event InventoryService.StockDispensed is {
+        do "the dispense is recorded; filling the prescription was the act"
       }
-      on event InventoryService.StockReserved is {
-        do "the model receives stock reserved"
+      on stockReserved: event InventoryService.StockReserved is {
+        do "stock is held for the fill; selecting the drug was recorded here"
       }
-      on event InventoryService.StockReturned is {
-        do "the model receives stock returned"
+      on stockReturned: event InventoryService.StockReturned is {
+        let item0: type Fill.ReturnToStock = prompt("translate the stockReturned event into a ReturnToStock, stock going back is what a return to stock records")
+        send item0 to outlet DispensingContext.FromInventoryService.FromInventoryServiceToDispensingContext
       }
       on other is {
         error "Unexpected message for adaptor FromInventoryService"
@@ -96,16 +124,18 @@ context DispensingContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor FromPOSBilling from context POSBilling is { 
+  adaptor FromPOSBilling from context POSBilling as flow is { 
+    inlet FromPOSBillingIn is type POSBilling.POSBillingEvent    outlet FromPOSBillingToDispensingContext is command Fill.CompletePickup
     handler FromPOSBillingHandler is {
-      on event POSBilling.CopayCollected is {
-        do "the model receives copay collected"
+      on copayCollectedEvent: event POSBilling.CopayCollected is {
+        let item0: type Fill.CompletePickup = prompt("translate the copayCollectedEvent event into a CompletePickup, the copay taken at the counter is the last act of a pickup")
+        send item0 to outlet DispensingContext.FromPOSBilling.FromPOSBillingToDispensingContext
       }
-      on event POSBilling.CopayWaived is {
-        do "the model receives copay waived"
+      on copayWaived: event POSBilling.CopayWaived is {
+        do "a waived copay still lets the pickup complete; the waiver is the payer's business"
       }
-      on event POSBilling.PaymentFailed is {
-        do "the model receives payment failed"
+      on paymentFailed: event POSBilling.PaymentFailed is {
+        do "an unpaid copay holds the pickup; the pharmacist decides what happens next"
       }
       on other is {
         error "Unexpected message for adaptor FromPOSBilling"
@@ -122,10 +152,10 @@ context DispensingContext as router is {
       |The model's side of the POSBilling conversation.
     }
   }
-  adaptor FromPatientService from context PatientService is { 
-    handler FromPatientServiceHandler is {
-      on event PatientService.PatientArrived is {
-        do "the model receives patient arrived"
+  adaptor FromPatientService from context PatientService as flow is { 
+    inlet FromPatientServiceIn is event PatientService.PatientArrived    handler FromPatientServiceHandler is {
+      on patientArrived: event PatientService.PatientArrived is {
+        do "the patient is at the counter; the pickup completes when they are counselled and pay"
       }
       on other is {
         error "Unexpected message for adaptor FromPatientService"
@@ -142,10 +172,12 @@ context DispensingContext as router is {
       |The model's side of the PatientService conversation.
     }
   }
-  adaptor FromPrescriptionService from context PrescriptionService is { 
+  adaptor FromPrescriptionService from context PrescriptionService as flow is { 
+    inlet FromPrescriptionServiceIn is event PrescriptionService.PrescriptionReadyToFill    outlet FromPrescriptionServiceToDispensingContext is command Fill.InitiateFill
     handler FromPrescriptionServiceHandler is {
-      on event PrescriptionService.PrescriptionReadyToFill is {
-        do "the model receives prescription ready to fill"
+      on prescriptionReadyToFill: event PrescriptionService.PrescriptionReadyToFill is {
+        let item0: type Fill.InitiateFill = prompt("translate the prescriptionReadyToFill event into a InitiateFill, a prescription ready is what a fill is started from")
+        send item0 to outlet DispensingContext.FromPrescriptionService.FromPrescriptionServiceToDispensingContext
       }
       on other is {
         error "Unexpected message for adaptor FromPrescriptionService"

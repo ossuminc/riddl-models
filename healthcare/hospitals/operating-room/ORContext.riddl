@@ -1,5 +1,27 @@
 // Operating Room Management - OR Context
 context ORContext as router is {
+  type FromAnesthesiaServiceCommand is one of {
+    SurgicalCase.ConfirmCase or SurgicalCase.MoveToRecovery
+  } with {
+    briefly "What FromAnesthesiaService turns that service's news into"
+  }
+  inlet ORContextFromAnesthesiaService is type ORContext.FromAnesthesiaServiceCommand with {
+    briefly "What FromAnesthesiaService makes of that service's news"
+  }
+  connector 'FromAnesthesiaService Intake' is from outlet ORContext.FromAnesthesiaService.FromAnesthesiaServiceToORContext to inlet ORContext.ORContextFromAnesthesiaService with {
+    briefly "What FromAnesthesiaService makes of that news, on its way in"
+  }
+  type FromPreOpServiceCommand is one of {
+    SurgicalCase.BringToOR or SurgicalCase.StartPreOp
+  } with {
+    briefly "What FromPreOpService turns that service's news into"
+  }
+  inlet ORContextFromPreOpService is type ORContext.FromPreOpServiceCommand with {
+    briefly "What FromPreOpService makes of that service's news"
+  }
+  connector 'FromPreOpService Intake' is from outlet ORContext.FromPreOpService.FromPreOpServiceToORContext to inlet ORContext.ORContextFromPreOpService with {
+    briefly "What FromPreOpService makes of that news, on its way in"
+  }
   connector 'FirstCaseStartProjector Storage 2' is from outlet ORContext.FirstCaseStartProjector.FirstCaseStartProjectorToORScheduleRepository2 to inlet ORContext.ORScheduleRepository.ORScheduleRepositoryFromFirstCaseStartProjector with {
     briefly "FirstCaseStartProjector messages on their way to ORScheduleRepository"
     described as {
@@ -95,16 +117,19 @@ context ORContext as router is {
   connector 'ORUtilizationProjector To ORScheduleRepository Storage' is from outlet ORContext.ORUtilizationProjector.ORUtilizationProjectorToORScheduleRepository to inlet ORContext.ORScheduleRepository.ORScheduleRepositoryFromORUtilizationProjector with {
     briefly "ORUtilizationProjector commands on their way to ORScheduleRepository"
   }
-  connector 'SurgicalCaseCommand Stream Intake' is from outlet ORContext.SurgicalCaseCommandStreamOut to inlet ORContext.SurgicalCase.SurgicalCaseCommands  connector 'SurgicalCaseResult Stream Egress' is from outlet ORContext.SurgicalCaseRepository.SurgicalCaseRepositoryResponses to inlet ORContext.SurgicalCaseResultStreamIn  adaptor FromAnesthesiaService from context AnesthesiaService is { 
+  connector 'SurgicalCaseCommand Stream Intake' is from outlet ORContext.SurgicalCaseCommandStreamOut to inlet ORContext.SurgicalCase.SurgicalCaseCommands  connector 'SurgicalCaseResult Stream Egress' is from outlet ORContext.SurgicalCaseRepository.SurgicalCaseRepositoryResponses to inlet ORContext.SurgicalCaseResultStreamIn  adaptor FromAnesthesiaService from context AnesthesiaService as flow is { 
+    inlet FromAnesthesiaServiceIn is type AnesthesiaService.AnesthesiaServiceEvent    outlet FromAnesthesiaServiceToORContext is type ORContext.FromAnesthesiaServiceCommand
     handler FromAnesthesiaServiceHandler is {
-      on event AnesthesiaService.AnesthesiaCoverageAssigned is {
-        do "the model receives anesthesia coverage assigned"
+      on anesthesiaCoverageAssigned: event AnesthesiaService.AnesthesiaCoverageAssigned is {
+        let item0: type SurgicalCase.ConfirmCase = prompt("translate the anesthesiaCoverageAssigned event into a ConfirmCase, a case without anaesthesia cover cannot be confirmed, so cover being assigned is what confirms it")
+        send item0 to outlet ORContext.FromAnesthesiaService.FromAnesthesiaServiceToORContext
       }
-      on event AnesthesiaService.AnesthesiaRecordComplete is {
-        do "the model receives anesthesia record complete"
+      on anesthesiaRecordComplete: event AnesthesiaService.AnesthesiaRecordComplete is {
+        do "the record is complete; the case recorded documenting it"
       }
-      on event AnesthesiaService.PACUHandoffComplete is {
-        do "the model receives pacu handoff complete"
+      on pACUHandoffComplete: event AnesthesiaService.PACUHandoffComplete is {
+        let item0: type SurgicalCase.MoveToRecovery = prompt("translate the pACUHandoffComplete event into a MoveToRecovery, handover to recovery actually completing is what moves the case there")
+        send item0 to outlet ORContext.FromAnesthesiaService.FromAnesthesiaServiceToORContext
       }
       on other is {
         error "Unexpected message for adaptor FromAnesthesiaService"
@@ -153,13 +178,16 @@ context ORContext as router is {
       |The model's side of the AnesthesiaService conversation.
     }
   }
-  adaptor FromPreOpService from context PreOpService is { 
+  adaptor FromPreOpService from context PreOpService as flow is { 
+    inlet FromPreOpServiceIn is type PreOpService.PreOpServiceEvent    outlet FromPreOpServiceToORContext is type ORContext.FromPreOpServiceCommand
     handler FromPreOpServiceHandler is {
-      on event PreOpService.MedicalClearanceComplete is {
-        do "the model receives medical clearance complete"
+      on medicalClearanceComplete: event PreOpService.MedicalClearanceComplete is {
+        let item0: type SurgicalCase.StartPreOp = prompt("translate the medicalClearanceComplete event into a StartPreOp, clearance is what lets pre-op begin")
+        send item0 to outlet ORContext.FromPreOpService.FromPreOpServiceToORContext
       }
-      on event PreOpService.PatientReadyForOR is {
-        do "the model receives patient ready for or"
+      on patientReadyForOR: event PreOpService.PatientReadyForOR is {
+        let item0: type SurgicalCase.BringToOR = prompt("translate the patientReadyForOR event into a BringToOR, a patient declared ready is one who can be brought to theatre")
+        send item0 to outlet ORContext.FromPreOpService.FromPreOpServiceToORContext
       }
       on other is {
         error "Unexpected message for adaptor FromPreOpService"
@@ -204,13 +232,13 @@ context ORContext as router is {
       |The model's side of the PreOpService conversation.
     }
   }
-  adaptor FromSterileSupplyService from context SterileSupplyService is { 
-    handler FromSterileSupplyServiceHandler is {
-      on event SterileSupplyService.ImplantsReady is {
-        do "the model receives implants ready"
+  adaptor FromSterileSupplyService from context SterileSupplyService as flow is { 
+    inlet FromSterileSupplyServiceIn is type SterileSupplyService.SterileSupplyServiceEvent    handler FromSterileSupplyServiceHandler is {
+      on implantsReady: event SterileSupplyService.ImplantsReady is {
+        do "the implants are ready; the case proceeds on clinical readiness"
       }
-      on event SterileSupplyService.InstrumentSetsDelivered is {
-        do "the model receives instrument sets delivered"
+      on instrumentSetsDelivered: event SterileSupplyService.InstrumentSetsDelivered is {
+        do "the sets are delivered; starting surgery depends on the patient and the team"
       }
       on other is {
         error "Unexpected message for adaptor FromSterileSupplyService"

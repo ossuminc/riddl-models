@@ -1,5 +1,17 @@
 // Catering Management - Catering Context
 context CateringContext as router is {
+  inlet CateringContextFromPaymentProcessingService is command CateringOrder.RecordPayment with {
+    briefly "What FromPaymentProcessingService makes of that service's news"
+  }
+  connector 'FromPaymentProcessingService Intake' is from outlet CateringContext.FromPaymentProcessingService.FromPaymentProcessingServiceToCateringContext to inlet CateringContext.CateringContextFromPaymentProcessingService with {
+    briefly "What FromPaymentProcessingService makes of that news, on its way in"
+  }
+  inlet CateringContextFromStaffSchedulingService is command CateringOrder.AssignStaff with {
+    briefly "What FromStaffSchedulingService makes of that service's news"
+  }
+  connector 'FromStaffSchedulingService Intake' is from outlet CateringContext.FromStaffSchedulingService.FromStaffSchedulingServiceToCateringContext to inlet CateringContext.CateringContextFromStaffSchedulingService with {
+    briefly "What FromStaffSchedulingService makes of that news, on its way in"
+  }
   inlet CateringOrderCommandStreamIn is type CateringOrderCommand  outlet CateringOrderCommandStreamOut is type CateringOrderCommand
   inlet MarketplaceOrderResultStreamIn is result CateringOrder.CateringOrderResult  outlet MarketplaceOrderResultStreamOut is result CateringOrder.CateringOrderResult
   handler CateringContextBoundary is {
@@ -56,13 +68,13 @@ context CateringContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'CateringOrderCommand Stream Intake' is from outlet CateringContext.CateringOrderCommandStreamOut to inlet CateringContext.CateringOrder.CateringOrderCommands  connector 'MarketplaceOrderResult Stream Egress' is from outlet CateringContext.OrderRepository.OrderRepositoryResponses to inlet CateringContext.MarketplaceOrderResultStreamIn  adaptor FromDeliveryService from context DeliveryService is { 
-    handler FromDeliveryServiceHandler is {
-      on event DeliveryService.DeliveryScheduled is {
-        do "the model receives delivery scheduled"
+  connector 'CateringOrderCommand Stream Intake' is from outlet CateringContext.CateringOrderCommandStreamOut to inlet CateringContext.CateringOrder.CateringOrderCommands  connector 'MarketplaceOrderResult Stream Egress' is from outlet CateringContext.OrderRepository.OrderRepositoryResponses to inlet CateringContext.MarketplaceOrderResultStreamIn  adaptor FromDeliveryService from context DeliveryService as flow is { 
+    inlet FromDeliveryServiceIn is type DeliveryService.DeliveryServiceEvent    handler FromDeliveryServiceHandler is {
+      on deliveryScheduled: event DeliveryService.DeliveryScheduled is {
+        do "the delivery is booked; dispatching it is a later act"
       }
-      on event DeliveryService.DeliveryStatusUpdated is {
-        do "the model receives delivery status updated"
+      on deliveryStatusUpdated: event DeliveryService.DeliveryStatusUpdated is {
+        do "status moves as the driver goes; the order confirms delivery when it actually arrives"
       }
       on other is {
         error "Unexpected message for adaptor FromDeliveryService"
@@ -105,10 +117,10 @@ context CateringContext as router is {
       |The model's side of the DeliveryService conversation.
     }
   }
-  adaptor FromInventoryService from context InventoryService is { 
-    handler FromInventoryServiceHandler is {
-      on event InventoryService.IngredientsReserved is {
-        do "the model receives ingredients reserved"
+  adaptor FromInventoryService from context InventoryService as flow is { 
+    inlet FromInventoryServiceIn is event InventoryService.IngredientsReserved    handler FromInventoryServiceHandler is {
+      on ingredientsReserved: event InventoryService.IngredientsReserved is {
+        do "ingredients are held; preparation starts when the kitchen begins"
       }
       on other is {
         error "Unexpected message for adaptor FromInventoryService"
@@ -215,16 +227,18 @@ context CateringContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromPaymentProcessingService from context PaymentProcessingService is { 
+  adaptor FromPaymentProcessingService from context PaymentProcessingService as flow is { 
+    inlet FromPaymentProcessingServiceIn is type PaymentProcessingService.PaymentProcessingServiceEvent    outlet FromPaymentProcessingServiceToCateringContext is command CateringOrder.RecordPayment
     handler FromPaymentProcessingServiceHandler is {
-      on event PaymentProcessingService.PaymentFailed is {
-        do "the model receives payment failed"
+      on paymentFailed: event PaymentProcessingService.PaymentFailed is {
+        do "an unpaid order stays unconfirmed; the customer is asked again"
       }
-      on event PaymentProcessingService.PaymentProcessed is {
-        do "the model receives payment processed"
+      on paymentProcessed: event PaymentProcessingService.PaymentProcessed is {
+        let item0: type CateringOrder.RecordPayment = prompt("translate the paymentProcessed event into a RecordPayment, money actually taken is what the order's payment record holds")
+        send item0 to outlet CateringContext.FromPaymentProcessingService.FromPaymentProcessingServiceToCateringContext
       }
-      on event PaymentProcessingService.RefundProcessed is {
-        do "the model receives refund processed"
+      on refundProcessed: event PaymentProcessingService.RefundProcessed is {
+        do "the refund has gone; cancelling was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentProcessingService"
@@ -291,10 +305,12 @@ context CateringContext as router is {
       |The model's side of the PricingService conversation.
     }
   }
-  adaptor FromStaffSchedulingService from context StaffSchedulingService is { 
+  adaptor FromStaffSchedulingService from context StaffSchedulingService as flow is { 
+    inlet FromStaffSchedulingServiceIn is event StaffSchedulingService.StaffScheduled    outlet FromStaffSchedulingServiceToCateringContext is command CateringOrder.AssignStaff
     handler FromStaffSchedulingServiceHandler is {
-      on event StaffSchedulingService.StaffScheduled is {
-        do "the model receives staff scheduled"
+      on staffScheduled: event StaffSchedulingService.StaffScheduled is {
+        let item0: type CateringOrder.AssignStaff = prompt("translate the staffScheduled event into a AssignStaff, staff actually rostered is who the order has")
+        send item0 to outlet CateringContext.FromStaffSchedulingService.FromStaffSchedulingServiceToCateringContext
       }
       on other is {
         error "Unexpected message for adaptor FromStaffSchedulingService"

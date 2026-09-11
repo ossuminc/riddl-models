@@ -1,6 +1,23 @@
 // Drug Supply Chain - DrugSupplyContext
 // Bounded context for pharmaceutical supply chain management
 context DrugSupplyContext as router is {
+  inlet DrugSupplyContextFromManufacturingSystem is command DrugBatch.ManufactureBatch with {
+    briefly "What FromManufacturingSystem makes of that service's news"
+  }
+  connector 'FromManufacturingSystem Intake' is from outlet DrugSupplyContext.FromManufacturingSystem.FromManufacturingSystemToDrugSupplyContext to inlet DrugSupplyContext.DrugSupplyContextFromManufacturingSystem with {
+    briefly "What FromManufacturingSystem makes of that news, on its way in"
+  }
+  type FromSerializationProviderCommand is one of {
+    DrugBatch.SerializeUnits or DrugBatch.VerifyAuthenticity
+  } with {
+    briefly "What FromSerializationProvider turns that service's news into"
+  }
+  inlet DrugSupplyContextFromSerializationProvider is type DrugSupplyContext.FromSerializationProviderCommand with {
+    briefly "What FromSerializationProvider makes of that service's news"
+  }
+  connector 'FromSerializationProvider Intake' is from outlet DrugSupplyContext.FromSerializationProvider.FromSerializationProviderToDrugSupplyContext to inlet DrugSupplyContext.DrugSupplyContextFromSerializationProvider with {
+    briefly "What FromSerializationProvider makes of that news, on its way in"
+  }
   connector 'TraceabilityDashboardProjector Storage' is from outlet DrugSupplyContext.TraceabilityDashboardProjector.TraceabilityDashboardProjectorToRepository to inlet DrugSupplyContext.BatchRepository.BatchRepositoryFromTraceabilityDashboardProjector with {
     briefly "TraceabilityDashboardProjector messages on their way to BatchRepository"
     described as {
@@ -51,13 +68,15 @@ context DrugSupplyContext as router is {
   connector 'SerializationMetricsProjector To SerializationRepository Storage' is from outlet DrugSupplyContext.SerializationMetricsProjector.SerializationMetricsProjectorToSerializationRepository to inlet DrugSupplyContext.SerializationRepository.SerializationRepositoryFromSerializationMetricsProjector with {
     briefly "SerializationMetricsProjector projections on their way to storage"
   }
-  connector 'DrugBatchCommand Stream Intake' is from outlet DrugSupplyContext.DrugBatchCommandStreamOut to inlet DrugSupplyContext.DrugBatch.DrugBatchCommands  connector 'DrugBatchResult Stream Egress' is from outlet DrugSupplyContext.BatchRepository.BatchRepositoryResponses to inlet DrugSupplyContext.DrugBatchResultStreamIn  adaptor FromManufacturingSystem from context ManufacturingSystem is { 
+  connector 'DrugBatchCommand Stream Intake' is from outlet DrugSupplyContext.DrugBatchCommandStreamOut to inlet DrugSupplyContext.DrugBatch.DrugBatchCommands  connector 'DrugBatchResult Stream Egress' is from outlet DrugSupplyContext.BatchRepository.BatchRepositoryResponses to inlet DrugSupplyContext.DrugBatchResultStreamIn  adaptor FromManufacturingSystem from context ManufacturingSystem as flow is { 
+    inlet FromManufacturingSystemIn is type ManufacturingSystem.ManufacturingSystemEvent    outlet FromManufacturingSystemToDrugSupplyContext is command DrugBatch.ManufactureBatch
     handler FromManufacturingSystemHandler is {
-      on event ManufacturingSystem.ProductionCompleteNotification is {
-        do "the model receives production complete notification"
+      on productionCompleteNotification: event ManufacturingSystem.ProductionCompleteNotification is {
+        let item0: type DrugBatch.ManufactureBatch = prompt("translate the productionCompleteNotification event into a ManufactureBatch, production finishing is what brings the batch into existence here")
+        send item0 to outlet DrugSupplyContext.FromManufacturingSystem.FromManufacturingSystemToDrugSupplyContext
       }
-      on event ManufacturingSystem.ProductionOrderReceived is {
-        do "the model receives production order received"
+      on productionOrderReceived: event ManufacturingSystem.ProductionOrderReceived is {
+        do "manufacturing has the order; the batch exists here when it is made"
       }
       on other is {
         error "Unexpected message for adaptor FromManufacturingSystem"
@@ -74,16 +93,16 @@ context DrugSupplyContext as router is {
       |The model's side of the ManufacturingSystem conversation.
     }
   }
-  adaptor FromRegulatoryReporting from context RegulatoryReporting is { 
-    handler FromRegulatoryReportingHandler is {
-      on event RegulatoryReporting.AdverseEventReportSubmitted is {
-        do "the model receives adverse event report submitted"
+  adaptor FromRegulatoryReporting from context RegulatoryReporting as flow is { 
+    inlet FromRegulatoryReportingIn is type RegulatoryReporting.RegulatoryReportingEvent    handler FromRegulatoryReportingHandler is {
+      on adverseEventReportSubmitted: event RegulatoryReporting.AdverseEventReportSubmitted is {
+        do "the report is filed; the batch's own state is unchanged by the filing"
       }
-      on event RegulatoryReporting.RecallReportSubmitted is {
-        do "the model receives recall report submitted"
+      on recallReportSubmitted: event RegulatoryReporting.RecallReportSubmitted is {
+        do "the recall was initiated here; filing it with the regulator follows"
       }
-      on event RegulatoryReporting.TransactionReportSubmitted is {
-        do "the model receives transaction report submitted"
+      on transactionReportSubmitted: event RegulatoryReporting.TransactionReportSubmitted is {
+        do "the transaction report is filed; shipments were recorded here first"
       }
       on other is {
         error "Unexpected message for adaptor FromRegulatoryReporting"
@@ -100,13 +119,16 @@ context DrugSupplyContext as router is {
       |The model's side of the RegulatoryReporting conversation.
     }
   }
-  adaptor FromSerializationProvider from context SerializationProvider is { 
+  adaptor FromSerializationProvider from context SerializationProvider as flow is { 
+    inlet FromSerializationProviderIn is type SerializationProvider.SerializationProviderEvent    outlet FromSerializationProviderToDrugSupplyContext is type DrugSupplyContext.FromSerializationProviderCommand
     handler FromSerializationProviderHandler is {
-      on event SerializationProvider.SerialNumbersGenerated is {
-        do "the model receives serial numbers generated"
+      on serialNumbersGenerated: event SerializationProvider.SerialNumbersGenerated is {
+        let item0: type DrugBatch.SerializeUnits = prompt("translate the serialNumbersGenerated event into a SerializeUnits, generated serial numbers are what the batch's units are serialised with")
+        send item0 to outlet DrugSupplyContext.FromSerializationProvider.FromSerializationProviderToDrugSupplyContext
       }
-      on event SerializationProvider.VerificationCompleted is {
-        do "the model receives verification completed"
+      on verificationCompleted: event SerializationProvider.VerificationCompleted is {
+        let item0: type DrugBatch.VerifyAuthenticity = prompt("translate the verificationCompleted event into a VerifyAuthenticity, the provider's verification is exactly what the batch's authenticity check records")
+        send item0 to outlet DrugSupplyContext.FromSerializationProvider.FromSerializationProviderToDrugSupplyContext
       }
       on other is {
         error "Unexpected message for adaptor FromSerializationProvider"

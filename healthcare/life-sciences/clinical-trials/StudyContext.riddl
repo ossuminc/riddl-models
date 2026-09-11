@@ -1,5 +1,17 @@
 // Study Management Bounded Context
 context StudyContext as router is {
+  inlet StudyContextFromCTMSIntegration is command ClinicalStudy.ActivateSite with {
+    briefly "What FromCTMSIntegration makes of that service's news"
+  }
+  connector 'FromCTMSIntegration Intake' is from outlet StudyContext.FromCTMSIntegration.FromCTMSIntegrationToStudyContext to inlet StudyContext.StudyContextFromCTMSIntegration with {
+    briefly "What FromCTMSIntegration makes of that news, on its way in"
+  }
+  inlet StudyContextFromEDCSystem is command ClinicalStudy.SubmitData with {
+    briefly "What FromEDCSystem makes of that service's news"
+  }
+  connector 'FromEDCSystem Intake' is from outlet StudyContext.FromEDCSystem.FromEDCSystemToStudyContext to inlet StudyContext.StudyContextFromEDCSystem with {
+    briefly "What FromEDCSystem makes of that news, on its way in"
+  }
   inlet ClinicalStudyCommandStreamIn is type ClinicalStudyCommand  outlet ClinicalStudyCommandStreamOut is type ClinicalStudyCommand
   inlet ClinicalStudyResultStreamIn is result ClinicalStudy.ClinicalStudyResult  outlet ClinicalStudyResultStreamOut is result ClinicalStudy.ClinicalStudyResult
   handler StudyContextBoundary is {
@@ -38,16 +50,18 @@ context StudyContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'ClinicalStudyCommand Stream Intake' is from outlet StudyContext.ClinicalStudyCommandStreamOut to inlet StudyContext.ClinicalStudy.ClinicalStudyCommands  connector 'ClinicalStudyResult Stream Egress' is from outlet StudyContext.StudyRepository.StudyRepositoryResponses to inlet StudyContext.ClinicalStudyResultStreamIn  adaptor FromCTMSIntegration from context CTMSIntegration is { 
+  connector 'ClinicalStudyCommand Stream Intake' is from outlet StudyContext.ClinicalStudyCommandStreamOut to inlet StudyContext.ClinicalStudy.ClinicalStudyCommands  connector 'ClinicalStudyResult Stream Egress' is from outlet StudyContext.StudyRepository.StudyRepositoryResponses to inlet StudyContext.ClinicalStudyResultStreamIn  adaptor FromCTMSIntegration from context CTMSIntegration as flow is { 
+    inlet FromCTMSIntegrationIn is type CTMSIntegration.CTMSIntegrationEvent    outlet FromCTMSIntegrationToStudyContext is command ClinicalStudy.ActivateSite
     handler FromCTMSIntegrationHandler is {
-      on event CTMSIntegration.ContractExecuted is {
-        do "the model receives contract executed"
+      on contractExecuted: event CTMSIntegration.ContractExecuted is {
+        let item0: type ClinicalStudy.ActivateSite = prompt("translate the contractExecuted event into a ActivateSite, a site cannot be activated until its contract is executed, so execution is what activates it")
+        send item0 to outlet StudyContext.FromCTMSIntegration.FromCTMSIntegrationToStudyContext
       }
-      on event CTMSIntegration.MilestoneAchieved is {
-        do "the model receives milestone achieved"
+      on milestoneAchieved: event CTMSIntegration.MilestoneAchieved is {
+        do "milestones are tracked in the trial management system; the study's own status changes deliberately"
       }
-      on event CTMSIntegration.PaymentProcessed is {
-        do "the model receives payment processed"
+      on paymentProcessed: event CTMSIntegration.PaymentProcessed is {
+        do "site payments are finance's business; the study's conduct is unaffected"
       }
       on other is {
         error "Unexpected message for adaptor FromCTMSIntegration"
@@ -64,16 +78,18 @@ context StudyContext as router is {
       |The model's side of the CTMSIntegration conversation.
     }
   }
-  adaptor FromEDCSystem from context EDCSystem is { 
+  adaptor FromEDCSystem from context EDCSystem as flow is { 
+    inlet FromEDCSystemIn is type EDCSystem.EDCSystemEvent    outlet FromEDCSystemToStudyContext is command ClinicalStudy.SubmitData
     handler FromEDCSystemHandler is {
-      on event EDCSystem.CRFSubmitted is {
-        do "the model receives crf submitted"
+      on cRFSubmitted: event EDCSystem.CRFSubmitted is {
+        let item0: type ClinicalStudy.SubmitData = prompt("translate the cRFSubmitted event into a SubmitData, a case report form submitted is the study's data arriving")
+        send item0 to outlet StudyContext.FromEDCSystem.FromEDCSystemToStudyContext
       }
-      on event EDCSystem.DataQueryResolved is {
-        do "the model receives data query resolved"
+      on dataQueryResolved: event EDCSystem.DataQueryResolved is {
+        do "a resolved query settles a question; the data it concerned was already recorded"
       }
-      on event EDCSystem.QueryOpened is {
-        do "the model receives query opened"
+      on queryOpened: event EDCSystem.QueryOpened is {
+        do "an open query is a question about data already submitted; it changes nothing until answered"
       }
       on other is {
         error "Unexpected message for adaptor FromEDCSystem"
@@ -90,16 +106,16 @@ context StudyContext as router is {
       |The model's side of the EDCSystem conversation.
     }
   }
-  adaptor FromSafetyDatabase from context SafetyDatabase is { 
-    handler FromSafetyDatabaseHandler is {
-      on event SafetyDatabase.AdverseEventReported is {
-        do "the model receives adverse event reported"
+  adaptor FromSafetyDatabase from context SafetyDatabase as flow is { 
+    inlet FromSafetyDatabaseIn is type SafetyDatabase.SafetyDatabaseEvent    handler FromSafetyDatabaseHandler is {
+      on adverseEventReported: event SafetyDatabase.AdverseEventReported is {
+        do "adverse events are held in the safety database; the study records visits, not pharmacovigilance"
       }
-      on event SafetyDatabase.SAEReported is {
-        do "the model receives sae reported"
+      on sAEReported: event SafetyDatabase.SAEReported is {
+        do "a serious event is assessed by the safety board; whether the study continues is their decision"
       }
-      on event SafetyDatabase.SAESubmittedToRegulator is {
-        do "the model receives sae submitted to regulator"
+      on sAESubmittedToRegulator: event SafetyDatabase.SAESubmittedToRegulator is {
+        do "the regulator has been told; the study's own conduct is unchanged by the filing"
       }
       on other is {
         error "Unexpected message for adaptor FromSafetyDatabase"

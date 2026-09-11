@@ -1,5 +1,22 @@
 // Hotel Reservations - Reservation Context
 context ReservationContext as router is {
+  type FromHousekeepingServiceCommand is one of {
+    Room.CompleteTurnover or Room.SendToMaintenance
+  } with {
+    briefly "What FromHousekeepingService turns that service's news into"
+  }
+  inlet ReservationContextFromHousekeepingService is type ReservationContext.FromHousekeepingServiceCommand with {
+    briefly "What FromHousekeepingService makes of that service's news"
+  }
+  connector 'FromHousekeepingService Intake' is from outlet ReservationContext.FromHousekeepingService.FromHousekeepingServiceToReservationContext to inlet ReservationContext.ReservationContextFromHousekeepingService with {
+    briefly "What FromHousekeepingService makes of that news, on its way in"
+  }
+  inlet ReservationContextFromPaymentGatewayService is command Reservation.ConfirmReservation with {
+    briefly "What FromPaymentGatewayService makes of that service's news"
+  }
+  connector 'FromPaymentGatewayService Intake' is from outlet ReservationContext.FromPaymentGatewayService.FromPaymentGatewayServiceToReservationContext to inlet ReservationContext.ReservationContextFromPaymentGatewayService with {
+    briefly "What FromPaymentGatewayService makes of that news, on its way in"
+  }
   inlet RoomCommandStreamIn is type RoomCommand  outlet RoomCommandStreamOut is type RoomCommand
   inlet ReservationCommandStreamIn is type ReservationCommand  outlet ReservationCommandStreamOut is type ReservationCommand
   inlet ReservationBoardViewStreamIn is result Reservation.ReservationResult  outlet ReservationBoardViewStreamOut is result Reservation.ReservationResult
@@ -69,13 +86,13 @@ context ReservationContext as router is {
   connector 'RoomEvent Feed' is from outlet ReservationContext.Room.RoomEvents to inlet ReservationContext.HotelAnalytics.HotelAnalyticsFromRoom with {
     briefly "Room events feeding the HotelAnalytics projection"
   }
-  connector 'RoomCommand Stream Intake' is from outlet ReservationContext.RoomCommandStreamOut to inlet ReservationContext.Room.RoomCommands  connector 'ReservationCommand Stream Intake' is from outlet ReservationContext.ReservationCommandStreamOut to inlet ReservationContext.Reservation.ReservationCommands  connector 'ReservationBoardView Stream Egress' is from outlet ReservationContext.ReservationRepository.ReservationRepositoryResponses to inlet ReservationContext.ReservationBoardViewStreamIn  adaptor FromChannelManagerService from context ChannelManagerService is { 
-    handler FromChannelManagerServiceHandler is {
-      on event ChannelManagerService.AvailabilitySynced is {
-        do "the model receives availability synced"
+  connector 'RoomCommand Stream Intake' is from outlet ReservationContext.RoomCommandStreamOut to inlet ReservationContext.Room.RoomCommands  connector 'ReservationCommand Stream Intake' is from outlet ReservationContext.ReservationCommandStreamOut to inlet ReservationContext.Reservation.ReservationCommands  connector 'ReservationBoardView Stream Egress' is from outlet ReservationContext.ReservationRepository.ReservationRepositoryResponses to inlet ReservationContext.ReservationBoardViewStreamIn  adaptor FromChannelManagerService from context ChannelManagerService as flow is { 
+    inlet FromChannelManagerServiceIn is type ChannelManagerService.ChannelManagerServiceEvent    handler FromChannelManagerServiceHandler is {
+      on availabilitySynced: event ChannelManagerService.AvailabilitySynced is {
+        do "the channels agree; availability is set here"
       }
-      on event ChannelManagerService.RatesSynced is {
-        do "the model receives rates synced"
+      on ratesSynced: event ChannelManagerService.RatesSynced is {
+        do "rates are pushed out; they are decided here"
       }
       on other is {
         error "Unexpected message for adaptor FromChannelManagerService"
@@ -118,13 +135,13 @@ context ReservationContext as router is {
       |The model's side of the ChannelManagerService conversation.
     }
   }
-  adaptor FromGuestCommunicationService from context GuestCommunicationService is { 
-    handler FromGuestCommunicationServiceHandler is {
-      on event GuestCommunicationService.ConfirmationSent is {
-        do "the model receives confirmation sent"
+  adaptor FromGuestCommunicationService from context GuestCommunicationService as flow is { 
+    inlet FromGuestCommunicationServiceIn is type GuestCommunicationService.GuestCommunicationServiceEvent    handler FromGuestCommunicationServiceHandler is {
+      on confirmationSent: event GuestCommunicationService.ConfirmationSent is {
+        do "the guest has the confirmation; confirming the reservation was the act"
       }
-      on event GuestCommunicationService.PreArrivalSent is {
-        do "the model receives pre arrival sent"
+      on preArrivalSent: event GuestCommunicationService.PreArrivalSent is {
+        do "the pre-arrival note is out; the reservation is unchanged by it"
       }
       on other is {
         error "Unexpected message for adaptor FromGuestCommunicationService"
@@ -165,16 +182,19 @@ context ReservationContext as router is {
       |The model's side of the GuestCommunicationService conversation.
     }
   }
-  adaptor FromHousekeepingService from context HousekeepingService is { 
+  adaptor FromHousekeepingService from context HousekeepingService as flow is { 
+    inlet FromHousekeepingServiceIn is type HousekeepingService.HousekeepingServiceEvent    outlet FromHousekeepingServiceToReservationContext is type ReservationContext.FromHousekeepingServiceCommand
     handler FromHousekeepingServiceHandler is {
-      on event HousekeepingService.MaintenanceReported is {
-        do "the model receives maintenance reported"
+      on maintenanceReported: event HousekeepingService.MaintenanceReported is {
+        let item0: type Room.SendToMaintenance = prompt("translate the maintenanceReported event into a SendToMaintenance, a fault housekeeping finds is what takes the room out of service")
+        send item0 to outlet ReservationContext.FromHousekeepingService.FromHousekeepingServiceToReservationContext
       }
-      on event HousekeepingService.RoomAssigned is {
-        do "the model receives room assigned"
+      on roomAssigned: event HousekeepingService.RoomAssigned is {
+        do "housekeeping has the assignment; the room was assigned here"
       }
-      on event HousekeepingService.RoomCleaned is {
-        do "the model receives room cleaned"
+      on roomCleaned: event HousekeepingService.RoomCleaned is {
+        let item0: type Room.CompleteTurnover = prompt("translate the roomCleaned event into a CompleteTurnover, a room actually cleaned is one whose turnover is complete")
+        send item0 to outlet ReservationContext.FromHousekeepingService.FromHousekeepingServiceToReservationContext
       }
       on other is {
         error "Unexpected message for adaptor FromHousekeepingService"
@@ -221,13 +241,13 @@ context ReservationContext as router is {
       |The model's side of the HousekeepingService conversation.
     }
   }
-  adaptor FromLoyaltyProgramService from context LoyaltyProgramService is { 
-    handler FromLoyaltyProgramServiceHandler is {
-      on event LoyaltyProgramService.PointsAccrued is {
-        do "the model receives points accrued"
+  adaptor FromLoyaltyProgramService from context LoyaltyProgramService as flow is { 
+    inlet FromLoyaltyProgramServiceIn is type LoyaltyProgramService.LoyaltyProgramServiceEvent    handler FromLoyaltyProgramServiceHandler is {
+      on pointsAccrued: event LoyaltyProgramService.PointsAccrued is {
+        do "points are the programme's ledger; the stay is unaffected"
       }
-      on event LoyaltyProgramService.PointsRedeemed is {
-        do "the model receives points redeemed"
+      on pointsRedeemed: event LoyaltyProgramService.PointsRedeemed is {
+        do "redeemed points pay for the stay; the charge was posted here"
       }
       on other is {
         error "Unexpected message for adaptor FromLoyaltyProgramService"
@@ -274,16 +294,18 @@ context ReservationContext as router is {
       |The model's side of the LoyaltyProgramService conversation.
     }
   }
-  adaptor FromPaymentGatewayService from context PaymentGatewayService is { 
+  adaptor FromPaymentGatewayService from context PaymentGatewayService as flow is { 
+    inlet FromPaymentGatewayServiceIn is type PaymentGatewayService.PaymentGatewayServiceEvent    outlet FromPaymentGatewayServiceToReservationContext is command Reservation.ConfirmReservation
     handler FromPaymentGatewayServiceHandler is {
-      on event PaymentGatewayService.PaymentAuthorized is {
-        do "the model receives payment authorized"
+      on paymentAuthorized: event PaymentGatewayService.PaymentAuthorized is {
+        let item0: type Reservation.ConfirmReservation = prompt("translate the paymentAuthorized event into a ConfirmReservation, a reservation is confirmed when the card is actually authorised")
+        send item0 to outlet ReservationContext.FromPaymentGatewayService.FromPaymentGatewayServiceToReservationContext
       }
-      on event PaymentGatewayService.PaymentCaptured is {
-        do "the model receives payment captured"
+      on paymentCaptured: event PaymentGatewayService.PaymentCaptured is {
+        do "the money is taken; the charge was posted here"
       }
-      on event PaymentGatewayService.PaymentRefunded is {
-        do "the model receives payment refunded"
+      on paymentRefunded: event PaymentGatewayService.PaymentRefunded is {
+        do "the refund has gone; cancelling was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentGatewayService"

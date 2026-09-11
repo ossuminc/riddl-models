@@ -1,5 +1,17 @@
 // Event Registration - Registration Context
 context RegistrationContext as router is {
+  inlet RegistrationContextFromPaymentProcessingService is command Registration.ConfirmRegistration with {
+    briefly "What FromPaymentProcessingService makes of that service's news"
+  }
+  connector 'FromPaymentProcessingService Intake' is from outlet RegistrationContext.FromPaymentProcessingService.FromPaymentProcessingServiceToRegistrationContext to inlet RegistrationContext.RegistrationContextFromPaymentProcessingService with {
+    briefly "What FromPaymentProcessingService makes of that news, on its way in"
+  }
+  inlet RegistrationContextFromSessionCapacityService is command Registration.RegisterForSession with {
+    briefly "What FromSessionCapacityService makes of that service's news"
+  }
+  connector 'FromSessionCapacityService Intake' is from outlet RegistrationContext.FromSessionCapacityService.FromSessionCapacityServiceToRegistrationContext to inlet RegistrationContext.RegistrationContextFromSessionCapacityService with {
+    briefly "What FromSessionCapacityService makes of that news, on its way in"
+  }
   inlet RegistrationCommandStreamIn is type RegistrationCommand  outlet RegistrationCommandStreamOut is type RegistrationCommand
   inlet RegistrationResultStreamIn is result Registration.RegistrationResult  outlet RegistrationResultStreamOut is result Registration.RegistrationResult
   handler RegistrationContextBoundary is {
@@ -59,10 +71,10 @@ context RegistrationContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'RegistrationCommand Stream Intake' is from outlet RegistrationContext.RegistrationCommandStreamOut to inlet RegistrationContext.Registration.RegistrationCommands  connector 'RegistrationResult Stream Egress' is from outlet RegistrationContext.RegistrationRepository.RegistrationRepositoryResponses to inlet RegistrationContext.RegistrationResultStreamIn  adaptor FromBadgePrintingService from context BadgePrintingService is { 
-    handler FromBadgePrintingServiceHandler is {
-      on event BadgePrintingService.BadgePrinted is {
-        do "the model receives badge printed"
+  connector 'RegistrationCommand Stream Intake' is from outlet RegistrationContext.RegistrationCommandStreamOut to inlet RegistrationContext.Registration.RegistrationCommands  connector 'RegistrationResult Stream Egress' is from outlet RegistrationContext.RegistrationRepository.RegistrationRepositoryResponses to inlet RegistrationContext.RegistrationResultStreamIn  adaptor FromBadgePrintingService from context BadgePrintingService as flow is { 
+    inlet FromBadgePrintingServiceIn is event BadgePrintingService.BadgePrinted    handler FromBadgePrintingServiceHandler is {
+      on badgePrinted: event BadgePrintingService.BadgePrinted is {
+        do "the badge is printed; assigning it was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromBadgePrintingService"
@@ -101,10 +113,10 @@ context RegistrationContext as router is {
       |The model's side of the BadgePrintingService conversation.
     }
   }
-  adaptor FromDiscountService from context DiscountService is { 
-    handler FromDiscountServiceHandler is {
-      on event DiscountService.DiscountRedeemed is {
-        do "the model receives discount redeemed"
+  adaptor FromDiscountService from context DiscountService as flow is { 
+    inlet FromDiscountServiceIn is event DiscountService.DiscountRedeemed    handler FromDiscountServiceHandler is {
+      on discountRedeemed: event DiscountService.DiscountRedeemed is {
+        do "the discount is spent; applying the code was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromDiscountService"
@@ -203,16 +215,18 @@ context RegistrationContext as router is {
       |The model's side of the EventCatalogService conversation.
     }
   }
-  adaptor FromPaymentProcessingService from context PaymentProcessingService is { 
+  adaptor FromPaymentProcessingService from context PaymentProcessingService as flow is { 
+    inlet FromPaymentProcessingServiceIn is type PaymentProcessingService.PaymentProcessingServiceEvent    outlet FromPaymentProcessingServiceToRegistrationContext is command Registration.ConfirmRegistration
     handler FromPaymentProcessingServiceHandler is {
-      on event PaymentProcessingService.PaymentFailed is {
-        do "the model receives payment failed"
+      on paymentFailed: event PaymentProcessingService.PaymentFailed is {
+        do "an unpaid registration stays unconfirmed; the attendee is asked again"
       }
-      on event PaymentProcessingService.PaymentSucceeded is {
-        do "the model receives payment succeeded"
+      on paymentSucceeded: event PaymentProcessingService.PaymentSucceeded is {
+        let item0: type Registration.ConfirmRegistration = prompt("translate the paymentSucceeded event into a ConfirmRegistration, a registration is confirmed when the money is actually taken")
+        send item0 to outlet RegistrationContext.FromPaymentProcessingService.FromPaymentProcessingServiceToRegistrationContext
       }
-      on event PaymentProcessingService.RefundSucceeded is {
-        do "the model receives refund succeeded"
+      on refundSucceeded: event PaymentProcessingService.RefundSucceeded is {
+        do "the refund has gone; cancelling the registration was recorded here"
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentProcessingService"
@@ -257,13 +271,15 @@ context RegistrationContext as router is {
       |The model's side of the PaymentProcessingService conversation.
     }
   }
-  adaptor FromSessionCapacityService from context SessionCapacityService is { 
+  adaptor FromSessionCapacityService from context SessionCapacityService as flow is { 
+    inlet FromSessionCapacityServiceIn is type SessionCapacityService.SessionCapacityServiceEvent    outlet FromSessionCapacityServiceToRegistrationContext is command Registration.RegisterForSession
     handler FromSessionCapacityServiceHandler is {
-      on event SessionCapacityService.SessionSpotReleased is {
-        do "the model receives session spot released"
+      on sessionSpotReleased: event SessionCapacityService.SessionSpotReleased is {
+        do "the spot is given back; unregistering was recorded here"
       }
-      on event SessionCapacityService.SessionSpotReserved is {
-        do "the model receives session spot reserved"
+      on sessionSpotReserved: event SessionCapacityService.SessionSpotReserved is {
+        let item0: type Registration.RegisterForSession = prompt("translate the sessionSpotReserved event into a RegisterForSession, a spot actually held is what a session registration rests on")
+        send item0 to outlet RegistrationContext.FromSessionCapacityService.FromSessionCapacityServiceToRegistrationContext
       }
       on other is {
         error "Unexpected message for adaptor FromSessionCapacityService"
@@ -308,13 +324,13 @@ context RegistrationContext as router is {
       |The model's side of the SessionCapacityService conversation.
     }
   }
-  adaptor FromTicketAvailabilityService from context TicketAvailabilityService is { 
-    handler FromTicketAvailabilityServiceHandler is {
-      on event TicketAvailabilityService.TicketReleased is {
-        do "the model receives ticket released"
+  adaptor FromTicketAvailabilityService from context TicketAvailabilityService as flow is { 
+    inlet FromTicketAvailabilityServiceIn is type TicketAvailabilityService.TicketAvailabilityServiceEvent    handler FromTicketAvailabilityServiceHandler is {
+      on ticketReleased: event TicketAvailabilityService.TicketReleased is {
+        do "the ticket is released; cancelling was recorded here"
       }
-      on event TicketAvailabilityService.TicketReserved is {
-        do "the model receives ticket reserved"
+      on ticketReserved: event TicketAvailabilityService.TicketReserved is {
+        do "the ticket is held; creating the registration was what asked for it"
       }
       on other is {
         error "Unexpected message for adaptor FromTicketAvailabilityService"
