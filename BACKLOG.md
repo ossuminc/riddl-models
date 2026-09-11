@@ -1062,60 +1062,79 @@ events under this campaign's recipe. shopping-cart's two refused adaptors were
 wired by hand with the same recipe, their placeholder handlers folded into the
 real handlers beside them.
 
-## 37. Abolish implied adaptor ports — RULED, PAUSED, blocked on riddl
+## 37. Abolish implied adaptor ports — LANDED in riddl 2026-09-11 as [1.25]; superseded by #38
 
-**Do not start this migration.** Reid ruled "abolish" on 2026-09-10 and then
-paused on riddl's feasibility measurement. **Nothing is implemented in riddl**;
-`../riddl/task/done/2026-09-11-implied-adaptor-ports-is-not-a-mechanical-migration.md`
-states that plainly. Migrating the corpus before the language change lands would
-be migrating to a rule that does not exist.
+**[1.25] is riddl's BACKLOG number for the change, not a CM rule.** It abolishes
+A103's AR3 (implied ports) and keeps the rest of A103: nothing is implied for any
+processor; a port the handlers need and the definition lacks is a **Missing**
+warning (`stream-processor-no-inlet` / `-no-outlet`); a connector endpoint naming
+an adaptor is `ref-wrong-kind`; ascriptions are checked against DECLARED arity;
+every rule abstains on the side it cannot read. riddl commit 2c2b8d5b2, pinned
+here as `2.1.1-45-a6a9588c` (f37a9447). The measurements this item carried are
+now history; the work it created is **#38**.
 
-### Why it was raised
+## 38. The [1.25] drain — 749 Missing inlets, 104 Missing outlets, 389 style
 
-Two failures in one day traced to one cause: a rule whose answer turns on a
-DECLARED port, applied to an adaptor that has only A103's implied one.
-`isStreamTail` opens `if proc.inlets.isEmpty then false`
-(`riddl/passes/.../ValidationPass.scala:8414`), and both `ask` legs are guarded
-the same way (`:627` question, `:639` reply). The consequence is an asymmetry no
-modeller can hold: an **inbound** adaptor MUST declare an inlet to end a chain, an
-**asking** adaptor must NOT or its reply has nowhere to land. Full argument and
-Reid's reasoning: `../riddl/task/2026-09-10-abolish-implied-adaptor-ports.md`.
+**Errors are at ZERO** as of bd4a19b0 (26 endpoints, 11 relays, 388 ascriptions —
+see the commit). What remains gates nothing in riddl's CI but is the corpus's
+completeness under the new rule, and reactive-bbq's R10 test (zero warnings) is
+RED until its 36 are drained.
 
-### What is settled, measured both ways
+Task file: `task/2026-09-11-implied-ports-abolished-26-endpoints-388-ascriptions.md`
+(open; criterion 1 met, criterion 2 is this item).
 
-| | |
-|---|---:|
-| adaptors | 1345 |
-| declare an inlet already (the inbound campaign is doing this) | 289 |
-| port-less, a **superset alternation already exists** | 692 |
-| port-less, single type, no alternation needed | 153 |
-| port-less, **no named type covers the handled set** | 211 |
-| — spans >1 owner, needs splitting per A103 | 11 |
-| — one owner, no alternation for it (mostly inbound, campaign creates it) | 200 |
-| still lack a declared **outlet** | 499 |
+### In order
 
-- **Inlets are mechanical.** 845 of 1056 can name a type that exists today.
-- **Outlets are NOT, and riddl's measurement is what showed it.** ~350 adaptors
-  have nothing to derive an outlet from: a body of
-  `do "Adjust vendor balance for return"` emits nothing. This repo's own task
-  claimed the whole migration was mechanical; that was half wrong.
-- **The inbound campaign (#36) shrinks this as it runs**: port-less adaptors went
-  616 -> 336 and declared inlets 9 -> 289 in one day.
+1. **The 21 `streamlet … as source` that `on event` + `send`** — RULED by Reid
+   2026-09-11: a source has no inlet, so nothing can deliver those events; each
+   is a flow in disguise. Declare the inlet (the entity's event alternation),
+   ascribe by the resulting arity, and connect it from what actually emits the
+   events. 20 in reactive-bbq; the pattern example is DONE in bd4a19b0 (it became
+   the fan-out split entity -> {projection, publication}, which is what the
+   topology needed once the source had to be fed).
+2. **The 102 `external context`s that `yield` with no outlet** — RULED: declare
+   `outlet <Ctx>EventsOut is type <Ctx>Event`, the shape the inbound campaign
+   already gives the contexts it reached. Characterise first: which handler
+   yields, and whether anything downstream can receive it.
+3. **The ~434 NON-asking adaptors' Missing inlets** — by script: the inlet's type
+   is the alternation of the events the handler names, ascription by arity, and
+   the connector from the emitting outlet. `apply.py` in `scripts/inbound-events/`
+   already writes exactly this for From adaptors.
+4. **The 298 ASKING adaptors — BLOCKED on riddl.** A declared inlet on an asker
+   engages `msg-ask-reply-unreachable`; the reply leg Reid ruled for (result
+   outlet on the answering context, result inlet on the asker, a connector) draws
+   `stream-boundary-inlet`; a second `to` adaptor is `adaptor-duplicate`. Filed as
+   `../riddl/task/2026-09-11-ask-reply-cannot-arrive-at-the-asking-adaptor.md`.
+   **Do not declare an inlet on an asking adaptor until it lands.** Once it does,
+   this is a #35-sized campaign: per ask, the result inlet, the connector back,
+   and a `tell command <local>(… from askAnswer …) to context <ours>` that
+   forwards the translated answer (Reid: the adaptor is a translator; the
+   originator's id is in the handled message, there is no `self.sender`).
+   assembly-operations' ToWorkOrderService ask is `???` meanwhile (bd4a19b0).
 
-### Sequencing we asked for
+### Measured
 
-**The deprecation warning must ship before the error**, so the corpus can migrate
-against a compiler that names each site rather than one that refuses the model.
+- Sweep after bd4a19b0: 749 no-inlet (of which 298 askers), 104 no-outlet, 389
+  `stream-ports-without-shape` (the deleted ascriptions; each flips to `flow` on
+  its own when the outlet is authored), 1 `handler-clause-no-statements` (the
+  stub). Canaried.
+- 26 endpoints reproduced exactly on 6d9e7ce8 before any edit; riddl's other
+  counts differed only by the two `patterns/` examples.
 
-### Trap for whoever measures this again
+### Traps, paid for this time
 
-`dump --json` resolves a clause's message ROOT-qualified
-(`OrderManagement.OrderContext.Order.OrderPlaced`) while a type node's alternation
-text is CONTEXT-qualified (`OrderContext.Order.OrderPlaced`). Comparing the two as
-sets matches nothing and condemns every case — it reported **607** uncoverable
-where the truth is **211**. Normalise to `Owner.Message`. Nothing in the output
-says anything is wrong; it surfaced only because the number disagreed with a case
-read by hand.
+- **Repointing an endpoint exposes the relay behind it.** Every adaptor portlet
+  the 26 named already had a connector from the context's own relay portlet;
+  the fix is to cut the relay, never to keep both.
+- **A `git checkout <file>` mid-task reverts EVERY uncommitted edit to it**, not
+  the last one. The scripted edits were idempotent and were replayed; a hand
+  edit would have been lost. Commit at each green step.
+- **`verify-templates.py` needs an ABSOLUTE `RIDDLC`** — it runs the examples
+  with `cwd=<example dir>`, so `../bin/riddlc` is `FileNotFoundError`. Same
+  family as the round-trip script's trap in CLAUDE.md.
+- **riddl-generator writes `RIDDLG_FILL_DEBUG` markers INTO this repo**
+  (`hospitality/food-service/reactive-bbq/1/fill-*.txt`, 426 files, untracked).
+  `git add -A` stages them. Not ours; not gitignored yet.
 
 ## 34. Delete Course's roster; decide what `LearnerEnrolled.enrollmentId` is
 

@@ -4,77 +4,110 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.1.1-33-dd3c2d80`, UNPUBLISHED, `riddlcPath` override ON**
-(`build.sbt:28,94`). `../bin/riddlc` IS the build's binary on this pin — verified
-2026-09-11 with `riddlc info`, not recalled. riddl `main` is now at `2.1.1-40`,
-seven commits past the pin; one of them changes a rule (`1037313f6`, a handler
-may declare at most one of each SPECIAL on-clause) and the corpus has NOT been
-validated against it. No published tag carries A103 yet, so the override stays
-until one does — take it off in the same edit as the pin.
+**Pin `2.1.1-45-a6a9588c`, UNPUBLISHED, `riddlcPath` override ON** (f37a9447).
+`../bin/riddlc` IS the build's binary on this pin — verified with `riddlc info`.
+This is riddl `main` with **[1.25]**: nothing is implied for any processor.
+[1.25] is riddl's BACKLOG number, not a CM rule; it abolishes A103's AR3 and
+keeps the rest. No published tag carries it; take the override off at the first
+that does.
 
-**Verified green 2026-09-11, by running them at the close:** prettify /
-validate / bastify 189/189, `sbt uc` 0 unsent (baseline empty, legitimately),
-`checkTests` 2 suites passed, `collect-warnings.py` **0 findings at every
-severity** — canaried by injecting an unused type and confirming the sweep
-named it — `verify-bast-roundtrip.sh` 189/189 at 0 discrepancies, and
-`scripts/check-unhandled-external-commands.py` 0 of 782.
+**Errors are at ZERO** (bd4a19b0): 26 `ref-wrong-kind` endpoints repointed, 11
+two-hop relays cut, 388 mismatched ascriptions DELETED (Reid: not `as sink`),
+patterns' two examples fixed and re-bastified. Verified by running: prettify /
+validate / bastify 189/189, verifyTemplates 2+7, `sbt uc` 0, round-trip 189/189
+at 0, sweep canaried.
 
-### Nothing is in flight
+**The corpus is NOT at zero and will not be until BACKLOG #38 drains it:** 749
+`stream-processor-no-inlet`, 104 `-no-outlet`, 389 style, 1 stub. reactive-bbq's
+R10 test (zero warnings) is RED on its 36 Missing warnings; `RiddlValidationTest`
+passes 189/189. `checkTests` therefore fails, legitimately, until the drain.
 
-**The inbound-event campaign (BACKLOG #36) is CLOSED at zero**, 1006 -> 0, as
-of 1cf1d7a2. So are adaptor wiring (#33) and outbound queries (#35). The task
-that drove all three, `2026-09-05-do-prose-must-be-an-instruction.md`, is in
-`task/done/` with its Results. **Do not reopen any of the three.** `task/` is
-empty of `.md` files.
+### In flight — BACKLOG #38, the [1.25] drain
 
-**Do not start the implied-ports migration.** Reid ruled "abolish" then PAUSED;
-nothing is implemented in riddl. BACKLOG #37 has the measurements.
+Task file `task/2026-09-11-implied-ports-abolished-26-endpoints-388-ascriptions.md`
+is OPEN with Results: criterion 1 (riddl CI) met, criterion 2 (drain) is #38.
+Order: (1) the 20 reactive-bbq `source` streamlets that receive, (2) the 102
+yielding external contexts with no outlet, (3) the ~434 non-asking adaptors'
+inlets by script, (4) the 298 ASKING adaptors — **BLOCKED on riddl**:
+`../riddl/task/2026-09-11-ask-reply-cannot-arrive-at-the-asking-adaptor.md`.
+**Do not declare an inlet on an asking adaptor until that lands.** Reid ruled the
+shape (result inlet on the asker, result outlet on the answerer, a connector, and
+a `tell` forwarding the translated answer); riddlc's boundary rule refuses it today.
 
-### Open, in rough order
+### Traps, still live
 
-- **BACKLOG #37** — paused on riddl; re-measure before touching.
-- **BACKLOG #1 / #23 / #24 / #30 / #34** — older, unchanged this session.
-- Upstream: `../riddl/task/2026-09-11-external-context-unhandled-command.md`
-  asks for a completeness rule; until it lands the tracked census script is
-  the only check for that class. Not wired into any gate — decide whether it
-  should be (it costs a `dump` per model, like `uc`).
-
-### Traps that already bit someone, still live
-
-- **A cause clause may be QUALIFIED.** When an external context's command
-  shares a name with one of ours, its handler says
-  `on command <Ctx>.<Cmd>`, and `apply.py`'s bare-name lookup finds no clause
-  and reverts the model cleanly. Retry with the qualified cause. Hit four
-  times in seven batches; every time the revert was correct.
-- **`dump --json` resolves a clause's message ROOT-qualified; a type's
-  alternation text is CONTEXT-qualified.** Normalise to `Owner.Message`
-  before comparing (BACKLOG #37).
-- **Never delete a definition by LINE RANGE.** prettify jams declarations
-  together. Spans carry a byte `offset` — cut with that. The three adaptors
-  pruned in 1cf1d7a2 were cut by span from `dump`, and the prune still took
-  the NEXT adaptor's leading indentation, which prettify restored; a line-wise
-  cut would have taken the adaptor.
-- **Declared-overrides-implied pulls both ways.** An INBOUND adaptor must
-  declare an inlet to end a chain; an ASKING adaptor must NOT, or its reply has
-  nowhere to land. CLAUDE.md § A103.
-- **`sbt v` is the lenient gate.** The close's last five findings (two
-  shadowing `let`s, three emptied adaptors) were invisible to it and visible
-  only to `collect-warnings.py`. Run both, every time.
+- **A declared inlet on an asking adaptor flips it from "abstains" to
+  `msg-ask-reply-unreachable`.** Canaried on water-utility. That is the whole
+  reason (4) is blocked.
+- **Repointing an endpoint exposes the relay behind it** — cut the relay, never
+  keep both (cardinality).
+- **`git checkout <file>` reverts EVERY uncommitted edit to it.** Commit at each
+  green step; the scripted edits replayed, a hand edit would not have.
+- **`verify-templates.py` needs an ABSOLUTE `RIDDLC`** (`cwd=` the example dir).
+- **`hospitality/food-service/reactive-bbq/1/` is riddl-generator's fill-debug
+  output**, 426 untracked files; `git add -A` stages them. Not ours.
+- **A cause clause may be QUALIFIED**; `dump --json` resolves ROOT-qualified;
+  never delete by LINE RANGE; `sbt v` is the lenient gate — all still true.
 
 ### Certainty
 
-Verified this session: every number above, the gates, the sweep, the
-round-trip, the census, the pin. Assumed: nothing that matters to the next
-session — the campaigns are closed, not paused.
+Verified this session: every number above, the canaries (sweep; asking-adaptor
+inlet; explicit reply leg; adaptor split), the pin. Assumed: that the 434
+non-asking adaptors drain by the inbound recipe — untested at scale.
 
 ### Pointers
 
-Open work: **BACKLOG.md**. Durable language facts: **CLAUDE.md**. This
-session's lessons: § 2026-09-11 below.
+Open work: **BACKLOG.md** (#38 in flight; #1/#23/#24/#30/#34 older). Durable
+language facts: **CLAUDE.md** — its A103 section still describes implied ports
+and needs a [1.25] rewrite (not done this session). Upstream tasks filed today:
+ask-reply (above) and `2026-09-11-external-context-unhandled-command.md`.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
 ---
+
+## 2026-09-11 (later) — [1.25] lands; errors to zero; the ask-reply contradiction
+
+The inbound campaign closed at noon; by 15:00 riddl had abolished the implied
+ports the whole campaign's recipe leaned on. Same day. The task drop carried
+riddl's census; it reproduced here to the model before an edit was made, which
+is the only reason its other numbers were trusted.
+
+**The two Error classes were one layer deep.** Repointing the 26 endpoints was
+mechanical, and every one of them landed on a portlet that already had a
+connector — the "context is the port" relay the corpus built in August, kept
+beside the A103 shape because the implied port hid the collision. The fix was
+never "which connector" but "the relay goes": under A103 the adaptor is the
+boundary, and a context inlet with no partner outlet (assembly-operations) was
+the giveaway that the relay had been dead since A103 landed.
+
+**Delete the ascription, do not correct it.** 388 `as flow` on inbound adaptors
+whose declared arity is sink. Reid: writing `as sink` "forces an incomplete
+adaptor into a lie". Deleted, they draw a style nudge that names the truth and
+resolves itself when the outlet is authored. A rule that is satisfied by a
+false statement is worse than a warning.
+
+**The ask-reply contradiction, found by canary before it cost 298 adaptors.**
+Declare the Missing inlet on an asking adaptor and `msg-ask-reply-unreachable`
+fires; build the reply leg Reid ruled for and `stream-boundary-inlet` fires;
+split the ask into its own `to` adaptor and `adaptor-duplicate` fires. Three
+canaries, one afternoon, no shape riddlc accepts. Filed with the reproduction.
+Two things that made it cheap: the sweep's rule-id column (the counts said
+which rule, not just how many) and testing on ONE adaptor before scripting.
+
+**`self.sender` does not exist.** Reid's first instinct for forwarding an
+answer; the grammar's `self` is `{id, version}`. The originator is in the
+handled message, so the translator form is `tell command <local>(… from
+askAnswer …) to context <ours>` — the shape the corpus's `from` adaptors use.
+And `forward` is legal only in a `yields`/`replies` clause, so the
+`on result … forward` alternative would not validate either.
+
+**A pattern example is a model, and the new rule found two things wrong with
+each.** Both repositories replied a result with no outlet — the corpus-standard
+result stream fixed that — and event-sourced's `AccountEventSource` was a
+source that received. Feeding it honestly meant a fan-out: entity → split →
+{projection, publication}. The pattern is better for it; it had been
+demonstrating a topology that could not run.
 
 ## 2026-09-11 — the inbound campaign, 578 -> 0 in seven batches
 
