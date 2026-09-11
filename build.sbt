@@ -15,7 +15,7 @@ enablePlugins(RiddlSbtPlugin)
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
 // same build, so one value pins both. This is an UNPUBLISHED snapshot of riddl
-// `main` -- 26 commits past 2.1.1, commit 4d17b1ef6 -- so `riddlcPath` below
+// `main` -- 33 commits past 2.1.1, commit dd3c2d80 -- so `riddlcPath` below
 // names a staged binary and the libraries resolve from ~/.ivy2/local via
 // `sbt publishLocal` in the riddl checkout. GitHub Packages stops at 2.1.1.
 //

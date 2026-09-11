@@ -977,9 +977,13 @@ case, not by recipe.
 ## 36. Inbound events — Reid's family rulings, 2026-09-10
 
 **The other half of `task/2026-09-05-do-prose-must-be-an-instruction.md`.** 1006
-inbound `do "the model receives ..."` placeholders; 157 done, 842 remaining at the
-time of the ruling. All were inert: no outlet on the external context, no
-connector, nothing emitting the event, so the clause could not fire.
+inbound `do "the model receives ..."` placeholders, all inert: no outlet on the
+external context, no connector, nothing emitting the event, so the clause could
+not fire.
+
+**Progress: 428 done, 578 remaining** (verified 2026-09-11 by
+`grep -rn 'do "the model receives'`). The outbound half is CLOSED at zero (#35).
+Commits: 3a6e425f recipe, then 25573cd5, e2c7f6c6, 72d8e72a, 32a074ef.
 
 ### The channel (recipe, committed 3a6e425f)
 
@@ -1032,17 +1036,73 @@ not say).
 
 ### Tooling
 
-`scratchpad/inbuild2.py` applies it -- ONE dump per pass, every edit in
-DESCENDING span order, because per-context re-dumps raced with edits in the same
-file and silently lost two adaptor inlets out of four. `scratchpad/indig.py LO HI`
-digests models by index. 2 of 597 From adaptors already declare ports
-(shopping-cart `InventoryService`, `PricingService`); the applier REFUSES those
-rather than merge, and they need hand treatment.
+**`scripts/inbound-events/`, TRACKED** — `apply.py` (ONE dump per pass, every
+edit in DESCENDING span order, because per-context re-dumps raced with edits in
+the same file and silently lost two adaptor inlets out of four), `digest.py LO HI`
+(models by index), `characterise.py` and `families.py` (the census behind the
+table above), and a README carrying the traps. 2 of 597 From adaptors already
+declare ports (shopping-cart `InventoryService`, `PricingService`); `apply.py`
+REFUSES those rather than merge, and they need hand treatment.
 
 ### Also outstanding
 
 **7 `on result` placeholders** -- a result nothing asked for, which is either a
 query we never modelled sending or a clause that should go.
+
+## 37. Abolish implied adaptor ports — RULED, PAUSED, blocked on riddl
+
+**Do not start this migration.** Reid ruled "abolish" on 2026-09-10 and then
+paused on riddl's feasibility measurement. **Nothing is implemented in riddl**;
+`../riddl/task/done/2026-09-11-implied-adaptor-ports-is-not-a-mechanical-migration.md`
+states that plainly. Migrating the corpus before the language change lands would
+be migrating to a rule that does not exist.
+
+### Why it was raised
+
+Two failures in one day traced to one cause: a rule whose answer turns on a
+DECLARED port, applied to an adaptor that has only A103's implied one.
+`isStreamTail` opens `if proc.inlets.isEmpty then false`
+(`riddl/passes/.../ValidationPass.scala:8414`), and both `ask` legs are guarded
+the same way (`:627` question, `:639` reply). The consequence is an asymmetry no
+modeller can hold: an **inbound** adaptor MUST declare an inlet to end a chain, an
+**asking** adaptor must NOT or its reply has nowhere to land. Full argument and
+Reid's reasoning: `../riddl/task/2026-09-10-abolish-implied-adaptor-ports.md`.
+
+### What is settled, measured both ways
+
+| | |
+|---|---:|
+| adaptors | 1345 |
+| declare an inlet already (the inbound campaign is doing this) | 289 |
+| port-less, a **superset alternation already exists** | 692 |
+| port-less, single type, no alternation needed | 153 |
+| port-less, **no named type covers the handled set** | 211 |
+| — spans >1 owner, needs splitting per A103 | 11 |
+| — one owner, no alternation for it (mostly inbound, campaign creates it) | 200 |
+| still lack a declared **outlet** | 499 |
+
+- **Inlets are mechanical.** 845 of 1056 can name a type that exists today.
+- **Outlets are NOT, and riddl's measurement is what showed it.** ~350 adaptors
+  have nothing to derive an outlet from: a body of
+  `do "Adjust vendor balance for return"` emits nothing. This repo's own task
+  claimed the whole migration was mechanical; that was half wrong.
+- **The inbound campaign (#36) shrinks this as it runs**: port-less adaptors went
+  616 -> 336 and declared inlets 9 -> 289 in one day.
+
+### Sequencing we asked for
+
+**The deprecation warning must ship before the error**, so the corpus can migrate
+against a compiler that names each site rather than one that refuses the model.
+
+### Trap for whoever measures this again
+
+`dump --json` resolves a clause's message ROOT-qualified
+(`OrderManagement.OrderContext.Order.OrderPlaced`) while a type node's alternation
+text is CONTEXT-qualified (`OrderContext.Order.OrderPlaced`). Comparing the two as
+sets matches nothing and condemns every case — it reported **607** uncoverable
+where the truth is **211**. Normalise to `Owner.Message`. Nothing in the output
+says anything is wrong; it surfaced only because the number disagreed with a case
+read by hand.
 
 ## 34. Delete Course's roster; decide what `LearnerEnrolled.enrollmentId` is
 

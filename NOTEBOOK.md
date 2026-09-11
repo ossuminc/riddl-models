@@ -4,153 +4,73 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch `main`. Pin `2.1.1-33-dd3c2d80`, UNPUBLISHED, `riddlcPath` override
-ON** (`build.sbt:28`); `../bin/riddlc` IS the build's binary on this pin.
-Take the override off at the first published tag carrying A103.
+**Pin `2.1.1-33-dd3c2d80`, UNPUBLISHED, `riddlcPath` override ON**
+(`build.sbt:28,94`). `../bin/riddlc` IS the build's binary on this pin — verified
+2026-09-11 with `riddlc info`, not recalled. Take the override off at the first
+PUBLISHED tag carrying A103, in the same edit as the pin.
 
-Corpus: **189 models, 0 findings at every severity**, sweep canaried.
-prettify/validate/bastify 189/189, `pc` and `uc` green.
+**Verified green 2026-09-11, by running them:** prettify / validate / bastify
+189/189, `sbt uc` 0 unsent (baseline empty, legitimately), `checkTests` 2 suites
+passed, and `collect-warnings.py` **0 findings at every severity** — canaried by
+injecting an unused type and confirming the sweep named it. A zero from a harness
+nobody has proven can see is worth nothing here.
 
-### The adaptor-wiring campaign is CLOSED AT ZERO
+### In flight — the inbound-event campaign, 578 of 1006 left
 
-**904 external commands across 782 external contexts in 189 models, and every
-one has something that sends it.** 524 -> 0. `sbt uc` reports that denominator
-on every run and the baseline file is empty, which is legitimate.
+The only work in progress. **BACKLOG #36 is the specification**: Reid ruled the
+decision per FAMILY (eight of them, with counts and examples) precisely so batches
+need no spot-checking. **Apply that table; do not re-derive it per site.**
 
-The last four were reactive-bbq's, and they were mislabelled as needing an
-adaptor BUILT. The far side was never missing: each external context already
-declared the command, a handler yielding its event, an event source and an
-egress connector — the whole return leg — and had no inlet a command could
-arrive on. Each needed an inlet, an outbound adaptor and a connector, moving
-the external context from `as flow` to `as merge`.
+- **Tooling is TRACKED** in `scripts/inbound-events/` (`apply.py`, `digest.py`,
+  `characterise.py`, `families.py` + a README carrying the traps). Smoke-tested
+  from that location this session. Do not rebuild it in a scratchpad.
+- Two side conditions learned in bulk, not in the table: **"mechanically
+  unblocks" means IS THE FINAL GATE** (several checks feeding one decision must
+  not each tell it), and **a tell is circular** when the command that caused the
+  external act is also the one that would record it.
+- Left deliberately: **2 From adaptors in shopping-cart** (`InventoryService`,
+  `PricingService`) already declare ports, so the applier refuses them — hand
+  work. And **7 `on result` placeholders**, a result nothing asked for.
 
-### What a fresh session must not get wrong
+### Do not start the implied-ports migration
 
-- **`sbt uc` keys its blindness check on the DENOMINATOR, not the finding
-  count.** It used to refuse an empty census as blind; that was right while
-  the answer was non-zero and became wrong the moment the work succeeded — the
-  guard would have failed the build for being finished. Generalise it: *a
-  "nothing found" guard must key on how much was looked at.*
-- **An adaptor may reference only messages of the two contexts it BRIDGES**
-  (`adaptor-message-not-in-context`). Reporting could not post a ledger entry
-  on Inventory's `StockReceived`; it fires on Reporting's own
-  `RecordInventoryEvent` instead. Same rule vendor-management hit: a
-  neighbour's event must become a fact of YOURS before you act on it.
-- **An outbound adaptor usually needs NO ports.** A103 makes them implied, one
-  type each way, so `tell ... to context X` publishes on the implied outlet.
-  Declare an outlet only when the adaptor carries a second message type.
-- **Adding an event is never a one-line change.** Every new member of an event
-  alternation must be accounted for wherever it flows: the apply clause, the
-  boundary relay, the split, EVERY projector fed by it, and a repository
-  persistence command with its handler clause.
-- **The tooling is TRACKED** in `scripts/adaptor-wiring/` (census, plan, dig,
-  wire + README). `plan.py` separates SETUP / INSERT / BUILD before any
-  editing.
+Reid ruled "abolish" then PAUSED; **nothing is implemented in riddl**. BACKLOG #37
+has the measurements and the sequencing request (deprecation before error).
+Migrating now would migrate to a rule that does not exist.
 
-### `initial handler` — reading 1 ruled and migrated, 2026-09-09
+### Traps that already bit someone
 
-riddl-generator found that a state's handler marked `initial` is the LIVE one
-(CM §17), while 34 reactive-bbq states put every message clause in a SECOND
-handler — so under the strict reading those states accepted nothing. Reid ruled
-**reading 1**: the models were wrong.
-
-**44 states migrated**, in just two models — reactive-bbq (34) and
-code-generator (10), both our own showcase models, which is why riddlg met it
-there. Each clause-less `initial handler` had its `on init` folded into the
-state's first clause-bearing handler, that handler marked `initial`, and the
-empty one deleted.
-
-**The measurement is what made the decision cheap.** Corpus-wide, of 618
-states, **399 already had the clauses at ENTITY level** — reading 1's own
-recommended shape, per §13.7 — and only 44 were in the problematic shape. The
-corpus was already ~90% conformant.
-
-**And that is the trap for riddlg**: its `liveFirst` accommodation was carrying
-**443** states, not 34. Deleting it outright breaks the 399, which are correct
-as they stand. The rule the corpus now needs is *fall back to the ENTITY-level
-handler*, not *the first handler that declares a message clause* — the latter
-would pick a `become` target. Told them in
-`../riddl-generator/task/2026-09-09-initial-handler-ruled-reading-1.md`.
-
-### The outbound-query campaign is CLOSED AT ZERO, 2026-09-10
-
-**All 363 `do "the model sends <Query> to <Ctx>"` placeholders are real
-`ask query Q of context Ctx` round trips**, each with a channel riddlc itself
-enforces. BACKLOG #35 carries the recipe, both shapes, and the four traps.
-
-Three things a fresh session must not relearn the hard way:
-
-- **An `ask`'s answer comes back on the asking adaptor's IMPLIED inlet, so that
-  adaptor must declare no inlet.** `msg-ask-reply-unreachable` says "no
-  connector carries it back", which sends you to add a connector that cannot
-  exist. Now in CLAUDE.md under A103, with the canary that proved it, and filed
-  upstream as
-  `../riddl/task/2026-09-10-ask-reply-unreachable-should-name-the-declared-inlet.md`.
+- **`dump --json` resolves a clause's message ROOT-qualified; a type's
+  alternation text is CONTEXT-qualified.** Comparing them as sets matches nothing
+  and condemns every case — reported 607 where the truth was 211. Normalise to
+  `Owner.Message`. Surfaced only because the number disagreed with a hand-read
+  case. (BACKLOG #37.)
 - **Never delete a definition by LINE RANGE.** prettify jams declarations
-  together, so an adaptor's opening line routinely carries two connectors.
-  `riddlc dump --json` gives every span a byte `offset` — cut with that.
-- **Pick an adaptor's driving event from its OWN existing clauses.** The
-  wiring campaign already spent an event on most outbound adaptors; listing
-  them first took one chunk from 6 of 12 models applied to 24 of 24.
-- **`sbt ac` is GONE and must not be rebuilt.** It guarded an `ask` without a
-  channel for the eleven hours before riddlc's own two rules landed, then became
-  a weaker duplicate of them — narrower question, blind to the reply leg, silent
-  on 59 errors riddlc caught. Reid retired it 2026-09-10. `checkAll` is
-  `riddlcValidate; unsentCheck; checkTests`. The general lesson is in CLAUDE.md:
-  **a "riddlc does not check X" note is a measurement with an expiry date**, and
-  a stale one invites building a guard nobody needs.
+  together, so an adaptor's opening line routinely carries two connectors; a
+  line-wise prune took them with it and three models broke where nothing was
+  edited. Spans carry a byte `offset` — cut with that.
+- **Edit in ONE ordered pass per model, descending by span.** Re-dumping per
+  external context raced with edits in the same file and silently lost two adaptor
+  inlets out of four; the model stayed valid, so only a later error revealed it.
+- **Declared-overrides-implied pulls both ways.** An INBOUND adaptor must declare
+  an inlet to end a chain; an ASKING adaptor must NOT, or its reply has nowhere to
+  land. CLAUDE.md § A103 carries both with the canaries that proved them.
+- **`sbt ac` no longer exists** — retired 2026-09-10 once riddlc covered it. Do
+  not rebuild it; CLAUDE.md says why.
 
-### Implied adaptor ports: ruled "abolish", PAUSED, and half-mechanical
+### Certainty
 
-**Nothing is implemented in riddl and nothing should be migrated here yet.** Reid
-ruled to abolish implied adaptor ports (the reasoning is in
-`../riddl/task/2026-09-10-abolish-implied-adaptor-ports.md`), then paused on
-riddl's feasibility measurement. Sequencing request is on record: **the
-deprecation warning must ship before the error**, so the corpus can migrate
-against a compiler that names each site.
+Verified this session: every number above, the gates, the sweep, the pin, the
+578/7 split, and BACKLOG #37's table. Assumed: that the remaining 578 behave like
+the 428 done — they have so far, across 8 batches and one revert (a typo, caught
+by the per-model validate).
 
-Where the argument landed, measured both ways:
+### Pointers
 
-- **Inlets are mechanical.** 845 of 1056 port-less adaptors can name a type that
-  already exists -- 692 via a superset alternation (usually the far entity's
-  `<Entity>Event`), 153 handling a single type. Only 11 genuinely need splitting
-  (handled set spans two entities; A103 already prescribes one type per adaptor).
-- **Outlets are NOT.** 499 adaptors lack one and most have nothing to derive it
-  from: an adaptor whose body is `do "Adjust vendor balance for return"` emits
-  nothing. riddl-models' own task claimed the whole migration was mechanical; that
-  was right for inlets and wrong for outlets, and riddl's measurement is what
-  showed it.
-- **The inbound campaign is shrinking the problem as it runs.** Port-less adaptors
-  616 -> 336 and declared inlets 9 -> 289 in one day, because the campaign writes
-  `type <Ctx>Event`, the outlet, and the adaptor's declared inlet for every
-  external context it touches.
-
-**A measurement trap worth remembering**, because it produced a confident wrong
-number that nearly went to riddl: `dump --json` resolves a clause's message to a
-ROOT-qualified path while a type node's alternation text is CONTEXT-qualified.
-Comparing the two forms as sets matches nothing and reports every case as
-uncoverable -- it said 607 where the truth was 211. Normalise to `Owner.Message`.
-It surfaced only because the result disagreed with a case read by hand.
-
-### In flight
-
-**1006 inbound `do "the model receives ..."` placeholders across 178 models** —
-the other half of `task/2026-09-05-do-prose-must-be-an-instruction.md`, deferred
-by Reid until the outbound half was done.
-
-**999 are `on event`; only 7 are `on result`** (measured 2026-09-10). So this is
-not the inbound half of 1006 round trips — those are gone, deleted as each `ask`
-took its reply's place, which is what took this population from 1361 to 1006.
-What remains is unsolicited notification from outside, and what the model should
-DO with each one — yield a fact of its own, tell a local command, update a
-projection, or deliberately nothing — is a per-case decision. Expect rulings in
-clusters as BACKLOG #33 needed, not a recipe applied 1006 times. The 7 `on
-result` are a separate small job: a result nothing asked for is either a query
-we never modelled sending, or a clause that should go.
-
-Otherwise: BACKLOG #33 and #35 are closed; #34 (Course's roster), #23 and #24
-remain accepted and unimplemented, and #1 (reactive-bbq as reference model) is
-its own campaign.
+Open work: **BACKLOG.md** (#36 in flight, #37 paused, #1/#23/#24/#30/#34 older).
+Durable language facts: **CLAUDE.md**. `task/` holds one file,
+`2026-09-05-do-prose-must-be-an-instruction.md`, **in progress** — its outbound
+half is complete and recorded in its Results; its inbound half is #36.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
