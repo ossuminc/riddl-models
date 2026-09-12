@@ -449,18 +449,19 @@ participates, not just Streamlet ... an Adaptor, Entity, Projector, Repository
 or Context that declares ports is a genuine node in a stream path."*
 `addStreamlet` is `@deprecated` for exactly this reason.
 
-**What actually ends a chain is a DECLARED inlet**, and that is the real trap:
+**What actually ends a chain is a DECLARED inlet** — and since [1.25] a declared
+inlet is the ONLY kind there is:
 
 ```scala
 protected def isStreamTail(proc: Processor[?]): Boolean =
-  if proc.inlets.isEmpty then false          // ValidationPass.scala:8414
+  if proc.inlets.isEmpty then false          // ValidationPass.scala:8467
 ```
 
-`proc.inlets` is the **declared** ports. A103's *implied* inlet does not appear
-there, so **an adaptor that declares no inlet can never be a stream tail**, and
-a source feeding it reports `stream-source-reaches-no-sink` no matter how the
-rest is wired. The fix is one line — `inlet <Adaptor>In is type <T>` plus the
-`as flow` a declared port requires — not a rework of the topology.
+An adaptor that declares no inlet receives nothing, so it can never be a stream
+tail, and a source feeding it reports `stream-source-reaches-no-sink` no matter
+how the rest is wired. The fix is one line — `inlet <Adaptor>In is type <T>`
+plus the ascription its arity now has (`as sink` when nothing goes out, `as
+flow` when one thing does) — not a rework of the topology.
 
 Measured 2026-09-10 on `commerce/e-commerce/shopping-cart`: an external
 publisher wired to a port-less `FromCustomerService` gives
@@ -476,11 +477,11 @@ code already agreed with him, and this file had been asserting the opposite
 since before the unified processor model. **BACKLOG #1's seven reactive-bbq
 sites rest on the same stale premise and should be re-measured, not trusted.**
 
-Note the asymmetry with the `ask` rule below: an inbound adaptor **must**
-declare an inlet to be a chain tail, while an **asking** adaptor must **not**,
-because a declared inlet overrides away the implied inlet its reply arrives on.
-Both follow from declared-overrides-implied; they pull in opposite directions,
-so decide per adaptor by what it does, never by habit.
+(An earlier version of this note claimed an ASYMMETRY: an inbound adaptor must
+declare its inlet while an asking adaptor must not, because a declared inlet
+"overrode away" the implied one its reply arrived on. That was true of A103's
+implied ports and is false under [1.25] — see the next section: the asker
+declares its reply inlet like any other port.)
 
 **`yield` vs `reply`** — a command yields an **event**, a query replies a
 **result**. Since riddlc **rc.10-45** these are distinct statements and the
@@ -814,81 +815,122 @@ one." `gateway` is one of four context intentions
 gateway ascribed `as router` is rejected, so a gateway cannot fan out to two
 destinations — it admits, and something downstream dispatches.
 
-### A103 — the ADAPTOR is the boundary, and its ports are IMPLIED
+### A103 under [1.25] — the ADAPTOR is the boundary, and NOTHING is implied
 
 **An adaptor declared in context A `to context B` (or `from context B`) IS A's
-boundary surface for that ordered pair and direction.** This REVERSES the older
-"no adaptor exemption" reading; where the two conflict, A103 wins.
+boundary surface for that ordered pair and direction.** That is A103, and it
+stands. What changed on 2026-09-11 with riddl `2.1.1-45` ([1.25], riddl's
+backlog number, not a CM rule) is the PORTS: **A103's implied inlet and outlet
+are abolished, for every processor kind.** A port the handlers need and the
+definition lacks is now a **Missing** warning, never a silent gift:
 
-- **Ports are implied.** A port-less adaptor counts as one inlet and one outlet,
-  so its shape is **`flow`** — `as source` / `as merge` on an adaptor is an
-  **Error**. Declaring a port overrides that side.
-- **An implied port carries exactly ONE TYPE, so a multi-type adaptor MUST
-  declare an outlet** (`adaptor-implied-outlet-ambiguous`, an **Error**).
-  riddlc's own suggestion is to "declare an outlet typed with an alternation of
-  those types, or split the translation across adaptors, one type each". A
-  declared outlet on an adaptor is therefore **not** pre-A103 residue to be
-  cleaned up — it is required the moment the adaptor translates a second
-  message, and a declared port in turn requires the `as flow` ascription
-  (`stream-ports-without-shape`). Measured 2026-09-07: 17 adaptors carry more
-  than one type and all 17 need the port. Do not "simplify" these away; the
-  attempt is recorded in `task/done/2026-09-06-adaptors-lose-their-plumbing.md`.
-- **An adaptor's implied port is nameable as a CONNECTOR endpoint**:
-  `from outlet Sales.ToBilling`. It is **not** nameable in a `send`; a
-  `send ... to inlet <Adaptor>` does not resolve. If a context handler must
-  reach the adaptor, give the context an outlet and run an intra-context
-  connector from it into the adaptor.
-- **Exclusivity** (`stream-connector-bypasses-adaptor`): where A declares an
-  outbound adaptor toward B, a connector from A's own outlet into B is an
-  Error; where A declares an inbound adaptor from B, a connector from B onto
-  A's own inlet is an Error. **An adaptor that can be routed around is not a
-  boundary.** This kills the old two-hop shape (adaptor → the context's own
-  inlet), which now also shows up as `stream-graph-cycle`.
-- **Typing is VALIDATED, never SYNTHESISED**
-  (`adaptor-target-no-admitting-inlet`): `tell ... to context X` from inside an
-  adaptor is an Error unless X declares an inlet whose type IS the message or
-  whose alternation contains it.
-- **`send` obeys ownership** (`stmt-outlet-not-owned`): a `send` may name only
-  an outlet whose parent chain contains the sending processor. An entity may
-  not publish on a neighbouring streamlet's outlet — it publishes on its own.
+- `stream-processor-no-inlet` — it handles messages and declares no inlet
+  (entities keep `entity-no-inlet`)
+- `stream-processor-no-outlet` — it `send`s or `tell`s and declares no outlet
+  (`entity-no-outlet`)
+- `stream-inlet-not-received` — a declared inlet whose type no handler clause
+  receives (-47)
+- `ref-wrong-kind` — a connector endpoint names an adaptor, not a portlet;
+  there is no implied port to land on
 
-**Consequence for adaptors: prefer `tell ... to context X` over `send`.** The
-adaptor's outlet is implied and the `tell` publishes on it, so no port need be
-declared and no ownership rule is engaged.
+**Every rule ABSTAINS on the side it cannot read**, so a port-less adaptor is
+merely incomplete, not wrong; the Missing warning is what says the model has a
+stub in it. `adaptor-implied-outlet-ambiguous` is **retired** — with no
+implied port there is nothing to be ambiguous about — and CM §7.2/§8.1 were
+reversed to match ("a missing port is a STUB").
 
-### An `ask`'s answer comes back on the adaptor's IMPLIED inlet
+The whole corpus was drained to this on 2026-09-11 (BACKLOG #38, closed): 26
+connector endpoints repointed, 388 ascriptions re-derived, 749 + 104 Missing
+warnings answered with declared ports. **The shape an adaptor has now:**
 
-**So the asking adaptor must NOT declare an inlet of its own.** Declaring one
-overrides the implied inlet away (A103: a declared port overrides that side),
-and the answer then has nowhere to arrive, which riddlc reports as
+- **An adaptor declares EVERY port it uses.** Inbound events arrive on
+  `inlet <A>In is type <ExtCtx>Event`; what it hands its own context leaves
+  on `outlet <A>To<Ctx> is type <Ctx>Command` (or the single command); what it
+  sends to the other side leaves on `outlet <A>Out is type <ExtCtx>Command`.
+  `utilities/water/water-utility`'s `ToSCADASystem` carries all four kinds at
+  once and is the reference instance.
+- **The ascription follows declared arity, exactly as for every other
+  processor** — `shapeForArity`, no adaptor exception. `as merge` and `as
+  router` on an adaptor are legal now. The corpus at the close: 581 `flow`, 293
+  `sink`, 289 `router`, 5 `merge`, 0 unascribed. **An inbound adaptor that
+  receives and transmits nothing is `as sink`** (Reid, 2026-09-11 evening,
+  reversing a morning ruling to leave 409 of them bare) — the `stream-ports-
+  without-shape` style nudge is real and the zero standard applies.
+- **A multi-type port is an ALTERNATION**, declared on the adaptor:
+  `outlet FromInventoryServiceToCartContext is type CartCommand`. The 17
+  adaptors measured on 2026-09-07 as needing a declared outlet were early;
+  every adaptor needs one now. `task/done/2026-09-06-adaptors-lose-their-
+  plumbing.md` records the attempt to strip them and remains the warning.
+- **A `tell` or `send` from an adaptor travels its OWN outlet**, so the outlet
+  must exist and `send ... to outlet <Ctx>.<A>.<A>To<Ctx>` names it in full.
+  `tell command X(...) to context <Ctx>` still resolves and is still typed —
+  `adaptor-target-no-admitting-inlet` requires `<Ctx>` to declare an inlet
+  admitting `X` — but it publishes on the adaptor's declared outlet, not on an
+  implied one, so it buys nothing over `send` any more. The 2026-09-10 advice
+  to "prefer `tell` because no port need be declared" is withdrawn.
+- **Reaching the context from the adaptor is a relay**: the context declares
+  `inlet <Ctx>From<A> is type <Ctx>Command`, an intra-context `connector '<A>
+  Intake'` joins the adaptor's outlet to it, and the boundary handler relays
+  each concrete member to the entity's stream (§ "The context IS the port").
+- **Exclusivity** (`stream-connector-bypasses-adaptor`) is unchanged: where A
+  declares an outbound adaptor toward B, a connector from A's own outlet into
+  B is an Error; where A declares an inbound adaptor from B, a connector from
+  B onto A's own inlet is an Error. **An adaptor that can be routed around is
+  not a boundary.**
+- **`send` obeys ownership** (`stmt-outlet-not-owned`), unchanged: a `send`
+  may name only an outlet whose parent chain contains the sending processor.
 
+### An `ask` from an adaptor: the asker owns BOTH legs
+
+**A103 makes the adaptor the boundary in BOTH directions** (riddl 8d2cc13e5,
+2026-09-11, answering `../riddl/task/2026-09-11-ask-reply-cannot-arrive-at-the-
+asking-adaptor.md`). Connectors are unidirectional, so an ask is two of them
+and the asking adaptor declares the port at its end of each:
+
+```riddl
+adaptor ToSCADASystem to context SCADASystem as router is {
+  // what triggers the ask
+  inlet  ToSCADASystemIn      is type WaterSystemEvent
+  // the answer
+  inlet  ToSCADASystemReplies is result SCADASystem.SensorReadings
+  // the question
+  outlet ToSCADASystemOut     is type SCADASystem.SCADASystemRequest
+  // what it does with the answer
+  outlet ToSCADASystemToWaterUtilityContext is command WaterSystem.UpdatePressure
+  ...
+}
+// domain level, one connector per leg
+persistent connector 'SCADASystemRequest Stream' is
+  from outlet WaterUtilityContext.ToSCADASystem.ToSCADASystemOut
+  to inlet SCADASystem.SCADASystemRequests
+persistent connector 'SCADASystemReply Stream' is
+  from outlet SCADASystem.SCADASystemRepliesOut
+  to inlet WaterUtilityContext.ToSCADASystem.ToSCADASystemReplies
 ```
-[error] [msg-ask-reply-unreachable]
-the answer from Context 'X' cannot reach Adaptor 'ToX': no connector carries
-it back, so the reply is not modelled
-```
 
-The message names the missing connector, not the declared inlet that caused it,
-so it reads as "add a connector" when the fix is "remove the inlet". Filed as
-`../riddl/task/2026-09-10-ask-reply-unreachable-should-name-the-declared-inlet.md`.
+The answering side declares `outlet <Ext>RepliesOut` typed with its `<Ext>Reply`
+alternation (or the single result) and its boundary handler answers each query
+with `reply`. `msg-ask-target-unreachable` / `msg-ask-reply-unreachable` walk
+exactly these connectors, so the reply-leg canary that used to prove "do not
+declare an inlet" now proves the opposite: **delete `'SCADASystemReply Stream'`
+and the ask goes red.** The 2026-09-10 filing that riddlc should "name the
+declared inlet" (`…-ask-reply-unreachable-should-name-the-declared-inlet.md`)
+described A103's behaviour and is moot.
 
-Measured 2026-09-10 by canary, which is the only reason this is stated as fact:
-`utilities/water/water-utility`'s `ToSCADASystem` asks and validates clean with
-one declared **outlet** and no inlet; adding a single declared inlet to it —
-changing nothing else — turned that same ask into `msg-ask-reply-unreachable`.
-Removing it restored the model.
+**And the answer must GO somewhere** (Reid, 2026-09-11: *"the information was
+obtained with an ask/reply pair for a reason. Your job is to intuit that reason
+and add it to the model. The only WRONG thing to do is nothing."*). Every one
+of the corpus's 368 asks is followed by a `send command <Entity>.<Cmd>(field =
+askAnswer.f, …) to outlet <Ctx>.<A>.<A>To<Ctx>` — guarded with `when
+prompt("…") then … end` where the answer only matters sometimes — and the
+decision for each is one row of `scripts/inbound-events/ask-decisions.tsv`.
+A wrong reading is one row to change and a rerun of `forward-answers.py`.
 
-Three corollaries, all checked:
-
-- **An OCCUPIED implied inlet still carries the answer.** A connector landing on
-  it is fine; it is the *declaration* of a rival inlet that removes it.
-- **So an asking adaptor takes exactly ONE inbound connector**, on the implied
-  inlet. Two inbound legs are unmodellable, since the second would need a
-  declared inlet — and an adaptor cannot be `as merge` either.
-- **A declared OUTLET is harmless**, which is what the corpus's outbound
-  adaptors already carry: `outlet To<Ctx>Out is ...` plus `as flow`, with a
-  domain-level `persistent connector '<Ctx>Request Stream'` into the external
-  context's inlet. That is the shape to build when wiring a new one.
+**Two things that stay red by ruling**, so do not "fix" them: an `error-sink`
+context with no handler draws `stream-inlet-not-received` (riddl is to exempt
+it — `../riddl/task/2026-09-11-error-sink-context-cannot-be-complete.md`), and
+reactive-bbq's clock-driven `NightlyCloseOut as void` is 1 Missing that belongs
+to BACKLOG #30.
 
 ### The context IS the port at its own boundary
 
@@ -1308,11 +1350,13 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.1.1-33-dd3c2d80**, an UNPUBLISHED snapshot of riddl `main`
-carrying **A103** (the adaptor is the boundary). **The override is back ON** —
-`riddlcPath := Some(file("../bin/riddlc"))` — and the libraries resolve from
-`~/.ivy2/local`. GitHub Packages stops at 2.1.1. Take the override off at the
-first published tag carrying A103.
+Current version: **2.1.1-47-d63cc2c3**, an UNPUBLISHED snapshot of riddl `main`
+carrying **A103** (the adaptor is the boundary), **[1.25]** (nothing is
+implied), the reply-leg fix and a receiving `on other`. **The override is back
+ON** — `riddlcPath := Some(file("../bin/riddlc"))` — and the libraries resolve
+from `~/.ivy2/local`. GitHub Packages stops at 2.1.1. Take the override off at
+the first published tag carrying [1.25]. **The staged binary moved under a
+session once** (-45 -> -47, unannounced); `riddlc info` is the only evidence.
 
 The corpus spent 2026-08-31 to 2026-09-05 on unpublished snapshots because
 four rules it depends on landed after a tag each time (`streamlet`; A6
@@ -1440,7 +1484,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.1.1-33-dd3c2d80 | `riddlVersion` in `build.sbt` (unpublished) |
+| riddlc | 2.1.1-47-d63cc2c3 | `riddlVersion` in `build.sbt` (unpublished) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 

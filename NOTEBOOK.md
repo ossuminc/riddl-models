@@ -26,11 +26,9 @@ nothing about any of this; sweep by rule is the census.
 
 ### In flight — nothing. Next is bookkeeping, not modelling
 
-- **CLAUDE.md is STALE on [1.25].** Its A103 section still says ports are
-  implied and an asking adaptor must not declare an inlet; its inbound recipe
-  still says `as flow`. Both are now the OPPOSITE of what riddlc enforces: nothing
-  is implied, the asker declares both legs, an inbound adaptor with no
-  transmission is `as sink`. Rewrite it before anyone follows it. Not started.
+- **CLAUDE.md is current on [1.25]** as of this commit: § "A103 under
+  [1.25]" and § "An `ask` from an adaptor" replace the implied-port text; the
+  stream-tail note no longer claims the inbound/asking asymmetry.
 - **Unpushed commits** since 6d9e7ce8; pushing is Reid's call.
 - The two open riddl tasks (error-sink exemption; prettify `URL"https"`) land
   as sweep changes here when riddl answers — re-sweep after the next bump.
@@ -59,7 +57,7 @@ later and is one row to change; none has been reviewed by a person.
 ### Pointers
 
 Open work: **BACKLOG.md** #30, #1/#23/#24/#34. Durable language facts:
-**CLAUDE.md** (stale on [1.25], see above). Lessons: the three § 2026-09-11
+**CLAUDE.md**. Lessons: the three § 2026-09-11
 sections below, newest first.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
