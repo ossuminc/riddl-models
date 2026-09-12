@@ -1,5 +1,5 @@
 // Product Catalog - Category Entity
-entity Category as flow is {
+event-sourced entity Category as flow is {
   type CategoryCommand is one of {
     Category.CreateCategory or Category.UpdateCategory or Category.MoveCategory or Category.ActivateCategory or Category.DeactivateCategory
   } with {
@@ -149,6 +149,12 @@ entity Category as flow is {
         |Creation time.
       }
     }
+    categoryDescription: String(1,500) with {
+      briefly "Category description"
+    }
+    displayOrder: Natural with {
+      briefly "Display order"
+    }
   } with {
     briefly "Category was created"
     described as {
@@ -293,6 +299,12 @@ entity Category as flow is {
         |Creation time.
       }
     }
+    movedAt: TimeStamp? with {
+      briefly "Moved at"
+    }
+    updatedAt: TimeStamp? with {
+      briefly "Updated at"
+    }
   } with {
     briefly "Active category data"
     described as {
@@ -360,7 +372,8 @@ entity Category as flow is {
   initial state ActiveState of record Category.ActiveCategoryData is {
     initial handler ActiveStateInitHandler is {
       on init is {
-        set state ActiveState to "initialize from prior event"
+        let categoryCreated: type CategoryCreated = prompt("the category created that brings this category into existence")
+        yield categoryCreated
       }
     } with {
       briefly "Active state init handler"
@@ -377,7 +390,8 @@ entity Category as flow is {
   state InactiveState of record Category.InactiveCategoryData is {
     initial handler InactiveStateInitHandler is {
       on init is {
-        set state InactiveState to "initialize from prior event"
+        let categoryDeactivated: type CategoryDeactivated = prompt("the category deactivated that brings this category into existence")
+        yield categoryDeactivated
       }
     } with {
       briefly "Inactive state init handler"
@@ -394,23 +408,24 @@ entity Category as flow is {
   // Handler
   handler CategoryHandler is {
     on categoryActivated: event CategoryActivated is {
-      do "apply CategoryActivated to the category so it can be persisted and replayed"
+      morph entity Category to state Category.ActiveState with record Category.ActiveCategoryData(categoryId = categoryActivated.categoryId, categoryName = prompt("the category name of this active category data"), categoryDescription = prompt("the category description of this active category data"), parentId = empty, displayOrder = prompt("the display order of this active category data"), productCount = prompt("the product count of this active category data"), createdAt = prompt("the created at of this active category data"), movedAt = empty, updatedAt = empty)
     }
     on categoryCreated: event CategoryCreated is {
-      do "apply CategoryCreated to the category so it can be persisted and replayed"
+      morph entity Category to state Category.ActiveState with record Category.ActiveCategoryData(categoryId = categoryCreated.categoryId, categoryName = categoryCreated.categoryName, categoryDescription = categoryCreated.categoryDescription, parentId = categoryCreated.parentId, displayOrder = categoryCreated.displayOrder, productCount = prompt("the product count of this active category data"), createdAt = prompt("the created at of this active category data"), movedAt = empty, updatedAt = empty)
     }
     on categoryDeactivated: event CategoryDeactivated is {
-      do "apply CategoryDeactivated to the category so it can be persisted and replayed"
+      morph entity Category to state Category.InactiveState with record Category.InactiveCategoryData(categoryId = categoryDeactivated.categoryId, categoryName = prompt("the category name of this inactive category data"), deactivatedAt = prompt("the deactivated at of this inactive category data"))
     }
     on categoryMoved: event CategoryMoved is {
-      do "apply CategoryMoved to the category so it can be persisted and replayed"
+      set field Category.ActiveState.parentId to categoryMoved.newParentId
+      set field Category.ActiveState.movedAt to categoryMoved.movedAt
     }
     on categoryUpdated: event CategoryUpdated is {
-      do "apply CategoryUpdated to the category so it can be persisted and replayed"
+      set field Category.ActiveState.categoryName to prompt("updatedCategoryName when present, else unchanged")
+      set field Category.ActiveState.updatedAt to categoryUpdated.updatedAt
     }
     on createCategory: command CreateCategory is {
-      morph entity Category to state Category.ActiveState with record Category.ActiveCategoryData(categoryId = createCategory.categoryId, categoryName = createCategory.categoryName, categoryDescription = createCategory.categoryDescription, parentId = createCategory.parentId, displayOrder = createCategory.displayOrder, productCount = prompt("the product count of this active category data"), createdAt = prompt("the created at of this active category data"))
-      yield event CategoryCreated(categoryId = createCategory.categoryId, categoryName = createCategory.categoryName, parentId = createCategory.parentId, createdAt = prompt("the created at of this category created"))
+      yield event CategoryCreated(categoryId = createCategory.categoryId, categoryName = createCategory.categoryName, parentId = createCategory.parentId, createdAt = prompt("the created at of this category created"), categoryDescription = createCategory.categoryDescription, displayOrder = createCategory.displayOrder)
     }
     on updateCategory: command UpdateCategory is {
       yield event CategoryUpdated(categoryId = updateCategory.categoryId, updatedCategoryName = updateCategory.updatedCategoryName, updatedAt = prompt("the updated at of this category updated"))
@@ -419,11 +434,9 @@ entity Category as flow is {
       yield event CategoryMoved(categoryId = moveCategory.categoryId, newParentId = moveCategory.newParentId, oldParentId = empty, movedAt = prompt("the moved at of this category moved"))
     }
     on activateCategory: command ActivateCategory is {
-      morph entity Category to state Category.ActiveState with record Category.ActiveCategoryData(categoryId = activateCategory.categoryId, categoryName = prompt("the category name of this active category data"), categoryDescription = prompt("the category description of this active category data"), parentId = empty, displayOrder = prompt("the display order of this active category data"), productCount = prompt("the product count of this active category data"), createdAt = prompt("the created at of this active category data"))
       yield event CategoryActivated(categoryId = activateCategory.categoryId, activatedAt = prompt("the activated at of this category activated"))
     }
     on deactivateCategory: command DeactivateCategory is {
-      morph entity Category to state Category.InactiveState with record Category.InactiveCategoryData(categoryId = deactivateCategory.categoryId, categoryName = prompt("the category name of this inactive category data"), deactivatedAt = prompt("the deactivated at of this inactive category data"))
       yield event CategoryDeactivated(categoryId = deactivateCategory.categoryId, deactivatedAt = prompt("the deactivated at of this category deactivated"))
     }
     on getCategory: query GetCategory is {

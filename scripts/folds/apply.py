@@ -65,7 +65,7 @@ for model,rs in rows.items():
         stn=next(n for n in ns if n["kind"]=="state" and n["id"]==st and n["parent"]==entn["path"])
         fp=text(stn["file"]); t=texts[fp]
         mm=re.match(r"\s*(?:initial )?state \S+ of (?:record )?(\S+)",t[stn["span"]["start"]["offset"]:]); rec=mm.group(1).split(".")[-1]
-        recn=next(n for n in ns if n["kind"] in("record","type") and n["id"]==rec and n["parent"]==entn["path"])
+        recn=next((n for n in ns if n["kind"] in("record","type") and n["id"]==rec and n["parent"]==entn["path"]),None) or next(n for n in ns if n["kind"] in("record","type") and n["id"]==rec)
         cl=next(n for n in ns if n["kind"]=="on-event" and n["message"]["resolved"].split(".")[-1]==ev and entn["path"] in n["ancestors"])
         cfp=text(cl["file"]); ct=texts[cfp]; s=cl["span"]["start"]["offset"]; s=ct.rfind("\n",0,s)+1; en=brace_end(ct,s)
         head=ct[s:ct.index("{",s)]
@@ -76,7 +76,7 @@ for model,rs in rows.items():
             m=re.match(r"(\+?)([\w.]+)(?::([^=]+))?=(.*)$",stmt)
             plus,f,ty,expr=m.groups()
             if plus:
-                newfields[recn["path"]].append((f,ty.strip()))
+                if (f,ty.strip()) not in newfields[recn["path"]]: newfields[recn["path"]].append((f,ty.strip()))
             expr=re.sub(r"\be\.",binding+".",expr.strip())
             lines.append(f"{indent}  set field {ent}.{st}.{f} to {expr}")
         new=f"{indent}on {binding}: event {ev} is {{\n"+"\n".join(lines)+f"\n{indent}}}"

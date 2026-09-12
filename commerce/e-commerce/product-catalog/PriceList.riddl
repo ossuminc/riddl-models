@@ -1,5 +1,5 @@
 // Product Catalog - PriceList Entity
-entity PriceList as flow is {
+event-sourced entity PriceList as flow is {
   type PriceListCommand is one of {
     PriceList.CreatePriceList or PriceList.SetProductPrice or PriceList.ActivatePriceList or PriceList.DeactivatePriceList
   } with {
@@ -135,6 +135,12 @@ entity PriceList as flow is {
       described as {
         |Creation time.
       }
+    }
+    listDescription: String(1,500) with {
+      briefly "List description"
+    }
+    priority: Natural with {
+      briefly "Priority"
     }
   } with {
     briefly "Price list was created"
@@ -292,6 +298,9 @@ entity PriceList as flow is {
         |Activation time.
       }
     }
+    lastPriceSetAt: TimeStamp? with {
+      briefly "Last price set at"
+    }
   } with {
     briefly "Active price list data"
     described as {
@@ -359,7 +368,8 @@ entity PriceList as flow is {
   initial state ActivePriceListState of record PriceList.ActivePriceListData is {
     initial handler ActivePriceListInitHandler is {
       on init is {
-        set state ActivePriceListState to "initialize from prior event"
+        let priceListCreated: type PriceListCreated = prompt("the price list created that brings this price list into existence")
+        yield priceListCreated
       }
     } with {
       briefly "Active price list init handler"
@@ -376,7 +386,8 @@ entity PriceList as flow is {
   state InactivePriceListState of record PriceList.InactivePriceListData is {
     initial handler InactivePriceListInitHandler is {
       on init is {
-        set state InactivePriceListState to "initialize from prior event"
+        let priceListDeactivated: type PriceListDeactivated = prompt("the price list deactivated that brings this price list into existence")
+        yield priceListDeactivated
       }
     } with {
       briefly "Inactive price list init handler"
@@ -393,30 +404,28 @@ entity PriceList as flow is {
   // Handler
   handler PriceListHandler is {
     on priceListActivated: event PriceListActivated is {
-      do "apply PriceListActivated to the pricelist so it can be persisted and replayed"
+      morph entity PriceList to state PriceList.ActivePriceListState with record PriceList.ActivePriceListData(priceListId = priceListActivated.priceListId, listName = prompt("the list name of this active price list data"), listDescription = prompt("the list description of this active price list data"), currency = prompt("the currency of this active price list data"), priority = prompt("the priority of this active price list data"), prices = prompt("the prices of this active price list data"), createdAt = prompt("the created at of this active price list data"), activatedAt = prompt("the activated at of this active price list data"), lastPriceSetAt = empty)
     }
     on priceListCreated: event PriceListCreated is {
-      do "apply PriceListCreated to the pricelist so it can be persisted and replayed"
+      morph entity PriceList to state PriceList.ActivePriceListState with record PriceList.ActivePriceListData(priceListId = priceListCreated.priceListId, listName = priceListCreated.listName, listDescription = priceListCreated.listDescription, currency = priceListCreated.currency, priority = priceListCreated.priority, prices = prompt("the prices of this active price list data"), createdAt = prompt("the created at of this active price list data"), activatedAt = prompt("the activated at of this active price list data"), lastPriceSetAt = empty)
     }
     on priceListDeactivated: event PriceListDeactivated is {
-      do "apply PriceListDeactivated to the pricelist so it can be persisted and replayed"
+      morph entity PriceList to state PriceList.InactivePriceListState with record PriceList.InactivePriceListData(priceListId = priceListDeactivated.priceListId, listName = prompt("the list name of this inactive price list data"), deactivatedAt = prompt("the deactivated at of this inactive price list data"))
     }
     on productPriceSet: event ProductPriceSet is {
-      do "apply ProductPriceSet to the pricelist so it can be persisted and replayed"
+      set field PriceList.ActivePriceListState.prices to prompt("the prices with an entry for productId at price, replacing any earlier one")
+      set field PriceList.ActivePriceListState.lastPriceSetAt to productPriceSet.setAt
     }
     on createPriceList: command CreatePriceList is {
-      morph entity PriceList to state PriceList.ActivePriceListState with record PriceList.ActivePriceListData(priceListId = createPriceList.priceListId, listName = createPriceList.listName, listDescription = createPriceList.listDescription, currency = createPriceList.currency, priority = createPriceList.priority, prices = prompt("the prices of this active price list data"), createdAt = prompt("the created at of this active price list data"), activatedAt = prompt("the activated at of this active price list data"))
-      yield event PriceListCreated(priceListId = createPriceList.priceListId, listName = createPriceList.listName, currency = createPriceList.currency, createdAt = prompt("the created at of this price list created"))
+      yield event PriceListCreated(priceListId = createPriceList.priceListId, listName = createPriceList.listName, currency = createPriceList.currency, createdAt = prompt("the created at of this price list created"), listDescription = createPriceList.listDescription, priority = createPriceList.priority)
     }
     on setProductPrice: command SetProductPrice is {
       yield event ProductPriceSet(priceListId = setProductPrice.priceListId, productId = setProductPrice.productId, price = setProductPrice.price, setAt = prompt("the set at of this product price set"))
     }
     on activatePriceList: command ActivatePriceList is {
-      morph entity PriceList to state PriceList.ActivePriceListState with record PriceList.ActivePriceListData(priceListId = activatePriceList.priceListId, listName = prompt("the list name of this active price list data"), listDescription = prompt("the list description of this active price list data"), currency = prompt("the currency of this active price list data"), priority = prompt("the priority of this active price list data"), prices = prompt("the prices of this active price list data"), createdAt = prompt("the created at of this active price list data"), activatedAt = prompt("the activated at of this active price list data"))
       yield event PriceListActivated(priceListId = activatePriceList.priceListId, activatedAt = prompt("the activated at of this price list activated"))
     }
     on deactivatePriceList: command DeactivatePriceList is {
-      morph entity PriceList to state PriceList.InactivePriceListState with record PriceList.InactivePriceListData(priceListId = deactivatePriceList.priceListId, listName = prompt("the list name of this inactive price list data"), deactivatedAt = prompt("the deactivated at of this inactive price list data"))
       yield event PriceListDeactivated(priceListId = deactivatePriceList.priceListId, deactivatedAt = prompt("the deactivated at of this price list deactivated"))
     }
     on getPriceList: query GetPriceList is {

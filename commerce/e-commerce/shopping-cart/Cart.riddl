@@ -1,5 +1,5 @@
 // Shopping Cart - Cart Entity
-entity Cart as flow is {
+event-sourced entity Cart as flow is {
   type CartCommand is one of {
     Cart.CreateCart or Cart.AddItem or Cart.UpdateQuantity or Cart.RemoveItem or Cart.ApplyPromoCode or Cart.RemovePromoCode or Cart.SetShippingAddress or Cart.MergeCart or Cart.Checkout or Cart.AbandonCart
   } with {
@@ -603,6 +603,9 @@ entity Cart as flow is {
         |Last update time.
       }
     }
+    shippingEstimate: Money? with {
+      briefly "Shipping estimate"
+    }
   } with {
     briefly "Active cart data"
     described as {
@@ -713,7 +716,8 @@ entity Cart as flow is {
   initial state ActiveState of record Cart.ActiveCartData is {
     initial handler ActiveStateInitHandler is {
       on init is {
-        set state ActiveState to "initialize from prior event"
+        let cartCreated: type CartCreated = prompt("the cart created that brings this cart into existence")
+        yield cartCreated
       }
       on quiescence "30 minutes" is {
         tell command AbandonCart(cartId = self.id) to entity CartContext.Cart
@@ -733,7 +737,8 @@ entity Cart as flow is {
   state CheckedOutState of record Cart.CheckedOutCartData is {
     initial handler CheckedOutStateInitHandler is {
       on init is {
-        set state CheckedOutState to "initialize from prior event"
+        let cartCheckedOut: type CartCheckedOut = prompt("the cart checked out that brings this cart into existence")
+        yield cartCheckedOut
       }
     } with {
       briefly "Checked out state init handler"
@@ -750,7 +755,8 @@ entity Cart as flow is {
   state AbandonedState of record Cart.AbandonedCartData is {
     initial handler AbandonedStateInitHandler is {
       on init is {
-        set state AbandonedState to "initialize from prior event"
+        let cartAbandoned: type CartAbandoned = prompt("the cart abandoned that brings this cart into existence")
+        yield cartAbandoned
       }
     } with {
       briefly "Abandoned state init handler"
@@ -767,37 +773,49 @@ entity Cart as flow is {
   // Handler
   handler CartHandler is {
     on cartAbandoned: event CartAbandoned is {
-      do "apply CartAbandoned to the cart so it can be persisted and replayed"
+      morph entity Cart to state Cart.AbandonedState with record Cart.AbandonedCartData(cartId = cartAbandoned.cartId, customerId = empty, items = prompt("the items of this abandoned cart data"), cartValue = prompt("the cart value of this abandoned cart data"), abandonedAt = prompt("the abandoned at of this abandoned cart data"))
     }
     on cartCheckedOut: event CartCheckedOut is {
-      do "apply CartCheckedOut to the cart so it can be persisted and replayed"
+      morph entity Cart to state Cart.CheckedOutState with record Cart.CheckedOutCartData(cartId = cartCheckedOut.cartId, orderId = prompt("the order id of this checked out cart data"), total = prompt("the total of this checked out cart data"), checkedOutAt = prompt("the checked out at of this checked out cart data"))
     }
     on cartCreated: event CartCreated is {
-      do "apply CartCreated to the cart so it can be persisted and replayed"
+      morph entity Cart to state Cart.ActiveState with record Cart.ActiveCartData(cartId = cartCreated.cartId, customerId = cartCreated.customerId, sessionId = cartCreated.sessionId, items = prompt("the items of this active cart data"), discounts = prompt("the discounts of this active cart data"), shippingAddress = empty, summary = prompt("the summary of this active cart data"), createdAt = prompt("the created at of this active cart data"), lastUpdatedAt = prompt("the last updated at of this active cart data"), shippingEstimate = empty)
     }
     on cartsMerged: event CartsMerged is {
-      do "apply CartsMerged to the cart so it can be persisted and replayed"
+      set field Cart.ActiveState.items to prompt("the items with the source cart's items merged in")
+      set field Cart.ActiveState.lastUpdatedAt to cartsMerged.mergedAt
     }
     on itemAdded: event ItemAdded is {
-      do "apply ItemAdded to the cart so it can be persisted and replayed"
+      set field Cart.ActiveState.items to prompt("the items with item appended")
+      set field Cart.ActiveState.summary.subtotal to itemAdded.newTotal
+      set field Cart.ActiveState.lastUpdatedAt to itemAdded.addedAt
     }
     on itemQuantityUpdated: event ItemQuantityUpdated is {
-      do "apply ItemQuantityUpdated to the cart so it can be persisted and replayed"
+      set field Cart.ActiveState.items to prompt("the items with productId's quantity set to newQuantity")
+      set field Cart.ActiveState.summary.subtotal to itemQuantityUpdated.newTotal
+      set field Cart.ActiveState.lastUpdatedAt to itemQuantityUpdated.updatedAt
     }
     on itemRemoved: event ItemRemoved is {
-      do "apply ItemRemoved to the cart so it can be persisted and replayed"
+      set field Cart.ActiveState.items to prompt("the items without productId")
+      set field Cart.ActiveState.summary.subtotal to itemRemoved.newTotal
+      set field Cart.ActiveState.lastUpdatedAt to itemRemoved.removedAt
     }
     on promoCodeApplied: event PromoCodeApplied is {
-      do "apply PromoCodeApplied to the cart so it can be persisted and replayed"
+      set field Cart.ActiveState.discounts to prompt("the discounts with discount appended")
+      set field Cart.ActiveState.summary.subtotal to promoCodeApplied.newTotal
+      set field Cart.ActiveState.lastUpdatedAt to promoCodeApplied.appliedAt
     }
     on promoCodeRemoved: event PromoCodeRemoved is {
-      do "apply PromoCodeRemoved to the cart so it can be persisted and replayed"
+      set field Cart.ActiveState.discounts to prompt("the discounts without the one for code")
+      set field Cart.ActiveState.summary.subtotal to promoCodeRemoved.newTotal
+      set field Cart.ActiveState.lastUpdatedAt to promoCodeRemoved.removedAt
     }
     on shippingAddressSet: event ShippingAddressSet is {
-      do "apply ShippingAddressSet to the cart so it can be persisted and replayed"
+      set field Cart.ActiveState.shippingAddress to shippingAddressSet.address
+      set field Cart.ActiveState.shippingEstimate to shippingAddressSet.shippingEstimate
+      set field Cart.ActiveState.lastUpdatedAt to shippingAddressSet.setAt
     }
     on createCart: command CreateCart is {
-      morph entity Cart to state Cart.ActiveState with record Cart.ActiveCartData(cartId = createCart.cartId, customerId = createCart.customerId, sessionId = createCart.sessionId, items = prompt("the items of this active cart data"), discounts = prompt("the discounts of this active cart data"), shippingAddress = empty, summary = prompt("the summary of this active cart data"), createdAt = prompt("the created at of this active cart data"), lastUpdatedAt = prompt("the last updated at of this active cart data"))
       yield event CartCreated(cartId = createCart.cartId, customerId = createCart.customerId, sessionId = createCart.sessionId, createdAt = prompt("the created at of this cart created"))
     }
     on addItem: command AddItem is {
@@ -822,11 +840,9 @@ entity Cart as flow is {
       yield event CartsMerged(targetCartId = mergeCart.targetCartId, sourceCartId = mergeCart.sourceCartId, addedItems = prompt("the added items of this carts merged"), mergedAt = prompt("the merged at of this carts merged"))
     }
     on checkout: command Checkout is {
-      morph entity Cart to state Cart.CheckedOutState with record Cart.CheckedOutCartData(cartId = checkout.cartId, orderId = prompt("the order id of this checked out cart data"), total = prompt("the total of this checked out cart data"), checkedOutAt = prompt("the checked out at of this checked out cart data"))
       yield event CartCheckedOut(cartId = checkout.cartId, orderId = prompt("the order id of this cart checked out"), total = prompt("the total of this cart checked out"), checkedOutAt = prompt("the checked out at of this cart checked out"))
     }
     on abandonCart: command AbandonCart is {
-      morph entity Cart to state Cart.AbandonedState with record Cart.AbandonedCartData(cartId = abandonCart.cartId, customerId = empty, items = prompt("the items of this abandoned cart data"), cartValue = prompt("the cart value of this abandoned cart data"), abandonedAt = prompt("the abandoned at of this abandoned cart data"))
       yield event CartAbandoned(cartId = abandonCart.cartId, itemCount = prompt("the item count of this cart abandoned"), cartValue = prompt("the cart value of this cart abandoned"), abandonedAt = prompt("the abandoned at of this cart abandoned"))
       terminate self.id
     }

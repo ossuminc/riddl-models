@@ -1,5 +1,5 @@
 // Life Policy Entity - Core aggregate for policy lifecycle management
-entity LifePolicy as flow is {
+event-sourced entity LifePolicy as flow is {
   type LifePolicyCommand is one of {
     LifePolicy.IssueLifePolicy or LifePolicy.AddBeneficiary or LifePolicy.RemoveBeneficiary or LifePolicy.AddRider or LifePolicy.RemoveRider or LifePolicy.ProcessPremium or LifePolicy.RequestLoan or LifePolicy.RepayLoan or LifePolicy.SurrenderPolicy or LifePolicy.ProcessDeath or LifePolicy.LapsePolicy or LifePolicy.ReinstatePolicyFromLapse
   } with {
@@ -716,6 +716,15 @@ entity LifePolicy as flow is {
         |Loan history.
       }
     }
+    lastBeneficiaryChangeOn: Date? with {
+      briefly "Last beneficiary change on"
+    }
+    lastLoanActivityOn: Date? with {
+      briefly "Last loan activity on"
+    }
+    lastRiderChangeOn: Date? with {
+      briefly "Last rider change on"
+    }
   } with {
     briefly "Active state data"
     described as {
@@ -833,37 +842,6 @@ entity LifePolicy as flow is {
       |Data for a policy with pending death claim.
     }
   }
-  record TerminatedStateData is {
-    policyInfo: LifePolicyInfo with {
-      briefly "Policy info"
-      described as {
-        |Final details.
-      }
-    }
-    terminationDate: Date with {
-      briefly "Termination date"
-      described as {
-        |When terminated.
-      }
-    }
-    terminationReason: String(1,200) with {
-      briefly "Reason"
-      described as {
-        |Termination reason.
-      }
-    }
-    finalSettlement: Money with {
-      briefly "Settlement"
-      described as {
-        |Final settlement.
-      }
-    }
-  } with {
-    briefly "Terminated state data"
-    described as {
-      |Data for a terminated policy.
-    }
-  }
   // Query/Result
   query GetLifePolicy replies result LifePolicyResult is {
     policyId: LifePolicyId with {
@@ -907,7 +885,8 @@ entity LifePolicy as flow is {
   initial state ApplicationState of record LifePolicy.ApplicationStateData is {
     initial handler ApplicationStateInitHandler is {
       on init is {
-        set state ApplicationState to "initialize from application submission"
+        let lifePolicyIssued: type LifePolicyIssued = prompt("the life policy issued that brings this life policy into existence")
+        yield lifePolicyIssued
       }
     } with {
       briefly "Application state init handler"
@@ -924,7 +903,8 @@ entity LifePolicy as flow is {
   state ActiveState of record LifePolicy.ActiveStateData is {
     initial handler ActiveStateInitHandler is {
       on init is {
-        set state ActiveState to "initialize from LifePolicyIssued event"
+        let lifePolicyIssued: type LifePolicyIssued = prompt("the life policy issued that brings this life policy into existence")
+        yield lifePolicyIssued
       }
     } with {
       briefly "Active state init handler"
@@ -941,7 +921,8 @@ entity LifePolicy as flow is {
   state LapsedState of record LifePolicy.LapsedStateData is {
     initial handler LapsedStateInitHandler is {
       on init is {
-        set state LapsedState to "initialize from PolicyLapsed event"
+        let policyLapsed: type PolicyLapsed = prompt("the policy lapsed that brings this life policy into existence")
+        yield policyLapsed
       }
     } with {
       briefly "Lapsed state init handler"
@@ -958,7 +939,8 @@ entity LifePolicy as flow is {
   state SurrenderedState of record LifePolicy.SurrenderedStateData is {
     initial handler SurrenderedStateInitHandler is {
       on init is {
-        set state SurrenderedState to "initialize from PolicySurrendered event"
+        let policySurrendered: type PolicySurrendered = prompt("the policy surrendered that brings this life policy into existence")
+        yield policySurrendered
       }
     } with {
       briefly "Surrendered state init handler"
@@ -975,7 +957,8 @@ entity LifePolicy as flow is {
   state DeathClaimState of record LifePolicy.DeathClaimStateData is {
     initial handler DeathClaimStateInitHandler is {
       on init is {
-        set state DeathClaimState to "initialize from DeathClaimInitiated event"
+        let deathClaimInitiated: type DeathClaimInitiated = prompt("the death claim initiated that brings this life policy into existence")
+        yield deathClaimInitiated
       }
     } with {
       briefly "Death claim state init handler"
@@ -989,64 +972,56 @@ entity LifePolicy as flow is {
       |Death claim has been filed against the policy.
     }
   }
-  state TerminatedState of record LifePolicy.TerminatedStateData is {
-    initial handler TerminatedStateInitHandler is {
-      on init is {
-        set state TerminatedState to "initialize from policy termination"
-      }
-    } with {
-      briefly "Terminated state init handler"
-      described as {
-        |Initializes the Terminated state.
-      }
-    }
-  } with {
-    briefly "Terminated state"
-    described as {
-      |Policy has been terminated.
-    }
-  }
   // Handler
   handler LifePolicyHandler is {
     on beneficiaryAdded: event BeneficiaryAdded is {
-      do "apply BeneficiaryAdded to the lifepolicy so it can be persisted and replayed"
+      set field LifePolicy.ActiveState.beneficiaries to prompt("the beneficiaries with beneficiary appended")
+      set field LifePolicy.ActiveState.lastBeneficiaryChangeOn to beneficiaryAdded.addedDate
     }
     on beneficiaryRemoved: event BeneficiaryRemoved is {
-      do "apply BeneficiaryRemoved to the lifepolicy so it can be persisted and replayed"
+      set field LifePolicy.ActiveState.beneficiaries to prompt("the beneficiaries without beneficiaryId")
+      set field LifePolicy.ActiveState.lastBeneficiaryChangeOn to beneficiaryRemoved.removedDate
     }
     on deathClaimInitiated: event DeathClaimInitiated is {
-      do "apply DeathClaimInitiated to the lifepolicy so it can be persisted and replayed"
+      morph entity LifePolicy to state LifePolicy.DeathClaimState with record LifePolicy.DeathClaimStateData(claimInfo = deathClaimInitiated.claimInfo, policyInfo = prompt("the policy info of this death claim state data"), beneficiaries = prompt("the beneficiaries of this death claim state data"), riders = prompt("the riders of this death claim state data"), totalBenefitCalculated = prompt("the total benefit calculated of this death claim state data"))
     }
     on lifePolicyIssued: event LifePolicyIssued is {
-      do "apply LifePolicyIssued to the lifepolicy so it can be persisted and replayed"
-    }
-    on loanDisbursed: event LoanDisbursed is {
-      do "apply LoanDisbursed to the lifepolicy so it can be persisted and replayed"
-    }
-    on loanRepaid: event LoanRepaid is {
-      do "apply LoanRepaid to the lifepolicy so it can be persisted and replayed"
-    }
-    on policyLapsed: event PolicyLapsed is {
-      do "apply PolicyLapsed to the lifepolicy so it can be persisted and replayed"
-    }
-    on policyReinstated: event PolicyReinstated is {
-      do "apply PolicyReinstated to the lifepolicy so it can be persisted and replayed"
-    }
-    on policySurrendered: event PolicySurrendered is {
-      do "apply PolicySurrendered to the lifepolicy so it can be persisted and replayed"
-    }
-    on premiumProcessed: event PremiumProcessed is {
-      do "apply PremiumProcessed to the lifepolicy so it can be persisted and replayed"
-    }
-    on riderAdded: event RiderAdded is {
-      do "apply RiderAdded to the lifepolicy so it can be persisted and replayed"
-    }
-    on riderRemoved: event RiderRemoved is {
-      do "apply RiderRemoved to the lifepolicy so it can be persisted and replayed"
-    }
-    on issueLifePolicy: command IssueLifePolicy is {
       let activeStateData: type LifePolicy.ActiveStateData = prompt("the active state data that results from issue life policy")
       morph entity LifePolicy to state LifePolicy.ActiveState with activeStateData
+    }
+    on loanDisbursed: event LoanDisbursed is {
+      set field LifePolicy.ActiveState.loanHistory to prompt("the loan history with loanTransaction appended")
+      set field LifePolicy.ActiveState.cashValue.loanBalance to prompt("loanBalance plus the disbursed amount")
+      set field LifePolicy.ActiveState.lastLoanActivityOn to loanDisbursed.disbursementDate
+    }
+    on loanRepaid: event LoanRepaid is {
+      set field LifePolicy.ActiveState.loanHistory to prompt("the loan history with loanTransaction appended")
+      set field LifePolicy.ActiveState.cashValue.loanBalance to loanRepaid.remainingBalance
+    }
+    on policyLapsed: event PolicyLapsed is {
+      morph entity LifePolicy to state LifePolicy.LapsedState with record LifePolicy.LapsedStateData(lapseDate = policyLapsed.lapseDate, policyInfo = prompt("the policy info of this lapsed state data"), beneficiaries = prompt("the beneficiaries of this lapsed state data"), riders = prompt("the riders of this lapsed state data"), cashValue = prompt("the cash value of this lapsed state data"), reinstatementDeadline = prompt("the reinstatement deadline of this lapsed state data"))
+    }
+    on policyReinstated: event PolicyReinstated is {
+      let activeStateData: type LifePolicy.ActiveStateData = prompt("the active state data that results from reinstate policy from lapse")
+      morph entity LifePolicy to state LifePolicy.ActiveState with activeStateData
+    }
+    on policySurrendered: event PolicySurrendered is {
+      let surrenderedStateData: type LifePolicy.SurrenderedStateData = prompt("the surrendered state data that results from surrender policy")
+      morph entity LifePolicy to state LifePolicy.SurrenderedState with surrenderedStateData
+    }
+    on premiumProcessed: event PremiumProcessed is {
+      set field LifePolicy.ActiveState.premiumHistory to prompt("the premium history with payment appended")
+      set field LifePolicy.ActiveState.paidToDate to premiumProcessed.newPaidToDate
+    }
+    on riderAdded: event RiderAdded is {
+      set field LifePolicy.ActiveState.riders to prompt("the riders with rider appended")
+      set field LifePolicy.ActiveState.lastRiderChangeOn to riderAdded.addedDate
+    }
+    on riderRemoved: event RiderRemoved is {
+      set field LifePolicy.ActiveState.riders to prompt("the riders without riderId")
+      set field LifePolicy.ActiveState.lastRiderChangeOn to riderRemoved.removedDate
+    }
+    on issueLifePolicy: command IssueLifePolicy is {
       yield event LifePolicyIssued(policyId = issueLifePolicy.policyId, policyInfo = prompt("the policy info of this life policy issued"), issueDate = prompt("the issue date of this life policy issued"), effectiveDate = prompt("the effective date of this life policy issued"))
     }
     on addBeneficiary: command AddBeneficiary is {
@@ -1071,21 +1046,15 @@ entity LifePolicy as flow is {
       yield event LoanRepaid(policyId = repayLoan.policyId, loanTransaction = prompt("the loan transaction of this loan repaid"), remainingBalance = prompt("the remaining balance of this loan repaid"))
     }
     on surrenderPolicy: command SurrenderPolicy is {
-      let surrenderedStateData: type LifePolicy.SurrenderedStateData = prompt("the surrendered state data that results from surrender policy")
-      morph entity LifePolicy to state LifePolicy.SurrenderedState with surrenderedStateData
       yield event PolicySurrendered(policyId = surrenderPolicy.policyId, surrenderDate = prompt("the surrender date of this policy surrendered"), surrenderValue = prompt("the surrender value of this policy surrendered"), reason = prompt("the reason of this policy surrendered"))
     }
     on processDeath: command ProcessDeath is {
-      morph entity LifePolicy to state LifePolicy.DeathClaimState with record LifePolicy.DeathClaimStateData(claimInfo = processDeath.claimInfo, policyInfo = prompt("the policy info of this death claim state data"), beneficiaries = prompt("the beneficiaries of this death claim state data"), riders = prompt("the riders of this death claim state data"), totalBenefitCalculated = prompt("the total benefit calculated of this death claim state data"))
       yield event DeathClaimInitiated(policyId = processDeath.policyId, claimInfo = processDeath.claimInfo, initiatedDate = prompt("the initiated date of this death claim initiated"))
     }
     on lapsePolicy: command LapsePolicy is {
-      morph entity LifePolicy to state LifePolicy.LapsedState with record LifePolicy.LapsedStateData(lapseDate = lapsePolicy.lapseDate, policyInfo = prompt("the policy info of this lapsed state data"), beneficiaries = prompt("the beneficiaries of this lapsed state data"), riders = prompt("the riders of this lapsed state data"), cashValue = prompt("the cash value of this lapsed state data"), reinstatementDeadline = prompt("the reinstatement deadline of this lapsed state data"))
       yield event PolicyLapsed(policyId = lapsePolicy.policyId, lapseDate = lapsePolicy.lapseDate, reason = lapsePolicy.reason, gracePeriodEnd = prompt("the grace period end of this policy lapsed"))
     }
     on reinstatePolicyFromLapse: command ReinstatePolicyFromLapse is {
-      let activeStateData: type LifePolicy.ActiveStateData = prompt("the active state data that results from reinstate policy from lapse")
-      morph entity LifePolicy to state LifePolicy.ActiveState with activeStateData
       yield event PolicyReinstated(policyId = reinstatePolicyFromLapse.policyId, reinstateDate = reinstatePolicyFromLapse.reinstateDate, premiumsPaid = prompt("the premiums paid of this policy reinstated"))
     }
     on getLifePolicy: query GetLifePolicy is {

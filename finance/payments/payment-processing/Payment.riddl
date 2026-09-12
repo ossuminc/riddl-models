@@ -1,5 +1,5 @@
 // Payment Processing - Payment Entity
-entity Payment as flow is {
+event-sourced entity Payment as flow is {
   type PaymentCommand is one of {
     Payment.InitiatePayment or Payment.RecordAuthentication or Payment.AuthorizePayment or Payment.DeclinePayment or Payment.CapturePayment or Payment.VoidPayment or Payment.RefundPayment or Payment.SettlePayment or Payment.RecordDispute or Payment.ResolveDispute
   } with {
@@ -10,7 +10,7 @@ entity Payment as flow is {
   }
   inlet PaymentCommands is type PaymentCommand  outlet PaymentEvents2 is type PaymentEvent
   // Commands
-  command InitiatePayment is {
+  command InitiatePayment yields event PaymentInitiated is {
     paymentId: PaymentId with {
       briefly "Payment ID"
       described as {
@@ -39,7 +39,7 @@ entity Payment as flow is {
       |had nothing to fire on.
     }
   }
-  command RecordAuthentication is {
+  command RecordAuthentication yields event PaymentAuthenticated is {
     paymentId: PaymentId with {
       briefly "Payment ID"
       described as {
@@ -59,7 +59,7 @@ entity Payment as flow is {
       |send to the card network for authorization.
     }
   }
-  command AuthorizePayment is {
+  command AuthorizePayment yields event PaymentAuthorized is {
     paymentId: PaymentId with {
       briefly "Payment ID"
       described as {
@@ -103,7 +103,7 @@ entity Payment as flow is {
       |Records a declined payment authorization.
     }
   }
-  command CapturePayment is {
+  command CapturePayment yields event PaymentCaptured is {
     paymentId: PaymentId with {
       briefly "Payment ID"
       described as {
@@ -122,7 +122,7 @@ entity Payment as flow is {
       |Captures authorized payment.
     }
   }
-  command VoidPayment is {
+  command VoidPayment yields event PaymentVoided is {
     paymentId: PaymentId with {
       briefly "Payment ID"
       described as {
@@ -141,7 +141,7 @@ entity Payment as flow is {
       |Voids authorized payment.
     }
   }
-  command RefundPayment is {
+  command RefundPayment yields event PaymentRefunded is {
     paymentId: PaymentId with {
       briefly "Payment ID"
       described as {
@@ -160,7 +160,7 @@ entity Payment as flow is {
       |Refunds captured payment.
     }
   }
-  command SettlePayment is {
+  command SettlePayment yields event PaymentSettled is {
     paymentId: PaymentId with {
       briefly "Payment ID"
       described as {
@@ -179,7 +179,7 @@ entity Payment as flow is {
       |Settles captured payment.
     }
   }
-  command RecordDispute is {
+  command RecordDispute yields event DisputeRecorded is {
     paymentId: PaymentId with {
       briefly "Payment ID"
       described as {
@@ -198,7 +198,7 @@ entity Payment as flow is {
       |Records chargeback dispute.
     }
   }
-  command ResolveDispute is {
+  command ResolveDispute yields event DisputeResolved is {
     paymentId: PaymentId with {
       briefly "Payment ID"
       described as {
@@ -544,6 +544,18 @@ entity Payment as flow is {
         |Auth time.
       }
     }
+    authenticationOutcome: String(1,50)? with {
+      briefly "Authentication outcome"
+    }
+    declinedAt: TimeStamp? with {
+      briefly "Declined at"
+    }
+    voidReason: String(1,200)? with {
+      briefly "Void reason"
+    }
+    voidedAt: TimeStamp? with {
+      briefly "Voided at"
+    }
   } with {
     briefly "Authorized state data"
     described as {
@@ -598,6 +610,12 @@ entity Payment as flow is {
       described as {
         |Capture time.
       }
+    }
+    lastDisputeResolvedAt: TimeStamp? with {
+      briefly "Last dispute resolved at"
+    }
+    lastRefundedAt: TimeStamp? with {
+      briefly "Last refunded at"
     }
   } with {
     briefly "Captured state data"
@@ -673,7 +691,8 @@ entity Payment as flow is {
   initial state AuthorizedState of record Payment.AuthorizedStateData is {
     initial handler AuthorizedStateInitHandler is {
       on init is {
-        set state AuthorizedState to "initialize from PaymentAuthorized event"
+        let paymentAuthorized: type PaymentAuthorized = prompt("the payment authorized that brings this payment into existence")
+        yield paymentAuthorized
       }
     } with {
       briefly "Authorized state init handler"
@@ -690,7 +709,8 @@ entity Payment as flow is {
   state CapturedState of record Payment.CapturedStateData is {
     initial handler CapturedStateInitHandler is {
       on init is {
-        set state CapturedState to "initialize from PaymentCaptured event"
+        let paymentCaptured: type PaymentCaptured = prompt("the payment captured that brings this payment into existence")
+        yield paymentCaptured
       }
     } with {
       briefly "Captured state init handler"
@@ -707,7 +727,8 @@ entity Payment as flow is {
   state SettledState of record Payment.SettledStateData is {
     initial handler SettledStateInitHandler is {
       on init is {
-        set state SettledState to "initialize from PaymentSettled event"
+        let paymentSettled: type PaymentSettled = prompt("the payment settled that brings this payment into existence")
+        yield paymentSettled
       }
     } with {
       briefly "Settled state init handler"
@@ -724,70 +745,78 @@ entity Payment as flow is {
   // Handler
   handler PaymentHandler is {
     on initiatePayment: command InitiatePayment is {
-      tell event PaymentInitiated(paymentId = initiatePayment.paymentId, info = initiatePayment.info, card = initiatePayment.card) to entity PaymentContext.Payment
+      yield event PaymentInitiated(paymentId = initiatePayment.paymentId, info = initiatePayment.info, card = initiatePayment.card)
     }
     on recordAuthentication: command RecordAuthentication is {
-      tell event PaymentAuthenticated(paymentId = recordAuthentication.paymentId, authenticationOutcome = recordAuthentication.authenticationOutcome) to entity PaymentContext.Payment
+      yield event PaymentAuthenticated(paymentId = recordAuthentication.paymentId, authenticationOutcome = recordAuthentication.authenticationOutcome)
     }
     on paymentInitiated: event PaymentInitiated is {
-      do "apply PaymentInitiated to the payment so it can be persisted and replayed"
+      set field Payment.AuthorizedState.info to paymentInitiated.info
+      set field Payment.AuthorizedState.card to paymentInitiated.card
+      set field Payment.AuthorizedState.status to PaymentStatus.Initiated
     }
     on paymentAuthenticated: event PaymentAuthenticated is {
-      do "apply PaymentAuthenticated to the payment so it can be persisted and replayed"
+      set field Payment.AuthorizedState.authenticationOutcome to paymentAuthenticated.authenticationOutcome
     }
     on declinePayment: command DeclinePayment is {
       yield event PaymentDeclined(paymentId = declinePayment.paymentId, info = prompt("the info of this payment declined"), result = declinePayment.result, declinedAt = prompt("the declined at of this payment declined"))
     }
     on authorizePayment: command AuthorizePayment is {
-      morph entity PaymentContext.Payment to state PaymentContext.Payment.AuthorizedState with record Payment.AuthorizedStateData(paymentId = authorizePayment.paymentId, info = authorizePayment.info, card = authorizePayment.card, status = prompt("the status of this authorized state data"), authResult = prompt("the auth result of this authorized state data"), authorizedAt = prompt("the authorized at of this authorized state data"))
-      tell event PaymentAuthorized(paymentId = authorizePayment.paymentId, info = authorizePayment.info, card = authorizePayment.card, result = prompt("the result of this payment authorized"), authorizedAt = prompt("the authorized at of this payment authorized")) to entity PaymentContext.Payment
+      yield event PaymentAuthorized(paymentId = authorizePayment.paymentId, info = authorizePayment.info, card = authorizePayment.card, result = prompt("the result of this payment authorized"), authorizedAt = prompt("the authorized at of this payment authorized"))
     }
     on capturePayment: command CapturePayment is {
-      morph entity PaymentContext.Payment to state PaymentContext.Payment.CapturedState with record Payment.CapturedStateData(paymentId = capturePayment.paymentId, info = prompt("the info of this captured state data"), card = prompt("the card of this captured state data"), status = prompt("the status of this captured state data"), capturedAmount = prompt("the captured amount of this captured state data"), refunds = prompt("the refunds of this captured state data"), disputes = prompt("the disputes of this captured state data"), capturedAt = prompt("the captured at of this captured state data"))
-      tell event PaymentCaptured(paymentId = capturePayment.paymentId, capturedAmount = prompt("the captured amount of this payment captured"), capturedAt = prompt("the captured at of this payment captured")) to entity PaymentContext.Payment
+      yield event PaymentCaptured(paymentId = capturePayment.paymentId, capturedAmount = prompt("the captured amount of this payment captured"), capturedAt = prompt("the captured at of this payment captured"))
     }
     on voidPayment: command VoidPayment is {
-      tell event PaymentVoided(paymentId = voidPayment.paymentId, reason = voidPayment.reason, voidedAt = prompt("the voided at of this payment voided")) to entity PaymentContext.Payment
+      yield event PaymentVoided(paymentId = voidPayment.paymentId, reason = voidPayment.reason, voidedAt = prompt("the voided at of this payment voided"))
     }
     on refundPayment: command RefundPayment is {
-      tell event PaymentRefunded(paymentId = refundPayment.paymentId, refund = refundPayment.refund, refundedAt = prompt("the refunded at of this payment refunded")) to entity PaymentContext.Payment
+      yield event PaymentRefunded(paymentId = refundPayment.paymentId, refund = refundPayment.refund, refundedAt = prompt("the refunded at of this payment refunded"))
     }
     on settlePayment: command SettlePayment is {
-      morph entity PaymentContext.Payment to state PaymentContext.Payment.SettledState with record Payment.SettledStateData(paymentId = settlePayment.paymentId, settlement = settlePayment.settlement, info = prompt("the info of this settled state data"), settledAt = prompt("the settled at of this settled state data"))
-      tell event PaymentSettled(paymentId = settlePayment.paymentId, settlement = settlePayment.settlement, settledAt = prompt("the settled at of this payment settled")) to entity PaymentContext.Payment
+      yield event PaymentSettled(paymentId = settlePayment.paymentId, settlement = settlePayment.settlement, settledAt = prompt("the settled at of this payment settled"))
     }
     on recordDispute: command RecordDispute is {
-      tell event DisputeRecorded(paymentId = recordDispute.paymentId, dispute = recordDispute.dispute, recordedAt = prompt("the recorded at of this dispute recorded")) to entity PaymentContext.Payment
+      yield event DisputeRecorded(paymentId = recordDispute.paymentId, dispute = recordDispute.dispute, recordedAt = prompt("the recorded at of this dispute recorded"))
     }
     on resolveDispute: command ResolveDispute is {
-      tell event DisputeResolved(paymentId = resolveDispute.paymentId, disputeId = resolveDispute.disputeId, resolution = resolveDispute.resolution, wonDispute = resolveDispute.wonDispute, resolvedAt = prompt("the resolved at of this dispute resolved")) to entity PaymentContext.Payment
+      yield event DisputeResolved(paymentId = resolveDispute.paymentId, disputeId = resolveDispute.disputeId, resolution = resolveDispute.resolution, wonDispute = resolveDispute.wonDispute, resolvedAt = prompt("the resolved at of this dispute resolved"))
     }
     on getPayment: query GetPayment is {
       reply result PaymentResult(paymentId = getPayment.paymentId, info = prompt("the info of this payment result"))
     }
     on disputeRecorded: event DisputeRecorded is {
-      do "apply DisputeRecorded to the payment so it can be persisted and replayed"
+      set field Payment.CapturedState.status to PaymentStatus.Disputed
+      set field Payment.CapturedState.disputes to prompt("the disputes with dispute appended")
     }
     on disputeResolved: event DisputeResolved is {
-      do "apply DisputeResolved to the payment so it can be persisted and replayed"
+      set field Payment.CapturedState.status to prompt("Captured when wonDispute, else Disputed")
+      set field Payment.CapturedState.disputes to prompt("the disputes with disputeId marked resolved with resolution")
+      set field Payment.CapturedState.lastDisputeResolvedAt to disputeResolved.resolvedAt
     }
     on paymentAuthorized: event PaymentAuthorized is {
-      do "apply PaymentAuthorized to the payment so it can be persisted and replayed"
+      morph entity PaymentContext.Payment to state PaymentContext.Payment.AuthorizedState with record Payment.AuthorizedStateData(paymentId = paymentAuthorized.paymentId, info = paymentAuthorized.info, card = paymentAuthorized.card, status = prompt("the status of this authorized state data"), authResult = prompt("the auth result of this authorized state data"), authorizedAt = prompt("the authorized at of this authorized state data"), authenticationOutcome = empty, declinedAt = empty, voidReason = empty, voidedAt = empty)
     }
     on paymentCaptured: event PaymentCaptured is {
-      do "apply PaymentCaptured to the payment so it can be persisted and replayed"
+      morph entity PaymentContext.Payment to state PaymentContext.Payment.CapturedState with record Payment.CapturedStateData(paymentId = paymentCaptured.paymentId, info = prompt("the info of this captured state data"), card = prompt("the card of this captured state data"), status = prompt("the status of this captured state data"), capturedAmount = prompt("the captured amount of this captured state data"), refunds = prompt("the refunds of this captured state data"), disputes = prompt("the disputes of this captured state data"), capturedAt = prompt("the captured at of this captured state data"), lastDisputeResolvedAt = empty, lastRefundedAt = empty)
     }
     on paymentDeclined: event PaymentDeclined is {
-      do "apply PaymentDeclined to the payment so it can be persisted and replayed"
+      set field Payment.AuthorizedState.status to PaymentStatus.Declined
+      set field Payment.AuthorizedState.authResult to paymentDeclined.result
+      set field Payment.AuthorizedState.declinedAt to paymentDeclined.declinedAt
     }
     on paymentRefunded: event PaymentRefunded is {
-      do "apply PaymentRefunded to the payment so it can be persisted and replayed"
+      set field Payment.CapturedState.status to PaymentStatus.Refunded
+      set field Payment.CapturedState.refunds to prompt("the refunds with refund appended")
+      set field Payment.CapturedState.lastRefundedAt to paymentRefunded.refundedAt
     }
     on paymentSettled: event PaymentSettled is {
-      do "apply PaymentSettled to the payment so it can be persisted and replayed"
+      morph entity PaymentContext.Payment to state PaymentContext.Payment.SettledState with record Payment.SettledStateData(paymentId = paymentSettled.paymentId, settlement = paymentSettled.settlement, info = prompt("the info of this settled state data"), settledAt = prompt("the settled at of this settled state data"))
     }
     on paymentVoided: event PaymentVoided is {
-      do "apply PaymentVoided to the payment so it can be persisted and replayed"
+      set field Payment.AuthorizedState.status to PaymentStatus.Voided
+      set field Payment.AuthorizedState.voidReason to paymentVoided.reason
+      set field Payment.AuthorizedState.voidedAt to paymentVoided.voidedAt
     }
   } with {
     briefly "Processes payment commands"

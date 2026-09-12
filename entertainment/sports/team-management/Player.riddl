@@ -1,5 +1,5 @@
 // Player entity for Team Management domain
-aggregate entity Player as merge is {
+aggregate event-sourced entity Player as merge is {
   inlet PlayerFromPlayerEventSplit is type PlayerCommand with {
     briefly "What PlayerEventSplit sends Player"
     described as {
@@ -440,6 +440,12 @@ aggregate entity Player as merge is {
         |Current roster assignment.
       }
     }
+    rosterStatus: PlayerStatus? with {
+      briefly "Roster status"
+    }
+    rosterAssignedAt: TimeStamp? with {
+      briefly "Roster assigned at"
+    }
   } with {
     briefly "Data for signed player state"
     described as {
@@ -562,7 +568,8 @@ aggregate entity Player as merge is {
   initial state UnsignedState of record Player.UnsignedStateData is {
     initial handler UnsignedStateInitHandler is {
       on init is {
-        set state UnsignedState to "initialize from PlayerReleased event"
+        let playerSigned: type PlayerSigned = prompt("the player signed that brings this player into existence")
+        yield playerSigned
       }
     } with {
       briefly "Unsigned state init handler"
@@ -579,7 +586,8 @@ aggregate entity Player as merge is {
   state SignedState of record Player.SignedStateData is {
     initial handler SignedStateInitHandler is {
       on init is {
-        set state SignedState to "initialize from PlayerSigned event"
+        let playerSigned: type PlayerSigned = prompt("the player signed that brings this player into existence")
+        yield playerSigned
       }
     } with {
       briefly "Signed state init handler"
@@ -596,7 +604,8 @@ aggregate entity Player as merge is {
   state InjuredReserveState of record Player.InjuredReserveStateData is {
     initial handler InjuredReserveStateInitHandler is {
       on init is {
-        set state InjuredReserveState to "initialize from PlayerPlacedOnInjuredReserve event"
+        let playerPlacedOnInjuredReserve: type PlayerPlacedOnInjuredReserve = prompt("the player placed on injured reserve that brings this player into existence")
+        yield playerPlacedOnInjuredReserve
       }
     } with {
       briefly "Injured reserve state init handler"
@@ -613,7 +622,8 @@ aggregate entity Player as merge is {
   state ReleasedState of record Player.ReleasedStateData is {
     initial handler ReleasedStateInitHandler is {
       on init is {
-        set state ReleasedState to "initialize from PlayerReleased event"
+        let playerReleased: type PlayerReleased = prompt("the player released that brings this player into existence")
+        yield playerReleased
       }
     } with {
       briefly "Released state init handler"
@@ -630,25 +640,27 @@ aggregate entity Player as merge is {
   // Handler
   handler PlayerHandler is {
     on contractExtended: event ContractExtended is {
-      do "apply ContractExtended to the player so it can be persisted and replayed"
+      set field Player.SignedState.contract.endDate to contractExtended.newEndDate
+      set field Player.SignedState.contract.totalValue to contractExtended.newTotalValue
     }
     on playerAssignedToRoster: event PlayerAssignedToRoster is {
-      do "apply PlayerAssignedToRoster to the player so it can be persisted and replayed"
+      set field Player.SignedState.rosterSlot to prompt("a RosterSlot of position and jerseyNumber")
+      set field Player.SignedState.rosterStatus to playerAssignedToRoster.status
+      set field Player.SignedState.rosterAssignedAt to playerAssignedToRoster.assignedAt
     }
     on playerPlacedOnInjuredReserve: event PlayerPlacedOnInjuredReserve is {
-      do "apply PlayerPlacedOnInjuredReserve to the player so it can be persisted and replayed"
+      morph entity Player to state Player.InjuredReserveState with record Player.InjuredReserveStateData(playerId = playerPlacedOnInjuredReserve.playerId, injuryDescription = playerPlacedOnInjuredReserve.injuryDescription, expectedReturnDate = playerPlacedOnInjuredReserve.expectedReturnDate, playerInfo = prompt("the player info of this injured reserve state data"), contract = prompt("the contract of this injured reserve state data"), teamId = prompt("the team id of this injured reserve state data"), placedOnIRDate = prompt("the placed on i r date of this injured reserve state data"))
     }
     on playerReleased: event PlayerReleased is {
-      do "apply PlayerReleased to the player so it can be persisted and replayed"
+      morph entity Player to state Player.ReleasedState with record Player.ReleasedStateData(playerId = playerReleased.playerId, releaseDate = playerReleased.releaseDate, reason = playerReleased.reason, playerInfo = prompt("the player info of this released state data"), previousTeamId = prompt("the previous team id of this released state data"))
     }
     on playerSigned: event PlayerSigned is {
-      do "apply PlayerSigned to the player so it can be persisted and replayed"
+      morph entity Player to state Player.SignedState with record Player.SignedStateData(playerId = playerSigned.playerId, playerInfo = playerSigned.playerInfo, contract = playerSigned.contract, teamId = playerSigned.teamId, rosterSlot = empty, rosterStatus = empty, rosterAssignedAt = empty)
     }
     on playerTraded: event PlayerTraded is {
-      do "apply PlayerTraded to the player so it can be persisted and replayed"
+      morph entity Player to state Player.SignedState with record Player.SignedStateData(playerId = playerTraded.playerId, playerInfo = prompt("the player info of this signed state data"), contract = prompt("the contract of this signed state data"), teamId = prompt("the team id of this signed state data"), rosterSlot = empty, rosterStatus = empty, rosterAssignedAt = empty)
     }
     on signPlayer: command SignPlayer is {
-      morph entity Player to state Player.SignedState with record Player.SignedStateData(playerId = signPlayer.playerId, playerInfo = signPlayer.playerInfo, contract = signPlayer.contract, teamId = signPlayer.teamId, rosterSlot = empty)
       yield event PlayerSigned(playerId = signPlayer.playerId, playerInfo = signPlayer.playerInfo, contract = signPlayer.contract, teamId = signPlayer.teamId, signedAt = prompt("the signed at of this player signed"))
     }
     on assignToRoster: command AssignToRoster is {
@@ -658,15 +670,12 @@ aggregate entity Player as merge is {
       yield event ContractExtended(playerId = extendContract.playerId, newEndDate = extendContract.newEndDate, contractId = prompt("the contract id of this contract extended"), newTotalValue = prompt("the new total value of this contract extended"), extendedAt = prompt("the extended at of this contract extended"))
     }
     on tradePlayer: command TradePlayer is {
-      morph entity Player to state Player.SignedState with record Player.SignedStateData(playerId = tradePlayer.playerId, playerInfo = prompt("the player info of this signed state data"), contract = prompt("the contract of this signed state data"), teamId = prompt("the team id of this signed state data"), rosterSlot = empty)
       yield event PlayerTraded(playerId = tradePlayer.playerId, tradeInfo = tradePlayer.tradeInfo, tradedAt = prompt("the traded at of this player traded"))
     }
     on releasePlayer: command ReleasePlayer is {
-      morph entity Player to state Player.ReleasedState with record Player.ReleasedStateData(playerId = releasePlayer.playerId, releaseDate = releasePlayer.releaseDate, reason = releasePlayer.reason, playerInfo = prompt("the player info of this released state data"), previousTeamId = prompt("the previous team id of this released state data"))
       yield event PlayerReleased(playerId = releasePlayer.playerId, releaseDate = releasePlayer.releaseDate, reason = releasePlayer.reason, releasedAt = prompt("the released at of this player released"))
     }
     on placeOnInjuredReserve: command PlaceOnInjuredReserve is {
-      morph entity Player to state Player.InjuredReserveState with record Player.InjuredReserveStateData(playerId = placeOnInjuredReserve.playerId, injuryDescription = placeOnInjuredReserve.injuryDescription, expectedReturnDate = placeOnInjuredReserve.expectedReturnDate, playerInfo = prompt("the player info of this injured reserve state data"), contract = prompt("the contract of this injured reserve state data"), teamId = prompt("the team id of this injured reserve state data"), placedOnIRDate = prompt("the placed on i r date of this injured reserve state data"))
       yield event PlayerPlacedOnInjuredReserve(playerId = placeOnInjuredReserve.playerId, injuryDescription = placeOnInjuredReserve.injuryDescription, expectedReturnDate = placeOnInjuredReserve.expectedReturnDate, placedAt = prompt("the placed at of this player placed on injured reserve"))
     }
     on getPlayer: query GetPlayer is {

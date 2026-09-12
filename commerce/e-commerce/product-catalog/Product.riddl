@@ -1,5 +1,5 @@
 // Product Catalog - Product Entity
-entity Product as flow is {
+event-sourced entity Product as flow is {
   type ProductCommand is one of {
     Product.CreateProduct or Product.UpdateProduct or Product.SetPrice or Product.AddVariant or Product.AssignCategory or Product.PublishProduct or Product.RetireProduct
   } with {
@@ -234,6 +234,12 @@ entity Product as flow is {
       described as {
         |When the product was created.
       }
+    }
+    attributes: AttributeValue+ with {
+      briefly "Attributes"
+    }
+    images: ImageUrl+ with {
+      briefly "Images"
     }
   } with {
     briefly "Product was created"
@@ -550,6 +556,12 @@ entity Product as flow is {
         |Publication time.
       }
     }
+    updatedAt: TimeStamp? with {
+      briefly "Updated at"
+    }
+    lastVariantAddedAt: TimeStamp? with {
+      briefly "Last variant added at"
+    }
   } with {
     briefly "Active product data"
     described as {
@@ -629,7 +641,8 @@ entity Product as flow is {
   initial state Draft of record Product.DraftProductData is {
     initial handler DraftInitHandler is {
       on init is {
-        set state Draft to "initialize from prior event"
+        let productCreated: type ProductCreated = prompt("the product created that brings this product into existence")
+        yield productCreated
       }
     } with {
       briefly "Draft init handler"
@@ -646,7 +659,8 @@ entity Product as flow is {
   state Active of record Product.ActiveProductData is {
     initial handler ActiveInitHandler is {
       on init is {
-        set state Active to "initialize from prior event"
+        let productPublished: type ProductPublished = prompt("the product published that brings this product into existence")
+        yield productPublished
       }
     } with {
       briefly "Active init handler"
@@ -663,7 +677,8 @@ entity Product as flow is {
   state Retired of record Product.RetiredProductData is {
     initial handler RetiredInitHandler is {
       on init is {
-        set state Retired to "initialize from prior event"
+        let productRetired: type ProductRetired = prompt("the product retired that brings this product into existence")
+        yield productRetired
       }
     } with {
       briefly "Retired init handler"
@@ -680,29 +695,32 @@ entity Product as flow is {
   // Handler
   handler ProductHandler is {
     on categoryAssigned: event CategoryAssigned is {
-      do "apply CategoryAssigned to the product so it can be persisted and replayed"
+      set field Product.Active.categories to prompt("the categories with categoryId added")
+      set field Product.Active.primaryCategory to prompt("categoryId when isPrimary, else unchanged")
     }
     on priceChanged: event PriceChanged is {
-      do "apply PriceChanged to the product so it can be persisted and replayed"
+      set field Product.Active.basePrice to priceChanged.newPrice
     }
     on productCreated: event ProductCreated is {
-      do "apply ProductCreated to the product so it can be persisted and replayed"
+      morph entity Product to state Product.Draft with record Product.DraftProductData(productId = productCreated.productId, sku = productCreated.sku, name = productCreated.name, description = productCreated.description, basePrice = productCreated.basePrice, attributes = productCreated.attributes, images = productCreated.images, variants = prompt("the variants of this draft product data"), categories = prompt("the categories of this draft product data"), primaryCategory = empty, createdAt = prompt("the created at of this draft product data"))
     }
     on productPublished: event ProductPublished is {
-      do "apply ProductPublished to the product so it can be persisted and replayed"
+      morph entity Product to state Product.Active with record Product.ActiveProductData(productId = productPublished.productId, sku = prompt("the sku of this active product data"), name = prompt("the name of this active product data"), description = prompt("the description of this active product data"), basePrice = prompt("the base price of this active product data"), priceTiers = prompt("the price tiers of this active product data"), attributes = prompt("the attributes of this active product data"), images = prompt("the images of this active product data"), variants = prompt("the variants of this active product data"), categories = prompt("the categories of this active product data"), primaryCategory = empty, publishedAt = prompt("the published at of this active product data"), updatedAt = empty, lastVariantAddedAt = empty)
     }
     on productRetired: event ProductRetired is {
-      do "apply ProductRetired to the product so it can be persisted and replayed"
+      morph entity Product to state Product.Retired with record Product.RetiredProductData(productId = productRetired.productId, reason = productRetired.reason, sku = prompt("the sku of this retired product data"), name = prompt("the name of this retired product data"), retiredAt = prompt("the retired at of this retired product data"))
     }
     on productUpdated: event ProductUpdated is {
-      do "apply ProductUpdated to the product so it can be persisted and replayed"
+      set field Product.Active.name to prompt("updatedName when present, else unchanged")
+      set field Product.Active.description to prompt("updatedDescription when present, else unchanged")
+      set field Product.Active.updatedAt to productUpdated.updatedAt
     }
     on variantAdded: event VariantAdded is {
-      do "apply VariantAdded to the product so it can be persisted and replayed"
+      set field Product.Active.variants to prompt("the variants with variant appended")
+      set field Product.Active.lastVariantAddedAt to variantAdded.addedAt
     }
     on createProduct: command CreateProduct is {
-      morph entity Product to state Product.Draft with record Product.DraftProductData(productId = createProduct.productId, sku = createProduct.sku, name = createProduct.name, description = createProduct.description, basePrice = createProduct.basePrice, attributes = createProduct.attributes, images = createProduct.images, variants = prompt("the variants of this draft product data"), categories = prompt("the categories of this draft product data"), primaryCategory = empty, createdAt = prompt("the created at of this draft product data"))
-      yield event ProductCreated(productId = createProduct.productId, sku = createProduct.sku, name = createProduct.name, description = createProduct.description, basePrice = createProduct.basePrice, createdAt = prompt("the created at of this product created"))
+      yield event ProductCreated(productId = createProduct.productId, sku = createProduct.sku, name = createProduct.name, description = createProduct.description, basePrice = createProduct.basePrice, createdAt = prompt("the created at of this product created"), attributes = createProduct.attributes, images = createProduct.images)
     }
     on updateProduct: command UpdateProduct is {
       yield event ProductUpdated(productId = updateProduct.productId, updatedName = updateProduct.updatedName, updatedDescription = updateProduct.updatedDescription, updatedAt = prompt("the updated at of this product updated"))
@@ -717,11 +735,9 @@ entity Product as flow is {
       yield event CategoryAssigned(productId = assignCategory.productId, categoryId = assignCategory.categoryId, isPrimary = assignCategory.isPrimary, assignedAt = prompt("the assigned at of this category assigned"))
     }
     on publishProduct: command PublishProduct is {
-      morph entity Product to state Product.Active with record Product.ActiveProductData(productId = publishProduct.productId, sku = prompt("the sku of this active product data"), name = prompt("the name of this active product data"), description = prompt("the description of this active product data"), basePrice = prompt("the base price of this active product data"), priceTiers = prompt("the price tiers of this active product data"), attributes = prompt("the attributes of this active product data"), images = prompt("the images of this active product data"), variants = prompt("the variants of this active product data"), categories = prompt("the categories of this active product data"), primaryCategory = empty, publishedAt = prompt("the published at of this active product data"))
       yield event ProductPublished(productId = publishProduct.productId, publishedAt = prompt("the published at of this product published"))
     }
     on retireProduct: command RetireProduct is {
-      morph entity Product to state Product.Retired with record Product.RetiredProductData(productId = retireProduct.productId, reason = retireProduct.reason, sku = prompt("the sku of this retired product data"), name = prompt("the name of this retired product data"), retiredAt = prompt("the retired at of this retired product data"))
       yield event ProductRetired(productId = retireProduct.productId, reason = retireProduct.reason, retiredAt = prompt("the retired at of this product retired"))
     }
     on getProduct: query GetProduct is {

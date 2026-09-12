@@ -1,6 +1,6 @@
 // Order Management - Shipment Entity
 // Tracks fulfillment and delivery information
-entity Shipment as flow is {
+event-sourced entity Shipment as flow is {
   type ShipmentCommand is one of {
     Shipment.InitShipment or Shipment.UpdateTracking or Shipment.MarkDelivered or Shipment.MarkFailed
   } with {
@@ -274,6 +274,9 @@ entity Shipment as flow is {
         | When the shipment was created in the system.
       }
     }
+    items: OrderItemRecord+ with {
+      briefly "Items"
+    }
   } with {
     briefly "A new shipment was created"
     described as {
@@ -439,6 +442,12 @@ entity Shipment as flow is {
         |When shipment was created.
       }
     }
+    lastLocation: String(1,200)? with {
+      briefly "Last location"
+    }
+    lastTrackingUpdateAt: TimeStamp? with {
+      briefly "Last tracking update at"
+    }
   } with {
     briefly "Active shipment being tracked"
     described as {
@@ -542,7 +551,8 @@ entity Shipment as flow is {
         tell shipmentResult to entity OrderContext.Shipment
       }
       on init is {
-        set state Active to "initialize from prior event"
+        let shipmentCreated: type ShipmentCreated = prompt("the shipment created that brings this shipment into existence")
+        yield shipmentCreated
       }
     } with {
       briefly "Active init handler"
@@ -559,7 +569,8 @@ entity Shipment as flow is {
   state DeliveryComplete of record Shipment.DeliveredShipmentData is {
     initial handler DeliveryCompleteInitHandler is {
       on init is {
-        set state DeliveryComplete to "initialize from prior event"
+        let shipmentDelivered: type ShipmentDelivered = prompt("the shipment delivered that brings this shipment into existence")
+        yield shipmentDelivered
       }
     } with {
       briefly "DeliveryComplete init handler"
@@ -576,7 +587,8 @@ entity Shipment as flow is {
   state DeliveryFailedState of record Shipment.FailedShipmentData is {
     initial handler DeliveryFailedStateInitHandler is {
       on init is {
-        set state DeliveryFailedState to "initialize from prior event"
+        let shipmentFailed: type ShipmentFailed = prompt("the shipment failed that brings this shipment into existence")
+        yield shipmentFailed
       }
     } with {
       briefly "DeliveryFailedState init handler"
@@ -593,30 +605,30 @@ entity Shipment as flow is {
   // Handler
   handler ShipmentHandler is {
     on shipmentCreated: event ShipmentCreated is {
-      do "apply ShipmentCreated to the shipment so it can be persisted and replayed"
+      morph entity Shipment to state Shipment.Active with record Shipment.ActiveShipmentData(shipmentId = shipmentCreated.shipmentId, orderId = shipmentCreated.orderId, carrier = shipmentCreated.carrier, trackingNumber = shipmentCreated.trackingNumber, shippingAddress = shipmentCreated.shippingAddress, items = shipmentCreated.items, status = prompt("the status of this active shipment data"), trackingHistory = prompt("the tracking history of this active shipment data"), createdAt = prompt("the created at of this active shipment data"), lastLocation = empty, lastTrackingUpdateAt = empty)
     }
     on shipmentDelivered: event ShipmentDelivered is {
-      do "apply ShipmentDelivered to the shipment so it can be persisted and replayed"
+      morph entity Shipment to state Shipment.DeliveryComplete with record Shipment.DeliveredShipmentData(shipmentId = shipmentDelivered.shipmentId, deliveredAt = shipmentDelivered.deliveredAt, signedBy = shipmentDelivered.signedBy, orderId = prompt("the order id of this delivered shipment data"), carrier = prompt("the carrier of this delivered shipment data"), trackingNumber = prompt("the tracking number of this delivered shipment data"))
     }
     on shipmentFailed: event ShipmentFailed is {
-      do "apply ShipmentFailed to the shipment so it can be persisted and replayed"
+      morph entity Shipment to state Shipment.DeliveryFailedState with record Shipment.FailedShipmentData(shipmentId = shipmentFailed.shipmentId, reason = shipmentFailed.reason, orderId = prompt("the order id of this failed shipment data"), carrier = prompt("the carrier of this failed shipment data"), trackingNumber = prompt("the tracking number of this failed shipment data"), failedAt = prompt("the failed at of this failed shipment data"))
     }
     on trackingUpdated: event TrackingUpdated is {
-      do "apply TrackingUpdated to the shipment so it can be persisted and replayed"
+      set field Shipment.Active.status to trackingUpdated.status
+      set field Shipment.Active.trackingHistory to prompt("the tracking history with a ShipmentEvent of status, location, description and updatedAt appended")
+      set field Shipment.Active.lastLocation to trackingUpdated.location
+      set field Shipment.Active.lastTrackingUpdateAt to trackingUpdated.updatedAt
     }
     on initShipment: command InitShipment is {
-      morph entity Shipment to state Shipment.Active with record Shipment.ActiveShipmentData(shipmentId = initShipment.shipmentId, orderId = initShipment.orderId, carrier = initShipment.carrier, trackingNumber = initShipment.trackingNumber, shippingAddress = initShipment.shippingAddress, items = initShipment.items, status = prompt("the status of this active shipment data"), trackingHistory = prompt("the tracking history of this active shipment data"), createdAt = prompt("the created at of this active shipment data"))
-      yield event ShipmentCreated(shipmentId = initShipment.shipmentId, orderId = initShipment.orderId, carrier = initShipment.carrier, trackingNumber = initShipment.trackingNumber, shippingAddress = initShipment.shippingAddress, createdAt = prompt("the created at of this shipment created"))
+      yield event ShipmentCreated(shipmentId = initShipment.shipmentId, orderId = initShipment.orderId, carrier = initShipment.carrier, trackingNumber = initShipment.trackingNumber, shippingAddress = initShipment.shippingAddress, createdAt = prompt("the created at of this shipment created"), items = initShipment.items)
     }
     on updateTracking: command UpdateTracking is {
       yield event TrackingUpdated(shipmentId = updateTracking.shipmentId, status = updateTracking.status, location = updateTracking.location, description = updateTracking.description, updatedAt = prompt("the updated at of this tracking updated"))
     }
     on markDelivered: command MarkDelivered is {
-      morph entity Shipment to state Shipment.DeliveryComplete with record Shipment.DeliveredShipmentData(shipmentId = markDelivered.shipmentId, deliveredAt = markDelivered.deliveredAt, signedBy = markDelivered.signedBy, orderId = prompt("the order id of this delivered shipment data"), carrier = prompt("the carrier of this delivered shipment data"), trackingNumber = prompt("the tracking number of this delivered shipment data"))
       yield event ShipmentDelivered(shipmentId = markDelivered.shipmentId, deliveredAt = markDelivered.deliveredAt, signedBy = markDelivered.signedBy, orderId = prompt("the order id of this shipment delivered"))
     }
     on markFailed: command MarkFailed is {
-      morph entity Shipment to state Shipment.DeliveryFailedState with record Shipment.FailedShipmentData(shipmentId = markFailed.shipmentId, reason = markFailed.reason, orderId = prompt("the order id of this failed shipment data"), carrier = prompt("the carrier of this failed shipment data"), trackingNumber = prompt("the tracking number of this failed shipment data"), failedAt = prompt("the failed at of this failed shipment data"))
       yield event ShipmentFailed(shipmentId = markFailed.shipmentId, reason = markFailed.reason, orderId = prompt("the order id of this shipment failed"), failedAt = prompt("the failed at of this shipment failed"))
     }
   } with {

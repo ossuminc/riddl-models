@@ -1,5 +1,5 @@
 // Enrollment Entity for Member Enrollment Domain
-entity Enrollment as flow is {
+event-sourced entity Enrollment as flow is {
   type EnrollmentCommand is one of {
     Enrollment.InitiateEnrollment or Enrollment.SelectPlan or Enrollment.VerifyEligibility or Enrollment.ConfirmEnrollment or Enrollment.TerminateCoverage or Enrollment.TransferEnrollment
   } with {
@@ -542,6 +542,12 @@ entity Enrollment as flow is {
         |Active coverage details.
       }
     }
+    transferredToEnrollmentId: EnrollmentId? with {
+      briefly "Transferred to enrollment id"
+    }
+    transferredAt: DateTime? with {
+      briefly "Transferred at"
+    }
   } with {
     briefly "Data for active coverage state"
     described as {
@@ -593,7 +599,8 @@ entity Enrollment as flow is {
         reply enrollmentQueryResult
       }
       on init is {
-        set state InitiatedState to "initialize from prior event"
+        let enrollmentInitiated: type EnrollmentInitiated = prompt("the enrollment initiated that brings this enrollment into existence")
+        yield enrollmentInitiated
       }
     } with {
       briefly "InitiatedState init handler"
@@ -610,7 +617,8 @@ entity Enrollment as flow is {
   state PlanSelectedState of record Enrollment.PlanSelectedStateData is {
     initial handler PlanSelectedStateInitHandler is {
       on init is {
-        set state PlanSelectedState to "initialize from prior event"
+        let planSelected: type PlanSelected = prompt("the plan selected that brings this enrollment into existence")
+        yield planSelected
       }
     } with {
       briefly "PlanSelectedState init handler"
@@ -627,7 +635,8 @@ entity Enrollment as flow is {
   state EligibilityVerifiedState of record Enrollment.EligibilityVerifiedStateData is {
     initial handler EligibilityVerifiedStateInitHandler is {
       on init is {
-        set state EligibilityVerifiedState to "initialize from prior event"
+        let eligibilityVerified: type EligibilityVerified = prompt("the eligibility verified that brings this enrollment into existence")
+        yield eligibilityVerified
       }
     } with {
       briefly "EligibilityVerifiedState init handler"
@@ -644,7 +653,8 @@ entity Enrollment as flow is {
   state ActiveState of record Enrollment.ActiveStateData is {
     initial handler ActiveStateInitHandler is {
       on init is {
-        set state ActiveState to "initialize from prior event"
+        let enrollmentConfirmed: type EnrollmentConfirmed = prompt("the enrollment confirmed that brings this enrollment into existence")
+        yield enrollmentConfirmed
       }
     } with {
       briefly "ActiveState init handler"
@@ -661,7 +671,8 @@ entity Enrollment as flow is {
   state TerminatedState of record Enrollment.TerminatedStateData is {
     initial handler TerminatedStateInitHandler is {
       on init is {
-        set state TerminatedState to "initialize from prior event"
+        let coverageTerminated: type CoverageTerminated = prompt("the coverage terminated that brings this enrollment into existence")
+        yield coverageTerminated
       }
     } with {
       briefly "TerminatedState init handler"
@@ -678,42 +689,38 @@ entity Enrollment as flow is {
   // Handler
   handler EnrollmentHandler is {
     on coverageTerminated: event CoverageTerminated is {
-      do "apply CoverageTerminated to the enrollment so it can be persisted and replayed"
+      morph entity Enrollment to state Enrollment.TerminatedState with record Enrollment.TerminatedStateData(enrollmentId = coverageTerminated.enrollmentId, terminationDate = coverageTerminated.terminationDate, reason = coverageTerminated.reason, memberId = prompt("the member id of this terminated state data"), finalCoverageInfo = prompt("the final coverage info of this terminated state data"))
     }
     on eligibilityVerified: event EligibilityVerified is {
-      do "apply EligibilityVerified to the enrollment so it can be persisted and replayed"
+      morph entity Enrollment to state Enrollment.EligibilityVerifiedState with record Enrollment.EligibilityVerifiedStateData(enrollmentId = eligibilityVerified.enrollmentId, eligibilityInfo = eligibilityVerified.eligibilityInfo, memberInfo = prompt("the member info of this eligibility verified state data"), planSelection = prompt("the plan selection of this eligibility verified state data"), requestedEffectiveDate = prompt("the requested effective date of this eligibility verified state data"))
     }
     on enrollmentConfirmed: event EnrollmentConfirmed is {
-      do "apply EnrollmentConfirmed to the enrollment so it can be persisted and replayed"
+      let activeStateData: type Enrollment.ActiveStateData = prompt("the active state data that results from confirm enrollment")
+      morph entity Enrollment to state Enrollment.ActiveState with activeStateData
     }
     on enrollmentInitiated: event EnrollmentInitiated is {
-      do "apply EnrollmentInitiated to the enrollment so it can be persisted and replayed"
+      morph entity Enrollment to state Enrollment.InitiatedState with record Enrollment.InitiatedStateData(enrollmentId = enrollmentInitiated.enrollmentId, memberInfo = enrollmentInitiated.memberInfo, enrollmentPeriod = enrollmentInitiated.enrollmentPeriod, qualifyingEvent = enrollmentInitiated.qualifyingEvent, requestedEffectiveDate = enrollmentInitiated.requestedEffectiveDate, initiatedAt = prompt("the initiated at of this initiated state data"))
     }
     on enrollmentTransferred: event EnrollmentTransferred is {
-      do "apply EnrollmentTransferred to the enrollment so it can be persisted and replayed"
+      set field Enrollment.ActiveState.transferredToEnrollmentId to enrollmentTransferred.newEnrollmentId
+      set field Enrollment.ActiveState.transferredAt to enrollmentTransferred.transferredAt
     }
     on planSelected: event PlanSelected is {
-      do "apply PlanSelected to the enrollment so it can be persisted and replayed"
+      morph entity Enrollment to state Enrollment.PlanSelectedState with record Enrollment.PlanSelectedStateData(enrollmentId = planSelected.enrollmentId, planSelection = planSelected.planSelection, memberInfo = prompt("the member info of this plan selected state data"), enrollmentPeriod = prompt("the enrollment period of this plan selected state data"), qualifyingEvent = empty, requestedEffectiveDate = prompt("the requested effective date of this plan selected state data"))
     }
     on initiateEnrollment: command InitiateEnrollment is {
-      morph entity Enrollment to state Enrollment.InitiatedState with record Enrollment.InitiatedStateData(enrollmentId = initiateEnrollment.enrollmentId, memberInfo = initiateEnrollment.memberInfo, enrollmentPeriod = initiateEnrollment.enrollmentPeriod, qualifyingEvent = initiateEnrollment.qualifyingEvent, requestedEffectiveDate = initiateEnrollment.requestedEffectiveDate, initiatedAt = prompt("the initiated at of this initiated state data"))
       yield event EnrollmentInitiated(enrollmentId = initiateEnrollment.enrollmentId, memberInfo = initiateEnrollment.memberInfo, enrollmentPeriod = initiateEnrollment.enrollmentPeriod, qualifyingEvent = initiateEnrollment.qualifyingEvent, requestedEffectiveDate = initiateEnrollment.requestedEffectiveDate, initiatedAt = prompt("the initiated at of this enrollment initiated"))
     }
     on selectPlan: command SelectPlan is {
-      morph entity Enrollment to state Enrollment.PlanSelectedState with record Enrollment.PlanSelectedStateData(enrollmentId = selectPlan.enrollmentId, planSelection = selectPlan.planSelection, memberInfo = prompt("the member info of this plan selected state data"), enrollmentPeriod = prompt("the enrollment period of this plan selected state data"), qualifyingEvent = empty, requestedEffectiveDate = prompt("the requested effective date of this plan selected state data"))
       yield event PlanSelected(enrollmentId = selectPlan.enrollmentId, planSelection = selectPlan.planSelection, selectedAt = prompt("the selected at of this plan selected"))
     }
     on verifyEligibility: command VerifyEligibility is {
-      morph entity Enrollment to state Enrollment.EligibilityVerifiedState with record Enrollment.EligibilityVerifiedStateData(enrollmentId = verifyEligibility.enrollmentId, eligibilityInfo = verifyEligibility.eligibilityInfo, memberInfo = prompt("the member info of this eligibility verified state data"), planSelection = prompt("the plan selection of this eligibility verified state data"), requestedEffectiveDate = prompt("the requested effective date of this eligibility verified state data"))
       yield event EligibilityVerified(enrollmentId = verifyEligibility.enrollmentId, eligibilityInfo = verifyEligibility.eligibilityInfo, verifiedAt = prompt("the verified at of this eligibility verified"))
     }
     on confirmEnrollment: command ConfirmEnrollment is {
-      let activeStateData: type Enrollment.ActiveStateData = prompt("the active state data that results from confirm enrollment")
-      morph entity Enrollment to state Enrollment.ActiveState with activeStateData
       yield event EnrollmentConfirmed(enrollmentId = confirmEnrollment.enrollmentId, confirmedBy = confirmEnrollment.confirmedBy, memberId = prompt("the member id of this enrollment confirmed"), coverageStartDate = prompt("the coverage start date of this enrollment confirmed"), confirmedAt = prompt("the confirmed at of this enrollment confirmed"))
     }
     on terminateCoverage: command TerminateCoverage is {
-      morph entity Enrollment to state Enrollment.TerminatedState with record Enrollment.TerminatedStateData(enrollmentId = terminateCoverage.enrollmentId, terminationDate = terminateCoverage.terminationDate, reason = terminateCoverage.reason, memberId = prompt("the member id of this terminated state data"), finalCoverageInfo = prompt("the final coverage info of this terminated state data"))
       yield event CoverageTerminated(enrollmentId = terminateCoverage.enrollmentId, terminationDate = terminateCoverage.terminationDate, reason = terminateCoverage.reason, terminatedAt = prompt("the terminated at of this coverage terminated"))
     }
     on transferEnrollment: command TransferEnrollment is {
