@@ -15,7 +15,7 @@ enablePlugins(RiddlSbtPlugin)
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
 // same build, so one value pins both. This is an UNPUBLISHED snapshot of riddl
-// `main` -- 47 commits past 2.1.1, commit d63cc2c3 -- so `riddlcPath` below
+// `main` -- 50 commits past 2.1.1, commit 290e74d3 -- so `riddlcPath` below
 // names a staged binary and the libraries resolve from ~/.ivy2/local via
 // `sbt publishLocal` in the riddl checkout. GitHub Packages stops at 2.1.1.
 //
@@ -26,10 +26,12 @@ enablePlugins(RiddlSbtPlugin)
 // Missing warning, a connector endpoint naming an adaptor is ref-wrong-kind,
 // and an ascription is checked against the DECLARED arity. -47 adds: the
 // adaptor is the boundary for its pair in BOTH directions (an asking adaptor
-// owns the reply leg), and `on other { error }` RECEIVES. The corpus is being
-// adapted to it. Move to the first PUBLISHED tag carrying [1.25] and take the
+// owns the reply leg), and `on other { error }` RECEIVES. -50 adds the
+// `[advisory]` message kind (severity with style, never a warning, its own
+// show-advisories switch) and four rules about what an entity does with its
+// journal. Move to the first PUBLISHED tag carrying [1.25] and take the
 // riddlcPath override off in the same edit.
-lazy val riddlVersion = "2.1.1-47-d63cc2c3"
+lazy val riddlVersion = "2.1.1-50-290e74d3"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
