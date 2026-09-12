@@ -257,6 +257,48 @@ own line.
 A state's body cannot be empty, so `on init` cannot simply be dropped;
 `on init { yield event <Creation> }` is the working form.
 
+**Which entities are event-sourced** (Reid, 2026-09-12): every lifecycle
+entity — one with several states and `morph` transitions whose events other
+processors handle. riddlc -50's `entity-crud-with-transitions-consumed`
+advisory names any that is not, and the 18 it named at landing were all
+converted rather than left; a single-state entity stays CRUD. The conversion
+is mechanical and scripted — `scripts/folds/event-source.py <model> <Entity>`
+— and the shape it produces is the one to write by hand:
+
+- the `on command` clause only **yields** (`yield event E(f = cmd.f, …)`);
+  a self-`tell event … to entity <Self>` is that same yield, spelled the old
+  way, and a send-only clause needs the yield beside the send
+- the **fold** does the mutation: `on e: event E is { morph … with record
+  R(f = e.f, …) }` or `set field <Entity>.<State>.<f> to e.f`. An event that
+  does not carry what the fold needs GAINS the field — the alternative is a
+  `prompt` that replay cannot answer
+- each state's `on init` is `let e: type E = prompt("the … that brings this
+  … into existence")` / `yield e`, where E is the event whose fold morphs
+  into that state; the initial state yields the creation event
+- **a context boundary relaying such a command must `forward`, not
+  `send`** — `msg-yield-undeclared` fires on a `send` because the clause
+  handles a yielding command and yields nothing; `forward` is the relay
+  form the rule exempts (37 sites turned over on 2026-09-12)
+
+**Folds are not prose** (`entity-event-sourced-prose-folds`, Completeness,
+-50): an `on event` clause whose every statement is `do` or `set … to
+prompt(…)` is a replay with no semantics. State the fields the event changes
+(`set field S.f to e.f`, a status by enumerator path — `ShiftStatus.
+AssignedStatus` resolves), and where the state has nowhere to keep what the
+event recorded, give it an optional field (`= empty` in every constructor of
+that record). Decisions live one row per fold in
+`scripts/folds/decisions.tsv`; `apply.py` writes them; `census.py` finds
+the prose ones. **What cannot be said**: appending to or removing from a
+collection, and arithmetic on a field — RIDDL has no expression for either
+(BACKLOG #21), so those folds stay `set … to prompt("orderItems with
+addedItem appended")` and the rule counts them. 14 in the corpus, filed
+with riddl on 2026-09-12; do not invent a scalar just to silence one.
+
+**A state nothing enters and nothing handles is dead** — the same class as
+an event nothing yields. Delete it with its record
+(`scripts/folds/drop-dead-states.py`, which refuses if anything else names
+it), or if an event for it exists, make that event's fold morph into it.
+
 **Who may handle a command that declares `yields`**: only the thing
 that fulfils it. `yields` is optional and belongs to a *domain*
 command. A processor that stores, forwards or translates must not
@@ -1350,9 +1392,10 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.1.1-47-d63cc2c3**, an UNPUBLISHED snapshot of riddl `main`
+Current version: **2.1.1-50-290e74d3**, an UNPUBLISHED snapshot of riddl `main`
 carrying **A103** (the adaptor is the boundary), **[1.25]** (nothing is
-implied), the reply-leg fix and a receiving `on other`. **The override is back
+implied), the reply-leg fix, a receiving `on other`, and -50's `[advisory]`
+message kind with its four event-sourcing rules. **The override is back
 ON** — `riddlcPath := Some(file("../bin/riddlc"))` — and the libraries resolve
 from `~/.ivy2/local`. GitHub Packages stops at 2.1.1. Take the override off at
 the first published tag carrying [1.25]. **The staged binary moved under a
@@ -1484,7 +1527,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.1.1-47-d63cc2c3 | `riddlVersion` in `build.sbt` (unpublished) |
+| riddlc | 2.1.1-50-290e74d3 | `riddlVersion` in `build.sbt` (unpublished) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
@@ -1604,6 +1647,15 @@ the one to hold to the stricter bar deliberately, rather than inherit the
 corpus-wide suppression by default; this is a technique worth reusing, not
 a coincidence to note twice. Do not assume uniformity here without
 recounting.
+**`[advisory]` is a fifth kind, not a warning** (-50): severity with
+style, `isWarning = false`, its own `show-advisories` switch (default on),
+never blocks `gen`, and `--fail-on warning` never trips on it. It marks a
+structural fact consistent with the model and inconsistent with what the
+declaration usually means — a design choice the modeller is entitled to.
+The zero standard covers it anyway: the sweep's level regex already
+captures it, and the corpus went 18 -> 0 on the first one by ruling, not
+by suppression.
+
 `collect-warnings.py` invokes `riddlc validate <entry>.riddl` **directly**,
 never `from <conf>`, so it takes riddlc's defaults — which have every class
 ON. It is therefore the STRONGER check, and the one the zero standard means.

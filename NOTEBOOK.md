@@ -4,63 +4,103 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.1.1-47-d63cc2c3`, UNPUBLISHED, `riddlcPath` override ON** (5d74e82a).
-`../bin/riddlc` IS the build's binary — verified with `riddlc info`. **The staged
-binary moved under this session once already** (-45 -> -47 at 16:20 with no
-announcement); check `riddlc info` against `build.sbt` before believing any
-number. No published tag carries [1.25]; take the override off at the first
-that does.
+**Pin `2.1.1-50-290e74d3`, UNPUBLISHED, `riddlcPath` override ON.** `../bin/riddlc`
+IS the build's binary — verified with `riddlc info`. **The staged binary has
+moved under a session twice now** (-45 -> -47, -47 -> -50, unannounced); check
+`riddlc info` against `build.sbt` before believing any number. No published tag
+carries [1.25]; take the override off at the first that does.
 
-**Errors 0, Missing 1, Completeness 4, everything else 0** — the [1.25] drain
-(BACKLOG #38) is CLOSED, task file in `task/done/`. The last commit of it,
-04be7395, made every one of the 368 asks forward its answer. Verified at the
-close: prettify / validate / bastify 189/189, `uc` 0, round-trip 189/189 at 0,
-census 0 of 782, sweep canaried on -47.
+**Sweep 8: 0 errors, 0 advisories, 7 completeness (prose folds), 1 missing.**
+The -50 upgrade (60213a31 and before) took the corpus 41 -> 8: 18 lifecycle
+entities event-sourced by Reid's ruling, 141 folds stated, 51 dead Rejected
+events and 3 dead states deleted. What is left is RULED or FILED: 14 folds the
+language cannot state (BACKLOG #39, riddl task filed) and NightlyCloseOut (#30).
+`checkTests` fails on reactive-bbq's R10 alone, on exactly those. Verified at
+the close: prettify / validate / bastify 189/189, `uc` 0, round-trip 189/189 at
+0.
 
-**What is red, and why it stays red — both RULED, not awaiting anyone:** 4
-`stream-inlet-not-received` on error-sink contexts (Reid: riddl exempts them;
-filed, `../riddl/task/2026-09-11-error-sink-context-cannot-be-complete.md`) and
-1 Missing on NightlyCloseOut (Reid: leave as written; BACKLOG #30). `checkTests`
-fails on reactive-bbq's R10 alone, on exactly those. `sbt v` is green and says
-nothing about any of this; sweep by rule is the census.
+### In flight — nothing. One task file is open
 
-### In flight — nothing. Next is bookkeeping, not modelling
-
-- **CLAUDE.md is current on [1.25]** as of this commit: § "A103 under
-  [1.25]" and § "An `ask` from an adaptor" replace the implied-port text; the
-  stream-tail note no longer claims the inbound/asking asymmetry.
-- **Unpushed commits** since 6d9e7ce8; pushing is Reid's call.
-- The two open riddl tasks (error-sink exemption; prettify `URL"https"`) land
-  as sweep changes here when riddl answers — re-sweep after the next bump.
+`task/2026-09-12-read-side-stubbed-67-repository-handlers.md` from
+riddl-generator: 67 reactive-bbq repository clauses whose prose names fields
+their schemas cannot hold. Triaged, not started; needs Reid's pick between
+widening the types and narrowing the prose, per repository.
 
 ### Traps, still live
 
-- **A yield answers the SENDER.** The outlet gets nothing unless a `send` says so;
-  write both, the yield is required by `msg-yield-undeclared`.
-- **A script that matches nothing reports success.** 001d98bf's message claimed a
-  conversion that had not happened. Grep the tree after a bulk edit, not the log.
+- **A converted entity's boundary relay must `forward`.** `send x to outlet`
+  in the context clause draws `msg-yield-undeclared` the moment the command
+  declares `yields`; `scripts/folds/relay-forward.py` fixes a model in one go.
+- **A yield answers the SENDER.** The outlet gets nothing unless a `send` says
+  so; write both.
+- **Enumerator paths resolve in a `set`** (`ShiftStatus.AssignedStatus`); a
+  bare `Assigned` that is not an enumerator's exact name is
+  `value-ref-unresolved`. Nested paths (`info.name`, `contract.endDate`) set
+  fine through non-optional fields.
+- **Copy a new field's TYPE from source, not from the dump** — the dump prints
+  `Currency` for `Currency(USD)` and the copy does not parse.
 - **A definition's span ends BEFORE its `with` block and a clause's before its
-  closing brace** — insert by brace-matching from the span start
-  (`block_end`/`clause_end` in `forward-answers.py`), never at `span.end`.
-- **`git checkout <file>` reverts every uncommitted edit to it.** Cost three
-  models' worth of replay this session.
+  closing brace** — insert by brace-matching from the span start.
+- **`git checkout <file>` reverts every uncommitted edit to it.**
 - **`hospitality/food-service/reactive-bbq/1/`** is riddl-generator debug output,
   untracked, not ours.
 
 ### Certainty
 
-Verified: every count above, by sweep and by gate. Assumed: the 368 per-ask
-translations in `scripts/inbound-events/ask-decisions.tsv` are my reading of
-why each answer was asked for — Reid's ruling was that a wrong one surfaces
-later and is one row to change; none has been reviewed by a person.
+Verified: every count above, by sweep and by gate. Assumed: the 141 fold
+statements and 63 round-2 decisions in `scripts/folds/decisions.tsv` are my
+reading of what each event changes — one row each, none reviewed by a person;
+same standing as the ask translations.
 
 ### Pointers
 
-Open work: **BACKLOG.md** #30, #1/#23/#24/#34. Durable language facts:
-**CLAUDE.md**. Lessons: the three § 2026-09-11
-sections below, newest first.
+Open work: **BACKLOG.md** #39, #30, #1/#23/#34. Durable facts: **CLAUDE.md**
+§ Event-Sourced Entities (rewritten today: which entities, the shape, folds,
+dead states) and § `[advisory]`. Lessons: § 2026-09-12 below.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
+
+---
+
+## 2026-09-12 — riddl -50: the advisory kind, and 111 folds become 14
+
+Two new riddl commits landed in `../bin/riddlc` overnight: -48 fixed prettify's
+`URL"https"` and exempted handler-less error-sink contexts (both filed
+yesterday, both answered), and -50 added the **`[advisory]` kind** with four
+rules about what an entity does with its journal. Corpus 2 -> 41 at landing.
+
+**The prose-fold rule was three different jobs wearing one number.**
+- 22 of the 111 were folds of reactive-bbq's `<Cmd>Rejected` events, which
+  nothing has yielded since 42c1d161 — BACKLOG #24's unfinished half. Deleting
+  the 51 dead events (and their 73 clauses and 74 alternation members) was the
+  fix, not writing folds for ghosts.
+- 78 were real folds written as `set state S to prompt("apply E …")`. Each
+  became the fields the event changes; where the state had nowhere to keep
+  what the event recorded (a cancel reason, a routed-at time, the last
+  payment), the state gained an optional field — 73 of them, `= empty` in every
+  constructor, because a journaled fact the state forgets is the hole the rule
+  is about.
+- 14 are appends, removes and arithmetic, which RIDDL spells only as a
+  `prompt`, and #21 says arithmetic is MEANT to be one. Filed; #39.
+
+**The advisory on 18 lifecycle entities became a conversion, not a shrug.**
+Reid picked event-sourcing all 18 over leaving them CRUD. The four ES rules
+turned it into a script: mutations move from `on command` into the yielded
+event's fold with `cmd.f` -> `ev.f`, events gain the fields their folds need
+(22), commands gain `yields` (40), states' `on init` yield their entering
+event, self-tells become yields, and — the surprise — 37 context boundary
+relays had to change `send` to `forward`, because a clause relaying a
+yielding command with `send` "does not yield it on every path". What the
+conversion dug up: five states nothing entered (three deleted, two turned out
+to have events that simply never morphed), a creation event with no
+`Id(PortCall)` on it, and reactive-bbq's R2 test wanting a full description on
+every new field.
+
+**Rulings taken without asking, for the record:** which state a fold names
+when the event can arrive in several (the state whose lifecycle position
+matches, not the first); a collection fold gets a real scalar beside the
+prompt only when the event carries one; `RenewalDeclined` morphs a policy to
+Expired; a state referenced by nothing but its own declaration is dead.
 
 ---
 

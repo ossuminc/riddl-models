@@ -1097,6 +1097,30 @@ before its closing brace.
 **Not done, flagged:** CLAUDE.md's A103 section and inbound recipe still describe
 implied ports and `as flow` on inbound adaptors; needs a [1.25] rewrite.
 
+## 39. Fourteen folds the language cannot state — WAITING on riddl
+
+riddlc -50's `entity-event-sourced-prose-folds` (Completeness) counts an `on
+event` clause made only of `do` / `set … to prompt(…)`. The corpus took it from
+**111 folds in 21 entities to 14 in 7** on 2026-09-12 (22 dead-rejection folds
+deleted, 141 folds stated, 18 entities event-sourced on the way). Every one of
+the 14 left is an append/remove on a collection (TableOrder/OnlineOrder/Cart
+items, MenuRelease items, Product categories, Wallet payment methods, Campaign
+audiences/allocations/metrics) or arithmetic on a balance (LoyaltyAccount) —
+and #21 records arithmetic as BY DESIGN a `prompt`. So the rule counts what the
+language means to be a prompt. Filed `riddl/task/2026-09-12-prose-folds-append-
+and-arithmetic-have-no-other-spelling.md` asking that a `set` of a stated field
+to a prompt naming its operands be Derived, not Prose (or an append/remove
+statement). **Do not invent a scalar field to silence one of these** — the
+2026-09-12 pass added optional fields only where the event recorded a fact the
+state had nowhere to keep. reactive-bbq's R10 test is red on exactly these plus
+#30's NightlyCloseOut until riddl answers.
+
+Also surfaced by the conversion, not yet a gate: **events consumed but never
+produced.** `Deployment.DeploymentAwaitingApproval` and `DeploymentFailed` have
+folds, states, repository Persist commands and projector clauses, and no
+command yields either. `uc` sees only external commands. A census of local
+events with no yield/send would find the rest of this class.
+
 ## 34. Delete Course's roster; decide what `LearnerEnrolled.enrollmentId` is
 
 Left deliberately when #32 closed (commit a9bdd684). **This is queued work,
@@ -2384,7 +2408,7 @@ not mechanism, and leaves (3)) and C (mechanical 1:1, leaves (2) and (3)).
 
 Do it with `riddlc find ... -replace`, not regex — see CLAUDE.md.
 
-## 24. Rejections do not go to a database — HALF DONE, and the rest is ORDERED
+## 24. Rejections do not go to a database — CLOSED 2026-09-12
 
 **Ruling (Reid, 2026-08-24).** *"Nobody ever sends a message to a database
 telling it to reject something... Whoever SENT those messages should not be
@@ -2392,7 +2416,15 @@ sending them and should be dealing with the rejection at THEIR level, not puntin
 to the database."* A genuine business rejection — a declined card — is different:
 it is a real event, stored by its own specific command.
 
-**Done:** 268 state-guard sends removed, the refusal preserved as `error`. The
+**Done 2026-09-12 (a3db072a):** the 51 dead `<Cmd>Rejected` events nothing
+yields are gone — declarations, 73 on-event clauses, 74 alternation members —
+and the seven projectors' `not persisted` lists are rebuilt from what can still
+arrive. `scripts/drop-dead-rejections.py` decides deadness from the dump (no
+send/yield/tell/let resolves to it) and kept `RedeemPointsRejected`, the carve-
+out. riddl -50's prose-fold rule is what forced it: 22 of its 111 holes were
+folds of events that could never arrive.
+
+**Done earlier:** 268 state-guard sends removed, the refusal preserved as `error`. The
 distinction was measured, not assumed: 268 of 269 carried
 `rejectionReason = "<X> does not accept <Y> in this state"`. The one that did not
 — `"Point balance is less than the points requested for redemption"`, at
