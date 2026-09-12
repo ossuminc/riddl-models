@@ -58,18 +58,21 @@ def main():
             states=[n for n in ns if n["kind"]=="state" and n["parent"]==ent["path"]]
             for cl in [n for n in ns if n["kind"]=="on-event" and ent["path"] in n.get("ancestors",[])]:
                 txt=text(cl["file"]); s=cl["span"]["start"]["offset"]; body=txt[s:clause_end(txt,s)]
-                stmts=[l.strip() for l in body.split("\n")[1:-1] if l.strip() and not l.strip().startswith("//")]
-                prose=all(l.startswith('do "') or re.match(r'set .* to prompt\(',l) for l in stmts)
+                flat=re.sub(r'"(?:[^"\\]|\\.)*"','""',body,flags=re.S)   # blank string literals, multi-line ones too
+                stmts=[l.strip() for l in flat.split("\n")[1:-1] if l.strip() and not l.strip().startswith("//")]
+                prose=all(l.startswith('do ') or re.match(r'set .* to prompt\(',l) for l in stmts)
                 if not prose: continue
                 ev=cl["message"]["resolved"]
-                # which state does the prose set?
-                m=re.search(r"set state (\S+)",body); st=m.group(1).split(".")[-1] if m else (states[0]["id"] if len(states)==1 else "?")
-                stn=next((x for x in states if x["id"]==st),None)
-                rec="?"
-                if stn:
-                    stxt=text(stn["file"]); mm=re.match(r"\s*state \S+ of (\S+)",stxt[stn["span"]["start"]["offset"]:]); rec=mm.group(1) if mm else "?"
-                recpath=next((p for p in byp if p.endswith("."+rec.split(".")[-1]) and byp[p]["kind"] in("record","type") and ent["path"] in byp[p].get("ancestors",[])+[byp[p]["parent"]]),None)
-                rf=fields.get(recpath,[]); ef=fields.get(ev,[])
+                # every state of the entity, with its record's fields; the fold names one (or none)
+                m=re.search(r"set state (\S+)",body); st=m.group(1).split(".")[-1] if m else "?"
+                sts=[]
+                for stn in states:
+                    stxt=text(stn["file"]); mm=re.match(r"\s*(?:initial )?state \S+ of (?:record )?(\S+)",stxt[stn["span"]["start"]["offset"]:]); rec=mm.group(1).split(".")[-1] if mm else "?"
+                    recpath=next((p for p in byp if p.split(".")[-1]==rec and byp[p]["kind"] in("record","type") and ent["path"] in byp[p].get("ancestors",[])+[byp[p]["parent"]]),None)
+                    rf=fields.get(recpath,[])
+                    sts.append(stn["id"]+"{"+", ".join(f"{a}:{b.replace('type ','')}{'?' if c=='zero-or-one' else ('*' if c=='zero-or-more' else ('+' if c=='one-or-more' else ''))}" for a,b,c in rf)+"}")
+                rf=[]; ef=fields.get(ev,[])
+                rec=" ; ".join(sts)
                 print("\t".join([str(d.relative_to(ROOT)),ent["path"],ev.split(".")[-1],st,rec,cl["file"],str(cl["span"]["start"]["line"]),
                     ", ".join(f"{a}:{b}{'?' if c=='zero-or-one' else ''}" for a,b,c in rf), ", ".join(f"{a}:{b}" for a,b,c in ef), " | ".join(stmts)]))
 main()

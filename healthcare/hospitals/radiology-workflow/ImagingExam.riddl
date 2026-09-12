@@ -325,6 +325,12 @@ aggregate event-sourced entity ImagingExam as flow is {
     studyInfo: StudyInfo
     completedAt: TimeStamp
     draftReport: RadiologyReport?
+    criticalFinding: CriticalFinding? with {
+      briefly "Critical finding"
+    }
+    criticalFindingReportedAt: TimeStamp? with {
+      briefly "Critical finding reported at"
+    }
   } with {
     briefly "Data for interpretation state"
     described as {
@@ -338,6 +344,12 @@ aggregate event-sourced entity ImagingExam as flow is {
     report: RadiologyReport
     finalizedAt: TimeStamp
     addendums: RadiologyReport*
+    lastAddendumAt: TimeStamp? with {
+      briefly "Last addendum at"
+    }
+    lastAddendumBy: PhysicianId? with {
+      briefly "Last addendum by"
+    }
   } with {
     briefly "Data for finalized state"
     described as {
@@ -488,23 +500,27 @@ aggregate event-sourced entity ImagingExam as flow is {
     on patientCheckedIn: event PatientCheckedIn is {
       morph entity ImagingExam to state ImagingExam.AcquisitionState with record ImagingExam.AcquisitionStateData(examId = patientCheckedIn.examId, checkedInAt = patientCheckedIn.checkedInAt, order = prompt("the order of this acquisition state data"), scheduledDateTime = prompt("the scheduled date time of this acquisition state data"), modalityId = prompt("the modality id of this acquisition state data"), technicianId = empty, acquisitionStartedAt = empty)
     }
-    on event AcquisitionStarted is {
-      do "apply AcquisitionStarted to the current state"
+    on acquisitionStarted: event AcquisitionStarted is {
+      set field ImagingExam.AcquisitionState.technicianId to acquisitionStarted.technicianId
+      set field ImagingExam.AcquisitionState.acquisitionStartedAt to acquisitionStarted.startedAt
     }
     on acquisitionCompleted: event AcquisitionCompleted is {
-      morph entity ImagingExam to state ImagingExam.InterpretationState with record ImagingExam.InterpretationStateData(examId = acquisitionCompleted.examId, studyInfo = acquisitionCompleted.studyInfo, completedAt = acquisitionCompleted.completedAt, order = prompt("the order of this interpretation state data"), draftReport = empty)
+      morph entity ImagingExam to state ImagingExam.InterpretationState with record ImagingExam.InterpretationStateData(examId = acquisitionCompleted.examId, studyInfo = acquisitionCompleted.studyInfo, completedAt = acquisitionCompleted.completedAt, order = prompt("the order of this interpretation state data"), draftReport = empty, criticalFinding = empty, criticalFindingReportedAt = empty)
     }
-    on event DraftReportCreated is {
-      do "apply DraftReportCreated to the current state"
+    on draftReportCreated: event DraftReportCreated is {
+      set field ImagingExam.InterpretationState.draftReport to record RadiologyReport(reportId = draftReportCreated.reportId, examId = draftReportCreated.examId, studyId = prompt("the study id from studyInfo"), patientId = prompt("the patient id from the order"), radiologistId = draftReportCreated.radiologistId, reportStatus = ReportStatus.Draft, findings = draftReportCreated.findings, impression = draftReportCreated.impression, recommendations = draftReportCreated.recommendations, comparisonStudies = empty, criticalFinding = empty, dictatedAt = draftReportCreated.createdAt, signedAt = empty, transcribedBy = empty)
     }
     on reportFinalized: event ReportFinalized is {
-      morph entity ImagingExam to state ImagingExam.FinalizedState with record ImagingExam.FinalizedStateData(examId = reportFinalized.examId, order = prompt("the order of this finalized state data"), studyInfo = prompt("the study info of this finalized state data"), report = prompt("the report of this finalized state data"), finalizedAt = prompt("the finalized at of this finalized state data"), addendums = empty)
+      morph entity ImagingExam to state ImagingExam.FinalizedState with record ImagingExam.FinalizedStateData(examId = reportFinalized.examId, order = prompt("the order of this finalized state data"), studyInfo = prompt("the study info of this finalized state data"), report = prompt("the report of this finalized state data"), finalizedAt = prompt("the finalized at of this finalized state data"), addendums = empty, lastAddendumAt = empty, lastAddendumBy = empty)
     }
-    on event AddendumAdded is {
-      do "apply AddendumAdded to the current state"
+    on addendumAdded: event AddendumAdded is {
+      set field ImagingExam.FinalizedState.lastAddendumAt to addendumAdded.addedAt
+      set field ImagingExam.FinalizedState.lastAddendumBy to addendumAdded.radiologistId
+      set field ImagingExam.FinalizedState.addendums to prompt("the addendums with a report carrying addendumText and addendumReason appended")
     }
-    on event CriticalFindingReported is {
-      do "apply CriticalFindingReported to the current state"
+    on criticalFindingReported: event CriticalFindingReported is {
+      set field ImagingExam.InterpretationState.criticalFinding to criticalFindingReported.finding
+      set field ImagingExam.InterpretationState.criticalFindingReportedAt to criticalFindingReported.reportedAt
     }
   } with {
     briefly "Main command handler for imaging exams"
