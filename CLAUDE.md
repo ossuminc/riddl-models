@@ -1422,15 +1422,17 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.1.1-51-4d8e69ef**, an UNPUBLISHED snapshot of riddl `main`
-carrying **A103** (the adaptor is the boundary), **[1.25]** (nothing is
-implied), the reply-leg fix, a receiving `on other`, -50's `[advisory]`
-message kind with its four event-sourcing rules, and -51's `append`/`remove`
-statements (BAST format 25). **The override is back
-ON** — `riddlcPath := Some(file("../bin/riddlc"))` — and the libraries resolve
-from `~/.ivy2/local`. GitHub Packages stops at 2.1.1. Take the override off at
-the first published tag carrying [1.25]. **The staged binary moved under a
-session once** (-45 -> -47, unannounced); `riddlc info` is the only evidence.
+Current version: **2.2.0**, a PUBLISHED release (2026-09-14), so the override
+is **OFF** — `riddlcPath := None`, the plugin downloads the binary to
+`~/.cache/riddlc/2.2.0/bin/riddlc`, and the libraries resolve from GitHub
+Packages. It carries everything the corpus tracked on unpublished snapshots
+from 2026-09-06 to 2026-09-14: **A103** (the adaptor is the boundary),
+**[1.25]** (nothing is implied for any processor), the reply leg, a receiving
+`on other`, the `[advisory]` kind with four event-sourcing rules, and the
+`append`/`remove` statements (BAST format 25). `../bin/riddlc` happens to be
+2.2.0 too today; that will stop being true the next time riddl is staged, and
+**the scripts' default `RIDDLC=../bin/riddlc` is then the wrong binary** — pass
+`RIDDLC=~/.cache/riddlc/2.2.0/bin/riddlc` for any manual run that is evidence.
 
 The corpus spent 2026-08-31 to 2026-09-05 on unpublished snapshots because
 four rules it depends on landed after a tag each time (`streamlet`; A6
@@ -1558,7 +1560,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.1.1-51-4d8e69ef | `riddlVersion` in `build.sbt` (unpublished) |
+| riddlc | 2.2.0 | `riddlVersion` in `build.sbt` (published) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
@@ -1751,7 +1753,7 @@ needs drive language changes, which land here as model changes. riddl's
 `release/2` is merged, tagged `2.0.0` and deleted, so the line to track is now
 **`main`**, and the corpus prefers **published tags wherever possible**.
 
-It is currently on the published **2.1.1** with **no override**. Point
+It is currently on the published **2.2.0** with **no override**. Point
 `riddlcPath` at a staged `../bin/riddlc` only to track a commit that has not
 been published yet, and **take the override off the moment it is** — a stale
 override is indistinguishable from a clean corpus.

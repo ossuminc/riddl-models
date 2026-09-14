@@ -4,12 +4,12 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.1.1-51-4d8e69ef`, UNPUBLISHED, `riddlcPath` override ON.** `../bin/riddlc`
-IS the build's binary — verified with `riddlc info`. **The staged binary has
-moved under a session three times now** (-45, -47, -50, -51 — never announced);
-run `riddlc info` against `build.sbt` before believing any number. BAST format
-is 25 as of -51. No published tag carries [1.25]; take the override off at the
-first that does.
+**Pin `2.2.0`, PUBLISHED, `riddlcPath` override OFF** — the plugin's
+`~/.cache/riddlc/2.2.0/bin/riddlc` is the build's binary (commit d4f11e34,
+one past -51). `../bin/riddlc` is the same today and will not stay so: pass
+`RIDDLC=~/.cache/riddlc/2.2.0/bin/riddlc` to any script run that is evidence.
+Certified on 2.2.0 at the close: every gate, checkTests, sweep 0 canaried,
+round-trip 189/189 with no `.bast` change.
 
 **THE CORPUS IS AT ZERO OF EVERY SEVERITY** (8bfdeed0), sweep canaried with an
 injected unused type. `checkTests` green including reactive-bbq's R10, first

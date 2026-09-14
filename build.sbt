@@ -14,24 +14,16 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. This is an UNPUBLISHED snapshot of riddl
-// `main` -- 51 commits past 2.1.1, commit 4d8e69ef -- so `riddlcPath` below
-// names a staged binary and the libraries resolve from ~/.ivy2/local via
-// `sbt publishLocal` in the riddl checkout. GitHub Packages stops at 2.1.1.
-//
-// It is tracked rather than the published 2.1.1 because **A103 -- "the adaptor
-// IS the boundary"** landed after that tag, and then **[1.25] -- nothing is
-// implied for any processor** (2c2b8d5b2, 2026-09-11) reversed A103's implied
-// ports: a port the handlers need and the definition does not declare is a
-// Missing warning, a connector endpoint naming an adaptor is ref-wrong-kind,
-// and an ascription is checked against the DECLARED arity. -47 adds: the
-// adaptor is the boundary for its pair in BOTH directions (an asking adaptor
-// owns the reply leg), and `on other { error }` RECEIVES. -50 adds the
-// `[advisory]` message kind (severity with style, never a warning, its own
-// show-advisories switch) and four rules about what an entity does with its
-// journal. Move to the first PUBLISHED tag carrying [1.25] and take the
-// riddlcPath override off in the same edit.
-lazy val riddlVersion = "2.1.1-51-4d8e69ef"
+// same build, so one value pins both. 2.2.0 is a PUBLISHED release, so the
+// plugin downloads the binary and the libraries resolve from GitHub Packages;
+// `riddlcPath` below is None. It carries everything the corpus spent
+// 2026-09-06 to 2026-09-14 on unpublished snapshots for: A103 (the adaptor IS
+// the boundary), [1.25] (nothing is implied for any processor), the reply leg,
+// a receiving `on other`, the `[advisory]` kind with four event-sourcing
+// rules, and the `append`/`remove` statements (BAST format 25). Whenever a
+// rule the corpus needs lands after a tag, the override goes back on -- and
+// comes off at the first published tag that carries it.
+lazy val riddlVersion = "2.2.0"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -85,19 +77,14 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
     ),
 
-    // Some(...) because riddlVersion names an UNPUBLISHED snapshot the plugin
-    // cannot download -- every riddlc task would fail with a bare
-    // `Nonzero exit value: 56`. Take it off again the moment that commit is
-    // published; a stale override is indistinguishable from a clean corpus.
-    //
-    // Two traps, both paid for. This path WINS over riddlVersion, so while an
-    // override is in place verify `riddlc info` against the pin rather than
-    // trusting the pin -- on 2026-08-26 ../bin/riddlc was cut from the wrong
-    // commit and the corpus read clean because the rule being migrated to was
-    // not in the binary. And a `git checkout -- .` reverts the pin silently,
-    // which happened on 2026-08-19 and left the pin naming rc.19-3 while
-    // rc.19-5 validated.
-    riddlcPath := Some(file("../bin/riddlc")),
+    // None on a published pin: the plugin downloads exactly riddlVersion. Set
+    // Some(file("../bin/riddlc")) only to track an UNPUBLISHED commit, because
+    // the plugin cannot download one (every riddlc task fails with a bare
+    // `Nonzero exit value: 56`), and take it off again the moment that commit
+    // is published -- a stale override is indistinguishable from a clean
+    // corpus. While an override is on, this path WINS over riddlVersion, so
+    // verify `riddlc info` against the pin rather than trusting the pin.
+    riddlcPath := None,
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),
