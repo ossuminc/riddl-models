@@ -16,18 +16,21 @@ injected unused type. `checkTests` green including reactive-bbq's R10, first
 time since -47. Verified at the close: prettify / validate / bastify 189/189,
 `uc` 0, round-trip 189/189 at 0.
 
-### In flight — one task file, needs Reid's pick
+### In flight — nothing; `task/` is empty
 
-`task/2026-09-12-read-side-stubbed-67-repository-handlers.md` from
-riddl-generator: 67 reactive-bbq repository clauses whose prose names fields
-their `Stored<X>` records cannot hold. Widen the types or narrow the prose, per
-repository. The count is reproducible now that generation runs from HEAD
-(`../bin/riddlg gen code -t pekko --no-fill -o <dir> reactive-bbq.riddl`, grep
-`HUMAN FILL: the prose names` in `*Repository.java`) — if riddlg's own riddlc
-pin has caught up to -51's BAST format.
+Both of today's task files are in `task/done/` with Results. riddl-generator
+owes a re-pin: its staged `../bin/riddlg` predates -51 and cannot parse
+`append`/`remove`, so its own measurement of the widened read side waits on
+that. When it lands, `../bin/riddlg gen code -t pekko --no-fill -o <dir>
+reactive-bbq.riddl` and grep `HUMAN FILL: the prose names` should read 1
+(`ticketItemReady`, a field of an element record) or 0 if riddlg looks into
+element records.
 
 ### Traps, still live
 
+- **A repository cannot `set`** (`state-set-not-allowed`); its row is `do`
+  prose, and the prose may name only what the Persist command and Stored
+  record declare. `check-repository-prose.py` says which clauses do not.
 - **`remove … where <key>` takes an identifier**, not a path; a nested key
   (`orderLineItem.itemCode`) removes by a prompted value. A `let` cannot be
   collection-typed; `foreach x in field <Event>.<coll>` is the way to append a
@@ -79,6 +82,18 @@ quiescence at the Reporting boundary, not a port-less streamlet that refuses
 every message. The void's description — "giving it ports would be a lie about
 how it runs" — was right about the ports and wrong about the trigger; silence
 IS something the model can observe.
+
+**The read side, widened.** riddl-generator's other task: 67 reactive-bbq
+repository clauses whose prose described five-field rows over id-only
+schemas. Widened rather than narrowed, all 13 — the prose is the read model
+the queries need. A script from the prose: `insert … with a, b` and `set col
+= evf` and `append x to coll` each say which command field and which column
+must exist; the projector passes them from the event. Two things the pass
+taught: a repository cannot `set` at all (the CLAUDE.md idiom and the pattern
+template were wrong; the row is prose by design, riddlg's to fill), and the
+field-overloading rule bites the moment a stored column is the optional twin
+of a required event field — the `actual<X>` names the original authors chose
+were that rule, obeyed by hand.
 
 **Lesson, third time:** verify the binary before every measurement, not
 every session. Friday's sweep of 8 was true of -50; today's first validate

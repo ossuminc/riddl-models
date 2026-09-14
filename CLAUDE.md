@@ -322,9 +322,21 @@ that fulfils it. `yields` is optional and belongs to a *domain*
 command. A processor that stores, forwards or translates must not
 handle one:
 - **Repositories** declare their own `Persist<Event>` commands, which
-  carry no `yields`, and write the stored row with
-  `set field Stored<X>.<field>`. They handle commands and queries,
-  never events.
+  carry no `yields`. **The row is written in `do` prose**, never with
+  `set`: `state-set-not-allowed` — "Repository owns no state to write"
+  (measured 2026-09-14; the `patterns/entity/repository` template's
+  `set field Stored{X}.id` is stale). The prose is what riddlg fills, and
+  **it may name only fields the Persist command carries or the Stored
+  record declares** — riddlg refuses a row nobody can build. So a
+  `Persist<E>` carries every event field its prose reads (projector passes
+  them from the event), the `Stored<X>` record declares every column the
+  prose writes, a column set by a later event is optional and named
+  `actual<X>` where the event's required field has the same name (the
+  field-overloading rule), and a status literal in prose types the column
+  with the entity's status enum. reactive-bbq went 30 -> 123 columns and
+  84 -> 194 Persist fields on 2026-09-14 (`scripts/folds/widen-
+  repositories.py`; `check-repository-prose.py` is the check). They handle
+  commands and queries, never events.
 - **"to" adaptors** handle the **source event** they translate
   (`on event <Source>`), not the target context's command.
 - **Relays** (source/sink processors) use `on other`. A `source` has
