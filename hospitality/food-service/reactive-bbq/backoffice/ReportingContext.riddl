@@ -84,6 +84,24 @@ context Reporting as router is {
     on purchaseOrderCreated: event InventoryItem.PurchaseOrderCreated is {
       send purchaseOrderCreated to outlet Reporting.InventoryToReportingOut
     }
+    on quiescence "PT24H" is {
+      do "roll the trading day forward: freeze yesterday's sales, labor and
+        inventory rows so late arrivals cannot silently restate a day the
+        owner has already read"
+    } with {
+      briefly "Nightly close-out"
+      described as {
+        |The close-out used to be a port-less `NightlyCloseOut` streamlet
+        |whose only handler said "it wakes on the clock" — which, once
+        |`on other` was ruled to RECEIVE, made it a message handler with no
+        |inlet and nothing to refuse. A day boundary is not an event any part
+        |of the restaurant emits, so the honest trigger is silence: a full
+        |day with nothing arriving at the Reporting boundary means trading has
+        |ended, and the day is frozen from here. Everything the close-out
+        |needs is already in the three report repositories, which it reads
+        |and writes directly rather than through the stream.
+      }
+    }
     on other is {
       error "Unexpected message at the Reporting boundary"
     }
@@ -92,7 +110,8 @@ context Reporting as router is {
     described as {
       |The context is the port at its own boundary: peers connect here, never
       |to a definition inside. Inbound messages are relayed to the definition
-      |that owns them; outbound ones are republished from here.
+      |that owns them; outbound ones are republished from here. It also
+      |carries the nightly close-out, which fires on a day of quiescence.
     }
   }
   connector 'SalesReport FrontOfHouse Feed' is from outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToSalesReport to inlet Reporting.SalesReport.SalesReportFromFrontOfHouse with {
@@ -1157,35 +1176,6 @@ context Reporting as router is {
     described as {
       |The adaptor's inlet is implied, and this is the channel the posting
       |travels on to reach it.
-    }
-  }
-  streamlet NightlyCloseOut as void is {
-    handler NightlyCloseOutRun is {
-      on init is {
-        do "roll the trading day forward: freeze yesterday's sales, labor and
-          inventory rows so late arrivals cannot silently restate a day the
-          owner has already read"
-      }
-      on other is {
-        error "NightlyCloseOut takes no messages; it wakes on the clock"
-      }
-    } with {
-      briefly "Nightly close-out run"
-      described as {
-        |Everything it needs is already in the three report repositories, so
-        |it reads and writes them directly rather than through the stream.
-      }
-    }
-  } with {
-    briefly "Nightly close-out"
-    described as {
-      |The one processor here with no ports at all, and `as void` says so.
-      |Nothing pushes it: it wakes on a clock at the end of trading, which is
-      |exactly what having neither an inlet nor an outlet means.
-      |
-      |Giving it ports to look like its neighbours would be a lie about how
-      |it runs — there is no upstream that could trigger a day boundary, and
-      |a day boundary is not an event any part of the restaurant emits.
     }
   }
   connector 'SalesReportRepository Direct Writes' is from outlet Reporting.SalesReportDirectWrites to inlet Reporting.SalesReportRepository.SalesReportRepositoryDirectWrites with {

@@ -15,7 +15,7 @@ enablePlugins(RiddlSbtPlugin)
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
 // same build, so one value pins both. This is an UNPUBLISHED snapshot of riddl
-// `main` -- 50 commits past 2.1.1, commit 290e74d3 -- so `riddlcPath` below
+// `main` -- 51 commits past 2.1.1, commit 4d8e69ef -- so `riddlcPath` below
 // names a staged binary and the libraries resolve from ~/.ivy2/local via
 // `sbt publishLocal` in the riddl checkout. GitHub Packages stops at 2.1.1.
 //
@@ -31,7 +31,7 @@ enablePlugins(RiddlSbtPlugin)
 // show-advisories switch) and four rules about what an entity does with its
 // journal. Move to the first PUBLISHED tag carrying [1.25] and take the
 // riddlcPath override off in the same edit.
-lazy val riddlVersion = "2.1.1-50-290e74d3"
+lazy val riddlVersion = "2.1.1-51-4d8e69ef"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
