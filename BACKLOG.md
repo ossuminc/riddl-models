@@ -1083,7 +1083,7 @@ legs (riddl 8d2cc13e5); a translator forwards its answer, the only wrong thing
 being nothing (Reid, evening) — decisions in `scripts/inbound-events/ask-decisions.tsv`,
 one row per ask, a wrong call is one row to change.
 
-**What stays red, both ruled:** NightlyCloseOut (1 Missing; a scheduled action,
+**What stayed red, both since resolved (2026-09-14):** NightlyCloseOut (1 Missing; a scheduled action,
 #30's question) and 4 error-sink contexts (`stream-inlet-not-received`; riddl to
 exempt them, filed). reactive-bbq's R10 test fails on exactly those.
 
@@ -1097,29 +1097,22 @@ before its closing brace.
 **Not done, flagged:** CLAUDE.md's A103 section and inbound recipe still describe
 implied ports and `as flow` on inbound adaptors; needs a [1.25] rewrite.
 
-## 39. Fourteen folds the language cannot state — WAITING on riddl
+## 39. Fourteen folds the language cannot state — CLOSED 2026-09-14, riddl added the statements
 
-riddlc -50's `entity-event-sourced-prose-folds` (Completeness) counts an `on
-event` clause made only of `do` / `set … to prompt(…)`. The corpus took it from
-**111 folds in 21 entities to 14 in 7** on 2026-09-12 (22 dead-rejection folds
-deleted, 141 folds stated, 18 entities event-sourced on the way). Every one of
-the 14 left is an append/remove on a collection (TableOrder/OnlineOrder/Cart
-items, MenuRelease items, Product categories, Wallet payment methods, Campaign
-audiences/allocations/metrics) or arithmetic on a balance (LoyaltyAccount) —
-and #21 records arithmetic as BY DESIGN a `prompt`. So the rule counts what the
-language means to be a prompt. Filed `riddl/task/2026-09-12-prose-folds-append-
-and-arithmetic-have-no-other-spelling.md` asking that a `set` of a stated field
-to a prompt naming its operands be Derived, not Prose (or an append/remove
-statement). **Do not invent a scalar field to silence one of these** — the
-2026-09-12 pass added optional fields only where the event recorded a fact the
-state had nowhere to keep. reactive-bbq's R10 test is red on exactly these plus
-#30's NightlyCloseOut until riddl answers.
+riddl `2.1.1-51` answered the 2026-09-12 task both ways: `set field F to
+prompt(…)` is Derived (arithmetic stays a prompt, #21, and no longer counts),
+and `append <v> to field F` / `remove <v> from field F` / `remove from field F
+where <key> == <v>` exist. 53 corpus folds are those statements now (8bfdeed0),
+`scripts/folds/collections.py` is the table. One fold keeps a prompted value:
+TableOrder's line key is nested (`orderLineItem.itemCode`) and `<key>` is an
+identifier — told riddl. **Sweep 0 of every severity**, reactive-bbq's R10
+green.
 
-Also surfaced by the conversion, not yet a gate: **events consumed but never
-produced.** `Deployment.DeploymentAwaitingApproval` and `DeploymentFailed` have
-folds, states, repository Persist commands and projector clauses, and no
-command yields either. `uc` sees only external commands. A census of local
-events with no yield/send would find the rest of this class.
+Still true from the 09-12 version: **events consumed but never produced** is a
+class no gate sees (`Deployment.DeploymentAwaitingApproval`/`DeploymentFailed`
+have folds, states, Persist commands, projector clauses, and no yield). `uc`
+covers external commands only; a census of local events with no yield/send
+would find the rest.
 
 ## 34. Delete Course's roster; decide what `LearnerEnrolled.enrollmentId` is
 
@@ -1154,6 +1147,12 @@ defect riddlc reports.
 
 ## 30. Temporal semantics — the corpus cannot express a scheduled or
 ## absence-driven action
+
+**2026-09-14: the clock-driven void is done.** reactive-bbq's `NightlyCloseOut`
+(the one Missing finding that survived the [1.25] drain) is an `on quiescence
+"PT24H"` clause on the `Reporting` boundary — Reid's (a) on riddl-generator's
+task, since both constructs below have shipped. What remains of #30 is the
+per-instance-clock question below, not this.
 
 Filed upstream 2026-09-07 as
 `../riddl/task/2026-09-07-temporal-semantics-in-the-model.md`, asking for

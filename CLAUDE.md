@@ -288,11 +288,29 @@ AssignedStatus` resolves), and where the state has nowhere to keep what the
 event recorded, give it an optional field (`= empty` in every constructor of
 that record). Decisions live one row per fold in
 `scripts/folds/decisions.tsv`; `apply.py` writes them; `census.py` finds
-the prose ones. **What cannot be said**: appending to or removing from a
-collection, and arithmetic on a field — RIDDL has no expression for either
-(BACKLOG #21), so those folds stay `set … to prompt("orderItems with
-addedItem appended")` and the rule counts them. 14 in the corpus, filed
-with riddl on 2026-09-12; do not invent a scalar just to silence one.
+the prose ones.
+
+**Collections have statements** (-51, answering the corpus's 2026-09-12
+task): `append <value> to field F`, `remove <value> from field F`, and
+`remove from field F where <key> == <value>` — every matching element, the
+key a direct field of the element record (an identifier, not a path: a
+line identified through `orderLineItem.itemCode` must remove by a prompted
+value). Two `foreach` forms iterate a message collection into appends:
+`foreach x in field <Event>.<coll>`. **Arithmetic stays a `prompt`** (#21)
+and `set field F to prompt(…)` counts as a Derived fold since -51 — only
+`set state S to prompt(…)` and bare `do` are prose. A `let` cannot be
+collection-typed, so a collection the event does not carry (CartsMerged
+carries a count) stays a set-to-prompt.
+
+**A clock-driven job is `on quiescence` on the context, not a port-less
+void** (Reid, 2026-09-14, closing BACKLOG #30's last case). reactive-bbq's
+`NightlyCloseOut as void` — `on init { do "roll the day forward" }` plus an
+`on other` that refused everything — was a Missing finding once `on other`
+received: a message handler with no inlet. A day boundary is not an event
+any part of the restaurant emits, but a day of silence at the `Reporting`
+boundary is: `on quiescence "PT24H" is { do "…" }` on the boundary handler,
+which riddlg lowers to a receive-timeout. The `send … to <portlet> at
+<instant>` form exists for a deadline the model can name.
 
 **A state nothing enters and nothing handles is dead** — the same class as
 an event nothing yields. Delete it with its record
@@ -1392,10 +1410,11 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.1.1-50-290e74d3**, an UNPUBLISHED snapshot of riddl `main`
+Current version: **2.1.1-51-4d8e69ef**, an UNPUBLISHED snapshot of riddl `main`
 carrying **A103** (the adaptor is the boundary), **[1.25]** (nothing is
-implied), the reply-leg fix, a receiving `on other`, and -50's `[advisory]`
-message kind with its four event-sourcing rules. **The override is back
+implied), the reply-leg fix, a receiving `on other`, -50's `[advisory]`
+message kind with its four event-sourcing rules, and -51's `append`/`remove`
+statements (BAST format 25). **The override is back
 ON** — `riddlcPath := Some(file("../bin/riddlc"))` — and the libraries resolve
 from `~/.ivy2/local`. GitHub Packages stops at 2.1.1. Take the override off at
 the first published tag carrying [1.25]. **The staged binary moved under a
@@ -1527,7 +1546,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.1.1-50-290e74d3 | `riddlVersion` in `build.sbt` (unpublished) |
+| riddlc | 2.1.1-51-4d8e69ef | `riddlVersion` in `build.sbt` (unpublished) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 

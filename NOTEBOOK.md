@@ -4,42 +4,41 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.1.1-50-290e74d3`, UNPUBLISHED, `riddlcPath` override ON.** `../bin/riddlc`
+**Pin `2.1.1-51-4d8e69ef`, UNPUBLISHED, `riddlcPath` override ON.** `../bin/riddlc`
 IS the build's binary — verified with `riddlc info`. **The staged binary has
-moved under a session twice now** (-45 -> -47, -47 -> -50, unannounced); check
-`riddlc info` against `build.sbt` before believing any number. No published tag
-carries [1.25]; take the override off at the first that does.
+moved under a session three times now** (-45, -47, -50, -51 — never announced);
+run `riddlc info` against `build.sbt` before believing any number. BAST format
+is 25 as of -51. No published tag carries [1.25]; take the override off at the
+first that does.
 
-**Sweep 8: 0 errors, 0 advisories, 7 completeness (prose folds), 1 missing.**
-The -50 upgrade (60213a31 and before) took the corpus 41 -> 8: 18 lifecycle
-entities event-sourced by Reid's ruling, 141 folds stated, 51 dead Rejected
-events and 3 dead states deleted. What is left is RULED or FILED: 14 folds the
-language cannot state (BACKLOG #39, riddl task filed) and NightlyCloseOut (#30).
-`checkTests` fails on reactive-bbq's R10 alone, on exactly those. Verified at
-the close: prettify / validate / bastify 189/189, `uc` 0, round-trip 189/189 at
-0.
+**THE CORPUS IS AT ZERO OF EVERY SEVERITY** (8bfdeed0), sweep canaried with an
+injected unused type. `checkTests` green including reactive-bbq's R10, first
+time since -47. Verified at the close: prettify / validate / bastify 189/189,
+`uc` 0, round-trip 189/189 at 0.
 
-### In flight — nothing. One task file is open
+### In flight — one task file, needs Reid's pick
 
 `task/2026-09-12-read-side-stubbed-67-repository-handlers.md` from
 riddl-generator: 67 reactive-bbq repository clauses whose prose names fields
-their schemas cannot hold. Triaged, not started; needs Reid's pick between
-widening the types and narrowing the prose, per repository.
+their `Stored<X>` records cannot hold. Widen the types or narrow the prose, per
+repository. The count is reproducible now that generation runs from HEAD
+(`../bin/riddlg gen code -t pekko --no-fill -o <dir> reactive-bbq.riddl`, grep
+`HUMAN FILL: the prose names` in `*Repository.java`) — if riddlg's own riddlc
+pin has caught up to -51's BAST format.
 
 ### Traps, still live
 
-- **A converted entity's boundary relay must `forward`.** `send x to outlet`
-  in the context clause draws `msg-yield-undeclared` the moment the command
-  declares `yields`; `scripts/folds/relay-forward.py` fixes a model in one go.
+- **`remove … where <key>` takes an identifier**, not a path; a nested key
+  (`orderLineItem.itemCode`) removes by a prompted value. A `let` cannot be
+  collection-typed; `foreach x in field <Event>.<coll>` is the way to append a
+  message's collection.
+- **A converted entity's boundary relay must `forward`** (`msg-yield-undeclared`
+  on `send`); `scripts/folds/relay-forward.py`.
 - **A yield answers the SENDER.** The outlet gets nothing unless a `send` says
   so; write both.
-- **Enumerator paths resolve in a `set`** (`ShiftStatus.AssignedStatus`); a
-  bare `Assigned` that is not an enumerator's exact name is
-  `value-ref-unresolved`. Nested paths (`info.name`, `contract.endDate`) set
-  fine through non-optional fields.
-- **Copy a new field's TYPE from source, not from the dump** — the dump prints
-  `Currency` for `Currency(USD)` and the copy does not parse.
-- **A definition's span ends BEFORE its `with` block and a clause's before its
+- **Enumerator paths resolve in a `set`** (`ShiftStatus.AssignedStatus`).
+- **Copy a new field's TYPE from source, not from the dump** (`Currency(USD)`).
+- **A definition's span ends BEFORE its `with` block; a clause's before its
   closing brace** — insert by brace-matching from the span start.
 - **`git checkout <file>` reverts every uncommitted edit to it.**
 - **`hospitality/food-service/reactive-bbq/1/`** is riddl-generator debug output,
@@ -47,18 +46,44 @@ widening the types and narrowing the prose, per repository.
 
 ### Certainty
 
-Verified: every count above, by sweep and by gate. Assumed: the 141 fold
-statements and 63 round-2 decisions in `scripts/folds/decisions.tsv` are my
-reading of what each event changes — one row each, none reviewed by a person;
-same standing as the ask translations.
+Verified: every count above. Assumed: the fold decisions in
+`scripts/folds/decisions.tsv` and the 53 append/remove rewrites in
+`scripts/folds/collections.py` are my reading of what each event changes —
+none reviewed by a person.
 
 ### Pointers
 
-Open work: **BACKLOG.md** #39, #30, #1/#23/#34. Durable facts: **CLAUDE.md**
-§ Event-Sourced Entities (rewritten today: which entities, the shape, folds,
-dead states) and § `[advisory]`. Lessons: § 2026-09-12 below.
+Open work: **BACKLOG.md** #30 (per-instance clocks only), #1/#23/#34, and the
+consumed-but-never-produced event class noted under #39. Durable facts:
+**CLAUDE.md** § Event-Sourced Entities (collections, clock-driven jobs).
+Lessons: § 2026-09-14 and § 2026-09-12 below.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
+
+---
+
+## 2026-09-14 — riddl -51 answers in kind; zero
+
+Two task files at the start of the session, and the staged riddlc moved to
+-51 while I was reading them. -51 is riddl's answer to Friday's fold task,
+and it took BOTH options: `set field F to prompt(…)` is Derived, and the
+language has `append`/`remove`, including the keyed remove the corpus's
+`ItemRemoved` folds needed. That left the 14 "unsayable" folds with a spelling
+and the 39 Friday prompts of the same shape with a better one — 53 statements,
+one table (`collections.py`), one commit. Two stayed prompts for reasons the
+language now makes precise: a nested key, and an event that carries a count
+where the fold needs the items.
+
+The last Missing finding fell to Reid's (a): the nightly close-out is a day of
+quiescence at the Reporting boundary, not a port-less streamlet that refuses
+every message. The void's description — "giving it ports would be a lie about
+how it runs" — was right about the ports and wrong about the trigger; silence
+IS something the model can observe.
+
+**Lesson, third time:** verify the binary before every measurement, not
+every session. Friday's sweep of 8 was true of -50; today's first validate
+already showed 2 on the same tree because -51 had landed underneath it, and
+the difference would have read as a change I made.
 
 ---
 
