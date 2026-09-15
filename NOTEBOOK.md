@@ -878,7 +878,7 @@ the 'bounded' aspect" path warnings and 4 port-overload warnings.
 
 Class B (30 warnings, second-and-subsequent repositories) is
 **done**. The defect was misrouting, not omission: the generator
-in `task/wire-a6-reachability.py` wires only `repos[0]`, so events
+in `scripts/wire-a6-reachability.py` (moved from the gitignored `task/` on 2026-09-15; historical, it predates A103 and [1.25]) wires only `repos[0]`, so events
 belonging to a sibling repository were connected to the wrong one.
 Fixed by re-pointing existing connectors, using two affinity
 signals — a projector's own `updates repository X` clause (exact),
