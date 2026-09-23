@@ -4,64 +4,101 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.2.0`, PUBLISHED, `riddlcPath` override OFF** — the plugin's
-`~/.cache/riddlc/2.2.0/bin/riddlc` is the build's binary (commit d4f11e34,
-one past -51). `../bin/riddlc` is the same today and will not stay so: pass
-`RIDDLC=~/.cache/riddlc/2.2.0/bin/riddlc` to any script run that is evidence.
-Certified on 2.2.0 at the close: every gate, checkTests, sweep 0 canaried,
-round-trip 189/189 with no `.bast` change.
+**Pin `2.2.0-11-8e416668`, UNPUBLISHED, `riddlcPath` override back ON.** It
+came off for published 2.2.0 on 2026-09-14 and went on again on 2026-09-23,
+because the eleven commits past the tag are riddl-generator's eight language
+proposals and seven task files asked for them. `../bin/riddlc` IS the build's
+binary; libraries from `~/.ivy2/local`. Take the override off at the first
+published tag carrying B1-B8.
 
-**THE CORPUS IS AT ZERO OF EVERY SEVERITY** (8bfdeed0), sweep canaried with an
-injected unused type. `checkTests` green including reactive-bbq's R10, first
-time since -47. Verified at the close: prettify / validate / bastify 189/189,
-`uc` 0, round-trip 189/189 at 0.
+**Corpus: 0 errors. Sweep 418 — 416 yield-argument advisories and two
+completeness findings, both FILED with riddl, neither ours.** `sbt uc` is
+**RED**, also filed: `dump --json` throws on the B2 statements, so no
+dump-driven tool can read reactive-bbq. BACKLOG #41.
 
 ### In flight — nothing; `task/` is empty
 
-Both of today's task files are in `task/done/` with Results. riddl-generator
-owes a re-pin: its staged `../bin/riddlg` predates -51 and cannot parse
-`append`/`remove`, so its own measurement of the widened read side waits on
-that. When it lands, `../bin/riddlg gen code -t pekko --no-fill -o <dir>
-reactive-bbq.riddl` and grep `HUMAN FILL: the prose names` should read 1
-(`ticketItemReady`, a field of an element record) or 0 if riddlg looks into
-element records.
+Eleven task files came in and eleven went to `task/done/` with Results:
+three model defects the generated system found, the umbrella "state what
+riddlg can lower", and riddl's seven feature announcements (B1-B8). What was
+NOT done is written in their Results and in BACKLOG #40, not left implied:
+`query one` (398 clauses), the corpus-wide read-side widening (~2000), the
+drink/food split (needs a `map` Reid ruled out).
 
 ### Traps, still live
 
-- **A repository cannot `set`** (`state-set-not-allowed`); its row is `do`
-  prose, and the prose may name only what the Persist command and Stored
-  record declare. `check-repository-prose.py` says which clauses do not.
-- **`remove … where <key>` takes an identifier**, not a path; a nested key
-  (`orderLineItem.itemCode`) removes by a prompted value. A `let` cannot be
-  collection-typed; `foreach x in field <Event>.<coll>` is the way to append a
-  message's collection.
-- **A converted entity's boundary relay must `forward`** (`msg-yield-undeclared`
-  on `send`); `scripts/folds/relay-forward.py`.
-- **A yield answers the SENDER.** The outlet gets nothing unless a `send` says
-  so; write both.
-- **Enumerator paths resolve in a `set`** (`ShiftStatus.AssignedStatus`).
-- **Copy a new field's TYPE from source, not from the dump** (`Currency(USD)`).
-- **A definition's span ends BEFORE its `with` block; a clause's before its
-  closing brace** — insert by brace-matching from the span start.
-- **`git checkout <file>` reverts every uncommitted edit to it.**
-- **`hospitality/food-service/reactive-bbq/1/`** is riddl-generator debug output,
-  untracked, not ours.
+- **A `while` loop over `re.finditer` while mutating the text** re-matches
+  stale offsets and splices garbage into the middle of a clause. Two scripts
+  did it today; both were caught by validate, one after `git checkout` had
+  already cost the edits in that file. Re-`search` after every write.
+- **`git checkout <file>` reverts every uncommitted edit to it** — cost the
+  B1 conversion in two files an hour after it was made.
+- **`log "..." + someId` does not typecheck** (string `+` rejects an Id);
+  `log <message>` does.
+- **`x != empty` is not a comparand.** An emptiness test has no spelling.
+- **A denominator guard catches a wholesale failure, not a per-item one.**
+  The census read nothing from reactive-bbq and still printed "189 models".
+- **`dump --json` exits 0 with an empty document when it throws.** Read
+  stderr, or check the length.
+- **`hospitality/food-service/reactive-bbq/1/`** is riddl-generator debug
+  output, untracked, not ours.
 
 ### Certainty
 
-Verified: every count above. Assumed: the fold decisions in
-`scripts/folds/decisions.tsv` and the 53 append/remove rewrites in
-`scripts/folds/collections.py` are my reading of what each event changes —
-none reviewed by a person.
+Verified: every count, by sweep and gate. Assumed: the per-clause judgements
+in today's migrations — which stored column a `store` fills, which enumerator
+a created row starts in, that the kitchen is what puts an order in
+preparation. Each is one line to change.
 
 ### Pointers
 
-Open work: **BACKLOG.md** #30 (per-instance clocks only), #1/#23/#34, and the
-consumed-but-never-produced event class noted under #39. Durable facts:
-**CLAUDE.md** § Event-Sourced Entities (collections, clock-driven jobs).
-Lessons: § 2026-09-14 and § 2026-09-12 below.
+Open work: **BACKLOG.md** #40 (the next B2 tranche), #41 (blocked), #30, #1,
+#23, #34. Durable facts: **CLAUDE.md**. Lessons: § 2026-09-23 below.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
+
+---
+
+## 2026-09-23 — eleven task files, and the language grew under them
+
+riddl-generator generated reactive-bbq, ran it end to end, and reported what
+the model actually says. Three defects, all real and all invisible to riddlc:
+a routing clause no connector could reach, a state no command could enter, and
+a display that sent an entity its own event back. The third is the one worth
+keeping: Reid — *"How can a display (monitor) that only receives data send
+anything back?"* — and making it an honest sink exposed that **no chain in
+reactive-bbq's main cycle reaches a source**, because the application that
+originates every command has result inlets and so can never be a graph head.
+Canaried with a throwaway second sink, 104 ancestors, zero heads. Filed.
+
+Then riddl landed all eight of the language features riddl-generator had asked
+for, in eleven commits over five days, and seven task files arrived saying
+"when a riddlc past 2.2.0 is staged". It was staged. So the day became a
+migration: 136 schema keys, 46 repository clauses that store and update
+instead of describing it, nine event logs that read `m.type` off the envelope
+and nine tables for them to write to, arithmetic where there were prompts
+quoting arithmetic, a booking window that is a comparison, a collection
+predicate for the kitchen's "all items ready", and one `log`.
+
+**Three things this taught.**
+
+**A reversed ruling has to be hunted down.** "RIDDL does not do arithmetic —
+do not file this upstream again" was in BACKLOG #21, quoted in #30 and relied
+on in #39. Reid reversed it on 2026-09-18. A ruling recorded in three places
+is a ruling that must be AMENDED in three places, and the instruction not to
+re-file was the most dangerous part of it.
+
+**A new statement can outrun its own tooling.** The B2 statements validate
+and do not dump: `MatchError`, exit 0, empty document. Everything in
+`scripts/` reads that dump. The census then counted reactive-bbq as swept and
+lost 1% of its denominator, which its floor was never going to catch — a
+per-item failure needs a per-item check, and it has one now.
+
+**The prompts that matter are the ones that state a rule.** Twelve survive in
+reactive-bbq and they are all "a cancelled order that was paid for is
+refunded" — a rule RIDDL cannot spell for want of an emptiness comparand. They
+used to read "the requires refund of this online order cancelled", which is
+the field's name spelled twice. Same hole; one of them an AI can fill.
 
 ---
 
