@@ -15,7 +15,7 @@ enablePlugins(RiddlSbtPlugin)
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
 // same build, so one value pins both. This is an UNPUBLISHED snapshot of riddl
-// `main` -- 11 commits past 2.2.0, commit 8e416668 -- so `riddlcPath` below
+// `main` -- 13 commits past 2.2.0, commit b8581131 -- so `riddlcPath` below
 // names the staged binary and the libraries resolve from ~/.ivy2/local via
 // `sbt publishLocal` in the riddl checkout.
 //
@@ -27,9 +27,12 @@ enablePlugins(RiddlSbtPlugin)
 // duration literals (B4), two lints (B6/B8), `log` (B7), schema `key on` and
 // `with history` (B3), the repository `store`/`upsert`/`update`/`delete`
 // statements and the `query` value (B2), and collection predicates (B5).
+// -13 adds the two fixes that work unblocked: `dump --json`'s missing
+// projection arms, and origination as "sends, and receives only events or
+// results" -- an application context is a chain origin again.
 // Move to the first PUBLISHED tag carrying them and take the override off in
 // the same edit.
-lazy val riddlVersion = "2.2.0-11-8e416668"
+lazy val riddlVersion = "2.2.0-13-b8581131"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
