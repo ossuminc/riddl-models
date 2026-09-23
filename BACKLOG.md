@@ -1100,7 +1100,8 @@ implied ports and `as flow` on inbound adaptors; needs a [1.25] rewrite.
 ## 39. Fourteen folds the language cannot state — CLOSED 2026-09-14, riddl added the statements
 
 riddl `2.1.1-51` answered the 2026-09-12 task both ways: `set field F to
-prompt(…)` is Derived (arithmetic stays a prompt, #21, and no longer counts),
+prompt(…)` is Derived (arithmetic was a prompt then — #21 records its reversal
+on 2026-09-18 — and either way no longer counts),
 and `append <v> to field F` / `remove <v> from field F` / `remove from field F
 where <key> == <v>` exist. 53 corpus folds are those statements now (8bfdeed0),
 `scripts/folds/collections.py` is the table. One fold keeps a prompted value:
@@ -1164,9 +1165,13 @@ DESIGN discussion (not implementation) on two constructs:
    what a projector correlation's mandatory timeout already does in the
    specific one.
 
-Arithmetic was reconsidered from the temporal direction and **rejected again**
-(Reid, 2026-09-07), consistent with #21. It is recorded in the task file so it
-dies there; do not file it a third time.
+Arithmetic was reconsidered from the temporal direction and rejected again
+(Reid, 2026-09-07), consistent with #21 — and **REVERSED on 2026-09-18**,
+within the bounds #21 now records. Time arithmetic is exactly what it bought:
+`reservationTime < system.now + 30 days` is a real comparison in reactive-bbq's
+booking window as of 2026-09-23, where it was two lines of prose. `on
+quiescence` and `times out after` keep their STRING duration for now (riddl
+BACKLOG [2.19]).
 
 ### Why this repository cares
 
@@ -2674,10 +2679,19 @@ gaps and was quoted back as current fact; check before repeating it.
   and the qualified `... to ShiftStatus.Open` both validate at **0 errors** on
   rc.22. The original claim that neither resolves is stale; it was true at the
   rc.19/rc.20 era and was never re-checked.
-- **arithmetic — WILL NEVER EXIST.** Reid ruled 2026-08-23: RIDDL does not do
-  arithmetic, and `pointBalance + accrualPoints` is what the AI prompt is for.
-  A `prompt(...)` hole is the intended form, not a defect. **Do not file this
-  upstream again.**
+- ~~**arithmetic — WILL NEVER EXIST.**~~ **REVERSED 2026-09-18, within bounds**,
+  and landed as riddl's B4 (`2.2.0-11`). Reid ruled 2026-08-23 that RIDDL does
+  not do arithmetic and a `prompt(...)` was the intended form; riddl-generator's
+  measurements changed his mind. What exists now: `+ - * /` on numbers, string
+  `+`, timestamp ± duration, comparisons whose operands are expressions,
+  duration literals (`30 days`), and constant expressions. What does NOT:
+  power, roots, any math-library function — `floor(spend * PointsPerDollar)` is
+  still a `prompt`, and so is anything else off that table. `Natural - Natural`
+  is `Integer`; `Natural / Natural` is `Whole`; timestamp − timestamp is a
+  Duration. `system.now` is the only spelling of the current instant.
+  **The old ruling is why three BACKLOG entries said "do not file this again";
+  that instruction is void, and the corpus's arithmetic prompts are migrated
+  (2026-09-23).**
 - ~~**absent — a genuine gap, filed.**~~ **FIXED in rc.23.** `empty_value =
   ( "empty" | "none" ) [ !statement_start type_expression ]` — both spellings
   parse to the identical AST and prettify converges them to `empty`.

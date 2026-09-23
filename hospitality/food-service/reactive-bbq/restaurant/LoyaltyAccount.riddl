@@ -505,12 +505,12 @@ event-sourced entity LoyaltyAccount as flow is {
         yield customerEnrolled
       }
       on accruePoints: command AccruePoints is {
-        yield event PointsAccrued(loyaltyAccountId = accruePoints.loyaltyAccountId, accrualPoints = accruePoints.accrualPoints, accrualReason = accruePoints.accrualReason, newBalance = prompt("the new balance of this points accrued"), accruedAt = system.now)
-        send event PointsAccrued(loyaltyAccountId = accruePoints.loyaltyAccountId, accrualPoints = accruePoints.accrualPoints, accrualReason = accruePoints.accrualReason, newBalance = prompt("the new balance of this points accrued"), accruedAt = system.now) to outlet Loyalty.LoyaltyAccount.LoyaltyAccountEvents2
+        yield event PointsAccrued(loyaltyAccountId = accruePoints.loyaltyAccountId, accrualPoints = accruePoints.accrualPoints, accrualReason = accruePoints.accrualReason, newBalance = LoyaltyAccountData.pointBalance + accruePoints.accrualPoints, accruedAt = system.now)
+        send event PointsAccrued(loyaltyAccountId = accruePoints.loyaltyAccountId, accrualPoints = accruePoints.accrualPoints, accrualReason = accruePoints.accrualReason, newBalance = LoyaltyAccountData.pointBalance + accruePoints.accrualPoints, accruedAt = system.now) to outlet Loyalty.LoyaltyAccount.LoyaltyAccountEvents2
       }
-      on event PointsAccrued is {
-        set field LoyaltyAccount.Active.pointBalance to prompt("LoyaltyAccountData.pointBalance + PointsAccrued.accrualPoints")
-        set field LoyaltyAccount.Active.lifetimePoints to prompt("LoyaltyAccountData.lifetimePoints + PointsAccrued.accrualPoints")
+      on pointsAccrued: event PointsAccrued is {
+        set field LoyaltyAccount.Active.pointBalance to LoyaltyAccountData.pointBalance + pointsAccrued.accrualPoints
+        set field LoyaltyAccount.Active.lifetimePoints to LoyaltyAccountData.lifetimePoints + pointsAccrued.accrualPoints
         do "append PointTransaction to LoyaltyAccountData
           .recentTransactions with new transactionId,
           pointsChanged = PointsAccrued.accrualPoints,
@@ -520,16 +520,15 @@ event-sourced entity LoyaltyAccount as flow is {
       }
       on redeemPoints: command RedeemPoints is {
         require invariant SufficientBalance
-        when prompt("LoyaltyAccountData.pointBalance >=
-          RedeemPoints.redemptionPoints") then
-          yield event PointsRedeemed(loyaltyAccountId = redeemPoints.loyaltyAccountId, redemptionPoints = redeemPoints.redemptionPoints, redemptionReason = redeemPoints.redemptionReason, remainingBalance = prompt("the remaining balance of this points redeemed"), redeemedAt = system.now)
-          send event PointsRedeemed(loyaltyAccountId = redeemPoints.loyaltyAccountId, redemptionPoints = redeemPoints.redemptionPoints, redemptionReason = redeemPoints.redemptionReason, remainingBalance = prompt("the remaining balance of this points redeemed"), redeemedAt = system.now) to outlet Loyalty.LoyaltyAccount.LoyaltyAccountEvents2
+        when LoyaltyAccountData.pointBalance >= redeemPoints.redemptionPoints then
+          yield event PointsRedeemed(loyaltyAccountId = redeemPoints.loyaltyAccountId, redemptionPoints = redeemPoints.redemptionPoints, redemptionReason = redeemPoints.redemptionReason, remainingBalance = LoyaltyAccountData.pointBalance - redeemPoints.redemptionPoints, redeemedAt = system.now)
+          send event PointsRedeemed(loyaltyAccountId = redeemPoints.loyaltyAccountId, redemptionPoints = redeemPoints.redemptionPoints, redemptionReason = redeemPoints.redemptionReason, remainingBalance = LoyaltyAccountData.pointBalance - redeemPoints.redemptionPoints, redeemedAt = system.now) to outlet Loyalty.LoyaltyAccount.LoyaltyAccountEvents2
         else
           send event RedeemPointsRejected(loyaltyAccountId = redeemPoints.loyaltyAccountId, rejectionReason = "Point balance is less than the points requested for redemption") to outlet Loyalty.LoyaltyAccount.LoyaltyAccountEvents2
         end
       }
-      on event PointsRedeemed is {
-        set field LoyaltyAccount.Active.pointBalance to prompt("LoyaltyAccountData.pointBalance - PointsRedeemed.redemptionPoints")
+      on pointsRedeemed: event PointsRedeemed is {
+        set field LoyaltyAccount.Active.pointBalance to LoyaltyAccountData.pointBalance - pointsRedeemed.redemptionPoints
         do "append PointTransaction to LoyaltyAccountData
           .recentTransactions with new transactionId,
           pointsChanged = negative PointsRedeemed
