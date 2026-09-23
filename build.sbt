@@ -14,16 +14,22 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. 2.2.0 is a PUBLISHED release, so the
-// plugin downloads the binary and the libraries resolve from GitHub Packages;
-// `riddlcPath` below is None. It carries everything the corpus spent
-// 2026-09-06 to 2026-09-14 on unpublished snapshots for: A103 (the adaptor IS
-// the boundary), [1.25] (nothing is implied for any processor), the reply leg,
-// a receiving `on other`, the `[advisory]` kind with four event-sourcing
-// rules, and the `append`/`remove` statements (BAST format 25). Whenever a
-// rule the corpus needs lands after a tag, the override goes back on -- and
-// comes off at the first published tag that carries it.
-lazy val riddlVersion = "2.2.0"
+// same build, so one value pins both. This is an UNPUBLISHED snapshot of riddl
+// `main` -- 11 commits past 2.2.0, commit 8e416668 -- so `riddlcPath` below
+// names the staged binary and the libraries resolve from ~/.ivy2/local via
+// `sbt publishLocal` in the riddl checkout.
+//
+// 2.2.0 itself carried A103, [1.25], the reply leg, a receiving `on other`,
+// the `[advisory]` kind and `append`/`remove`. The eleven commits past it are
+// riddl-generator's eight language proposals, all ruled in by Reid between
+// 2026-09-18 and 2026-09-23 and all of them retirements of prose the corpus
+// is full of: `m.<field>` under `on other as m` (B1), bounded arithmetic and
+// duration literals (B4), two lints (B6/B8), `log` (B7), schema `key on` and
+// `with history` (B3), the repository `store`/`upsert`/`update`/`delete`
+// statements and the `query` value (B2), and collection predicates (B5).
+// Move to the first PUBLISHED tag carrying them and take the override off in
+// the same edit.
+lazy val riddlVersion = "2.2.0-11-8e416668"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -77,14 +83,13 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
     ),
 
-    // None on a published pin: the plugin downloads exactly riddlVersion. Set
-    // Some(file("../bin/riddlc")) only to track an UNPUBLISHED commit, because
-    // the plugin cannot download one (every riddlc task fails with a bare
-    // `Nonzero exit value: 56`), and take it off again the moment that commit
-    // is published -- a stale override is indistinguishable from a clean
-    // corpus. While an override is on, this path WINS over riddlVersion, so
-    // verify `riddlc info` against the pin rather than trusting the pin.
-    riddlcPath := None,
+    // Some(...) while riddlVersion names an UNPUBLISHED commit, which the
+    // plugin cannot download (every riddlc task fails with a bare
+    // `Nonzero exit value: 56`). None the moment it is published -- a stale
+    // override is indistinguishable from a clean corpus. While an override is
+    // on, this path WINS over riddlVersion, so verify `riddlc info` against
+    // the pin rather than trusting the pin.
+    riddlcPath := Some(file("../bin/riddlc")),
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),

@@ -7,7 +7,7 @@ context Kitchen as router is {
       |KitchenTicket events on their way to Inventory.
     }
   }
-  connector 'KitchenTicketEventLog To KitchenTicketRepository' is from outlet Kitchen.KitchenTicketEventLog.KitchenTicketEventLogToKitchenTicketRepository to inlet Kitchen.KitchenTicketRepository.KitchenTicketRepositoryFromKitchenTicketEventLog  connector 'FromOnlineOrdering To Kitchen' is from outlet Kitchen.FromOnlineOrdering.FromOnlineOrderingToKitchen to inlet Kitchen.KitchenFromFromOnlineOrdering  inlet KitchenFromFromOnlineOrdering is command ReceiveTicket  connector 'FromFrontOfHouse To Kitchen' is from outlet Kitchen.FromFrontOfHouse.FromFrontOfHouseToKitchen to inlet Kitchen.KitchenFromFromFrontOfHouse  inlet KitchenFromFromFrontOfHouse is command ReceiveTicket  connector 'TicketDisplaySink To KitchenTicket' is from outlet Kitchen.TicketDisplaySink.TicketDisplaySinkToKitchenTicket to inlet Kitchen.KitchenTicket.KitchenTicketFromTicketDisplaySink  inlet KitchenTicketCommandStreamIn is type KitchenTicketCommand  outlet KitchenTicketCommandStreamOut is type KitchenTicketCommand
+  connector 'KitchenTicketEventLog To KitchenTicketRepository' is from outlet Kitchen.KitchenTicketEventLog.KitchenTicketEventLogToKitchenTicketRepository to inlet Kitchen.KitchenTicketRepository.KitchenTicketRepositoryFromKitchenTicketEventLog  connector 'FromOnlineOrdering To Kitchen' is from outlet Kitchen.FromOnlineOrdering.FromOnlineOrderingToKitchen to inlet Kitchen.KitchenFromFromOnlineOrdering  inlet KitchenFromFromOnlineOrdering is command ReceiveTicket  connector 'FromFrontOfHouse To Kitchen' is from outlet Kitchen.FromFrontOfHouse.FromFrontOfHouseToKitchen to inlet Kitchen.KitchenFromFromFrontOfHouse  inlet KitchenFromFromFrontOfHouse is command ReceiveTicket  inlet KitchenTicketCommandStreamIn is type KitchenTicketCommand  outlet KitchenTicketCommandStreamOut is type KitchenTicketCommand
   inlet KitchenTicketResultStreamIn is result KitchenTicket.KitchenTicketResult  outlet KitchenTicketResultStreamOut is result KitchenTicket.KitchenTicketResult
   outlet TicketIntakeOut is command KitchenTicket.ReceiveTicket
  with {
@@ -17,9 +17,19 @@ context Kitchen as router is {
       |ReceiveTicket from either inlet and forwards it to this one outlet.
     }
   }
+  outlet KitchenToFrontOfHouseOut is event KitchenTicket.PreparationStarted
+ with {
+    briefly "What Kitchen tells FrontOfHouse about the orders it is cooking"
+    described as {
+      |A dine-in order is in preparation when the kitchen starts cooking its
+      |ticket, and the kitchen is the only party that knows. FrontOfHouse
+      |learns it here, through its own `FromKitchen` adaptor.
+    }
+  }
   handler KitchenBoundary is {
     on preparationStarted: event KitchenTicket.PreparationStarted is {
       send preparationStarted to outlet Kitchen.KitchenToInventoryOut
+      send preparationStarted to outlet Kitchen.KitchenToFrontOfHouseOut
     }
     on ticketApproved: event KitchenTicket.TicketApproved is {
       send ticketApproved to outlet Kitchen.KitchenToInventoryOut
@@ -570,14 +580,12 @@ context Kitchen as router is {
       |backpressure when the kitchen is at capacity.
     }
   }
-  streamlet TicketDisplaySink as flow is {
-    outlet TicketDisplaySinkToKitchenTicket is event KitchenTicket.TicketReceived
+  streamlet TicketDisplaySink as sink is {
     inlet DisplayedTickets is type KitchenTicketEvent    handler TicketDisplayHandler is {
       on other is {
         do "the remaining members of this inlet's type - rejections and events this sink does not act on - change nothing here"
       }
       on ticketReceived: event KitchenTicket.TicketReceived is {
-        send ticketReceived to outlet Kitchen.TicketDisplaySink.TicketDisplaySinkToKitchenTicket
         do "render ticket on kitchen display screen"
       }
     } with {
@@ -593,6 +601,13 @@ context Kitchen as router is {
       |Consumes processed kitchen ticket events from the
       |ticket queue and renders them on the kitchen display
       |screen for staff visibility.
+      |
+      |A display receives; it does not send. It used to hand
+      |`TicketReceived` back to the KitchenTicket entity that yielded it,
+      |which is a message the entity had already processed - a monitor
+      |cannot tell the kitchen anything. Should it ever answer a query
+      |("which tickets are on screen"), it gains an outlet carrying that
+      |RESULT and stops being a sink; it does not regain this one.
     }
   }
   connector QueueToDisplay is from outlet Kitchen.TicketQueue.DisplayTickets to inlet Kitchen.TicketDisplaySink.DisplayedTickets with {

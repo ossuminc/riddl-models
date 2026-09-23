@@ -1225,6 +1225,7 @@ context FrontOfHouse as router is {
       }
       on orderSubmitted: event TableOrder.OrderSubmitted is {
         send orderSubmitted to outlet TableOrderEvents
+        send orderSubmitted to outlet TableOrderEventSourceToReporting
       }
       on paymentProcessed: event TableOrder.PaymentProcessed is {
         send paymentProcessed to outlet TableOrderEvents
@@ -1427,6 +1428,61 @@ context FrontOfHouse as router is {
     described as {
       |Receives drink order events from the bar streaming
       |topology for order readiness notification.
+    }
+  }
+  adaptor FromKitchen from context Restaurant.Kitchen as flow is { 
+    inlet FromKitchenIn is event Kitchen.KitchenTicket.PreparationStarted with {
+      briefly "Kitchen tickets that have started cooking"
+      described as {
+        |Where Kitchen's `PreparationStarted` arrives. The adaptor is the
+        |boundary for this pair, so the connector lands here and not on one of
+        |the context's own inlets.
+      }
+    }
+    outlet FromKitchenToFrontOfHouse is command TableOrder.MarkOrderInPreparation
+ with {
+      briefly "What FromKitchen tells FrontOfHouse"
+      described as {
+        |A sender publishes only through its OWN outlet, so the translated
+        |command travels this one on its way to the context boundary.
+      }
+    }
+    handler KitchenPreparationIntake is {
+      on preparationStarted: event Restaurant.Kitchen.KitchenTicket.PreparationStarted is {
+        send command MarkOrderInPreparation(tableOrderId = prompt("the table order whose id is preparationStarted.sourceOrderId")) to outlet FrontOfHouse.FromKitchen.FromKitchenToFrontOfHouse
+      }
+      on other is {
+        error "Unexpected message for adaptor FromKitchen"
+      }
+    } with {
+      briefly "Kitchen preparation intake"
+      described as {
+        |The kitchen decides when a dine-in order is in preparation, because
+        |the kitchen is what starts cooking it. Translating its
+        |`PreparationStarted` into the order's own `MarkOrderInPreparation`
+        |is what makes the order's `InPreparation` state reachable at all.
+      }
+    }
+  } with {
+    briefly "Kitchen adaptor"
+    described as {
+      |Receives the kitchen's progress on tickets cut from this context's
+      |orders, and states it as commands those orders accept.
+    }
+  }
+  connector 'FromKitchen To FrontOfHouse' is from outlet FrontOfHouse.FromKitchen.FromKitchenToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromFromKitchen with {
+    briefly "MarkOrderInPreparation on its way to the boundary"
+    described as {
+      |A sender publishes only through its OWN outlet, so the adaptor's
+      |translation reaches the context here.
+    }
+  }
+  inlet FrontOfHouseFromFromKitchen is command TableOrder.MarkOrderInPreparation with {
+    briefly "What FromKitchen hands this context"
+    described as {
+      |The context is the port at its own boundary: the adaptor's translation
+      |arrives here and the boundary handler forwards it to the order's
+      |command stream, which is what makes `InPreparation` reachable.
     }
   }
   adaptor FromMenuManagementItems from context Corporate.MenuManagement as flow is { 
