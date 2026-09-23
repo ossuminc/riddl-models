@@ -1115,51 +1115,53 @@ have folds, states, Persist commands, projector clauses, and no yield). `uc`
 covers external commands only; a census of local events with no yield/send
 would find the rest.
 
-## 40. The read side outside reactive-bbq is still id-only — the next B2 tranche
+## 40. The read side — DONE for the write path, `query one` is what is left
 
-riddl landed the repository statements (`store`/`upsert`/`update`/`delete`,
-`query`) on 2026-09-22 and reactive-bbq took 46 of its 101 repository clauses
-into them (06d6781d). **The other 188 models convert SIX.** The reason is not
-the statements: 1155 of their repository clauses say `apply <Event> to the
-stored row` over a `Persist<E>` command carrying nothing but the id and a
-`Stored<X>` record declaring nothing but the id. There is no column to set and
-nothing to state.
+**Done 2026-09-23 (8ffbd5c6).** 1265 repository clauses across the corpus are
+`store`/`update` statements instead of `do "apply <Event> to the stored row"`.
+Three passes, in order, each needing the one before:
+`scripts/schema-declare-keys.py` (69 identity keys no schema declared),
+`scripts/widen-read-side.py` (1838 clauses: the event's fields onto the
+`Persist` command and the `Stored` record, passed from the projector), then
+`scripts/repo-statements.py`.
 
-Stating them means doing corpus-wide what 2026-09-14 did for reactive-bbq:
-widen each `Stored<X>` to the columns its prose names, widen each `Persist<E>`
-to the event fields those columns need, and pass them from the projector.
-`scripts/folds/widen-repositories.py` is the tool and
-`scripts/repo-statements.py` follows it. ~2000 clauses; a day's work, mechanical,
-and it is what makes the corpus's read side generable rather than plausible.
+**The rule that matters if this is ever redone:** the row a `Persist<E>` writes
+is `Stored<Entity that yielded E>`, not the schema's first table. A repository
+storing orders, returns and shipments inverts them otherwise — the first
+attempt did, and validate did not catch it because every table admitted the
+write.
 
-**Also outstanding from the same window:**
+**648 `apply … to the stored row` lines remain, honestly:** a command carrying
+only the id has nothing to set, and 34 events belong to entities their
+repository does not store (`Fund`, `PortCall`, `Room`, `Voyage`, …) — those
+are repositories keeping a projection of someone else's entity, and widening
+them means deciding what that projection holds.
+
+**Still outstanding:**
 - **`query one` (B2).** 398 `let x = prompt("read the X from the store")`
-  clauses corpus-wide. Each needs the `where` key from the handled query's
-  fields — mechanical, but blocked with everything else on the dump bug below.
-- **An unreachable-clause rule, for riddl.** riddl-generator found a context
-  clause `on X` that no connector into any of the context's inlets could ever
-  carry (the `OrderSubmitted` routing gap, fixed 2026-09-23). riddlc reports
-  nothing: the inlet's type admits the event, so no rule looks at whether a
-  connector carries it. Worth filing once the census can be run.
-- **The drink/food split stays a prompt.** It filters a collection AND maps each
-  element, and Reid ruled `map` out of RIDDL on 2026-09-23 (a per-element
-  expression is a lambda). B5's predicates cannot express it. The prompt names
-  the rule; that is the end state unless the ruling changes.
+  clauses. Each needs the result CONSTRUCTED from the row — `let found: record
+  StoredX = query one <table> where <key> == <q>.<key>` then `reply result
+  R(...)` — so it is a per-clause mapping, not a rewrite. The biggest remaining
+  prose class in the corpus.
+- **An unreachable-clause rule, for riddl.** A context clause `on X` that no
+  connector into any of the context's inlets can carry (the `OrderSubmitted`
+  gap, fixed 2026-09-23). riddlc reports nothing; the census is now possible
+  again since the dump works.
+- **The drink/food split stays a prompt.** It filters AND maps, and Reid ruled
+  `map` out on 2026-09-23. The prompt names the rule; that is the end state.
 
-## 41. BLOCKED: `dump --json` throws on the B2 statements
+## 41. CLOSED 2026-09-23: `dump --json` threw on the B2 statements
 
-riddlc `2.2.0-11-8e416668` exits 0 with an EMPTY document and a `[severe]`
-`MatchError` on stderr when the JSON writer meets `store` or `update`
-(`riddl/task/2026-09-23-dump-json-throws-matcherror-on-the-b2-statements.md`).
-Every tool in `scripts/` is built on that dump, so **nothing dump-driven can
-read reactive-bbq** until riddl ships the missing match arms — including `sbt
-uc`, which is RED for that reason and not because anything is unsent.
+riddlc `2.2.0-13-b8581131` fixed it (the five missing projection arms, plus a
+fixture sweep to catch the next one), and `sbt uc` is green again at its full
+denominator — 782 contexts, 900 commands.
 
-It also defeated a blindness guard, which is the part worth remembering: the
-census counted the model as swept, its denominator fell ~1% (782 -> 775
-contexts), and the floor did not notice. `scripts/check-unsent.py` now treats
-any per-model read error as fatal. **A denominator guard only catches a
-wholesale failure; a per-item failure needs a per-item check.**
+**Keep the lesson, not the bug.** The dump exited 0 with an EMPTY document and
+a `[severe]` on stderr, so the census counted reactive-bbq as swept and its
+denominator fell 1% — far too little for the floor guard to notice.
+`scripts/check-unsent.py` now treats any per-model read error as fatal. **A
+denominator guard catches a wholesale failure; a per-item failure needs a
+per-item check.**
 
 ## 34. Delete Course's roster; decide what `LearnerEnrolled.enrollmentId` is
 

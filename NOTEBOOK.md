@@ -4,60 +4,83 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.2.0-11-8e416668`, UNPUBLISHED, `riddlcPath` override back ON.** It
-came off for published 2.2.0 on 2026-09-14 and went on again on 2026-09-23,
-because the eleven commits past the tag are riddl-generator's eight language
-proposals and seven task files asked for them. `../bin/riddlc` IS the build's
-binary; libraries from `~/.ivy2/local`. Take the override off at the first
-published tag carrying B1-B8.
+**Pin `2.2.0-13-b8581131`, UNPUBLISHED, override ON** (`riddlcPath :=
+Some(file("../bin/riddlc"))`, libraries from `~/.ivy2/local`). Take it off at
+the first published tag carrying B1-B8. Verify with `riddlc info`; the staged
+binary has moved under a session four times now.
 
-**Corpus: 0 errors. Sweep 418 — 416 yield-argument advisories and two
-completeness findings, both FILED with riddl, neither ours.** `sbt uc` is
-**RED**, also filed: `dump --json` throws on the B2 statements, so no
-dump-driven tool can read reactive-bbq. BACKLOG #41.
+**0 errors. Sweep 406 — 405 yield-argument advisories and one completeness
+finding, filed.** Every gate green except `checkTests` R10, which is red on
+exactly two things, both riddl's and both filed:
+`handler-streamlet-foreign-message` on the kitchen display sink, and one
+`authorizationCode` prompt that only a payment gateway can answer.
 
 ### In flight — nothing; `task/` is empty
 
-Eleven task files came in and eleven went to `task/done/` with Results:
-three model defects the generated system found, the umbrella "state what
-riddlg can lower", and riddl's seven feature announcements (B1-B8). What was
-NOT done is written in their Results and in BACKLOG #40, not left implied:
-`query one` (398 clauses), the corpus-wide read-side widening (~2000), the
-drink/food split (needs a `map` Reid ruled out).
+Eleven task files came in on 09-16..09-23 and all eleven are in `task/done/`
+with Results. riddl then fixed both blockers I raised (-13: the dump projects
+again, and an application context is a chain origin), so the corpus-wide
+read-side tranche that was BACKLOG #40 is done too: 1265 repository clauses
+are `store`/`update` statements.
+
+**The one big prose class left is `query one`** — 398 `let x = prompt("read
+the X from the store")` clauses, each needing its result constructed from the
+row. BACKLOG #40.
 
 ### Traps, still live
 
-- **A `while` loop over `re.finditer` while mutating the text** re-matches
-  stale offsets and splices garbage into the middle of a clause. Two scripts
-  did it today; both were caught by validate, one after `git checkout` had
-  already cost the edits in that file. Re-`search` after every write.
-- **`git checkout <file>` reverts every uncommitted edit to it** — cost the
-  B1 conversion in two files an hour after it was made.
-- **`log "..." + someId` does not typecheck** (string `+` rejects an Id);
-  `log <message>` does.
-- **`x != empty` is not a comparand.** An emptiness test has no spelling.
+- **A repository's row is `Stored<Entity that yielded the event>`,** not the
+  schema's first table. Picking by position inverts orders/returns/shipments
+  and VALIDATES, because every table admits the write.
+- **A `while` loop over `re.finditer` while mutating the text** splices garbage
+  at stale offsets. Two scripts did it; re-`search` after every write.
+- **`git checkout <file>` reverts every uncommitted edit to it.**
 - **A denominator guard catches a wholesale failure, not a per-item one.**
-  The census read nothing from reactive-bbq and still printed "189 models".
-- **`dump --json` exits 0 with an empty document when it throws.** Read
-  stderr, or check the length.
+- **`log "..." + someId`** does not typecheck; `log <message>` does.
+- **`x != empty` is not a comparand** — an emptiness test has no spelling, so
+  carry the VALUE (`refundablePayment`) rather than a boolean about it.
 - **`hospitality/food-service/reactive-bbq/1/`** is riddl-generator debug
   output, untracked, not ours.
 
 ### Certainty
 
-Verified: every count, by sweep and gate. Assumed: the per-clause judgements
-in today's migrations — which stored column a `store` fills, which enumerator
-a created row starts in, that the kitchen is what puts an order in
-preparation. Each is one line to change.
+Verified: every count, by sweep and gate. Assumed: the per-clause judgements in
+the migrations — which column a `store` fills, which enumerator a created row
+starts in, that the kitchen is what puts an order in preparation. Each is one
+line to change.
 
 ### Pointers
 
-Open work: **BACKLOG.md** #40 (the next B2 tranche), #41 (blocked), #30, #1,
-#23, #34. Durable facts: **CLAUDE.md**. Lessons: § 2026-09-23 below.
+Open work: **BACKLOG.md** #40 (`query one`), #30, #1, #23, #34. Durable facts:
+**CLAUDE.md**. Lessons: § 2026-09-23 below.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
 ---
+
+## 2026-09-23 (evening) — riddl answered both, and the read side followed
+
+-13 landed the two fixes my morning reports asked for. The origination one is
+Reid's, and it is the better statement of the thing: *"Origination is denoted
+by having outlets that send commands or queries. Having inlets that ONLY
+receive events or results isn't an indication of origination, just receipt of a
+reply."* An application that sends commands and takes results back is an
+origin; the old rule said a node with any inbound edge could not be one, which
+made every pure sink under an application unreachable.
+
+With the dump working again the tranche I had specified in BACKLOG #40 became
+doable, and it wanted three passes rather than one: declare the identity key
+(69 schemas had none), widen the `Persist` command and the `Stored` record from
+the event the command is named for (1838 clauses), then state the write (1265).
+
+**What the first attempt got wrong is the part worth keeping.** I picked the
+row by taking the schema's first `of` line, and order-management stores orders,
+returns AND shipments — so `PersistOrderShipped` wrote its fields into the
+returns table and `riddlc validate` said nothing, because every table admits a
+write of the right shape. The rule is that the row belongs to the entity that
+YIELDED the event. A model can be wrong in a way no rule can see; the only
+defence is deriving the answer from the model rather than from the file's
+layout.
 
 ## 2026-09-23 — eleven task files, and the language grew under them
 
