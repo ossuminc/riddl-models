@@ -412,7 +412,9 @@ context FrontOfHouse as router is {
       }
     }
     schema ReservationSchema is relational
+      of reservationEvents as record LoggedReservationEvent with history
       of reservations as record StoredReservation
+        link reservationEventLogEntry as field LoggedReservationEvent.loggedReservationId to field StoredReservation.reservationId
         key on field StoredReservation.reservationId
         index on field StoredReservation.guestName
         index on field StoredReservation.reservationTime
@@ -630,8 +632,8 @@ context FrontOfHouse as router is {
       on command RollbackMenuRelease is {
         do "rollback menu release at restaurant"
       }
-      on command LogReservationEvent is {
-        do "append the reservation event to the Reservation event log"
+      on logReservationEvent: command LogReservationEvent is {
+        store record LoggedReservationEvent(loggedReservationId = logReservationEvent.loggedReservationId, loggedReservationEventType = logReservationEvent.loggedReservationEventType, loggedAt = system.now) in ReservationSchema.reservationEvents
       }
       on query GetReservationBoard is {
         let reservationBoardView: type ReservationBoardView = prompt("read the reservation board projection")
@@ -701,6 +703,8 @@ context FrontOfHouse as router is {
     inlet TableOrderRepositoryFromTableOrderEventLog is command LogTableOrderEvent    inlet TableOrderRepositoryFromDrinkOrderEventSink is type DrinkServiceNotice    inlet TableOrderRepositoryFromTableOrderProjection is type TableOrderRepositoryCommand    outlet TableOrderRepositoryResponses is result TableOrder.TableOrderResult
     schema TableOrderSchema is relational
       of orders as record StoredTableOrder
+      of tableOrderEvents as record LoggedTableOrderEvent with history
+        link tableOrderEventLogEntry as field LoggedTableOrderEvent.loggedTableOrderId to field StoredTableOrder.tableOrderId
         key on field StoredTableOrder.tableOrderId
         index on field StoredTableOrder.tableNumber
  with {
@@ -944,8 +948,8 @@ context FrontOfHouse as router is {
       on command ApplyMenuItemPriceChange is {
         do "update local menu pricing from corporate"
       }
-      on command LogTableOrderEvent is {
-        do "append the table order event to the TableOrder event log"
+      on logTableOrderEvent: command LogTableOrderEvent is {
+        store record LoggedTableOrderEvent(loggedTableOrderId = logTableOrderEvent.loggedTableOrderId, loggedTableOrderEventType = logTableOrderEvent.loggedTableOrderEventType, loggedAt = system.now) in TableOrderSchema.tableOrderEvents
       }
     } with {
       briefly "Order persistence"
@@ -1516,6 +1520,33 @@ context FrontOfHouse as router is {
     }
   }
   // ---- Local event log for reservation events ----
+  record LoggedReservationEvent is {
+    loggedReservationId: String(1,50) with {
+      briefly "LoggedReservationId"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedReservationEventType: String(1,50) with {
+      briefly "LoggedReservationEventType"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedAt: TimeStamp with {
+      briefly "Logged at"
+      described as {
+        |When the log row was written.
+      }
+    }
+  } with {
+    briefly "A logged Reservation event"
+    described as {
+      |One row of the Reservation event log: which reservation, which event,
+      |and when it was recorded. `with history` on the entry keeps every
+      |version, which is what a log is.
+    }
+  }
   command LogReservationEvent is {
     loggedReservationId: String(1,50) with {
       briefly "ID"
@@ -1540,10 +1571,8 @@ context FrontOfHouse as router is {
   streamlet ReservationEventLog as flow is {
     outlet ReservationEventLogToReservationRepository is command LogReservationEvent
     inlet IncomingReservationLog is type ReservationEvent    handler ReservationLogIntake is {
-      on other is {
-        let logReservationEvent: type LogReservationEvent = prompt("the log reservation event to issue for this this")
-        send logReservationEvent to outlet FrontOfHouse.ReservationEventLog.ReservationEventLogToReservationRepository
-        do "append the reservation event to the context event log"
+      on other as m is {
+        send command LogReservationEvent(loggedReservationId = m.reservationId, loggedReservationEventType = m.type) to outlet FrontOfHouse.ReservationEventLog.ReservationEventLogToReservationRepository
       }
     } with {
       briefly "Reservation log intake"
@@ -1565,6 +1594,33 @@ context FrontOfHouse as router is {
     }
   }
   // ---- Local event log for table order events ----
+  record LoggedTableOrderEvent is {
+    loggedTableOrderId: String(1,50) with {
+      briefly "LoggedTableOrderId"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedTableOrderEventType: String(1,50) with {
+      briefly "LoggedTableOrderEventType"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedAt: TimeStamp with {
+      briefly "Logged at"
+      described as {
+        |When the log row was written.
+      }
+    }
+  } with {
+    briefly "A logged TableOrder event"
+    described as {
+      |One row of the TableOrder event log: which tableorder, which event,
+      |and when it was recorded. `with history` on the entry keeps every
+      |version, which is what a log is.
+    }
+  }
   command LogTableOrderEvent is {
     loggedTableOrderId: String(1,50) with {
       briefly "ID"
@@ -1589,10 +1645,8 @@ context FrontOfHouse as router is {
   streamlet TableOrderEventLog as flow is {
     outlet TableOrderEventLogToTableOrderRepository is command LogTableOrderEvent
     inlet IncomingTableOrderLog is type OrderEvent    handler TableOrderLogIntake is {
-      on other is {
-        let logTableOrderEvent: type LogTableOrderEvent = prompt("the log table order event to issue for this this")
-        send logTableOrderEvent to outlet FrontOfHouse.TableOrderEventLog.TableOrderEventLogToTableOrderRepository
-        do "append the table order event to the context event log"
+      on other as m is {
+        send command LogTableOrderEvent(loggedTableOrderId = m.tableOrderId, loggedTableOrderEventType = m.type) to outlet FrontOfHouse.TableOrderEventLog.TableOrderEventLogToTableOrderRepository
       }
     } with {
       briefly "TableOrder log intake"
@@ -1831,6 +1885,7 @@ context FrontOfHouse as router is {
     }
   }
 } with {
+  option message_envelope("Riddl.Envelope")
   briefly "Front of house context"
   described as {
     | Manages reservations, table seating, dine-in orders,

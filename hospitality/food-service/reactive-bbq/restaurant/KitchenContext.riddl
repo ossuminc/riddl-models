@@ -156,7 +156,9 @@ context Kitchen as router is {
       }
     }
     schema KitchenTicketSchema is relational
+      of kitchenTicketEvents as record LoggedKitchenTicketEvent with history
       of tickets as record StoredKitchenTicket
+        link kitchenTicketEventLogEntry as field LoggedKitchenTicketEvent.loggedKitchenTicketId to field StoredKitchenTicket.kitchenTicketId
         key on field StoredKitchenTicket.kitchenTicketId
         index on field StoredKitchenTicket.currentStation
  with {
@@ -326,8 +328,8 @@ context Kitchen as router is {
         do "update KitchenTicketSchema.tickets where
           kitchenTicketId matches"
       }
-      on command LogKitchenTicketEvent is {
-        do "append the kitchen ticket event to the KitchenTicket event log"
+      on logKitchenTicketEvent: command LogKitchenTicketEvent is {
+        store record LoggedKitchenTicketEvent(loggedKitchenTicketId = logKitchenTicketEvent.loggedKitchenTicketId, loggedKitchenTicketEventType = logKitchenTicketEvent.loggedKitchenTicketEventType, loggedAt = system.now) in KitchenTicketSchema.kitchenTicketEvents
       }
       on command UpdateStationRouting is {
         foreach menuCategory, routedStation in field UpdateStationRouting.newRouting {
@@ -697,6 +699,33 @@ context Kitchen as router is {
     }
   }
   // ---- Local event log for kitchen ticket events ----
+  record LoggedKitchenTicketEvent is {
+    loggedKitchenTicketId: String(1,50) with {
+      briefly "LoggedKitchenTicketId"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedKitchenTicketEventType: String(1,50) with {
+      briefly "LoggedKitchenTicketEventType"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedAt: TimeStamp with {
+      briefly "Logged at"
+      described as {
+        |When the log row was written.
+      }
+    }
+  } with {
+    briefly "A logged KitchenTicket event"
+    described as {
+      |One row of the KitchenTicket event log: which kitchenticket, which event,
+      |and when it was recorded. `with history` on the entry keeps every
+      |version, which is what a log is.
+    }
+  }
   command LogKitchenTicketEvent is {
     loggedKitchenTicketId: String(1,50) with {
       briefly "ID"
@@ -721,10 +750,8 @@ context Kitchen as router is {
   streamlet KitchenTicketEventLog as flow is {
     outlet KitchenTicketEventLogToKitchenTicketRepository is command LogKitchenTicketEvent
     inlet IncomingKitchenTicketLog is type KitchenTicketEvent    handler KitchenTicketLogIntake is {
-      on other is {
-        let logKitchenTicketEvent: type LogKitchenTicketEvent = prompt("the log kitchen ticket event to issue for this this")
-        send logKitchenTicketEvent to outlet Kitchen.KitchenTicketEventLog.KitchenTicketEventLogToKitchenTicketRepository
-        do "append the kitchen ticket event to the context event log"
+      on other as m is {
+        send command LogKitchenTicketEvent(loggedKitchenTicketId = m.kitchenTicketId, loggedKitchenTicketEventType = m.type) to outlet Kitchen.KitchenTicketEventLog.KitchenTicketEventLogToKitchenTicketRepository
       }
     } with {
       briefly "KitchenTicket log intake"
@@ -901,6 +928,7 @@ context Kitchen as router is {
     }
   }
 } with {
+  option message_envelope("Riddl.Envelope")
   briefly "Kitchen context"
   described as {
     | Manages kitchen ticket queue, station assignments,

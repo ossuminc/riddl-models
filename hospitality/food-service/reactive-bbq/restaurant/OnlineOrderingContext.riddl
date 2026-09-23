@@ -210,7 +210,9 @@ context OnlineOrdering as router is {
       }
     }
     schema OnlineOrderSchema is relational
+      of onlineOrderEvents as record LoggedOnlineOrderEvent with history
       of onlineOrders as record StoredOnlineOrder
+        link onlineOrderEventLogEntry as field LoggedOnlineOrderEvent.loggedOnlineOrderId to field StoredOnlineOrder.onlineOrderId
         key on field StoredOnlineOrder.onlineOrderId
         index on field StoredOnlineOrder.customerId
  with {
@@ -452,9 +454,8 @@ context OnlineOrdering as router is {
       }
     }
     handler OnlineOrderPersistence is {
-      on command LogOnlineOrderEvent is {
-        do "append the published event to the context's event log,
-          keyed by loggedOnlineOrderId"
+      on logOnlineOrderEvent: command LogOnlineOrderEvent is {
+        store record LoggedOnlineOrderEvent(loggedOnlineOrderId = logOnlineOrderEvent.loggedOnlineOrderId, loggedOnlineOrderEventType = logOnlineOrderEvent.loggedOnlineOrderEventType, loggedAt = system.now) in OnlineOrderSchema.onlineOrderEvents
       }
       on persistMenuBrowsed: command PersistMenuBrowsed is {
         store record StoredOnlineOrder(onlineOrderId = persistMenuBrowsed.onlineOrderId, customerId = persistMenuBrowsed.customerId, actualCancellationReason = prompt("the actualCancellationReason of this row"), actualCancelledAt = prompt("the actualCancelledAt of this row"), actualCompletedAt = prompt("the actualCompletedAt of this row"), actualOnlineSubmittedAt = prompt("the actualOnlineSubmittedAt of this row"), createdAt = prompt("the createdAt of this row"), orderCartItems = prompt("the orderCartItems of this row"), processedOnlinePayment = prompt("the processedOnlinePayment of this row"), selectedDeliveryAddress = prompt("the selectedDeliveryAddress of this row"), selectedFulfillment = prompt("the selectedFulfillment of this row")) in OnlineOrderSchema.onlineOrders
@@ -630,11 +631,46 @@ context OnlineOrdering as router is {
       |cross a context boundary and bypass the anti-corruption layer.
     }
   }
+  record LoggedOnlineOrderEvent is {
+    loggedOnlineOrderId: String(1,50) with {
+      briefly "LoggedOnlineOrderId"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedOnlineOrderEventType: String(1,50) with {
+      briefly "LoggedOnlineOrderEventType"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedAt: TimeStamp with {
+      briefly "Logged at"
+      described as {
+        |When the log row was written.
+      }
+    }
+  } with {
+    briefly "A logged OnlineOrder event"
+    described as {
+      |One row of the OnlineOrder event log: which onlineorder, which event,
+      |and when it was recorded. `with history` on the entry keeps every
+      |version, which is what a log is.
+    }
+  }
   command LogOnlineOrderEvent is {
     loggedOnlineOrderId: String(1,50) with {
       briefly "ID"
       described as {
         |Identifier of the online order the logged event concerns.
+      }
+    }
+    loggedOnlineOrderEventType: String(1,50) with {
+      briefly "Event type"
+      described as {
+        |Which event was logged, by type name. Every sibling `Log<X>Event`
+        |carries this; without it a log row says something happened to an
+        |order and not what.
       }
     }
   } with {
@@ -750,10 +786,8 @@ context OnlineOrdering as router is {
   streamlet OnlineOrderEventLog as flow is {
     outlet OnlineOrderEventLogToOnlineOrderRepository is command LogOnlineOrderEvent
     inlet IncomingOnlineOrderLog is type OnlineOrderEvent    handler OnlineOrderLogIntake is {
-      on other is {
-        let logOnlineOrderEvent: type LogOnlineOrderEvent = prompt("the online order event to append to this context's log")
-        send logOnlineOrderEvent to outlet OnlineOrdering.OnlineOrderEventLog.OnlineOrderEventLogToOnlineOrderRepository
-        do "append the online order event to the context event log"
+      on other as m is {
+        send command LogOnlineOrderEvent(loggedOnlineOrderId = m.onlineOrderId, loggedOnlineOrderEventType = m.type) to outlet OnlineOrdering.OnlineOrderEventLog.OnlineOrderEventLogToOnlineOrderRepository
       }
     } with {
       briefly "OnlineOrder log intake"
@@ -884,6 +918,7 @@ context OnlineOrdering as router is {
     }
   }
 } with {
+  option message_envelope("Riddl.Envelope")
   briefly "Online ordering context"
   described as {
     | Manages the online ordering experience including menu

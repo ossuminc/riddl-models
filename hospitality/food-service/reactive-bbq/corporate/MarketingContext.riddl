@@ -159,7 +159,9 @@ context Marketing as router is {
       }
     }
     schema CampaignData is relational
+      of campaignEvents as record LoggedCampaignEvent with history
       of campaigns as record StoredCampaign
+        link campaignEventLogEntry as field LoggedCampaignEvent.loggedCampaignId to field StoredCampaign.campaignId
         key on field StoredCampaign.campaignId
         index on field StoredCampaign.campaignStatus
  with {
@@ -304,8 +306,8 @@ context Marketing as router is {
         do "update CampaignData.campaigns set campaignStatus =
           Ended where campaignId matches"
       }
-      on command LogCampaignEvent is {
-        do "append the campaign event to the Campaign event log"
+      on logCampaignEvent: command LogCampaignEvent is {
+        store record LoggedCampaignEvent(loggedCampaignId = logCampaignEvent.loggedCampaignId, loggedCampaignEventType = logCampaignEvent.loggedCampaignEventType, loggedAt = system.now) in CampaignData.campaignEvents
       }
     } with {
       briefly "Campaign persistence"
@@ -423,6 +425,33 @@ context Marketing as router is {
     }
   }
   // ---- Local event log for campaign events ----
+  record LoggedCampaignEvent is {
+    loggedCampaignId: String(1,50) with {
+      briefly "LoggedCampaignId"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedCampaignEventType: String(1,50) with {
+      briefly "LoggedCampaignEventType"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedAt: TimeStamp with {
+      briefly "Logged at"
+      described as {
+        |When the log row was written.
+      }
+    }
+  } with {
+    briefly "A logged Campaign event"
+    described as {
+      |One row of the Campaign event log: which campaign, which event,
+      |and when it was recorded. `with history` on the entry keeps every
+      |version, which is what a log is.
+    }
+  }
   command LogCampaignEvent is {
     loggedCampaignId: String(1,50) with {
       briefly "ID"
@@ -447,10 +476,8 @@ context Marketing as router is {
   streamlet CampaignEventLog as flow is {
     outlet CampaignEventLogToCampaignRepository is command LogCampaignEvent
     inlet IncomingCampaignLog is type CampaignEvent    handler CampaignLogIntake is {
-      on other is {
-        let logCampaignEvent: type LogCampaignEvent = prompt("the log campaign event to issue for this this")
-        send logCampaignEvent to outlet Marketing.CampaignEventLog.CampaignEventLogToCampaignRepository
-        do "append the campaign event to the context event log"
+      on other as m is {
+        send command LogCampaignEvent(loggedCampaignId = m.campaignId, loggedCampaignEventType = m.type) to outlet Marketing.CampaignEventLog.CampaignEventLogToCampaignRepository
       }
     } with {
       briefly "Campaign log intake"
@@ -485,6 +512,7 @@ context Marketing as router is {
     }
   }
 } with {
+  option message_envelope("Riddl.Envelope")
   briefly "Marketing context"
   described as {
     | Manages marketing campaigns, promotions, and

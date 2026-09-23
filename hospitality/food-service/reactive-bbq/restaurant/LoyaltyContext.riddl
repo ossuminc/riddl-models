@@ -172,6 +172,8 @@ context Loyalty as router is {
     }
     schema LoyaltyAccountSchema is relational
       of accounts as record StoredLoyaltyAccount
+      of loyaltyAccountEvents as record LoggedLoyaltyAccountEvent with history
+        link loyaltyAccountEventLogEntry as field LoggedLoyaltyAccountEvent.loggedLoyaltyAccountId to field StoredLoyaltyAccount.loyaltyAccountId
         key on field StoredLoyaltyAccount.loyaltyAccountId
         index on field StoredLoyaltyAccount.loyaltyCustomerId
         index on field StoredLoyaltyAccount.customerEmail
@@ -330,8 +332,8 @@ context Loyalty as router is {
           closedAt = current timestamp where
           loyaltyAccountId matches"
       }
-      on command LogLoyaltyAccountEvent is {
-        do "append the loyalty account event to the LoyaltyAccount event log"
+      on logLoyaltyAccountEvent: command LogLoyaltyAccountEvent is {
+        store record LoggedLoyaltyAccountEvent(loggedLoyaltyAccountId = logLoyaltyAccountEvent.loggedLoyaltyAccountId, loggedLoyaltyAccountEventType = logLoyaltyAccountEvent.loggedLoyaltyAccountEventType, loggedAt = system.now) in LoyaltyAccountSchema.loyaltyAccountEvents
       }
     } with {
       briefly "Loyalty account persistence"
@@ -584,6 +586,33 @@ context Loyalty as router is {
     }
   }
   // ---- Local event log for loyalty account events ----
+  record LoggedLoyaltyAccountEvent is {
+    loggedLoyaltyAccountId: String(1,50) with {
+      briefly "LoggedLoyaltyAccountId"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedLoyaltyAccountEventType: String(1,50) with {
+      briefly "LoggedLoyaltyAccountEventType"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedAt: TimeStamp with {
+      briefly "Logged at"
+      described as {
+        |When the log row was written.
+      }
+    }
+  } with {
+    briefly "A logged LoyaltyAccount event"
+    described as {
+      |One row of the LoyaltyAccount event log: which loyaltyaccount, which event,
+      |and when it was recorded. `with history` on the entry keeps every
+      |version, which is what a log is.
+    }
+  }
   command LogLoyaltyAccountEvent is {
     loggedLoyaltyAccountId: String(1,50) with {
       briefly "ID"
@@ -608,10 +637,8 @@ context Loyalty as router is {
   streamlet LoyaltyAccountEventLog as flow is {
     outlet LoyaltyAccountEventLogToLoyaltyAccountRepository is command LogLoyaltyAccountEvent
     inlet IncomingLoyaltyAccountLog is type LoyaltyEvent    handler LoyaltyAccountLogIntake is {
-      on other is {
-        let logLoyaltyAccountEvent: type LogLoyaltyAccountEvent = prompt("the log loyalty account event to issue for this this")
-        send logLoyaltyAccountEvent to outlet Loyalty.LoyaltyAccountEventLog.LoyaltyAccountEventLogToLoyaltyAccountRepository
-        do "append the loyalty account event to the context event log"
+      on other as m is {
+        send command LogLoyaltyAccountEvent(loggedLoyaltyAccountId = m.loyaltyAccountId, loggedLoyaltyAccountEventType = m.type) to outlet Loyalty.LoyaltyAccountEventLog.LoyaltyAccountEventLogToLoyaltyAccountRepository
       }
     } with {
       briefly "LoyaltyAccount log intake"
@@ -646,6 +673,7 @@ context Loyalty as router is {
     }
   }
 } with {
+  option message_envelope("Riddl.Envelope")
   briefly "Loyalty context"
   described as {
     | Manages loyalty program enrollment, point accrual from

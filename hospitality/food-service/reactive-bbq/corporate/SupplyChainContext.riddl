@@ -128,7 +128,9 @@ context SupplyChain as router is {
       }
     }
     schema PurchaseOrderData is relational
+      of purchaseOrderEvents as record LoggedPurchaseOrderEvent with history
       of purchaseOrders as record StoredPurchaseOrder
+        link purchaseOrderEventLogEntry as field LoggedPurchaseOrderEvent.loggedPurchaseOrderId to field StoredPurchaseOrder.purchaseOrderId
         key on field StoredPurchaseOrder.purchaseOrderId
         index on field StoredPurchaseOrder.vendorId
         index on field StoredPurchaseOrder.purchaseOrderStatus
@@ -273,8 +275,8 @@ context SupplyChain as router is {
         do "append issue record to PurchaseOrderData
           .purchaseOrders where purchaseOrderId matches"
       }
-      on command LogPurchaseOrderEvent is {
-        do "append the purchase order event to the PurchaseOrder event log"
+      on logPurchaseOrderEvent: command LogPurchaseOrderEvent is {
+        store record LoggedPurchaseOrderEvent(loggedPurchaseOrderId = logPurchaseOrderEvent.loggedPurchaseOrderId, loggedPurchaseOrderEventType = logPurchaseOrderEvent.loggedPurchaseOrderEventType, loggedAt = system.now) in PurchaseOrderData.purchaseOrderEvents
       }
     } with {
       briefly "Purchase order persistence"
@@ -361,6 +363,33 @@ context SupplyChain as router is {
     }
   }
   // ---- Local event log for purchase order events ----
+  record LoggedPurchaseOrderEvent is {
+    loggedPurchaseOrderId: String(1,50) with {
+      briefly "LoggedPurchaseOrderId"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedPurchaseOrderEventType: String(1,50) with {
+      briefly "LoggedPurchaseOrderEventType"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedAt: TimeStamp with {
+      briefly "Logged at"
+      described as {
+        |When the log row was written.
+      }
+    }
+  } with {
+    briefly "A logged PurchaseOrder event"
+    described as {
+      |One row of the PurchaseOrder event log: which purchaseorder, which event,
+      |and when it was recorded. `with history` on the entry keeps every
+      |version, which is what a log is.
+    }
+  }
   command LogPurchaseOrderEvent is {
     loggedPurchaseOrderId: String(1,50) with {
       briefly "ID"
@@ -385,10 +414,8 @@ context SupplyChain as router is {
   streamlet PurchaseOrderEventLog as flow is {
     outlet PurchaseOrderEventLogToPurchaseOrderRepository is command LogPurchaseOrderEvent
     inlet IncomingPurchaseOrderLog is type PurchaseOrderEvent    handler PurchaseOrderLogIntake is {
-      on other is {
-        let logPurchaseOrderEvent: type LogPurchaseOrderEvent = prompt("the log purchase order event to issue for this this")
-        send logPurchaseOrderEvent to outlet SupplyChain.PurchaseOrderEventLog.PurchaseOrderEventLogToPurchaseOrderRepository
-        do "append the purchase order event to the context event log"
+      on other as m is {
+        send command LogPurchaseOrderEvent(loggedPurchaseOrderId = m.purchaseOrderId, loggedPurchaseOrderEventType = m.type) to outlet SupplyChain.PurchaseOrderEventLog.PurchaseOrderEventLogToPurchaseOrderRepository
       }
     } with {
       briefly "PurchaseOrder log intake"
@@ -423,6 +450,7 @@ context SupplyChain as router is {
     }
   }
 } with {
+  option message_envelope("Riddl.Envelope")
   briefly "Supply chain context"
   described as {
     | Manages vendor relationships and bulk ordering for

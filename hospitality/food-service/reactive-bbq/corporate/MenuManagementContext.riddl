@@ -230,7 +230,9 @@ context MenuManagement as router is {
       }
     }
     schema MenuItemData is relational
+      of menuItemEvents as record LoggedMenuItemEvent with history
       of menuItems as record StoredMenuItem
+        link menuItemEventLogEntry as field LoggedMenuItemEvent.loggedMenuItemId to field StoredMenuItem.menuItemId
         key on field StoredMenuItem.menuItemId
         index on field StoredMenuItem.menuItemCategory
         index on field StoredMenuItem.menuItemLifecycle
@@ -373,8 +375,8 @@ context MenuManagement as router is {
         tell event MenuItem.PhotoShootCompletionRecorded(shootId = recordPhotoShootCompletion.shootId, menuItemId = prompt("the menu item id of this photo shoot completion recorded"), photoShootRecordedAt = system.now) to entity MenuManagement.MenuItem
         do "update menu item images from completed photo shoot"
       }
-      on command LogMenuItemEvent is {
-        do "append the menu item event to the MenuItem event log"
+      on logMenuItemEvent: command LogMenuItemEvent is {
+        store record LoggedMenuItemEvent(loggedMenuItemId = logMenuItemEvent.loggedMenuItemId, loggedMenuItemEventType = logMenuItemEvent.loggedMenuItemEventType, loggedAt = system.now) in MenuItemData.menuItemEvents
       }
     } with {
       briefly "Menu item persistence"
@@ -429,7 +431,9 @@ context MenuManagement as router is {
   repository MenuReleaseRepository as merge is {
     inlet MenuReleaseRepositoryFromMenuReleaseEventLog is command LogMenuReleaseEvent    inlet MenuReleaseRepositoryFromPrintConfirmSink is command RecordPrintCompletion    inlet MenuReleaseRepositoryFromMenuReleaseProjection is type MenuReleaseRepositoryCommand    outlet MenuReleaseRepositoryResponses is result MenuRelease.MenuReleaseResult
     schema MenuReleaseData is relational
+      of menuReleaseEvents as record LoggedMenuReleaseEvent with history
       of releases as record StoredMenuRelease
+        link menuReleaseEventLogEntry as field LoggedMenuReleaseEvent.loggedMenuReleaseId to field StoredMenuRelease.menuReleaseId
         key on field StoredMenuRelease.menuReleaseId
         index on field StoredMenuRelease.menuReleaseStatus
  with {
@@ -569,8 +573,8 @@ context MenuManagement as router is {
         tell event MenuRelease.PrintCompletionRecorded(printJobId = recordPrintCompletion.printJobId, menuReleaseId = prompt("the menu release id of this print completion recorded"), printRecordedAt = system.now) to entity MenuManagement.MenuRelease
         do "log print job completion for menu release"
       }
-      on command LogMenuReleaseEvent is {
-        do "append the menu release event to the MenuRelease event log"
+      on logMenuReleaseEvent: command LogMenuReleaseEvent is {
+        store record LoggedMenuReleaseEvent(loggedMenuReleaseId = logMenuReleaseEvent.loggedMenuReleaseId, loggedMenuReleaseEventType = logMenuReleaseEvent.loggedMenuReleaseEventType, loggedAt = system.now) in MenuReleaseData.menuReleaseEvents
       }
     } with {
       briefly "Menu release persistence"
@@ -845,6 +849,33 @@ context MenuManagement as router is {
     }
   }
   // ---- Local event log for menu item events ----
+  record LoggedMenuItemEvent is {
+    loggedMenuItemId: String(1,50) with {
+      briefly "LoggedMenuItemId"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedMenuItemEventType: String(1,50) with {
+      briefly "LoggedMenuItemEventType"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedAt: TimeStamp with {
+      briefly "Logged at"
+      described as {
+        |When the log row was written.
+      }
+    }
+  } with {
+    briefly "A logged MenuItem event"
+    described as {
+      |One row of the MenuItem event log: which menuitem, which event,
+      |and when it was recorded. `with history` on the entry keeps every
+      |version, which is what a log is.
+    }
+  }
   command LogMenuItemEvent is {
     loggedMenuItemId: String(1,50) with {
       briefly "ID"
@@ -869,10 +900,8 @@ context MenuManagement as router is {
   streamlet MenuItemEventLog as flow is {
     outlet MenuItemEventLogToMenuItemRepository is command LogMenuItemEvent
     inlet IncomingMenuItemLog is type MenuItemEvent    handler MenuItemLogIntake is {
-      on other is {
-        let logMenuItemEvent: type LogMenuItemEvent = prompt("the log menu item event to issue for this this")
-        send logMenuItemEvent to outlet MenuManagement.MenuItemEventLog.MenuItemEventLogToMenuItemRepository
-        do "append the menu item event to the context event log"
+      on other as m is {
+        send command LogMenuItemEvent(loggedMenuItemId = m.menuItemId, loggedMenuItemEventType = m.type) to outlet MenuManagement.MenuItemEventLog.MenuItemEventLogToMenuItemRepository
       }
     } with {
       briefly "MenuItem log intake"
@@ -894,6 +923,33 @@ context MenuManagement as router is {
     }
   }
   // ---- Local event log for menu release events ----
+  record LoggedMenuReleaseEvent is {
+    loggedMenuReleaseId: String(1,50) with {
+      briefly "LoggedMenuReleaseId"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedMenuReleaseEventType: String(1,50) with {
+      briefly "LoggedMenuReleaseEventType"
+      described as {
+        |As the logged event carried it.
+      }
+    }
+    loggedAt: TimeStamp with {
+      briefly "Logged at"
+      described as {
+        |When the log row was written.
+      }
+    }
+  } with {
+    briefly "A logged MenuRelease event"
+    described as {
+      |One row of the MenuRelease event log: which menurelease, which event,
+      |and when it was recorded. `with history` on the entry keeps every
+      |version, which is what a log is.
+    }
+  }
   command LogMenuReleaseEvent is {
     loggedMenuReleaseId: String(1,50) with {
       briefly "ID"
@@ -918,10 +974,8 @@ context MenuManagement as router is {
   streamlet MenuReleaseEventLog as flow is {
     outlet MenuReleaseEventLogToMenuReleaseRepository is command LogMenuReleaseEvent
     inlet IncomingMenuReleaseLog is type MenuReleaseEvent    handler MenuReleaseLogIntake is {
-      on other is {
-        let logMenuReleaseEvent: type LogMenuReleaseEvent = prompt("the log menu release event to issue for this this")
-        send logMenuReleaseEvent to outlet MenuManagement.MenuReleaseEventLog.MenuReleaseEventLogToMenuReleaseRepository
-        do "append the menu release event to the context event log"
+      on other as m is {
+        send command LogMenuReleaseEvent(loggedMenuReleaseId = m.menuReleaseId, loggedMenuReleaseEventType = m.type) to outlet MenuManagement.MenuReleaseEventLog.MenuReleaseEventLogToMenuReleaseRepository
       }
     } with {
       briefly "MenuRelease log intake"
@@ -981,6 +1035,7 @@ context MenuManagement as router is {
     }
   }
 } with {
+  option message_envelope("Riddl.Envelope")
   briefly "Menu management context"
   described as {
     | Manages the corporate menu lifecycle including recipe
