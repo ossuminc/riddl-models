@@ -83,7 +83,18 @@ for d in models:
             b=cl.get("binding") or lc(cmd["id"])
             # which table?
             tm=re.search(r"(?:into|update|from)\s+(?:\w+\.)?(\w+)",prose)
-            table=tm.group(1) if tm and tm.group(1) in tables else (list(tables)[0] if len(tables)==1 else None)
+            table=tm.group(1) if tm and tm.group(1) in tables else None
+            if not table:
+                # `apply <Event> to the stored row` names none. The row is the one for
+                # the entity that YIELDED the event the command is named for -- a
+                # repository may store several, and picking the first inverts them.
+                evname=cmd["id"][7:] if cmd["id"].startswith("Persist") else None
+                evn=next((n for n in ns if n["kind"]=="event" and n["id"]==evname),None)
+                own=byp.get(evn["parent"],{}).get("id") if evn else None
+                table=next((tb for tb,rc in tables.items() if rc.split(".")[-1]=="Stored"+str(own)),None)
+                if not table:
+                    cands=[tb for tb,rc in tables.items() if rc.split(".")[-1].startswith("Stored")]
+                    table=cands[0] if len(cands)==1 else None
             if not table: stats["no table"]+=1; continue
             rec=tables[table]; rcols=cols(rec); key=keys.get(rec.split(".")[-1])
             if not key or key not in cfields: stats["no key on the command"]+=1; continue
