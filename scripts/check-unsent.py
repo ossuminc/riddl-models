@@ -42,6 +42,17 @@ def current():
     if nmodels < 100 or nctx < 100 or ncmd < 100:
         sys.exit(f"census looks BLIND, not clean: {nmodels} models, {nctx} "
                  f"external contexts, {ncmd} external commands")
+    # A model whose dump THREW still counts as swept, and one model's worth of
+    # contexts is ~1% of the denominator -- far too small for the floor above
+    # to notice. riddlc 2.2.0-11's `dump --json` exits 0 with an empty document
+    # when the JSON writer meets a statement it has no arm for (the B2 storage
+    # statements; filed upstream 2026-09-23), so the census read NOTHING from
+    # reactive-bbq while reporting 189 models swept. Any per-model error is now
+    # fatal: a census that could not read a model has not measured it.
+    errs = [l for l in p.stderr.splitlines() if l.startswith("# ERR ")]
+    if errs:
+        sys.exit("census could not read some models, so it has not measured "
+                 "them:\n" + "\n".join(errs))
     print(f"swept {nmodels} models, {nctx} external contexts, "
           f"{ncmd} external commands")
     return {f"{r['model']}\t{r['ctx']}\t{r['id']}" for r in rows}
