@@ -1422,17 +1422,24 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.2.0**, a PUBLISHED release (2026-09-14), so the override
-is **OFF** — `riddlcPath := None`, the plugin downloads the binary to
-`~/.cache/riddlc/2.2.0/bin/riddlc`, and the libraries resolve from GitHub
-Packages. It carries everything the corpus tracked on unpublished snapshots
-from 2026-09-06 to 2026-09-14: **A103** (the adaptor is the boundary),
-**[1.25]** (nothing is implied for any processor), the reply leg, a receiving
-`on other`, the `[advisory]` kind with four event-sourcing rules, and the
-`append`/`remove` statements (BAST format 25). `../bin/riddlc` happens to be
-2.2.0 too today; that will stop being true the next time riddl is staged, and
-**the scripts' default `RIDDLC=../bin/riddlc` is then the wrong binary** — pass
-`RIDDLC=~/.cache/riddlc/2.2.0/bin/riddlc` for any manual run that is evidence.
+Current version: **2.3.0**, a PUBLISHED release (2026-09-25) — it is commit
+`b8581131` tagged, the snapshot the corpus tracked from 2026-09-23. The override
+is **OFF**: `riddlcPath := None`, the plugin downloads to
+`~/.cache/riddlc/2.3.0/bin/riddlc`, the libraries resolve from GitHub Packages.
+
+It carries everything the corpus spent 2026-09-06 to 2026-09-23 on unpublished
+snapshots for: **A103** (the adaptor is the boundary), **[1.25]** (nothing is
+implied for any processor), the reply leg, a receiving `on other`, the
+`[advisory]` kind with four event-sourcing rules, `append`/`remove`, and
+riddl-generator's **eight language proposals (B1–B8)** — `m.<field>` under
+`on other as m`, bounded arithmetic and duration literals, two lints, `log`,
+schema `key on` and `with history`, the repository `store`/`upsert`/`update`/
+`delete` statements and the `query` value, and collection predicates. BAST
+revision 30.
+
+**`../bin/riddlc` is NOT the build's binary now**, by construction: the scripts
+default to it and it is whatever riddl last staged. Pass
+`RIDDLC=~/.cache/riddlc/2.3.0/bin/riddlc` for any manual run that is evidence.
 
 The corpus spent 2026-08-31 to 2026-09-05 on unpublished snapshots because
 four rules it depends on landed after a tag each time (`streamlet`; A6
@@ -1753,7 +1760,7 @@ needs drive language changes, which land here as model changes. riddl's
 `release/2` is merged, tagged `2.0.0` and deleted, so the line to track is now
 **`main`**, and the corpus prefers **published tags wherever possible**.
 
-It is currently on the published **2.2.0** with **no override**. Point
+It is currently on the published **2.3.0** with **no override**. Point
 `riddlcPath` at a staged `../bin/riddlc` only to track a commit that has not
 been published yet, and **take the override off the moment it is** — a stale
 override is indistinguishable from a clean corpus.

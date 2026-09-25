@@ -4,10 +4,13 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.2.0-13-b8581131`, UNPUBLISHED, override ON** (`riddlcPath :=
-Some(file("../bin/riddlc"))`, libraries from `~/.ivy2/local`). Take it off at
-the first published tag carrying B1-B8. Verify with `riddlc info`; the staged
-binary has moved under a session four times now.
+**Pin `2.3.0`, PUBLISHED, override OFF** — `riddlcPath := None`, the plugin's
+`~/.cache/riddlc/2.3.0/bin/riddlc` is the build's binary, libraries from GitHub
+Packages. 2.3.0 IS commit `b8581131`, the snapshot tracked from 09-23, so the
+publish changed nothing but where the binary comes from (certified: every gate,
+sweep 406 canaried, round trip 189/189). **`../bin/riddlc` is no longer the
+build's binary** — pass `RIDDLC=~/.cache/riddlc/2.3.0/bin/riddlc` to any script
+run that is evidence.
 
 **0 errors. Sweep 406 — 405 yield-argument advisories and one completeness
 finding, filed.** Every gate green except `checkTests` R10, which is red on

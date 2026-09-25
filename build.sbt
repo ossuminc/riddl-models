@@ -14,25 +14,25 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. This is an UNPUBLISHED snapshot of riddl
-// `main` -- 13 commits past 2.2.0, commit b8581131 -- so `riddlcPath` below
-// names the staged binary and the libraries resolve from ~/.ivy2/local via
-// `sbt publishLocal` in the riddl checkout.
+// same build, so one value pins both. 2.3.0 is a PUBLISHED release -- it is
+// commit b8581131 tagged, the snapshot this corpus tracked from 2026-09-23 --
+// so the plugin downloads the binary and the libraries resolve from GitHub
+// Packages; `riddlcPath` below is None.
 //
-// 2.2.0 itself carried A103, [1.25], the reply leg, a receiving `on other`,
-// the `[advisory]` kind and `append`/`remove`. The eleven commits past it are
-// riddl-generator's eight language proposals, all ruled in by Reid between
-// 2026-09-18 and 2026-09-23 and all of them retirements of prose the corpus
-// is full of: `m.<field>` under `on other as m` (B1), bounded arithmetic and
-// duration literals (B4), two lints (B6/B8), `log` (B7), schema `key on` and
-// `with history` (B3), the repository `store`/`upsert`/`update`/`delete`
-// statements and the `query` value (B2), and collection predicates (B5).
-// -13 adds the two fixes that work unblocked: `dump --json`'s missing
-// projection arms, and origination as "sends, and receives only events or
-// results" -- an application context is a chain origin again.
-// Move to the first PUBLISHED tag carrying them and take the override off in
-// the same edit.
-lazy val riddlVersion = "2.2.0-13-b8581131"
+// It carries A103, [1.25], the reply leg, a receiving `on other`, the
+// `[advisory]` kind, `append`/`remove`, and riddl-generator's eight language
+// proposals (B1-B8): `m.<field>` under `on other as m`, bounded arithmetic and
+// duration literals, two lints, `log`, schema `key on` and `with history`, the
+// repository `store`/`upsert`/`update`/`delete` statements and the `query`
+// value, and collection predicates. Plus the two fixes that unblocked them:
+// `dump --json`'s missing projection arms, and origination as "sends, and
+// receives only events or results", which makes an application context a chain
+// origin again. BAST revision 30.
+//
+// Whenever a rule the corpus needs lands after a tag, the override goes back
+// on -- and comes off at the first published tag that carries it, which is
+// this edit.
+lazy val riddlVersion = "2.3.0"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -86,13 +86,14 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
       "com.ossuminc" %% "riddl-utils" % riddlVersion % Test
     ),
 
-    // Some(...) while riddlVersion names an UNPUBLISHED commit, which the
-    // plugin cannot download (every riddlc task fails with a bare
-    // `Nonzero exit value: 56`). None the moment it is published -- a stale
-    // override is indistinguishable from a clean corpus. While an override is
-    // on, this path WINS over riddlVersion, so verify `riddlc info` against
-    // the pin rather than trusting the pin.
-    riddlcPath := Some(file("../bin/riddlc")),
+    // None on a published pin: the plugin downloads exactly riddlVersion. Set
+    // Some(file("../bin/riddlc")) only to track an UNPUBLISHED commit, which
+    // the plugin cannot download (every riddlc task fails with a bare
+    // `Nonzero exit value: 56`), and take it off again the moment that commit
+    // is published -- a stale override is indistinguishable from a clean
+    // corpus. While an override is on, this path WINS over riddlVersion, so
+    // verify `riddlc info` against the pin rather than trusting the pin.
+    riddlcPath := None,
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),
