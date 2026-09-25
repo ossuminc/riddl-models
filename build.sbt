@@ -14,10 +14,13 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. 2.3.0 is a PUBLISHED release -- it is
-// commit b8581131 tagged, the snapshot this corpus tracked from 2026-09-23 --
-// so the plugin downloads the binary and the libraries resolve from GitHub
-// Packages; `riddlcPath` below is None.
+// same build, so one value pins both. 2.3.1 is a PUBLISHED release, so the
+// plugin downloads the binary and the libraries resolve from GitHub Packages;
+// `riddlcPath` below is None. 2.3.0 was commit b8581131 tagged -- the snapshot
+// this corpus tracked from 2026-09-23 -- and 2.3.1 adds one rule change: a
+// TERMINAL sink that does executable work dispatches to nothing by design, so
+// `handler-streamlet-foreign-message` now asks whether the sink said what it
+// does rather than whether it told an entity (riddl-models' kitchen display).
 //
 // It carries A103, [1.25], the reply leg, a receiving `on other`, the
 // `[advisory]` kind, `append`/`remove`, and riddl-generator's eight language
@@ -32,7 +35,7 @@ enablePlugins(RiddlSbtPlugin)
 // Whenever a rule the corpus needs lands after a tag, the override goes back
 // on -- and comes off at the first published tag that carries it, which is
 // this edit.
-lazy val riddlVersion = "2.3.0"
+lazy val riddlVersion = "2.3.1"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +

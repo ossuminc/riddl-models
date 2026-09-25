@@ -4,13 +4,14 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.3.0`, PUBLISHED, override OFF** — `riddlcPath := None`, the plugin's
-`~/.cache/riddlc/2.3.0/bin/riddlc` is the build's binary, libraries from GitHub
-Packages. 2.3.0 IS commit `b8581131`, the snapshot tracked from 09-23, so the
-publish changed nothing but where the binary comes from (certified: every gate,
-sweep 406 canaried, round trip 189/189). **`../bin/riddlc` is no longer the
-build's binary** — pass `RIDDLC=~/.cache/riddlc/2.3.0/bin/riddlc` to any script
-run that is evidence.
+**Pin `2.3.1`, PUBLISHED, override OFF** — `riddlcPath := None`, the plugin's
+`~/.cache/riddlc/2.3.1/bin/riddlc` is the build's binary, libraries from GitHub
+Packages. **`../bin/riddlc` is no longer the build's binary** — pass
+`RIDDLC=~/.cache/riddlc/2.3.1/bin/riddlc` to any script run that is evidence.
+
+**EVERY GATE IS GREEN, `checkTests` included** — first time since 2026-09-11.
+0 errors, 0 warnings; 407 advisories corpus-wide, 3 in reactive-bbq, all
+`stmt-yield-argument-prompt` and all dismissed on purpose.
 
 **0 errors. Sweep 406 — 405 yield-argument advisories and one completeness
 finding, filed.** Every gate green except `checkTests` R10, which is red on

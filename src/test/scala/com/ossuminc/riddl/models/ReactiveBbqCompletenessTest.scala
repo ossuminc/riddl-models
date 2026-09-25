@@ -92,10 +92,21 @@ class ReactiveBbqCompletenessTest extends AnyWordSpec with Matchers:
           withClue(s"${errors.size} error(s):\n  ${errors.map(_.format).mkString("\n  ")}\n") {
             errors shouldBe empty
           }
-          val warnings = result.messages.justWarnings
+          // `justWarnings` is SEVERITY-banded, and Advisory shares severity 1 with Style,
+          // so it returns messages whose own `isWarning` is false -- filed with riddl
+          // 2026-09-25. Filter on the predicate the kind itself carries: an advisory is a
+          // structural observation the modeller may dismiss by design (riddl 2026-09-12),
+          // and three of ours are an external payment gateway's return values, which no
+          // model can state. Errors and warnings must still be empty.
+          val warnings = result.messages.filter(_.kind.isWarning)
           withClue(s"${warnings.size} warning(s):\n  ${warnings.map(_.format).mkString("\n  ")}\n") {
             warnings shouldBe empty
           }
+          // Advisories are reported, never asserted away: a NEW advisory RULE is worth
+          // seeing, so print what is being dismissed rather than hiding the count.
+          val advisories = result.messages.filter(_.kind.isAdvisory)
+          info(s"${advisories.size} advisory(ies), dismissed by design:\n  " +
+            advisories.map(_.format).mkString("\n  "))
     }
 
     // ---- R1: no placeholders ------------------------------------------------
