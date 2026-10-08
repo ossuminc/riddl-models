@@ -1696,12 +1696,12 @@ a coincidence to note twice. Do not assume uniformity here without
 recounting.
 **`[advisory]` is a fifth kind, not a warning** (-50): severity with
 style, `isWarning = false`, its own `show-advisories` switch (default on),
-never blocks `gen`, and `--fail-on warning` never trips on it. **But
-`Messages.justWarnings` RETURNS advisories** — it filters on the severity
-band, and Advisory shares severity 1 with Style, so an accessor named for
-warnings hands back messages whose own `isWarning` is false (filed
-2026-09-25; `ReactiveBbqCompletenessTest` R10 filters on `_.kind.isWarning`
-and reports advisories with `info` instead). It marks a
+never blocks `gen`, and `--fail-on warning` never trips on it.
+`Messages.justWarnings` excludes advisories **since 2.4.0** (it filters on
+`_.isWarning`); through 2.3.1 it filtered on the severity band and, since
+Advisory shares severity 1 with Style, returned them.
+`ReactiveBbqCompletenessTest` R10 filters on `_.kind.isWarning` directly from
+that era — equivalent now — and reports advisories with `info`. It marks a
 structural fact consistent with the model and inconsistent with what the
 declaration usually means — a design choice the modeller is entitled to.
 The zero standard covers it anyway: the sweep's level regex already
