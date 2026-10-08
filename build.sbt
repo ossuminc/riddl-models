@@ -14,13 +14,20 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. 2.3.1 is a PUBLISHED release, so the
+// same build, so one value pins both. 2.4.0 is a PUBLISHED release, so the
 // plugin downloads the binary and the libraries resolve from GitHub Packages;
-// `riddlcPath` below is None. 2.3.0 was commit b8581131 tagged -- the snapshot
-// this corpus tracked from 2026-09-23 -- and 2.3.1 adds one rule change: a
-// TERMINAL sink that does executable work dispatches to nothing by design, so
-// `handler-streamlet-foreign-message` now asks whether the sink said what it
-// does rather than whether it told an entity (riddl-models' kitchen display).
+// `riddlcPath` below is None. 2.4.0 types every value by a type NAME: a bare
+// `empty` takes the type of its position, and `empty T` names one where nothing
+// supplies it (`empty X?` is an Error). The corpus needed no change -- every
+// bare `empty` sits in a typed position -- and every gate, the sweep and the
+// BAST round trip came back identical to 2.3.1. It also fixes `justWarnings`,
+// which no longer returns advisories.
+//
+// 2.3.0 was commit b8581131 tagged -- the snapshot this corpus tracked from
+// 2026-09-23 -- and 2.3.1 added one rule change: a TERMINAL sink that does
+// executable work dispatches to nothing by design, so
+// `handler-streamlet-foreign-message` asks whether the sink said what it does
+// rather than whether it told an entity (riddl-models' kitchen display).
 //
 // It carries A103, [1.25], the reply leg, a receiving `on other`, the
 // `[advisory]` kind, `append`/`remove`, and riddl-generator's eight language
@@ -35,7 +42,7 @@ enablePlugins(RiddlSbtPlugin)
 // Whenever a rule the corpus needs lands after a tag, the override goes back
 // on -- and comes off at the first published tag that carries it, which is
 // this edit.
-lazy val riddlVersion = "2.3.1"
+lazy val riddlVersion = "2.4.0"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +

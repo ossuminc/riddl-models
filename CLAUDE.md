@@ -1422,10 +1422,13 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current version: **2.3.1**, a PUBLISHED release (2026-09-25). The override is
+Current version: **2.4.0**, a PUBLISHED release (2026-10-07). The override is
 **OFF**: `riddlcPath := None`, the plugin downloads to
-`~/.cache/riddlc/2.3.1/bin/riddlc`, the libraries resolve from GitHub Packages.
-2.3.0 was commit `b8581131` tagged — the snapshot the corpus tracked from
+`~/.cache/riddlc/2.4.0/bin/riddlc`, the libraries resolve from GitHub Packages.
+2.4.0 types every value by a type NAME — a bare `empty` takes its position's
+type, `empty T` names one where nothing supplies it, and `empty X?` is an
+Error (`value-ascription-not-a-name`). The corpus needed no change; gates,
+sweep and BAST came back identical to 2.3.1. 2.3.0 was commit `b8581131` tagged — the snapshot the corpus tracked from
 2026-09-23 — and 2.3.1 narrows one rule: a TERMINAL sink that does executable
 work dispatches to nothing by design, so `handler-streamlet-foreign-message`
 now asks whether the sink SAID what it does rather than whether it told an
@@ -1443,7 +1446,7 @@ revision 30.
 
 **`../bin/riddlc` is NOT the build's binary now**, by construction: the scripts
 default to it and it is whatever riddl last staged. Pass
-`RIDDLC=~/.cache/riddlc/2.3.1/bin/riddlc` for any manual run that is evidence.
+`RIDDLC=~/.cache/riddlc/2.4.0/bin/riddlc` for any manual run that is evidence.
 
 The corpus spent 2026-08-31 to 2026-09-05 on unpublished snapshots because
 four rules it depends on landed after a tag each time (`streamlet`; A6
@@ -1571,7 +1574,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.2.0 | `riddlVersion` in `build.sbt` (published) |
+| riddlc | 2.4.0 | `riddlVersion` in `build.sbt` (published) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
@@ -1769,7 +1772,7 @@ needs drive language changes, which land here as model changes. riddl's
 `release/2` is merged, tagged `2.0.0` and deleted, so the line to track is now
 **`main`**, and the corpus prefers **published tags wherever possible**.
 
-It is currently on the published **2.3.1** with **no override**. Point
+It is currently on the published **2.4.0** with **no override**. Point
 `riddlcPath` at a staged `../bin/riddlc` only to track a commit that has not
 been published yet, and **take the override off the moment it is** — a stale
 override is indistinguishable from a clean corpus.

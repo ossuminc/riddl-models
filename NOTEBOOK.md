@@ -4,25 +4,19 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.3.1`, PUBLISHED, override OFF** — `riddlcPath := None`, the plugin's
-`~/.cache/riddlc/2.3.1/bin/riddlc` is the build's binary, libraries from GitHub
+**Pin `2.4.0`, PUBLISHED, override OFF** — `riddlcPath := None`, the plugin's
+`~/.cache/riddlc/2.4.0/bin/riddlc` is the build's binary, libraries from GitHub
 Packages. **`../bin/riddlc` is no longer the build's binary** — pass
-`RIDDLC=~/.cache/riddlc/2.3.1/bin/riddlc` to any script run that is evidence.
+`RIDDLC=~/.cache/riddlc/2.4.0/bin/riddlc` to any script run that is evidence.
 
-**EVERY GATE IS GREEN, `checkTests` included** — first time since 2026-09-11.
-0 errors, 0 warnings; 407 advisories corpus-wide, 3 in reactive-bbq, all
-`stmt-yield-argument-prompt` and all dismissed on purpose.
-
-**0 errors. Sweep 406 — 405 yield-argument advisories and one completeness
-finding, filed.** Every gate green except `checkTests` R10, which is red on
-exactly two things, both riddl's and both filed:
-`handler-streamlet-foreign-message` on the kitchen display sink, and one
-`authorizationCode` prompt that only a payment gateway can answer.
+**EVERY GATE IS GREEN, `checkTests` included.** 0 errors, 0 warnings; 407
+advisories corpus-wide, 3 in reactive-bbq, all `stmt-yield-argument-prompt`
+and all dismissed on purpose.
 
 ### In flight — nothing; `task/` is empty
 
 Eleven task files came in on 09-16..09-23 and all eleven are in `task/done/`
-with Results. riddl then fixed both blockers I raised (-13: the dump projects
+with Results. The two 2.4.0 files (2026-10-07) are there too. riddl then fixed both blockers I raised (-13: the dump projects
 again, and an application context is a chain origin), so the corpus-wide
 read-side tranche that was BACKLOG #40 is done too: 1265 repository clauses
 are `store`/`update` statements.
@@ -61,6 +55,30 @@ Open work: **BACKLOG.md** #40 (`query one`), #30, #1, #23, #34. Durable facts:
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
 ---
+
+## 2026-10-08 — riddl 2.4.0: a bump that changed nothing, measured
+
+2.4.0 types every value by a type NAME (riddl [1.26], CM §0.3 ruling 6). riddl
+had measured 0 -> 0 errors on a CANDIDATE; re-measured here on the published
+tag, at every severity:
+
+- `checkAll` green: 189/189 validate, 7 templates, 0 unsent, both suites pass.
+- Sweep, canaried first (an injected unused type was reported): 407
+  `stmt-yield-argument-prompt` advisories, and the sorted JSONL is
+  byte-identical to a 2.3.1 sweep.
+- BAST round trip 189/189. Its in-place rebastify left every committed `.bast`
+  byte-identical, so the format revision did not move.
+- `sbt pc`: all 1004 files canonical.
+
+**The two `patterns/` example `.bast` files were stale against 2.3.1 already**
+— 2.3.1 and 2.4.0 produce the same bytes for them, and neither matched what was
+committed. Every sweep skips `patterns/`, so only a hand rebastify sees it.
+Regenerated in a separate commit. Rebastify them by hand after any MODEL change
+there, not just after a riddlc bump.
+
+`justWarnings` is fixed in 2.4.0 (`msgs.filter(_.isWarning)`; 2.3.1 filtered on
+the severity band). `ReactiveBbqCompletenessTest` still filters on
+`_.kind.isWarning`, which is now equivalent — left alone.
 
 ## 2026-09-23 (evening) — riddl answered both, and the read side followed
 
