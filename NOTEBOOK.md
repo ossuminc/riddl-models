@@ -78,11 +78,22 @@ unchanged-green on the 2.4.0 pin.
 site reads as unresolved (1,987 of 1,996 did on the first pass).
 
 **61 held, for a decision each:**
-- 39 — **no one produces the event at all** (reactive-bbq 11,
-  prescription-management 8, campaign-management 4, ...). E.g.
-  order-orchestration's `SubOrderRouted` has a fold, a split clause and a
-  repository Persist command, and nothing yields or tells it. An event nothing
-  emits; the `tell` is the least of it.
+- 39 that looked unproduced. **13 were not** — the same blind spot again, on
+  the producer side: `let e: type E = prompt(…)` / `yield e` names E only
+  through the `let`'s `binds`/`declaredType`. Deleted in a second pass by the
+  same four tests (91 -> 78). The other 26:
+  - **8, prescription-management: the entity only `send`s each event to its
+    outlet**, so its `on event` clauses are reached ONLY through the split's
+    tell back — the loop Reid KEPT on 2026-08-22 ("handling the event is
+    important to be able to persist it"). Deleting the tell would orphan them.
+  - **11, reactive-bbq: a boundary or persistence handler BUILDS the entity's
+    event and tells it in** (TicketRouted, DrinkOrderRouted, MenuDistributed,
+    PhotoShootCompletionRecorded, …). No inlet admits it, so the producer's
+    tell is as undeliverable as the split's.
+  - **7 produced by nothing at all** — `SubOrderRouted`, `OrderCompleted`
+    (order-orchestration), `LowStockDetected`, `SyncJobCompleted`,
+    `SegmentBuildCompleted`, `AuthenticationFailed`, `UsageAlertTriggered`.
+    Each has a fold and split clauses and no emitter.
 - 16 — the event is not the target's own (port-operations 11,
   vessel-management 5).
 - 6 — order-management: the target has no `on event` clause for it.
