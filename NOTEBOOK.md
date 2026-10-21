@@ -56,6 +56,39 @@ Open work: **BACKLOG.md** #40 (`query one`), #30, #1, #23, #34. Durable facts:
 
 ---
 
+## 2026-10-21 — `msg-tell-no-route-for-type`: 2,026 -> 91
+
+riddl's new Error (staged `2.4.0-3-fa72d569`, not yet published; task
+`task/2026-10-21-tell-no-route-for-type.md`) fires when no route can carry a
+`tell`'s message. Reproduced exactly: 2,026 in 186 models, 1,996 of them an
+`<Entity>EventSplit` telling an entity its own event back.
+
+**The task's premise was half right.** It expected event-sourced folds. Only
+238 of the targets `yield` the event; **1,697 emit it by a self-`tell`**
+(`tell event X(...) to entity Self`, exempt from the rule) and handle it in an
+`on event` clause. Either way the split's `tell` is a second delivery, so it
+was deleted wherever four things hold, read from `riddlc dump --json`, not
+regex: the event is the target's own, the target has an `on event` clause for
+it, the target yields or self-tells it, and the clause keeps another statement.
+1,935 lines removed, nothing added; prettify, `checkAll`, BAST round trip all
+unchanged-green on the 2.4.0 pin.
+
+**A bound `tell x` has no resolved message in the dump** — `message` is
+`{"value": "x"}`. Resolve it through the parent clause's `binding`, or every
+site reads as unresolved (1,987 of 1,996 did on the first pass).
+
+**61 held, for a decision each:**
+- 39 — **no one produces the event at all** (reactive-bbq 11,
+  prescription-management 8, campaign-management 4, ...). E.g.
+  order-orchestration's `SubOrderRouted` has a fold, a split clause and a
+  repository Persist command, and nothing yields or tells it. An event nothing
+  emits; the `tell` is the least of it.
+- 16 — the event is not the target's own (port-operations 11,
+  vessel-management 5).
+- 6 — order-management: the target has no `on event` clause for it.
+
+Plus the task's other 30 (Command/Result sites), untouched so far.
+
 ## 2026-10-08 — riddl 2.4.0: a bump that changed nothing, measured
 
 2.4.0 types every value by a type NAME (riddl [1.26], CM §0.3 ruling 6). riddl
