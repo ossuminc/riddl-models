@@ -1,5 +1,5 @@
 // Prescription Management - Prescription Entity
-entity Prescription as flow is {
+event-sourced entity Prescription as flow is {
   type PrescriptionCommand is one of {
     Prescription.ReceivePrescription or Prescription.VerifyPrescription or Prescription.RequestRefill or Prescription.ApproveRefill or Prescription.PlaceOnHold or Prescription.ReleaseHold or Prescription.TransferPrescription or Prescription.SuspendPrescription
   } with {
@@ -46,7 +46,7 @@ entity Prescription as flow is {
   // ───────────────────────────────────────────────────────────────────────────
   // Commands
   // ───────────────────────────────────────────────────────────────────────────
-  command ReceivePrescription is {
+  command ReceivePrescription yields event PrescriptionReceived is {
     prescriptionId: PrescriptionId with {
       briefly "ID"
       described as {
@@ -95,7 +95,7 @@ entity Prescription as flow is {
       |Initiates a new prescription in the system from any source.
     }
   }
-  command VerifyPrescription is {
+  command VerifyPrescription yields event PrescriptionVerified is {
     prescriptionId: PrescriptionId with {
       briefly "ID"
       described as {
@@ -126,7 +126,7 @@ entity Prescription as flow is {
       |Pharmacist reviews and verifies the prescription is valid.
     }
   }
-  command RequestRefill is {
+  command RequestRefill yields event RefillRequested is {
     prescriptionId: PrescriptionId with {
       briefly "ID"
       described as {
@@ -151,7 +151,7 @@ entity Prescription as flow is {
       |Patient or staff initiates a refill request.
     }
   }
-  command ApproveRefill is {
+  command ApproveRefill yields event RefillApproved is {
     prescriptionId: PrescriptionId with {
       briefly "ID"
       described as {
@@ -194,7 +194,7 @@ entity Prescription as flow is {
       |Pharmacist approves the refill for dispensing.
     }
   }
-  command PlaceOnHold is {
+  command PlaceOnHold yields event PrescriptionOnHold is {
     prescriptionId: PrescriptionId with {
       briefly "ID"
       described as {
@@ -231,7 +231,7 @@ entity Prescription as flow is {
       |Pauses prescription processing due to an issue.
     }
   }
-  command ReleaseHold is {
+  command ReleaseHold yields event HoldReleased is {
     prescriptionId: PrescriptionId with {
       briefly "ID"
       described as {
@@ -256,7 +256,7 @@ entity Prescription as flow is {
       |Removes hold status after issue resolution.
     }
   }
-  command TransferPrescription is {
+  command TransferPrescription yields event PrescriptionTransferred is {
     prescriptionId: PrescriptionId with {
       briefly "ID"
       described as {
@@ -311,7 +311,7 @@ entity Prescription as flow is {
       |Transfers remaining refills to another pharmacy.
     }
   }
-  command SuspendPrescription is {
+  command SuspendPrescription yields event PrescriptionSuspended is {
     prescriptionId: PrescriptionId with {
       briefly "ID"
       described as {
@@ -850,6 +850,12 @@ entity Prescription as flow is {
         |Refill history.
       }
     }
+    lastRefillRequestedAt: TimeStamp? with {
+      briefly "Last refill requested at"
+    }
+    lastRefillRequestedBy: String? with {
+      briefly "Last refill requested by"
+    }
   } with {
     briefly "Verified state data"
     described as {
@@ -1055,7 +1061,8 @@ entity Prescription as flow is {
         reply prescriptionQueryResult
       }
       on init is {
-        set state ReceivedState to "initialize from prior event"
+        let prescriptionReceived: type PrescriptionReceived = prompt("the prescription received that brings this prescription into existence")
+        yield prescriptionReceived
       }
     } with {
       briefly "ReceivedState init handler"
@@ -1072,7 +1079,8 @@ entity Prescription as flow is {
   state VerifiedState of record Prescription.VerifiedStateData is {
     initial handler VerifiedStateInitHandler is {
       on init is {
-        set state VerifiedState to "initialize from prior event"
+        let prescriptionVerified: type PrescriptionVerified = prompt("the prescription verified that brings this prescription into existence")
+        yield prescriptionVerified
       }
     } with {
       briefly "VerifiedState init handler"
@@ -1089,7 +1097,8 @@ entity Prescription as flow is {
   state OnHoldState of record Prescription.OnHoldStateData is {
     initial handler OnHoldStateInitHandler is {
       on init is {
-        set state OnHoldState to "initialize from prior event"
+        let prescriptionOnHold: type PrescriptionOnHold = prompt("the prescription on hold that brings this prescription into existence")
+        yield prescriptionOnHold
       }
     } with {
       briefly "OnHoldState init handler"
@@ -1106,7 +1115,8 @@ entity Prescription as flow is {
   state TransferredState of record Prescription.TransferredStateData is {
     initial handler TransferredStateInitHandler is {
       on init is {
-        set state TransferredState to "initialize from prior event"
+        let prescriptionTransferred: type PrescriptionTransferred = prompt("the prescription transferred that brings this prescription into existence")
+        yield prescriptionTransferred
       }
     } with {
       briefly "TransferredState init handler"
@@ -1123,7 +1133,8 @@ entity Prescription as flow is {
   state SuspendedState of record Prescription.SuspendedStateData is {
     initial handler SuspendedStateInitHandler is {
       on init is {
-        set state SuspendedState to "initialize from prior event"
+        let prescriptionSuspended: type PrescriptionSuspended = prompt("the prescription suspended that brings this prescription into existence")
+        yield prescriptionSuspended
       }
     } with {
       briefly "SuspendedState init handler"
@@ -1142,59 +1153,62 @@ entity Prescription as flow is {
   // ───────────────────────────────────────────────────────────────────────────
   handler PrescriptionHandler is {
     on receivePrescription: command ReceivePrescription is {
-      morph entity Prescription to state Prescription.ReceivedState with record Prescription.ReceivedStateData(prescriptionId = receivePrescription.prescriptionId, patient = receivePrescription.patient, prescriber = receivePrescription.prescriber, drug = receivePrescription.drug, writtenDate = receivePrescription.writtenDate, refillsAuthorized = receivePrescription.refillsAuthorized, receivedBy = receivePrescription.receivedBy, expirationDate = prompt("the expiration date of this received state data"), refillsRemaining = prompt("the refills remaining of this received state data"), receivedTimestamp = prompt("the received timestamp of this received state data"))
-      send event Prescription.PrescriptionReceived(prescriptionId = receivePrescription.prescriptionId, patient = receivePrescription.patient, prescriber = receivePrescription.prescriber, drug = receivePrescription.drug, writtenDate = receivePrescription.writtenDate, refillsAuthorized = receivePrescription.refillsAuthorized, receivedBy = receivePrescription.receivedBy, expirationDate = prompt("the expiration date of this prescription received"), receivedTimestamp = prompt("the received timestamp of this prescription received")) to outlet PrescriptionEvents2
+      yield event PrescriptionReceived(prescriptionId = receivePrescription.prescriptionId, patient = receivePrescription.patient, prescriber = receivePrescription.prescriber, drug = receivePrescription.drug, writtenDate = receivePrescription.writtenDate, refillsAuthorized = receivePrescription.refillsAuthorized, receivedBy = receivePrescription.receivedBy, expirationDate = prompt("the expiration date of this prescription received"), receivedTimestamp = system.now)
+      send event Prescription.PrescriptionReceived(prescriptionId = receivePrescription.prescriptionId, patient = receivePrescription.patient, prescriber = receivePrescription.prescriber, drug = receivePrescription.drug, writtenDate = receivePrescription.writtenDate, refillsAuthorized = receivePrescription.refillsAuthorized, receivedBy = receivePrescription.receivedBy, expirationDate = prompt("the expiration date of this prescription received"), receivedTimestamp = system.now) to outlet PrescriptionEvents2
     }
     on verifyPrescription: command VerifyPrescription is {
-      morph entity Prescription to state Prescription.VerifiedState with record Prescription.VerifiedStateData(prescriptionId = verifyPrescription.prescriptionId, patient = prompt("the patient of this verified state data"), prescriber = prompt("the prescriber of this verified state data"), drug = prompt("the drug of this verified state data"), writtenDate = prompt("the written date of this verified state data"), expirationDate = prompt("the expiration date of this verified state data"), refillsAuthorized = prompt("the refills authorized of this verified state data"), refillsRemaining = prompt("the refills remaining of this verified state data"), receivedTimestamp = prompt("the received timestamp of this verified state data"), verifiedTimestamp = prompt("the verified timestamp of this verified state data"), verifiedBy = prompt("the verified by of this verified state data"), refillHistory = prompt("the refill history of this verified state data"))
-      send event Prescription.PrescriptionVerified(prescriptionId = verifyPrescription.prescriptionId, pharmacistId = verifyPrescription.pharmacistId, verificationType = verifyPrescription.verificationType, notes = verifyPrescription.notes, verifiedTimestamp = prompt("the verified timestamp of this prescription verified")) to outlet PrescriptionEvents2
+      yield event PrescriptionVerified(prescriptionId = verifyPrescription.prescriptionId, pharmacistId = verifyPrescription.pharmacistId, verificationType = verifyPrescription.verificationType, notes = verifyPrescription.notes, verifiedTimestamp = system.now)
+      send event Prescription.PrescriptionVerified(prescriptionId = verifyPrescription.prescriptionId, pharmacistId = verifyPrescription.pharmacistId, verificationType = verifyPrescription.verificationType, notes = verifyPrescription.notes, verifiedTimestamp = system.now) to outlet PrescriptionEvents2
     }
     on requestRefill: command RequestRefill is {
-      send event Prescription.RefillRequested(prescriptionId = requestRefill.prescriptionId, requestedBy = requestRefill.requestedBy, requestSource = requestRefill.requestSource, refillNumber = prompt("the refill number of this refill requested"), requestedTimestamp = prompt("the requested timestamp of this refill requested")) to outlet PrescriptionEvents2
+      yield event RefillRequested(prescriptionId = requestRefill.prescriptionId, requestedBy = requestRefill.requestedBy, requestSource = requestRefill.requestSource, refillNumber = prompt("the refill number of this refill requested"), requestedTimestamp = system.now)
+      send event Prescription.RefillRequested(prescriptionId = requestRefill.prescriptionId, requestedBy = requestRefill.requestedBy, requestSource = requestRefill.requestSource, refillNumber = prompt("the refill number of this refill requested"), requestedTimestamp = system.now) to outlet PrescriptionEvents2
     }
     on approveRefill: command ApproveRefill is {
       // decrement refills remaining and record approval
-      send event Prescription.RefillApproved(prescriptionId = approveRefill.prescriptionId, refillNumber = approveRefill.refillNumber, quantity = approveRefill.quantity, daysSupply = approveRefill.daysSupply, pharmacistId = approveRefill.pharmacistId, technicianId = approveRefill.technicianId, approvedTimestamp = prompt("the approved timestamp of this refill approved"), refillsRemaining = prompt("the refills remaining of this refill approved")) to outlet PrescriptionEvents2
+      yield event RefillApproved(prescriptionId = approveRefill.prescriptionId, refillNumber = approveRefill.refillNumber, quantity = approveRefill.quantity, daysSupply = approveRefill.daysSupply, pharmacistId = approveRefill.pharmacistId, technicianId = approveRefill.technicianId, approvedTimestamp = system.now, refillsRemaining = prompt("the refills remaining of this refill approved"))
+      send event Prescription.RefillApproved(prescriptionId = approveRefill.prescriptionId, refillNumber = approveRefill.refillNumber, quantity = approveRefill.quantity, daysSupply = approveRefill.daysSupply, pharmacistId = approveRefill.pharmacistId, technicianId = approveRefill.technicianId, approvedTimestamp = system.now, refillsRemaining = prompt("the refills remaining of this refill approved")) to outlet PrescriptionEvents2
     }
     on placeOnHold: command PlaceOnHold is {
-      morph entity Prescription to state Prescription.OnHoldState with record Prescription.OnHoldStateData(prescriptionId = placeOnHold.prescriptionId, patient = prompt("the patient of this on hold state data"), prescriber = prompt("the prescriber of this on hold state data"), drug = prompt("the drug of this on hold state data"), writtenDate = prompt("the written date of this on hold state data"), expirationDate = prompt("the expiration date of this on hold state data"), refillsAuthorized = prompt("the refills authorized of this on hold state data"), refillsRemaining = prompt("the refills remaining of this on hold state data"), receivedTimestamp = prompt("the received timestamp of this on hold state data"), verifiedTimestamp = empty, verifiedBy = empty, holdInfo = prompt("the hold info of this on hold state data"), refillHistory = prompt("the refill history of this on hold state data"))
-      send event Prescription.PrescriptionOnHold(prescriptionId = placeOnHold.prescriptionId, holdReason = placeOnHold.holdReason, placedBy = placeOnHold.placedBy, notes = placeOnHold.notes, expectedResolutionDate = placeOnHold.expectedResolutionDate, holdTimestamp = prompt("the hold timestamp of this prescription on hold")) to outlet PrescriptionEvents2
+      yield event PrescriptionOnHold(prescriptionId = placeOnHold.prescriptionId, holdReason = placeOnHold.holdReason, placedBy = placeOnHold.placedBy, notes = placeOnHold.notes, expectedResolutionDate = placeOnHold.expectedResolutionDate, holdTimestamp = system.now)
+      send event Prescription.PrescriptionOnHold(prescriptionId = placeOnHold.prescriptionId, holdReason = placeOnHold.holdReason, placedBy = placeOnHold.placedBy, notes = placeOnHold.notes, expectedResolutionDate = placeOnHold.expectedResolutionDate, holdTimestamp = system.now) to outlet PrescriptionEvents2
     }
     on releaseHold: command ReleaseHold is {
-      morph entity Prescription to state Prescription.VerifiedState with record Prescription.VerifiedStateData(prescriptionId = releaseHold.prescriptionId, patient = prompt("the patient of this verified state data"), prescriber = prompt("the prescriber of this verified state data"), drug = prompt("the drug of this verified state data"), writtenDate = prompt("the written date of this verified state data"), expirationDate = prompt("the expiration date of this verified state data"), refillsAuthorized = prompt("the refills authorized of this verified state data"), refillsRemaining = prompt("the refills remaining of this verified state data"), receivedTimestamp = prompt("the received timestamp of this verified state data"), verifiedTimestamp = prompt("the verified timestamp of this verified state data"), verifiedBy = prompt("the verified by of this verified state data"), refillHistory = prompt("the refill history of this verified state data"))
-      send event Prescription.HoldReleased(prescriptionId = releaseHold.prescriptionId, releasedBy = releaseHold.releasedBy, resolutionNotes = releaseHold.resolutionNotes, releaseTimestamp = prompt("the release timestamp of this hold released"), previousHoldReason = prompt("the previous hold reason of this hold released")) to outlet PrescriptionEvents2
+      yield event HoldReleased(prescriptionId = releaseHold.prescriptionId, releasedBy = releaseHold.releasedBy, resolutionNotes = releaseHold.resolutionNotes, releaseTimestamp = system.now, previousHoldReason = prompt("the previous hold reason of this hold released"))
+      send event Prescription.HoldReleased(prescriptionId = releaseHold.prescriptionId, releasedBy = releaseHold.releasedBy, resolutionNotes = releaseHold.resolutionNotes, releaseTimestamp = system.now, previousHoldReason = prompt("the previous hold reason of this hold released")) to outlet PrescriptionEvents2
     }
     on transferPrescription: command TransferPrescription is {
-      morph entity Prescription to state Prescription.TransferredState with record Prescription.TransferredStateData(prescriptionId = transferPrescription.prescriptionId, patient = prompt("the patient of this transferred state data"), prescriber = prompt("the prescriber of this transferred state data"), drug = prompt("the drug of this transferred state data"), writtenDate = prompt("the written date of this transferred state data"), transferInfo = prompt("the transfer info of this transferred state data"), refillHistory = prompt("the refill history of this transferred state data"))
-      send event Prescription.PrescriptionTransferred(prescriptionId = transferPrescription.prescriptionId, transferReason = transferPrescription.transferReason, destinationPharmacyId = transferPrescription.destinationPharmacyId, destinationPharmacyName = transferPrescription.destinationPharmacyName, destinationPharmacyPhone = transferPrescription.destinationPharmacyPhone, transferredBy = transferPrescription.transferredBy, receivingPharmacist = transferPrescription.receivingPharmacist, transferTimestamp = prompt("the transfer timestamp of this prescription transferred"), sourcePharmacyId = prompt("the source pharmacy id of this prescription transferred"), refillsTransferred = prompt("the refills transferred of this prescription transferred")) to outlet PrescriptionEvents2
+      yield event PrescriptionTransferred(prescriptionId = transferPrescription.prescriptionId, transferReason = transferPrescription.transferReason, destinationPharmacyId = transferPrescription.destinationPharmacyId, destinationPharmacyName = transferPrescription.destinationPharmacyName, destinationPharmacyPhone = transferPrescription.destinationPharmacyPhone, transferredBy = transferPrescription.transferredBy, receivingPharmacist = transferPrescription.receivingPharmacist, transferTimestamp = system.now, sourcePharmacyId = prompt("the source pharmacy id of this prescription transferred"), refillsTransferred = prompt("the refills transferred of this prescription transferred"))
+      send event Prescription.PrescriptionTransferred(prescriptionId = transferPrescription.prescriptionId, transferReason = transferPrescription.transferReason, destinationPharmacyId = transferPrescription.destinationPharmacyId, destinationPharmacyName = transferPrescription.destinationPharmacyName, destinationPharmacyPhone = transferPrescription.destinationPharmacyPhone, transferredBy = transferPrescription.transferredBy, receivingPharmacist = transferPrescription.receivingPharmacist, transferTimestamp = system.now, sourcePharmacyId = prompt("the source pharmacy id of this prescription transferred"), refillsTransferred = prompt("the refills transferred of this prescription transferred")) to outlet PrescriptionEvents2
     }
     on suspendPrescription: command SuspendPrescription is {
-      morph entity Prescription to state Prescription.SuspendedState with record Prescription.SuspendedStateData(prescriptionId = suspendPrescription.prescriptionId, suspendedBy = suspendPrescription.suspendedBy, suspendReason = suspendPrescription.suspendReason, patient = prompt("the patient of this suspended state data"), prescriber = prompt("the prescriber of this suspended state data"), drug = prompt("the drug of this suspended state data"), suspendTimestamp = prompt("the suspend timestamp of this suspended state data"), refillHistory = prompt("the refill history of this suspended state data"))
-      send event Prescription.PrescriptionSuspended(prescriptionId = suspendPrescription.prescriptionId, suspendedBy = suspendPrescription.suspendedBy, suspendReason = suspendPrescription.suspendReason, suspendTimestamp = prompt("the suspend timestamp of this prescription suspended")) to outlet PrescriptionEvents2
+      yield event PrescriptionSuspended(prescriptionId = suspendPrescription.prescriptionId, suspendedBy = suspendPrescription.suspendedBy, suspendReason = suspendPrescription.suspendReason, suspendTimestamp = system.now)
+      send event Prescription.PrescriptionSuspended(prescriptionId = suspendPrescription.prescriptionId, suspendedBy = suspendPrescription.suspendedBy, suspendReason = suspendPrescription.suspendReason, suspendTimestamp = system.now) to outlet PrescriptionEvents2
     }
     on holdReleased: event HoldReleased is {
-      do "apply HoldReleased to the prescription so it can be persisted and replayed"
+      morph entity Prescription to state Prescription.VerifiedState with record Prescription.VerifiedStateData(prescriptionId = holdReleased.prescriptionId, patient = prompt("the patient of this verified state data"), prescriber = prompt("the prescriber of this verified state data"), drug = prompt("the drug of this verified state data"), writtenDate = prompt("the written date of this verified state data"), expirationDate = prompt("the expiration date of this verified state data"), refillsAuthorized = prompt("the refills authorized of this verified state data"), refillsRemaining = prompt("the refills remaining of this verified state data"), receivedTimestamp = prompt("the received timestamp of this verified state data"), verifiedTimestamp = prompt("the verified timestamp of this verified state data"), verifiedBy = prompt("the verified by of this verified state data"), refillHistory = prompt("the refill history of this verified state data"), lastRefillRequestedAt = empty, lastRefillRequestedBy = empty)
     }
     on prescriptionOnHold: event PrescriptionOnHold is {
-      do "apply PrescriptionOnHold to the prescription so it can be persisted and replayed"
+      morph entity Prescription to state Prescription.OnHoldState with record Prescription.OnHoldStateData(prescriptionId = prescriptionOnHold.prescriptionId, patient = prompt("the patient of this on hold state data"), prescriber = prompt("the prescriber of this on hold state data"), drug = prompt("the drug of this on hold state data"), writtenDate = prompt("the written date of this on hold state data"), expirationDate = prompt("the expiration date of this on hold state data"), refillsAuthorized = prompt("the refills authorized of this on hold state data"), refillsRemaining = prompt("the refills remaining of this on hold state data"), receivedTimestamp = prompt("the received timestamp of this on hold state data"), verifiedTimestamp = empty, verifiedBy = empty, holdInfo = prompt("the hold info of this on hold state data"), refillHistory = prompt("the refill history of this on hold state data"))
     }
     on prescriptionReceived: event PrescriptionReceived is {
-      do "apply PrescriptionReceived to the prescription so it can be persisted and replayed"
+      morph entity Prescription to state Prescription.ReceivedState with record Prescription.ReceivedStateData(prescriptionId = prescriptionReceived.prescriptionId, patient = prescriptionReceived.patient, prescriber = prescriptionReceived.prescriber, drug = prescriptionReceived.drug, writtenDate = prescriptionReceived.writtenDate, refillsAuthorized = prescriptionReceived.refillsAuthorized, receivedBy = prescriptionReceived.receivedBy, expirationDate = prompt("the expiration date of this received state data"), refillsRemaining = prompt("the refills remaining of this received state data"), receivedTimestamp = prompt("the received timestamp of this received state data"))
     }
     on prescriptionSuspended: event PrescriptionSuspended is {
-      do "apply PrescriptionSuspended to the prescription so it can be persisted and replayed"
+      morph entity Prescription to state Prescription.SuspendedState with record Prescription.SuspendedStateData(prescriptionId = prescriptionSuspended.prescriptionId, suspendedBy = prescriptionSuspended.suspendedBy, suspendReason = prescriptionSuspended.suspendReason, patient = prompt("the patient of this suspended state data"), prescriber = prompt("the prescriber of this suspended state data"), drug = prompt("the drug of this suspended state data"), suspendTimestamp = prompt("the suspend timestamp of this suspended state data"), refillHistory = prompt("the refill history of this suspended state data"))
     }
     on prescriptionTransferred: event PrescriptionTransferred is {
-      do "apply PrescriptionTransferred to the prescription so it can be persisted and replayed"
+      morph entity Prescription to state Prescription.TransferredState with record Prescription.TransferredStateData(prescriptionId = prescriptionTransferred.prescriptionId, patient = prompt("the patient of this transferred state data"), prescriber = prompt("the prescriber of this transferred state data"), drug = prompt("the drug of this transferred state data"), writtenDate = prompt("the written date of this transferred state data"), transferInfo = prompt("the transfer info of this transferred state data"), refillHistory = prompt("the refill history of this transferred state data"))
     }
     on prescriptionVerified: event PrescriptionVerified is {
-      do "apply PrescriptionVerified to the prescription so it can be persisted and replayed"
+      morph entity Prescription to state Prescription.VerifiedState with record Prescription.VerifiedStateData(prescriptionId = prescriptionVerified.prescriptionId, patient = prompt("the patient of this verified state data"), prescriber = prompt("the prescriber of this verified state data"), drug = prompt("the drug of this verified state data"), writtenDate = prompt("the written date of this verified state data"), expirationDate = prompt("the expiration date of this verified state data"), refillsAuthorized = prompt("the refills authorized of this verified state data"), refillsRemaining = prompt("the refills remaining of this verified state data"), receivedTimestamp = prompt("the received timestamp of this verified state data"), verifiedTimestamp = prompt("the verified timestamp of this verified state data"), verifiedBy = prompt("the verified by of this verified state data"), refillHistory = prompt("the refill history of this verified state data"), lastRefillRequestedAt = empty, lastRefillRequestedBy = empty)
     }
     on refillApproved: event RefillApproved is {
-      do "apply RefillApproved to the prescription so it can be persisted and replayed"
+      set field Prescription.VerifiedState.refillsRemaining to refillApproved.refillsRemaining
     }
     on refillRequested: event RefillRequested is {
-      do "apply RefillRequested to the prescription so it can be persisted and replayed"
+      set field Prescription.VerifiedState.lastRefillRequestedAt to refillRequested.requestedTimestamp
+      set field Prescription.VerifiedState.lastRefillRequestedBy to refillRequested.requestedBy
     }
   } with {
     briefly "Primary command handler"
