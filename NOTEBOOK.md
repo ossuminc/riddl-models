@@ -9,17 +9,20 @@ Development journal for active work on the riddl-models repository.
 Packages. **`../bin/riddlc` is no longer the build's binary** — pass
 `RIDDLC=~/.cache/riddlc/2.4.0/bin/riddlc` to any script run that is evidence.
 
-**EVERY GATE IS GREEN, `checkTests` included.** 0 errors, 0 warnings; 407
-advisories corpus-wide, 3 in reactive-bbq, all `stmt-yield-argument-prompt`
-and all dismissed on purpose.
+**EVERY GATE IS GREEN ON 2.4.0, `checkTests` included.** 0 errors, 0
+warnings; 413 advisories corpus-wide, 3 in reactive-bbq, all
+`stmt-yield-argument-prompt` and all dismissed on purpose.
 
-### In flight — nothing; `task/` is empty
+### In flight — `task/2026-10-21-tell-no-route-for-type.md`, 52 of 2,026 left
 
-Eleven task files came in on 09-16..09-23 and all eleven are in `task/done/`
-with Results. The two 2.4.0 files (2026-10-07) are there too. riddl then fixed both blockers I raised (-13: the dump projects
-again, and an application context is a chain origin), so the corpus-wide
-read-side tranche that was BACKLOG #40 is done too: 1265 repository clauses
-are `store`/`update` statements.
+riddl's staged `../bin/riddlc` (`2.4.0-3-fa72d569`, unpublished) adds the
+Error `msg-tell-no-route-for-type`; the 2.4.0 pin does not have it, so the
+sweep for it is `RIDDLC=../bin/riddlc ./scripts/collect-warnings.py`. Left:
+22 Event (port-operations 11 and vessel-management 5, where the event is not
+the target's own; 6 in order-management, where the target has no fold), 16
+Command, 14 Result. **Every ruling so far is in § 2026-10-28 below. Ask before
+deciding any of the 52** — one question per similar group, with the whole
+flow written out (Reid, 2026-10-28).
 
 **The one big prose class left is `query one`** — 398 `let x = prompt("read
 the X from the store")` clauses, each needing its result constructed from the
@@ -55,6 +58,47 @@ Open work: **BACKLOG.md** #40 (`query one`), #30, #1, #23, #34. Durable facts:
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
 ---
+
+## 2026-10-28 — `msg-tell-no-route-for-type`: 91 -> 52, by ruling
+
+The 2026-10-21 holds were each a design question, not a mechanical deletion.
+Reid ruled each one, and every ruling is now a commit:
+
+- **13 false holds** were deleted by the same four tests (`8315a1b7`).
+- **Prescription only `send`s its events**, so its folds were reachable only
+  through the loop. It is now event-sourced by `scripts/folds/event-source.py`,
+  rather than given an inlet to keep the loop (`d6a8ad07`).
+- **A boundary that builds an entity's event tells it a command instead**,
+  and the entity yields the event (reactive-bbq, `f40c8c8a`).
+- **The seven events nothing produced each have a producer** (`37949ef7`,
+  `2eae0bd5`). There are three shapes:
+  - a conditional outcome is a `when prompt(…) then … end` guard in the
+    command that decides it;
+  - finished external work comes back from the inbound adaptor as a new
+    `Complete<X>` command;
+  - `SubOrderRouted` comes from `CreateOrder` as a `foreach` over
+    `OrderCreated.subOrders`.
+  None was deleted as dead: each had downstream consumers that were silently
+  inert. No vendor was ever notified of a sub-order.
+- **reactive-bbq's repositories built `MenuRelease`/`MenuItem` events**, and
+  had to prompt for the id because the vendor's reply carried only its own job
+  id. The vendor now echoes the id, and the confirmation reaches the entity
+  through the context (`dd51bbfb`).
+
+**The principle Reid endorsed twice: an external system ECHOES a correlation
+id.** A receiver that prompts for which instance a reply concerns has an
+address that neither riddlg nor replay can resolve. plm-integration still
+prompts `integrationId` on `CompleteSyncJob`, because the echo carries only
+`jobId`.
+
+**reactive-bbq R2 requires a `described as` on every definition**, including
+an intake inlet and its connector. `sbt v` does not check it; `checkTests`
+does.
+
+**A scratch probe is cheap evidence for a proposal.** Copying the model to
+the scratchpad and validating the proposed clause answered "does riddlc accept
+this?" before the question went to Reid. It does not answer what the clause
+means.
 
 ## 2026-10-21 — `msg-tell-no-route-for-type`: 2,026 -> 91
 
