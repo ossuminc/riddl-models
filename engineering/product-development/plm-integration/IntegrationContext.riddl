@@ -1,5 +1,11 @@
 // PLM Integration - Integration Context
 context IntegrationContext as router is {
+  inlet IntegrationContextFromFromPLMSystemService is command Integration.CompleteSyncJob with {
+    briefly "What FromPLMSystemService makes of the products it receives"
+  }
+  connector 'FromPLMSystemService Intake' is from outlet IntegrationContext.FromPLMSystemService.FromPLMSystemServiceToIntegrationContext to inlet IntegrationContext.IntegrationContextFromFromPLMSystemService with {
+    briefly "Finished sync jobs reported by FromPLMSystemService, on their way in"
+  }
   inlet IntegrationCommandStreamIn is type IntegrationCommand  outlet IntegrationCommandStreamOut is type IntegrationCommand
   inlet IntegrationResultStreamIn is result Integration.IntegrationResult  outlet IntegrationResultStreamOut is result Integration.IntegrationResult
   handler IntegrationContextBoundary is {
@@ -29,6 +35,9 @@ context IntegrationContext as router is {
     }
     on cancelSyncJob: command Integration.CancelSyncJob is {
       send cancelSyncJob to outlet IntegrationContext.IntegrationCommandStreamOut
+    }
+    on completeSyncJob: command Integration.CompleteSyncJob is {
+      send completeSyncJob to outlet IntegrationContext.IntegrationCommandStreamOut
     }
     on processChangeEvent: command Integration.ProcessChangeEvent is {
       send processChangeEvent to outlet IntegrationContext.IntegrationCommandStreamOut
@@ -226,10 +235,11 @@ context IntegrationContext as router is {
       |The model's side of the MonitoringService conversation.
     }
   }
-  adaptor FromPLMSystemService from context PLMSystemService as sink is { 
+  adaptor FromPLMSystemService from context PLMSystemService as flow is { 
+    outlet FromPLMSystemServiceToIntegrationContext is command Integration.CompleteSyncJob
     inlet FromPLMSystemServiceIn is event PLMSystemService.ProductFetched    handler FromPLMSystemServiceHandler is {
       on productFetched: event PLMSystemService.ProductFetched is {
-        do "the product is here; what the sync does with it is the job's own business"
+        send command Integration.CompleteSyncJob(integrationId = prompt("the integration that owns this sync job"), jobId = productFetched.jobId) to outlet IntegrationContext.FromPLMSystemService.FromPLMSystemServiceToIntegrationContext
       }
       on other is {
         error "Unexpected message for adaptor FromPLMSystemService"
@@ -250,7 +260,7 @@ context IntegrationContext as router is {
     inlet ToPLMSystemServiceIn is type IntegrationEvent    outlet ToPLMSystemServiceOut is type PLMSystemService.PLMSystemServiceCommand
     handler ToPLMSystemServiceHandler is {
       on syncJobStarted: event Integration.SyncJobStarted is {
-        let item0: type PLMSystemService.FetchProduct = prompt("translate the syncJobStarted event into a FetchProduct, the job needing the current product record before it can compare")
+        let item0: type PLMSystemService.FetchProduct = prompt("translate the syncJobStarted event into a FetchProduct carrying the job's id, the job needing the current product record before it can compare")
         send item0 to outlet IntegrationContext.ToPLMSystemService.ToPLMSystemServiceOut
       }
       on changeEventProcessed: event Integration.ChangeEventProcessed is {
@@ -1044,7 +1054,6 @@ context IntegrationContext as router is {
       on syncJobCompleted: event Integration.SyncJobCompleted is {
         send syncJobCompleted to outlet IntegrationEventSplitToIntegrationAnalytics
         send syncJobCompleted to outlet IntegrationEventSplitToToMonitoringService
-        tell syncJobCompleted to entity IntegrationContext.Integration
       }
       on syncJobCancelled: event Integration.SyncJobCancelled is {
         send syncJobCancelled to outlet IntegrationEventSplitToIntegrationAnalytics
