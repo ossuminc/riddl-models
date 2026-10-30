@@ -51,9 +51,6 @@ context TeamContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'PlayerProjection Storage' is from outlet TeamContext.PlayerProjection.PlayerProjectionToRepository to inlet TeamContext.PlayerRepository.PlayerRepositoryFromPlayerProjection with {
-    briefly "PlayerProjection commands on their way to PlayerRepository"
-  }
   connector 'PlayerCommand Stream Intake' is from outlet TeamContext.PlayerCommandStreamOut to inlet TeamContext.Player.PlayerCommands  connector 'TeamCommand Stream Intake' is from outlet TeamContext.TeamCommandStreamOut to inlet TeamContext.Team.TeamCommands  connector 'PlayerResult Stream Egress' is from outlet TeamContext.PlayerRepository.PlayerRepositoryResponses to inlet TeamContext.PlayerResultStreamIn  query GetRosterMetrics replies result RosterMetricsView is {
     teamId: TeamId with {
       briefly "Team ID"
@@ -322,7 +319,7 @@ context TeamContext as router is {
     }
   }
   // Repository for player data persistence
-  repository PlayerRepository as merge is {
+  repository PlayerRepository as flow is {
     inlet PlayerRepositoryFromRosterMetrics is type PlayerRepositoryCommand with {
       briefly "What RosterMetrics sends PlayerRepository"
       described as {
@@ -696,7 +693,7 @@ context TeamContext as router is {
         |The relational schema persisting player records for this repository.
       }
     }
-    inlet PlayerRepositoryFromPlayerProjection is command TeamContext.PlayerRepository.PersistTeamCreated    outlet PlayerRepositoryResponses is result Player.PlayerResult
+    outlet PlayerRepositoryResponses is result Player.PlayerResult
     query GetPlayerById replies result PlayerRecord is {
       playerId: PlayerId with {
         briefly "Player to retrieve"
@@ -866,25 +863,6 @@ context TeamContext as router is {
       | Provides query capabilities for player data including lookups
       | by ID, team, status, and free agency. Supports roster management
       | and player acquisition workflows.
-    }
-  }
-  projector PlayerProjection as flow is {
-    updates repository TeamContext.PlayerRepository
-    inlet PlayerProjectionFromPlayer is type TeamEvent    outlet PlayerProjectionToRepository is command TeamContext.PlayerRepository.PersistTeamCreated
-    handler PlayerProjectionHandler is {
-      on teamCreated: event Team.TeamCreated is {
-        tell command TeamContext.PlayerRepository.PersistTeamCreated(teamId = teamCreated.teamId) to repository TeamContext.PlayerRepository
-      }
-    } with {
-      briefly "PlayerProjection handler"
-      described as {
-        |Turns each Player event into the repository command that writes it.
-      }
-    }
-  } with {
-    briefly "Player persistence projection"
-    described as {
-      |Builds the stored Player view from the entity's events.
     }
   }
   // Projector for roster analytics
@@ -1060,12 +1038,10 @@ context TeamContext as router is {
       |Fans Player events out to the repository and projectors.
     }
   }
-  streamlet TeamEventSplit as split is {
-    inlet TeamEventSplitIn is type TeamEvent    outlet TeamEventSplitToPlayerRepository is type TeamEvent
-    outlet TeamEventSplitToRosterMetrics is type TeamEvent
+  streamlet TeamEventSplit as flow is {
+    inlet TeamEventSplitIn is type TeamEvent    outlet TeamEventSplitToRosterMetrics is type TeamEvent
     handler TeamEventSplitHandler is {
       on teamCreated: event Team.TeamCreated is {
-        send teamCreated to outlet TeamEventSplitToPlayerRepository
         send teamCreated to outlet TeamEventSplitToRosterMetrics
       }
       on other is {
@@ -1091,9 +1067,6 @@ context TeamContext as router is {
   }
   connector 'TeamEvent Stream' is from outlet TeamContext.Team.TeamEvents to inlet TeamContext.TeamEventSplit.TeamEventSplitIn with {
     briefly "Team events, fanned out to storage and read models"
-  }
-  connector 'TeamEvent Storage' is from outlet TeamContext.TeamEventSplit.TeamEventSplitToPlayerRepository to inlet TeamContext.PlayerProjection.PlayerProjectionFromPlayer with {
-    briefly "Team events on their way to storage"
   }
   connector 'TeamEvent Feed' is from outlet TeamContext.TeamEventSplit.TeamEventSplitToRosterMetrics to inlet TeamContext.RosterMetrics.RosterMetricsFromTeam with {
     briefly "TeamEvent feeding the RosterMetrics projection"
