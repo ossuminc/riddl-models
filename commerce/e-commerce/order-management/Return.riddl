@@ -1,6 +1,6 @@
 // Order Management - Return Entity
 // Handles return requests, refunds, and restocking
-entity Return as flow is {
+event-sourced entity Return as flow is {
   type ReturnCommand is one of {
     Return.RequestReturn or Return.ApproveReturn or Return.DenyReturn or Return.ReceiveReturn or Return.ProcessRefund
   } with {
@@ -96,7 +96,7 @@ entity Return as flow is {
     }
   }
   // Commands
-  command RequestReturn is {
+  command RequestReturn yields event ReturnRequested is {
     returnId: ReturnId with {
       briefly "Return ID"
       described as {
@@ -139,7 +139,7 @@ entity Return as flow is {
       |Submits a request to return one or more items from a delivered order.
     }
   }
-  command ApproveReturn is {
+  command ApproveReturn yields event ReturnApproved is {
     returnId: ReturnId with {
       briefly "Return ID"
       described as {
@@ -164,7 +164,7 @@ entity Return as flow is {
       |Approves the return and provides shipping label for customer.
     }
   }
-  command DenyReturn is {
+  command DenyReturn yields event ReturnDenied is {
     returnId: ReturnId with {
       briefly "Return ID"
       described as {
@@ -189,7 +189,7 @@ entity Return as flow is {
       |Rejects the return request with explanation.
     }
   }
-  command ReceiveReturn is {
+  command ReceiveReturn yields event ReturnReceived is {
     returnId: ReturnId with {
       briefly "Return ID"
       described as {
@@ -220,7 +220,7 @@ entity Return as flow is {
       |Records that returned items have been received at warehouse.
     }
   }
-  command ProcessRefund is {
+  command ProcessRefund yields event RefundProcessed is {
     returnId: ReturnId with {
       briefly "Return ID"
       described as {
@@ -282,6 +282,9 @@ entity Return as flow is {
       described as {
         |Request time.
       }
+    }
+    comments: String(1,1000)? with {
+      briefly "Comments"
     }
   } with {
     briefly "A return was requested"
@@ -473,44 +476,6 @@ entity Return as flow is {
     briefly "Pending return request"
     described as {
       |State data for a return request awaiting review.
-    }
-  }
-  record ShippedReturnData is {
-    stateValue: ReturnStatus with {
-      briefly "State value"
-      described as {
-        |The enumeration value naming the state this record represents.
-      }
-    }
-    returnId: ReturnId with {
-      briefly "Return ID"
-      described as {
-        |Return identifier.
-      }
-    }
-  } with {
-    briefly "Shipped return"
-    described as {
-      |State data for a return where the customer has despatched the goods back.
-    }
-  }
-  record ClosedReturnData is {
-    stateValue: ReturnStatus with {
-      briefly "State value"
-      described as {
-        |The enumeration value naming the state this record represents.
-      }
-    }
-    returnId: ReturnId with {
-      briefly "Return ID"
-      described as {
-        |Return identifier.
-      }
-    }
-  } with {
-    briefly "Closed return"
-    described as {
-      |State data for a return where the return is finished and no longer accepts activity.
     }
   }
   record ApprovedReturnData is {
@@ -723,8 +688,8 @@ entity Return as flow is {
         reply returnResult
       }
       on init is {
-        set state Requested to "initialize from prior event"
-        set field Return.RequestedReturnData.stateValue to "StatusRequested"
+        let returnRequested: type ReturnRequested = prompt("the return requested that brings this return into existence")
+        yield returnRequested
       }
     } with {
       briefly "Requested init handler"
@@ -738,59 +703,11 @@ entity Return as flow is {
       |The Requested state of the Return.
     }
   }
-  state Shipped of record Return.ShippedReturnData is {
-    initial handler ShippedInitHandler is {
-      on init is {
-        set state Shipped to "initialize from prior event"
-        set field Return.ShippedReturnData.stateValue to "StatusShipped"
-      }
-      on query GetReturn is {
-        let returnResult: type Return.ReturnResult = prompt("read the return from the store")
-        reply returnResult
-      }
-      on other is {
-        error "a shipped return is read-only; it reports its state but accepts no changes"
-      }
-    } with {
-      briefly "Shipped init handler"
-      described as {
-        |Initializes the Shipped state. The return is readable here but
-        |cannot be moved by further commands -- receipt is what advances it.
-      }
-    }
-  } with {
-    briefly "Shipped state"
-    described as {
-      |The Shipped state of the Return: goods are in transit back to the
-      |merchant. Read-only -- the state reports itself but refuses changes.
-    }
-  }
-  state Closed of record Return.ClosedReturnData is {
-    initial handler ClosedInitHandler is {
-      on init is {
-        set state Closed to "initialize from prior event"
-        set field Return.ClosedReturnData.stateValue to "StatusClosed"
-      }
-      on other is {
-        error "the return is closed and accepts no further activity"
-      }
-    } with {
-      briefly "Closed init handler"
-      described as {
-        |Initializes the Closed state and refuses everything thereafter.
-      }
-    }
-  } with {
-    briefly "Closed state"
-    described as {
-      |The Closed state of the Return: terminal. Every message is refused.
-    }
-  }
   state Approved of record Return.ApprovedReturnData is {
     initial handler ApprovedInitHandler is {
       on init is {
-        set state Approved to "initialize from prior event"
-        set field Return.ApprovedReturnData.stateValue to "StatusApproved"
+        let returnApproved: type ReturnApproved = prompt("the return approved that brings this return into existence")
+        yield returnApproved
       }
     } with {
       briefly "Approved init handler"
@@ -807,8 +724,8 @@ entity Return as flow is {
   state Received of record Return.ReceivedReturnData is {
     initial handler ReceivedInitHandler is {
       on init is {
-        set state Received to "initialize from prior event"
-        set field Return.ReceivedReturnData.stateValue to "StatusReceived"
+        let returnReceived: type ReturnReceived = prompt("the return received that brings this return into existence")
+        yield returnReceived
       }
     } with {
       briefly "Received init handler"
@@ -825,8 +742,8 @@ entity Return as flow is {
   state Refunded of record Return.RefundedReturnData is {
     initial handler RefundedInitHandler is {
       on init is {
-        set state Refunded to "initialize from prior event"
-        set field Return.RefundedReturnData.stateValue to "StatusRefunded"
+        let refundProcessed: type RefundProcessed = prompt("the refund processed that brings this return into existence")
+        yield refundProcessed
       }
     } with {
       briefly "Refunded init handler"
@@ -843,8 +760,8 @@ entity Return as flow is {
   state Denied of record Return.DeniedReturnData is {
     initial handler DeniedInitHandler is {
       on init is {
-        set state Denied to "initialize from prior event"
-        set field Return.DeniedReturnData.stateValue to "StatusDenied"
+        let returnDenied: type ReturnDenied = prompt("the return denied that brings this return into existence")
+        yield returnDenied
       }
     } with {
       briefly "Denied init handler"
@@ -861,24 +778,34 @@ entity Return as flow is {
   // Handler
   handler ReturnHandler is {
     on requestReturn: command RequestReturn is {
-      morph entity Return to state Return.Requested with record Return.RequestedReturnData(returnId = requestReturn.returnId, orderId = requestReturn.orderId, customerId = requestReturn.customerId, returnItems = requestReturn.returnItems, returnReason = requestReturn.returnReason, comments = requestReturn.comments, stateValue = prompt("the state value of this requested return data"), requestedAt = prompt("the requested at of this requested return data"))
-      tell event ReturnRequested(returnId = requestReturn.returnId, orderId = requestReturn.orderId, customerId = requestReturn.customerId, returnItems = requestReturn.returnItems, returnReason = requestReturn.returnReason, requestedAt = prompt("the requested at of this return requested")) to entity Return
+      yield event ReturnRequested(returnId = requestReturn.returnId, orderId = requestReturn.orderId, customerId = requestReturn.customerId, returnItems = requestReturn.returnItems, returnReason = requestReturn.returnReason, requestedAt = prompt("the requested at of this return requested"), comments = requestReturn.comments)
     }
     on approveReturn: command ApproveReturn is {
-      morph entity Return to state Return.Approved with record Return.ApprovedReturnData(returnId = approveReturn.returnId, returnLabel = approveReturn.returnLabel, approvedBy = approveReturn.approvedBy, stateValue = prompt("the state value of this approved return data"), orderId = prompt("the order id of this approved return data"), customerId = prompt("the customer id of this approved return data"), returnItems = prompt("the return items of this approved return data"), approvedAt = prompt("the approved at of this approved return data"))
-      tell event ReturnApproved(returnId = approveReturn.returnId, approvedBy = approveReturn.approvedBy, returnLabel = approveReturn.returnLabel, approvedAt = prompt("the approved at of this return approved")) to entity Return
+      yield event ReturnApproved(returnId = approveReturn.returnId, approvedBy = approveReturn.approvedBy, returnLabel = approveReturn.returnLabel, approvedAt = prompt("the approved at of this return approved"))
     }
     on denyReturn: command DenyReturn is {
-      morph entity Return to state Return.Denied with record Return.DeniedReturnData(returnId = denyReturn.returnId, deniedBy = denyReturn.deniedBy, reason = denyReturn.reason, stateValue = prompt("the state value of this denied return data"), orderId = prompt("the order id of this denied return data"), customerId = prompt("the customer id of this denied return data"), deniedAt = prompt("the denied at of this denied return data"))
-      tell event ReturnDenied(returnId = denyReturn.returnId, deniedBy = denyReturn.deniedBy, reason = denyReturn.reason, deniedAt = prompt("the denied at of this return denied")) to entity Return
+      yield event ReturnDenied(returnId = denyReturn.returnId, deniedBy = denyReturn.deniedBy, reason = denyReturn.reason, deniedAt = prompt("the denied at of this return denied"))
     }
     on receiveReturn: command ReceiveReturn is {
-      morph entity Return to state Return.Received with record Return.ReceivedReturnData(returnId = receiveReturn.returnId, receivedAt = receiveReturn.receivedAt, condition = receiveReturn.condition, stateValue = prompt("the state value of this received return data"), orderId = prompt("the order id of this received return data"), customerId = prompt("the customer id of this received return data"), returnItems = prompt("the return items of this received return data"))
-      tell event ReturnReceived(returnId = receiveReturn.returnId, receivedAt = receiveReturn.receivedAt, condition = receiveReturn.condition, allItemsReceived = receiveReturn.allItemsReceived) to entity Return
+      yield event ReturnReceived(returnId = receiveReturn.returnId, receivedAt = receiveReturn.receivedAt, condition = receiveReturn.condition, allItemsReceived = receiveReturn.allItemsReceived)
     }
     on processRefund: command ProcessRefund is {
-      morph entity Return to state Return.Refunded with record Return.RefundedReturnData(returnId = processRefund.returnId, refundAmount = processRefund.refundAmount, refundMethod = processRefund.refundMethod, stateValue = prompt("the state value of this refunded return data"), orderId = prompt("the order id of this refunded return data"), customerId = prompt("the customer id of this refunded return data"), refundedAt = prompt("the refunded at of this refunded return data"))
-      tell event RefundProcessed(returnId = processRefund.returnId, refundAmount = processRefund.refundAmount, refundMethod = processRefund.refundMethod, orderId = prompt("the order id of this refund processed"), processedAt = prompt("the processed at of this refund processed")) to entity Return
+      yield event RefundProcessed(returnId = processRefund.returnId, refundAmount = processRefund.refundAmount, refundMethod = processRefund.refundMethod, orderId = prompt("the order id of this refund processed"), processedAt = prompt("the processed at of this refund processed"))
+    }
+    on refundProcessed: event RefundProcessed is {
+      morph entity Return to state Return.Refunded with record Return.RefundedReturnData(returnId = refundProcessed.returnId, refundAmount = refundProcessed.refundAmount, refundMethod = refundProcessed.refundMethod, stateValue = prompt("the state value of this refunded return data"), orderId = prompt("the order id of this refunded return data"), customerId = prompt("the customer id of this refunded return data"), refundedAt = prompt("the refunded at of this refunded return data"))
+    }
+    on returnReceived: event ReturnReceived is {
+      morph entity Return to state Return.Received with record Return.ReceivedReturnData(returnId = returnReceived.returnId, receivedAt = returnReceived.receivedAt, condition = returnReceived.condition, stateValue = prompt("the state value of this received return data"), orderId = prompt("the order id of this received return data"), customerId = prompt("the customer id of this received return data"), returnItems = prompt("the return items of this received return data"))
+    }
+    on returnDenied: event ReturnDenied is {
+      morph entity Return to state Return.Denied with record Return.DeniedReturnData(returnId = returnDenied.returnId, deniedBy = returnDenied.deniedBy, reason = returnDenied.reason, stateValue = prompt("the state value of this denied return data"), orderId = prompt("the order id of this denied return data"), customerId = prompt("the customer id of this denied return data"), deniedAt = prompt("the denied at of this denied return data"))
+    }
+    on returnApproved: event ReturnApproved is {
+      morph entity Return to state Return.Approved with record Return.ApprovedReturnData(returnId = returnApproved.returnId, returnLabel = returnApproved.returnLabel, approvedBy = returnApproved.approvedBy, stateValue = prompt("the state value of this approved return data"), orderId = prompt("the order id of this approved return data"), customerId = prompt("the customer id of this approved return data"), returnItems = prompt("the return items of this approved return data"), approvedAt = prompt("the approved at of this approved return data"))
+    }
+    on returnRequested: event ReturnRequested is {
+      morph entity Return to state Return.Requested with record Return.RequestedReturnData(returnId = returnRequested.returnId, orderId = returnRequested.orderId, customerId = returnRequested.customerId, returnItems = returnRequested.returnItems, returnReason = returnRequested.returnReason, comments = returnRequested.comments, stateValue = prompt("the state value of this requested return data"), requestedAt = prompt("the requested at of this requested return data"))
     }
   } with {
     briefly "Processes return lifecycle commands"
