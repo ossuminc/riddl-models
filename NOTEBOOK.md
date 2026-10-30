@@ -10,19 +10,17 @@ Packages. **`../bin/riddlc` is no longer the build's binary** — pass
 `RIDDLC=~/.cache/riddlc/2.4.0/bin/riddlc` to any script run that is evidence.
 
 **EVERY GATE IS GREEN ON 2.4.0, `checkTests` included.** 0 errors, 0
-warnings; 413 advisories corpus-wide, 3 in reactive-bbq, all
+warnings; 418 advisories corpus-wide, 3 in reactive-bbq, all
 `stmt-yield-argument-prompt` and all dismissed on purpose.
 
-### In flight — `task/2026-10-21-tell-no-route-for-type.md`, 52 of 2,026 left
+### In flight — `msg-tell-no-route-for-type` is at 0; riddl to confirm
 
-riddl's staged `../bin/riddlc` (`2.4.0-3-fa72d569`, unpublished) adds the
-Error `msg-tell-no-route-for-type`; the 2.4.0 pin does not have it, so the
-sweep for it is `RIDDLC=../bin/riddlc ./scripts/collect-warnings.py`. Left:
-22 Event (port-operations 11 and vessel-management 5, where the event is not
-the target's own; 6 in order-management, where the target has no fold), 16
-Command, 14 Result. **Every ruling so far is in § 2026-10-28 below. Ask before
-deciding any of the 52** — one question per similar group, with the whole
-flow written out (Reid, 2026-10-28).
+`task/2026-10-21-tell-no-route-for-type.md`: 2,026 -> 0 on the staged
+`../bin/riddlc` (`2.4.0-3-fa72d569`, unpublished; the 2.4.0 pin lacks the
+rule). Acceptance 3, riddl's `RiddlModelsRoundTripTest`, is the riddl
+instance's to confirm, so the file stays in `task/`. When riddl publishes a tag
+carrying the rule, bump the pin to it. Rulings are in § 2026-10-30 and
+§ 2026-10-28 below.
 
 **The one big prose class left is `query one`** — 398 `let x = prompt("read
 the X from the store")` clauses, each needing its result constructed from the
@@ -58,6 +56,37 @@ Open work: **BACKLOG.md** #40 (`query one`), #30, #1, #23, #34. Durable facts:
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
 ---
+
+## 2026-10-30 — `msg-tell-no-route-for-type`: 52 -> 0
+
+Six more rulings, one per group, each asked as its own question with the flow
+written out (`2184f79c` … `8c91ffac`). By group:
+- 14 repository queries `tell`ing results to entities now `reply`;
+- 9 mistyped adaptor ports are corrected;
+- order-management's `Return` is event-sourced;
+- reactive-bbq's seating no longer opens an order from inside a fold;
+- Berth and Vessel take their own commands from PortCall and Voyage events;
+- team-management's RosterMetrics port is widened.
+
+**A fold must not send.** reactive-bbq's `PartySeated` fold told TableOrder a
+`CreateOrder`. A fold re-runs on every replay, so recovery would have opened
+an order per party ever seated. No rule catches this; riddlc reported it only
+because the tell also had no route. A reaction to an event belongs downstream
+of it, in the split.
+
+**I gave Reid a false premise, and the edit exposed it.** I said storage is
+separate from analytics "as the corpus's other models do". It is the reverse:
+122 `…Analytics` projectors persist entity events as `Persist` commands, and
+riddlc requires every projector to persist (`proj-no-persistence`). The edit
+was reverted uncommitted and the question re-asked with the correction stated
+first. **Check a "the corpus does X" claim with a grep before it goes into a
+recommendation.**
+
+**Several of these entities had state no event ever set** (a Berth stayed
+Available forever, a Vessel never reached port), while their folds said
+"apply X so it can be persisted and replayed". That boilerplate is the
+2026-08-22 tell-back ruling's residue. Where it remains it marks state that
+is silently never updated. **1,708 such folds remain corpus-wide** (grep, 2026-10-30), unexamined.
 
 ## 2026-10-28 — `msg-tell-no-route-for-type`: 91 -> 52, by ruling
 
