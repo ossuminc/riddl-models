@@ -5,6 +5,43 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
+## 42. 1,708 boilerplate folds — survey what state they hide (Reid, 2026-10-30)
+
+**What:** an `on event X` clause whose only statement is
+`do "apply X to the <entity> so it can be persisted and replayed"`. There are
+1,708 of them, in 162 model directories (grep, 2026-10-30):
+
+```bash
+grep -rn --include='*.riddl' \
+  'do "apply \w* to the \w* so it can be persisted and replayed"' . | wc -l
+```
+
+**Why:** these are what the 2026-08-22 tell-back ruling generated, a clause
+added wherever a split told an entity an event. In port-operations and
+vessel-management (`7eb5ee1e`) they hid state that **no event ever set**: a
+Berth stayed `Available` forever, and a Vessel never reached port. They
+validate silently. `entity-event-sourced-prose-folds` covers only
+event-sourced entities, and these sit almost entirely in CRUD entities that
+self-`tell`.
+
+**Survey, before deciding anything.** Classify each site from
+`riddlc dump --json`, not regex:
+1. **The fold's entity owns the event.** Does its state have a field the event
+   carries (state the fold, as `scripts/folds/decisions.tsv` does), or is the
+   event pure history?
+2. **A sibling's event**: the Berth/Vessel shape, an entity folding another
+   entity's event. `7eb5ee1e` removed the two known cases; recount.
+3. **An entity that should be event-sourced**: a lifecycle entity with several
+   states and morphs. `Return` (`b58b65bf`) was one; the 2026-09-12 rule
+   missed it, because its advisory fires only when the events are consumed.
+
+Report per-class counts to Reid with a proposed treatment for each. One
+question per class, with an example flow.
+
+**Verified so far:** the count and the grep above. Nothing is classified yet.
+
+---
+
 ## 33. Adaptor-wiring campaign — CLOSED 2026-09-09 at ZERO
 
 **This is the campaign that `task/2026-09-05-do-prose-must-be-an-instruction.md`
