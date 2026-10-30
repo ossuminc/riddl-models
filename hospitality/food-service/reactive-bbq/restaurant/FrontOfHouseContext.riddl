@@ -1,5 +1,19 @@
 // Front of House bounded context
 context FrontOfHouse as router is {
+  inlet FrontOfHouseFromReservationEventSplit is command TableOrder.CreateOrder with {
+    briefly "Table orders opened by seating a reserved party"
+    described as {
+      |ReservationEventSplit's CreateOrder enters here and the boundary forwards
+      |it to TableOrder, as it does the app's.
+    }
+  }
+  connector 'ReservationEventSplit Intake' is from outlet FrontOfHouse.ReservationEventSplit.ReservationEventSplitToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromReservationEventSplit with {
+    briefly "Seated parties' table orders, on their way in"
+    described as {
+      |Joins ReservationEventSplit to the context's own inlet, so the order
+      |reaches TableOrder through the boundary rather than around it.
+    }
+  }
   inlet FrontOfHouseTableOrderToReportingIn is type TableOrderEvent  outlet FrontOfHouseTableOrderToReportingOut is type TableOrderEvent
   connector 'FromFrontOfHouseReservations TableOrder Feed' is from outlet FrontOfHouse.TableOrderEventSource.TableOrderEventSourceToReporting to inlet FrontOfHouse.FrontOfHouseTableOrderToReportingIn with {
     briefly "TableOrder events on their way to Reporting"
@@ -1672,6 +1686,14 @@ context FrontOfHouse as router is {
     inlet ReservationEventSplitIn is type ReservationEvent    outlet ReservationEventSplitToReservationEventSource is type ReservationEvent
     outlet ReservationEventSplitToReservationRepository is type ReservationEvent
     outlet ReservationEventSplitToReservationBoard is type ReservationEvent
+    outlet ReservationEventSplitToFrontOfHouse is command TableOrder.CreateOrder
+ with {
+      briefly "The table order a seated party opens"
+      described as {
+        |Seating a reserved party opens its table order. The split does it, not
+        |the PartySeated fold, because a fold runs again on every replay.
+      }
+    }
     handler ReservationEventSplitHandler is {
       on reservationMade: event Reservation.ReservationMade is {
         send reservationMade to outlet ReservationEventSplitToReservationRepository
@@ -1691,6 +1713,7 @@ context FrontOfHouse as router is {
         send reservationCancelled to outlet ReservationEventSplitToReporting
       }
       on partySeated: event Reservation.PartySeated is {
+        send command TableOrder.CreateOrder(tableOrderId = prompt("a new table order id for the seated party"), tableNumber = partySeated.seatedTable, serverId = prompt("the server the host assigned to the table")) to outlet FrontOfHouse.ReservationEventSplit.ReservationEventSplitToFrontOfHouse
         send partySeated to outlet ReservationEventSplitToReservationRepository
         send partySeated to outlet ReservationEventSplitToReservationBoard
         send partySeated to outlet ReservationEventSplitToReservationEventSource
