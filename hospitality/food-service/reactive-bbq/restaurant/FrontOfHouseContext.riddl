@@ -276,7 +276,7 @@ context FrontOfHouse as router is {
     }
   }
   type ReservationRepositoryCommand is one of {
-    FrontOfHouse.ReservationRepository.PersistReservationMade or FrontOfHouse.ReservationRepository.PersistReservationConfirmed or FrontOfHouse.ReservationRepository.PersistReservationCancelled or FrontOfHouse.ReservationRepository.PersistPartySeated or FrontOfHouse.ReservationRepository.PersistNoShowMarked or FrontOfHouse.ReservationRepository.PersistReservationRescheduled
+    FrontOfHouse.ReservationRepository.PersistReservationMade or FrontOfHouse.ReservationRepository.PersistReservationConfirmed or FrontOfHouse.ReservationRepository.PersistReservationCancelled or FrontOfHouse.ReservationRepository.PersistPartySeated or FrontOfHouse.ReservationRepository.PersistNoShowMarked or FrontOfHouse.ReservationRepository.PersistReservationRescheduled or FrontOfHouse.ReservationRepository.PostReservationBoardEntry or FrontOfHouse.ReservationRepository.ConfirmReservationBoardEntry or FrontOfHouse.ReservationRepository.SeatReservationBoardEntry or FrontOfHouse.ReservationRepository.RescheduleReservationBoardEntry or FrontOfHouse.ReservationRepository.ClearReservationBoardEntry
   } with {
     briefly "Anything that writes the ReservationRepository"
     described as {
@@ -403,13 +403,61 @@ context FrontOfHouse as router is {
         |The persistence shape of tableOrder data as this repository stores it.
       }
     }
+    record ReservationBoardEntry is {
+      reservationId: ReservationId with {
+        briefly "ID"
+        described as {
+          |The booking this board row stands for.
+        }
+      }
+      guestName: GuestName with {
+        briefly "Guest"
+        described as {
+          |Who the host greets.
+        }
+      }
+      partySize: PartySize with {
+        briefly "Party size"
+        described as {
+          |How many covers to seat.
+        }
+      }
+      reservationTime: TimeStamp with {
+        briefly "Time"
+        described as {
+          |When the party is due. The board sorts on this.
+        }
+      }
+      reservationDisplayStatus: String(1,30) with {
+        briefly "Status"
+        described as {
+          |Requested, Confirmed or Seated.
+        }
+      }
+      assignedTable: TableNumber? with {
+        briefly "Table"
+        described as {
+          |The table confirmed or seated at, empty until one is.
+        }
+      }
+    } with {
+      briefly "Board entry"
+      described as {
+        |One active booking on the host stand's board. The row is cleared when
+        |the booking is cancelled, the party is marked a no-show, or the visit
+        |ends, so the board shows only parties still to come or still seated;
+        |the reservations table keeps the history.
+      }
+    }
     schema ReservationSchema is relational
+      of reservationBoard as record ReservationBoardEntry
       of reservationEvents as record LoggedReservationEvent with history
       of reservations as record StoredReservation
         link reservationEventLogEntry as field LoggedReservationEvent.loggedReservationId to field StoredReservation.reservationId
         key on field StoredReservation.reservationId
         index on field StoredReservation.guestName
         index on field StoredReservation.reservationTime
+        index on field ReservationBoardEntry.reservationId
  with {
       briefly "Reservation data schema"
       described as {
@@ -591,7 +639,123 @@ context FrontOfHouse as router is {
         |because storing a row records no new entity state.
       }
     }
+    command PostReservationBoardEntry is {
+      reservationId: ReservationId with {
+        briefly "ID"
+        described as {
+          |The booking whose board row this writes.
+        }
+      }
+      guestName: GuestName with {
+        briefly "Guest"
+        described as {
+          |Who the booking is for.
+        }
+      }
+      partySize: PartySize with {
+        briefly "Party size"
+        described as {
+          |How many covers.
+        }
+      }
+      reservationTime: TimeStamp with {
+        briefly "Time"
+        described as {
+          |When the party is due.
+        }
+      }
+    } with {
+      briefly "Post a booking to the board"
+      described as {
+        |Puts a new booking on the host stand board.
+      }
+    }
+    command ConfirmReservationBoardEntry is {
+      reservationId: ReservationId with {
+        briefly "ID"
+        described as {
+          |The booking whose board row this writes.
+        }
+      }
+      confirmedTable: TableNumber with {
+        briefly "Table"
+        described as {
+          |The table the booking was confirmed for.
+        }
+      }
+    } with {
+      briefly "Show a booking confirmed"
+      described as {
+        |Marks a booking confirmed on the board, with its table.
+      }
+    }
+    command SeatReservationBoardEntry is {
+      reservationId: ReservationId with {
+        briefly "ID"
+        described as {
+          |The booking whose board row this writes.
+        }
+      }
+      seatedTable: TableNumber with {
+        briefly "Table"
+        described as {
+          |The table the party was seated at.
+        }
+      }
+    } with {
+      briefly "Show a party seated"
+      described as {
+        |Marks a party seated on the board, at the table they sat.
+      }
+    }
+    command RescheduleReservationBoardEntry is {
+      reservationId: ReservationId with {
+        briefly "ID"
+        described as {
+          |The booking whose board row this writes.
+        }
+      }
+      newReservationTime: TimeStamp with {
+        briefly "New time"
+        described as {
+          |When the party is now due.
+        }
+      }
+    } with {
+      briefly "Move a booking on the board"
+      described as {
+        |Moves a booking to its new time on the board.
+      }
+    }
+    command ClearReservationBoardEntry is {
+      reservationId: ReservationId with {
+        briefly "ID"
+        described as {
+          |The booking whose board row this writes.
+        }
+      }
+    } with {
+      briefly "Take a booking off the board"
+      described as {
+        |Removes a booking that is cancelled, a no-show or finished.
+      }
+    }
     handler ReservationPersistence is {
+      on postReservationBoardEntry: command PostReservationBoardEntry is {
+        store record ReservationBoardEntry(reservationId = postReservationBoardEntry.reservationId, guestName = postReservationBoardEntry.guestName, partySize = postReservationBoardEntry.partySize, reservationTime = postReservationBoardEntry.reservationTime, reservationDisplayStatus = "Requested", assignedTable = empty) in ReservationSchema.reservationBoard
+      }
+      on confirmReservationBoardEntry: command ConfirmReservationBoardEntry is {
+        update ReservationSchema.reservationBoard set reservationDisplayStatus = "Confirmed", assignedTable = confirmReservationBoardEntry.confirmedTable where reservationId == confirmReservationBoardEntry.reservationId
+      }
+      on seatReservationBoardEntry: command SeatReservationBoardEntry is {
+        update ReservationSchema.reservationBoard set reservationDisplayStatus = "Seated", assignedTable = seatReservationBoardEntry.seatedTable where reservationId == seatReservationBoardEntry.reservationId
+      }
+      on rescheduleReservationBoardEntry: command RescheduleReservationBoardEntry is {
+        update ReservationSchema.reservationBoard set reservationTime = rescheduleReservationBoardEntry.newReservationTime where reservationId == rescheduleReservationBoardEntry.reservationId
+      }
+      on clearReservationBoardEntry: command ClearReservationBoardEntry is {
+        delete from ReservationSchema.reservationBoard where reservationId == clearReservationBoardEntry.reservationId
+      }
       on persistReservationMade: command PersistReservationMade is {
         store record StoredReservation(reservationId = persistReservationMade.reservationId, guestName = persistReservationMade.guestName, guestPhone = persistReservationMade.guestPhone, partySize = persistReservationMade.partySize, reservationTime = persistReservationMade.reservationTime, actualCompletedAt = empty, actualMarkedNoShowAt = empty, actualSeatedAt = empty, assignedTable = empty) in ReservationSchema.reservations
       }
@@ -1027,7 +1191,7 @@ context FrontOfHouse as router is {
       |Builds the stored TableOrder view from the entity's events.
     }
   }
-  projector ReservationBoard as merge is {
+  projector ReservationBoard as flow is {
     updates repository FrontOfHouse.ReservationRepository
     correlation VisitDwell by reservationId yields command PersistVisitCompleted is {
       handler CollectVisitSpan is {
@@ -1060,8 +1224,8 @@ context FrontOfHouse as router is {
         |the same table in one night, and a merged table serves one party
         |under two numbers.
         |
-        |**It does not join across the TableOrder stream**, though this
-        |projector receives one. A dine-in check carries no reservationId and
+        |**It does not join across the TableOrder stream**, and this projector
+        |does not receive one. A dine-in check carries no reservationId and
         |should not — a walk-in has no booking at all — so the key would be
         |unreachable from half the events. That is a domain fact, not a
         |modelling shortcut.
@@ -1070,90 +1234,28 @@ context FrontOfHouse as router is {
         |means the visit was never closed rather than that it ran late.
       }
     }
-    inlet ReservationBoardFromReservation is type ReservationEvent    inlet ReservationBoardFromTableOrder is type TableOrderEvent    outlet ReservationBoardOut is type ReservationRepositoryCommand
-    record ReservationBoardEntry is {
-      reservationId: ReservationId with {
-        briefly "ID"
-        described as {
-          |The booking this board row stands for. The host stand uses it to
-          |pull up the full reservation when a party arrives at the door.
-        }
-      }
-      guestName: GuestName with {
-        briefly "Guest"
-        described as {
-          |The name the booking is held under. This is what the host reads
-          |aloud when calling the party, so it is the guest's preferred name
-          |rather than a legal one.
-        }
-      }
-      partySize: PartySize with {
-        briefly "Party size"
-        described as {
-          |Number of guests.
-        }
-      }
-      reservationTime: TimeStamp with {
-        briefly "Time"
-        described as {
-          |When the party is expected. The board sorts on this, and it is the
-          |clock against which lateness and no-show timeouts are measured.
-        }
-      }
-      reservationDisplayStatus: String(1,30) with {
-        briefly "Status"
-        described as {
-          |Display status derived from entity state name.
-        }
-      }
-      assignedTable: TableNumber? with {
-        briefly "Table"
-        described as {
-          |The table this party has been given, once the host assigns one.
-          |Absent while the booking is still waiting, which is how the board
-          |distinguishes seated parties from those still to arrive.
-        }
-      }
-    } with {
-      briefly "Board entry"
-      described as {
-        |A single entry on the reservation board.
-      }
-    }
+    inlet ReservationBoardFromReservation is type ReservationEvent    outlet ReservationBoardOut is type ReservationRepositoryCommand
     handler ReservationBoardHandler is {
-      on other as m is {
-        log m
-      }
       on reservationMade: event Reservation.ReservationMade is {
-        set field ReservationBoardEntry.reservationDisplayStatus to "Requested"
-        tell command PersistReservationMade(reservationId = reservationMade.reservationId, guestName = reservationMade.guestName, guestPhone = reservationMade.guestPhone, partySize = reservationMade.partySize, reservationTime = reservationMade.reservationTime) to repository FrontOfHouse.ReservationRepository
-        do "insert ReservationBoardEntry with reservationId =
-          event.reservationId, guestName = event.guestName,
-          partySize = event.partySize, reservationTime =
-          event.reservationTime, reservationDisplayStatus = Requested,
-          assignedTable = none"
+        tell command FrontOfHouse.ReservationRepository.PostReservationBoardEntry(reservationId = reservationMade.reservationId, guestName = reservationMade.guestName, partySize = reservationMade.partySize, reservationTime = reservationMade.reservationTime) to repository FrontOfHouse.ReservationRepository
       }
       on reservationConfirmed: event Reservation.ReservationConfirmed is {
-        set field ReservationBoardEntry.reservationDisplayStatus to "Confirmed"
-        tell command PersistReservationConfirmed(reservationId = reservationConfirmed.reservationId, confirmedTable = reservationConfirmed.confirmedTable) to repository FrontOfHouse.ReservationRepository
-        do "update ReservationBoardEntry set
-          reservationDisplayStatus = Confirmed,
-          assignedTable = event.confirmedTable
-          where reservationId = event.reservationId"
+        tell command FrontOfHouse.ReservationRepository.ConfirmReservationBoardEntry(reservationId = reservationConfirmed.reservationId, confirmedTable = reservationConfirmed.confirmedTable) to repository FrontOfHouse.ReservationRepository
       }
       on reservationCancelled: event Reservation.ReservationCancelled is {
-        set field ReservationBoardEntry.reservationDisplayStatus to "Cancelled"
-        tell command PersistReservationCancelled(reservationId = reservationCancelled.reservationId) to repository FrontOfHouse.ReservationRepository
-        do "delete ReservationBoardEntry where reservationId =
-          event.reservationId"
+        tell command FrontOfHouse.ReservationRepository.ClearReservationBoardEntry(reservationId = reservationCancelled.reservationId) to repository FrontOfHouse.ReservationRepository
       }
       on partySeated: event Reservation.PartySeated is {
-        set field ReservationBoardEntry.reservationDisplayStatus to "Seated"
-        tell command PersistPartySeated(reservationId = partySeated.reservationId, seatedAt = partySeated.seatedAt) to repository FrontOfHouse.ReservationRepository
-        do "update ReservationBoardEntry set
-          reservationDisplayStatus = Seated,
-          assignedTable = event.seatedTable where
-          reservationId = event.reservationId"
+        tell command FrontOfHouse.ReservationRepository.SeatReservationBoardEntry(reservationId = partySeated.reservationId, seatedTable = partySeated.seatedTable) to repository FrontOfHouse.ReservationRepository
+      }
+      on reservationRescheduled: event Reservation.ReservationRescheduled is {
+        tell command FrontOfHouse.ReservationRepository.RescheduleReservationBoardEntry(reservationId = reservationRescheduled.reservationId, newReservationTime = reservationRescheduled.newReservationTime) to repository FrontOfHouse.ReservationRepository
+      }
+      on noShowMarked: event Reservation.NoShowMarked is {
+        tell command FrontOfHouse.ReservationRepository.ClearReservationBoardEntry(reservationId = noShowMarked.reservationId) to repository FrontOfHouse.ReservationRepository
+      }
+      on visitCompleted: event Reservation.VisitCompleted is {
+        tell command FrontOfHouse.ReservationRepository.ClearReservationBoardEntry(reservationId = visitCompleted.reservationId) to repository FrontOfHouse.ReservationRepository
       }
     } with {
       briefly "Board event handler"
@@ -1749,60 +1851,47 @@ context FrontOfHouse as router is {
   streamlet TableOrderEventSplit as split is {
     inlet TableOrderEventSplitIn is type TableOrderEvent    outlet TableOrderEventSplitToTableOrderEventSource is type TableOrderEvent
     outlet TableOrderEventSplitToTableOrderRepository is type TableOrderEvent
-    outlet TableOrderEventSplitToReservationBoard is type TableOrderEvent
     handler TableOrderEventSplitHandler is {
       on orderCreated: event TableOrder.OrderCreated is {
         send orderCreated to outlet TableOrderEventSplitToTableOrderRepository
-        send orderCreated to outlet TableOrderEventSplitToReservationBoard
         send orderCreated to outlet TableOrderEventSplitToTableOrderEventSource
       }
       on itemAdded: event TableOrder.ItemAdded is {
         send itemAdded to outlet TableOrderEventSplitToTableOrderRepository
-        send itemAdded to outlet TableOrderEventSplitToReservationBoard
         send itemAdded to outlet TableOrderEventSplitToTableOrderEventSource
       }
       on itemRemoved: event TableOrder.ItemRemoved is {
         send itemRemoved to outlet TableOrderEventSplitToTableOrderRepository
-        send itemRemoved to outlet TableOrderEventSplitToReservationBoard
       }
       on orderSubmitted: event TableOrder.OrderSubmitted is {
         send orderSubmitted to outlet TableOrderEventSplitToTableOrderRepository
-        send orderSubmitted to outlet TableOrderEventSplitToReservationBoard
         send orderSubmitted to outlet TableOrderEventSplitToTableOrderEventSource
       }
       on billPresented: event TableOrder.BillPresented is {
         send billPresented to outlet TableOrderEventSplitToTableOrderRepository
-        send billPresented to outlet TableOrderEventSplitToReservationBoard
       }
       on paymentProcessed: event TableOrder.PaymentProcessed is {
         send paymentProcessed to outlet TableOrderEventSplitToTableOrderRepository
-        send paymentProcessed to outlet TableOrderEventSplitToReservationBoard
         send paymentProcessed to outlet TableOrderEventSplitToTableOrderEventSource
       }
       on orderClosed: event TableOrder.OrderClosed is {
         send orderClosed to outlet TableOrderEventSplitToTableOrderRepository
-        send orderClosed to outlet TableOrderEventSplitToReservationBoard
         send orderClosed to outlet TableOrderEventSplitToTableOrderEventSource
       }
       on orderMarkedInPreparation: event TableOrder.OrderMarkedInPreparation is {
         send orderMarkedInPreparation to outlet TableOrderEventSplitToTableOrderRepository
-        send orderMarkedInPreparation to outlet TableOrderEventSplitToReservationBoard
       }
       on orderMarkedReadyToServe: event TableOrder.OrderMarkedReadyToServe is {
         send orderMarkedReadyToServe to outlet TableOrderEventSplitToTableOrderRepository
-        send orderMarkedReadyToServe to outlet TableOrderEventSplitToReservationBoard
       }
       on ticketRouted: event TableOrder.TicketRouted is {
         send ticketRouted to outlet TableOrderEventSplitToTableOrderRepository
-        send ticketRouted to outlet TableOrderEventSplitToReservationBoard
       }
       on drinkOrderRouted: event TableOrder.DrinkOrderRouted is {
         send drinkOrderRouted to outlet TableOrderEventSplitToTableOrderRepository
-        send drinkOrderRouted to outlet TableOrderEventSplitToReservationBoard
       }
       on pointsAccrualRouted: event TableOrder.PointsAccrualRouted is {
         send pointsAccrualRouted to outlet TableOrderEventSplitToTableOrderRepository
-        send pointsAccrualRouted to outlet TableOrderEventSplitToReservationBoard
       }
       on other is {
         error "Unexpected message for processor TableOrderEventSplit"
@@ -1869,13 +1958,6 @@ context FrontOfHouse as router is {
     briefly "TableOrder events on their way to storage"
     described as {
       |Carries what leaves TableOrderEventSplitToTableOrderRepository to TableOrderRepositoryFromTableOrder, which is where it is acted on.
-      |The pipe states the route; the endpoints state who owns each end.
-    }
-  }
-  connector 'TableOrderEvent Feed' is from outlet FrontOfHouse.TableOrderEventSplit.TableOrderEventSplitToReservationBoard to inlet FrontOfHouse.ReservationBoard.ReservationBoardFromTableOrder with {
-    briefly "TableOrderEvent feeding the ReservationBoard projection"
-    described as {
-      |Carries what leaves TableOrderEventSplitToReservationBoard to ReservationBoardFromTableOrder, which is where it is acted on.
       |The pipe states the route; the endpoints state who owns each end.
     }
   }

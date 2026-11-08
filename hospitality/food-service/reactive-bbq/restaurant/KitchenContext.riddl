@@ -89,7 +89,7 @@ context Kitchen as router is {
   connector 'KitchenTicketResult Stream Egress' is from outlet Kitchen.KitchenTicketRepository.KitchenTicketRepositoryResponses to inlet Kitchen.KitchenTicketResultStreamIn  include "kitchen-types.riddl"
   include "KitchenTicket.riddl"
   type KitchenTicketRepositoryCommand is one of {
-    Kitchen.KitchenTicketRepository.PersistTicketReceived or Kitchen.KitchenTicketRepository.PersistStationAssigned or Kitchen.KitchenTicketRepository.PersistPreparationStarted or Kitchen.KitchenTicketRepository.PersistItemMarkedReady or Kitchen.KitchenTicketRepository.PersistTicketApproved or Kitchen.KitchenTicketRepository.PersistServerNotified
+    Kitchen.KitchenTicketRepository.PersistTicketReceived or Kitchen.KitchenTicketRepository.PersistStationAssigned or Kitchen.KitchenTicketRepository.PersistPreparationStarted or Kitchen.KitchenTicketRepository.PersistItemMarkedReady or Kitchen.KitchenTicketRepository.PersistTicketApproved or Kitchen.KitchenTicketRepository.PersistServerNotified or Kitchen.KitchenTicketRepository.PostKitchenDisplayEntry or Kitchen.KitchenTicketRepository.AssignKitchenDisplayStation or Kitchen.KitchenTicketRepository.SetKitchenDisplayStatus or Kitchen.KitchenTicketRepository.MarkKitchenDisplayLineReady or Kitchen.KitchenTicketRepository.ClearKitchenDisplayEntry
   } with {
     briefly "Anything that writes the KitchenTicketRepository"
     described as {
@@ -155,12 +155,103 @@ context Kitchen as router is {
         |The persistence shape of kitchenTicket data as this repository stores it.
       }
     }
+    record KitchenDisplayEntry is {
+      kitchenTicketId: KitchenTicketId with {
+        briefly "ID"
+        described as {
+          |The ticket this display row stands for. The expo reads the board by
+          |ticket, so this is what a cook calls out when asking about an order.
+        }
+      }
+      ticketSource: TicketSource with {
+        briefly "Source"
+        described as {
+          |Dine-in or online.
+        }
+      }
+      ticketDisplayStatus: String(1,30) with {
+        briefly "Status"
+        described as {
+          |Where the ticket is on the line: Received, Assigned, InPreparation,
+          |ItemReady or Approved.
+        }
+      }
+      displayStation: StationName? with {
+        briefly "Station"
+        described as {
+          |Assigned station, empty until one is assigned.
+        }
+      }
+      receivedAt: TimeStamp with {
+        briefly "Received at"
+        described as {
+          |When the ticket hit the kitchen. The board sorts on this, so the
+          |oldest ticket sits at the top and nothing ages out of sight.
+        }
+      }
+    } with {
+      briefly "Display entry"
+      described as {
+        |One active ticket on the kitchen display. The row is cleared when the
+        |server is notified, so the board shows only work still on the line;
+        |the tickets table keeps the history.
+      }
+    }
+    record KitchenDisplayLine is {
+      kitchenTicketId: KitchenTicketId with {
+        briefly "Ticket"
+        described as {
+          |The ticket this line is shown under.
+        }
+      }
+      ticketMenuItemId: String(1,50) with {
+        briefly "Menu item"
+        described as {
+          |The dish, which with the ticket identifies the line.
+        }
+      }
+      ticketItemName: String(1,200) with {
+        briefly "Dish"
+        described as {
+          |What the cook reads on the board.
+        }
+      }
+      ticketItemQuantity: Natural with {
+        briefly "Quantity"
+        described as {
+          |How many to plate.
+        }
+      }
+      ticketItemNotes: String(1,500)? with {
+        briefly "Notes"
+        described as {
+          |Modifications the guest asked for.
+        }
+      }
+      ticketItemReady: Boolean with {
+        briefly "Ready"
+        described as {
+          |Set when the cook marks the dish ready. A cook works the unmarked
+          |lines.
+        }
+      }
+    } with {
+      briefly "Display line"
+      described as {
+        |One dish under a ticket on the kitchen display, a row of its own so
+        |marking it ready is an update rather than an edit inside the entry.
+      }
+    }
     schema KitchenTicketSchema is relational
+      of displayBoard as record KitchenDisplayEntry
+      of displayLines as record KitchenDisplayLine
       of kitchenTicketEvents as record LoggedKitchenTicketEvent with history
       of tickets as record StoredKitchenTicket
         link kitchenTicketEventLogEntry as field LoggedKitchenTicketEvent.loggedKitchenTicketId to field StoredKitchenTicket.kitchenTicketId
         key on field StoredKitchenTicket.kitchenTicketId
         index on field StoredKitchenTicket.currentStation
+        index on field KitchenDisplayEntry.kitchenTicketId
+        index on field KitchenDisplayLine.kitchenTicketId
  with {
       briefly "Kitchen ticket data schema"
       described as {
@@ -306,7 +397,128 @@ context Kitchen as router is {
         |because storing a row records no new entity state.
       }
     }
+    command PostKitchenDisplayEntry is {
+      kitchenTicketId: KitchenTicketId with {
+        briefly "ID"
+        described as {
+          |The ticket whose display row this writes.
+        }
+      }
+      ticketSource: TicketSource with {
+        briefly "Source"
+        described as {
+          |Dine-in or online.
+        }
+      }
+      ticketItems: TicketItem+ with {
+        briefly "Items"
+        described as {
+          |The dishes to show under the ticket.
+        }
+      }
+      receivedAt: TimeStamp with {
+        briefly "Received at"
+        described as {
+          |When the ticket hit the kitchen.
+        }
+      }
+    } with {
+      briefly "Post a ticket to the display"
+      described as {
+        |Puts a newly received ticket and each of its dishes on the kitchen display.
+      }
+    }
+    command AssignKitchenDisplayStation is {
+      kitchenTicketId: KitchenTicketId with {
+        briefly "ID"
+        described as {
+          |The ticket whose display row this writes.
+        }
+      }
+      assignedStation: StationName with {
+        briefly "Station"
+        described as {
+          |The station now cooking the ticket.
+        }
+      }
+    } with {
+      briefly "Show the assigned station"
+      described as {
+        |Records on the display which station the ticket went to.
+      }
+    }
+    command SetKitchenDisplayStatus is {
+      kitchenTicketId: KitchenTicketId with {
+        briefly "ID"
+        described as {
+          |The ticket whose display row this writes.
+        }
+      }
+      ticketDisplayStatus: String(1,30) with {
+        briefly "Status"
+        described as {
+          |The status to show.
+        }
+      }
+    } with {
+      briefly "Show the ticket status"
+      described as {
+        |Records on the display where the ticket is on the line.
+      }
+    }
+    command MarkKitchenDisplayLineReady is {
+      kitchenTicketId: KitchenTicketId with {
+        briefly "ID"
+        described as {
+          |The ticket whose display row this writes.
+        }
+      }
+      readyMenuItemId: String(1,50) with {
+        briefly "Dish"
+        described as {
+          |The dish the cook marked ready.
+        }
+      }
+    } with {
+      briefly "Mark a dish ready on the display"
+      described as {
+        |Marks one dish under a ticket ready on the display.
+      }
+    }
+    command ClearKitchenDisplayEntry is {
+      kitchenTicketId: KitchenTicketId with {
+        briefly "ID"
+        described as {
+          |The ticket whose display row this writes.
+        }
+      }
+    } with {
+      briefly "Take a ticket off the display"
+      described as {
+        |Removes a finished ticket and its dishes from the display.
+      }
+    }
     handler KitchenTicketPersistence is {
+      on postKitchenDisplayEntry: command PostKitchenDisplayEntry is {
+        store record KitchenDisplayEntry(kitchenTicketId = postKitchenDisplayEntry.kitchenTicketId, ticketSource = postKitchenDisplayEntry.ticketSource, ticketDisplayStatus = "Received", displayStation = empty, receivedAt = postKitchenDisplayEntry.receivedAt) in KitchenTicketSchema.displayBoard
+        foreach postedItem in field PostKitchenDisplayEntry.ticketItems {
+          store record KitchenDisplayLine(kitchenTicketId = postKitchenDisplayEntry.kitchenTicketId, ticketMenuItemId = postedItem.ticketMenuItemId, ticketItemName = postedItem.ticketItemName, ticketItemQuantity = postedItem.ticketItemQuantity, ticketItemNotes = postedItem.ticketItemNotes, ticketItemReady = postedItem.ticketItemReady) in KitchenTicketSchema.displayLines
+        }
+      }
+      on assignKitchenDisplayStation: command AssignKitchenDisplayStation is {
+        update KitchenTicketSchema.displayBoard set displayStation = assignKitchenDisplayStation.assignedStation, ticketDisplayStatus = "Assigned" where kitchenTicketId == assignKitchenDisplayStation.kitchenTicketId
+      }
+      on setKitchenDisplayStatus: command SetKitchenDisplayStatus is {
+        update KitchenTicketSchema.displayBoard set ticketDisplayStatus = setKitchenDisplayStatus.ticketDisplayStatus where kitchenTicketId == setKitchenDisplayStatus.kitchenTicketId
+      }
+      on markKitchenDisplayLineReady: command MarkKitchenDisplayLineReady is {
+        update KitchenTicketSchema.displayLines set ticketItemReady = true where kitchenTicketId == markKitchenDisplayLineReady.kitchenTicketId and ticketMenuItemId == markKitchenDisplayLineReady.readyMenuItemId
+        update KitchenTicketSchema.displayBoard set ticketDisplayStatus = "ItemReady" where kitchenTicketId == markKitchenDisplayLineReady.kitchenTicketId
+      }
+      on clearKitchenDisplayEntry: command ClearKitchenDisplayEntry is {
+        delete from KitchenTicketSchema.displayLines where kitchenTicketId == clearKitchenDisplayEntry.kitchenTicketId
+        delete from KitchenTicketSchema.displayBoard where kitchenTicketId == clearKitchenDisplayEntry.kitchenTicketId
+      }
       on persistTicketReceived: command PersistTicketReceived is {
         store record StoredKitchenTicket(kitchenTicketId = persistTicketReceived.kitchenTicketId, sourceOrderId = persistTicketReceived.sourceOrderId, ticketSource = persistTicketReceived.ticketSource, ticketItems = persistTicketReceived.ticketItems, receivedAt = persistTicketReceived.receivedAt, actualPreparationStartedAt = empty, currentStation = empty, ticketApprovedAt = empty) in KitchenTicketSchema.tickets
       }
@@ -390,104 +602,31 @@ context Kitchen as router is {
   projector KitchenDisplay as flow is {
     updates repository Kitchen.KitchenTicketRepository
     inlet KitchenDisplayFromKitchenTicket is type KitchenTicketEvent    outlet KitchenDisplayOut is type KitchenTicketRepositoryCommand
-    record KitchenDisplayEntry is {
-      kitchenTicketId: KitchenTicketId with {
-        briefly "ID"
-        described as {
-          |The ticket this display row stands for. The expo reads the board by
-          |ticket, so this is what a cook calls out when asking about an order.
-        }
-      }
-      ticketSource: TicketSource with {
-        briefly "Source"
-        described as {
-          |Dine-in or online.
-        }
-      }
-      ticketItems: TicketItem+ with {
-        briefly "Items"
-        described as {
-          |What the board shows under the ticket, each with its own ready flag.
-          |A cook works the unmarked ones; the row clears when none are left.
-        }
-      }
-      ticketDisplayStatus: String(1,30) with {
-        briefly "Status"
-        described as {
-          |Display status derived from entity state name.
-        }
-      }
-      displayStation: StationName? with {
-        briefly "Station"
-        described as {
-          |Assigned station.
-        }
-      }
-      receivedAt: TimeStamp with {
-        briefly "Received at"
-        described as {
-          |When the ticket hit the kitchen. The board sorts on this, so the
-          |oldest ticket sits at the top and nothing ages out of sight.
-        }
-      }
-    } with {
-      briefly "Display entry"
-      described as {
-        |A single entry on the kitchen display.
-      }
-    }
     handler KitchenDisplayHandler is {
       on other as m is {
         log m
       }
       on ticketReceived: event KitchenTicket.TicketReceived is {
-        let entry: type KitchenDisplayEntry = "new KitchenDisplayEntry from event"
-        tell command PersistTicketReceived(kitchenTicketId = ticketReceived.kitchenTicketId, sourceOrderId = ticketReceived.sourceOrderId, ticketSource = ticketReceived.ticketSource, ticketItems = ticketReceived.ticketItems, receivedAt = ticketReceived.receivedAt) to repository Kitchen.KitchenTicketRepository
-        do "insert KitchenDisplayEntry with kitchenTicketId =
-          event.kitchenTicketId, ticketSource =
-          event.ticketSource, ticketItems = event.ticketItems,
-          ticketDisplayStatus = Received, displayStation = none,
-          receivedAt = event.receivedAt"
+        tell command Kitchen.KitchenTicketRepository.PostKitchenDisplayEntry(kitchenTicketId = ticketReceived.kitchenTicketId, ticketSource = ticketReceived.ticketSource, ticketItems = ticketReceived.ticketItems, receivedAt = ticketReceived.receivedAt) to repository Kitchen.KitchenTicketRepository
         foreach ticketLine in field TicketReceived.ticketItems {
           do "route ticketLine to the station that owns its menu item, so a
             ticket spanning grill and fryer appears on both boards"
         }
-        set field KitchenDisplayEntry.ticketDisplayStatus to "Received"
       }
       on stationAssigned: event KitchenTicket.StationAssigned is {
-        tell command PersistStationAssigned(kitchenTicketId = stationAssigned.kitchenTicketId, assignedStation = stationAssigned.assignedStation) to repository Kitchen.KitchenTicketRepository
-        do "update KitchenDisplayEntry set displayStation =
-          event.assignedStation, ticketDisplayStatus = Assigned
-          where kitchenTicketId = event.kitchenTicketId"
-        set field KitchenDisplayEntry.ticketDisplayStatus to "Assigned"
+        tell command Kitchen.KitchenTicketRepository.AssignKitchenDisplayStation(kitchenTicketId = stationAssigned.kitchenTicketId, assignedStation = stationAssigned.assignedStation) to repository Kitchen.KitchenTicketRepository
       }
       on preparationStarted: event KitchenTicket.PreparationStarted is {
-        tell command PersistPreparationStarted(kitchenTicketId = preparationStarted.kitchenTicketId, startedAt = preparationStarted.startedAt) to repository Kitchen.KitchenTicketRepository
-        do "update KitchenDisplayEntry set ticketDisplayStatus =
-          InPreparation where kitchenTicketId =
-          event.kitchenTicketId"
-        set field KitchenDisplayEntry.ticketDisplayStatus to "InPreparation"
+        tell command Kitchen.KitchenTicketRepository.SetKitchenDisplayStatus(kitchenTicketId = preparationStarted.kitchenTicketId, ticketDisplayStatus = "InPreparation") to repository Kitchen.KitchenTicketRepository
       }
       on itemMarkedReady: event KitchenTicket.ItemMarkedReady is {
-        tell command PersistItemMarkedReady(kitchenTicketId = itemMarkedReady.kitchenTicketId, readyMenuItemId = itemMarkedReady.readyMenuItemId) to repository Kitchen.KitchenTicketRepository
-        do "update KitchenDisplayEntry set
-          ticketItems[event.readyMenuItemId].ticketItemReady
-          = true where kitchenTicketId =
-          event.kitchenTicketId"
-        set field KitchenDisplayEntry.ticketDisplayStatus to "ItemReady"
+        tell command Kitchen.KitchenTicketRepository.MarkKitchenDisplayLineReady(kitchenTicketId = itemMarkedReady.kitchenTicketId, readyMenuItemId = itemMarkedReady.readyMenuItemId) to repository Kitchen.KitchenTicketRepository
       }
       on ticketApproved: event KitchenTicket.TicketApproved is {
-        tell command PersistTicketApproved(kitchenTicketId = ticketApproved.kitchenTicketId, approvedAt = ticketApproved.approvedAt) to repository Kitchen.KitchenTicketRepository
-        do "update KitchenDisplayEntry set ticketDisplayStatus =
-          Approved where kitchenTicketId =
-          event.kitchenTicketId"
-        set field KitchenDisplayEntry.ticketDisplayStatus to "Approved"
+        tell command Kitchen.KitchenTicketRepository.SetKitchenDisplayStatus(kitchenTicketId = ticketApproved.kitchenTicketId, ticketDisplayStatus = "Approved") to repository Kitchen.KitchenTicketRepository
       }
       on serverNotified: event KitchenTicket.ServerNotified is {
-        tell command PersistServerNotified(kitchenTicketId = serverNotified.kitchenTicketId) to repository Kitchen.KitchenTicketRepository
-        do "delete KitchenDisplayEntry where kitchenTicketId =
-          event.kitchenTicketId"
-        set field KitchenDisplayEntry.ticketDisplayStatus to "ServerNotified"
+        tell command Kitchen.KitchenTicketRepository.ClearKitchenDisplayEntry(kitchenTicketId = serverNotified.kitchenTicketId) to repository Kitchen.KitchenTicketRepository
       }
     } with {
       briefly "Kitchen display handler"
