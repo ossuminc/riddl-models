@@ -15,17 +15,11 @@ The published 2.5.0 binary needs Homebrew's `openssl@4` (installed
 warnings; 418 advisories corpus-wide, 3 in reactive-bbq, all
 `stmt-yield-argument-prompt` and all dismissed on purpose.
 
-### In flight — reactive-bbq fill holes (riddl-generator's task)
+### In flight
 
-`task/2026-11-01-reactive-bbq-holes-only-the-model-can-close.md`: six design
-questions put to Reid 2026-11-07 (display boards, order-line storage,
-reporting's sales writes, seating's order id/server, `+` item cardinality,
-prose `on other`), plus eight fixes the model already answers. Awaiting his
-rulings. `msg-tell-no-route-for-type` is closed (task/done/).
-
-**The one big prose class left is `query one`** — 398 `let x = prompt("read
-the X from the store")` clauses, each needing its result constructed from the
-row. BACKLOG #40.
+Nothing. riddl-generator's reactive-bbq fill-holes task is done
+(`task/done/`, § 2026-11-07). New in `task/`:
+`2026-11-07-system-now-in-event-sourced-folds.md`, not yet triaged.
 
 ### Traps, still live
 
@@ -37,8 +31,9 @@ row. BACKLOG #40.
 - **`git checkout <file>` reverts every uncommitted edit to it.**
 - **A denominator guard catches a wholesale failure, not a per-item one.**
 - **`log "..." + someId`** does not typecheck; `log <message>` does.
-- **`x != empty` is not a comparand** — an emptiness test has no spelling, so
-  carry the VALUE (`refundablePayment`) rather than a boolean about it.
+- **`x != empty` IS a comparand on 2.5.0** (re-measured 2026-11-07; this
+  line used to say it had no spelling). Both sides resolve: a misspelled field
+  and `emptyX` each draw `value-comparand-unresolved`.
 - **`hospitality/food-service/reactive-bbq/1/`** is riddl-generator debug
   output, untracked, not ours.
 
@@ -57,6 +52,37 @@ Open work: **BACKLOG.md** #40 (`query one`), #30, #1, #23, #34. Durable facts:
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
 ---
+
+## 2026-11-07 — riddl 2.5.0, and the holes only the model could close
+
+**2.5.0 pinned** (`6ef4a085`): nothing to migrate, every gate identical to
+2.4.0. The published macOS binary links Homebrew's `openssl@4` (2.4.0 linked
+`@3`); without it sbt says only `Nonzero exit value: 134`. Filed upstream as
+`riddl/task/2026-11-07-release-riddlc-links-homebrew-openssl4.md`.
+
+**riddl-generator's reactive-bbq task** (91 of 372 fill holes unfilled): eight
+fixes the model already answered, then six rulings by Reid, one commit each.
+What they taught:
+
+- **A display projector is a second read model, not a second writer.** Both
+  boards re-sent their entity's `Persist…` commands (double writes) and kept
+  their real row in prose. The fix is a table and commands in the repository.
+  This is the same shape as PlayerProjection, but with a genuinely different
+  view, so it was kept.
+- **A collection inside a row has no storage statement.** Order lines and board
+  lines became rows of their own: `store`, `update … where a and b`,
+  `delete from … where`. A `foreach` inside a repository handler can `store`
+  each element.
+- **A deleted `on other` is not a no-op to riddlc.** Without it riddlc reports
+  `stream-inlet-not-received` per unhandled member and, on an adaptor,
+  `adaptor-no-on-other` (an Error). `on other as m is { log m }` needs
+  `option message_envelope` in scope.
+- **Removing a catch-all exposes dead wiring.** ReservationBoard's
+  `TableOrderEvent` inlet had 12 of 12 members unhandled; only deleting the
+  `on other` showed it.
+- **A write with no table is a deletion, not a fill.** Reporting's
+  reservation "sales" writes had no row and double-counted payments. Removing
+  them took the whole reservation stream to Reporting with them.
 
 ## 2026-10-30 — `msg-tell-no-route-for-type`: 52 -> 0
 
