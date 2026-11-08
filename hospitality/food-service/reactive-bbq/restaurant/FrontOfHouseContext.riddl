@@ -367,12 +367,6 @@ context FrontOfHouse as router is {
           |The row's server id, as the persisting projector last wrote it.
         }
       }
-      orderItems: OrderLine* with {
-        briefly "Order items"
-        described as {
-          |The row's order items, as the persisting projector last wrote it.
-        }
-      }
       actualSubmittedAt: TimeStamp? with {
         briefly "Actual submitted at"
         described as {
@@ -699,12 +693,41 @@ context FrontOfHouse as router is {
   }
   repository TableOrderRepository as merge is {
     inlet TableOrderRepositoryFromTableOrderEventLog is command LogTableOrderEvent    inlet TableOrderRepositoryFromDrinkOrderEventSink is type DrinkServiceNotice    inlet TableOrderRepositoryFromTableOrderProjection is type TableOrderRepositoryCommand    outlet TableOrderRepositoryResponses is result TableOrder.TableOrderResult
+    record StoredOrderLine is {
+      tableOrderId: TableOrderId with {
+        briefly "Order"
+        described as {
+          |The table order this line belongs to.
+        }
+      }
+      lineItemCode: String(1,50) with {
+        briefly "Menu item"
+        described as {
+          |The menu item's code, which with the order identifies the line: an
+          |order holds at most one line per dish, and removing a dish names it.
+        }
+      }
+      storedOrderLine: OrderLine with {
+        briefly "Line"
+        described as {
+          |The dish, quantity and notes as the server entered them.
+        }
+      }
+    } with {
+      briefly "Stored order line"
+      described as {
+        |One line of a table order, a row of its own so adding and removing a
+        |dish are a store and a delete rather than an edit inside the order row.
+      }
+    }
     schema TableOrderSchema is relational
+      of orderLines as record StoredOrderLine
       of orders as record StoredTableOrder
       of tableOrderEvents as record LoggedTableOrderEvent with history
         link tableOrderEventLogEntry as field LoggedTableOrderEvent.loggedTableOrderId to field StoredTableOrder.tableOrderId
         key on field StoredTableOrder.tableOrderId
         index on field StoredTableOrder.tableNumber
+        index on field StoredOrderLine.tableOrderId
  with {
       briefly "Table order data schema"
       described as {
@@ -903,17 +926,13 @@ context FrontOfHouse as router is {
     }
     handler TableOrderPersistence is {
       on persistOrderCreated: command PersistOrderCreated is {
-        store record StoredTableOrder(tableOrderId = persistOrderCreated.tableOrderId, tableNumber = persistOrderCreated.tableNumber, serverId = persistOrderCreated.serverId, actualClosedAt = empty, actualReadyAt = empty, actualSubmittedAt = empty, orderItems = empty, presentedBillTotal = empty, processedPayment = empty) in TableOrderSchema.orders
+        store record StoredTableOrder(tableOrderId = persistOrderCreated.tableOrderId, tableNumber = persistOrderCreated.tableNumber, serverId = persistOrderCreated.serverId, actualClosedAt = empty, actualReadyAt = empty, actualSubmittedAt = empty, presentedBillTotal = empty, processedPayment = empty) in TableOrderSchema.orders
       }
-      on command PersistItemAdded is {
-        do "append addedItem OrderLine to orderItems array
-          in TableOrderSchema.orders where tableOrderId
-          matches"
+      on persistItemAdded: command PersistItemAdded is {
+        store record StoredOrderLine(tableOrderId = persistItemAdded.tableOrderId, lineItemCode = persistItemAdded.addedItem.orderLineItem.itemCode, storedOrderLine = persistItemAdded.addedItem) in TableOrderSchema.orderLines
       }
-      on command PersistItemRemoved is {
-        do "remove OrderLine with removedMenuItemId from
-          orderItems array in TableOrderSchema.orders where
-          tableOrderId matches"
+      on persistItemRemoved: command PersistItemRemoved is {
+        delete from TableOrderSchema.orderLines where tableOrderId == persistItemRemoved.tableOrderId and lineItemCode == persistItemRemoved.removedMenuItemId
       }
       on persistOrderSubmitted: command PersistOrderSubmitted is {
         update TableOrderSchema.orders set actualSubmittedAt = persistOrderSubmitted.submittedAt where tableOrderId == persistOrderSubmitted.tableOrderId
