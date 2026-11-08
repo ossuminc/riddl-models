@@ -1,5 +1,12 @@
 // InventoryItem entity for the Inventory context
 event-sourced entity InventoryItem as merge is {
+  constant EmptyStockLevel: Decimal(10,2) = 0 with {
+    briefly "The stock level at which an item is out"
+    described as {
+      |Nothing left on the shelf. An item at or below this level is OutOfStock
+      |whatever its reorder threshold says.
+    }
+  }
   inlet InventoryItemFromStockReceiptSink is command InventoryItem.ReceiveStock  type InventoryItemCommand is one of {
     InventoryItem.ReceiveStock or InventoryItem.ConsumeStock or InventoryItem.AdjustStock or InventoryItem.SetReorderThreshold or InventoryItem.CreatePurchaseOrder
   } with {
@@ -385,6 +392,13 @@ event-sourced entity InventoryItem as merge is {
         |decides whether the threshold was set early enough to matter.
       }
     }
+    preferredSupplier: String(1,100)? with {
+      briefly "Supplier"
+      described as {
+        |Who the order was raised with, carried from the command so the item
+        |and its stored row can record it.
+      }
+    }
   } with {
     briefly "Purchase order created"
     described as {
@@ -535,8 +549,8 @@ event-sourced entity InventoryItem as merge is {
       send event ReorderThresholdSet(inventoryItemId = setReorderThreshold.inventoryItemId, reorderThreshold = setReorderThreshold.reorderThreshold, reorderUnit = setReorderThreshold.reorderUnit) to outlet Inventory.InventoryItem.InventoryItemEvents2
     }
     on createPurchaseOrder: command CreatePurchaseOrder is {
-      yield event PurchaseOrderCreated(inventoryItemId = createPurchaseOrder.inventoryItemId, orderQuantity = createPurchaseOrder.orderQuantity, orderUnit = createPurchaseOrder.orderUnit, purchaseOrderCreatedAt = system.now)
-      send event PurchaseOrderCreated(inventoryItemId = createPurchaseOrder.inventoryItemId, orderQuantity = createPurchaseOrder.orderQuantity, orderUnit = createPurchaseOrder.orderUnit, purchaseOrderCreatedAt = system.now) to outlet Inventory.InventoryItem.InventoryItemEvents2
+      yield event PurchaseOrderCreated(inventoryItemId = createPurchaseOrder.inventoryItemId, orderQuantity = createPurchaseOrder.orderQuantity, orderUnit = createPurchaseOrder.orderUnit, purchaseOrderCreatedAt = system.now, preferredSupplier = createPurchaseOrder.preferredSupplier)
+      send event PurchaseOrderCreated(inventoryItemId = createPurchaseOrder.inventoryItemId, orderQuantity = createPurchaseOrder.orderQuantity, orderUnit = createPurchaseOrder.orderUnit, purchaseOrderCreatedAt = system.now, preferredSupplier = createPurchaseOrder.preferredSupplier) to outlet Inventory.InventoryItem.InventoryItemEvents2
     }
     on inventoryItemInitialized: event InventoryItemInitialized is {
       set state TrackedItem to record InventoryItemStateData(inventoryItemId = inventoryItemInitialized.inventoryItemId, inventoryItemName = inventoryItemInitialized.inventoryItemName, currentStockLevel = 0, stockUnit = inventoryItemInitialized.stockUnit, inventoryItemStatus = InStock, configuredReorderThreshold = empty, preferredSupplier = empty, lastReceivedAt = empty, onOrderQuantity = empty, lastPurchaseOrderCreatedAt = empty)
@@ -549,11 +563,27 @@ event-sourced entity InventoryItem as merge is {
     }
     on stockConsumed: event StockConsumed is {
       set field InventoryItem.TrackedItem.currentStockLevel to stockConsumed.remainingStockLevel
-      set field InventoryItem.TrackedItem.inventoryItemStatus to prompt("InStock, LowStock or OutOfStock by comparing remainingStockLevel with configuredReorderThreshold")
+      when stockConsumed.remainingStockLevel <= InventoryItem.EmptyStockLevel then
+        set field InventoryItem.TrackedItem.inventoryItemStatus to InventoryItemStatus.OutOfStock
+      else
+        when stockConsumed.remainingStockLevel <= InventoryItem.TrackedItem.configuredReorderThreshold then
+          set field InventoryItem.TrackedItem.inventoryItemStatus to InventoryItemStatus.LowStock
+        else
+          set field InventoryItem.TrackedItem.inventoryItemStatus to InventoryItemStatus.InStock
+        end
+      end
     }
     on stockAdjusted: event StockAdjusted is {
       set field InventoryItem.TrackedItem.currentStockLevel to stockAdjusted.adjustedStockLevel
-      set field InventoryItem.TrackedItem.inventoryItemStatus to prompt("InStock, LowStock or OutOfStock by comparing adjustedStockLevel with configuredReorderThreshold")
+      when stockAdjusted.adjustedStockLevel <= InventoryItem.EmptyStockLevel then
+        set field InventoryItem.TrackedItem.inventoryItemStatus to InventoryItemStatus.OutOfStock
+      else
+        when stockAdjusted.adjustedStockLevel <= InventoryItem.TrackedItem.configuredReorderThreshold then
+          set field InventoryItem.TrackedItem.inventoryItemStatus to InventoryItemStatus.LowStock
+        else
+          set field InventoryItem.TrackedItem.inventoryItemStatus to InventoryItemStatus.InStock
+        end
+      end
     }
     on reorderThresholdSet: event ReorderThresholdSet is {
       set field InventoryItem.TrackedItem.configuredReorderThreshold to reorderThresholdSet.reorderThreshold
@@ -561,6 +591,7 @@ event-sourced entity InventoryItem as merge is {
     on purchaseOrderCreated: event PurchaseOrderCreated is {
       set field InventoryItem.TrackedItem.onOrderQuantity to purchaseOrderCreated.orderQuantity
       set field InventoryItem.TrackedItem.lastPurchaseOrderCreatedAt to purchaseOrderCreated.purchaseOrderCreatedAt
+      set field InventoryItem.TrackedItem.preferredSupplier to purchaseOrderCreated.preferredSupplier
     }
     on query GetInventoryItem is {
       do "look up InventoryItem by GetInventoryItem.inventoryItemId"
