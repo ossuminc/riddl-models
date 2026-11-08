@@ -1,6 +1,6 @@
 // Reporting bounded context - CQRS projectors only
 context Reporting as router is {
-  connector 'InventoryEventSink To InventoryReportRepository' is from outlet Reporting.InventoryEventSink.InventoryEventSinkToInventoryReportRepository to inlet Reporting.InventoryReportRepository.InventoryReportRepositoryFromInventoryEventSink  connector 'ShiftEventSink To LaborReportRepository' is from outlet Reporting.ShiftEventSink.ShiftEventSinkToLaborReportRepository to inlet Reporting.LaborReportRepository.LaborReportRepositoryFromShiftEventSink  connector 'FromFrontOfHouseReservations To Reporting' is from outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting to inlet Reporting.ReportingFromFromFrontOfHouseReservations  inlet ReportingFromFromFrontOfHouseReservations is type SalesReportCommand  connector 'AccountingConfirmSink To SalesReportRepository' is from outlet Reporting.AccountingConfirmSink.AccountingConfirmSinkToSalesReportRepository to inlet Reporting.SalesReportRepository.SalesReportRepositoryFromAccountingConfirmSink  inlet ShiftToReportingIn is type ShiftEvent  outlet ShiftToReportingOut is type ShiftEvent
+  connector 'InventoryEventSink To InventoryReportRepository' is from outlet Reporting.InventoryEventSink.InventoryEventSinkToInventoryReportRepository to inlet Reporting.InventoryReportRepository.InventoryReportRepositoryFromInventoryEventSink  connector 'ShiftEventSink To LaborReportRepository' is from outlet Reporting.ShiftEventSink.ShiftEventSinkToLaborReportRepository to inlet Reporting.LaborReportRepository.LaborReportRepositoryFromShiftEventSink  connector 'AccountingConfirmSink To SalesReportRepository' is from outlet Reporting.AccountingConfirmSink.AccountingConfirmSinkToSalesReportRepository to inlet Reporting.SalesReportRepository.SalesReportRepositoryFromAccountingConfirmSink  inlet ShiftToReportingIn is type ShiftEvent  outlet ShiftToReportingOut is type ShiftEvent
   inlet InventoryToReportingIn is type InventoryEvent  outlet InventoryToReportingOut is type InventoryEvent
   outlet SalesReportDirectWrites is type SalesReportCommand
  with {
@@ -281,7 +281,7 @@ context Reporting as router is {
     }
   }
   type SalesReportCommand is one of {
-    RecordDineInPayment or RecordOnlinePayment or RecordAccountingPosting or RecordReservationEvent or RecordTableOrderEvent
+    RecordDineInPayment or RecordOnlinePayment or RecordAccountingPosting
   } with {
     briefly "Sales report command alternation"
     described as {
@@ -372,52 +372,6 @@ context Reporting as router is {
         |Record an accounting posting confirmation.
       }
     }
-    command RecordReservationEvent is {
-      reservationId: String(1,50) with {
-        briefly "Reservation ID"
-        described as {
-          |The booking the reported event concerns. Reporting keeps the id so a
-          |figure can be traced back to the visit behind it.
-        }
-      }
-      eventType: String(1,30) with {
-        briefly "Event type"
-        described as {
-          |Type of reservation event: made or cancelled.
-        }
-      }
-    } with {
-      briefly "Record reservation event"
-      described as {
-        |Record a reservation event for reporting.
-      }
-    }
-    command RecordTableOrderEvent is {
-      tableOrderId: String(1,50) with {
-        briefly "Order ID"
-        described as {
-          |The check the reported event concerns, kept so a day's revenue can
-          |be broken back down to individual tables.
-        }
-      }
-      eventType: String(1,30) with {
-        briefly "Event type"
-        described as {
-          |Type of order event: payment or closed.
-        }
-      }
-      paymentAmount: Decimal(10,2)? with {
-        briefly "Amount"
-        described as {
-          |Payment amount if applicable.
-        }
-      }
-    } with {
-      briefly "Record table order event"
-      described as {
-        |Record a table order event for reporting.
-      }
-    }
     handler SalesReportPersistence is {
       on query GetSalesReport is {
         let salesReportView: type SalesReportView = prompt("read the sales report projection")
@@ -439,12 +393,6 @@ context Reporting as router is {
       }
       on command RecordAccountingPosting is {
         do "log accounting confirmation for reconciliation"
-      }
-      on command RecordReservationEvent is {
-        do "record reservation event for sales reporting"
-      }
-      on command RecordTableOrderEvent is {
-        do "record table order event for sales reporting"
       }
     } with {
       briefly "Sales report persistence"
@@ -1048,37 +996,11 @@ context Reporting as router is {
       |The back office's side of the OnlineOrdering conversation: payments, for reporting.
     }
   }
-  adaptor FromFrontOfHouseReservations from context Restaurant.FrontOfHouse as router is { 
-    inlet FromFrontOfHouseReservationsFromTableOrderIn is type ReactiveBBQ.Restaurant.FrontOfHouse.TableOrder.TableOrderEvent    inlet FromFrontOfHouseReservationsFromReservationIn is type ReactiveBBQ.Restaurant.FrontOfHouse.ReservationEvent    outlet FromFrontOfHouseReservationsToReporting is type SalesReportCommand
-    outlet FromFrontOfHouseReservationsToSalesReport is type Restaurant.FrontOfHouse.OrderEvent
-    handler ReservationEventIntake is {
-      on reservationMade: event Restaurant.FrontOfHouse.Reservation.ReservationMade is {
-        send command RecordReservationEvent(reservationId = reservationMade.reservationId, eventType = prompt("the event type of this record reservation event")) to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting
-        do "record reservation creation for sales reporting"
-      }
-      on reservationCancelled: event Restaurant.FrontOfHouse.Reservation.ReservationCancelled is {
-        send command RecordReservationEvent(reservationId = reservationCancelled.reservationId, eventType = prompt("the event type of this record reservation event")) to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting
-        do "record reservation cancellation for sales reporting"
-      }
-      on other is {
-        error "Unexpected message for adaptor FromFrontOfHouseReservations"
-      }
-    } with {
-      briefly "Reservation event intake"
-      described as {
-        |Processes incoming reservation events for sales
-        |reporting.
-      }
-    }
+  adaptor FromFrontOfHouseReservations from context Restaurant.FrontOfHouse as flow is { 
+    inlet FromFrontOfHouseReservationsFromTableOrderIn is type ReactiveBBQ.Restaurant.FrontOfHouse.TableOrder.TableOrderEvent    outlet FromFrontOfHouseReservationsToSalesReport is type Restaurant.FrontOfHouse.OrderEvent
     handler TableOrderEventIntake is {
       on paymentProcessed: event Restaurant.FrontOfHouse.TableOrder.PaymentProcessed is {
-        send command RecordTableOrderEvent(tableOrderId = paymentProcessed.tableOrderId, eventType = prompt("the event type of this record table order event"), paymentAmount = prompt("the payment amount of this record table order event")) to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting
-        do "record payment for sales reporting"
         send paymentProcessed to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToSalesReport
-      }
-      on orderClosed: event Restaurant.FrontOfHouse.TableOrder.OrderClosed is {
-        send command RecordTableOrderEvent(tableOrderId = orderClosed.tableOrderId, eventType = prompt("the event type of this record table order event"), paymentAmount = prompt("the payment amount of this record table order event")) to outlet Reporting.FromFrontOfHouseReservations.FromFrontOfHouseReservationsToReporting
-        do "record order closure for sales reporting"
       }
       on other is {
         error "Unexpected message for adaptor FromFrontOfHouseOrders"
@@ -1091,10 +1013,11 @@ context Reporting as router is {
       }
     }
   } with {
-    briefly "Reservation event sink"
+    briefly "Dine-in payment intake"
     described as {
-      |Receives reservation events from the streaming
-      |topology for sales and reservation reports.
+      |Receives front of house's table order events and passes each dine-in
+      |payment to the sales report projection, which records it. Reservations
+      |carry no money, so they do not reach Reporting.
     }
   }
   streamlet ShiftEventSink as split is {
