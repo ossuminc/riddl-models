@@ -4,23 +4,24 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.4.0`, PUBLISHED, override OFF** — `riddlcPath := None`, the plugin's
-`~/.cache/riddlc/2.4.0/bin/riddlc` is the build's binary, libraries from GitHub
+**Pin `2.5.0`, PUBLISHED, override OFF** — `riddlcPath := None`, the plugin's
+`~/.cache/riddlc/2.5.0/bin/riddlc` is the build's binary, libraries from GitHub
 Packages. **`../bin/riddlc` is no longer the build's binary** — pass
-`RIDDLC=~/.cache/riddlc/2.4.0/bin/riddlc` to any script run that is evidence.
+`RIDDLC=~/.cache/riddlc/2.5.0/bin/riddlc` to any script run that is evidence.
+The published 2.5.0 binary needs Homebrew's `openssl@4` (installed
+2026-11-07); without it sbt fails with `Nonzero exit value: 134`.
 
-**EVERY GATE IS GREEN ON 2.4.0, `checkTests` included.** 0 errors, 0
+**EVERY GATE IS GREEN ON 2.5.0, `checkTests` included.** 0 errors, 0
 warnings; 418 advisories corpus-wide, 3 in reactive-bbq, all
 `stmt-yield-argument-prompt` and all dismissed on purpose.
 
-### In flight — `msg-tell-no-route-for-type` is at 0; riddl to confirm
+### In flight — reactive-bbq fill holes (riddl-generator's task)
 
-`task/2026-10-21-tell-no-route-for-type.md`: 2,026 -> 0 on the staged
-`../bin/riddlc` (`2.4.0-3-fa72d569`, unpublished; the 2.4.0 pin lacks the
-rule). Acceptance 3, riddl's `RiddlModelsRoundTripTest`, is the riddl
-instance's to confirm, so the file stays in `task/`. When riddl publishes a tag
-carrying the rule, bump the pin to it. Rulings are in § 2026-10-30 and
-§ 2026-10-28 below.
+`task/2026-11-01-reactive-bbq-holes-only-the-model-can-close.md`: six design
+questions put to Reid 2026-11-07 (display boards, order-line storage,
+reporting's sales writes, seating's order id/server, `+` item cardinality,
+prose `on other`), plus eight fixes the model already answers. Awaiting his
+rulings. `msg-tell-no-route-for-type` is closed (task/done/).
 
 **The one big prose class left is `query one`** — 398 `let x = prompt("read
 the X from the store")` clauses, each needing its result constructed from the

@@ -14,9 +14,11 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. 2.4.0 is a PUBLISHED release, so the
+// same build, so one value pins both. 2.5.0 is a PUBLISHED release, so the
 // plugin downloads the binary and the libraries resolve from GitHub Packages;
-// `riddlcPath` below is None. 2.4.0 types every value by a type NAME: a bare
+// `riddlcPath` below is None. 2.5.0 makes tell routing type-aware: a tell no
+// path CARRIES is an Error (`msg-tell-no-route-for-type`), which the corpus
+// drained 2,026 -> 0 before the bump. 2.4.0 types every value by a type NAME: a bare
 // `empty` takes the type of its position, and `empty T` names one where nothing
 // supplies it (`empty X?` is an Error). The corpus needed no change -- every
 // bare `empty` sits in a typed position -- and every gate, the sweep and the
@@ -42,7 +44,7 @@ enablePlugins(RiddlSbtPlugin)
 // Whenever a rule the corpus needs lands after a tag, the override goes back
 // on -- and comes off at the first published tag that carries it, which is
 // this edit.
-lazy val riddlVersion = "2.4.0"
+lazy val riddlVersion = "2.5.0"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
