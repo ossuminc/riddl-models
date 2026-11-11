@@ -1294,6 +1294,10 @@ rather than ordered, so a nested pair is an error, not a race.
   every handler as having no clauses.
 - **An event name appears as a SUFFIX** in generated command names
   (`PersistCustomerEnrolled`), so a lookbehind-anchored substitution misses it.
+- **A clause node carries no statement text** (2.5.0). A scan for what a
+  clause body READS (`system.now`, a field) over the dump reports 0 on any
+  tree. Read the clause's span from the source, and canary it on a tree
+  known to have a hit.
 
 ---
 

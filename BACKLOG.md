@@ -40,6 +40,15 @@ question per class, with an example flow.
 
 **Verified so far:** the count and the grep above. Nothing is classified yet.
 
+**Same family: 6 do-nothing `on other` clauses** (grep, 2026-11-11), in
+medication-dispensing `DispensingContext.riddl:936`, supply-chain
+`SupplyContext.riddl:878`, and radiology-workflow `RadiologyContext.riddl`
+973/1057/1134/1217. reactive-bbq's 25 became `on other as m is { log m }`
+(`963e4b4d`, Reid's ruling 2026-11-07). Deleting them instead draws
+`stream-inlet-not-received` and, on an adaptor, `adaptor-no-on-other`
+(Error). `log m` needs `option message_envelope("Riddl.Envelope")` in the
+context.
+
 ---
 
 ## 33. Adaptor-wiring campaign — CLOSED 2026-09-09 at ZERO

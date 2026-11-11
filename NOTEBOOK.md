@@ -17,9 +17,10 @@ warnings; 418 advisories corpus-wide, 3 in reactive-bbq, all
 
 ### In flight
 
-Nothing. riddl-generator's reactive-bbq fill-holes task is done
-(`task/done/`, § 2026-11-07). New in `task/`:
-`2026-11-07-system-now-in-event-sourced-folds.md`, not yet triaged.
+Nothing. Untriaged in `task/`: **`upgrade-riddl-2.6.0.md`**, which adds
+`entity-event-sourced-fold-nondeterministic` (Error), already cleared here,
+and `2026-11-07-riddl-2.5.0-13-staged.md`, a local stage that 2.6.0
+supersedes.
 
 ### Traps, still live
 
@@ -83,6 +84,16 @@ What they taught:
 - **A write with no table is a deletion, not a fill.** Reporting's
   reservation "sales" writes had no row and double-counted payments. Removing
   them took the whole reservation stream to Reporting with them.
+
+**`system.now` in a fold** (riddl's task, `dd266579`; closed 2026-11-07 after
+riddl verified it with the rule staged). KitchenTicket's and DrinkOrder's
+folds told the server, stamped with `system.now`. The clock was the defect
+the rule names, but the real defect was the tell: replay would notify the
+server again. The tell moved to the command handler, stamped with the
+command's own instant, and each fold keeps only its morph. **A dump-based
+scan of `on event` bodies is blind**, because the projection carries no
+statement text. It reported 0 on the pre-fix tree. A text scan, canaried
+on that same tree, found both sites.
 
 ## 2026-10-30 — `msg-tell-no-route-for-type`: 52 -> 0
 
