@@ -4,23 +4,19 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.5.0`, PUBLISHED, override OFF** — `riddlcPath := None`, the plugin's
-`~/.cache/riddlc/2.5.0/bin/riddlc` is the build's binary, libraries from GitHub
-Packages. **`../bin/riddlc` is no longer the build's binary** — pass
-`RIDDLC=~/.cache/riddlc/2.5.0/bin/riddlc` to any script run that is evidence.
-The published 2.5.0 binary needs Homebrew's `openssl@4` (installed
-2026-11-07); without it sbt fails with `Nonzero exit value: 134`.
+**Pin `2.6.0`, PUBLISHED, override OFF** — `riddlcPath := None`, the plugin's
+`~/.cache/riddlc/2.6.0/bin/riddlc` is the build's binary, libraries from GitHub
+Packages. **`../bin/riddlc` is not the build's binary** — it reports 2.6.0 but
+was built here and links `openssl@4`; pass
+`RIDDLC=~/.cache/riddlc/2.6.0/bin/riddlc` to any script run that is evidence.
 
-**EVERY GATE IS GREEN ON 2.5.0, `checkTests` included.** 0 errors, 0
+**EVERY GATE IS GREEN ON 2.6.0, `checkTests` included.** 0 errors, 0
 warnings; 418 advisories corpus-wide, 3 in reactive-bbq, all
 `stmt-yield-argument-prompt` and all dismissed on purpose.
 
 ### In flight
 
-Nothing. Untriaged in `task/`: **`upgrade-riddl-2.6.0.md`**, which adds
-`entity-event-sourced-fold-nondeterministic` (Error), already cleared here,
-and `2026-11-07-riddl-2.5.0-13-staged.md`, a local stage that 2.6.0
-supersedes.
+Nothing. `task/` is empty.
 
 ### Traps, still live
 
@@ -53,6 +49,21 @@ Open work: **BACKLOG.md** #40 (`query one`), #30, #1, #23, #34. Durable facts:
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
 ---
+
+## 2026-11-11 — riddl 2.6.0
+
+**2.6.0 pinned**: nothing to migrate. Its one new Error,
+`entity-event-sourced-fold-nondeterministic`, was cleared by `dd266579`
+before the release. Gates, sweep (418 advisories), BAST (189/189, no `.bast`
+changed) and unsent (0) are identical to 2.5.0. Canaried: `system.now` put
+back into KitchenTicket's `TicketApproved` fold draws the Error on the
+downloaded binary.
+
+**The release binary and the staged one link different openssl majors.** The
+published 2.6.0 links `openssl@3` (riddl pinned its release runner); riddl's
+`../bin/riddlc`, staged from the same tag on this Mac, links `@4`. A version
+string does not say which machine built a binary — `otool -L` does. Both
+2.6.0 tasks are closed (`task/done/`).
 
 ## 2026-11-07 — riddl 2.5.0, and the holes only the model could close
 
