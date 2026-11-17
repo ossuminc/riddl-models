@@ -16,7 +16,20 @@ warnings; 418 advisories corpus-wide, 3 in reactive-bbq, all
 
 ### In flight
 
-Nothing. `task/` is empty.
+**reactive-bbq `create` bridge, waiting on riddl.** Each initial state's
+`on init(...)` yields the entity's creation event so that its fold can
+morph. Reid's model (`on init` IS the first journal entry, and morphs
+itself) is filed as `../riddl/task/2026-11-17-on-init-is-the-creation-
+event.md`; Reid is working it with riddl and will say when it's staged. Then:
+move each creation fold's `morph` into `on init`, delete the bridge, re-run
+the gates, and tell riddl-generator. riddlg and Synapify wait for that.
+Two task files stay open in `task/`: the create task, and the OrderSubmitted
+route, which waits on riddlg's DineIn e2e.
+
+**The staged `../bin/riddlc` (2.7.0-12) reports ~100
+`msg-clause-undeliverable` and 2 `value-ref-not-a-value` in reactive-bbq.**
+These come from riddl's answer to our undeliverable-clause task. They are
+next-pin work, not regressions.
 
 ### Traps, still live
 
