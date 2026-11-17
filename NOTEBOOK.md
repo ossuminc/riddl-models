@@ -78,6 +78,14 @@ a dedicated outlet (`TableOrderEventSourceToRouting`), connector
 nothing**, which is how this regressed twice. Filed upstream as
 `../riddl/task/2026-11-17-a-clause-no-connector-can-feed-is-silent.md`.
 
+**reactive-bbq: the 34 `on init` clauses that never run are gone** (Reid's
+ruling, 2026-11-17, answering riddlg's create-by-value task). Each yielded,
+from a prompt, the event whose fold had already morphed the entity into that
+state, so running it would have recorded the event twice. The 13 initial
+states keep theirs. Removed by span from `riddlc dump` (the on-init span's end
+runs one line past the clause, so it was anchored on the start line and the
+4-line shape asserted). Findings unchanged; every gate green.
+
 ## 2026-11-11 — riddl 2.6.0
 
 **2.6.0 pinned**: nothing to migrate. Its one new Error,
