@@ -1,7 +1,7 @@
 // DrinkOrder entity for the Bar context
 event-sourced entity DrinkOrder as merge is {
   inlet DrinkOrderFromDrinkOrderQueue is command DrinkOrder.PrepareDrink  type DrinkOrderCommand is one of {
-    DrinkOrder.ReceiveDrinkOrder or DrinkOrder.PrepareDrink or DrinkOrder.MarkDrinkReady or DrinkOrder.NotifyServerDrinksReady or DrinkOrder.CompleteDrinkOrder
+    DrinkOrder.PrepareDrink or DrinkOrder.MarkDrinkReady or DrinkOrder.NotifyServerDrinksReady or DrinkOrder.CompleteDrinkOrder
   } with {
     briefly "DrinkOrder command alternation"
     described as {
@@ -10,43 +10,6 @@ event-sourced entity DrinkOrder as merge is {
   }
   inlet DrinkOrderCommands is type DrinkOrderCommand  outlet DrinkOrderEvents2 is type DrinkOrderEvent
   // ---- Commands ----
-  command ReceiveDrinkOrder yields event DrinkOrderReceived is {
-    drinkOrderId: DrinkOrderId with {
-      briefly "ID"
-      described as {
-        |Identifier for the new drink order.
-      }
-    }
-    sourceOrderId: String(1,50) with {
-      briefly "Source order ID"
-      described as {
-        |Identifier of the originating table order.
-      }
-    }
-    drinkTableNumber: Natural with {
-      briefly "Table"
-      described as {
-        |Table the drinks are for.
-      }
-    }
-    drinkItems: DrinkItem+ with {
-      briefly "Drinks"
-      described as {
-        |Drinks to prepare.
-      }
-    }
-    drinkReceivedAt: TimeStamp with {
-      briefly "Received at"
-      described as {
-        |When the drink order was received.
-      }
-    }
-  } with {
-    briefly "Receive drink order"
-    described as {
-      |Receive a new drink order from a table order.
-    }
-  }
   command PrepareDrink yields event DrinkPrepared is {
     drinkOrderId: DrinkOrderId with {
       briefly "ID"
@@ -352,9 +315,9 @@ event-sourced entity DrinkOrder as merge is {
   }
   initial state Received of record DrinkOrder.DrinkOrderData is {
     initial handler ReceivedHandler is {
-      on init is {
-        let drinkOrderReceived: type DrinkOrderReceived = prompt("the drink order received that brings this drink order into existence")
-        yield drinkOrderReceived
+      on init(forOrder: String(1,50), atTable: Natural, drinks: type DrinkItem+, receivedAt: TimeStamp) is {
+        yield event DrinkOrderReceived(drinkOrderId = self.id, sourceOrderId = forOrder, drinkTableNumber = atTable, drinkItems = drinks, drinkReceivedAt = receivedAt)
+        send event DrinkOrderReceived(drinkOrderId = self.id, sourceOrderId = forOrder, drinkTableNumber = atTable, drinkItems = drinks, drinkReceivedAt = receivedAt) to outlet Bar.DrinkOrder.DrinkOrderEvents2
       }
       on prepareDrink: command PrepareDrink is {
         yield event DrinkPrepared(drinkOrderId = prepareDrink.drinkOrderId, drinkPreparationStartedAt = prepareDrink.drinkPreparationStartedAt)
@@ -362,9 +325,6 @@ event-sourced entity DrinkOrder as merge is {
       }
       on drinkPrepared: event DrinkPrepared is {
         morph entity Bar.DrinkOrder to state Bar.DrinkOrder.InPreparation with record DrinkOrder.DrinkOrderData(drinkOrderId = drinkPrepared.drinkOrderId, sourceOrderId = DrinkOrderData.sourceOrderId, drinkTableNumber = DrinkOrderData.drinkTableNumber, drinkItems = DrinkOrderData.drinkItems, drinkReceivedAt = DrinkOrderData.drinkReceivedAt, actualDrinkReadyAt = empty, actualDrinkCompletedAt = empty)
-      }
-      on receiveDrinkOrder: command ReceiveDrinkOrder is {
-        error "DrinkOrder does not accept ReceiveDrinkOrder in this state"
       }
       on markDrinkReady: command MarkDrinkReady is {
         error "DrinkOrder does not accept MarkDrinkReady in this state"
@@ -398,9 +358,6 @@ event-sourced entity DrinkOrder as merge is {
       }
       on drinkMarkedReady: event DrinkMarkedReady is {
         morph entity Bar.DrinkOrder to state Bar.DrinkOrder.Ready with record DrinkOrder.DrinkOrderData(drinkOrderId = drinkMarkedReady.drinkOrderId, sourceOrderId = DrinkOrderData.sourceOrderId, drinkTableNumber = DrinkOrderData.drinkTableNumber, drinkItems = DrinkOrderData.drinkItems, drinkReceivedAt = DrinkOrderData.drinkReceivedAt, actualDrinkReadyAt = DrinkOrderData.actualDrinkReadyAt, actualDrinkCompletedAt = empty)
-      }
-      on receiveDrinkOrder: command ReceiveDrinkOrder is {
-        error "DrinkOrder does not accept ReceiveDrinkOrder in this state"
       }
       on prepareDrink: command PrepareDrink is {
         error "DrinkOrder does not accept PrepareDrink in this state"
@@ -437,9 +394,6 @@ event-sourced entity DrinkOrder as merge is {
           notification to server via NotificationService
           streaming topology"
       }
-      on receiveDrinkOrder: command ReceiveDrinkOrder is {
-        error "DrinkOrder does not accept ReceiveDrinkOrder in this state"
-      }
       on prepareDrink: command PrepareDrink is {
         error "DrinkOrder does not accept PrepareDrink in this state"
       }
@@ -472,9 +426,6 @@ event-sourced entity DrinkOrder as merge is {
       on drinkOrderCompleted: event DrinkOrderCompleted is {
         morph entity Bar.DrinkOrder to state Bar.DrinkOrder.Completed with record DrinkOrder.DrinkOrderData(drinkOrderId = drinkOrderCompleted.drinkOrderId, sourceOrderId = DrinkOrderData.sourceOrderId, drinkTableNumber = DrinkOrderData.drinkTableNumber, drinkItems = DrinkOrderData.drinkItems, drinkReceivedAt = DrinkOrderData.drinkReceivedAt, actualDrinkReadyAt = DrinkOrderData.actualDrinkReadyAt, actualDrinkCompletedAt = DrinkOrderData.actualDrinkCompletedAt)
       }
-      on receiveDrinkOrder: command ReceiveDrinkOrder is {
-        error "DrinkOrder does not accept ReceiveDrinkOrder in this state"
-      }
       on prepareDrink: command PrepareDrink is {
         error "DrinkOrder does not accept PrepareDrink in this state"
       }
@@ -500,9 +451,6 @@ event-sourced entity DrinkOrder as merge is {
   }
   state Completed of record DrinkOrder.DrinkOrderData is {
     initial handler CompletedHandler is {
-      on receiveDrinkOrder: command ReceiveDrinkOrder is {
-        error "DrinkOrder does not accept ReceiveDrinkOrder in this state"
-      }
       on prepareDrink: command PrepareDrink is {
         error "DrinkOrder does not accept PrepareDrink in this state"
       }
@@ -529,10 +477,6 @@ event-sourced entity DrinkOrder as merge is {
     }
   }
   handler DrinkOrderCreationHandler is {
-    on receiveDrinkOrder: command ReceiveDrinkOrder is {
-      yield event DrinkOrderReceived(drinkOrderId = receiveDrinkOrder.drinkOrderId, sourceOrderId = receiveDrinkOrder.sourceOrderId, drinkTableNumber = receiveDrinkOrder.drinkTableNumber, drinkItems = receiveDrinkOrder.drinkItems, drinkReceivedAt = receiveDrinkOrder.drinkReceivedAt)
-      send event DrinkOrderReceived(drinkOrderId = receiveDrinkOrder.drinkOrderId, sourceOrderId = receiveDrinkOrder.sourceOrderId, drinkTableNumber = receiveDrinkOrder.drinkTableNumber, drinkItems = receiveDrinkOrder.drinkItems, drinkReceivedAt = receiveDrinkOrder.drinkReceivedAt) to outlet Bar.DrinkOrder.DrinkOrderEvents2
-    }
     on drinkOrderReceived: event DrinkOrderReceived is {
       morph entity Bar.DrinkOrder to state Bar.DrinkOrder.Received with record DrinkOrder.DrinkOrderData(drinkOrderId = drinkOrderReceived.drinkOrderId, sourceOrderId = drinkOrderReceived.sourceOrderId, drinkTableNumber = drinkOrderReceived.drinkTableNumber, drinkItems = drinkOrderReceived.drinkItems, drinkReceivedAt = drinkOrderReceived.drinkReceivedAt, actualDrinkReadyAt = empty, actualDrinkCompletedAt = empty)
     }
@@ -544,9 +488,9 @@ event-sourced entity DrinkOrder as merge is {
   } with {
     briefly "Drink order creation handler"
     described as {
-      |Handles the initial ReceiveDrinkOrder command when
-      |the entity has no state yet, and the GetDrinkOrder
-      |query for retrieving drink order data.
+      |Folds DrinkOrderReceived, the event a newly created
+      |drink order yields from its on init, and answers the
+      |GetDrinkOrder query for retrieving drink order data.
     }
   }
 } with {

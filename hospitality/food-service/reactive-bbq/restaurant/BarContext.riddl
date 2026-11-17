@@ -1,6 +1,6 @@
 // Bar bounded context
 context Bar as router is {
-  connector 'FromFrontOfHouse To Bar' is from outlet Bar.FromFrontOfHouse.FromFrontOfHouseToBar to inlet Bar.BarFromFromFrontOfHouse  inlet BarFromFromFrontOfHouse is command ReceiveDrinkOrder  connector 'DrinkOrderQueue To DrinkOrder' is from outlet Bar.DrinkOrderQueue.DrinkOrderQueueToDrinkOrder to inlet Bar.DrinkOrder.DrinkOrderFromDrinkOrderQueue  inlet DrinkOrderCommandStreamIn is type DrinkOrderCommand  outlet DrinkOrderCommandStreamOut is type DrinkOrderCommand
+  connector 'DrinkOrderQueue To DrinkOrder' is from outlet Bar.DrinkOrderQueue.DrinkOrderQueueToDrinkOrder to inlet Bar.DrinkOrder.DrinkOrderFromDrinkOrderQueue  inlet DrinkOrderCommandStreamIn is type DrinkOrderCommand  outlet DrinkOrderCommandStreamOut is type DrinkOrderCommand
   inlet BarToFOHIn is type DrinkOrderEvent  outlet BarToFOHOut is type DrinkOrderEvent
   inlet DrinkOrderResultStreamIn is result DrinkOrder.DrinkOrderResult  outlet DrinkOrderResultStreamOut is result DrinkOrder.DrinkOrderResult
   handler BarBoundary is {
@@ -18,9 +18,6 @@ context Bar as router is {
     }
     on drinkOrderCompleted: event Bar.DrinkOrder.DrinkOrderCompleted is {
       send drinkOrderCompleted to outlet Bar.BarToFOHOut
-    }
-    on receiveDrinkOrder: command DrinkOrder.ReceiveDrinkOrder is {
-      forward receiveDrinkOrder to outlet Bar.DrinkOrderCommandStreamOut
     }
     on prepareDrink: command DrinkOrder.PrepareDrink is {
       forward prepareDrink to outlet Bar.DrinkOrderCommandStreamOut
@@ -306,35 +303,29 @@ context Bar as router is {
   }
   streamlet DrinkOrderEventSource as split is {
     outlet DrinkOrderEventSourceToDrinkOrderProjection is type DrinkOrderEvent
-    inlet DrinkOrderEventSourceIn is type DrinkOrderEvent    outlet DrinkOrderEventsToQueue is type DrinkOrderEvent
-    outlet DrinkOrderEvents is type DrinkOrderEvent
+    inlet DrinkOrderEventSourceIn is type DrinkOrderEvent    outlet DrinkOrderEvents is type DrinkOrderEvent
     handler DrinkOrderEventEmitter is {
       on other is {
         error "Unexpected message for source DrinkOrderEventSource"
       }
       on drinkOrderReceived: event DrinkOrder.DrinkOrderReceived is {
         send drinkOrderReceived to outlet DrinkOrderEvents
-        send drinkOrderReceived to outlet DrinkOrderEventsToQueue
         send drinkOrderReceived to outlet DrinkOrderEventSourceToDrinkOrderProjection
       }
       on drinkPrepared: event DrinkOrder.DrinkPrepared is {
         send drinkPrepared to outlet DrinkOrderEvents
-        send drinkPrepared to outlet DrinkOrderEventsToQueue
         send drinkPrepared to outlet DrinkOrderEventSourceToDrinkOrderProjection
       }
       on drinkMarkedReady: event DrinkOrder.DrinkMarkedReady is {
         send drinkMarkedReady to outlet DrinkOrderEvents
-        send drinkMarkedReady to outlet DrinkOrderEventsToQueue
         send drinkMarkedReady to outlet DrinkOrderEventSourceToDrinkOrderProjection
       }
       on serverNotifiedDrinksReady: event DrinkOrder.ServerNotifiedDrinksReady is {
         send serverNotifiedDrinksReady to outlet DrinkOrderEvents
-        send serverNotifiedDrinksReady to outlet DrinkOrderEventsToQueue
         send serverNotifiedDrinksReady to outlet DrinkOrderEventSourceToDrinkOrderProjection
       }
       on drinkOrderCompleted: event DrinkOrder.DrinkOrderCompleted is {
         send drinkOrderCompleted to outlet DrinkOrderEvents
-        send drinkOrderCompleted to outlet DrinkOrderEventsToQueue
         send drinkOrderCompleted to outlet DrinkOrderEventSourceToDrinkOrderProjection
       }
     } with {
@@ -349,16 +340,31 @@ context Bar as router is {
       |Publishes drink order entity events.
     }
   }
+  command QueueDrinkOrder is {
+    drinkOrderId: DrinkOrderId with {
+      briefly "Drink order"
+      described as {
+        |The drink order just created, to be prepared in turn.
+      }
+    }
+  } with {
+    briefly "Queue a drink order"
+    described as {
+      |Puts a newly created drink order at the back of the bar's queue. The
+      |intake that creates the order hands it over this way, so the queue
+      |works from orders it is given rather than from events it overhears.
+    }
+  }
   streamlet DrinkOrderQueue as flow is {
     outlet DrinkOrderQueueToDrinkOrder is command DrinkOrder.PrepareDrink
-    inlet IncomingDrinks is type DrinkOrderEvent    handler DrinkQueueHandler is {
+    inlet IncomingDrinks is command Bar.QueueDrinkOrder    handler DrinkQueueHandler is {
       on other as m is {
         log m
       }
-      on drinkOrderReceived: event DrinkOrder.DrinkOrderReceived is {
+      on queueDrinkOrder: command Bar.QueueDrinkOrder is {
         do "enqueue drink order for bartender preparation
           in FIFO sequence"
-        send command DrinkOrder.PrepareDrink(drinkOrderId = drinkOrderReceived.drinkOrderId, drinkPreparationStartedAt = system.now) to outlet Bar.DrinkOrderQueue.DrinkOrderQueueToDrinkOrder
+        send command DrinkOrder.PrepareDrink(drinkOrderId = queueDrinkOrder.drinkOrderId, drinkPreparationStartedAt = system.now) to outlet Bar.DrinkOrderQueue.DrinkOrderQueueToDrinkOrder
       }
     } with {
       briefly "Drink queue handler"
@@ -376,9 +382,9 @@ context Bar as router is {
     }
   }
   adaptor FromFrontOfHouse from context Restaurant.FrontOfHouse as flow is { 
-    inlet FromFrontOfHouseIn is event ReactiveBBQ.Restaurant.FrontOfHouse.TableOrder.OrderSubmitted    outlet FromFrontOfHouseToBar is command ReceiveDrinkOrder
+    inlet FromFrontOfHouseIn is event ReactiveBBQ.Restaurant.FrontOfHouse.TableOrder.OrderSubmitted    outlet FromFrontOfHouseToQueue is command Bar.QueueDrinkOrder
     handler DrinkIntake is {
-      on event Restaurant.FrontOfHouse.TableOrder.OrderSubmitted is {
+      on orderSubmitted: event Restaurant.FrontOfHouse.TableOrder.OrderSubmitted is {
         do "filter event.orderItems where
           orderLineItem.itemCategory is drink"
         when prompt("filtered drink items list is not empty") then
@@ -386,13 +392,8 @@ context Bar as router is {
             drinkName = orderLineItem.itemName,
             drinkQuantity = orderLineQuantity,
             drinkNotes = orderLineNotes"
-          do "construct ReceiveDrinkOrder with new DrinkOrderId,
-            sourceOrderId = event.tableOrderId,
-            drinkTableNumber = event.tableNumber,
-            drinkItems = mapped list, drinkReceivedAt =
-            current timestamp"
-          let receiveDrinkOrder: type ReceiveDrinkOrder = prompt("the receive drink order that results from order submitted")
-          send receiveDrinkOrder to outlet Bar.FromFrontOfHouse.FromFrontOfHouseToBar
+          let newDrinkOrder = create entity Bar.DrinkOrder(forOrder = orderSubmitted.tableOrderId, atTable = orderSubmitted.tableNumber, drinks = prompt("the drink items mapped from the order's drink lines"), receivedAt = system.now)
+          send command Bar.QueueDrinkOrder(drinkOrderId = newDrinkOrder) to outlet Bar.FromFrontOfHouse.FromFrontOfHouseToQueue
         end
       }
       on other is {
@@ -417,18 +418,17 @@ context Bar as router is {
       |Every DrinkOrder event, on its way to the fan-out.
     }
   }
+  connector 'QueueDrinkOrder Intake' is from outlet Bar.FromFrontOfHouse.FromFrontOfHouseToQueue to inlet Bar.DrinkOrderQueue.IncomingDrinks with {
+    briefly "New drink orders on their way to the queue"
+    described as {
+      |The intake creates each drink order and hands it to the queue here.
+    }
+  }
   connector 'DrinkOrderEvent Storage' is from outlet Bar.DrinkOrderEventSource.DrinkOrderEventSourceToDrinkOrderProjection to inlet Bar.DrinkOrderProjection.DrinkOrderProjectionFromDrinkOrder with {
     briefly "DrinkOrder events on their way to storage"
     described as {
       |Carries what leaves DrinkOrderEvents2 to DrinkOrderRepositoryFromDrinkOrder, which is where it is acted on.
       |The pipe states the route; the endpoints state who owns each end.
-    }
-  }
-  connector 'DrinkOrderEvent Queue Feed' is from outlet Bar.DrinkOrderEventSource.DrinkOrderEventsToQueue to inlet Bar.DrinkOrderQueue.IncomingDrinks with {
-    briefly "This context's own events to its queue"
-    described as {
-      |The queue works on events this context publishes, not on the raw events
-      |another context happened to forward.
     }
   }
 } with {

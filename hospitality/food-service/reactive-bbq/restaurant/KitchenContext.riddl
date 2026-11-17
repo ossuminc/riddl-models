@@ -7,16 +7,8 @@ context Kitchen as router is {
       |KitchenTicket events on their way to Inventory.
     }
   }
-  connector 'KitchenTicketEventLog To KitchenTicketRepository' is from outlet Kitchen.KitchenTicketEventLog.KitchenTicketEventLogToKitchenTicketRepository to inlet Kitchen.KitchenTicketRepository.KitchenTicketRepositoryFromKitchenTicketEventLog  connector 'FromOnlineOrdering To Kitchen' is from outlet Kitchen.FromOnlineOrdering.FromOnlineOrderingToKitchen to inlet Kitchen.KitchenFromFromOnlineOrdering  inlet KitchenFromFromOnlineOrdering is command ReceiveTicket  connector 'FromFrontOfHouse To Kitchen' is from outlet Kitchen.FromFrontOfHouse.FromFrontOfHouseToKitchen to inlet Kitchen.KitchenFromFromFrontOfHouse  inlet KitchenFromFromFrontOfHouse is command ReceiveTicket  inlet KitchenTicketCommandStreamIn is type KitchenTicketCommand  outlet KitchenTicketCommandStreamOut is type KitchenTicketCommand
+  connector 'KitchenTicketEventLog To KitchenTicketRepository' is from outlet Kitchen.KitchenTicketEventLog.KitchenTicketEventLogToKitchenTicketRepository to inlet Kitchen.KitchenTicketRepository.KitchenTicketRepositoryFromKitchenTicketEventLog  inlet KitchenTicketCommandStreamIn is type KitchenTicketCommand  outlet KitchenTicketCommandStreamOut is type KitchenTicketCommand
   inlet KitchenTicketResultStreamIn is result KitchenTicket.KitchenTicketResult  outlet KitchenTicketResultStreamOut is result KitchenTicket.KitchenTicketResult
-  outlet TicketIntakeOut is command KitchenTicket.ReceiveTicket
- with {
-    briefly "Externally originated tickets on their way to the intake merge"
-    described as {
-      |Both source contexts converge here: KitchenBoundary handles
-      |ReceiveTicket from either inlet and forwards it to this one outlet.
-    }
-  }
   outlet KitchenToFrontOfHouseOut is event KitchenTicket.PreparationStarted
  with {
     briefly "What Kitchen tells FrontOfHouse about the orders it is cooking"
@@ -33,9 +25,6 @@ context Kitchen as router is {
     }
     on ticketApproved: event KitchenTicket.TicketApproved is {
       send ticketApproved to outlet Kitchen.KitchenToInventoryOut
-    }
-    on receiveTicket: command KitchenTicket.ReceiveTicket is {
-      forward receiveTicket to outlet Kitchen.TicketIntakeOut
     }
     on assignStation: command KitchenTicket.AssignStation is {
       forward assignStation to outlet Kitchen.KitchenTicketCommandStreamOut
@@ -73,13 +62,7 @@ context Kitchen as router is {
       |The pipe states the route; the endpoints state who owns each end.
     }
   }
-  connector 'KitchenTicketCommand Stream Intake' is from outlet Kitchen.KitchenTicketCommandStreamOut to inlet Kitchen.KitchenTicketIntake.IntakeAppCommands  connector 'KitchenTicket External Intake' is from outlet Kitchen.TicketIntakeOut to inlet Kitchen.KitchenTicketIntake.IntakeExternalTickets with {
-    briefly "Externally originated tickets on their way into the intake merge"
-    described as {
-      |The second leg of the merge: what the two order-taking contexts sent.
-    }
-  }
-  connector 'KitchenTicketCommand Merged Intake' is from outlet Kitchen.KitchenTicketIntake.IntakeMergedCommands to inlet Kitchen.KitchenTicket.KitchenTicketCommands with {
+  connector 'KitchenTicketCommand Stream Intake' is from outlet Kitchen.KitchenTicketCommandStreamOut to inlet Kitchen.KitchenTicketIntake.IntakeAppCommands  connector 'KitchenTicketCommand Merged Intake' is from outlet Kitchen.KitchenTicketIntake.IntakeMergedCommands to inlet Kitchen.KitchenTicket.KitchenTicketCommands with {
     briefly "The joined command stream reaching the KitchenTicket entity"
     described as {
       |One stream out of the merge, so the entity has a single command source
@@ -646,33 +629,27 @@ context Kitchen as router is {
   }
   streamlet KitchenTicketEventSource as split is {
     outlet KitchenTicketEventSourceToInventory is type KitchenTicketEvent
-    inlet KitchenTicketEventSourceIn is type KitchenTicketEvent    outlet KitchenTicketEventsToQueue is type KitchenTicketEvent
-    outlet KitchenTicketEvents is type KitchenTicketEvent
+    inlet KitchenTicketEventSourceIn is type KitchenTicketEvent    outlet KitchenTicketEvents is type KitchenTicketEvent
     handler KitchenTicketEventEmitter is {
       on other is {
         error "Unexpected message for source KitchenTicketEventSource"
       }
       on ticketReceived: event KitchenTicket.TicketReceived is {
         send ticketReceived to outlet KitchenTicketEvents
-        send ticketReceived to outlet KitchenTicketEventsToQueue
       }
       on stationAssigned: event KitchenTicket.StationAssigned is {
         send stationAssigned to outlet KitchenTicketEvents
-        send stationAssigned to outlet KitchenTicketEventsToQueue
       }
       on preparationStarted: event KitchenTicket.PreparationStarted is {
         send preparationStarted to outlet KitchenTicketEvents
-        send preparationStarted to outlet KitchenTicketEventsToQueue
         send preparationStarted to outlet KitchenTicketEventSourceToInventory
       }
       on ticketApproved: event KitchenTicket.TicketApproved is {
         send ticketApproved to outlet KitchenTicketEvents
-        send ticketApproved to outlet KitchenTicketEventsToQueue
         send ticketApproved to outlet KitchenTicketEventSourceToInventory
       }
       on serverNotified: event KitchenTicket.ServerNotified is {
         send serverNotified to outlet KitchenTicketEvents
-        send serverNotified to outlet KitchenTicketEventsToQueue
       }
     } with {
       briefly "Kitchen ticket event emitter"
@@ -688,14 +665,33 @@ context Kitchen as router is {
       |consumption.
     }
   }
-  streamlet TicketQueue as flow is {
-    inlet IncomingTickets is type KitchenTicketEvent    outlet DisplayTickets is type KitchenTicketEvent
-    handler TicketQueueHandler is {
-      on other as m is {
-        log m
+  command QueueTicket is {
+    kitchenTicketId: KitchenTicketId with {
+      briefly "Ticket"
+      described as {
+        |The ticket just created, to be shown to the kitchen in turn.
       }
-      on ticketReceived: event KitchenTicket.TicketReceived is {
-        send ticketReceived to outlet DisplayTickets
+    }
+    ticketSource: TicketSource with {
+      briefly "Source"
+      described as {
+        |Dine-in or online, which the display marks.
+      }
+    }
+  } with {
+    briefly "Queue a ticket"
+    described as {
+      |Puts a newly created kitchen ticket at the back of the queue for the
+      |display. The intake that creates the ticket hands it over this way,
+      |so the queue works from tickets it is given rather than from events it
+      |overhears.
+    }
+  }
+  streamlet TicketQueue as merge is {
+    inlet QueuedFromFrontOfHouse is command Kitchen.QueueTicket    inlet QueuedFromOnlineOrdering is command Kitchen.QueueTicket    outlet DisplayTickets is command Kitchen.QueueTicket
+    handler TicketQueueHandler is {
+      on queueTicket: command Kitchen.QueueTicket is {
+        send queueTicket to outlet DisplayTickets
       }
     } with {
       briefly "Ticket queue handler"
@@ -714,13 +710,11 @@ context Kitchen as router is {
     }
   }
   streamlet TicketDisplaySink as sink is {
-    inlet DisplayedTickets is type KitchenTicketEvent    handler TicketDisplayHandler is {
-      on other as m is {
-        log m
-      }
-      on ticketReceived: event KitchenTicket.TicketReceived is {
-        log ticketReceived
-        do "render ticket on kitchen display screen"
+    inlet DisplayedTickets is command Kitchen.QueueTicket    handler TicketDisplayHandler is {
+      on queueTicket: command Kitchen.QueueTicket is {
+        log queueTicket
+        do "render the ticket on the kitchen display screen, its items
+          read from the ticket queueTicket.kitchenTicketId names"
       }
     } with {
       briefly "Ticket display handler"
@@ -744,6 +738,18 @@ context Kitchen as router is {
       |RESULT and stops being a sink; it does not regain this one.
     }
   }
+  connector 'QueueTicket FromFrontOfHouse Intake' is from outlet Kitchen.FromFrontOfHouse.FromFrontOfHouseToQueue to inlet Kitchen.TicketQueue.QueuedFromFrontOfHouse with {
+    briefly "New tickets from FrontOfHouse on their way to the queue"
+    described as {
+      |The intake creates each ticket and hands it to the queue here.
+    }
+  }
+  connector 'QueueTicket FromOnlineOrdering Intake' is from outlet Kitchen.FromOnlineOrdering.FromOnlineOrderingToQueue to inlet Kitchen.TicketQueue.QueuedFromOnlineOrdering with {
+    briefly "New tickets from OnlineOrdering on their way to the queue"
+    described as {
+      |The intake creates each ticket and hands it to the queue here.
+    }
+  }
   connector QueueToDisplay is from outlet Kitchen.TicketQueue.DisplayTickets to inlet Kitchen.TicketDisplaySink.DisplayedTickets with {
     briefly "Queue to display connector"
     described as {
@@ -752,9 +758,9 @@ context Kitchen as router is {
     }
   }
   adaptor FromFrontOfHouse from context Restaurant.FrontOfHouse as flow is { 
-    inlet FromFrontOfHouseIn is event ReactiveBBQ.Restaurant.FrontOfHouse.TableOrder.OrderSubmitted    outlet FromFrontOfHouseToKitchen is command ReceiveTicket
+    inlet FromFrontOfHouseIn is event ReactiveBBQ.Restaurant.FrontOfHouse.TableOrder.OrderSubmitted    outlet FromFrontOfHouseToQueue is command Kitchen.QueueTicket
     handler FrontOfHouseIntake is {
-      on event Restaurant.FrontOfHouse.TableOrder.OrderSubmitted is {
+      on orderSubmitted: event Restaurant.FrontOfHouse.TableOrder.OrderSubmitted is {
         do "filter event.orderItems where
           orderLineItem.itemCategory is not drink"
         do "map each food OrderLine to TicketItem with
@@ -763,12 +769,8 @@ context Kitchen as router is {
           ticketItemQuantity = orderLineQuantity,
           ticketItemNotes = orderLineNotes,
           ticketItemReady = false"
-        do "construct ReceiveTicket with new KitchenTicketId,
-          sourceOrderId = event.tableOrderId, ticketSource =
-          DineIn, ticketItems = mapped list, receivedAt =
-          current timestamp"
-        let receiveTicket: type ReceiveTicket = prompt("the receive ticket that results from order submitted")
-        send receiveTicket to outlet Kitchen.FromFrontOfHouse.FromFrontOfHouseToKitchen
+        let newTicket = create entity Kitchen.KitchenTicket(forOrder = orderSubmitted.tableOrderId, source = DineIn, items = prompt("the ticket items mapped from the order's food lines"), arrivedAt = system.now)
+        send command Kitchen.QueueTicket(kitchenTicketId = newTicket, ticketSource = DineIn) to outlet Kitchen.FromFrontOfHouse.FromFrontOfHouseToQueue
       }
       on other is {
         error "Unexpected message for adaptor FromFrontOfHouse"
@@ -788,20 +790,16 @@ context Kitchen as router is {
     }
   }
   adaptor FromOnlineOrdering from context Restaurant.OnlineOrdering as flow is { 
-    inlet FromOnlineOrderingIn is event ReactiveBBQ.Restaurant.OnlineOrdering.OnlineOrder.OnlineOrderSubmitted    outlet FromOnlineOrderingToKitchen is command ReceiveTicket
+    inlet FromOnlineOrderingIn is event ReactiveBBQ.Restaurant.OnlineOrdering.OnlineOrder.OnlineOrderSubmitted    outlet FromOnlineOrderingToQueue is command Kitchen.QueueTicket
     handler OnlineIntake is {
-      on event Restaurant.OnlineOrdering.OnlineOrder.OnlineOrderSubmitted is {
+      on onlineOrderSubmitted: event Restaurant.OnlineOrdering.OnlineOrder.OnlineOrderSubmitted is {
         do "map each event.orderCartItems CartItem to TicketItem
           with ticketMenuItemId = cartMenuItemId, ticketItemName
           = cartItemName, ticketItemQuantity = cartItemQuantity,
           ticketItemNotes = cartItemNotes, ticketItemReady =
           false"
-        do "construct ReceiveTicket with new KitchenTicketId,
-          sourceOrderId = event.onlineOrderId, ticketSource =
-          Online, ticketItems = mapped list, receivedAt =
-          current timestamp"
-        let receiveTicket: type ReceiveTicket = prompt("the receive ticket that results from online order submitted")
-        send receiveTicket to outlet Kitchen.FromOnlineOrdering.FromOnlineOrderingToKitchen
+        let newTicket = create entity Kitchen.KitchenTicket(forOrder = onlineOrderSubmitted.onlineOrderId, source = Online, items = prompt("the ticket items mapped from the order's food lines"), arrivedAt = system.now)
+        send command Kitchen.QueueTicket(kitchenTicketId = newTicket, ticketSource = Online) to outlet Kitchen.FromOnlineOrdering.FromOnlineOrderingToQueue
       }
       on other is {
         error "Unexpected message for adaptor FromOnlineOrdering"
@@ -911,7 +909,7 @@ context Kitchen as router is {
       |Wires published kitchen ticket events to the context's event log.
     }
   }
-  streamlet KitchenTicketIntake as merge is {
+  streamlet KitchenTicketIntake as flow is {
     inlet IntakeAppCommands is type KitchenTicketCommand with {
       briefly "Staff commands originated by the application"
       described as {
@@ -919,24 +917,14 @@ context Kitchen as router is {
         |readiness, approval, server notification.
       }
     }
-    inlet IntakeExternalTickets is command KitchenTicket.ReceiveTicket with {
-      briefly "Tickets originated by the order-taking contexts"
-      described as {
-        |What FrontOfHouse and OnlineOrdering send. A ticket enters the
-        |kitchen this way; it is never typed at a terminal in the kitchen.
-      }
-    }
     outlet IntakeMergedCommands is type KitchenTicketCommand
  with {
-      briefly "The two streams as one"
+      briefly "Staff commands, onward to the entity"
       described as {
         |Everything the KitchenTicket entity is asked to do, in one stream.
       }
     }
     handler KitchenTicketIntakeHandler is {
-      on receiveTicket: command KitchenTicket.ReceiveTicket is {
-        send receiveTicket to outlet Kitchen.KitchenTicketIntake.IntakeMergedCommands
-      }
       on assignStation: command KitchenTicket.AssignStation is {
         send assignStation to outlet Kitchen.KitchenTicketIntake.IntakeMergedCommands
       }
@@ -963,11 +951,11 @@ context Kitchen as router is {
       }
     }
   } with {
-    briefly "Kitchen ticket intake merge"
+    briefly "Kitchen ticket intake"
     described as {
-      |Joins the two ways work reaches the kitchen -- staff acting in the
-      |application, and tickets arriving from front of house and online
-      |ordering -- so the entity sees one ordered command stream.
+      |Carries what staff ask of existing tickets into the entity. Tickets
+      |themselves are no longer commanded into being: the FrontOfHouse and
+      |OnlineOrdering intakes create them, and hand them to the TicketQueue.
     }
   }
   streamlet KitchenTicketEventSplit as split is {
@@ -1051,13 +1039,6 @@ context Kitchen as router is {
     described as {
       |Carries what leaves KitchenDisplayOut to KitchenTicketRepositoryFromKitchenDisplay, which is where it is acted on.
       |The pipe states the route; the endpoints state who owns each end.
-    }
-  }
-  connector 'KitchenTicketEvent Queue Feed' is from outlet Kitchen.KitchenTicketEventSource.KitchenTicketEventsToQueue to inlet Kitchen.TicketQueue.IncomingTickets with {
-    briefly "This context's own events to its queue"
-    described as {
-      |The queue works on events this context publishes, not on the raw events
-      |another context happened to forward.
     }
   }
 } with {

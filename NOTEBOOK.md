@@ -116,6 +116,34 @@ Campaign, and InventoryItem, which had no creation path at all and now gets
   `SeatParty`/`PartySeated` lost `tableOrderId`: a host can't know an id
   that `create` has not minted yet.
 
+**reactive-bbq creates by value: the intake side.** Bar, Kitchen and Delivery
+create their entity from another context's event, so no requester waits for
+an answer. The id still needs a consumer inside the clause, so each intake
+hands the new instance to the next thing that has to act on it (Reid
+accepted this as the "real consumer"):
+
+- Bar: `QueueDrinkOrder(drinkOrderId)` goes to `DrinkOrderQueue`, which
+  sends `PrepareDrink`.
+- Kitchen: both intakes send `QueueTicket(kitchenTicketId, ticketSource)` to
+  `TicketQueue`, which is now a merge, and on to the display.
+- Delivery: sends `AssignDriver` to the new delivery. That step was only
+  prose in the old creation clause.
+
+The queues used to OVERHEAR the creation event through the event source's
+fan-out. Those feeds are gone, along with the ReceiveTicket /
+ReceiveDrinkOrder / CreateDelivery relay: context inlets, connectors,
+boundary clauses, and Kitchen's external-intake leg.
+
+- **Reid's correction worth keeping:** an entity that is created and never
+  sent another message is a value object, not an entity. DrinkOrder is not
+  one: it has five states and is told PrepareDrink, MarkDrinkReady and
+  CompleteDrinkOrder. A corpus census for the real cases is still owed.
+- **A `let` cannot be collection-typed**, so `QueueTicket` carries the ticket
+  id rather than its items; the display reads them from the ticket.
+
+All 13 entities now have a creating value (14 `create` sites; KitchenTicket
+has two intakes), and no entity-level clause exists only to create.
+
 ## 2026-11-11 — riddl 2.6.0
 
 **2.6.0 pinned**: nothing to migrate. Its one new Error,

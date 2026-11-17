@@ -1,7 +1,7 @@
 // KitchenTicket entity for the Kitchen context
 event-sourced entity KitchenTicket as flow is {
   type KitchenTicketCommand is one of {
-    KitchenTicket.ReceiveTicket or KitchenTicket.AssignStation or KitchenTicket.StartPreparation or KitchenTicket.MarkItemReady or KitchenTicket.ApproveTicket or KitchenTicket.NotifyServer
+    KitchenTicket.AssignStation or KitchenTicket.StartPreparation or KitchenTicket.MarkItemReady or KitchenTicket.ApproveTicket or KitchenTicket.NotifyServer
   } with {
     briefly "KitchenTicket command alternation"
     described as {
@@ -10,43 +10,6 @@ event-sourced entity KitchenTicket as flow is {
   }
   inlet KitchenTicketCommands is type KitchenTicketCommand  outlet KitchenTicketEvents2 is type KitchenTicketEvent
   // ---- Commands ----
-  command ReceiveTicket yields event TicketReceived is {
-    kitchenTicketId: KitchenTicketId with {
-      briefly "ID"
-      described as {
-        |Identifier for the new ticket.
-      }
-    }
-    sourceOrderId: String(1,50) with {
-      briefly "Source order ID"
-      described as {
-        |Identifier of the originating order.
-      }
-    }
-    ticketSource: TicketSource with {
-      briefly "Source"
-      described as {
-        |Whether from dine-in or online.
-      }
-    }
-    ticketItems: TicketItem+ with {
-      briefly "Items"
-      described as {
-        |Food items to prepare.
-      }
-    }
-    receivedAt: TimeStamp with {
-      briefly "Received at"
-      described as {
-        |When the ticket was received.
-      }
-    }
-  } with {
-    briefly "Receive ticket"
-    described as {
-      |Receive a new kitchen ticket from an order.
-    }
-  }
   command AssignStation yields event StationAssigned is {
     kitchenTicketId: KitchenTicketId with {
       briefly "ID"
@@ -418,9 +381,9 @@ event-sourced entity KitchenTicket as flow is {
   }
   initial state Received of record KitchenTicket.KitchenTicketData is {
     initial handler ReceivedHandler is {
-      on init is {
-        let ticketReceived: type TicketReceived = prompt("the ticket received that brings this kitchen ticket into existence")
-        yield ticketReceived
+      on init(forOrder: String(1,50), source: type TicketSource, items: type TicketItem+, arrivedAt: TimeStamp) is {
+        yield event TicketReceived(kitchenTicketId = self.id, sourceOrderId = forOrder, ticketSource = source, ticketItems = items, receivedAt = arrivedAt)
+        send event TicketReceived(kitchenTicketId = self.id, sourceOrderId = forOrder, ticketSource = source, ticketItems = items, receivedAt = arrivedAt) to outlet Kitchen.KitchenTicket.KitchenTicketEvents2
       }
       on assignStation: command AssignStation is {
         yield event StationAssigned(kitchenTicketId = assignStation.kitchenTicketId, assignedStation = assignStation.assignedStation, assignedAt = system.now)
@@ -428,9 +391,6 @@ event-sourced entity KitchenTicket as flow is {
       }
       on stationAssigned: event StationAssigned is {
         morph entity Kitchen.KitchenTicket to state Kitchen.KitchenTicket.Assigned with record KitchenTicket.KitchenTicketData(kitchenTicketId = stationAssigned.kitchenTicketId, sourceOrderId = KitchenTicketData.sourceOrderId, ticketSource = KitchenTicketData.ticketSource, ticketItems = KitchenTicketData.ticketItems, currentStation = KitchenTicketData.currentStation, receivedAt = KitchenTicketData.receivedAt, actualPreparationStartedAt = empty, ticketApprovedAt = empty)
-      }
-      on receiveTicket: command ReceiveTicket is {
-        error "KitchenTicket does not accept ReceiveTicket in this state"
       }
       on startPreparation: command StartPreparation is {
         error "KitchenTicket does not accept StartPreparation in this state"
@@ -466,9 +426,6 @@ event-sourced entity KitchenTicket as flow is {
       }
       on preparationStarted: event PreparationStarted is {
         morph entity Kitchen.KitchenTicket to state Kitchen.KitchenTicket.InPreparation with record KitchenTicket.KitchenTicketData(kitchenTicketId = preparationStarted.kitchenTicketId, sourceOrderId = KitchenTicketData.sourceOrderId, ticketSource = KitchenTicketData.ticketSource, ticketItems = KitchenTicketData.ticketItems, currentStation = KitchenTicketData.currentStation, receivedAt = KitchenTicketData.receivedAt, actualPreparationStartedAt = KitchenTicketData.actualPreparationStartedAt, ticketApprovedAt = empty)
-      }
-      on receiveTicket: command ReceiveTicket is {
-        error "KitchenTicket does not accept ReceiveTicket in this state"
       }
       on assignStation: command AssignStation is {
         error "KitchenTicket does not accept AssignStation in this state"
@@ -510,9 +467,6 @@ event-sourced entity KitchenTicket as flow is {
           morph entity Kitchen.KitchenTicket to state Kitchen.KitchenTicket.ItemsReady with record KitchenTicket.KitchenTicketData(kitchenTicketId = itemMarkedReady.kitchenTicketId, sourceOrderId = KitchenTicketData.sourceOrderId, ticketSource = KitchenTicketData.ticketSource, ticketItems = KitchenTicketData.ticketItems, currentStation = KitchenTicketData.currentStation, receivedAt = KitchenTicketData.receivedAt, actualPreparationStartedAt = KitchenTicketData.actualPreparationStartedAt, ticketApprovedAt = empty)
         end
       }
-      on receiveTicket: command ReceiveTicket is {
-        error "KitchenTicket does not accept ReceiveTicket in this state"
-      }
       on assignStation: command AssignStation is {
         error "KitchenTicket does not accept AssignStation in this state"
       }
@@ -550,9 +504,6 @@ event-sourced entity KitchenTicket as flow is {
       }
       on ticketApproved: event TicketApproved is {
         morph entity Kitchen.KitchenTicket to state Kitchen.KitchenTicket.Approved with record KitchenTicket.KitchenTicketData(kitchenTicketId = ticketApproved.kitchenTicketId, sourceOrderId = KitchenTicketData.sourceOrderId, ticketSource = KitchenTicketData.ticketSource, ticketItems = KitchenTicketData.ticketItems, currentStation = KitchenTicketData.currentStation, receivedAt = KitchenTicketData.receivedAt, actualPreparationStartedAt = KitchenTicketData.actualPreparationStartedAt, ticketApprovedAt = KitchenTicketData.ticketApprovedAt)
-      }
-      on receiveTicket: command ReceiveTicket is {
-        error "KitchenTicket does not accept ReceiveTicket in this state"
       }
       on assignStation: command AssignStation is {
         error "KitchenTicket does not accept AssignStation in this state"
@@ -592,9 +543,6 @@ event-sourced entity KitchenTicket as flow is {
         do "ServerNotified event triggers push notification to
           server via NotificationService streaming topology"
       }
-      on receiveTicket: command ReceiveTicket is {
-        error "KitchenTicket does not accept ReceiveTicket in this state"
-      }
       on assignStation: command AssignStation is {
         error "KitchenTicket does not accept AssignStation in this state"
       }
@@ -623,9 +571,6 @@ event-sourced entity KitchenTicket as flow is {
   }
   state ServerNotifiedState of record KitchenTicket.KitchenTicketData is {
     initial handler ServerNotifiedHandler is {
-      on receiveTicket: command ReceiveTicket is {
-        error "KitchenTicket does not accept ReceiveTicket in this state"
-      }
       on assignStation: command AssignStation is {
         error "KitchenTicket does not accept AssignStation in this state"
       }
@@ -655,10 +600,6 @@ event-sourced entity KitchenTicket as flow is {
     }
   }
   handler KitchenTicketCreationHandler is {
-    on receiveTicket: command ReceiveTicket is {
-      yield event TicketReceived(kitchenTicketId = receiveTicket.kitchenTicketId, sourceOrderId = receiveTicket.sourceOrderId, ticketSource = receiveTicket.ticketSource, ticketItems = receiveTicket.ticketItems, receivedAt = receiveTicket.receivedAt)
-      send event TicketReceived(kitchenTicketId = receiveTicket.kitchenTicketId, sourceOrderId = receiveTicket.sourceOrderId, ticketSource = receiveTicket.ticketSource, ticketItems = receiveTicket.ticketItems, receivedAt = receiveTicket.receivedAt) to outlet Kitchen.KitchenTicket.KitchenTicketEvents2
-    }
     on ticketReceived: event TicketReceived is {
       morph entity Kitchen.KitchenTicket to state Kitchen.KitchenTicket.Received with record KitchenTicket.KitchenTicketData(kitchenTicketId = ticketReceived.kitchenTicketId, sourceOrderId = ticketReceived.sourceOrderId, ticketSource = ticketReceived.ticketSource, ticketItems = ticketReceived.ticketItems, receivedAt = ticketReceived.receivedAt, currentStation = empty, actualPreparationStartedAt = empty, ticketApprovedAt = empty)
     }
@@ -670,8 +611,8 @@ event-sourced entity KitchenTicket as flow is {
   } with {
     briefly "Kitchen ticket creation handler"
     described as {
-      |Handles the initial ReceiveTicket command when
-      |the entity has no state yet.
+      |Folds TicketReceived, the event a newly created ticket
+      |yields from its on init, into the Received state.
     }
   }
 } with {

@@ -1,6 +1,6 @@
 // Delivery bounded context
 context Delivery as router is {
-  connector 'FromOnlineOrdering To Delivery' is from outlet Delivery.FromOnlineOrdering.FromOnlineOrderingToDelivery to inlet Delivery.DeliveryFromFromOnlineOrdering  inlet DeliveryFromFromOnlineOrdering is command CreateDelivery  inlet DeliveryOrderCommandStreamIn is type DeliveryOrderCommand  outlet DeliveryOrderCommandStreamOut is type DeliveryOrderCommand
+  connector 'FromOnlineOrdering To Delivery' is from outlet Delivery.FromOnlineOrdering.FromOnlineOrderingToDelivery to inlet Delivery.DeliveryFromFromOnlineOrdering  inlet DeliveryFromFromOnlineOrdering is command DeliveryOrder.AssignDriver  inlet DeliveryOrderCommandStreamIn is type DeliveryOrderCommand  outlet DeliveryOrderCommandStreamOut is type DeliveryOrderCommand
   inlet DeliveryToOnlineIn is type DeliveryEvent  outlet DeliveryToOnlineOut is type DeliveryEvent
   inlet DeliveryOrderResultStreamIn is result DeliveryOrder.DeliveryOrderResult  outlet DeliveryOrderResultStreamOut is result DeliveryOrder.DeliveryOrderResult
   handler DeliveryBoundary is {
@@ -27,9 +27,6 @@ context Delivery as router is {
     }
     on deliveryMarkedFailed: event DeliveryOrder.DeliveryMarkedFailed is {
       send deliveryMarkedFailed to outlet Delivery.DeliveryToOnlineOut
-    }
-    on createDelivery: command DeliveryOrder.CreateDelivery is {
-      forward createDelivery to outlet Delivery.DeliveryOrderCommandStreamOut
     }
     on assignDriver: command DeliveryOrder.AssignDriver is {
       forward assignDriver to outlet Delivery.DeliveryOrderCommandStreamOut
@@ -591,18 +588,14 @@ context Delivery as router is {
     }
   }
   adaptor FromOnlineOrdering from context Restaurant.OnlineOrdering as flow is { 
-    inlet FromOnlineOrderingIn is type OnlineOrdering.OnlineOrderEvent    outlet FromOnlineOrderingToDelivery is command CreateDelivery
+    inlet FromOnlineOrderingIn is type OnlineOrdering.OnlineOrderEvent    outlet FromOnlineOrderingToDelivery is command DeliveryOrder.AssignDriver
     handler OnlineDeliveryIntake is {
-      on event Restaurant.OnlineOrdering.OnlineOrder.FulfillmentSelected is {
+      on fulfillmentSelected: event Restaurant.OnlineOrdering.OnlineOrder.FulfillmentSelected is {
         when prompt("event.fulfillmentType is DeliveryFulfillment") then
-          do "construct CreateDelivery with new DeliveryId,
-            sourceOnlineOrderId = event.onlineOrderId,
-            deliveryCustomerName from customer profile,
-            deliveryCustomerPhone from customer profile,
-            deliveryDestination = event.deliveryAddress,
-            requestedDeliveryTime = event.requestedTime"
-          let createDelivery: type CreateDelivery = prompt("the create delivery that results from fulfillment selected")
-          send createDelivery to outlet Delivery.FromOnlineOrdering.FromOnlineOrderingToDelivery
+          let newDelivery = create entity Delivery.DeliveryOrder(forOnlineOrder = fulfillmentSelected.onlineOrderId, customerName = prompt("the customer's name, from their profile"), customerPhone = prompt("the customer's phone number, from their profile"), destination = prompt("the delivery address the customer gave when choosing delivery"), createdOn = system.now)
+          do "query available drivers by GeoLocation proximity to
+            restaurant and select nearest with status = available"
+          send command DeliveryOrder.AssignDriver(deliveryId = newDelivery, driverId = prompt("the nearest available driver"), driverName = prompt("that driver's name")) to outlet Delivery.FromOnlineOrdering.FromOnlineOrderingToDelivery
         end
       }
       on other is {
@@ -611,8 +604,8 @@ context Delivery as router is {
     } with {
       briefly "Online delivery intake"
       described as {
-        |Creates deliveries from online orders when delivery
-        |fulfillment is selected.
+        |Creates a delivery when an online order selects delivery
+        |fulfillment, and assigns it the nearest available driver.
       }
     }
   } with {

@@ -1,7 +1,7 @@
 // DeliveryOrder entity for the Delivery context
 event-sourced entity DeliveryOrder as flow is {
   type DeliveryOrderCommand is one of {
-    DeliveryOrder.CreateDelivery or DeliveryOrder.AssignDriver or DeliveryOrder.DispatchDriver or DeliveryOrder.RecordDeliveryLocation or DeliveryOrder.ConfirmDelivery or DeliveryOrder.RecordDeliveryPayment or DeliveryOrder.ReportDeliveryIssue or DeliveryOrder.FailDelivery
+    DeliveryOrder.AssignDriver or DeliveryOrder.DispatchDriver or DeliveryOrder.RecordDeliveryLocation or DeliveryOrder.ConfirmDelivery or DeliveryOrder.RecordDeliveryPayment or DeliveryOrder.ReportDeliveryIssue or DeliveryOrder.FailDelivery
   } with {
     briefly "DeliveryOrder command alternation"
     described as {
@@ -18,51 +18,6 @@ event-sourced entity DeliveryOrder as flow is {
   }
   inlet DeliveryOrderCommands is type DeliveryOrderCommand  outlet DeliveryOrderEvents2 is type DeliveryOrderEvent
   // ---- Commands ----
-  command CreateDelivery yields event DeliveryCreated is {
-    deliveryId: DeliveryId with {
-      briefly "ID"
-      described as {
-        |Identifier for the new delivery.
-      }
-    }
-    sourceOnlineOrderId: String(1,50) with {
-      briefly "Online order ID"
-      described as {
-        |Originating online order.
-      }
-    }
-    deliveryCustomerName: String(1,100) with {
-      briefly "Customer name"
-      described as {
-        |Who the driver is looking for at the door. Carried on the delivery
-        |itself because the driver has no access to customer records from the
-        |road.
-      }
-    }
-    deliveryCustomerPhone: String(7,20) with {
-      briefly "Customer phone"
-      described as {
-        |Customer contact phone.
-      }
-    }
-    deliveryDestination: DeliveryAddress with {
-      briefly "Destination"
-      described as {
-        |Delivery destination address.
-      }
-    }
-    requestedDeliveryTime: TimeStamp? with {
-      briefly "Requested time"
-      described as {
-        |Customer-requested delivery time.
-      }
-    }
-  } with {
-    briefly "Create delivery"
-    described as {
-      |Create a new delivery from an online order.
-    }
-  }
   command AssignDriver yields event DriverAssigned is {
     deliveryId: DeliveryId with {
       briefly "ID"
@@ -713,9 +668,9 @@ event-sourced entity DeliveryOrder as flow is {
   }
   initial state Pending of record DeliveryOrder.PendingData is {
     initial handler PendingHandler is {
-      on init is {
-        let deliveryCreated: type DeliveryCreated = prompt("the delivery created that brings this delivery order into existence")
-        yield deliveryCreated
+      on init(forOnlineOrder: String(1,50), customerName: String(1,100), customerPhone: String(7,20), destination: type DeliveryAddress, createdOn: TimeStamp) is {
+        yield event DeliveryCreated(deliveryId = self.id, sourceOnlineOrderId = forOnlineOrder, deliveryDestination = destination, createdAt = createdOn, deliveryCustomerName = customerName, deliveryCustomerPhone = customerPhone)
+        send event DeliveryCreated(deliveryId = self.id, sourceOnlineOrderId = forOnlineOrder, deliveryDestination = destination, createdAt = createdOn, deliveryCustomerName = customerName, deliveryCustomerPhone = customerPhone) to outlet Delivery.DeliveryOrder.DeliveryOrderEvents2
       }
       on assignDriver: command AssignDriver is {
         yield event DriverAssigned(deliveryId = assignDriver.deliveryId, driverId = assignDriver.driverId, driverName = assignDriver.driverName, assignedAt = system.now)
@@ -732,9 +687,6 @@ event-sourced entity DeliveryOrder as flow is {
       }
       on deliveryMarkedFailed: event DeliveryMarkedFailed is {
         morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData(failureReason = deliveryMarkedFailed.failureReason, failedAt = deliveryMarkedFailed.failedAt, base = PendingData.base, lastDriverId = empty)
-      }
-      on createDelivery: command CreateDelivery is {
-        error "DeliveryOrder does not accept CreateDelivery in this state"
       }
       on dispatchDriver: command DispatchDriver is {
         error "DeliveryOrder does not accept DispatchDriver in this state"
@@ -784,9 +736,6 @@ event-sourced entity DeliveryOrder as flow is {
       }
       on deliveryMarkedFailed: event DeliveryMarkedFailed is {
         morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData(failureReason = deliveryMarkedFailed.failureReason, failedAt = deliveryMarkedFailed.failedAt, base = DriverAssignedData.base, lastDriverId = DriverAssignedData.assignedDriverId)
-      }
-      on createDelivery: command CreateDelivery is {
-        error "DeliveryOrder does not accept CreateDelivery in this state"
       }
       on assignDriver: command AssignDriver is {
         error "DeliveryOrder does not accept AssignDriver in this state"
@@ -898,9 +847,6 @@ event-sourced entity DeliveryOrder as flow is {
       on deliveryMarkedFailed: event DeliveryMarkedFailed is {
         morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Failed with record DeliveryOrder.FailedData(failureReason = deliveryMarkedFailed.failureReason, failedAt = deliveryMarkedFailed.failedAt, base = InTransitData.base, lastDriverId = InTransitData.assignedDriverId)
       }
-      on createDelivery: command CreateDelivery is {
-        error "DeliveryOrder does not accept CreateDelivery in this state"
-      }
       on assignDriver: command AssignDriver is {
         error "DeliveryOrder does not accept AssignDriver in this state"
       }
@@ -996,9 +942,6 @@ event-sourced entity DeliveryOrder as flow is {
   }
   state Delivered of record DeliveryOrder.DeliveredData is {
     initial handler DeliveredHandler is {
-      on createDelivery: command CreateDelivery is {
-        error "DeliveryOrder does not accept CreateDelivery in this state"
-      }
       on assignDriver: command AssignDriver is {
         error "DeliveryOrder does not accept AssignDriver in this state"
       }
@@ -1034,9 +977,6 @@ event-sourced entity DeliveryOrder as flow is {
   }
   state Failed of record DeliveryOrder.FailedData is {
     initial handler FailedHandler is {
-      on createDelivery: command CreateDelivery is {
-        error "DeliveryOrder does not accept CreateDelivery in this state"
-      }
       on assignDriver: command AssignDriver is {
         error "DeliveryOrder does not accept AssignDriver in this state"
       }
@@ -1071,12 +1011,6 @@ event-sourced entity DeliveryOrder as flow is {
     }
   }
   handler DeliveryCreationHandler is {
-    on createDelivery: command CreateDelivery is {
-      yield event DeliveryCreated(deliveryId = createDelivery.deliveryId, sourceOnlineOrderId = createDelivery.sourceOnlineOrderId, deliveryDestination = createDelivery.deliveryDestination, createdAt = system.now, deliveryCustomerName = createDelivery.deliveryCustomerName, deliveryCustomerPhone = createDelivery.deliveryCustomerPhone)
-      send event DeliveryCreated(deliveryId = createDelivery.deliveryId, sourceOnlineOrderId = createDelivery.sourceOnlineOrderId, deliveryDestination = createDelivery.deliveryDestination, createdAt = system.now, deliveryCustomerName = createDelivery.deliveryCustomerName, deliveryCustomerPhone = createDelivery.deliveryCustomerPhone) to outlet Delivery.DeliveryOrder.DeliveryOrderEvents2
-      do "query available drivers by GeoLocation proximity to
-        restaurant and select nearest with status = available"
-    }
     on deliveryCreated: event DeliveryCreated is {
       morph entity Delivery.DeliveryOrder to state Delivery.DeliveryOrder.Pending with record DeliveryOrder.PendingData(base = record DeliveryBase(deliveryId = deliveryCreated.deliveryId, sourceOnlineOrderId = deliveryCreated.sourceOnlineOrderId, deliveryCustomerName = prompt("the delivery customer name of this delivery created"), deliveryCustomerPhone = prompt("the delivery customer phone of this delivery created"), deliveryDestination = deliveryCreated.deliveryDestination, createdAt = deliveryCreated.createdAt))
     }
@@ -1093,8 +1027,8 @@ event-sourced entity DeliveryOrder as flow is {
   } with {
     briefly "Delivery creation handler"
     described as {
-      |Handles the initial CreateDelivery command when
-      |the entity has no state yet, and the GetDeliveryOrder
+      |Folds DeliveryCreated, the event a newly created delivery
+      |yields from its on init, and answers the GetDeliveryOrder
       |query for retrieving delivery data.
     }
   }
