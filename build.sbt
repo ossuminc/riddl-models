@@ -14,9 +14,11 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. 2.6.0 is a PUBLISHED release, so the
+// same build, so one value pins both. 2.7.0 is a PUBLISHED release, so the
 // plugin downloads the binary and the libraries resolve from GitHub Packages;
-// `riddlcPath` below is None. 2.6.0 forbids `system.now`/`system.random` in a
+// `riddlcPath` below is None. 2.7.0 spells the creating value `create`
+// (`initiate` deprecated) and moves BAST to revision 31; the corpus needed no
+// change. 2.6.0 forbids `system.now`/`system.random` in a
 // fold of an entity's own event (`entity-event-sourced-fold-nondeterministic`),
 // which the corpus cleared before the bump. 2.5.0 makes tell routing
 // type-aware: a tell no path CARRIES is an Error
@@ -46,7 +48,7 @@ enablePlugins(RiddlSbtPlugin)
 // Whenever a rule the corpus needs lands after a tag, the override goes back
 // on -- and comes off at the first published tag that carries it, which is
 // this edit.
-lazy val riddlVersion = "2.6.0"
+lazy val riddlVersion = "2.7.0"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +

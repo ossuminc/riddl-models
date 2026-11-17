@@ -4,13 +4,13 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.6.0`, PUBLISHED, override OFF** — `riddlcPath := None`, the plugin's
-`~/.cache/riddlc/2.6.0/bin/riddlc` is the build's binary, libraries from GitHub
-Packages. **`../bin/riddlc` is not the build's binary** — it reports 2.6.0 but
+**Pin `2.7.0`, PUBLISHED, override OFF** — `riddlcPath := None`, the plugin's
+`~/.cache/riddlc/2.7.0/bin/riddlc` is the build's binary, libraries from GitHub
+Packages. **`../bin/riddlc` is not the build's binary** — it reports 2.7.0 but
 was built here and links `openssl@4`; pass
-`RIDDLC=~/.cache/riddlc/2.6.0/bin/riddlc` to any script run that is evidence.
+`RIDDLC=~/.cache/riddlc/2.7.0/bin/riddlc` to any script run that is evidence.
 
-**EVERY GATE IS GREEN ON 2.6.0, `checkTests` included.** 0 errors, 0
+**EVERY GATE IS GREEN ON 2.7.0, `checkTests` included.** 0 errors, 0
 warnings; 418 advisories corpus-wide, 3 in reactive-bbq, all
 `stmt-yield-argument-prompt` and all dismissed on purpose.
 
@@ -56,6 +56,16 @@ Open work: **BACKLOG.md** #40 (`query one`), #30, #1, #23, #34. Durable facts:
 CLAUDE.md said `processor` "keeps parsing forever"; it now says it may be
 removed in 3.0. Nothing to migrate: the corpus has 0 `processor` declarations
 (`^\s*processor [A-Z]`, all `.riddl`).
+
+**riddl 2.7.0 pinned; nothing to migrate.** Baseline taken on 2.6.0 first, then
+compared: `checkAll` green (189 models validated, 0 test failures), sweep 418
+advisories and **line-identical** (`diff` of sorted JSONL empty), `pc` 1004
+files canonical, unsent census 189 models / 782 contexts / 900 commands / 0 on
+both. Canary: an appended unused type in shopping-cart's `types.riddl` drew
+`use-unused-definition` from the 2.7.0 sweep. BAST revision 30 -> 31: `sbt b`
+for 189 models, the two `patterns/` examples by hand, round trip 189/189 at 0
+discrepancies. `dump`/`find` now project values as nodes, which did not move
+the unsent census's denominators.
 
 ## 2026-11-11 — riddl 2.6.0
 
