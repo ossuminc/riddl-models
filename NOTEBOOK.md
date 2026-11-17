@@ -67,6 +67,17 @@ for 189 models, the two `patterns/` examples by hand, round trip 189/189 at 0
 discrepancies. `dump`/`find` now project values as nodes, which did not move
 the unsent census's denominators.
 
+**OrderSubmitted reaches FrontOfHouse's routing again, on a path of its own.**
+`0d854285f` cut `OrderSubmitted` from the Reporting feed, which was also the
+only way it reached the boundary clause that routes it to Kitchen and Bar, the
+same gap as 2026-09-16. Rather than put it back on the report feed, it now has
+a dedicated outlet (`TableOrderEventSourceToRouting`), connector
+(`'OrderSubmitted Routing'`) and context inlet
+(`FrontOfHouseOrderSubmittedIn`). Canaries: deleting the connector draws
+`stream-portlet-unconnected` at both ends; **deleting the one `send` draws
+nothing**, which is how this regressed twice. Filed upstream as
+`../riddl/task/2026-11-17-a-clause-no-connector-can-feed-is-silent.md`.
+
 ## 2026-11-11 — riddl 2.6.0
 
 **2.6.0 pinned**: nothing to migrate. Its one new Error,

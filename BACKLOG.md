@@ -1192,7 +1192,10 @@ them means deciding what that projection holds.
 - **An unreachable-clause rule, for riddl.** A context clause `on X` that no
   connector into any of the context's inlets can carry (the `OrderSubmitted`
   gap, fixed 2026-09-23). riddlc reports nothing; the census is now possible
-  again since the dump works.
+  again since the dump works. **It regressed** (`0d854285f`, found by
+  riddlg 2026-11-14) and was refixed with a dedicated route on 2026-11-17;
+  filed upstream as `../riddl/task/2026-11-17-a-clause-no-connector-can-feed-
+  is-silent.md`, canary included (delete the one `send` -> 0 findings).
 - **The drink/food split stays a prompt.** It filters AND maps, and Reid ruled
   `map` out on 2026-09-23. The prompt names the rule; that is the end state.
 
