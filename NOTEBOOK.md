@@ -86,6 +86,36 @@ states keep theirs. Removed by span from `riddlc dump` (the on-init span's end
 runs one line past the clause, so it was anchored on the start line and the
 4-line shape asserted). Findings unchanged; every gate green.
 
+**reactive-bbq creates by value: the request side** (Reid's design, 2026-11-17).
+A creating command that arrives from an `application context` (or the
+CustomerGateway) is a request to the CONTEXT, not to an entity that does not
+exist yet. So the command moves to the receiving context, minus its id field;
+the boundary clause does `let newX = create entity X(…)` and **yields** the
+creation event with the new id. Yield answers the requester, so that is how
+RestaurantApp learns the id it needs for `AddItem`. Reid's rule: whatever
+processes a command yields its event. Each context gets a `<X>Request`
+alternation (`one of { Ctx.Create… or X.XCommand }`) for its inlet and the
+application context's outlet. Ten entities: TableOrder, Reservation,
+LoyaltyAccount, OnlineOrder, Shift, MenuItem, MenuRelease, PurchaseOrder,
+Campaign, and InventoryItem, which had no creation path at all and now gets
+`Inventory.AddInventoryItem` from BackOfficeApp.
+
+- **Measured before deciding:** an entity that declares a command but
+  doesn't handle it draws `entity-command-not-handled`, even with the
+  command out of the alternation and a context handling it. And a command
+  handled by a clause that doesn't yield its `yields` event is an Error,
+  `msg-yield-undeclared`.
+- **The `on init` is a BRIDGE.** It takes the creation data as parameters and
+  yields the entity's creation event, whose fold morphs. Reid's model is that
+  `on init` IS the first journal entry and should morph directly; riddl
+  forbids that today (`entity-event-sourced-mutation-scope`), filed as
+  `../riddl/task/2026-11-17-on-init-is-the-creation-event.md`. Timestamps
+  arrive as parameters so the collapse survives a determinism rule.
+- Reservation's window check moved to the boundary, before `create` (Reid),
+  and its scheduled `MarkNoShow` now names the new id instead of prompting.
+  `SeatParty`/`PartySeated` lost `tableOrderId`: a host can't know an id
+  that `create` has not minted yet.
+
 ## 2026-11-11 — riddl 2.6.0
 
 **2.6.0 pinned**: nothing to migrate. Its one new Error,

@@ -7,8 +7,49 @@ context Marketing as router is {
       |Campaign events on their way to Loyalty.
     }
   }
-  connector 'CampaignEventLog To CampaignRepository' is from outlet Marketing.CampaignEventLog.CampaignEventLogToCampaignRepository to inlet Marketing.CampaignRepository.CampaignRepositoryFromCampaignEventLog  connector 'FromLoyalty To Marketing' is from outlet Marketing.FromLoyalty.FromLoyaltyToMarketing to inlet Marketing.MarketingFromFromLoyalty  inlet MarketingFromFromLoyalty is command RecordLoyaltyActivity  inlet CampaignCommandStreamIn is type CampaignCommand  outlet CampaignCommandStreamOut is type CampaignCommand
+  connector 'CampaignEventLog To CampaignRepository' is from outlet Marketing.CampaignEventLog.CampaignEventLogToCampaignRepository to inlet Marketing.CampaignRepository.CampaignRepositoryFromCampaignEventLog  connector 'FromLoyalty To Marketing' is from outlet Marketing.FromLoyalty.FromLoyaltyToMarketing to inlet Marketing.MarketingFromFromLoyalty  inlet MarketingFromFromLoyalty is command RecordLoyaltyActivity  inlet CampaignCommandStreamIn is type CampaignRequest  outlet CampaignCommandStreamOut is type CampaignCommand
   inlet CampaignResultStreamIn is result Campaign.CampaignResult  outlet CampaignResultStreamOut is result Campaign.CampaignResult
+  command CreateCampaign yields event Campaign.CampaignCreated is {
+    campaignName: String(1,200) with {
+      briefly "Name"
+      described as {
+        |What the campaign is called internally. Marketing runs several at
+        |once, so this is how staff tell them apart on a report.
+      }
+    }
+    campaignDescription: String(1,2000) with {
+      briefly "Description"
+      described as {
+        |Campaign description and goals.
+      }
+    }
+    campaignChannels: CampaignChannel+ with {
+      briefly "Channels"
+      described as {
+        |Marketing channels for the campaign.
+      }
+    }
+    campaignPromotion: CampaignPromotion? with {
+      briefly "Promotion"
+      described as {
+        |Promotional offer if applicable.
+      }
+    }
+  } with {
+    briefly "Create campaign"
+    described as {
+      |Create a new marketing campaign.
+    }
+  }
+  type CampaignRequest is one of {
+    Marketing.CreateCampaign or Campaign.CampaignCommand
+  } with {
+    briefly "Campaign requests"
+    described as {
+      |What may be asked of Marketing about Campaign: CreateCampaign, which the context
+      |does itself, or any command for an existing one.
+    }
+  }
   handler MarketingBoundary is {
     on campaignLaunched: event Campaign.CampaignLaunched is {
       send campaignLaunched to outlet Marketing.MarketingToLoyaltyOut
@@ -16,8 +57,10 @@ context Marketing as router is {
     on campaignEnded: event Campaign.CampaignEnded is {
       send campaignEnded to outlet Marketing.MarketingToLoyaltyOut
     }
-    on createCampaign: command Campaign.CreateCampaign is {
-      forward createCampaign to outlet Marketing.CampaignCommandStreamOut
+    on createCampaign: command Marketing.CreateCampaign is {
+      let campaignStamp: type TimeStamp = system.now
+      let newCampaign = create entity Marketing.Campaign(givenCampaignName = createCampaign.campaignName, givenCampaignChannels = createCampaign.campaignChannels, givenCampaignCreatedAt = campaignStamp, givenCampaignDescription = createCampaign.campaignDescription, givenCampaignPromotion = createCampaign.campaignPromotion)
+      yield event Campaign.CampaignCreated(campaignId = newCampaign, campaignName = createCampaign.campaignName, campaignChannels = createCampaign.campaignChannels, campaignCreatedAt = campaignStamp, campaignDescription = createCampaign.campaignDescription, campaignPromotion = createCampaign.campaignPromotion)
     }
     on scheduleCampaign: command Campaign.ScheduleCampaign is {
       let launch: type Campaign.LaunchCampaign = prompt("a LaunchCampaign naming this campaign, to be reconsidered when its start date arrives rather than sent now")

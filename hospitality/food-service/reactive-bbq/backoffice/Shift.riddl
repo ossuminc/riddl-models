@@ -1,7 +1,7 @@
 // Shift entity for the Scheduling context
 event-sourced entity Shift as merge is {
   inlet ShiftFromEmployeeUpdateSink is command Shift.AssignEmployee  type ShiftCommand is one of {
-    Shift.CreateShift or Shift.AssignEmployee or Shift.SwapShift or Shift.ClockIn or Shift.ClockOut or Shift.CancelShift
+    Shift.AssignEmployee or Shift.SwapShift or Shift.ClockIn or Shift.ClockOut or Shift.CancelShift
   } with {
     briefly "Shift command alternation"
     described as {
@@ -10,44 +10,6 @@ event-sourced entity Shift as merge is {
   }
   inlet ShiftCommands is type ShiftCommand  outlet ShiftEvents2 is type ShiftEvent
   // ---- Commands ----
-  command CreateShift yields event ShiftCreated is {
-    shiftId: ShiftId with {
-      briefly "ID"
-      described as {
-        |Identifier for the new shift.
-      }
-    }
-    shiftDate: Date with {
-      briefly "Date"
-      described as {
-        |The day being staffed. Held separately from clock times because a
-        |late shift crosses midnight and still belongs to the day it started.
-      }
-    }
-    shiftStart: TimeStamp with {
-      briefly "Start"
-      described as {
-        |Shift start time.
-      }
-    }
-    shiftEnd: TimeStamp with {
-      briefly "End"
-      described as {
-        |Shift end time.
-      }
-    }
-    shiftRole: ShiftRole with {
-      briefly "Role"
-      described as {
-        |Role needed for this shift.
-      }
-    }
-  } with {
-    briefly "Create shift"
-    described as {
-      |Create a new shift in the schedule.
-    }
-  }
   command AssignEmployee yields event EmployeeAssigned is {
     shiftId: ShiftId with {
       briefly "ID"
@@ -479,9 +441,11 @@ event-sourced entity Shift as merge is {
   }
   initial state ActiveShift of record Shift.ShiftStateData is {
     initial handler ActiveShiftInitHandler is {
-      on init is {
-        let shiftCreated: type ShiftCreated = prompt("the shift created that brings this shift into existence")
-        yield shiftCreated
+      on init(givenShiftDate: Date, givenShiftStart: TimeStamp, givenShiftEnd: TimeStamp, givenShiftRole: type ShiftRole, givenShiftCreatedAt: TimeStamp) is {
+        yield event ShiftCreated(shiftId = self.id, shiftDate = givenShiftDate, shiftStart = givenShiftStart, shiftEnd = givenShiftEnd, shiftRole = givenShiftRole, shiftCreatedAt = givenShiftCreatedAt)
+        send event ShiftCreated(shiftId = self.id, shiftDate = givenShiftDate, shiftStart = givenShiftStart, shiftEnd = givenShiftEnd, shiftRole = givenShiftRole, shiftCreatedAt = givenShiftCreatedAt) to outlet Scheduling.Shift.ShiftEvents2
+        do "ShiftCreated event triggers employee data sync
+          via HRSystem streaming topology"
       }
     } with {
       briefly "Active shift init handler"
@@ -498,12 +462,6 @@ event-sourced entity Shift as merge is {
     }
   }
   initial handler ShiftHandler is {
-    on createShift: command CreateShift is {
-      yield event ShiftCreated(shiftId = createShift.shiftId, shiftDate = createShift.shiftDate, shiftStart = createShift.shiftStart, shiftEnd = createShift.shiftEnd, shiftRole = createShift.shiftRole, shiftCreatedAt = system.now)
-      send event ShiftCreated(shiftId = createShift.shiftId, shiftDate = createShift.shiftDate, shiftStart = createShift.shiftStart, shiftEnd = createShift.shiftEnd, shiftRole = createShift.shiftRole, shiftCreatedAt = system.now) to outlet Scheduling.Shift.ShiftEvents2
-      do "ShiftCreated event triggers employee data sync
-        via HRSystem streaming topology"
-    }
     on assignEmployee: command AssignEmployee is {
       yield event EmployeeAssigned(shiftId = assignEmployee.shiftId, employeeId = assignEmployee.employeeId, employeeName = assignEmployee.employeeName, employeeAssignedAt = system.now)
       send event EmployeeAssigned(shiftId = assignEmployee.shiftId, employeeId = assignEmployee.employeeId, employeeName = assignEmployee.employeeName, employeeAssignedAt = system.now) to outlet Scheduling.Shift.ShiftEvents2

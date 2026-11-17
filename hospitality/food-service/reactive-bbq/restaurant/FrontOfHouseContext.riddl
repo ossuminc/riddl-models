@@ -1,10 +1,92 @@
 // Front of House bounded context
 context FrontOfHouse as router is {
-  inlet FrontOfHouseFromReservationEventSplit is command TableOrder.CreateOrder with {
+  command CreateOrder yields event TableOrder.OrderCreated is {
+    tableNumber: TableNumber with {
+      briefly "Table"
+      described as {
+        |Table the new order is for.
+      }
+    }
+    serverId: String(1,50) with {
+      briefly "Server ID"
+      described as {
+        |Identifier of the server who will take the order.
+      }
+    }
+  } with {
+    briefly "Open a table order"
+    described as {
+      |Asks Front of House to open a table order. The boundary creates the
+      |TableOrder and answers with OrderCreated, which carries the new
+      |order's id so the requester can address it (AddItem, SubmitOrder).
+    }
+  }
+  command MakeReservation yields event Reservation.ReservationMade is {
+    guestName: GuestName with {
+      term WalkIn is "A party arriving with no booking, seated against whatever capacity the reservation book has not committed. The restaurant knows nothing about them beyond what it is told at the door."
+      briefly "Guest"
+      described as {
+        |The name the booking is held under, used to call the party when
+        |their table is ready. Not a customer account name -- walk-in and
+        |phone bookings have no account at all.
+      }
+    }
+    guestPhone: GuestPhone with {
+      briefly "Phone"
+      described as {
+        |Contact phone for the guest.
+      }
+    }
+    partySize: PartySize with {
+      briefly "Party size"
+      described as {
+        |Number of guests.
+      }
+    }
+    reservationTime: TimeStamp with {
+      briefly "Time"
+      described as {
+        |Requested reservation date and time.
+      }
+    }
+    noShowAt: TimeStamp with {
+      briefly "No-show at"
+      described as {
+        |The instant at which a party that has still not arrived is judged a
+        |no-show. Carried explicitly rather than derived: it is the
+        |reservation time plus the house's grace period, and the language has
+        |no arithmetic with which to add one to the other.
+      }
+    }
+  } with {
+    briefly "Make reservation"
+    described as {
+      |Request a new reservation.
+    }
+  }
+  type ReservationRequest is one of {
+    FrontOfHouse.MakeReservation or Reservation.ReservationCommand
+  } with {
+    briefly "Reservation requests"
+    described as {
+      |What may be asked of Front of House about reservations: making one,
+      |which the context does itself, or any command for an existing booking.
+    }
+  }
+  type TableOrderRequest is one of {
+    FrontOfHouse.CreateOrder or TableOrder.TableOrderCommand
+  } with {
+    briefly "Table order requests"
+    described as {
+      |What may be asked of Front of House about table orders: opening one,
+      |which the context does itself, or any command for an existing order.
+    }
+  }
+  inlet FrontOfHouseFromReservationEventSplit is command FrontOfHouse.CreateOrder with {
     briefly "Table orders opened by seating a reserved party"
     described as {
-      |ReservationEventSplit's CreateOrder enters here and the boundary forwards
-      |it to TableOrder, as it does the app's.
+      |ReservationEventSplit's CreateOrder enters here, and the boundary opens
+      |the order, as it does for RestaurantApp's.
     }
   }
   connector 'ReservationEventSplit Intake' is from outlet FrontOfHouse.ReservationEventSplit.ReservationEventSplitToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromReservationEventSplit with {
@@ -54,8 +136,8 @@ context FrontOfHouse as router is {
     }
   }
   inlet BarToFOHIn is type DrinkOrderEvent  outlet BarToFOHOut is type DrinkOrderEvent
-  inlet ReservationCommandStreamIn is type ReservationCommand  outlet ReservationCommandStreamOut is type ReservationCommand
-  inlet TableOrderCommandStreamIn is type TableOrderCommand  outlet TableOrderCommandStreamOut is type TableOrderCommand
+  inlet ReservationCommandStreamIn is type ReservationRequest  outlet ReservationCommandStreamOut is type ReservationCommand
+  inlet TableOrderCommandStreamIn is type TableOrderRequest  outlet TableOrderCommandStreamOut is type TableOrderCommand
   inlet ReservationBoardViewStreamIn is result ReservationBoardView  outlet ReservationBoardViewStreamOut is result ReservationBoardView
   inlet TableOrderResultStreamIn is result TableOrder.TableOrderResult  outlet TableOrderResultStreamOut is result TableOrder.TableOrderResult
   handler FrontOfHouseBoundary is {
@@ -85,10 +167,18 @@ context FrontOfHouse as router is {
     on drinkOrderCompleted: event Bar.DrinkOrder.DrinkOrderCompleted is {
       send drinkOrderCompleted to outlet FrontOfHouse.BarToFOHOut
     }
-    on makeReservation: command Reservation.MakeReservation is {
-      let noShow: type Reservation.MarkNoShow = prompt("a MarkNoShow naming this reservation, to be reconsidered when the booking's grace period runs out rather than sent now")
-      send noShow to outlet FrontOfHouse.ReservationCommandStreamOut at makeReservation.noShowAt
-      forward makeReservation to outlet FrontOfHouse.ReservationCommandStreamOut
+    on makeReservation: command FrontOfHouse.MakeReservation is {
+      do "query ReservationRepository for conflicting reservations at
+        makeReservation.reservationTime with sufficient table capacity
+        for makeReservation.partySize"
+      when makeReservation.reservationTime > system.now and makeReservation.reservationTime < system.now + 30 days then
+        let bookingMadeAt: type TimeStamp = system.now
+        let newReservation = create entity FrontOfHouse.Reservation(guest = makeReservation.guestName, phone = makeReservation.guestPhone, party = makeReservation.partySize, bookedFor = makeReservation.reservationTime, madeAtTime = bookingMadeAt)
+        yield event Reservation.ReservationMade(reservationId = newReservation, guestName = makeReservation.guestName, guestPhone = makeReservation.guestPhone, partySize = makeReservation.partySize, reservationTime = makeReservation.reservationTime, madeAt = bookingMadeAt)
+        send command Reservation.MarkNoShow(reservationId = newReservation, markedNoShowAt = makeReservation.noShowAt) to outlet FrontOfHouse.ReservationCommandStreamOut at makeReservation.noShowAt
+      else
+        error "A reservation must be in the future and within the 30-day booking window"
+      end
     }
     on confirmReservation: command Reservation.ConfirmReservation is {
       forward confirmReservation to outlet FrontOfHouse.ReservationCommandStreamOut
@@ -108,8 +198,10 @@ context FrontOfHouse as router is {
     on rescheduleReservation: command Reservation.RescheduleReservation is {
       forward rescheduleReservation to outlet FrontOfHouse.ReservationCommandStreamOut
     }
-    on createOrder: command TableOrder.CreateOrder is {
-      forward createOrder to outlet FrontOfHouse.TableOrderCommandStreamOut
+    on createOrder: command FrontOfHouse.CreateOrder is {
+      let openedAt: type TimeStamp = system.now
+      let newOrder = create entity FrontOfHouse.TableOrder(atTable = createOrder.tableNumber, byServer = createOrder.serverId, openedAt = openedAt)
+      yield event TableOrder.OrderCreated(tableOrderId = newOrder, tableNumber = createOrder.tableNumber, serverId = createOrder.serverId, createdAt = openedAt)
     }
     on addItem: command TableOrder.AddItem is {
       forward addItem to outlet FrontOfHouse.TableOrderCommandStreamOut
@@ -1805,7 +1897,7 @@ context FrontOfHouse as router is {
     inlet ReservationEventSplitIn is type ReservationEvent    outlet ReservationEventSplitToReservationEventSource is type ReservationEvent
     outlet ReservationEventSplitToReservationRepository is type ReservationEvent
     outlet ReservationEventSplitToReservationBoard is type ReservationEvent
-    outlet ReservationEventSplitToFrontOfHouse is command TableOrder.CreateOrder
+    outlet ReservationEventSplitToFrontOfHouse is command FrontOfHouse.CreateOrder
  with {
       briefly "The table order a seated party opens"
       described as {
@@ -1830,7 +1922,7 @@ context FrontOfHouse as router is {
         send reservationCancelled to outlet ReservationEventSplitToReservationEventSource
       }
       on partySeated: event Reservation.PartySeated is {
-        send command TableOrder.CreateOrder(tableOrderId = partySeated.tableOrderId, tableNumber = partySeated.seatedTable, serverId = partySeated.serverId) to outlet FrontOfHouse.ReservationEventSplit.ReservationEventSplitToFrontOfHouse
+        send command FrontOfHouse.CreateOrder(tableNumber = partySeated.seatedTable, serverId = partySeated.serverId) to outlet FrontOfHouse.ReservationEventSplit.ReservationEventSplitToFrontOfHouse
         send partySeated to outlet ReservationEventSplitToReservationRepository
         send partySeated to outlet ReservationEventSplitToReservationBoard
         send partySeated to outlet ReservationEventSplitToReservationEventSource

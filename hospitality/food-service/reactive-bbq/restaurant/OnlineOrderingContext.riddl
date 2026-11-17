@@ -17,8 +17,37 @@ context OnlineOrdering as router is {
   outlet OnlineOrderSubmittedToKitchen is event OnlineOrder.OnlineOrderSubmitted
   outlet OnlinePaymentProcessedToLoyalty is event OnlineOrder.OnlinePaymentProcessed
   connector 'DeliveryEventSink To OnlineOrder' is from outlet OnlineOrdering.DeliveryEventSink.DeliveryEventSinkToOnlineOrder to inlet OnlineOrdering.OnlineOrder.OnlineOrderFromDeliveryEventSink  connector 'OnlineOrderEventLog To OnlineOrderRepository' is from outlet OnlineOrdering.OnlineOrderEventLog.OnlineOrderEventLogToOnlineOrderRepository to inlet OnlineOrdering.OnlineOrderRepository.OnlineOrderRepositoryFromOnlineOrderEventLog  inlet DeliveryToOnlineIn is type DeliveryEvent  outlet DeliveryToOnlineOut is type DeliveryEvent
-  inlet OnlineOrderCommandStreamIn is type OnlineOrderCommand  outlet OnlineOrderCommandStreamOut is type OnlineOrderCommand
+  inlet OnlineOrderCommandStreamIn is type OnlineOrderRequest  outlet OnlineOrderCommandStreamOut is type OnlineOrderCommand
   inlet OnlineOrderResultStreamIn is result OnlineOrder.OnlineOrderResult  outlet OnlineOrderResultStreamOut is result OnlineOrder.OnlineOrderResult
+  command BrowseMenu yields event OnlineOrder.MenuBrowsed is {
+    customerId: CustomerId with {
+      briefly "Customer ID"
+      described as {
+        |Customer browsing the menu.
+      }
+    }
+    browsedAt: TimeStamp with {
+      briefly "Browsed at"
+      described as {
+        |When the menu was browsed.
+      }
+    }
+  } with {
+    briefly "Browse menu"
+    described as {
+      |Customer begins browsing the online menu.
+    }
+  }
+  type OnlineOrderRequest is one of {
+    OnlineOrdering.BrowseMenu or OnlineOrder.OnlineOrderCommand
+  } with {
+    briefly "Online order requests"
+    described as {
+      |What may be asked of Online Ordering: starting an order by browsing
+      |the menu, which the context does itself, or any command for an
+      |existing order.
+    }
+  }
   handler OnlineOrderingBoundary is {
     on fulfillmentSelected: event OnlineOrder.FulfillmentSelected is {
       send fulfillmentSelected to outlet OnlineOrdering.OnlineOrderingToDeliveryOut
@@ -56,8 +85,9 @@ context OnlineOrdering as router is {
     on deliveryMarkedFailed: event DeliveryOrder.DeliveryMarkedFailed is {
       send deliveryMarkedFailed to outlet OnlineOrdering.DeliveryToOnlineOut
     }
-    on browseMenu: command OnlineOrder.BrowseMenu is {
-      forward browseMenu to outlet OnlineOrdering.OnlineOrderCommandStreamOut
+    on browseMenu: command OnlineOrdering.BrowseMenu is {
+      let newOnlineOrder = create entity OnlineOrdering.OnlineOrder(shopper = browseMenu.customerId, startedAt = browseMenu.browsedAt)
+      yield event OnlineOrder.MenuBrowsed(onlineOrderId = newOnlineOrder, customerId = browseMenu.customerId, browsedAt = browseMenu.browsedAt)
     }
     on addToCart: command OnlineOrder.AddToCart is {
       forward addToCart to outlet OnlineOrdering.OnlineOrderCommandStreamOut
@@ -708,9 +738,6 @@ context OnlineOrdering as router is {
       }
     }
     handler OnlineOrderSignalRouterHandler is {
-      on browseMenu: command OnlineOrder.BrowseMenu is {
-        send browseMenu to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
-      }
       on addToCart: command OnlineOrder.AddToCart is {
         send addToCart to outlet OnlineOrdering.OnlineOrderSignalRouter.RouterToOrderOut
       }

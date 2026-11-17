@@ -1,7 +1,7 @@
 // Reservation entity for the Front of House context
 event-sourced entity Reservation as flow is {
   type ReservationCommand is one of {
-    Reservation.MakeReservation or Reservation.ConfirmReservation or Reservation.CancelReservation or Reservation.SeatParty or Reservation.CompleteVisit or Reservation.MarkNoShow or Reservation.RescheduleReservation
+    Reservation.ConfirmReservation or Reservation.CancelReservation or Reservation.SeatParty or Reservation.CompleteVisit or Reservation.MarkNoShow or Reservation.RescheduleReservation
   } with {
     briefly "Reservation command alternation"
     described as {
@@ -10,55 +10,6 @@ event-sourced entity Reservation as flow is {
   }
   inlet ReservationCommands is type ReservationCommand  outlet ReservationEvents2 is type ReservationEvent
   // ---- Commands ----
-  command MakeReservation yields event ReservationMade is {
-    reservationId: ReservationId with {
-      briefly "ID"
-      described as {
-        |Identifier for the new reservation.
-      }
-    }
-    guestName: GuestName with {
-      term WalkIn is "A party arriving with no booking, seated against whatever capacity the reservation book has not committed. The restaurant knows nothing about them beyond what it is told at the door."
-      briefly "Guest"
-      described as {
-        |The name the booking is held under, used to call the party when
-        |their table is ready. Not a customer account name -- walk-in and
-        |phone bookings have no account at all.
-      }
-    }
-    guestPhone: GuestPhone with {
-      briefly "Phone"
-      described as {
-        |Contact phone for the guest.
-      }
-    }
-    partySize: PartySize with {
-      briefly "Party size"
-      described as {
-        |Number of guests.
-      }
-    }
-    reservationTime: TimeStamp with {
-      briefly "Time"
-      described as {
-        |Requested reservation date and time.
-      }
-    }
-    noShowAt: TimeStamp with {
-      briefly "No-show at"
-      described as {
-        |The instant at which a party that has still not arrived is judged a
-        |no-show. Carried explicitly rather than derived: it is the
-        |reservation time plus the house's grace period, and the language has
-        |no arithmetic with which to add one to the other.
-      }
-    }
-  } with {
-    briefly "Make reservation"
-    described as {
-      |Request a new reservation.
-    }
-  }
   command ConfirmReservation yields event ReservationConfirmed is {
     reservationId: ReservationId with {
       briefly "ID"
@@ -116,12 +67,6 @@ event-sourced entity Reservation as flow is {
       briefly "Seated at"
       described as {
         |Time the party was seated.
-      }
-    }
-    tableOrderId: TableOrderId with {
-      briefly "Table order"
-      described as {
-        |The table order seating opens, its id minted by the host stand.
       }
     }
     serverId: String(1,50) with {
@@ -316,12 +261,6 @@ event-sourced entity Reservation as flow is {
       briefly "Seated at"
       described as {
         |When the party was seated.
-      }
-    }
-    tableOrderId: TableOrderId with {
-      briefly "Table order"
-      described as {
-        |The table order seating opens, its id minted by the host stand, carried so the table order can be opened from this event.
       }
     }
     serverId: String(1,50) with {
@@ -633,9 +572,9 @@ event-sourced entity Reservation as flow is {
   }
   initial state Requested of record Reservation.RequestedData is {
     initial handler RequestedHandler is {
-      on init is {
-        let reservationMade: type ReservationMade = prompt("the reservation made that brings this reservation into existence")
-        yield reservationMade
+      on init(guest: type GuestName, phone: type GuestPhone, party: type PartySize, bookedFor: TimeStamp, madeAtTime: TimeStamp) is {
+        yield event ReservationMade(reservationId = self.id, guestName = guest, guestPhone = phone, partySize = party, reservationTime = bookedFor, madeAt = madeAtTime)
+        send event ReservationMade(reservationId = self.id, guestName = guest, guestPhone = phone, partySize = party, reservationTime = bookedFor, madeAt = madeAtTime) to outlet FrontOfHouse.Reservation.ReservationEvents2
       }
       on confirmReservation: command ConfirmReservation is {
         yield event ReservationConfirmed(reservationId = confirmReservation.reservationId, confirmedTable = confirmReservation.confirmedTable, confirmedAt = system.now)
@@ -650,9 +589,6 @@ event-sourced entity Reservation as flow is {
       }
       on reservationCancelled: event ReservationCancelled is {
         morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.Cancelled with record Reservation.CancelledData(cancelledAt = reservationCancelled.cancelledAt, cancellationReason = reservationCancelled.cancellationReason, base = RequestedData.base)
-      }
-      on makeReservation: command MakeReservation is {
-        error "Reservation does not accept MakeReservation in this state"
       }
       on seatParty: command SeatParty is {
         error "Reservation does not accept SeatParty in this state"
@@ -684,8 +620,8 @@ event-sourced entity Reservation as flow is {
   state Confirmed of record Reservation.ConfirmedData is {
     initial handler ConfirmedHandler is {
       on seatParty: command SeatParty is {
-        yield event PartySeated(reservationId = seatParty.reservationId, seatedTable = seatParty.seatedTable, seatedAt = seatParty.seatedAt, tableOrderId = seatParty.tableOrderId, serverId = seatParty.serverId)
-        send event PartySeated(reservationId = seatParty.reservationId, seatedTable = seatParty.seatedTable, seatedAt = seatParty.seatedAt, tableOrderId = seatParty.tableOrderId, serverId = seatParty.serverId) to outlet FrontOfHouse.Reservation.ReservationEvents2
+        yield event PartySeated(reservationId = seatParty.reservationId, seatedTable = seatParty.seatedTable, seatedAt = seatParty.seatedAt, serverId = seatParty.serverId)
+        send event PartySeated(reservationId = seatParty.reservationId, seatedTable = seatParty.seatedTable, seatedAt = seatParty.seatedAt, serverId = seatParty.serverId) to outlet FrontOfHouse.Reservation.ReservationEvents2
       }
       on partySeated: event PartySeated is {
         morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.Seated with record Reservation.SeatedData(seatedAt = partySeated.seatedAt, base = ConfirmedData.base, assignedTable = ConfirmedData.assignedTable)
@@ -714,9 +650,6 @@ event-sourced entity Reservation as flow is {
       }
       on reservationRescheduled: event ReservationRescheduled is {
         morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.Requested with record Reservation.RequestedData(base = record ReservationBase(reservationId = ConfirmedData.base.reservationId, guestName = ConfirmedData.base.guestName, guestPhone = ConfirmedData.base.guestPhone, partySize = ConfirmedData.base.partySize, reservationTime = reservationRescheduled.newReservationTime, createdAt = ConfirmedData.base.createdAt))
-      }
-      on makeReservation: command MakeReservation is {
-        error "Reservation does not accept MakeReservation in this state"
       }
       on confirmReservation: command ConfirmReservation is {
         error "Reservation does not accept ConfirmReservation in this state"
@@ -747,9 +680,6 @@ event-sourced entity Reservation as flow is {
       }
       on visitCompleted: event VisitCompleted is {
         morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.Completed with record Reservation.CompletedData(completedAt = visitCompleted.completedAt, base = SeatedData.base, assignedTable = SeatedData.assignedTable)
-      }
-      on makeReservation: command MakeReservation is {
-        error "Reservation does not accept MakeReservation in this state"
       }
       on confirmReservation: command ConfirmReservation is {
         error "Reservation does not accept ConfirmReservation in this state"
@@ -782,9 +712,6 @@ event-sourced entity Reservation as flow is {
   }
   state Completed of record Reservation.CompletedData is {
     initial handler CompletedHandler is {
-      on makeReservation: command MakeReservation is {
-        error "Reservation does not accept MakeReservation in this state"
-      }
       on confirmReservation: command ConfirmReservation is {
         error "Reservation does not accept ConfirmReservation in this state"
       }
@@ -817,9 +744,6 @@ event-sourced entity Reservation as flow is {
   }
   state Cancelled of record Reservation.CancelledData is {
     initial handler CancelledHandler is {
-      on makeReservation: command MakeReservation is {
-        error "Reservation does not accept MakeReservation in this state"
-      }
       on confirmReservation: command ConfirmReservation is {
         error "Reservation does not accept ConfirmReservation in this state"
       }
@@ -852,9 +776,6 @@ event-sourced entity Reservation as flow is {
   }
   state NoShow of record Reservation.NoShowData is {
     initial handler NoShowHandler is {
-      on makeReservation: command MakeReservation is {
-        error "Reservation does not accept MakeReservation in this state"
-      }
       on confirmReservation: command ConfirmReservation is {
         error "Reservation does not accept ConfirmReservation in this state"
       }
@@ -887,17 +808,6 @@ event-sourced entity Reservation as flow is {
     }
   }
   handler ReservationCreationHandler is {
-    on makeReservation: command MakeReservation is {
-      do "query ReservationRepository for conflicting
-        reservations at MakeReservation.reservationTime with
-        sufficient table capacity for MakeReservation.partySize"
-      when makeReservation.reservationTime > system.now and makeReservation.reservationTime < system.now + 30 days then
-        yield event ReservationMade(reservationId = makeReservation.reservationId, guestName = makeReservation.guestName, guestPhone = makeReservation.guestPhone, partySize = makeReservation.partySize, reservationTime = makeReservation.reservationTime, madeAt = system.now)
-        send event ReservationMade(reservationId = makeReservation.reservationId, guestName = makeReservation.guestName, guestPhone = makeReservation.guestPhone, partySize = makeReservation.partySize, reservationTime = makeReservation.reservationTime, madeAt = system.now) to outlet FrontOfHouse.Reservation.ReservationEvents2
-      else
-        error "A reservation must be in the future and within the 30-day booking window"
-      end
-    }
     on event ReservationMade is {
       let requestedData: type Reservation.RequestedData = prompt("the requested data that results from reservation made")
       morph entity FrontOfHouse.Reservation to state FrontOfHouse.Reservation.Requested with requestedData
@@ -910,9 +820,8 @@ event-sourced entity Reservation as flow is {
   } with {
     briefly "Reservation creation handler"
     described as {
-      |Handles the initial MakeReservation command when
-      |the entity has no state yet. Validates party size,
-      |reservation time, and table availability.
+      |Folds ReservationMade, the event a newly created reservation
+      |yields from its on init, into the Requested state.
     }
   }
 } with {

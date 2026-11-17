@@ -1,7 +1,7 @@
 // LoyaltyAccount entity for the Loyalty context
 event-sourced entity LoyaltyAccount as flow is {
   type LoyaltyAccountCommand is one of {
-    LoyaltyAccount.EnrollCustomer or LoyaltyAccount.AccruePoints or LoyaltyAccount.RedeemPoints or LoyaltyAccount.SuspendAccount or LoyaltyAccount.ReactivateAccount or LoyaltyAccount.CloseAccount
+    LoyaltyAccount.AccruePoints or LoyaltyAccount.RedeemPoints or LoyaltyAccount.SuspendAccount or LoyaltyAccount.ReactivateAccount or LoyaltyAccount.CloseAccount
   } with {
     briefly "LoyaltyAccount command alternation"
     described as {
@@ -18,38 +18,6 @@ event-sourced entity LoyaltyAccount as flow is {
   }
   inlet LoyaltyAccountCommands is type LoyaltyAccountCommand  outlet LoyaltyAccountEvents2 is type LoyaltyAccountEvent
   // ---- Commands ----
-  command EnrollCustomer yields event CustomerEnrolled is {
-    loyaltyAccountId: LoyaltyAccountId with {
-      briefly "ID"
-      described as {
-        |Identifier for the new account.
-      }
-    }
-    loyaltyCustomerId: LoyaltyCustomerId with {
-      briefly "Customer ID"
-      described as {
-        |Customer to enroll.
-      }
-    }
-    customerDisplayName: String(1,100) with {
-      briefly "Name"
-      described as {
-        |What staff greet the guest by. A regular's preferred name, not a
-        |legal one — loyalty exists so the room can recognise people.
-      }
-    }
-    customerEmail: String(5,254) with {
-      briefly "Email"
-      described as {
-        |Customer email address.
-      }
-    }
-  } with {
-    briefly "Enroll customer"
-    described as {
-      |Enroll a new customer in the loyalty program.
-    }
-  }
   command AccruePoints yields event PointsAccrued is {
     loyaltyAccountId: LoyaltyAccountId with {
       briefly "ID"
@@ -500,9 +468,9 @@ event-sourced entity LoyaltyAccount as flow is {
       }
     }
     initial handler ActiveHandler is {
-      on init is {
-        let customerEnrolled: type CustomerEnrolled = prompt("the customer enrolled that brings this loyalty account into existence")
-        yield customerEnrolled
+      on init(member: type LoyaltyCustomerId, displayName: String(1,100), email: String(5,254), joinedAt: TimeStamp) is {
+        yield event CustomerEnrolled(loyaltyAccountId = self.id, loyaltyCustomerId = member, customerDisplayName = displayName, customerEmail = email, enrolledAt = joinedAt)
+        send event CustomerEnrolled(loyaltyAccountId = self.id, loyaltyCustomerId = member, customerDisplayName = displayName, customerEmail = email, enrolledAt = joinedAt) to outlet Loyalty.LoyaltyAccount.LoyaltyAccountEvents2
       }
       on accruePoints: command AccruePoints is {
         yield event PointsAccrued(loyaltyAccountId = accruePoints.loyaltyAccountId, accrualPoints = accruePoints.accrualPoints, accrualReason = accruePoints.accrualReason, newBalance = LoyaltyAccountData.pointBalance + accruePoints.accrualPoints, accruedAt = system.now)
@@ -550,9 +518,6 @@ event-sourced entity LoyaltyAccount as flow is {
       on accountClosed: event AccountClosed is {
         morph entity Loyalty.LoyaltyAccount to state Loyalty.LoyaltyAccount.Closed with record LoyaltyAccount.LoyaltyAccountData(loyaltyAccountId = accountClosed.loyaltyAccountId, closedAt = accountClosed.closedAt, loyaltyCustomerId = LoyaltyAccountData.loyaltyCustomerId, customerDisplayName = LoyaltyAccountData.customerDisplayName, customerEmail = LoyaltyAccountData.customerEmail, pointBalance = LoyaltyAccountData.pointBalance, lifetimePoints = LoyaltyAccountData.lifetimePoints, recentTransactions = LoyaltyAccountData.recentTransactions, enrolledAt = LoyaltyAccountData.enrolledAt)
       }
-      on enrollCustomer: command EnrollCustomer is {
-        error "LoyaltyAccount does not accept EnrollCustomer in this state"
-      }
       on reactivateAccount: command ReactivateAccount is {
         error "LoyaltyAccount does not accept ReactivateAccount in this state"
       }
@@ -588,9 +553,6 @@ event-sourced entity LoyaltyAccount as flow is {
       on accountClosed: event AccountClosed is {
         morph entity Loyalty.LoyaltyAccount to state Loyalty.LoyaltyAccount.Closed with record LoyaltyAccount.LoyaltyAccountData(loyaltyAccountId = accountClosed.loyaltyAccountId, closedAt = accountClosed.closedAt, loyaltyCustomerId = LoyaltyAccountData.loyaltyCustomerId, customerDisplayName = LoyaltyAccountData.customerDisplayName, customerEmail = LoyaltyAccountData.customerEmail, pointBalance = LoyaltyAccountData.pointBalance, lifetimePoints = LoyaltyAccountData.lifetimePoints, recentTransactions = LoyaltyAccountData.recentTransactions, enrolledAt = LoyaltyAccountData.enrolledAt)
       }
-      on enrollCustomer: command EnrollCustomer is {
-        error "LoyaltyAccount does not accept EnrollCustomer in this state"
-      }
       on accruePoints: command AccruePoints is {
         error "LoyaltyAccount does not accept AccruePoints in this state"
       }
@@ -617,9 +579,6 @@ event-sourced entity LoyaltyAccount as flow is {
   }
   state Closed of record LoyaltyAccount.LoyaltyAccountData is {
     initial handler ClosedHandler is {
-      on enrollCustomer: command EnrollCustomer is {
-        error "LoyaltyAccount does not accept EnrollCustomer in this state"
-      }
       on accruePoints: command AccruePoints is {
         error "LoyaltyAccount does not accept AccruePoints in this state"
       }
@@ -649,10 +608,6 @@ event-sourced entity LoyaltyAccount as flow is {
     }
   }
   handler LoyaltyCreationHandler is {
-    on enrollCustomer: command EnrollCustomer is {
-      yield event CustomerEnrolled(loyaltyAccountId = enrollCustomer.loyaltyAccountId, loyaltyCustomerId = enrollCustomer.loyaltyCustomerId, customerDisplayName = enrollCustomer.customerDisplayName, customerEmail = enrollCustomer.customerEmail, enrolledAt = system.now)
-      send event CustomerEnrolled(loyaltyAccountId = enrollCustomer.loyaltyAccountId, loyaltyCustomerId = enrollCustomer.loyaltyCustomerId, customerDisplayName = enrollCustomer.customerDisplayName, customerEmail = enrollCustomer.customerEmail, enrolledAt = system.now) to outlet Loyalty.LoyaltyAccount.LoyaltyAccountEvents2
-    }
     on customerEnrolled: event CustomerEnrolled is {
       morph entity Loyalty.LoyaltyAccount to state Loyalty.LoyaltyAccount.Active with record LoyaltyAccount.LoyaltyAccountData(loyaltyAccountId = customerEnrolled.loyaltyAccountId, loyaltyCustomerId = customerEnrolled.loyaltyCustomerId, customerDisplayName = customerEnrolled.customerDisplayName, customerEmail = customerEnrolled.customerEmail, enrolledAt = customerEnrolled.enrolledAt, pointBalance = 0, lifetimePoints = 0, recentTransactions = prompt("the recent transactions of this loyalty account data"), closedAt = empty)
       do "CustomerEnrolled event triggers welcome push
@@ -672,8 +627,8 @@ event-sourced entity LoyaltyAccount as flow is {
   } with {
     briefly "Loyalty creation handler"
     described as {
-      |Handles the initial EnrollCustomer command when
-      |the entity has no state yet.
+      |Folds CustomerEnrolled, the event a newly created account
+      |yields from its on init, into the Active state.
     }
   }
 } with {
