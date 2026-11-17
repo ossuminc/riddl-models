@@ -50,6 +50,13 @@ Open work: **BACKLOG.md** #40 (`query one`), #30, #1, #23, #34. Durable facts:
 
 ---
 
+## 2026-11-17 — four tasks: deprecation lifetime, 2.7.0, OrderSubmitted, create
+
+**Deprecations last until the next major** (Reid, 2026-11-17, via ossum.tech).
+CLAUDE.md said `processor` "keeps parsing forever"; it now says it may be
+removed in 3.0. Nothing to migrate: the corpus has 0 `processor` declarations
+(`^\s*processor [A-Z]`, all `.riddl`).
+
 ## 2026-11-11 — riddl 2.6.0
 
 **2.6.0 pinned**: nothing to migrate. Its one new Error,

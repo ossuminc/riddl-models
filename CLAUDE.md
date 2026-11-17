@@ -350,9 +350,12 @@ match the AST node it has always built, which is `Streamlet`.
 **"Processor" remains the right word in PROSE** for that abstraction; only
 the declaration keyword moved.
 
-`processor` keeps parsing forever — under the 3.0 rule riddl deprecates and
-renames but never deletes a spelling — and draws `[deprecated]
-[stream-processor-keyword]`. Both spellings build the **identical** AST node,
+`processor` still parses but is **deprecated and may be removed in 3.0**, and
+draws `[deprecated] [stream-processor-keyword]`. A deprecated spelling lasts
+only until the next MAJOR release (Reid, 2026-11-17, withdrawing an earlier
+"never deletes a spelling" rule), so migrating to `streamlet` is required work,
+not cosmetic. The corpus has none left (0 declarations, 2026-11-17). Both
+spellings build the **identical** AST node,
 which is not a claim to take on faith: after migrating all 242 declarations in
 this corpus, 188 of 189 `.bast` files came back **byte-identical**, as did both
 of `patterns/`.
