@@ -125,7 +125,28 @@ context FrontOfHouse as router is {
   connector 'TableOrderEventLog To TableOrderRepository' is from outlet FrontOfHouse.TableOrderEventLog.TableOrderEventLogToTableOrderRepository to inlet FrontOfHouse.TableOrderRepository.TableOrderRepositoryFromTableOrderEventLog
   connector 'ReservationEventLog To ReservationRepository' is from outlet FrontOfHouse.ReservationEventLog.ReservationEventLogToReservationRepository to inlet FrontOfHouse.ReservationRepository.ReservationRepositoryFromReservationEventLog
   connector 'FromMenuManagementItems To FrontOfHouse' is from outlet FrontOfHouse.FromMenuManagementItems.FromMenuManagementItemsToFrontOfHouse to inlet FrontOfHouse.FrontOfHouseFromFromMenuManagementItems
-  inlet FrontOfHouseFromFromMenuManagementItems is type MenuDistributionCommand
+  inlet FrontOfHouseFromFromMenuManagementItems is type Menu.RestaurantMenuRelease
+  outlet FOHMenuReleasesOut is type Menu.RestaurantMenuRelease
+ with {
+    briefly "Releases on their way to the menu"
+    described as {
+      |FrontOfHouse receives Corporate's releases at its menu-management
+      |adaptor and forwards them to the Menu context, which owns the menu.
+    }
+  }
+  outlet FOHMenuLookupsOut is query Menu.FindMenuListing
+ with {
+    briefly "Is this dish on the menu?"
+    described as {
+      |Asked before an item is added to a table order.
+    }
+  }
+  inlet FOHMenuRepliesIn is result Menu.MenuListingFound with {
+    briefly "The menu's answers"
+    described as {
+      |The reply leg of FrontOfHouse's menu look-ups.
+    }
+  }
   connector 'DrinkOrderEventSink To TableOrderRepository' is from outlet FrontOfHouse.DrinkOrderEventSink.DrinkOrderEventSinkToTableOrderRepository to inlet FrontOfHouse.TableOrderRepository.TableOrderRepositoryFromDrinkOrderEventSink
   connector 'NotificationAckSink To ReservationRepository' is from outlet FrontOfHouse.NotificationAckSink.NotificationAckSinkToReservationRepository to inlet FrontOfHouse.ReservationRepository.ReservationRepositoryFromNotificationAckSink
   connector 'PaymentResultSink To TableOrder' is from outlet FrontOfHouse.PaymentResultSink.PaymentResultSinkToTableOrder to inlet FrontOfHouse.TableOrder.TableOrderFromPaymentResultSink
@@ -247,7 +268,18 @@ context FrontOfHouse as router is {
       yield event TableOrder.OrderCreated(tableOrderId = newOrder, tableNumber = createOrder.tableNumber, serverId = createOrder.serverId, createdAt = openedAt)
     }
     on addItem: command TableOrder.AddItem is {
-      forward addItem to outlet FrontOfHouse.TableOrderCommandStreamOut
+      let menuListing: type Menu.MenuListingFound = ask query Menu.FindMenuListing of context Menu
+      when menuListing.onMenu then
+        forward addItem to outlet FrontOfHouse.TableOrderCommandStreamOut
+      else
+        error "only a dish on this restaurant's menu may be ordered"
+      end
+    }
+    on applyMenuRelease: command Menu.ApplyMenuRelease is {
+      send applyMenuRelease to outlet FrontOfHouse.FOHMenuReleasesOut
+    }
+    on rollbackMenuRelease: command Menu.RollbackMenuRelease is {
+      send rollbackMenuRelease to outlet FrontOfHouse.FOHMenuReleasesOut
     }
     on removeItem: command TableOrder.RemoveItem is {
       forward removeItem to outlet FrontOfHouse.TableOrderCommandStreamOut
@@ -342,15 +374,6 @@ context FrontOfHouse as router is {
       |service notices, so they need a name of their own.
     }
   }
-  type MenuDistributionCommand is one of {
-    ApplyMenuRelease or RollbackMenuRelease
-  } with {
-    briefly "What Corporate menu management asks the restaurants to apply"
-    described as {
-      |Item edits, price changes and whole-release apply/rollback all arrive
-      |on one channel from the menu-management adaptor.
-    }
-  }
   command NotifyDrinkReady is {
     tableOrderId: TableOrderId with {
       briefly "ID"
@@ -375,32 +398,6 @@ context FrontOfHouse as router is {
     briefly "Notify drinks served"
     described as {
       |Notify that drinks have been served.
-    }
-  }
-  command ApplyMenuRelease is {
-    releaseId: String(1,50) with {
-      briefly "ID"
-      described as {
-        |Menu release to apply.
-      }
-    }
-  } with {
-    briefly "Apply menu release"
-    described as {
-      |Apply a published menu release from corporate.
-    }
-  }
-  command RollbackMenuRelease is {
-    releaseId: String(1,50) with {
-      briefly "ID"
-      described as {
-        |Menu release to roll back.
-      }
-    }
-  } with {
-    briefly "Rollback menu release"
-    described as {
-      |Roll back a menu release from corporate.
     }
   }
   command RecordNotificationAck is {
@@ -927,12 +924,6 @@ context FrontOfHouse as router is {
       on command RecordNotificationAck is {
         do "log notification delivery confirmation for
           audit trail"
-      }
-      on command ApplyMenuRelease is {
-        do "apply published menu release to restaurant"
-      }
-      on command RollbackMenuRelease is {
-        do "rollback menu release at restaurant"
       }
       on logReservationEvent: command LogReservationEvent is {
         store record LoggedReservationEvent(loggedReservationId = logReservationEvent.loggedReservationId, loggedReservationEventType = logReservationEvent.loggedReservationEventType, loggedAt = system.now) in ReservationSchema.reservationEvents
@@ -1744,17 +1735,13 @@ context FrontOfHouse as router is {
   }
   adaptor FromMenuManagementItems from context Corporate.MenuManagement as flow is { 
     inlet FromMenuManagementItemsIn is type ReactiveBBQ.Corporate.MenuManagement.MenuDistributionEvent
-    outlet FromMenuManagementItemsToFrontOfHouse is type MenuDistributionCommand
+    outlet FromMenuManagementItemsToFrontOfHouse is type Menu.RestaurantMenuRelease
     handler MenuReleaseEventIntake is {
-      on event Corporate.MenuManagement.MenuRelease.ReleasePublished is {
-        let applyMenuRelease: type ApplyMenuRelease = prompt("the apply menu release that results from release published")
-        send applyMenuRelease to outlet FrontOfHouse.FromMenuManagementItems.FromMenuManagementItemsToFrontOfHouse
-        do "apply published menu release to restaurant"
+      on releasePublished: event Corporate.MenuManagement.MenuRelease.ReleasePublished is {
+        send command Menu.ApplyMenuRelease(releaseId = releasePublished.menuReleaseId, releaseChanges = releasePublished.publishedItems) to outlet FrontOfHouse.FromMenuManagementItems.FromMenuManagementItemsToFrontOfHouse
       }
-      on event Corporate.MenuManagement.MenuRelease.ReleaseRolledBack is {
-        let rollbackMenuRelease: type RollbackMenuRelease = prompt("the rollback menu release that results from release rolled back")
-        send rollbackMenuRelease to outlet FrontOfHouse.FromMenuManagementItems.FromMenuManagementItemsToFrontOfHouse
-        do "rollback menu release at restaurant"
+      on releaseRolledBack: event Corporate.MenuManagement.MenuRelease.ReleaseRolledBack is {
+        send command Menu.RollbackMenuRelease(releaseId = releaseRolledBack.menuReleaseId, rolledBackChanges = releaseRolledBack.rolledBackItems) to outlet FrontOfHouse.FromMenuManagementItems.FromMenuManagementItemsToFrontOfHouse
       }
       on other is {
         error "Unexpected message for adaptor FromMenuManagementReleases"

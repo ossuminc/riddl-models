@@ -20,16 +20,10 @@ event-sourced entity MenuRelease as router is {
         |Release to add item to.
       }
     }
-    releaseMenuItemId: MenuItemId with {
-      briefly "Menu item ID"
+    releasedItem: ReleasedMenuItem with {
+      briefly "Entry"
       described as {
-        |Menu item to include in the release.
-      }
-    }
-    releaseAction: String(1,50) with {
-      briefly "Action"
-      described as {
-        |Action: add, update, remove, or price-change.
+        |The dish, its listing and what the release does with it.
       }
     }
   } with {
@@ -153,16 +147,10 @@ event-sourced entity MenuRelease as router is {
         |changes so restaurants see one coordinated menu, not a drip.
       }
     }
-    releaseMenuItemId: MenuItemId with {
-      briefly "Menu item ID"
+    releasedItem: ReleasedMenuItem with {
+      briefly "Entry"
       described as {
-        |Added item.
-      }
-    }
-    releaseAction: String(1,50) with {
-      briefly "Action"
-      described as {
-        |Action for this item.
+        |The entry the desk added, replacing any earlier entry for that dish.
       }
     }
   } with {
@@ -226,6 +214,13 @@ event-sourced entity MenuRelease as router is {
         |takes effect.
       }
     }
+    publishedItems: ReleasedMenuItem* with {
+      briefly "Changes"
+      described as {
+        |Every change the release makes to the menu, so a restaurant can apply
+        |it from this event alone.
+      }
+    }
   } with {
     briefly "Release published"
     described as {
@@ -255,6 +250,13 @@ event-sourced entity MenuRelease as router is {
       described as {
         |When the previous menu was restored. How long the bad release was
         |live bounds how many orders were taken against it.
+      }
+    }
+    rolledBackItems: ReleasedMenuItem* with {
+      briefly "Changes undone"
+      described as {
+        |The changes the rolled-back release made, so a restaurant can undo
+        |each one.
       }
     }
   } with {
@@ -420,10 +422,10 @@ event-sourced entity MenuRelease as router is {
         |Current release status.
       }
     }
-    releaseItems: MenuItemId+ with {
+    releaseItems: ReleasedMenuItem* with {
       briefly "Items"
       described as {
-        |Menu items in this release.
+        |The changes this release makes, one entry per dish.
       }
     }
     releaseCreatedAt: TimeStamp with {
@@ -492,8 +494,8 @@ event-sourced entity MenuRelease as router is {
   }
   initial handler MenuReleaseHandler is {
     on addItemToRelease: command AddItemToRelease is {
-      yield event ItemAddedToRelease(menuReleaseId = addItemToRelease.menuReleaseId, releaseMenuItemId = addItemToRelease.releaseMenuItemId, releaseAction = addItemToRelease.releaseAction)
-      send event ItemAddedToRelease(menuReleaseId = addItemToRelease.menuReleaseId, releaseMenuItemId = addItemToRelease.releaseMenuItemId, releaseAction = addItemToRelease.releaseAction) to outlet MenuManagement.MenuRelease.MenuReleaseEvents2
+      yield event ItemAddedToRelease(menuReleaseId = addItemToRelease.menuReleaseId, releasedItem = addItemToRelease.releasedItem)
+      send event ItemAddedToRelease(menuReleaseId = addItemToRelease.menuReleaseId, releasedItem = addItemToRelease.releasedItem) to outlet MenuManagement.MenuRelease.MenuReleaseEvents2
     }
     on finalizeRelease: command FinalizeRelease is {
       yield event ReleaseFinalized(menuReleaseId = finalizeRelease.menuReleaseId, finalizedAt = finalizeRelease.finalizedAt, itemCount = count of MenuReleaseStateData.releaseItems)
@@ -506,14 +508,14 @@ event-sourced entity MenuRelease as router is {
       yield event PrintCompletionRecorded(printJobId = recordPrintCompletion.printJobId, menuReleaseId = recordPrintCompletion.menuReleaseId, printRecordedAt = system.now)
     }
     on publishRelease: command PublishRelease is {
-      yield event ReleasePublished(menuReleaseId = publishRelease.menuReleaseId, publishedAt = publishRelease.publishedAt, releaseName = MenuReleaseStateData.releaseName, effectiveDate = MenuReleaseStateData.effectiveDate)
-      send event ReleasePublished(menuReleaseId = publishRelease.menuReleaseId, publishedAt = publishRelease.publishedAt, releaseName = MenuReleaseStateData.releaseName, effectiveDate = MenuReleaseStateData.effectiveDate) to outlet MenuManagement.MenuRelease.MenuReleaseEvents2
+      yield event ReleasePublished(menuReleaseId = publishRelease.menuReleaseId, publishedAt = publishRelease.publishedAt, releaseName = MenuReleaseStateData.releaseName, effectiveDate = MenuReleaseStateData.effectiveDate, publishedItems = MenuReleaseStateData.releaseItems)
+      send event ReleasePublished(menuReleaseId = publishRelease.menuReleaseId, publishedAt = publishRelease.publishedAt, releaseName = MenuReleaseStateData.releaseName, effectiveDate = MenuReleaseStateData.effectiveDate, publishedItems = MenuReleaseStateData.releaseItems) to outlet MenuManagement.MenuRelease.MenuReleaseEvents2
       do "ReleasePublished event triggers menu printing via
         PrintingService streaming topology"
     }
     on rollbackRelease: command RollbackRelease is {
-      yield event ReleaseRolledBack(menuReleaseId = rollbackRelease.menuReleaseId, rollbackReason = rollbackRelease.rollbackReason, rolledBackAt = rollbackRelease.rolledBackAt)
-      send event ReleaseRolledBack(menuReleaseId = rollbackRelease.menuReleaseId, rollbackReason = rollbackRelease.rollbackReason, rolledBackAt = rollbackRelease.rolledBackAt) to outlet MenuManagement.MenuRelease.MenuReleaseEvents2
+      yield event ReleaseRolledBack(menuReleaseId = rollbackRelease.menuReleaseId, rollbackReason = rollbackRelease.rollbackReason, rolledBackAt = rollbackRelease.rolledBackAt, rolledBackItems = MenuReleaseStateData.releaseItems)
+      send event ReleaseRolledBack(menuReleaseId = rollbackRelease.menuReleaseId, rollbackReason = rollbackRelease.rollbackReason, rolledBackAt = rollbackRelease.rolledBackAt, rolledBackItems = MenuReleaseStateData.releaseItems) to outlet MenuManagement.MenuRelease.MenuReleaseEvents2
     }
     on query GetMenuRelease is {
       do "look up MenuRelease by GetMenuRelease.menuReleaseId"
@@ -521,15 +523,12 @@ event-sourced entity MenuRelease as router is {
       reply menuReleaseResult
     }
     on init(givenReleaseName: String(1,200), givenEffectiveDate: Date, givenReleaseCreatedAt: TimeStamp, givenReleaseDescription: String(1,1000)) is {
-      morph entity MenuManagement.MenuRelease to state MenuManagement.MenuRelease.ActiveRelease with record MenuRelease.MenuReleaseStateData(menuReleaseId = self.id, releaseName = givenReleaseName, effectiveDate = givenEffectiveDate, releaseCreatedAt = givenReleaseCreatedAt, releaseDescription = givenReleaseDescription, menuReleaseStatus = MenuReleaseStatus.ReleaseDraftStatus, releaseItems = prompt("the release items of this menu release state data"), actualPublishedAt = empty, finalizedAt = empty, rollbackReason = empty, rolledBackAt = empty, menuDistributedAt = empty, printJobId = empty, printRecordedAt = empty)
+      morph entity MenuManagement.MenuRelease to state MenuManagement.MenuRelease.ActiveRelease with record MenuRelease.MenuReleaseStateData(menuReleaseId = self.id, releaseName = givenReleaseName, effectiveDate = givenEffectiveDate, releaseCreatedAt = givenReleaseCreatedAt, releaseDescription = givenReleaseDescription, menuReleaseStatus = MenuReleaseStatus.ReleaseDraftStatus, releaseItems = empty, actualPublishedAt = empty, finalizedAt = empty, rollbackReason = empty, rolledBackAt = empty, menuDistributedAt = empty, printJobId = empty, printRecordedAt = empty)
       send event MenuReleaseCreated(menuReleaseId = self.id, releaseName = givenReleaseName, effectiveDate = givenEffectiveDate, releaseCreatedAt = givenReleaseCreatedAt, releaseDescription = givenReleaseDescription) to outlet MenuManagement.MenuRelease.MenuReleaseEvents2
     }
     on itemAddedToRelease: event ItemAddedToRelease is {
-      when prompt("releaseAction says remove") then
-        remove itemAddedToRelease.releaseMenuItemId from field MenuRelease.ActiveRelease.releaseItems
-      else
-        append itemAddedToRelease.releaseMenuItemId to field MenuRelease.ActiveRelease.releaseItems
-      end
+      remove from field MenuRelease.ActiveRelease.releaseItems where releasedItemCode == itemAddedToRelease.releasedItem.releasedItemCode
+      append itemAddedToRelease.releasedItem to field MenuRelease.ActiveRelease.releaseItems
     }
     on releaseFinalized: event ReleaseFinalized is {
       set field MenuRelease.ActiveRelease.menuReleaseStatus to MenuReleaseStatus.ReleaseFinalizedStatus
