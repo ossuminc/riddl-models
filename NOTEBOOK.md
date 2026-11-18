@@ -4,41 +4,48 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.7.0-17-f3ecdb82`, UNPUBLISHED riddl `main`, override ON** --
+**Pin `2.7.0-20-8f855a52`, UNPUBLISHED riddl `main`, override ON** --
 `riddlcPath := Some(file("../bin/riddlc"))`, libraries from `publishLocal`.
-It carries riddl 2.8.0's creation model (`on init` at entity level, morphs;
-no initial state; `on entry`). **Take the override off at the 2.8.0 tag.**
-Published 2.7.0 rejects reactive-bbq now, by design.
+It carries 2.8.0's creation model, `ask query Q(args) of P`, and the
+external-context exemption for `stmt-yield-argument-prompt`. BAST revision
+33. **Take the override off at the 2.8.0 tag.**
 
-**Gates on this pin: all green** (`sbt checkAll`, 2026-11-18). reactive-bbq
-is at 0 findings except 3 `[advisory] stmt-yield-argument-prompt` in
-PaymentGateway. Reid ruled them correct for an external context, and riddl
-is asked to exempt external contexts
-(`../riddl/task/2026-11-18-yield-argument-prompt-in-an-external-context.md`).
-patterns/ uses the reference creation shape (`94a1b4480`): the context
-`create`s and yields the creation event; the entity's `on init(args)` morphs.
-
-**reactive-bbq gained a Menu context** (`9dfbcd65d`): a corporate release
-lists its changes (add, change or withdraw, with details captured at add
-time), FrontOfHouse forwards releases to Menu, and AddItem and AddToCart ask
-Menu whether the dish is on it. The entity is `RestaurantMenuItem`, because
-riddlc resolves a relative `MenuItem.X` across domains, and a plain
-`MenuItem` made 54 of Corporate's references ambiguous. `ask` takes no
-arguments, so the look-up cannot state its code; filed as
-`../riddl/task/2026-11-18-ask-cannot-say-what-it-asks.md`.
+**Reid's goal (2026-11-18): every model free of errors, warnings and
+deprecations on this pin.** Tracked as **BACKLOG #43**, with the per-rule
+table, his rulings for each step, and the cases collected for him. Gates are
+green throughout (`checkAll`); the zero is measured by
+`RIDDLC=/Users/reid/Code/ossuminc/bin/riddlc ./scripts/collect-warnings.py
+--include-patterns` (every severity), which the gates do NOT enforce.
 
 ### In flight
 
-**reactive-bbq's bridge is COLLAPSED** (`7e1ff5bc2`): each of the 13
-entities has one entity-level `on init(params)` that morphs and `send`s its
-creation event; the event stays (the creating context yields it as the answer
-carrying the id; stores persist it). Still to do: tell riddl-generator and
-Synapify, then close the create task. The OrderSubmitted task waits on riddlg's
-DineIn e2e.
+- **Done:** reactive-bbq at 0; (1) all 373 bare asks given arguments
+  (`b9ee4cf3d`); (2) creation migration, 718 of 725 deprecations
+  (`1ec22dbef`, `9fbbde7b0`, `771efc733`).
+- **Next:** (3) the ~1,300 undelivered commands at context boundaries, by
+  Reid's (a)/(b)/(c) rule; then (4) queries and results; then (5) the 307
+  advisories. Neither 3 nor 4 has started. Expect several sessions.
+- **Collect, do not ask one at a time:** cases needing a ruling go in BACKLOG
+  #43 § Awaiting Reid's ruling (six so far) for one session with Reid.
+- **Not pushed:** everything after `01e83726b`. Ask before pushing.
+- riddl-generator and Synapify: Reid will tell them later. Do not hand off.
 
-**Corpus-wide migration not started** (188 other models: 214 states lost
-`initial` to prettify in `2bdf37f65`; their `on init`s still sit in states and
-draw `entity-init-in-state` / `entity-init-no-morph`, Deprecations only).
+### Creation-migration traps (scripts/creation/migrate.py)
+
+- riddlc **prettify mangles `Currency(USD)` in an on-init argument** to
+  `Currency`, which does not parse; filed with riddl. The script skips such
+  entities (PriceList, Fund).
+- A field named for a **keyword** (`result`, `call`) cannot be a parameter or
+  a value reference; the script uses `<field>Value`.
+- Moving the creating command out of the entity needs **three** follow-ons
+  or the model goes red: drop it from the entity alternation (alias when one
+  member is left), a context `<X>Request` alternation on every non-entity
+  port that carried the entity's, and dropping the id argument from every
+  other constructor of it.
+- An event-sourced `on init` must also **send the creation event** on the
+  entity's outlet, or the splits that persisted it go undeliverable.
+- An entity gaining its **first entity-level handler** exposes
+  `entity-no-query-clause` if it never answered a query. Not a regression.
 
 ### Traps, still live
 

@@ -5,6 +5,74 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
+## 43. Corpus to zero on riddlc 2.7.0-20-8f855a52 (Reid, 2026-11-18) — IN FLIGHT
+
+**What:** every model free of errors, warnings and deprecations on the -20
+pin. Reid's order, 2026-11-18: (1) bare asks, (2) creation migration, (3)
+undelivered commands, (4) undelivered queries/results, (5) the
+`stmt-yield-argument-prompt` advisories LAST.
+
+**Where it stands** (sweep `collect-warnings.py --include-patterns`, after
+`771efc733`):
+
+| rule | start | now |
+|---|---:|---:|
+| `value-ask-bare-query` (deprecated) | 373 | **0** (`b9ee4cf3d`) |
+| `entity-init-in-state` (deprecated) | 524 | 13 |
+| `entity-init-no-morph` (deprecated) | 201 | 5 |
+| `msg-clause-undeliverable` (completeness) | 2,182 | 2,184 |
+| `stream-outlet-never-sent` (completeness) | 268 | 268 |
+| `entity-no-query-clause` (completeness) | 0 | 4 (newly visible) |
+| `entity-no-command-types` / `entity-no-inlet` | 0 | 1 / 1 (Team) |
+| `stmt-yield-argument-prompt` (advisory) | 340 | 307 |
+
+**Tools:** `scripts/ask-arguments.py` (step 1, done);
+`scripts/creation/census.py` and `scripts/creation/migrate.py` (step 2). The
+migrate script reports what it cannot convert rather than guessing; its
+docstring and comments say which shapes it handles.
+
+### Step 3 — undelivered commands at a context boundary (Reid's ruling)
+
+Per site: **(a)** an app control (`input …Input acquires command X`) when
+the command belongs to a stream the app already has an outlet for; **(b)**
+wire it through the existing inbound adaptor when it clearly comes from
+another system; **(c)** otherwise collect it below for one session with Reid.
+Never delete a clause without his say. NOT STARTED.
+
+### Step 4 — undelivered queries (622) and results (180) (Reid's ruling)
+
+The `GetRestaurantMenuItem` path: an app control for the query, the context
+relays it to the entity or repository, the answer comes back through a reply
+outlet to the app. Also clears most repository `stream-outlet-never-sent`,
+and should give the four `entity-no-query-clause` entities (GenerationRun,
+Artifact, Hole, SurveyStation) a look-up of themselves. NOT STARTED.
+
+### Awaiting Reid's ruling — collect here, decide in one session
+
+1. **CNCMachine** (cnc-operations): the only creator candidate is
+   `SetupMachine`, which also re-configures a machine; moving it to the
+   context would make every re-setup create a new machine. Is there a
+   register step missing?
+2. **Subscription** (subscription-management): `CreateSubscription` and
+   `StartTrial` both create. Two creating requests at the context?
+3. **Ticket** (ticket-sales): mixes `CreateEvent` with `ReleaseTickets`
+   (quantity N). Should releasing create N tickets in the context?
+4. **Team** (team-management): `CreateTeam` was its only command, so the
+   entity now has none (`entity-no-command-types`). Leave it query-only, or
+   does a team take commands (rename, relocate)?
+5. **NewAccountState** (customer-success): declared first, never entered;
+   OnboardCustomer starts an account in Onboarding. Delete the dead state?
+6. **DeploymentAwaitingApproval, DeploymentFailed** (deployment-pipeline):
+   only ever yielded by state on-inits that never ran; now undeliverable.
+
+**Blocked on riddl:** PriceList (product-catalog) and Fund (fund-accounting)
+take a `Currency(USD)` creation argument, which riddlc prettify writes back
+as `Currency` and then cannot parse
+(`../riddl/task/2026-11-18-prettify-drops-currency-code-on-init-argument.md`).
+Re-run `migrate.py` on both when it is fixed.
+
+---
+
 ## 42. 1,708 boilerplate folds — survey what state they hide (Reid, 2026-10-30)
 
 **What:** an `on event X` clause whose only statement is
