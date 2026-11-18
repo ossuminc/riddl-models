@@ -4,21 +4,27 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.7.0-15-53c8fcfe`, UNPUBLISHED riddl `main`, override ON** —
+**Pin `2.7.0-17-f3ecdb82`, UNPUBLISHED riddl `main`, override ON** --
 `riddlcPath := Some(file("../bin/riddlc"))`, libraries from `publishLocal`.
 It carries riddl 2.8.0's creation model (`on init` at entity level, morphs;
 no initial state; `on entry`). **Take the override off at the 2.8.0 tag.**
-Published 2.7.0 rejects reactive-bbq now (19 errors), by design.
+Published 2.7.0 rejects reactive-bbq now, by design.
 
-**Gates on this pin: NOT all green.** `uc` and `pc` green (1004 files
-canonical); 0 errors in reactive-bbq. Two reds, both other tasks' work:
-- **R10** — exactly the 106 `msg-clause-undeliverable` /
-  `stream-outlet-never-sent` in reactive-bbq
-  (`task/2026-11-17-reactive-bbq-undeliverable-clauses-and-unsent-outlets.md`)
-- **`verifyTemplates`** — both pattern examples and four templates draw the
-  new deprecations, and the examples the undeliverable rule. Migrating them
-  sets the reference `create` shape, so it waits on Reid
-  (`task/2026-11-17-migrate-to-on-init-creation-and-on-entry.md`)
+**Gates on this pin: one red.** `uc` and `pc` are green, and reactive-bbq is at
+0 findings of every severity except 3 `[advisory] stmt-yield-argument-prompt`
+in PaymentGateway, a rule new in -17 and not yet answered. R10 is green.
+- **`verifyTemplates`** -- both pattern examples and four templates draw the
+  new deprecations. Reid's choice of the reference `create` shape for
+  patterns/ is still open (`task/2026-11-17-migrate-to-on-init-creation-and-on-entry.md`)
+
+**reactive-bbq gained a Menu context** (`9dfbcd65d`): a corporate release
+lists its changes (add, change or withdraw, with details captured at add
+time), FrontOfHouse forwards releases to Menu, and AddItem and AddToCart ask
+Menu whether the dish is on it. The entity is `RestaurantMenuItem`, because
+riddlc resolves a relative `MenuItem.X` across domains, and a plain
+`MenuItem` made 54 of Corporate's references ambiguous. `ask` takes no
+arguments, so the look-up cannot state its code; filed as
+`../riddl/task/2026-11-18-ask-cannot-say-what-it-asks.md`.
 
 ### In flight
 
