@@ -4,32 +4,34 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.7.0`, PUBLISHED, override OFF** — `riddlcPath := None`, the plugin's
-`~/.cache/riddlc/2.7.0/bin/riddlc` is the build's binary, libraries from GitHub
-Packages. **`../bin/riddlc` is not the build's binary** — it reports 2.7.0 but
-was built here and links `openssl@4`; pass
-`RIDDLC=~/.cache/riddlc/2.7.0/bin/riddlc` to any script run that is evidence.
+**Pin `2.7.0-15-53c8fcfe`, UNPUBLISHED riddl `main`, override ON** —
+`riddlcPath := Some(file("../bin/riddlc"))`, libraries from `publishLocal`.
+It carries riddl 2.8.0's creation model (`on init` at entity level, morphs;
+no initial state; `on entry`). **Take the override off at the 2.8.0 tag.**
+Published 2.7.0 rejects reactive-bbq now (19 errors), by design.
 
-**EVERY GATE IS GREEN ON 2.7.0, `checkTests` included.** 0 errors, 0
-warnings; 418 advisories corpus-wide, 3 in reactive-bbq, all
-`stmt-yield-argument-prompt` and all dismissed on purpose.
+**Gates on this pin: NOT all green.** `uc` and `pc` green (1004 files
+canonical); 0 errors in reactive-bbq. Two reds, both other tasks' work:
+- **R10** — exactly the 106 `msg-clause-undeliverable` /
+  `stream-outlet-never-sent` in reactive-bbq
+  (`task/2026-11-17-reactive-bbq-undeliverable-clauses-and-unsent-outlets.md`)
+- **`verifyTemplates`** — both pattern examples and four templates draw the
+  new deprecations, and the examples the undeliverable rule. Migrating them
+  sets the reference `create` shape, so it waits on Reid
+  (`task/2026-11-17-migrate-to-on-init-creation-and-on-entry.md`)
 
 ### In flight
 
-**reactive-bbq `create` bridge, waiting on riddl.** Each initial state's
-`on init(...)` yields the entity's creation event so that its fold can
-morph. Reid's model (`on init` IS the first journal entry, and morphs
-itself) is filed as `../riddl/task/2026-11-17-on-init-is-the-creation-
-event.md`; Reid is working it with riddl and will say when it's staged. Then:
-move each creation fold's `morph` into `on init`, delete the bridge, re-run
-the gates, and tell riddl-generator. riddlg and Synapify wait for that.
-Two task files stay open in `task/`: the create task, and the OrderSubmitted
-route, which waits on riddlg's DineIn e2e.
+**reactive-bbq's bridge is COLLAPSED** (`7e1ff5bc2`): each of the 13
+entities has one entity-level `on init(params)` that morphs and `send`s its
+creation event; the event stays (the creating context yields it as the answer
+carrying the id; stores persist it). Still to do: tell riddl-generator and
+Synapify, then close the create task. The OrderSubmitted task waits on riddlg's
+DineIn e2e.
 
-**The staged `../bin/riddlc` (2.7.0-12) reports ~100
-`msg-clause-undeliverable` and 2 `value-ref-not-a-value` in reactive-bbq.**
-These come from riddl's answer to our undeliverable-clause task. They are
-next-pin work, not regressions.
+**Corpus-wide migration not started** (188 other models: 214 states lost
+`initial` to prettify in `2bdf37f65`; their `on init`s still sit in states and
+draw `entity-init-in-state` / `entity-init-no-morph`, Deprecations only).
 
 ### Traps, still live
 
