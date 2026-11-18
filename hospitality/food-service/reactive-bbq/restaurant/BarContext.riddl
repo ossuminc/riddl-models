@@ -1,8 +1,25 @@
 // Bar bounded context
 context Bar as router is {
   connector 'DrinkOrderQueue To DrinkOrder' is from outlet Bar.DrinkOrderQueue.DrinkOrderQueueToDrinkOrder to inlet Bar.DrinkOrder.DrinkOrderFromDrinkOrderQueue
-  inlet DrinkOrderCommandStreamIn is type DrinkOrderCommand
+  type DrinkOrderRequest is one of {
+    DrinkOrder.DrinkOrderCommand or DrinkOrder.GetDrinkOrder
+  } with {
+    briefly "DrinkOrder requests"
+    described as {
+      |What may be asked of Bar about a DrinkOrder: any of its commands, or a
+      |look-up of one by its id, which the DrinkOrder itself answers.
+    }
+  }
+  inlet DrinkOrderCommandStreamIn is type DrinkOrderRequest
   outlet DrinkOrderCommandStreamOut is type DrinkOrderCommand
+  outlet DrinkOrderQueriesOut is query DrinkOrder.GetDrinkOrder
+  connector 'DrinkOrderQuery Intake' is from outlet Bar.DrinkOrderQueriesOut to inlet Bar.DrinkOrder.DrinkOrderQueries with {
+    briefly "Look-ups of one DrinkOrder, on their way to it"
+    described as {
+      |Carries GetDrinkOrder to the DrinkOrder it names, which answers from the state it
+      |already holds.
+    }
+  }
   inlet BarToFOHIn is type DrinkOrderEvent
   outlet BarToFOHOut is type DrinkOrderEvent
   inlet DrinkOrderResultStreamIn is result DrinkOrder.DrinkOrderResult
@@ -29,6 +46,9 @@ context Bar as router is {
     on completeDrinkOrder: command DrinkOrder.CompleteDrinkOrder is {
       forward completeDrinkOrder to outlet Bar.DrinkOrderCommandStreamOut
     }
+    on getDrinkOrder: query DrinkOrder.GetDrinkOrder is {
+      forward getDrinkOrder to outlet Bar.DrinkOrderQueriesOut
+    }
     on drinkOrderResult: result DrinkOrder.DrinkOrderResult is {
       send drinkOrderResult to outlet Bar.DrinkOrderResultStreamOut
     }
@@ -52,7 +72,7 @@ context Bar as router is {
   }
   connector 'DrinkOrderCommand Stream Intake' is from outlet Bar.DrinkOrderCommandStreamOut to inlet Bar.DrinkOrder.DrinkOrderCommands
   connector 'BarToFOH Egress' is from outlet Bar.DrinkOrderEventSource.DrinkOrderEvents to inlet Bar.BarToFOHIn
-  connector 'DrinkOrderResult Stream Egress' is from outlet Bar.DrinkOrderRepository.DrinkOrderRepositoryResponses to inlet Bar.DrinkOrderResultStreamIn
+  connector 'DrinkOrderResult Stream Egress' is from outlet Bar.DrinkOrder.DrinkOrderReplies to inlet Bar.DrinkOrderResultStreamIn
   include "bar-types.riddl"
   include "DrinkOrder.riddl"
   type DrinkOrderRepositoryCommand is one of {
@@ -65,9 +85,8 @@ context Bar as router is {
       |takes commands and queries only.
     }
   }
-  repository DrinkOrderRepository as flow is {
+  repository DrinkOrderRepository as sink is {
     inlet DrinkOrderRepositoryFromDrinkOrderProjection is type DrinkOrderRepositoryCommand
-    outlet DrinkOrderRepositoryResponses is result DrinkOrder.DrinkOrderResult
     record StoredDrinkOrder is {
       drinkOrderId: DrinkOrderId with {
         briefly "drinkOrderId"

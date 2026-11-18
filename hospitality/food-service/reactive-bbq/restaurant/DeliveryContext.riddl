@@ -2,8 +2,25 @@
 context Delivery as router is {
   connector 'FromOnlineOrdering To Delivery' is from outlet Delivery.FromOnlineOrdering.FromOnlineOrderingToDelivery to inlet Delivery.DeliveryFromFromOnlineOrdering
   inlet DeliveryFromFromOnlineOrdering is command DeliveryOrder.AssignDriver
-  inlet DeliveryOrderCommandStreamIn is type DeliveryOrderCommand
+  type DeliveryOrderRequest is one of {
+    DeliveryOrder.DeliveryOrderCommand or DeliveryOrder.GetDeliveryOrder
+  } with {
+    briefly "DeliveryOrder requests"
+    described as {
+      |What may be asked of Delivery about a DeliveryOrder: any of its commands, or a
+      |look-up of one by its id, which the DeliveryOrder itself answers.
+    }
+  }
+  inlet DeliveryOrderCommandStreamIn is type DeliveryOrderRequest
   outlet DeliveryOrderCommandStreamOut is type DeliveryOrderCommand
+  outlet DeliveryOrderQueriesOut is query DeliveryOrder.GetDeliveryOrder
+  connector 'DeliveryOrderQuery Intake' is from outlet Delivery.DeliveryOrderQueriesOut to inlet Delivery.DeliveryOrder.DeliveryOrderQueries with {
+    briefly "Look-ups of one DeliveryOrder, on their way to it"
+    described as {
+      |Carries GetDeliveryOrder to the DeliveryOrder it names, which answers from the state it
+      |already holds.
+    }
+  }
   inlet DeliveryToOnlineIn is type DeliveryEvent
   outlet DeliveryToOnlineOut is type DeliveryEvent
   inlet DeliveryOrderResultStreamIn is result DeliveryOrder.DeliveryOrderResult
@@ -42,6 +59,9 @@ context Delivery as router is {
     on reportDeliveryIssue: command DeliveryOrder.ReportDeliveryIssue is {
       forward reportDeliveryIssue to outlet Delivery.DeliveryOrderCommandStreamOut
     }
+    on getDeliveryOrder: query DeliveryOrder.GetDeliveryOrder is {
+      forward getDeliveryOrder to outlet Delivery.DeliveryOrderQueriesOut
+    }
     on deliveryOrderResult: result DeliveryOrder.DeliveryOrderResult is {
       send deliveryOrderResult to outlet Delivery.DeliveryOrderResultStreamOut
     }
@@ -65,7 +85,7 @@ context Delivery as router is {
   }
   connector 'DeliveryOrderCommand Stream Intake' is from outlet Delivery.DeliveryOrderCommandStreamOut to inlet Delivery.DeliveryOrder.DeliveryOrderCommands
   connector 'DeliveryToOnline Egress' is from outlet Delivery.DeliveryOrderEventSource.DeliveryOrderEvents to inlet Delivery.DeliveryToOnlineIn
-  connector 'DeliveryOrderResult Stream Egress' is from outlet Delivery.DeliveryRepository.DeliveryRepositoryResponses to inlet Delivery.DeliveryOrderResultStreamIn
+  connector 'DeliveryOrderResult Stream Egress' is from outlet Delivery.DeliveryOrder.DeliveryOrderReplies to inlet Delivery.DeliveryOrderResultStreamIn
   include "delivery-types.riddl"
   include "Delivery.riddl"
   type DeliveryRepositoryCommand is one of {
@@ -78,9 +98,8 @@ context Delivery as router is {
       |takes commands and queries only.
     }
   }
-  repository DeliveryRepository as flow is {
+  repository DeliveryRepository as sink is {
     inlet DeliveryRepositoryFromDeliveryProjection is type DeliveryRepositoryCommand
-    outlet DeliveryRepositoryResponses is result DeliveryOrder.DeliveryOrderResult
     record StoredDeliveryOrder is {
       deliveryOrderId: DeliveryId with {
         briefly "deliveryOrderId"
