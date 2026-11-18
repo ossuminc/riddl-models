@@ -49,6 +49,15 @@ Artifact, Hole, SurveyStation) a look-up of themselves. NOT STARTED.
 
 ### Awaiting Reid's ruling — collect here, decide in one session
 
+**RULED 2026-11-18** (implement next session, before or alongside step 3):
+1 — add `RegisterMachine` as the creator; `SetupMachine` stays a command on
+an existing machine. 2 — both create: `StartTrial` a subscription on trial
+terms, `CreateSubscription` a paid one. 3 — DEFERRED, Reid to look later.
+4 — give Team real commands for an existing team (rename, relocate). 5 —
+delete `NewAccountState`. 6 — use the new `on entry` clause on the state each
+event belongs to, yielding the event as the old state on-init did, so the
+effect is the original's.
+
 1. **CNCMachine** (cnc-operations): the only creator candidate is
    `SetupMachine`, which also re-configures a machine; moving it to the
    context would make every re-setup create a new machine. Is there a
