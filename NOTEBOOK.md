@@ -10,12 +10,13 @@ It carries riddl 2.8.0's creation model (`on init` at entity level, morphs;
 no initial state; `on entry`). **Take the override off at the 2.8.0 tag.**
 Published 2.7.0 rejects reactive-bbq now, by design.
 
-**Gates on this pin: one red.** `uc` and `pc` are green, and reactive-bbq is at
-0 findings of every severity except 3 `[advisory] stmt-yield-argument-prompt`
-in PaymentGateway, a rule new in -17 and not yet answered. R10 is green.
-- **`verifyTemplates`** -- both pattern examples and four templates draw the
-  new deprecations. Reid's choice of the reference `create` shape for
-  patterns/ is still open (`task/2026-11-17-migrate-to-on-init-creation-and-on-entry.md`)
+**Gates on this pin: all green** (`sbt checkAll`, 2026-11-18). reactive-bbq
+is at 0 findings except 3 `[advisory] stmt-yield-argument-prompt` in
+PaymentGateway. Reid ruled them correct for an external context, and riddl
+is asked to exempt external contexts
+(`../riddl/task/2026-11-18-yield-argument-prompt-in-an-external-context.md`).
+patterns/ uses the reference creation shape (`94a1b4480`): the context
+`create`s and yields the creation event; the entity's `on init(args)` morphs.
 
 **reactive-bbq gained a Menu context** (`9dfbcd65d`): a corporate release
 lists its changes (add, change or withdraw, with details captured at add
