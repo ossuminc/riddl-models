@@ -1,6 +1,56 @@
 // Port Operations - Berth Context
 context BerthContext as router is {
-  inlet BerthContextFromBerthEventSplit is type BerthCommand with {
+  command RequestBerth yields event PortCall.BerthRequested is {
+    berthId: BerthId with {
+      briefly "Berth"
+      described as {
+        |Berth identifier.
+      }
+    }
+    request: PortCallRequest with {
+      briefly "Request"
+      described as {
+        |Port call request.
+      }
+    }
+  } with {
+    briefly "Request berth"
+    described as {
+      |Requests berth allocation for port call.
+    }
+  }
+  type PortCallCreationRequest is one of {
+    BerthContext.RequestBerth or PortCall.PortCallCommand
+  } with {
+    briefly "PortCall requests"
+    described as {
+      |What may be asked of BerthContext about a PortCall: RequestBerth, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
+  command CreateBerth is {
+    details: BerthDetails with {
+      briefly "Details"
+      described as {
+        |Berth details.
+      }
+    }
+  } with {
+    briefly "Create berth"
+    described as {
+      |Creates a new berth in the terminal.
+    }
+  }
+  type BerthRequest is one of {
+    BerthContext.CreateBerth or Berth.BerthCommand
+  } with {
+    briefly "Berth requests"
+    described as {
+      |What may be asked of BerthContext about a Berth: CreateBerth, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
+  inlet BerthContextFromBerthEventSplit is type BerthContext.BerthRequest with {
     briefly "What a port call's progress asks of the berth"
   }
   connector 'BerthEventSplit Intake' is from outlet BerthContext.BerthEventSplit.BerthEventSplitToBerthContext to inlet BerthContext.BerthContextFromBerthEventSplit with {
@@ -42,15 +92,17 @@ context BerthContext as router is {
   connector 'FromTowageService Intake' is from outlet BerthContext.FromTowageService.FromTowageServiceToBerthContext to inlet BerthContext.BerthContextFromTowageService with {
     briefly "What FromTowageService makes of that news, on its way in"
   }
-  inlet PortCallCommandStreamIn is type PortCallCommand
+  inlet PortCallCommandStreamIn is type BerthContext.PortCallCreationRequest
   outlet PortCallCommandStreamOut is type PortCallCommand
-  inlet BerthCommandStreamIn is type BerthCommand
+  inlet BerthCommandStreamIn is type BerthContext.BerthRequest
   outlet BerthCommandStreamOut is type BerthCommand
   inlet BerthResultStreamIn is result Berth.BerthResult
   outlet BerthResultStreamOut is result Berth.BerthResult
   handler BerthContextBoundary is {
-    on requestBerth: command PortCall.RequestBerth is {
-      forward requestBerth to outlet BerthContext.PortCallCommandStreamOut
+    on requestBerth: command BerthContext.RequestBerth is {
+      let givenRequestedAt: type TimeStamp = prompt("the requested at of this berth requested")
+      let newPortCall = create entity BerthContext.PortCall(berthId = requestBerth.berthId, request = requestBerth.request, requestedAt = givenRequestedAt)
+      yield event PortCall.BerthRequested(portCallId = newPortCall, berthId = requestBerth.berthId, request = requestBerth.request, requestedAt = givenRequestedAt)
     }
     on confirmBerthAssignment: command PortCall.ConfirmBerthAssignment is {
       forward confirmBerthAssignment to outlet BerthContext.PortCallCommandStreamOut
@@ -82,8 +134,9 @@ context BerthContext as router is {
     on cancelPortCall: command PortCall.CancelPortCall is {
       forward cancelPortCall to outlet BerthContext.PortCallCommandStreamOut
     }
-    on createBerth: command Berth.CreateBerth is {
-      send createBerth to outlet BerthContext.BerthCommandStreamOut
+    on createBerth: command BerthContext.CreateBerth is {
+      let newBerth = create entity BerthContext.Berth(details = createBerth.details)
+      log newBerth
     }
     on updateBerthDetails: command Berth.UpdateBerthDetails is {
       send updateBerthDetails to outlet BerthContext.BerthCommandStreamOut
@@ -1001,7 +1054,7 @@ context BerthContext as router is {
     }
   }
   streamlet BerthEventSplit as split is {
-    outlet BerthEventSplitToBerthContext is type BerthCommand
+    outlet BerthEventSplitToBerthContext is type BerthContext.BerthRequest
     outlet BerthEventSplitToToVesselTrafficService is type BerthEvent
     outlet BerthEventSplitToToTowageService is type BerthEvent
     outlet BerthEventSplitToToTerminalOperatingSystem is type BerthEvent

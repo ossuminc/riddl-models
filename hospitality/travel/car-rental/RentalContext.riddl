@@ -1,5 +1,39 @@
 // Car Rental - Rental Context
 context RentalContext as router is {
+  command CreateRental is {
+    customer: CustomerInfo with {
+      briefly "Customer"
+      described as {
+        |Customer information.
+      }
+    }
+    vehicle: VehicleInfo with {
+      briefly "Vehicle"
+      described as {
+        |Vehicle information.
+      }
+    }
+    period: RentalPeriod with {
+      briefly "Period"
+      described as {
+        |Rental period.
+      }
+    }
+  } with {
+    briefly "Create rental"
+    described as {
+      |Creates a new rental reservation.
+    }
+  }
+  type RentalRequest is one of {
+    RentalContext.CreateRental or Rental.RentalCommand
+  } with {
+    briefly "Rental requests"
+    described as {
+      |What may be asked of RentalContext about a Rental: CreateRental, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
   inlet RentalContextFromToInsuranceProviderService is command Rental.SelectInsurance with {
     briefly "What ToInsuranceProviderService makes of the answers it gets"
   }
@@ -12,7 +46,7 @@ context RentalContext as router is {
   connector 'ToPricingService Intake' is from outlet RentalContext.ToPricingService.ToPricingServiceToRentalContext to inlet RentalContext.RentalContextFromToPricingService with {
     briefly "Answers translated by ToPricingService, on their way in"
   }
-  inlet RentalContextFromToVehicleAvailabilityService is command Rental.CreateRental with {
+  inlet RentalContextFromToVehicleAvailabilityService is command RentalContext.CreateRental with {
     briefly "What ToVehicleAvailabilityService makes of the answers it gets"
   }
   connector 'ToVehicleAvailabilityService Intake' is from outlet RentalContext.ToVehicleAvailabilityService.ToVehicleAvailabilityServiceToRentalContext to inlet RentalContext.RentalContextFromToVehicleAvailabilityService with {
@@ -30,13 +64,14 @@ context RentalContext as router is {
   connector 'FromPaymentProcessingService Intake' is from outlet RentalContext.FromPaymentProcessingService.FromPaymentProcessingServiceToRentalContext to inlet RentalContext.RentalContextFromPaymentProcessingService with {
     briefly "What FromPaymentProcessingService makes of that news, on its way in"
   }
-  inlet RentalCommandStreamIn is type RentalCommand
+  inlet RentalCommandStreamIn is type RentalContext.RentalRequest
   outlet RentalCommandStreamOut is type RentalCommand
   inlet RentalResultStreamIn is result Rental.RentalResult
   outlet RentalResultStreamOut is result Rental.RentalResult
   handler RentalContextBoundary is {
-    on createRental: command Rental.CreateRental is {
-      send createRental to outlet RentalContext.RentalCommandStreamOut
+    on createRental: command RentalContext.CreateRental is {
+      let newRental = create entity RentalContext.Rental(customer = createRental.customer, vehicle = createRental.vehicle, period = createRental.period)
+      log newRental
     }
     on addAddOn: command Rental.AddAddOn is {
       send addAddOn to outlet RentalContext.RentalCommandStreamOut
@@ -390,7 +425,7 @@ context RentalContext as router is {
     }
   }
   adaptor ToVehicleAvailabilityService to context VehicleAvailabilityService as router is { 
-    outlet ToVehicleAvailabilityServiceToRentalContext is command Rental.CreateRental
+    outlet ToVehicleAvailabilityServiceToRentalContext is command RentalContext.CreateRental
     inlet ToVehicleAvailabilityServiceIn is type RentalEvent
     inlet ToVehicleAvailabilityServiceReplies is result VehicleAvailabilityService.AvailableVehicles
     outlet ToVehicleAvailabilityServiceOut is type VehicleAvailabilityService.VehicleAvailabilityServiceCommand
@@ -399,7 +434,7 @@ context RentalContext as router is {
         let askAnswer: type VehicleAvailabilityService.AvailableVehicles = ask query VehicleAvailabilityService.SearchAvailableVehicles(pickupLocationId = prompt("the pickup location id this asks about"), returnLocationId = prompt("the return location id this asks about"), pickupDateTime = rentalCreated.period.pickupDateTime, returnDateTime = rentalCreated.period.returnDateTime, filterVehicleClass = empty) of context VehicleAvailabilityService
         do "a rental needing a vehicle free at that branch and those dates"
         when prompt("rentalCreated.vehicle is not among askAnswer.vehicles") then
-          send command Rental.CreateRental(rentalId = rentalCreated.rentalId, customer = rentalCreated.customer, vehicle = prompt("the first of askAnswer.vehicles"), period = rentalCreated.period) to outlet RentalContext.ToVehicleAvailabilityService.ToVehicleAvailabilityServiceToRentalContext
+          send command RentalContext.CreateRental(customer = rentalCreated.customer, vehicle = prompt("the first of askAnswer.vehicles"), period = rentalCreated.period) to outlet RentalContext.ToVehicleAvailabilityService.ToVehicleAvailabilityServiceToRentalContext
         end
         let item0: type VehicleAvailabilityService.ReserveVehicle = prompt("translate the rentalCreated event into a ReserveVehicle, the rental being what claims the vehicle")
         send item0 to outlet RentalContext.ToVehicleAvailabilityService.ToVehicleAvailabilityServiceOut

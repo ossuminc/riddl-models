@@ -47,7 +47,16 @@ KEYWORDS = {"result", "event", "command", "query", "type", "record", "state",
             "entity", "context", "handler", "on", "is", "of", "to", "from",
             "with", "yield", "reply", "send", "tell", "morph", "become", "set",
             "let", "when", "then", "else", "end", "error", "do", "init", "self",
-            "empty", "true", "false", "inlet", "outlet", "domain", "function"}
+            "empty", "true", "false", "inlet", "outlet", "domain", "function",
+            "call", "ask", "create", "foreach", "append", "remove", "log", "store",
+            "update", "delete", "upsert", "prompt", "system", "forward", "in",
+            "where", "and", "or", "not", "become", "stop", "focus", "any", "all"}
+
+
+CREATE_VERBS = (r"(Create|Register|Open|Start|Submit|Initiate|Add|Place|New|Apply|"
+                r"Establish|Enroll|Onboard|Provision|Install|Commission|Plan|Record|"
+                r"Request|Schedule|File|Issue|Receive|Report|Initialize|Init|Define|"
+                r"Draft|Book|Admit|Acquire|Launch)[A-Z]")
 
 
 def pname(f):
@@ -216,16 +225,45 @@ def migrate_entity(m, ent):
         if not any(n["kind"] == "morph-statement" for n in m.kids[fold["path"]]):
             raise Skip("creation fold does not morph")
     else:
-        cc = [c for c in clauses if any(
-            s["kind"] == "morph-statement" and s.get("state", {}).get("resolved") == s0["path"]
-            for s in m.kids[c["path"]])]
+        def enters_s0(st):
+            if st["kind"] == "morph-statement":
+                return st.get("state", {}).get("resolved") == s0["path"]
+            # a single-state entity's 'set state S to record R(...)'
+            return (st["kind"] == "set-statement" and st.get("target") == s0["id"]
+                    and isinstance(st.get("value"), dict) and "resolved" in st["value"])
+        cc = [c for c in clauses if any(enters_s0(st) for st in m.kids[c["path"]])]
+        if not cc:
+            # nothing enters the first-declared state; the one creating command
+            # that morphs at all names the state an instance really starts in
+            made = [c for c in clauses
+                    if re.match(CREATE_VERBS, c["id"].split(" ", 1)[1].split(".")[-1])
+                    and any(st["kind"] == "morph-statement" for st in m.kids[c["path"]])]
+            order = [st["path"] for st in states]
+
+            def target(c):
+                t = [st for st in m.kids[c["path"]]
+                     if st["kind"] == "morph-statement"][0]["state"].get("resolved")
+                return order.index(t) if t in order else len(order)
+            made.sort(key=target)
+            # several may morph (renew, churn); the one entering the earliest
+            # declared state is where an instance begins
+            if made and (len(made) == 1 or target(made[0]) < target(made[1])) \
+                    and target(made[0]) < len(order):
+                s0 = states[target(made[0])]
+                cc = [made[0]]
+        if len(cc) > 1:
+            # one creates; the others return an existing instance to S0
+            made = [c for c in cc if re.match(CREATE_VERBS, c["id"].split(" ", 1)[1].split(".")[-1])]
+            if len(made) == 1:
+                cc = made
         if len(cc) != 1:
             raise Skip(f"CRUD: {len(cc)} command clauses morph into {s0['id']}")
         cc = cc[0]
     cmd = m.by_path.get(cc.get("message", {}).get("resolved", ""))
     if not cmd:
         raise Skip("creating command unresolved")
-    if len([f for f in m.fields(cmd["path"]) if not m.is_id_of(f, ent)]) == 0:
+    if len([f for f in m.fields(cmd["path"]) if not m.is_id_of(f, ent)]) == 0 \
+            and not re.match(CREATE_VERBS, cmd["id"]):
         raise Skip(f"{cmd['id']} carries nothing but the id, so it creates nothing")
     cc_bind = cc.get("binding")
     if not cc_bind:
@@ -257,6 +295,10 @@ def migrate_entity(m, ent):
             raise Skip("fold reads the whole event")
     else:
         body = body_of(m.text(cc))
+        # nothing else puts a new instance in a state, so the set is a morph
+        body = re.sub(rf"\bset state {s0['id']} to record ",
+                      f"morph entity {ctx['id']}.{ent['id']} to state "
+                      f"{ctx['id']}.{ent['id']}.{s0['id']} with record ", body)
         if len(cmd_id) > 1:
             raise Skip("creating command has several ids")
         if cmd_id:
@@ -269,7 +311,7 @@ def migrate_entity(m, ent):
         body = re.sub(rf"\b{cc_bind}\.(\w+)", lambda mm: pname(mm.group(1)), body)
         if re.search(rf"\b{cc_bind}\b", body):
             raise Skip("creator reads the whole command")
-        if not params:
+        if not params and not re.match(CREATE_VERBS, cmd["id"]):
             raise Skip("creator reads no fields of its command")
 
     # riddlc prettify writes an on-init parameter 'Currency(USD)' back as
@@ -339,7 +381,8 @@ def migrate_entity(m, ent):
             ev_vals = [f"{ev_id[0]} = self.id"] + [f"{p} = {pname(p)}" for p, _ in params]
             body += (f"\nsend event {ev['id']}(" + ", ".join(ev_vals) + ") to outlet "
                      f"{ctx['id']}.{ent['id']}.{outs[0]['id']}")
-    on_init = ("on init(" + ", ".join(f"{pname(p)}: {t}" for p, t in params) + ") is {\n"
+    sig = ("(" + ", ".join(f"{pname(p)}: {t}" for p, t in params) + ")") if params else ""
+    on_init = ("on init" + sig + " is {\n"
                + body + "\n}\n")
     handlers = [n for n in m.nodes if n["kind"] == "handler" and n["parent"] == ep]
     if not handlers:
@@ -386,12 +429,20 @@ def move_command(m, ent, ctx, cmd, cmd_id, relay):
         raise Skip(f"{alt['id']} would be left with {len(members) - 1} member")
     req = f"{X}Request"
     if any(n.get("id") == req for n in m.nodes):
+        req = f"{X}CreationRequest"
+    if any(n.get("id") == req for n in m.nodes):
         raise Skip(f"{req} already exists")
     # the definition, moved
     ctext = m.text(cmd)
     for f in m.fields(cmd["path"]):
         if f["id"] in cmd_id:
             ctext = ctext.replace(m.text(f), "", 1)
+    if all(f["id"] in cmd_id for f in m.fields(cmd["path"])):
+        # nothing left but the id create mints: an empty body is '???'
+        i = ctext.index("{")
+        j = ctext.index("}", i) if "with {" not in ctext[i:] else None
+        body_end = ctext.rindex("} with {") if "} with {" in ctext else ctext.rindex("}")
+        ctext = ctext[:i + 1] + " ??? " + ctext[body_end:]
     local = {n["id"] for n in m.nodes if n.get("parent") == ep
              and n["kind"] in ("type", "record", "event", "command", "query", "result")}
     ctext = re.sub(r"(yields event )(\w+)\b",
