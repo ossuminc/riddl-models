@@ -1,5 +1,65 @@
 // Incident Management Bounded Context
 context IncidentContext as router is {
+  command CreateIncident yields event Incident.IncidentCreated is {
+    title: String(1,200) with {
+      briefly "Incident title"
+      described as {
+        |Brief summary of the incident.
+      }
+    }
+    description: String(1,2000) with {
+      briefly "Incident description"
+      described as {
+        |Detailed description of the issue.
+      }
+    }
+    severity: IncidentSeverity with {
+      briefly "Severity level"
+      described as {
+        |Initial severity classification.
+      }
+    }
+    affectedServices: ServiceId+ with {
+      briefly "Affected services"
+      described as {
+        |Services impacted by this incident.
+      }
+    }
+    alertIds: AlertId+ with {
+      briefly "Related alerts"
+      described as {
+        |Alert identifiers that triggered this incident.
+      }
+    }
+    customerImpact: String(1,1000) with {
+      briefly "Customer impact"
+      described as {
+        |Description of how customers are affected.
+      }
+    }
+    communicationChannel: String(1,200) with {
+      briefly "Communication channel"
+      described as {
+        |Slack channel or other coordination channel.
+      }
+    }
+  } with {
+    briefly "Create a new incident from an alert or manual report"
+    described as {
+      | Initiates a new incident record, typically triggered by an
+      | alerting system or reported manually by an engineer. Sets the initial
+      | severity and identifies affected services.
+    }
+  }
+  type IncidentRequest is one of {
+    IncidentContext.CreateIncident or Incident.IncidentCommand
+  } with {
+    briefly "Incident requests"
+    described as {
+      |What may be asked of IncidentContext about a Incident: CreateIncident, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
   inlet IncidentContextFromToPagerDutyIntegration is command Incident.AssignIncidentCommander with {
     briefly "What ToPagerDutyIntegration makes of the answers it gets"
   }
@@ -12,7 +72,7 @@ context IncidentContext as router is {
       |The channel the `tell` travels.
     }
   }
-  inlet IncidentContextFromAlertAdapter is type IncidentCommand with {
+  inlet IncidentContextFromAlertAdapter is type IncidentContext.IncidentRequest with {
     briefly "What AlertAdapter sends IncidentContext"
     described as {
       |Its own inlet: an inlet accepts exactly one connector.
@@ -30,19 +90,21 @@ context IncidentContext as router is {
       |The channel the `tell` travels.
     }
   }
-  inlet IncidentContextFromFromPagerDutyIntegration is type IncidentCommand with {
+  inlet IncidentContextFromFromPagerDutyIntegration is type IncidentContext.IncidentRequest with {
     briefly "What FromPagerDutyIntegration sends IncidentContext"
     described as {
       |Its own inlet: an inlet accepts exactly one connector.
     }
   }
-  inlet IncidentCommandStreamIn is type IncidentCommand
+  inlet IncidentCommandStreamIn is type IncidentContext.IncidentRequest
   outlet IncidentCommandStreamOut is type IncidentCommand
   inlet IncidentQueryResultStreamIn is result Incident.IncidentResult
   outlet IncidentQueryResultStreamOut is result Incident.IncidentResult
   handler IncidentContextBoundary is {
-    on createIncident: command Incident.CreateIncident is {
-      forward createIncident to outlet IncidentContext.IncidentCommandStreamOut
+    on createIncident: command IncidentContext.CreateIncident is {
+      let givenInfo: type IncidentInfo = prompt("the info of the new Incident")
+      let newIncident = create entity IncidentContext.Incident(info = givenInfo, timeline = prompt("the timeline of the new Incident"))
+      yield event Incident.IncidentCreated(incidentId = newIncident, info = givenInfo, timeline = prompt("the timeline of the new Incident"))
     }
     on acknowledgeIncident: command Incident.AcknowledgeIncident is {
       forward acknowledgeIncident to outlet IncidentContext.IncidentCommandStreamOut
@@ -86,7 +148,7 @@ context IncidentContext as router is {
   connector 'IncidentQueryResult Stream Egress' is from outlet IncidentContext.IncidentRepository.IncidentRepositoryResponses to inlet IncidentContext.IncidentQueryResultStreamIn
   adaptor FromPagerDutyIntegration from context PagerDutyIntegration as flow is { 
     inlet FromPagerDutyIntegrationIn is event PagerDutyIntegration.PageAcknowledged
-    outlet FromPagerDutyIntegrationToIncidentContext is type IncidentCommand
+    outlet FromPagerDutyIntegrationToIncidentContext is type IncidentContext.IncidentRequest
  with {
       briefly "What FromPagerDutyIntegration publishes to IncidentContext"
       described as {
@@ -711,7 +773,7 @@ context IncidentContext as router is {
     }
   }
   adaptor AlertAdapter from context AlertingService as flow is { 
-    outlet AlertAdapterToIncidentContext is type IncidentCommand
+    outlet AlertAdapterToIncidentContext is type IncidentContext.IncidentRequest
  with {
       briefly "What AlertAdapter publishes to IncidentContext"
       described as {

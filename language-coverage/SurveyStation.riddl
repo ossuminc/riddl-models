@@ -2,29 +2,20 @@
 // expressions somewhere real to live, and to carry a second state so the
 // `morph` here has somewhere to go.
 aggregate event-sourced entity SurveyStation as flow is {
+  handler SurveyStationCreation is {
+    on init(regionCode: type RegionCode) is {
+      morph entity Cartography.SurveyStation to state Cartography.SurveyStation.Commissioned with record SurveyStation.CommissionedData(stationId = self.id, regionCode = regionCode, sightlines = prompt("the sightlines a newly commissioned station starts with"), elevationTile = prompt("the elevation tile a newly commissioned station starts with"), sampleTally = 0, regionTally = prompt("the region tally a newly commissioned station starts with"), observedSpecies = prompt("the observed species a newly commissioned station starts with"), stationSummary = prompt("the station summary a newly commissioned station starts with"))
+      send event StationCommissioned(stationId = self.id, regionCode = regionCode) to outlet Cartography.SurveyStation.StationEvents
+    }
+  } with {
+    briefly "SurveyStation creation"
+    described as {
+      |Puts a new SurveyStation in its starting state.
+    }
+  }
   inlet StationCommands is type StationCommand
   outlet StationEvents is type StationEvent
   // ---- Commands ----
-  command CommissionStation yields event StationCommissioned is {
-    stationId: StationId with {
-      briefly "Station being commissioned"
-      described as {
-        |Identifier assigned to the new station when the crew installs it.
-      }
-    }
-    regionCode: RegionCode with {
-      briefly "Region the station reports under"
-      described as {
-        |The map sheet this station's readings roll up into.
-      }
-    }
-  } with {
-    briefly "Commission a survey station"
-    described as {
-      |Bring a newly installed station into service so it may take
-      |readings.
-    }
-  }
   command RecordReading yields event ReadingRecorded is {
     stationId: StationId with {
       briefly "Station reporting"
@@ -167,7 +158,7 @@ aggregate event-sourced entity SurveyStation as flow is {
   }
   // ---- Alternations carried by the ports ----
   type StationCommand is one of {
-    CommissionStation or RecordReading or RetireStation
+    RecordReading or RetireStation
   } with {
     briefly "Every command this entity accepts"
     described as {
@@ -269,14 +260,6 @@ aggregate event-sourced entity SurveyStation as flow is {
   // ---- States ----
   state Commissioned of record SurveyStation.CommissionedData is {
     initial handler CommissionedHandler is {
-      on init is {
-        let stationCommissioned: type StationCommissioned = prompt("the station commissioned that brings this survey station into existence")
-        yield stationCommissioned
-      }
-      on commissionStation: command CommissionStation is {
-        yield event StationCommissioned(stationId = commissionStation.stationId, regionCode = commissionStation.regionCode)
-        send event StationCommissioned(stationId = commissionStation.stationId, regionCode = commissionStation.regionCode) to outlet Cartography.SurveyStation.StationEvents
-      }
       on recordReading: command RecordReading is {
         yield event ReadingRecorded(stationId = recordReading.stationId, readingElevation = recordReading.readingElevation)
         send event ReadingRecorded(stationId = recordReading.stationId, readingElevation = recordReading.readingElevation) to outlet Cartography.SurveyStation.StationEvents
@@ -284,13 +267,6 @@ aggregate event-sourced entity SurveyStation as flow is {
       on retireStation: command RetireStation is {
         yield event StationRetired(stationId = retireStation.stationId, retirementReason = retireStation.retirementReason)
         send event StationRetired(stationId = retireStation.stationId, retirementReason = retireStation.retirementReason) to outlet Cartography.SurveyStation.StationEvents
-      }
-      on event StationCommissioned is {
-        set state SurveyStation.Commissioned to "stationId, regionCode,
-          sightlines = empty, elevationTile = empty,
-          sampleTally = 0, regionTally = empty,
-          observedSpecies = empty,
-          stationSummary = empty"
       }
       on event ReadingRecorded is {
         set field CommissionedData.sampleTally to "the merged tally, one higher for this device"

@@ -59,6 +59,10 @@ CREATE_VERBS = (r"(Create|Register|Open|Start|Submit|Initiate|Add|Place|New|Appl
                 r"Draft|Book|Admit|Acquire|Launch)[A-Z]")
 
 
+STRONG_CREATE_VERBS = (r"(Create|Register|Open|Start|Initiate|New|Add|Establish|"
+                       r"Onboard|Provision|Enroll|Admit|Submit|Apply)[A-Z]")
+
+
 def pname(f):
     """An on-init parameter name for field f; a keyword cannot be one."""
     return f + "Value" if f in KEYWORDS else f
@@ -191,6 +195,33 @@ class Model:
                                       n["span"]["end"]["offset"], new))
 
 
+def synth_morph(m, ent, ctx, s0, have, id_field):
+    head = m.text(s0)
+    mm = re.match(r"\s*state\s+\w+\s+(?:of|is)\s+(?:record\s+)?([\w.]+)", head)
+    if not mm:
+        raise Skip("cannot read the starting state's record")
+    name = mm.group(1).split(".")[-1]
+    recs = [n for n in m.nodes if n["kind"] in ("record", "type") and n.get("id") == name]
+    near = [r for r in recs if under(ent["path"], r["parent"])]
+    rec = max(near, key=lambda r: len(r["parent"])) if near else (recs[0] if len(recs) == 1 else None)
+    if not rec:
+        raise Skip(f"record {name} unresolved")
+    args = []
+    for f in m.fields(rec["path"]):
+        if f["id"] == id_field or m.is_id_of(f, ent):
+            args.append(f"{f['id']} = self.id")
+        elif f["id"] in have:
+            args.append(f"{f['id']} = {pname(f['id'])}")
+        elif f.get("acceptsEmpty"):
+            args.append(f"{f['id']} = empty")
+        else:
+            words = re.sub(r"(?<=[a-z0-9])([A-Z])", r" \1", f["id"]).lower()
+            args.append(f'{f["id"]} = prompt("the {words} a new {ent["id"]} starts with")')
+    ref = mm.group(1)
+    return (f"morph entity {ctx['id']}.{ent['id']} to state {ctx['id']}.{ent['id']}.{s0['id']} "
+            f"with record {ref}(" + ", ".join(args) + ")")
+
+
 def migrate_entity(m, ent):
     ep = ent["path"]
     ctx = m.by_path[ent["parent"]]
@@ -200,6 +231,10 @@ def migrate_entity(m, ent):
         return None
     s0 = states[0]
     inits = [n for n in m.nodes if n["kind"] == "on-init" and under(n["parent"], ep)]
+    # already in the creation model: an entity-level on init that morphs
+    if any(m.by_path[i["parent"]]["parent"] == ep
+           and any(k["kind"] == "morph-statement" for k in m.kids[i["path"]]) for i in inits):
+        return None
     clauses = [n for n in m.nodes if n["kind"] == "onmessageclause"
                and under(n["parent"], ep) and n["id"].startswith("command ")]
     s0_inits = [i for i in inits if under(i["parent"], s0["path"])]
@@ -213,17 +248,24 @@ def migrate_entity(m, ent):
 
     fold = None
     if event:
-        cc = [c for c in clauses if any(
-            y["kind"] == "yield-statement" and y.get("message", {}).get("resolved") == event
-            for y in m.kids[c["path"]])]
+        def yields_event(c):
+            kids = m.kids[c["path"]]
+            if any(y["kind"] == "yield-statement"
+                   and y.get("message", {}).get("resolved") == event for y in kids):
+                return True
+            # 'let e: type E = prompt(...)' then 'yield e'
+            bound = {k.get("binds") for k in kids if k["kind"] == "let-statement"
+                     and k.get("declaredType", {}).get("resolved") == event}
+            return any(y["kind"] == "yield-statement"
+                       and y.get("message", {}).get("value") in bound for y in kids)
+        cc = [c for c in clauses if yields_event(c)]
         folds = [n for n in m.nodes if n["kind"] == "on-event" and under(n["parent"], ep)
                  and n.get("message", {}).get("resolved") == event]
         if len(cc) != 1 or len(folds) != 1:
             raise Skip(f"event-sourced: {len(cc)} creators, {len(folds)} folds of "
                        f"{event.rsplit('.', 1)[-1]}")
         cc, fold = cc[0], folds[0]
-        if not any(n["kind"] == "morph-statement" for n in m.kids[fold["path"]]):
-            raise Skip("creation fold does not morph")
+        synth = not any(n["kind"] == "morph-statement" for n in m.kids[fold["path"]])
     else:
         def enters_s0(st):
             if st["kind"] == "morph-statement":
@@ -251,6 +293,17 @@ def migrate_entity(m, ent):
                     and target(made[0]) < len(order):
                 s0 = states[target(made[0])]
                 cc = [made[0]]
+        synth_crud = False
+        if not cc:
+            # a creating command that never puts the instance in a state
+            # (CreateTeam yields TeamCreated, whose fold is prose): it still
+            # creates, and the morph is built from what it carries
+            named = [c for c in clauses
+                     if re.match(STRONG_CREATE_VERBS, c["id"].split(" ", 1)[1].split(".")[-1])
+                     and not any(st["kind"] in ("morph-statement", "set-statement")
+                                 for st in m.kids[c["path"]])]
+            if len(named) == 1:
+                cc, synth_crud = named, True
         if len(cc) > 1:
             # one creates; the others return an existing instance to S0
             made = [c for c in cc if re.match(CREATE_VERBS, c["id"].split(" ", 1)[1].split(".")[-1])]
@@ -265,9 +318,8 @@ def migrate_entity(m, ent):
     if len([f for f in m.fields(cmd["path"]) if not m.is_id_of(f, ent)]) == 0 \
             and not re.match(CREATE_VERBS, cmd["id"]):
         raise Skip(f"{cmd['id']} carries nothing but the id, so it creates nothing")
-    cc_bind = cc.get("binding")
-    if not cc_bind:
-        raise Skip("creating clause has no binding")
+    # an unbound clause reads its message by name: 'StartRun.generationRunId'
+    cc_bind = cc.get("binding") or cmd["id"]
 
     # what the creator passes, field by field, as text in terms of cc_bind
     cmd_fields = m.fields(cmd["path"])
@@ -279,14 +331,26 @@ def migrate_entity(m, ent):
         if len(ev_id) != 1:
             raise Skip(f"creation event has {len(ev_id)} id fields")
         yields = [y for y in m.kids[cc["path"]] if y["kind"] == "yield-statement"]
-        passed = split_args(ctor_args(m.text(yields[0])))
+        if yields[0].get("message", {}).get("resolved") == event:
+            passed = split_args(ctor_args(m.text(yields[0])))
+        else:
+            # the creator prompted for the whole event; ask for each field
+            words = lambda f: re.sub(r"(?<=[a-z0-9])([A-Z])", r" \1", f).lower()
+            passed = {f["id"]: f'prompt("the {words(f["id"])} of the new {ent["id"]}")'
+                      for f in m.fields(event)}
         params = [(f["id"], m.type_text(f)) for f in ev_fields if f["id"] != ev_id[0]]
         args = {p: passed.get(p) for p, _ in params}
         missing = [p for p, v in args.items() if v is None]
         if missing:
             raise Skip(f"creator yield omits {missing}")
-        body = body_of(m.text(fold))
         fb = fold.get("binding")
+        if synth:
+            # the fold states nothing a replay can use (prose sets, a resend):
+            # build the starting record from the creation data by field name
+            body = synth_morph(m, ent, ctx, s0, {p for p, _ in params}, ev_id[0])
+            fb = fb or "_"
+        else:
+            body = body_of(m.text(fold))
         if not fb:
             raise Skip("fold has no binding")
         body = re.sub(rf"\b{fb}\.{ev_id[0]}\b", "self.id", body)
@@ -295,6 +359,9 @@ def migrate_entity(m, ent):
             raise Skip("fold reads the whole event")
     else:
         body = body_of(m.text(cc))
+        if synth_crud:
+            # it read the whole command's fields; every non-id one is an argument
+            body = (f"__MORPH__\n" + body)
         # nothing else puts a new instance in a state, so the set is a morph
         body = re.sub(rf"\bset state {s0['id']} to record ",
                       f"morph entity {ctx['id']}.{ent['id']} to state "
@@ -303,7 +370,8 @@ def migrate_entity(m, ent):
             raise Skip("creating command has several ids")
         if cmd_id:
             body = re.sub(rf"\b{cc_bind}\.{cmd_id[0]}\b", "self.id", body)
-        used = sorted(set(re.findall(rf"\b{cc_bind}\.(\w+)", body)),
+        used = sorted(set(re.findall(rf"\b{cc_bind}\.(\w+)", body))
+                      | ({f["id"] for f in cmd_fields if f["id"] not in cmd_id} if synth_crud else set()),
                       key=[f["id"] for f in cmd_fields].index)
         ftype = {f["id"]: m.type_text(f) for f in cmd_fields}
         params = [(f, ftype[f]) for f in used]
@@ -313,6 +381,9 @@ def migrate_entity(m, ent):
             raise Skip("creator reads the whole command")
         if not params and not re.match(CREATE_VERBS, cmd["id"]):
             raise Skip("creator reads no fields of its command")
+        if synth_crud:
+            body = body.replace("__MORPH__", synth_morph(
+                m, ent, ctx, s0, {p for p, _ in params}, cmd_id[0] if cmd_id else ""))
 
     # riddlc prettify writes an on-init parameter 'Currency(USD)' back as
     # 'Currency', which does not parse (filed with riddl, 2026-11-18)
@@ -324,13 +395,19 @@ def migrate_entity(m, ent):
               and n["parent"].rsplit(".", 1)[0] == ctx["path"]
               and m.by_path[n["parent"]]["kind"] == "handler"
               and n.get("message", {}).get("resolved") == cmd["path"]]
-    if len(relays) != 1:
+    if len(relays) > 1:
         raise Skip(f"{len(relays)} boundary clauses for {cmd['id']}")
-    relay = relays[0]
-    rb = relay.get("binding")
-    if not rb:
-        raise Skip("boundary clause has no binding")
-    relay_kinds = {k["kind"] for k in m.kids[relay["path"]] if k["kind"].endswith("-statement")}
+    relay = relays[0] if relays else None
+    if relay is None:
+        # nothing at the boundary handled C: the creating clause goes beside
+        # the context's other relays
+        bounds = [h for h in m.nodes if h["kind"] == "handler" and h["parent"] == ctx["path"]
+                  and any(k["kind"] == "onmessageclause" for k in m.kids[h["path"]])]
+        if len(bounds) != 1:
+            raise Skip(f"no boundary clause for {cmd['id']}, and {len(bounds)} boundary handlers")
+    rb = (relay.get("binding") if relay else None) or cmd["id"][0].lower() + cmd["id"][1:]
+    relay_kinds = {k["kind"] for k in m.kids[relay["path"]] if k["kind"].endswith("-statement")} \
+        if relay else set()
     if not relay_kinds <= {"forward-statement", "send-statement", "tell-statement"}:
         raise Skip(f"boundary clause does more than relay: {sorted(relay_kinds)}")
 
@@ -362,9 +439,15 @@ def migrate_entity(m, ent):
         ctx_body.append(f"yield event {ent['id']}.{ev['id']}(" + ", ".join(ev_args) + ")")
     else:
         ctx_body.append(f"log {new_var}")
-    head = m.text(relay)
-    head = head[:head.index("{") + 1]
-    m.edit(relay, head + "\n" + "\n".join(ctx_body) + "\n}\n")
+    if relay:
+        head = m.text(relay)
+        head = head[:head.index("{") + 1]
+        m.edit(relay, head + "\n" + "\n".join(ctx_body) + "\n}\n")
+    else:
+        b = bounds[0]
+        at = b["span"]["start"]["offset"] + m.text(b).index("{") + 1
+        m.edits[b["file"]].append((at, at, f"\non {rb}: command {ent['id']}.{cmd['id']} is {{\n"
+                                   + "\n".join(ctx_body) + "\n}\n"))
 
     # the entity side. An event-sourced entity published its creation event
     # on its outlet when it yielded it; now the context yields it, so on init
@@ -385,13 +468,19 @@ def migrate_entity(m, ent):
     on_init = ("on init" + sig + " is {\n"
                + body + "\n}\n")
     handlers = [n for n in m.nodes if n["kind"] == "handler" and n["parent"] == ep]
-    if not handlers:
-        raise Skip("no entity-level handler")
-    h = handlers[0]
-    h_text = m.text(h)
-    first = h_text.index("{") + 1
-    m.edits[h["file"]].append((h["span"]["start"]["offset"] + first,
-                               h["span"]["start"]["offset"] + first, "\n" + on_init))
+    if handlers:
+        h = handlers[0]
+        h_text = m.text(h)
+        first = h_text.index("{") + 1
+        m.edits[h["file"]].append((h["span"]["start"]["offset"] + first,
+                                   h["span"]["start"]["offset"] + first, "\n" + on_init))
+    else:
+        e_text = m.text(ent)
+        first = ent["span"]["start"]["offset"] + e_text.index("{") + 1
+        m.edits[ent["file"]].append((first, first,
+            f"\nhandler {ent['id']}Creation is {{\n{on_init}}} with {{\n"
+            f"  briefly \"{ent['id']} creation\"\n  described as {{\n"
+            f"    |Puts a new {ent['id']} in its starting state.\n  }}\n}}\n"))
     for n in [cc] + ([fold] if fold else []):
         m.edit(n, "")
     for i in inits:
@@ -425,8 +514,8 @@ def move_command(m, ent, ctx, cmd, cmd_id, relay):
         raise Skip(f"{cmd['id']} is in {len(alts)} alternations")
     alt = alts[0]
     members = re.findall(r"type ([\w.]+)", alt["type"])
-    if len(members) < 3:
-        raise Skip(f"{alt['id']} would be left with {len(members) - 1} member")
+    if len(members) < 2:
+        raise Skip(f"{alt['id']} would be left with no member")
     req = f"{X}Request"
     if any(n.get("id") == req for n in m.nodes):
         req = f"{X}CreationRequest"
@@ -456,9 +545,15 @@ def move_command(m, ent, ctx, cmd, cmd_id, relay):
     body = atext[atext.index("{") + 1:atext.index("}")]
     kept = [t for t in re.split(r"\s+or\s+", body.strip())
             if t.split(".")[-1] != cmd["id"]]
-    m.edits[alt["file"]].append((alt["span"]["start"]["offset"] + atext.index("{") + 1,
-                                 alt["span"]["start"]["offset"] + atext.index("}"),
-                                 "\n    " + " or ".join(kept) + "\n  "))
+    if len(kept) == 1:
+        # one of { A } is deprecated; a type naming one message is an alias
+        lo = alt["span"]["start"]["offset"] + atext.index(" is ") + 4
+        m.edits[alt["file"]].append((lo, alt["span"]["start"]["offset"] + atext.index("}") + 1,
+                                     kept[0]))
+    else:
+        m.edits[alt["file"]].append((alt["span"]["start"]["offset"] + atext.index("{") + 1,
+                                     alt["span"]["start"]["offset"] + atext.index("}"),
+                                     "\n    " + " or ".join(kept) + "\n  "))
     ctx_text = m.text(ctx)
     at = ctx["span"]["start"]["offset"] + ctx_text.index("{") + 1
     m.edits[ctx["file"]].append((at, at, "\n" + ctext.strip() + "\n"

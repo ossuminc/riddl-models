@@ -1,7 +1,7 @@
 // Clinical Study Entity
 aggregate event-sourced entity ClinicalStudy as flow is {
   type ClinicalStudyCommand is one of {
-    ClinicalStudy.CreateStudy or ClinicalStudy.ActivateSite or ClinicalStudy.EnrollSubject or ClinicalStudy.RecordVisit or ClinicalStudy.SubmitData or ClinicalStudy.CloseStudy or ClinicalStudy.UpdateStudyStatus
+    ClinicalStudy.ActivateSite or ClinicalStudy.EnrollSubject or ClinicalStudy.RecordVisit or ClinicalStudy.SubmitData or ClinicalStudy.CloseStudy or ClinicalStudy.UpdateStudyStatus
   } with {
     briefly "ClinicalStudy command alternation"
     described as {
@@ -100,15 +100,6 @@ aggregate event-sourced entity ClinicalStudy as flow is {
     }
   }
   // Commands
-  command CreateStudy yields event StudyCreated is {
-    studyId: StudyId
-    protocol: StudyProtocol
-  } with {
-    briefly "Initialize a new clinical study"
-    described as {
-      |Creates a new clinical study record with protocol details. Study starts in Draft status.
-    }
-  }
   command ActivateSite yields event SiteActivated is {
     studyId: StudyId
     siteInfo: SiteInfo
@@ -249,10 +240,6 @@ aggregate event-sourced entity ClinicalStudy as flow is {
         let clinicalStudyResult: type ClinicalStudyResult = prompt("read the clinical study from the store")
         reply clinicalStudyResult
       }
-      on init is {
-        let studyCreated: type StudyCreated = prompt("the study created that brings this clinical study into existence")
-        yield studyCreated
-      }
     } with {
       briefly "DraftState initialization"
       described as {
@@ -266,39 +253,13 @@ aggregate event-sourced entity ClinicalStudy as flow is {
       |The draft state of the ClinicalStudy entity, carrying DraftStateFields.
     }
   }
-  state ActiveState of record ActiveStateFields is {
-    initial handler ActiveStateInitHandler is {
-      on init is {
-        let studyCreated: type StudyCreated = prompt("the study created that brings this clinical study into existence")
-        yield studyCreated
-      }
-    } with {
-      briefly "ActiveState initialization"
-      described as {
-        |Initializes ActiveState from the message that caused the
-        |entity to enter it.
-      }
-    }
-  } with {
+  state ActiveState of record ActiveStateFields with {
     briefly "Active state"
     described as {
       |The active state of the ClinicalStudy entity, carrying ActiveStateFields.
     }
   }
-  state ClosedState of record ClosedStateFields is {
-    initial handler ClosedStateInitHandler is {
-      on init is {
-        let studyCreated: type StudyCreated = prompt("the study created that brings this clinical study into existence")
-        yield studyCreated
-      }
-    } with {
-      briefly "ClosedState initialization"
-      described as {
-        |Initializes ClosedState from the message that caused the
-        |entity to enter it.
-      }
-    }
-  } with {
+  state ClosedState of record ClosedStateFields with {
     briefly "Closed state"
     described as {
       |The closed state of the ClinicalStudy entity, carrying ClosedStateFields.
@@ -306,8 +267,9 @@ aggregate event-sourced entity ClinicalStudy as flow is {
   }
   // Handler
   handler ClinicalStudyHandler is {
-    on createStudy: command CreateStudy is {
-      yield event StudyCreated(studyId = createStudy.studyId, protocol = createStudy.protocol, createdAt = prompt("the created at of this study created"))
+    on init(protocol: type StudyProtocol, createdAt: DateTime) is {
+      morph entity StudyContext.ClinicalStudy to state StudyContext.ClinicalStudy.DraftState with record DraftStateFields(studyId = self.id, protocol = protocol, status = prompt("the status a new ClinicalStudy starts with"), createdAt = createdAt)
+      send event StudyCreated(studyId = self.id, protocol = protocol, createdAt = createdAt) to outlet StudyContext.ClinicalStudy.ClinicalStudyEvents2
     }
     on activateSite: command ActivateSite is {
       yield event SiteActivated(studyId = activateSite.studyId, siteInfo = activateSite.siteInfo, activatedAt = prompt("the activated at of this site activated"))
@@ -326,10 +288,6 @@ aggregate event-sourced entity ClinicalStudy as flow is {
     }
     on updateStudyStatus: command UpdateStudyStatus is {
       yield event StudyStatusUpdated(studyId = updateStudyStatus.studyId, newStatus = updateStudyStatus.newStatus, effectiveDate = updateStudyStatus.effectiveDate, reason = updateStudyStatus.reason, previousStatus = prompt("the previous status of this study status updated"), updatedAt = prompt("the updated at of this study status updated"))
-    }
-    on event StudyCreated is {
-      set field DraftState.studyId to "CreateStudy.studyId"
-      set field DraftState.protocol to "CreateStudy.protocol"
     }
     on siteActivated: event SiteActivated is {
       append siteActivated.siteInfo to field ClinicalStudy.ActiveState.sites

@@ -32,32 +32,6 @@ event-sourced entity Artifact as split is {
       |in the handler chain it is sent.
     }
   }
-  command PlanArtifact yields event ArtifactPlanned is {
-    artifactId: ArtifactId with {
-      briefly "Artifact"
-      described as {
-        |The artifact being planned.
-      }
-    }
-    artifactPath: String(1,1024) with {
-      briefly "Path"
-      described as {
-        |The file path this artifact will occupy.
-      }
-    }
-    artifactParadigm: Paradigm with {
-      briefly "Paradigm"
-      described as {
-        |The paradigm Planning selected for this artifact's definition.
-      }
-    }
-  } with {
-    briefly "Plan an artifact"
-    described as {
-      |Begins an artifact against a planned path and paradigm, before
-      |anything has been emitted.
-    }
-  }
   command EmitArtifact yields event ArtifactEmitted is {
     artifactId: ArtifactId with {
       briefly "Artifact"
@@ -247,18 +221,20 @@ event-sourced entity Artifact as split is {
       |Full state of an artifact, shared across all its states.
     }
   }
+  handler ArtifactCreation is {
+    on init(path: String(1,1024), paradigm: type Paradigm) is {
+      morph entity CodeEmission.Artifact to state CodeEmission.Artifact.Planned with record Artifact.ArtifactData(artifactId = self.id, artifactPath = path, artifactParadigm = paradigm, openHoleCount = 0)
+      send event ArtifactPlanned(artifactId = self.id, artifactPath = path, artifactParadigm = paradigm) to outlet CodeEmission.Artifact.ArtifactEvents
+    }
+  } with {
+    briefly "Artifact creation"
+    described as {
+      |An artifact begins Planned, at the path and in the paradigm Planning
+      |chose, with no holes yet.
+    }
+  }
   state Planned of record Artifact.ArtifactData is {
     initial handler PlannedHandler is {
-      on init is {
-        let creation: type ArtifactPlanned = prompt("the artifact planned that brings this artifact into existence")
-        yield creation
-      }
-      on command PlanArtifact is {
-        yield event ArtifactPlanned(artifactId = PlanArtifact.artifactId, artifactPath = PlanArtifact.artifactPath, artifactParadigm = PlanArtifact.artifactParadigm)
-      }
-      on plannedEvent: event ArtifactPlanned is {
-        send plannedEvent to outlet CodeEmission.Artifact.ArtifactEvents
-      }
       on command EmitArtifact is {
         do "emit, for artifactPath, the framework and structure derivable
            from the plan: signatures, imports and the file skeleton,
@@ -291,10 +267,6 @@ event-sourced entity Artifact as split is {
   }
   state Emitted of record Artifact.ArtifactData is {
     initial handler EmittedHandler is {
-      on init is {
-        let entering: type ArtifactEmitted = prompt("the artifact emitted that enters this state")
-        yield entering
-      }
       on command FillArtifact is {
         yield event ArtifactFilled(artifactId = FillArtifact.artifactId, openHoleCount = FillArtifact.openHoleCount)
       }
@@ -319,10 +291,6 @@ event-sourced entity Artifact as split is {
   }
   state Filled of record Artifact.ArtifactData is {
     initial handler FilledHandler is {
-      on init is {
-        let entering: type ArtifactFilled = prompt("the artifact filled that enters this state")
-        yield entering
-      }
       on command VerifyArtifact is {
         yield event ArtifactVerified(artifactId = VerifyArtifact.artifactId)
       }
@@ -349,10 +317,6 @@ event-sourced entity Artifact as split is {
   }
   state Verified of record Artifact.ArtifactData is {
     initial handler VerifiedHandler is {
-      on init is {
-        let entering: type ArtifactVerified = prompt("the artifact verified that enters this state")
-        yield entering
-      }
       on other is {
         error "An artifact that has been verified accepts no further commands"
       }

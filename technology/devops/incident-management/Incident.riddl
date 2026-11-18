@@ -1,7 +1,7 @@
 // Incident Entity for Incident Management Domain
 aggregate event-sourced entity Incident as flow is {
   type IncidentCommand is one of {
-    Incident.CreateIncident or Incident.AcknowledgeIncident or Incident.EscalateIncident or Incident.UpdateStatus or Incident.AssignIncidentCommander or Incident.AddTimelineEntry or Incident.ResolveIncident or Incident.CreatePostMortem or Incident.CloseIncident
+    Incident.AcknowledgeIncident or Incident.EscalateIncident or Incident.UpdateStatus or Incident.AssignIncidentCommander or Incident.AddTimelineEntry or Incident.ResolveIncident or Incident.CreatePostMortem or Incident.CloseIncident
   } with {
     briefly "Incident command alternation"
     described as {
@@ -45,65 +45,6 @@ aggregate event-sourced entity Incident as flow is {
     }
   }
   // Commands
-  command CreateIncident yields event IncidentCreated is {
-    incidentId: IncidentId with {
-      briefly "Incident addressed"
-      described as {
-        |Which incident this message concerns. Named directly rather
-        |than left to a wrapped record, because a nested record cannot say
-        |which instance is addressed.
-      }
-    }
-    title: String(1,200) with {
-      briefly "Incident title"
-      described as {
-        |Brief summary of the incident.
-      }
-    }
-    description: String(1,2000) with {
-      briefly "Incident description"
-      described as {
-        |Detailed description of the issue.
-      }
-    }
-    severity: IncidentSeverity with {
-      briefly "Severity level"
-      described as {
-        |Initial severity classification.
-      }
-    }
-    affectedServices: ServiceId+ with {
-      briefly "Affected services"
-      described as {
-        |Services impacted by this incident.
-      }
-    }
-    alertIds: AlertId+ with {
-      briefly "Related alerts"
-      described as {
-        |Alert identifiers that triggered this incident.
-      }
-    }
-    customerImpact: String(1,1000) with {
-      briefly "Customer impact"
-      described as {
-        |Description of how customers are affected.
-      }
-    }
-    communicationChannel: String(1,200) with {
-      briefly "Communication channel"
-      described as {
-        |Slack channel or other coordination channel.
-      }
-    }
-  } with {
-    briefly "Create a new incident from an alert or manual report"
-    described as {
-      | Initiates a new incident record, typically triggered by an
-      | alerting system or reported manually by an engineer. Sets the initial
-      | severity and identifies affected services.
-    }
-  }
   command AcknowledgeIncident yields event IncidentAcknowledged is {
     incidentId: IncidentId with {
       briefly "Incident identifier"
@@ -807,10 +748,6 @@ aggregate event-sourced entity Incident as flow is {
         let incidentResult: type IncidentResult = prompt("read the incident from the store")
         reply incidentResult
       }
-      on init is {
-        let incidentCreated: type IncidentCreated = prompt("the incident created that brings this incident into existence")
-        yield incidentCreated
-      }
       on quiescence "30 minutes" is {
         tell command EscalateIncident(incidentId = self.id, newSeverity = prompt("the severity one step above the incident's current one"), escalatedBy = prompt("the escalation policy that fired, since no person acted"), reason = prompt("that the incident was never acknowledged"), additionalServices = prompt("the services the escalation policy adds at this level")) to entity IncidentContext.Incident
       }
@@ -827,58 +764,19 @@ aggregate event-sourced entity Incident as flow is {
       |The triggered state of the Incident entity, carrying TriggeredStateData.
     }
   }
-  state ActiveState of record Incident.ActiveStateData is {
-    initial handler ActiveStateInitHandler is {
-      on init is {
-        let incidentAcknowledged: type IncidentAcknowledged = prompt("the incident acknowledged that brings this incident into existence")
-        yield incidentAcknowledged
-      }
-    } with {
-      briefly "ActiveState initialization"
-      described as {
-        |Initializes ActiveState from the message that caused the
-        |entity to enter it.
-      }
-    }
-  } with {
+  state ActiveState of record Incident.ActiveStateData with {
     briefly "Active state"
     described as {
       |The active state of the Incident entity, carrying ActiveStateData.
     }
   }
-  state ResolvedState of record Incident.ResolvedStateData is {
-    initial handler ResolvedStateInitHandler is {
-      on init is {
-        let incidentResolved: type IncidentResolved = prompt("the incident resolved that brings this incident into existence")
-        yield incidentResolved
-      }
-    } with {
-      briefly "ResolvedState initialization"
-      described as {
-        |Initializes ResolvedState from the message that caused the
-        |entity to enter it.
-      }
-    }
-  } with {
+  state ResolvedState of record Incident.ResolvedStateData with {
     briefly "Resolved state"
     described as {
       |The resolved state of the Incident entity, carrying ResolvedStateData.
     }
   }
-  state ClosedState of record Incident.ClosedStateData is {
-    initial handler ClosedStateInitHandler is {
-      on init is {
-        let incidentClosed: type IncidentClosed = prompt("the incident closed that brings this incident into existence")
-        yield incidentClosed
-      }
-    } with {
-      briefly "ClosedState initialization"
-      described as {
-        |Initializes ClosedState from the message that caused the
-        |entity to enter it.
-      }
-    }
-  } with {
+  state ClosedState of record Incident.ClosedStateData with {
     briefly "Closed state"
     described as {
       |The closed state of the Incident entity, carrying ClosedStateData.
@@ -886,9 +784,9 @@ aggregate event-sourced entity Incident as flow is {
   }
   // Handler
   handler IncidentHandler is {
-    on command CreateIncident is {
-      let incidentCreated: type IncidentCreated = prompt("the incident created that results from create incident")
-      yield incidentCreated
+    on init(info: type IncidentInfo, timeline: type TimelineEntry+) is {
+      morph entity Incident to state Incident.TriggeredState with record Incident.TriggeredStateData(info = info, timeline = timeline)
+      send event IncidentCreated(incidentId = self.id, info = info, timeline = timeline) to outlet IncidentContext.Incident.IncidentEvents2
     }
     on acknowledgeIncident: command AcknowledgeIncident is {
       yield event IncidentAcknowledged(incidentId = acknowledgeIncident.incidentId, acknowledgedBy = acknowledgeIncident.acknowledgedBy, initialAssessment = acknowledgeIncident.initialAssessment, acknowledgedAt = prompt("the acknowledged at of this incident acknowledged"))
@@ -913,9 +811,6 @@ aggregate event-sourced entity Incident as flow is {
     }
     on closeIncident: command CloseIncident is {
       yield event IncidentClosed(incidentId = closeIncident.incidentId, closedBy = closeIncident.closedBy, closedAt = prompt("the closed at of this incident closed"))
-    }
-    on incidentCreated: event IncidentCreated is {
-      morph entity Incident to state Incident.TriggeredState with record Incident.TriggeredStateData(info = incidentCreated.info, timeline = incidentCreated.timeline)
     }
     on incidentAcknowledged: event IncidentAcknowledged is {
       morph entity Incident to state Incident.ActiveState with record Incident.ActiveStateData(acknowledgedAt = incidentAcknowledged.acknowledgedAt, acknowledgedBy = incidentAcknowledged.acknowledgedBy, info = prompt("the info of this active state data"), timeline = prompt("the timeline of this active state data"), incidentCommander = empty, commanderAssignedAt = empty, lastTimelineEntryAt = empty)

@@ -1,5 +1,37 @@
 // Team Management bounded context
 context TeamContext as router is {
+  command CreateTeam yields event Team.TeamCreated is {
+    name: String(1,100) with {
+      briefly "Team name"
+      described as {
+        |Official name of the team.
+      }
+    }
+    city: String(1,50) with {
+      briefly "City"
+      described as {
+        |City where the team is based.
+      }
+    }
+    conference: String(1,50) with {
+      briefly "Conference"
+      described as {
+        |League conference the team belongs to.
+      }
+    }
+    division: String(1,50) with {
+      briefly "Division"
+      described as {
+        |Division within the conference.
+      }
+    }
+  } with {
+    briefly "Create a new team in the system"
+    described as {
+      | Initializes a new franchise with basic identifying information
+      | including geographic and league organizational details.
+    }
+  }
   command SignPlayer yields event Player.PlayerSigned is {
     playerInfo: PlayerInfo with {
       briefly "Player information"
@@ -49,8 +81,7 @@ context TeamContext as router is {
   }
   inlet PlayerCommandStreamIn is type TeamContext.PlayerRequest
   outlet PlayerCommandStreamOut is type PlayerCommand
-  inlet TeamCommandStreamIn is command Team.CreateTeam
-  outlet TeamCommandStreamOut is command Team.CreateTeam
+  inlet TeamCommandStreamIn is command TeamContext.CreateTeam
   inlet PlayerResultStreamIn is result Player.PlayerResult
   outlet PlayerResultStreamOut is result Player.PlayerResult
   handler TeamContextBoundary is {
@@ -74,8 +105,10 @@ context TeamContext as router is {
     on placeOnInjuredReserve: command Player.PlaceOnInjuredReserve is {
       forward placeOnInjuredReserve to outlet TeamContext.PlayerCommandStreamOut
     }
-    on createTeam: command Team.CreateTeam is {
-      forward createTeam to outlet TeamContext.TeamCommandStreamOut
+    on createTeam: command TeamContext.CreateTeam is {
+      let teamCreatedAt: type TimeStamp = system.now
+      let newTeam = create entity TeamContext.Team(teamName = createTeam.name, teamCity = createTeam.city, teamConference = createTeam.conference, teamDivision = createTeam.division, createdAt = teamCreatedAt)
+      yield event Team.TeamCreated(teamId = newTeam, name = createTeam.name, city = createTeam.city, conference = createTeam.conference, division = createTeam.division, createdAt = teamCreatedAt)
     }
     on playerResult: result Player.PlayerResult is {
       send playerResult to outlet TeamContext.PlayerResultStreamOut
@@ -92,7 +125,6 @@ context TeamContext as router is {
     }
   }
   connector 'PlayerCommand Stream Intake' is from outlet TeamContext.PlayerCommandStreamOut to inlet TeamContext.Player.PlayerCommands
-  connector 'TeamCommand Stream Intake' is from outlet TeamContext.TeamCommandStreamOut to inlet TeamContext.Team.TeamCommands
   connector 'PlayerResult Stream Egress' is from outlet TeamContext.PlayerRepository.PlayerRepositoryResponses to inlet TeamContext.PlayerResultStreamIn
   query GetRosterMetrics replies result RosterMetricsView is {
     teamId: TeamId with {
@@ -136,7 +168,6 @@ context TeamContext as router is {
         |Events published by the Team entity.
       }
     }
-    inlet TeamCommands is command Team.CreateTeam
     outlet TeamEvents is type TeamEvent
     query GetTeam is {
       teamId: TeamId with {
@@ -170,44 +201,6 @@ context TeamContext as router is {
       briefly "Team result"
       described as {
         |Result carrying the requested Team data.
-      }
-    }
-    command CreateTeam yields event TeamCreated is {
-      teamId: TeamId with {
-        briefly "Team identifier"
-        described as {
-          |Unique identifier for the new team.
-        }
-      }
-      name: String(1,100) with {
-        briefly "Team name"
-        described as {
-          |Official name of the team.
-        }
-      }
-      city: String(1,50) with {
-        briefly "City"
-        described as {
-          |City where the team is based.
-        }
-      }
-      conference: String(1,50) with {
-        briefly "Conference"
-        described as {
-          |League conference the team belongs to.
-        }
-      }
-      division: String(1,50) with {
-        briefly "Division"
-        described as {
-          |Division within the conference.
-        }
-      }
-    } with {
-      briefly "Create a new team in the system"
-      described as {
-        | Initializes a new franchise with basic identifying information
-        | including geographic and league organizational details.
       }
     }
     event TeamCreated is {
@@ -318,9 +311,6 @@ context TeamContext as router is {
           let teamResult: type TeamResult = prompt("read the team from the store")
           tell teamResult to entity TeamContext.Team
         }
-        on init is {
-          set state ActiveTeam to "initialize from TeamCreated event"
-        }
       } with {
         briefly "Active team init handler"
         described as {
@@ -334,11 +324,9 @@ context TeamContext as router is {
       }
     }
     initial handler TeamHandler is {
-      on teamCreated: event TeamCreated is {
-        do "apply TeamCreated to the team so it can be persisted and replayed"
-      }
-      on createTeam: command CreateTeam is {
-        yield event TeamCreated(teamId = createTeam.teamId, name = createTeam.name, city = createTeam.city, conference = createTeam.conference, division = createTeam.division, createdAt = prompt("the created at of this team created"))
+      on init(teamName: String(1,100), teamCity: String(1,50), teamConference: String(1,50), teamDivision: String(1,50), createdAt: TimeStamp) is {
+        morph entity TeamContext.Team to state TeamContext.Team.ActiveTeam with record Team.ActiveTeamData(teamId = self.id, name = teamName, city = teamCity, conference = teamConference, division = teamDivision, rosterSize = 0, salaryCap = prompt("the salary cap a new team starts with"), currentPayroll = 0)
+        send event TeamCreated(teamId = self.id, name = teamName, city = teamCity, conference = teamConference, division = teamDivision, createdAt = createdAt) to outlet TeamContext.Team.TeamEvents
       }
     } with {
       briefly "Handles team management commands"

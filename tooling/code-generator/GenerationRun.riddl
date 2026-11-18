@@ -7,7 +7,16 @@ event-sourced entity GenerationRun as flow is {
       |Events published by the GenerationRun entity.
     }
   }
-  inlet GenerationRunCommands is type Intake.IntakeCommand with {
+  type GenerationRunCommand is one of {
+    GenerationRun.AdmitModel or GenerationRun.RefuseModel
+  } with {
+    briefly "GenerationRun command alternation"
+    described as {
+      |Commands for a run that exists. Starting one is the Intake context's
+      |to do, since it creates the run.
+    }
+  }
+  inlet GenerationRunCommands is type GenerationRunCommand with {
     briefly "Commands routed to this run"
     described as {
       |Commands relayed from the Intake boundary.
@@ -18,30 +27,6 @@ event-sourced entity GenerationRun as flow is {
     briefly "Events this run publishes"
     described as {
       |Lifecycle events, consumed by the projection that persists them.
-    }
-  }
-  command StartRun yields event RunStarted is {
-    generationRunId: GenerationRunId with {
-      briefly "Run"
-      described as {
-        |The run being started.
-      }
-    }
-    subjectModel: ModelRef with {
-      briefly "Model"
-      described as {
-        |The model to generate from.
-      }
-    }
-  } with {
-    briefly "Start a generation run"
-    described as {
-      |Begins a run against a named model, before anything is known about
-      |whether that model can be generated from. Told by GeneratorDriver,
-      |not by the saga: StartRun creates the subject the pipeline
-      |operates on, so it must precede the saga rather than be one of its
-      |steps — every saga step carries a runId that has to already
-      |exist.
     }
   }
   command AdmitModel yields event ModelAdmitted is {
@@ -154,15 +139,19 @@ event-sourced entity GenerationRun as flow is {
       |Full state of a run, shared across all its states.
     }
   }
+  handler GenerationRunCreation is {
+    on init(subjectModel: type ModelRef) is {
+      morph entity Intake.GenerationRun to state Intake.GenerationRun.Loading with record GenerationRun.GenerationRunData(generationRunId = self.id, subjectModel = subjectModel, admissionBlocker = empty)
+      send event RunStarted(generationRunId = self.id, subjectModel = subjectModel) to outlet Intake.GenerationRun.GenerationRunEvents
+    }
+  } with {
+    briefly "GenerationRun creation"
+    described as {
+      |A run begins Loading, against the model it was started for.
+    }
+  }
   state Loading of record GenerationRun.GenerationRunData is {
     initial handler LoadingHandler is {
-      on init is {
-        let creation: type RunStarted = prompt("the run started that brings this generation run into existence")
-        yield creation
-      }
-      on command StartRun is {
-        yield event RunStarted(generationRunId = StartRun.generationRunId, subjectModel = StartRun.subjectModel)
-      }
       on command AdmitModel is {
         yield event ModelAdmitted(generationRunId = AdmitModel.generationRunId)
       }
@@ -176,9 +165,6 @@ event-sourced entity GenerationRun as flow is {
       on refusedEvent: event ModelRefused is {
         send refusedEvent to outlet Intake.GenerationRun.GenerationRunEvents
         morph entity Intake.GenerationRun to state Intake.GenerationRun.Refused with record GenerationRun.GenerationRunData(generationRunId = refusedEvent.generationRunId, subjectModel = GenerationRunData.subjectModel, admissionBlocker = refusedEvent.blockingSeverity)
-      }
-      on startedEvent: event RunStarted is {
-        send startedEvent to outlet Intake.GenerationRun.GenerationRunEvents
       }
       on other is {
         error "Unexpected message for GenerationRun while Loading"
@@ -198,10 +184,6 @@ event-sourced entity GenerationRun as flow is {
   }
   state Admitted of record GenerationRun.GenerationRunData is {
     initial handler AdmittedHandler is {
-      on init is {
-        let entering: type ModelAdmitted = prompt("the model admitted that enters this state")
-        yield entering
-      }
       on other is {
         error "A run that has been admitted accepts no further commands"
       }
@@ -220,10 +202,6 @@ event-sourced entity GenerationRun as flow is {
   }
   state Refused of record GenerationRun.GenerationRunData is {
     initial handler RefusedHandler is {
-      on init is {
-        let entering: type ModelRefused = prompt("the model refused that enters this state")
-        yield entering
-      }
       on other is {
         error "A run that has been refused accepts no further commands"
       }

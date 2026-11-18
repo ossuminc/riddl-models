@@ -1,7 +1,78 @@
 // Drug Supply Chain - DrugSupplyContext
 // Bounded context for pharmaceutical supply chain management
 context DrugSupplyContext as router is {
-  inlet DrugSupplyContextFromManufacturingSystem is command DrugBatch.ManufactureBatch with {
+  command ManufactureBatch yields event DrugBatch.BatchManufactured is {
+    productName: String(1,100) with {
+      briefly "Product name"
+      described as {
+        |Name of the pharmaceutical product.
+      }
+    }
+    ndcCode: NDCCode with {
+      briefly "NDC code"
+      described as {
+        |National Drug Code for the product.
+      }
+    }
+    gtinCode: GTINCode with {
+      briefly "GTIN code"
+      described as {
+        |Global Trade Item Number.
+      }
+    }
+    lotNumber: LotNumber with {
+      briefly "Lot number"
+      described as {
+        |Manufacturing lot number.
+      }
+    }
+    quantity: Natural with {
+      briefly "Quantity"
+      described as {
+        |Number of units manufactured.
+      }
+    }
+    unitOfMeasure: String(1,20) with {
+      briefly "Unit of measure"
+      described as {
+        |Unit type (tablets, vials, etc.).
+      }
+    }
+    manufacturingDate: Date with {
+      briefly "Manufacturing date"
+      described as {
+        |Date of manufacture.
+      }
+    }
+    expirationDate: Date with {
+      briefly "Expiration date"
+      described as {
+        |Product expiration date.
+      }
+    }
+    manufacturingSite: String(1,100) with {
+      briefly "Manufacturing site"
+      described as {
+        |Manufacturing facility name.
+      }
+    }
+  } with {
+    briefly "Create a new manufacturing batch"
+    described as {
+      | Initiates tracking of a new pharmaceutical manufacturing batch
+      | with all required product identification and manufacturing details.
+    }
+  }
+  type DrugBatchRequest is one of {
+    DrugSupplyContext.ManufactureBatch or DrugBatch.DrugBatchCommand
+  } with {
+    briefly "DrugBatch requests"
+    described as {
+      |What may be asked of DrugSupplyContext about a DrugBatch: ManufactureBatch, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
+  inlet DrugSupplyContextFromManufacturingSystem is command DrugSupplyContext.ManufactureBatch with {
     briefly "What FromManufacturingSystem makes of that service's news"
   }
   connector 'FromManufacturingSystem Intake' is from outlet DrugSupplyContext.FromManufacturingSystem.FromManufacturingSystemToDrugSupplyContext to inlet DrugSupplyContext.DrugSupplyContextFromManufacturingSystem with {
@@ -24,15 +95,18 @@ context DrugSupplyContext as router is {
       |The channel the `tell` travels.
     }
   }
-  inlet DrugBatchCommandStreamIn is type DrugBatchCommand
+  inlet DrugBatchCommandStreamIn is type DrugSupplyContext.DrugBatchRequest
   outlet DrugBatchCommandStreamOut is type DrugBatchCommand
   inlet DrugBatchResultStreamIn is result DrugBatch.DrugBatchResult
   outlet DrugBatchResultStreamOut is result DrugBatch.DrugBatchResult
   inlet SerializationMetricsViewStreamIn is result SerializationMetricsView
   outlet SerializationMetricsViewStreamOut is result SerializationMetricsView
   handler DrugSupplyContextBoundary is {
-    on manufactureBatch: command DrugBatch.ManufactureBatch is {
-      forward manufactureBatch to outlet DrugSupplyContext.DrugBatchCommandStreamOut
+    on manufactureBatch: command DrugSupplyContext.ManufactureBatch is {
+      let givenBatch: type ManufacturingBatch = prompt("the batch of the new DrugBatch")
+      let givenManufacturingTimestamp: type TimeStamp = prompt("the manufacturing timestamp of the new DrugBatch")
+      let newDrugBatch = create entity DrugSupplyContext.DrugBatch(batch = givenBatch, manufacturingTimestamp = givenManufacturingTimestamp)
+      yield event DrugBatch.BatchManufactured(drugBatchId = newDrugBatch, batch = givenBatch, manufacturingTimestamp = givenManufacturingTimestamp)
     }
     on serializeUnits: command DrugBatch.SerializeUnits is {
       forward serializeUnits to outlet DrugSupplyContext.DrugBatchCommandStreamOut
@@ -82,10 +156,10 @@ context DrugSupplyContext as router is {
   connector 'DrugBatchResult Stream Egress' is from outlet DrugSupplyContext.BatchRepository.BatchRepositoryResponses to inlet DrugSupplyContext.DrugBatchResultStreamIn
   adaptor FromManufacturingSystem from context ManufacturingSystem as flow is { 
     inlet FromManufacturingSystemIn is type ManufacturingSystem.ManufacturingSystemEvent
-    outlet FromManufacturingSystemToDrugSupplyContext is command DrugBatch.ManufactureBatch
+    outlet FromManufacturingSystemToDrugSupplyContext is command DrugSupplyContext.ManufactureBatch
     handler FromManufacturingSystemHandler is {
       on productionCompleteNotification: event ManufacturingSystem.ProductionCompleteNotification is {
-        let item0: type DrugBatch.ManufactureBatch = prompt("translate the productionCompleteNotification event into a ManufactureBatch, production finishing is what brings the batch into existence here")
+        let item0: type DrugSupplyContext.ManufactureBatch = prompt("translate the productionCompleteNotification event into a ManufactureBatch, production finishing is what brings the batch into existence here")
         send item0 to outlet DrugSupplyContext.FromManufacturingSystem.FromManufacturingSystemToDrugSupplyContext
       }
       on productionOrderReceived: event ManufacturingSystem.ProductionOrderReceived is {
