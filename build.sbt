@@ -14,9 +14,14 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. 2.7.0 is a PUBLISHED release, so the
-// plugin downloads the binary and the libraries resolve from GitHub Packages;
-// `riddlcPath` below is None. 2.7.0 spells the creating value `create`
+// same build, so one value pins both. The pin is an UNPUBLISHED riddl `main`
+// build, 2.7.0-15-53c8fcfe (staged 2026-11-17), so `riddlcPath` points at the
+// staged ../bin/riddlc and the libraries come from `sbt publishLocal` in the
+// riddl checkout. It carries what riddl 2.8.0 will publish: `on init` is the
+// entity's CREATION clause, at entity level, and may `morph` in an
+// event-sourced entity; there is no initial state; and a state has `on entry`.
+// reactive-bbq's create bridge collapsed onto it. Take the override off at the
+// first published tag that carries it. 2.7.0 spells the creating value `create`
 // (`initiate` deprecated) and moves BAST to revision 31; the corpus needed no
 // change. 2.6.0 forbids `system.now`/`system.random` in a
 // fold of an entity's own event (`entity-event-sourced-fold-nondeterministic`),
@@ -48,7 +53,7 @@ enablePlugins(RiddlSbtPlugin)
 // Whenever a rule the corpus needs lands after a tag, the override goes back
 // on -- and comes off at the first published tag that carries it, which is
 // this edit.
-lazy val riddlVersion = "2.7.0"
+lazy val riddlVersion = "2.7.0-15-53c8fcfe"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -109,7 +114,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // is published -- a stale override is indistinguishable from a clean
     // corpus. While an override is on, this path WINS over riddlVersion, so
     // verify `riddlc info` against the pin rather than trusting the pin.
-    riddlcPath := None,
+    riddlcPath := Some(file("../bin/riddlc")),
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),

@@ -1,15 +1,23 @@
 // Inventory bounded context
 context Inventory as router is {
-  connector 'FromKitchen To Inventory' is from outlet Inventory.FromKitchen.FromKitchenToInventory to inlet Inventory.InventoryFromFromKitchen  inlet InventoryFromFromKitchen is command InventoryItem.ConsumeStock  connector 'FromSupplyChain To Inventory' is from outlet Inventory.FromSupplyChain.FromSupplyChainToInventory to inlet Inventory.InventoryFromFromSupplyChain  inlet InventoryFromFromSupplyChain is command InventoryItem.ReceiveStock  connector 'StockReceiptSink To InventoryItem' is from outlet Inventory.StockReceiptSink.StockReceiptSinkToInventoryItem to inlet Inventory.InventoryItem.InventoryItemFromStockReceiptSink  connector 'InventoryItemProjection Storage' is from outlet Inventory.InventoryItemProjection.InventoryItemProjectionToRepository to inlet Inventory.InventoryItemRepository.InventoryItemRepositoryFromInventoryItemProjection with {
+  connector 'FromKitchen To Inventory' is from outlet Inventory.FromKitchen.FromKitchenToInventory to inlet Inventory.InventoryFromFromKitchen
+  inlet InventoryFromFromKitchen is command InventoryItem.ConsumeStock
+  connector 'FromSupplyChain To Inventory' is from outlet Inventory.FromSupplyChain.FromSupplyChainToInventory to inlet Inventory.InventoryFromFromSupplyChain
+  inlet InventoryFromFromSupplyChain is command InventoryItem.ReceiveStock
+  connector 'StockReceiptSink To InventoryItem' is from outlet Inventory.StockReceiptSink.StockReceiptSinkToInventoryItem to inlet Inventory.InventoryItem.InventoryItemFromStockReceiptSink
+  connector 'InventoryItemProjection Storage' is from outlet Inventory.InventoryItemProjection.InventoryItemProjectionToRepository to inlet Inventory.InventoryItemRepository.InventoryItemRepositoryFromInventoryItemProjection with {
     briefly "InventoryItemProjection commands on their way to InventoryItemRepository"
     described as {
       |Carries what leaves Inventory.InventoryItemProjection.InventoryItemProjectionToRepository to Inventory.InventoryItemRepository.InventoryItemRepositoryFromInventoryItemProjection, which is where it is acted on.
       |The pipe states the route; the endpoints state who owns each end.
     }
   }
-  inlet InventoryItemCommandStreamIn is type InventoryItemRequest  outlet InventoryItemCommandStreamOut is type InventoryItemCommand
-  inlet InventoryToReportingIn is type InventoryEvent  outlet InventoryToReportingOut is type InventoryEvent
-  inlet InventoryItemResultStreamIn is result InventoryItem.InventoryItemResult  outlet InventoryItemResultStreamOut is result InventoryItem.InventoryItemResult
+  inlet InventoryItemCommandStreamIn is type InventoryItemRequest
+  outlet InventoryItemCommandStreamOut is type InventoryItemCommand
+  inlet InventoryToReportingIn is type InventoryEvent
+  outlet InventoryToReportingOut is type InventoryEvent
+  inlet InventoryItemResultStreamIn is result InventoryItem.InventoryItemResult
+  outlet InventoryItemResultStreamOut is result InventoryItem.InventoryItemResult
   command AddInventoryItem yields event InventoryItem.InventoryItemInitialized is {
     inventoryItemName: String with {
       briefly "Name"
@@ -89,10 +97,14 @@ context Inventory as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'InventoryItemCommand Stream Intake' is from outlet Inventory.InventoryItemCommandStreamOut to inlet Inventory.InventoryItem.InventoryItemCommands  connector 'InventoryToReporting Egress' is from outlet Inventory.InventoryItemEventSource.InventoryItemEvents to inlet Inventory.InventoryToReportingIn  connector 'InventoryItemResult Stream Egress' is from outlet Inventory.InventoryItemRepository.InventoryItemRepositoryResponses to inlet Inventory.InventoryItemResultStreamIn  include "inventory-types.riddl"
+  connector 'InventoryItemCommand Stream Intake' is from outlet Inventory.InventoryItemCommandStreamOut to inlet Inventory.InventoryItem.InventoryItemCommands
+  connector 'InventoryToReporting Egress' is from outlet Inventory.InventoryItemEventSource.InventoryItemEvents to inlet Inventory.InventoryToReportingIn
+  connector 'InventoryItemResult Stream Egress' is from outlet Inventory.InventoryItemRepository.InventoryItemRepositoryResponses to inlet Inventory.InventoryItemResultStreamIn
+  include "inventory-types.riddl"
   include "InventoryItem.riddl"
   adaptor SupplierSystemAdapter from context SupplierSystem as flow is { 
-    inlet IncomingSupplierSystemEvents is type SupplierEvent    outlet TranslatedSupplierSystemEvents is type SupplierEvent
+    inlet IncomingSupplierSystemEvents is type SupplierEvent
+    outlet TranslatedSupplierSystemEvents is type SupplierEvent
     handler InboundSupplierSystem is {
       on shipmentDelivered: event SupplierSystem.ShipmentDelivered is {
         send shipmentDelivered to outlet TranslatedSupplierSystemEvents
@@ -124,7 +136,8 @@ context Inventory as router is {
   }
   streamlet StockReceiptSink as flow is {
     outlet StockReceiptSinkToInventoryItem is command InventoryItem.ReceiveStock
-    inlet IncomingStockDeliveries is type SupplierEvent    handler StockReceiptHandler is {
+    inlet IncomingStockDeliveries is type SupplierEvent
+    handler StockReceiptHandler is {
       on shipmentDelivered: event SupplierSystem.ShipmentDelivered is {
         do "match the delivered quantity to the inventory item it
           replenishes"
@@ -160,7 +173,8 @@ context Inventory as router is {
     }
   }
   repository InventoryItemRepository as flow is {
-    inlet InventoryItemRepositoryFromInventoryItemProjection is type InventoryItemRepositoryCommand    outlet InventoryItemRepositoryResponses is result InventoryItem.InventoryItemResult
+    inlet InventoryItemRepositoryFromInventoryItemProjection is type InventoryItemRepositoryCommand
+    outlet InventoryItemRepositoryResponses is result InventoryItem.InventoryItemResult
     record StoredInventoryItem is {
       inventoryItemId: InventoryItemId with {
         briefly "inventoryItemId"
@@ -384,7 +398,8 @@ context Inventory as router is {
   }
   projector InventoryItemProjection as flow is {
     updates repository Inventory.InventoryItemRepository
-    inlet InventoryItemProjectionFromInventoryItem is type InventoryItemEvent    outlet InventoryItemProjectionToRepository is type InventoryItemRepositoryCommand
+    inlet InventoryItemProjectionFromInventoryItem is type InventoryItemEvent
+    outlet InventoryItemProjectionToRepository is type InventoryItemRepositoryCommand
     handler InventoryItemProjectionHandler is {
       on stockReceived: event InventoryItem.StockReceived is {
         tell command Inventory.InventoryItemRepository.PersistStockReceived(inventoryItemId = stockReceived.inventoryItemId, receivedQuantity = stockReceived.receivedQuantity, stockReceivedAt = stockReceived.stockReceivedAt) to repository Inventory.InventoryItemRepository
@@ -415,7 +430,8 @@ context Inventory as router is {
   }
   streamlet InventoryItemEventSource as split is {
     outlet InventoryItemEventSourceToInventoryItemProjection is type InventoryItemEvent
-    inlet InventoryItemEventSourceIn is type InventoryItemEvent    outlet InventoryItemEvents is type InventoryEvent
+    inlet InventoryItemEventSourceIn is type InventoryItemEvent
+    outlet InventoryItemEvents is type InventoryEvent
     handler InventoryItemEventEmitter is {
       on other is {
         error "Unexpected message for source InventoryItemEventSource"
@@ -453,7 +469,8 @@ context Inventory as router is {
     }
   }
   adaptor FromSupplyChain from context Corporate.SupplyChain as flow is { 
-    inlet FromSupplyChainIn is type SupplyChain.PurchaseOrderEvent    outlet FromSupplyChainToInventory is command InventoryItem.ReceiveStock
+    inlet FromSupplyChainIn is type SupplyChain.PurchaseOrderEvent
+    outlet FromSupplyChainToInventory is command InventoryItem.ReceiveStock
     handler PurchaseOrderEventIntake is {
       on event Corporate.SupplyChain.PurchaseOrder.ShipmentReceived is {
         let receiveStock: type InventoryItem.ReceiveStock = prompt("the receive stock that results from shipment received")
@@ -483,7 +500,8 @@ context Inventory as router is {
     }
   }
   adaptor FromKitchen from context Restaurant.Kitchen as flow is { 
-    inlet FromKitchenIn is type Kitchen.KitchenTicketEvent    outlet FromKitchenToInventory is command InventoryItem.ConsumeStock
+    inlet FromKitchenIn is type Kitchen.KitchenTicketEvent
+    outlet FromKitchenToInventory is command InventoryItem.ConsumeStock
     handler KitchenConsumptionIntake is {
       on event Restaurant.Kitchen.KitchenTicket.PreparationStarted is {
         do "look up recipe ingredients for ticket items"
