@@ -4,7 +4,7 @@
 // than on Vessel: a vessel is not "Planned", and it outlives any one voyage.
 aggregate entity Voyage as flow is {
   type VoyageCommand is one of {
-    Voyage.CreateVoyage or Voyage.UpdateVoyage or Voyage.RecordPortArrival or Voyage.RecordPortDeparture or Voyage.CompleteVoyage or Voyage.CancelVoyage
+    Voyage.UpdateVoyage or Voyage.RecordPortArrival or Voyage.RecordPortDeparture or Voyage.CompleteVoyage or Voyage.CancelVoyage
   } with {
     briefly "Voyage command alternation"
     described as {
@@ -45,31 +45,6 @@ aggregate entity Voyage as flow is {
     briefly "Voyage result"
     described as {
       |Result carrying the requested Voyage data.
-    }
-  }
-  command CreateVoyage is {
-    voyageId: VoyageId with {
-      briefly "Voyage"
-      described as {
-        |The voyage being planned.
-      }
-    }
-    vesselId: VesselId with {
-      briefly "Vessel"
-      described as {
-        |The vessel that will sail it.
-      }
-    }
-    details: VoyageDetails with {
-      briefly "Details"
-      described as {
-        |Route, voyage number and commencement date.
-      }
-    }
-  } with {
-    briefly "Plan a voyage"
-    described as {
-      |Creates a voyage in the planned state.
     }
   }
   command UpdateVoyage is {
@@ -390,37 +365,13 @@ aggregate entity Voyage as flow is {
       |A voyage abandoned before completion.
     }
   }
-  state PlannedState of record Voyage.PlannedStateData is {
-    initial handler PlannedInitHandler is {
-      on init is {
-        set state PlannedState to "initialize from the creating message"
-        set field Voyage.PlannedStateData.stateValue to "Planned"
-      }
-    } with {
-      briefly "Planned init handler"
-      described as {
-        |Initializes a voyage on entry to the planned state.
-      }
-    }
-  } with {
+  state PlannedState of record Voyage.PlannedStateData with {
     briefly "Planned state"
     described as {
       |The voyage is scheduled but has not sailed.
     }
   }
-  state InProgressState of record Voyage.InProgressStateData is {
-    initial handler InProgressInitHandler is {
-      on init is {
-        set state InProgressState to "initialize from the first arrival"
-        set field Voyage.InProgressStateData.stateValue to "InProgress"
-      }
-    } with {
-      briefly "In-progress init handler"
-      described as {
-        |Initializes a voyage on entry to the under-way state.
-      }
-    }
-  } with {
+  state InProgressState of record Voyage.InProgressStateData with {
     briefly "In-progress state"
     described as {
       |The voyage is under way and calling at ports.
@@ -428,10 +379,6 @@ aggregate entity Voyage as flow is {
   }
   state CompletedState of record Voyage.CompletedStateData is {
     initial handler CompletedInitHandler is {
-      on init is {
-        set state CompletedState to "initialize from the completion event"
-        set field Voyage.CompletedStateData.stateValue to "Completed"
-      }
       on query GetVoyage is {
         let voyageResult: type Voyage.VoyageResult = prompt("read the voyage from the store")
         reply voyageResult
@@ -453,10 +400,6 @@ aggregate entity Voyage as flow is {
   }
   state CancelledState of record Voyage.CancelledStateData is {
     initial handler CancelledInitHandler is {
-      on init is {
-        set state CancelledState to "initialize from the cancellation event"
-        set field Voyage.CancelledStateData.stateValue to "Cancelled"
-      }
       on other is {
         error "the voyage is cancelled and accepts no further activity"
       }
@@ -473,13 +416,13 @@ aggregate entity Voyage as flow is {
     }
   }
   handler VoyageHandler is {
+    on init(vesselId: type VesselId, details: type VoyageDetails) is {
+      morph entity VesselContext.Voyage to state VesselContext.Voyage.PlannedState with record Voyage.PlannedStateData(voyageId = self.id, vesselId = vesselId, details = details, stateValue = prompt("the state value of this planned state data"))
+      send event Voyage.VoyageCreated(voyageId = self.id, vesselId = vesselId) to outlet VoyageEvents
+    }
     on query GetVoyage is {
       let voyageResult: type Voyage.VoyageResult = prompt("read the voyage from the store")
       reply voyageResult
-    }
-    on createVoyage: command CreateVoyage is {
-      morph entity VesselContext.Voyage to state VesselContext.Voyage.PlannedState with record Voyage.PlannedStateData(voyageId = createVoyage.voyageId, vesselId = createVoyage.vesselId, details = createVoyage.details, stateValue = prompt("the state value of this planned state data"))
-      send event Voyage.VoyageCreated(voyageId = createVoyage.voyageId, vesselId = createVoyage.vesselId) to outlet VoyageEvents
     }
     on updateVoyage: command UpdateVoyage is {
       send event Voyage.VoyageUpdated(voyageId = updateVoyage.voyageId, vesselId = prompt("the vessel id of this voyage updated")) to outlet VoyageEvents

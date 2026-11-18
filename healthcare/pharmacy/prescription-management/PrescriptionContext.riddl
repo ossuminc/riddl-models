@@ -1,7 +1,59 @@
 // Prescription Management - Bounded Context
 context PrescriptionContext as router is {
+  command ReceivePrescription yields event Prescription.PrescriptionReceived is {
+    patient: PatientInfo with {
+      briefly "Patient"
+      described as {
+        |Patient information.
+      }
+    }
+    prescriber: PrescriberInfo with {
+      briefly "Prescriber"
+      described as {
+        |Prescriber information.
+      }
+    }
+    drug: DrugInfo with {
+      briefly "Drug"
+      described as {
+        |Drug information.
+      }
+    }
+    writtenDate: Date with {
+      briefly "Written"
+      described as {
+        |Date written.
+      }
+    }
+    refillsAuthorized: Integer with {
+      briefly "Refills"
+      described as {
+        |Refills authorized.
+      }
+    }
+    receivedBy: String with {
+      briefly "Received by"
+      described as {
+        |Who received.
+      }
+    }
+  } with {
+    briefly "Receive a new prescription"
+    described as {
+      |Initiates a new prescription in the system from any source.
+    }
+  }
+  type PrescriptionRequest is one of {
+    PrescriptionContext.ReceivePrescription or Prescription.PrescriptionCommand
+  } with {
+    briefly "Prescription requests"
+    described as {
+      |What may be asked of PrescriptionContext about a Prescription: ReceivePrescription, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
   type FromEPrescribingNetworkCommand is one of {
-    Prescription.ReceivePrescription or Prescription.TransferPrescription
+    PrescriptionContext.ReceivePrescription or Prescription.TransferPrescription
   } with {
     briefly "What FromEPrescribingNetwork turns that service's news into"
   }
@@ -34,13 +86,15 @@ context PrescriptionContext as router is {
       |The channel the `tell` travels.
     }
   }
-  inlet PrescriptionCommandStreamIn is type PrescriptionCommand
+  inlet PrescriptionCommandStreamIn is type PrescriptionContext.PrescriptionRequest
   outlet PrescriptionCommandStreamOut is type PrescriptionCommand
   inlet PrescriptionQueryResultStreaIn is result Prescription.PrescriptionQueryResult
   outlet PrescriptionQueryResultStreaOut is result Prescription.PrescriptionQueryResult
   handler PrescriptionContextBoundary is {
-    on receivePrescription: command Prescription.ReceivePrescription is {
-      forward receivePrescription to outlet PrescriptionContext.PrescriptionCommandStreamOut
+    on receivePrescription: command PrescriptionContext.ReceivePrescription is {
+      let givenExpirationDate: type Date = prompt("the expiration date of this prescription received")
+      let newPrescription = create entity PrescriptionContext.Prescription(patient = receivePrescription.patient, prescriber = receivePrescription.prescriber, drug = receivePrescription.drug, writtenDate = receivePrescription.writtenDate, expirationDate = givenExpirationDate, refillsAuthorized = receivePrescription.refillsAuthorized, receivedTimestamp = system.now, receivedBy = receivePrescription.receivedBy)
+      yield event Prescription.PrescriptionReceived(prescriptionId = newPrescription, patient = receivePrescription.patient, prescriber = receivePrescription.prescriber, drug = receivePrescription.drug, writtenDate = receivePrescription.writtenDate, expirationDate = givenExpirationDate, refillsAuthorized = receivePrescription.refillsAuthorized, receivedTimestamp = system.now, receivedBy = receivePrescription.receivedBy)
     }
     on verifyPrescription: command Prescription.VerifyPrescription is {
       forward verifyPrescription to outlet PrescriptionContext.PrescriptionCommandStreamOut
@@ -84,7 +138,7 @@ context PrescriptionContext as router is {
     outlet FromEPrescribingNetworkToPrescriptionContext is type PrescriptionContext.FromEPrescribingNetworkCommand
     handler FromEPrescribingNetworkHandler is {
       on newPrescriptionReceived: event EPrescribingNetwork.NewPrescriptionReceived is {
-        let item0: type Prescription.ReceivePrescription = prompt("translate the newPrescriptionReceived event into a ReceivePrescription, a prescription arriving on the network is what the pharmacy receives")
+        let item0: type PrescriptionContext.ReceivePrescription = prompt("translate the newPrescriptionReceived event into a ReceivePrescription, a prescription arriving on the network is what the pharmacy receives")
         send item0 to outlet PrescriptionContext.FromEPrescribingNetwork.FromEPrescribingNetworkToPrescriptionContext
       }
       on transferCompleted: event EPrescribingNetwork.TransferCompleted is {

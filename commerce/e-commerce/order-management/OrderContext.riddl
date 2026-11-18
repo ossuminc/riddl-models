@@ -1,19 +1,164 @@
 // Order Management - Order Context
 // The primary bounded context for order lifecycle management
 context OrderContext as router is {
+  command RequestReturn yields event Return.ReturnRequested is {
+    orderId: OrderId with {
+      briefly "Order ID"
+      described as {
+        |Original order reference.
+      }
+    }
+    customerId: CustomerId with {
+      briefly "Customer ID"
+      described as {
+        |Customer making request.
+      }
+    }
+    returnItems: Return.ReturnItemRecord+ with {
+      briefly "Items"
+      described as {
+        |Items to return.
+      }
+    }
+    returnReason: ReturnReason with {
+      briefly "Reason"
+      described as {
+        |Primary return reason.
+      }
+    }
+    comments: String(1,1000)? with {
+      briefly "Comments"
+      described as {
+        |Additional comments.
+      }
+    }
+  } with {
+    briefly "Initiate a return request"
+    described as {
+      |Submits a request to return one or more items from a delivered order.
+    }
+  }
+  type ReturnRequest is one of {
+    OrderContext.RequestReturn or Return.ReturnCommand
+  } with {
+    briefly "Return requests"
+    described as {
+      |What may be asked of OrderContext about a Return: RequestReturn, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
+  command InitShipment yields event Shipment.ShipmentCreated is {
+    orderId: OrderId with {
+      briefly "Order ID"
+      described as {
+        | Reference to the order being fulfilled by this shipment.
+        | Links shipment tracking to order status.
+      }
+    }
+    carrier: CarrierCode with {
+      briefly "Carrier"
+      described as {
+        | The shipping carrier selected for this delivery based
+        | on shipping method, destination, and cost.
+      }
+    }
+    trackingNumber: TrackingNumber with {
+      briefly "Tracking"
+      described as {
+        | Carrier-assigned tracking number for this shipment.
+        | Used by customer to track delivery progress.
+      }
+    }
+    shippingAddress: Address with {
+      briefly "Address"
+      described as {
+        | Destination address where the shipment will be delivered.
+        | Copied from order at time of shipment creation.
+      }
+    }
+    items: OrderItemRecord+ with {
+      briefly "Items"
+      described as {
+        | List of order items included in this shipment. May be
+        | a subset of order items for split shipments.
+      }
+    }
+  } with {
+    briefly "Create a new shipment for an order"
+    described as {
+      | Initializes a shipment record when warehouse has picked and
+      | packed an order. Creates tracking and notifies customer.
+    }
+  }
+  type ShipmentRequest is one of {
+    OrderContext.InitShipment or Shipment.ShipmentCommand
+  } with {
+    briefly "Shipment requests"
+    described as {
+      |What may be asked of OrderContext about a Shipment: InitShipment, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
+  command PlaceOrder yields event Order.OrderPlaced is {
+    customerId: CustomerId with {
+      briefly "Customer reference"
+      described as {
+        |Reference to the customer placing the order.
+      }
+    }
+    items: OrderItemRecord+ with {
+      briefly "Order line items"
+      described as {
+        |The products being ordered with quantities and prices.
+      }
+    }
+    shippingAddress: Address with {
+      briefly "Shipping destination"
+      described as {
+        |The address where the order should be delivered.
+      }
+    }
+    billingAddress: Address with {
+      briefly "Billing address"
+      described as {
+        |The address associated with the payment method.
+      }
+    }
+    paymentMethod: PaymentMethod with {
+      briefly "Payment method"
+      described as {
+        |How the customer will pay for the order.
+      }
+    }
+  } with {
+    briefly "Create a new order from cart items"
+    described as {
+      | Initiates a new order with the specified items and addresses.
+      | The order starts in PendingPayment state awaiting payment confirmation.
+    }
+  }
+  type OrderRequest is one of {
+    OrderContext.PlaceOrder or Order.OrderCommand
+  } with {
+    briefly "Order requests"
+    described as {
+      |What may be asked of OrderContext about a Order: PlaceOrder, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
   connector 'ShippingAdapter Intake' is from outlet OrderContext.ShippingAdapter.ShippingAdapterToOrderContext to inlet OrderContext.OrderContextFromShippingAdapter with {
     briefly "ShippingAdapter messages on their way to OrderContext"
     described as {
       |The channel the `tell` travels.
     }
   }
-  inlet OrderContextFromShippingAdapterShipments is type ShipmentCommand with {
+  inlet OrderContextFromShippingAdapterShipments is type OrderContext.ShipmentRequest with {
     briefly "The Shipment commands ShippingAdapter sends OrderContext"
   }
   connector 'ShippingAdapter Shipment Intake' is from outlet OrderContext.ShippingAdapter.ShippingAdapterShipmentsToOrderContext to inlet OrderContext.OrderContextFromShippingAdapterShipments with {
     briefly "Carrier tracking, as Shipment commands, on their way to OrderContext"
   }
-  inlet OrderContextFromShippingAdapter is type OrderCommand with {
+  inlet OrderContextFromShippingAdapter is type OrderContext.OrderRequest with {
     briefly "What ShippingAdapter sends OrderContext"
     described as {
       |Its own inlet: an inlet accepts exactly one connector.
@@ -25,7 +170,7 @@ context OrderContext as router is {
       |The channel the `tell` travels.
     }
   }
-  inlet OrderContextFromInventoryAdapter is type OrderCommand with {
+  inlet OrderContextFromInventoryAdapter is type OrderContext.OrderRequest with {
     briefly "What InventoryAdapter sends OrderContext"
     described as {
       |Its own inlet: an inlet accepts exactly one connector.
@@ -37,23 +182,29 @@ context OrderContext as router is {
       |The channel the `tell` travels.
     }
   }
-  inlet OrderContextFromPaymentAdapter is type OrderCommand with {
+  inlet OrderContextFromPaymentAdapter is type OrderContext.OrderRequest with {
     briefly "What PaymentAdapter sends OrderContext"
     described as {
       |Its own inlet: an inlet accepts exactly one connector.
     }
   }
-  inlet OrderCommandStreamIn is type OrderCommand
+  inlet OrderCommandStreamIn is type OrderContext.OrderRequest
   outlet OrderCommandStreamOut is type OrderCommand
-  inlet ReturnCommandStreamIn is type ReturnCommand
+  inlet ReturnCommandStreamIn is type OrderContext.ReturnRequest
   outlet ReturnCommandStreamOut is type ReturnCommand
-  inlet ShipmentCommandStreamIn is type ShipmentCommand
+  inlet ShipmentCommandStreamIn is type OrderContext.ShipmentRequest
   outlet ShipmentCommandStreamOut is type ShipmentCommand
   inlet MarketplaceOrderResultStreamIn is result Order.OrderResult
   outlet MarketplaceOrderResultStreamOut is result Order.OrderResult
   handler OrderContextBoundary is {
-    on placeOrder: command Order.PlaceOrder is {
-      forward placeOrder to outlet OrderContext.OrderCommandStreamOut
+    on placeOrder: command OrderContext.PlaceOrder is {
+      let givenSubtotal: type Money = prompt("the subtotal of this order placed")
+      let givenTax: type Money = prompt("the tax of this order placed")
+      let givenShippingCost: type Money = prompt("the shipping cost of this order placed")
+      let givenTotal: type Money = prompt("the total of this order placed")
+      let givenPlacedAt: type TimeStamp = prompt("the placed at of this order placed")
+      let newOrder = create entity OrderContext.Order(customerId = placeOrder.customerId, items = placeOrder.items, subtotal = givenSubtotal, tax = givenTax, shippingCost = givenShippingCost, total = givenTotal, shippingAddress = placeOrder.shippingAddress, billingAddress = placeOrder.billingAddress, placedAt = givenPlacedAt, paymentMethod = placeOrder.paymentMethod)
+      yield event Order.OrderPlaced(orderId = newOrder, customerId = placeOrder.customerId, items = placeOrder.items, subtotal = givenSubtotal, tax = givenTax, shippingCost = givenShippingCost, total = givenTotal, shippingAddress = placeOrder.shippingAddress, billingAddress = placeOrder.billingAddress, placedAt = givenPlacedAt, paymentMethod = placeOrder.paymentMethod)
     }
     on confirmPayment: command Order.ConfirmPayment is {
       forward confirmPayment to outlet OrderContext.OrderCommandStreamOut
@@ -73,8 +224,10 @@ context OrderContext as router is {
     on cancelOrder: command Order.CancelOrder is {
       forward cancelOrder to outlet OrderContext.OrderCommandStreamOut
     }
-    on requestReturn: command Return.RequestReturn is {
-      forward requestReturn to outlet OrderContext.ReturnCommandStreamOut
+    on requestReturn: command OrderContext.RequestReturn is {
+      let givenRequestedAt: type TimeStamp = prompt("the requested at of this return requested")
+      let newReturn = create entity OrderContext.Return(orderId = requestReturn.orderId, customerId = requestReturn.customerId, returnItems = requestReturn.returnItems, returnReason = requestReturn.returnReason, requestedAt = givenRequestedAt, comments = requestReturn.comments)
+      yield event Return.ReturnRequested(returnId = newReturn, orderId = requestReturn.orderId, customerId = requestReturn.customerId, returnItems = requestReturn.returnItems, returnReason = requestReturn.returnReason, requestedAt = givenRequestedAt, comments = requestReturn.comments)
     }
     on approveReturn: command Return.ApproveReturn is {
       forward approveReturn to outlet OrderContext.ReturnCommandStreamOut
@@ -85,8 +238,10 @@ context OrderContext as router is {
     on receiveReturn: command Return.ReceiveReturn is {
       forward receiveReturn to outlet OrderContext.ReturnCommandStreamOut
     }
-    on initShipment: command Shipment.InitShipment is {
-      forward initShipment to outlet OrderContext.ShipmentCommandStreamOut
+    on initShipment: command OrderContext.InitShipment is {
+      let givenCreatedAt: type TimeStamp = prompt("the created at of this shipment created")
+      let newShipment = create entity OrderContext.Shipment(orderId = initShipment.orderId, carrier = initShipment.carrier, trackingNumber = initShipment.trackingNumber, shippingAddress = initShipment.shippingAddress, createdAt = givenCreatedAt, items = initShipment.items)
+      yield event Shipment.ShipmentCreated(shipmentId = newShipment, orderId = initShipment.orderId, carrier = initShipment.carrier, trackingNumber = initShipment.trackingNumber, shippingAddress = initShipment.shippingAddress, createdAt = givenCreatedAt, items = initShipment.items)
     }
     on updateTracking: command Shipment.UpdateTracking is {
       forward updateTracking to outlet OrderContext.ShipmentCommandStreamOut
@@ -265,7 +420,7 @@ context OrderContext as router is {
   }
   adaptor PaymentAdapter from context PaymentGateway as flow is { 
     inlet PaymentAdapterIn is type PaymentGateway.PaymentGatewayEvent
-    outlet PaymentAdapterToOrderContext is type OrderCommand
+    outlet PaymentAdapterToOrderContext is type OrderContext.OrderRequest
  with {
       briefly "What PaymentAdapter publishes to OrderContext"
       described as {
@@ -301,7 +456,7 @@ context OrderContext as router is {
   }
   adaptor InventoryAdapter from context InventoryService as flow is { 
     inlet InventoryAdapterIn is type InventoryService.InventoryServiceEvent
-    outlet InventoryAdapterToOrderContext is type OrderCommand
+    outlet InventoryAdapterToOrderContext is type OrderContext.OrderRequest
  with {
       briefly "What InventoryAdapter publishes to OrderContext"
       described as {
@@ -333,12 +488,12 @@ context OrderContext as router is {
     }
   }
   adaptor ShippingAdapter from context ShippingCarrier as split is { 
-    outlet ShippingAdapterShipmentsToOrderContext is type ShipmentCommand
+    outlet ShippingAdapterShipmentsToOrderContext is type OrderContext.ShipmentRequest
  with {
       briefly "The Shipment commands ShippingAdapter publishes to OrderContext"
     }
     inlet ShippingAdapterIn is type ShippingCarrier.ShippingCarrierEvent
-    outlet ShippingAdapterToOrderContext is type OrderCommand
+    outlet ShippingAdapterToOrderContext is type OrderContext.OrderRequest
  with {
       briefly "What ShippingAdapter publishes to OrderContext"
       described as {
@@ -348,7 +503,7 @@ context OrderContext as router is {
     }
     handler InboundShipping is {
       on shipmentCreatedByCarrier: event ShippingCarrier.ShipmentCreatedByCarrier is {
-        send command Shipment.InitShipment(shipmentId = shipmentCreatedByCarrier.shipmentId, orderId = shipmentCreatedByCarrier.orderId, trackingNumber = shipmentCreatedByCarrier.trackingNumber, carrier = prompt("the carrier of this init shipment"), shippingAddress = prompt("the shipping address of this init shipment"), items = prompt("the items of this init shipment")) to outlet OrderContext.ShippingAdapter.ShippingAdapterShipmentsToOrderContext
+        send command OrderContext.InitShipment(orderId = shipmentCreatedByCarrier.orderId, trackingNumber = shipmentCreatedByCarrier.trackingNumber, carrier = prompt("the carrier of this init shipment"), shippingAddress = prompt("the shipping address of this init shipment"), items = prompt("the items of this init shipment")) to outlet OrderContext.ShippingAdapter.ShippingAdapterShipmentsToOrderContext
       }
       on shipmentPickedUp: event ShippingCarrier.ShipmentPickedUp is {
         send command UpdateTracking(shipmentId = shipmentPickedUp.shipmentId, status = prompt("the status of this update tracking"), location = empty, description = prompt("the description of this update tracking")) to outlet OrderContext.ShippingAdapter.ShippingAdapterShipmentsToOrderContext

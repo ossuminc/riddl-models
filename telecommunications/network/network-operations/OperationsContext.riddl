@@ -1,5 +1,39 @@
 // Network Operations - Operations Context
 context OperationsContext as router is {
+  command CreateIncident is {
+    incidentInfo: IncidentInfo with {
+      briefly "Info"
+      described as {
+        |Incident details.
+      }
+    }
+    affectedElements: NetworkElementId+ with {
+      briefly "Elements"
+      described as {
+        |Affected network elements.
+      }
+    }
+    affectedServices: AffectedService* with {
+      briefly "Services"
+      described as {
+        |Affected services.
+      }
+    }
+  } with {
+    briefly "Create incident"
+    described as {
+      |Creates a new network incident.
+    }
+  }
+  type NetworkIncidentRequest is one of {
+    OperationsContext.CreateIncident or NetworkIncident.NetworkIncidentCommand
+  } with {
+    briefly "NetworkIncident requests"
+    described as {
+      |What may be asked of OperationsContext about a NetworkIncident: CreateIncident, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
   inlet OperationsContextFromToCapacityPlanningSystem is command NetworkIncident.AddTimelineEntry with {
     briefly "What ToCapacityPlanningSystem makes of the answers it gets"
   }
@@ -12,25 +46,26 @@ context OperationsContext as router is {
   connector 'ToNetworkMonitoringSystem Intake' is from outlet OperationsContext.ToNetworkMonitoringSystem.ToNetworkMonitoringSystemToOperationsContext to inlet OperationsContext.OperationsContextFromToNetworkMonitoringSystem with {
     briefly "Answers translated by ToNetworkMonitoringSystem, on their way in"
   }
-  inlet OperationsContextFromCapacityPlanningSystem is command NetworkIncident.CreateIncident with {
+  inlet OperationsContextFromCapacityPlanningSystem is command OperationsContext.CreateIncident with {
     briefly "What FromCapacityPlanningSystem makes of that service's news"
   }
   connector 'FromCapacityPlanningSystem Intake' is from outlet OperationsContext.FromCapacityPlanningSystem.FromCapacityPlanningSystemToOperationsContext to inlet OperationsContext.OperationsContextFromCapacityPlanningSystem with {
     briefly "What FromCapacityPlanningSystem makes of that news, on its way in"
   }
-  inlet OperationsContextFromNetworkMonitoringSystem is command NetworkIncident.CreateIncident with {
+  inlet OperationsContextFromNetworkMonitoringSystem is command OperationsContext.CreateIncident with {
     briefly "What FromNetworkMonitoringSystem makes of that service's news"
   }
   connector 'FromNetworkMonitoringSystem Intake' is from outlet OperationsContext.FromNetworkMonitoringSystem.FromNetworkMonitoringSystemToOperationsContext to inlet OperationsContext.OperationsContextFromNetworkMonitoringSystem with {
     briefly "What FromNetworkMonitoringSystem makes of that news, on its way in"
   }
-  inlet NetworkIncidentCommandStreamIn is type NetworkIncidentCommand
+  inlet NetworkIncidentCommandStreamIn is type OperationsContext.NetworkIncidentRequest
   outlet NetworkIncidentCommandStreamOut is type NetworkIncidentCommand
   inlet NetworkIncidentResultStreamIn is result NetworkIncident.NetworkIncidentResult
   outlet NetworkIncidentResultStreamOut is result NetworkIncident.NetworkIncidentResult
   handler OperationsContextBoundary is {
-    on createIncident: command NetworkIncident.CreateIncident is {
-      send createIncident to outlet OperationsContext.NetworkIncidentCommandStreamOut
+    on createIncident: command OperationsContext.CreateIncident is {
+      let newNetworkIncident = create entity OperationsContext.NetworkIncident(incidentInfo = createIncident.incidentInfo, affectedElements = createIncident.affectedElements, affectedServices = createIncident.affectedServices)
+      log newNetworkIncident
     }
     on acknowledgeIncident: command NetworkIncident.AcknowledgeIncident is {
       send acknowledgeIncident to outlet OperationsContext.NetworkIncidentCommandStreamOut
@@ -71,10 +106,10 @@ context OperationsContext as router is {
   connector 'NetworkIncidentResult Stream Egress' is from outlet OperationsContext.OperationsRepository.OperationsRepositoryResponses to inlet OperationsContext.NetworkIncidentResultStreamIn
   adaptor FromCapacityPlanningSystem from context CapacityPlanningSystem as flow is { 
     inlet FromCapacityPlanningSystemIn is event CapacityPlanningSystem.CapacityThresholdBreached
-    outlet FromCapacityPlanningSystemToOperationsContext is command NetworkIncident.CreateIncident
+    outlet FromCapacityPlanningSystemToOperationsContext is command OperationsContext.CreateIncident
     handler FromCapacityPlanningSystemHandler is {
       on capacityThresholdBreached: event CapacityPlanningSystem.CapacityThresholdBreached is {
-        let item0: type NetworkIncident.CreateIncident = prompt("translate the capacityThresholdBreached event into a CreateIncident, a breached capacity threshold is an incident the NOC works")
+        let item0: type OperationsContext.CreateIncident = prompt("translate the capacityThresholdBreached event into a CreateIncident, a breached capacity threshold is an incident the NOC works")
         send item0 to outlet OperationsContext.FromCapacityPlanningSystem.FromCapacityPlanningSystemToOperationsContext
       }
       on other is {
@@ -167,13 +202,13 @@ context OperationsContext as router is {
   }
   adaptor FromNetworkMonitoringSystem from context NetworkMonitoringSystem as flow is { 
     inlet FromNetworkMonitoringSystemIn is type NetworkMonitoringSystem.NetworkMonitoringSystemEvent
-    outlet FromNetworkMonitoringSystemToOperationsContext is command NetworkIncident.CreateIncident
+    outlet FromNetworkMonitoringSystemToOperationsContext is command OperationsContext.CreateIncident
     handler FromNetworkMonitoringSystemHandler is {
       on alarmCleared: event NetworkMonitoringSystem.AlarmCleared is {
         do "the alarm cleared; the incident is resolved when an engineer confirms the fix"
       }
       on alarmRaised: event NetworkMonitoringSystem.AlarmRaised is {
-        let item0: type NetworkIncident.CreateIncident = prompt("translate the alarmRaised event into a CreateIncident, an alarm from monitoring is an incident the NOC works")
+        let item0: type OperationsContext.CreateIncident = prompt("translate the alarmRaised event into a CreateIncident, an alarm from monitoring is an incident the NOC works")
         send item0 to outlet OperationsContext.FromNetworkMonitoringSystem.FromNetworkMonitoringSystemToOperationsContext
       }
       on other is {

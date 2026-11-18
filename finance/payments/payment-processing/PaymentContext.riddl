@@ -1,6 +1,34 @@
 // Payment Processing - Payment Context
 context PaymentContext as router is {
-  inlet PaymentContextFromToMerchantService is command Payment.AuthorizePayment with {
+  command AuthorizePayment yields event Payment.PaymentAuthorized is {
+    info: PaymentInfo with {
+      briefly "Info"
+      described as {
+        |Payment information.
+      }
+    }
+    card: CardDetails with {
+      briefly "Card"
+      described as {
+        |Card details.
+      }
+    }
+  } with {
+    briefly "Authorize payment"
+    described as {
+      |Requests payment authorization.
+    }
+  }
+  type PaymentRequest is one of {
+    PaymentContext.AuthorizePayment or Payment.PaymentCommand
+  } with {
+    briefly "Payment requests"
+    described as {
+      |What may be asked of PaymentContext about a Payment: AuthorizePayment, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
+  inlet PaymentContextFromToMerchantService is command PaymentContext.AuthorizePayment with {
     briefly "What ToMerchantService makes of the answers it gets"
   }
   connector 'ToMerchantService Intake' is from outlet PaymentContext.ToMerchantService.ToMerchantServiceToPaymentContext to inlet PaymentContext.PaymentContextFromToMerchantService with {
@@ -12,7 +40,7 @@ context PaymentContext as router is {
   connector 'FromThreeDSecureService Intake' is from outlet PaymentContext.FromThreeDSecureService.FromThreeDSecureServiceToPaymentContext to inlet PaymentContext.PaymentContextFromThreeDSecureService with {
     briefly "What FromThreeDSecureService makes of that news, on its way in"
   }
-  inlet PaymentCommandStreamIn is type PaymentCommand
+  inlet PaymentCommandStreamIn is type PaymentContext.PaymentRequest
   outlet PaymentCommandStreamOut is type PaymentCommand
   inlet PaymentResultStreamIn is result Payment.PaymentResult
   outlet PaymentResultStreamOut is result Payment.PaymentResult
@@ -23,8 +51,11 @@ context PaymentContext as router is {
     on recordAuthentication: command Payment.RecordAuthentication is {
       forward recordAuthentication to outlet PaymentContext.PaymentCommandStreamOut
     }
-    on authorizePayment: command Payment.AuthorizePayment is {
-      forward authorizePayment to outlet PaymentContext.PaymentCommandStreamOut
+    on authorizePayment: command PaymentContext.AuthorizePayment is {
+      let givenResult: type AuthorizationResult = prompt("the result of this payment authorized")
+      let givenAuthorizedAt: type TimeStamp = prompt("the authorized at of this payment authorized")
+      let newPayment = create entity PaymentContext.Payment(info = authorizePayment.info, card = authorizePayment.card, result = givenResult, authorizedAt = givenAuthorizedAt)
+      yield event Payment.PaymentAuthorized(paymentId = newPayment, info = authorizePayment.info, card = authorizePayment.card, result = givenResult, authorizedAt = givenAuthorizedAt)
     }
     on declinePayment: command DeclinePayment is {
       yield event PaymentDeclined(paymentId = declinePayment.paymentId, info = prompt("the info of this payment declined"), result = declinePayment.result, declinedAt = prompt("the declined at of this payment declined"))
@@ -152,7 +183,7 @@ context PaymentContext as router is {
     }
   }
   adaptor ToMerchantService to context MerchantService as router is { 
-    outlet ToMerchantServiceToPaymentContext is command Payment.AuthorizePayment
+    outlet ToMerchantServiceToPaymentContext is command PaymentContext.AuthorizePayment
     inlet ToMerchantServiceIn is type PaymentEvent
     inlet ToMerchantServiceReplies is result MerchantService.MerchantDetails
     outlet ToMerchantServiceOut is query MerchantService.GetMerchant
@@ -160,7 +191,7 @@ context PaymentContext as router is {
       on paymentInitiated: event Payment.PaymentInitiated is {
         let askAnswer: type MerchantService.MerchantDetails = ask query MerchantService.GetMerchant(merchantId = paymentInitiated.info.merchantId) of context MerchantService
         do "a payment starting needing the merchant's terms and account"
-        send command Payment.AuthorizePayment(paymentId = paymentInitiated.paymentId, info = prompt("the payment's info with the merchant terms askAnswer carries"), card = paymentInitiated.card) to outlet PaymentContext.ToMerchantService.ToMerchantServiceToPaymentContext
+        send command PaymentContext.AuthorizePayment(info = prompt("the payment's info with the merchant terms askAnswer carries"), card = paymentInitiated.card) to outlet PaymentContext.ToMerchantService.ToMerchantServiceToPaymentContext
       }
       on other is {
         error "Unexpected message for adaptor ToMerchantService"

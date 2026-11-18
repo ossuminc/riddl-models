@@ -1,7 +1,7 @@
 // Inventory Entity - Manages inventory items at specific warehouse locations
 aggregate event-sourced entity Inventory as flow is {
   type InventoryCommand is one of {
-    Inventory.ReceiveInventory or Inventory.AdjustInventory or Inventory.ReserveInventory or Inventory.ReleaseReservation or Inventory.TransferInventory or Inventory.UpdateLocation or Inventory.ShipInventory or Inventory.QuarantineInventory or Inventory.ReleaseFromQuarantine or Inventory.RecordProductDetails
+    Inventory.AdjustInventory or Inventory.ReserveInventory or Inventory.ReleaseReservation or Inventory.TransferInventory or Inventory.UpdateLocation or Inventory.ShipInventory or Inventory.QuarantineInventory or Inventory.ReleaseFromQuarantine or Inventory.RecordProductDetails
   } with {
     briefly "Inventory command alternation"
     described as {
@@ -11,22 +11,6 @@ aggregate event-sourced entity Inventory as flow is {
   inlet InventoryCommands is type InventoryCommand
   outlet InventoryEvents2 is type InventoryEvent
   // Commands
-  command ReceiveInventory yields event InventoryReceived is {
-    inventoryId: InventoryId
-    productId: ProductId
-    locationId: LocationId
-    quantity: Integer
-    unitOfMeasure: UnitOfMeasure
-    lotNumber: String(,50)
-    expirationDate: Date?
-    shipmentId: ShipmentId
-    receivedBy: String(1,100)
-  } with {
-    briefly "Receive new inventory into the warehouse"
-    described as {
-      |Records the receipt of inventory from an inbound shipment into a specific location.
-    }
-  }
   command AdjustInventory yields event InventoryAdjusted is {
     inventoryId: InventoryId
     adjustmentQuantity: Integer
@@ -348,55 +332,19 @@ aggregate event-sourced entity Inventory as flow is {
     }
   }
   // States
-  state EmptyInventoryState of record Inventory.EmptyInventoryStateData is {
-    initial handler EmptyInventoryStateInitHandler is {
-      on init is {
-        let inventoryReceived: type InventoryReceived = prompt("the inventory received that brings this inventory into existence")
-        yield inventoryReceived
-      }
-    } with {
-      briefly "Initializes EmptyInventory state"
-      described as {
-        |Handles initialization of the EmptyInventory state.
-      }
-    }
-  } with {
+  state EmptyInventoryState of record Inventory.EmptyInventoryStateData with {
     briefly "EmptyInventory state"
     described as {
       |The entity in EmptyInventory state.
     }
   }
-  state ActiveInventoryState of record Inventory.ActiveInventoryStateData is {
-    initial handler ActiveInventoryStateInitHandler is {
-      on init is {
-        let inventoryReleasedFromQuarantine: type InventoryReleasedFromQuarantine = prompt("the inventory released from quarantine that brings this inventory into existence")
-        yield inventoryReleasedFromQuarantine
-      }
-    } with {
-      briefly "Initializes ActiveInventory state"
-      described as {
-        |Handles initialization of the ActiveInventory state.
-      }
-    }
-  } with {
+  state ActiveInventoryState of record Inventory.ActiveInventoryStateData with {
     briefly "ActiveInventory state"
     described as {
       |The entity in ActiveInventory state.
     }
   }
-  state QuarantineInventoryState of record Inventory.QuarantineInventoryStateData is {
-    initial handler QuarantineInventoryStateInitHandler is {
-      on init is {
-        let inventoryQuarantined: type InventoryQuarantined = prompt("the inventory quarantined that brings this inventory into existence")
-        yield inventoryQuarantined
-      }
-    } with {
-      briefly "Initializes QuarantineInventory state"
-      described as {
-        |Handles initialization of the QuarantineInventory state.
-      }
-    }
-  } with {
+  state QuarantineInventoryState of record Inventory.QuarantineInventoryStateData with {
     briefly "QuarantineInventory state"
     described as {
       |The entity in QuarantineInventory state.
@@ -430,11 +378,12 @@ aggregate event-sourced entity Inventory as flow is {
   }
   // Handler
   handler InventoryHandler is {
+    on init(productId: type ProductId, locationId: type LocationId, quantity: Integer, unitOfMeasure: type UnitOfMeasure, lotNumber: String(,50), expirationDate: Date?, shipmentId: type ShipmentId, receivedBy: String(1,100), timestamp: TimeStamp) is {
+      morph entity WarehouseContext.Inventory to state WarehouseContext.Inventory.ActiveInventoryState with record Inventory.ActiveInventoryStateData(inventoryId = self.id, productId = productId, locationId = locationId, quantity = quantity, unitOfMeasure = unitOfMeasure, lotNumber = lotNumber, expirationDate = expirationDate, reservedQuantity = prompt("the reserved quantity of this active inventory state data"), status = prompt("the status of this active inventory state data"), lastUpdated = prompt("the last updated of this active inventory state data"), productName = empty, sku = empty, weight = empty)
+      send event InventoryReceived(inventoryId = self.id, productId = productId, locationId = locationId, quantity = quantity, unitOfMeasure = unitOfMeasure, lotNumber = lotNumber, expirationDate = expirationDate, shipmentId = shipmentId, receivedBy = receivedBy, timestamp = timestamp) to outlet WarehouseContext.Inventory.InventoryEvents2
+    }
     on getInventory: query GetInventory is {
       reply result InventoryEntityResult(inventoryId = getInventory.inventoryId)
-    }
-    on receiveInventory: command ReceiveInventory is {
-      yield event InventoryReceived(inventoryId = receiveInventory.inventoryId, productId = receiveInventory.productId, locationId = receiveInventory.locationId, quantity = receiveInventory.quantity, unitOfMeasure = receiveInventory.unitOfMeasure, lotNumber = receiveInventory.lotNumber, expirationDate = receiveInventory.expirationDate, shipmentId = receiveInventory.shipmentId, receivedBy = receiveInventory.receivedBy, timestamp = prompt("the timestamp of this inventory received"))
     }
     on adjustInventory: command AdjustInventory is {
       yield event InventoryAdjusted(inventoryId = adjustInventory.inventoryId, adjustmentQuantity = adjustInventory.adjustmentQuantity, reason = adjustInventory.reason, adjustedBy = adjustInventory.adjustedBy, previousQuantity = prompt("the previous quantity of this inventory adjusted"), newQuantity = prompt("the new quantity of this inventory adjusted"), timestamp = prompt("the timestamp of this inventory adjusted"))
@@ -462,9 +411,6 @@ aggregate event-sourced entity Inventory as flow is {
     }
     on recordProductDetails: command RecordProductDetails is {
       yield event ProductDetailsRecorded(inventoryId = recordProductDetails.inventoryId, productName = recordProductDetails.productName, sku = recordProductDetails.sku, weight = recordProductDetails.weight, recordedAt = prompt("now"))
-    }
-    on inventoryReceived: event InventoryReceived is {
-      morph entity WarehouseContext.Inventory to state WarehouseContext.Inventory.ActiveInventoryState with record Inventory.ActiveInventoryStateData(inventoryId = inventoryReceived.inventoryId, productId = inventoryReceived.productId, locationId = inventoryReceived.locationId, quantity = inventoryReceived.quantity, unitOfMeasure = inventoryReceived.unitOfMeasure, lotNumber = inventoryReceived.lotNumber, expirationDate = inventoryReceived.expirationDate, reservedQuantity = prompt("the reserved quantity of this active inventory state data"), status = prompt("the status of this active inventory state data"), lastUpdated = prompt("the last updated of this active inventory state data"), productName = empty, sku = empty, weight = empty)
     }
     on inventoryAdjusted: event InventoryAdjusted is {
       set field Inventory.ActiveInventoryState.quantity to inventoryAdjusted.newQuantity

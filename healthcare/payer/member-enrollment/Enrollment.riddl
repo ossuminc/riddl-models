@@ -1,7 +1,7 @@
 // Enrollment Entity for Member Enrollment Domain
 event-sourced entity Enrollment as flow is {
   type EnrollmentCommand is one of {
-    Enrollment.InitiateEnrollment or Enrollment.SelectPlan or Enrollment.VerifyEligibility or Enrollment.ConfirmEnrollment or Enrollment.TerminateCoverage or Enrollment.TransferEnrollment
+    Enrollment.SelectPlan or Enrollment.VerifyEligibility or Enrollment.ConfirmEnrollment or Enrollment.TerminateCoverage or Enrollment.TransferEnrollment
   } with {
     briefly "Enrollment command alternation"
     described as {
@@ -45,51 +45,6 @@ event-sourced entity Enrollment as flow is {
     }
   }
   // Commands
-  command InitiateEnrollment yields event EnrollmentInitiated is {
-    enrollmentId: EnrollmentId with {
-      briefly "Enrollment ID"
-      described as {
-        |Unique identifier for this enrollment.
-      }
-    }
-    memberInfo: MemberInfo with {
-      briefly "Member information"
-      described as {
-        |Personal and contact information for the member.
-      }
-    }
-    enrollmentPeriod: EnrollmentPeriod with {
-      briefly "Enrollment period"
-      described as {
-        |Type of enrollment window.
-      }
-    }
-    qualifyingEvent: QualifyingEvent? with {
-      briefly "Qualifying event"
-      described as {
-        |Life event for special enrollment, if applicable.
-      }
-    }
-    requestedEffectiveDate: Date with {
-      briefly "Requested effective date"
-      described as {
-        |Date member wants coverage to begin.
-      }
-    }
-    brokerAgentId: String(1,50)? with {
-      briefly "Broker agent ID"
-      described as {
-        |ID of broker submitting enrollment, if any.
-      }
-    }
-  } with {
-    briefly "Start a new enrollment application"
-    described as {
-      | Begins the enrollment process by capturing member information
-      | and enrollment period details. Validates basic eligibility
-      | requirements before proceeding.
-    }
-  }
   command SelectPlan yields event PlanSelected is {
     enrollmentId: EnrollmentId with {
       briefly "Enrollment ID"
@@ -599,10 +554,6 @@ event-sourced entity Enrollment as flow is {
         let enrollmentQueryResult: type EnrollmentQueryResult = prompt("read the enrollment query from the store")
         reply enrollmentQueryResult
       }
-      on init is {
-        let enrollmentInitiated: type EnrollmentInitiated = prompt("the enrollment initiated that brings this enrollment into existence")
-        yield enrollmentInitiated
-      }
     } with {
       briefly "InitiatedState init handler"
       described as {
@@ -615,73 +566,25 @@ event-sourced entity Enrollment as flow is {
       |The InitiatedState state of the Enrollment.
     }
   }
-  state PlanSelectedState of record Enrollment.PlanSelectedStateData is {
-    initial handler PlanSelectedStateInitHandler is {
-      on init is {
-        let planSelected: type PlanSelected = prompt("the plan selected that brings this enrollment into existence")
-        yield planSelected
-      }
-    } with {
-      briefly "PlanSelectedState init handler"
-      described as {
-        |Initializes the PlanSelectedState state.
-      }
-    }
-  } with {
+  state PlanSelectedState of record Enrollment.PlanSelectedStateData with {
     briefly "PlanSelectedState state"
     described as {
       |The PlanSelectedState state of the Enrollment.
     }
   }
-  state EligibilityVerifiedState of record Enrollment.EligibilityVerifiedStateData is {
-    initial handler EligibilityVerifiedStateInitHandler is {
-      on init is {
-        let eligibilityVerified: type EligibilityVerified = prompt("the eligibility verified that brings this enrollment into existence")
-        yield eligibilityVerified
-      }
-    } with {
-      briefly "EligibilityVerifiedState init handler"
-      described as {
-        |Initializes the EligibilityVerifiedState state.
-      }
-    }
-  } with {
+  state EligibilityVerifiedState of record Enrollment.EligibilityVerifiedStateData with {
     briefly "EligibilityVerifiedState state"
     described as {
       |The EligibilityVerifiedState state of the Enrollment.
     }
   }
-  state ActiveState of record Enrollment.ActiveStateData is {
-    initial handler ActiveStateInitHandler is {
-      on init is {
-        let enrollmentConfirmed: type EnrollmentConfirmed = prompt("the enrollment confirmed that brings this enrollment into existence")
-        yield enrollmentConfirmed
-      }
-    } with {
-      briefly "ActiveState init handler"
-      described as {
-        |Initializes the ActiveState state.
-      }
-    }
-  } with {
+  state ActiveState of record Enrollment.ActiveStateData with {
     briefly "ActiveState state"
     described as {
       |The ActiveState state of the Enrollment.
     }
   }
-  state TerminatedState of record Enrollment.TerminatedStateData is {
-    initial handler TerminatedStateInitHandler is {
-      on init is {
-        let coverageTerminated: type CoverageTerminated = prompt("the coverage terminated that brings this enrollment into existence")
-        yield coverageTerminated
-      }
-    } with {
-      briefly "TerminatedState init handler"
-      described as {
-        |Initializes the TerminatedState state.
-      }
-    }
-  } with {
+  state TerminatedState of record Enrollment.TerminatedStateData with {
     briefly "TerminatedState state"
     described as {
       |The TerminatedState state of the Enrollment.
@@ -689,6 +592,10 @@ event-sourced entity Enrollment as flow is {
   }
   // Handler
   handler EnrollmentHandler is {
+    on init(memberInfo: type MemberInfo, enrollmentPeriod: type EnrollmentPeriod, qualifyingEvent: type QualifyingEvent?, requestedEffectiveDate: Date, initiatedAt: DateTime) is {
+      morph entity Enrollment to state Enrollment.InitiatedState with record Enrollment.InitiatedStateData(enrollmentId = self.id, memberInfo = memberInfo, enrollmentPeriod = enrollmentPeriod, qualifyingEvent = qualifyingEvent, requestedEffectiveDate = requestedEffectiveDate, initiatedAt = prompt("the initiated at of this initiated state data"))
+      send event EnrollmentInitiated(enrollmentId = self.id, memberInfo = memberInfo, enrollmentPeriod = enrollmentPeriod, qualifyingEvent = qualifyingEvent, requestedEffectiveDate = requestedEffectiveDate, initiatedAt = initiatedAt) to outlet EnrollmentContext.Enrollment.EnrollmentEvents2
+    }
     on coverageTerminated: event CoverageTerminated is {
       morph entity Enrollment to state Enrollment.TerminatedState with record Enrollment.TerminatedStateData(enrollmentId = coverageTerminated.enrollmentId, terminationDate = coverageTerminated.terminationDate, reason = coverageTerminated.reason, memberId = prompt("the member id of this terminated state data"), finalCoverageInfo = prompt("the final coverage info of this terminated state data"))
     }
@@ -699,18 +606,12 @@ event-sourced entity Enrollment as flow is {
       let activeStateData: type Enrollment.ActiveStateData = prompt("the active state data that results from confirm enrollment")
       morph entity Enrollment to state Enrollment.ActiveState with activeStateData
     }
-    on enrollmentInitiated: event EnrollmentInitiated is {
-      morph entity Enrollment to state Enrollment.InitiatedState with record Enrollment.InitiatedStateData(enrollmentId = enrollmentInitiated.enrollmentId, memberInfo = enrollmentInitiated.memberInfo, enrollmentPeriod = enrollmentInitiated.enrollmentPeriod, qualifyingEvent = enrollmentInitiated.qualifyingEvent, requestedEffectiveDate = enrollmentInitiated.requestedEffectiveDate, initiatedAt = prompt("the initiated at of this initiated state data"))
-    }
     on enrollmentTransferred: event EnrollmentTransferred is {
       set field Enrollment.ActiveState.transferredToEnrollmentId to enrollmentTransferred.newEnrollmentId
       set field Enrollment.ActiveState.transferredAt to enrollmentTransferred.transferredAt
     }
     on planSelected: event PlanSelected is {
       morph entity Enrollment to state Enrollment.PlanSelectedState with record Enrollment.PlanSelectedStateData(enrollmentId = planSelected.enrollmentId, planSelection = planSelected.planSelection, memberInfo = prompt("the member info of this plan selected state data"), enrollmentPeriod = prompt("the enrollment period of this plan selected state data"), qualifyingEvent = empty, requestedEffectiveDate = prompt("the requested effective date of this plan selected state data"))
-    }
-    on initiateEnrollment: command InitiateEnrollment is {
-      yield event EnrollmentInitiated(enrollmentId = initiateEnrollment.enrollmentId, memberInfo = initiateEnrollment.memberInfo, enrollmentPeriod = initiateEnrollment.enrollmentPeriod, qualifyingEvent = initiateEnrollment.qualifyingEvent, requestedEffectiveDate = initiateEnrollment.requestedEffectiveDate, initiatedAt = prompt("the initiated at of this enrollment initiated"))
     }
     on selectPlan: command SelectPlan is {
       yield event PlanSelected(enrollmentId = selectPlan.enrollmentId, planSelection = selectPlan.planSelection, selectedAt = prompt("the selected at of this plan selected"))

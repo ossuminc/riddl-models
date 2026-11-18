@@ -2,7 +2,7 @@
 // Core entity managing the lifecycle of an imaging examination
 aggregate event-sourced entity ImagingExam as flow is {
   type ImagingExamCommand is one of {
-    ImagingExam.OrderExam or ImagingExam.ScheduleExam or ImagingExam.CheckInPatient or ImagingExam.StartAcquisition or ImagingExam.CompleteAcquisition or ImagingExam.CreateDraftReport or ImagingExam.FinalizeReport or ImagingExam.AddAddendum or ImagingExam.ReportCriticalFinding
+    ImagingExam.ScheduleExam or ImagingExam.CheckInPatient or ImagingExam.StartAcquisition or ImagingExam.CompleteAcquisition or ImagingExam.CreateDraftReport or ImagingExam.FinalizeReport or ImagingExam.AddAddendum or ImagingExam.ReportCriticalFinding
   } with {
     briefly "ImagingExam command alternation"
     described as {
@@ -48,24 +48,6 @@ aggregate event-sourced entity ImagingExam as flow is {
   // ==========================================================================
   // Commands
   // ==========================================================================
-  command OrderExam yields event ExamOrdered is {
-    examId: ExamId
-    patientId: PatientId
-    orderingPhysicianId: PhysicianId
-    examCode: String
-    examDescription: String
-    modalityType: ModalityType
-    priority: ExamPriority
-    clinicalIndication: String
-    relevantHistory: String
-    specialInstructions: String?
-  } with {
-    briefly "Order a new imaging examination"
-    described as {
-      | Initiates the radiology workflow by creating a new imaging
-      | order with clinical context and priority.
-    }
-  }
   command ScheduleExam yields event ExamScheduled is {
     examId: ExamId
     scheduledDateTime: TimeStamp
@@ -366,10 +348,6 @@ aggregate event-sourced entity ImagingExam as flow is {
         let imagingExamResult: type ImagingExamResult = prompt("read the imaging exam from the store")
         tell imagingExamResult to entity RadiologyContext.ImagingExam
       }
-      on init is {
-        let examOrdered: type ExamOrdered = prompt("the exam ordered that brings this imaging exam into existence")
-        yield examOrdered
-      }
     } with {
       briefly "OrderedState init handler"
       described as {
@@ -382,73 +360,25 @@ aggregate event-sourced entity ImagingExam as flow is {
       |The OrderedState state of the ImagingExam.
     }
   }
-  state ScheduledState of record ImagingExam.ScheduledStateData is {
-    initial handler ScheduledStateInitHandler is {
-      on init is {
-        let examScheduled: type ExamScheduled = prompt("the exam scheduled that brings this imaging exam into existence")
-        yield examScheduled
-      }
-    } with {
-      briefly "ScheduledState init handler"
-      described as {
-        |Initializes the ScheduledState state.
-      }
-    }
-  } with {
+  state ScheduledState of record ImagingExam.ScheduledStateData with {
     briefly "ScheduledState state"
     described as {
       |The ScheduledState state of the ImagingExam.
     }
   }
-  state AcquisitionState of record ImagingExam.AcquisitionStateData is {
-    initial handler AcquisitionStateInitHandler is {
-      on init is {
-        let patientCheckedIn: type PatientCheckedIn = prompt("the patient checked in that brings this imaging exam into existence")
-        yield patientCheckedIn
-      }
-    } with {
-      briefly "AcquisitionState init handler"
-      described as {
-        |Initializes the AcquisitionState state.
-      }
-    }
-  } with {
+  state AcquisitionState of record ImagingExam.AcquisitionStateData with {
     briefly "AcquisitionState state"
     described as {
       |The AcquisitionState state of the ImagingExam.
     }
   }
-  state InterpretationState of record ImagingExam.InterpretationStateData is {
-    initial handler InterpretationStateInitHandler is {
-      on init is {
-        let acquisitionCompleted: type AcquisitionCompleted = prompt("the acquisition completed that brings this imaging exam into existence")
-        yield acquisitionCompleted
-      }
-    } with {
-      briefly "InterpretationState init handler"
-      described as {
-        |Initializes the InterpretationState state.
-      }
-    }
-  } with {
+  state InterpretationState of record ImagingExam.InterpretationStateData with {
     briefly "InterpretationState state"
     described as {
       |The InterpretationState state of the ImagingExam.
     }
   }
-  state FinalizedState of record ImagingExam.FinalizedStateData is {
-    initial handler FinalizedStateInitHandler is {
-      on init is {
-        let reportFinalized: type ReportFinalized = prompt("the report finalized that brings this imaging exam into existence")
-        yield reportFinalized
-      }
-    } with {
-      briefly "FinalizedState init handler"
-      described as {
-        |Initializes the FinalizedState state.
-      }
-    }
-  } with {
+  state FinalizedState of record ImagingExam.FinalizedStateData with {
     briefly "FinalizedState state"
     described as {
       |The FinalizedState state of the ImagingExam.
@@ -458,8 +388,9 @@ aggregate event-sourced entity ImagingExam as flow is {
   // Handler
   // ==========================================================================
   handler ImagingExamHandler is {
-    on orderExam: command OrderExam is {
-      yield event ExamOrdered(examId = orderExam.examId, order = prompt("the order of this exam ordered"), orderedAt = prompt("the ordered at of this exam ordered"))
+    on init(order: type ImagingOrder, orderedAt: TimeStamp) is {
+      morph entity ImagingExam to state ImagingExam.OrderedState with record ImagingExam.OrderedStateData(examId = self.id, order = order, orderedAt = orderedAt)
+      send event ExamOrdered(examId = self.id, order = order, orderedAt = orderedAt) to outlet RadiologyContext.ImagingExam.ImagingExamEvents2
     }
     on scheduleExam: command ScheduleExam is {
       yield event ExamScheduled(examId = scheduleExam.examId, scheduledDateTime = scheduleExam.scheduledDateTime, modalityId = scheduleExam.modalityId, roomLocation = scheduleExam.roomLocation, protocol = scheduleExam.protocol, scheduledBy = prompt("the scheduled by of this exam scheduled"))
@@ -491,9 +422,6 @@ aggregate event-sourced entity ImagingExam as flow is {
     }
     on other is {
       error "Unknown command received"
-    }
-    on examOrdered: event ExamOrdered is {
-      morph entity ImagingExam to state ImagingExam.OrderedState with record ImagingExam.OrderedStateData(examId = examOrdered.examId, order = examOrdered.order, orderedAt = examOrdered.orderedAt)
     }
     on examScheduled: event ExamScheduled is {
       morph entity ImagingExam to state ImagingExam.ScheduledState with record ImagingExam.ScheduledStateData(examId = examScheduled.examId, scheduledDateTime = examScheduled.scheduledDateTime, modalityId = examScheduled.modalityId, roomLocation = examScheduled.roomLocation, protocol = examScheduled.protocol, order = prompt("the order of this scheduled state data"))

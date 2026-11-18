@@ -1,7 +1,7 @@
 // Shopping Cart - Cart Entity
 event-sourced entity Cart as flow is {
   type CartCommand is one of {
-    Cart.CreateCart or Cart.AddItem or Cart.UpdateQuantity or Cart.RemoveItem or Cart.ApplyPromoCode or Cart.RemovePromoCode or Cart.SetShippingAddress or Cart.MergeCart or Cart.Checkout or Cart.AbandonCart
+    Cart.AddItem or Cart.UpdateQuantity or Cart.RemoveItem or Cart.ApplyPromoCode or Cart.RemovePromoCode or Cart.SetShippingAddress or Cart.MergeCart or Cart.Checkout or Cart.AbandonCart
   } with {
     briefly "Cart command alternation"
     described as {
@@ -11,31 +11,6 @@ event-sourced entity Cart as flow is {
   inlet CartCommands is type CartCommand
   outlet CartEvents2 is type CartEvent
   // Commands
-  command CreateCart yields event CartCreated is {
-    cartId: CartId with {
-      briefly "Cart ID"
-      described as {
-        |Unique identifier for the new cart.
-      }
-    }
-    customerId: CustomerId? with {
-      briefly "Customer ID"
-      described as {
-        |Customer if authenticated, none for guest.
-      }
-    }
-    sessionId: SessionId with {
-      briefly "Session ID"
-      described as {
-        |Browser session for cart association.
-      }
-    }
-  } with {
-    briefly "Create a new shopping cart"
-    described as {
-      |Initializes an empty shopping cart for the session.
-    }
-  }
   command AddItem yields event ItemAdded is {
     cartId: CartId with {
       briefly "Cart ID"
@@ -716,10 +691,6 @@ event-sourced entity Cart as flow is {
   // States
   state ActiveState of record Cart.ActiveCartData is {
     initial handler ActiveStateInitHandler is {
-      on init is {
-        let cartCreated: type CartCreated = prompt("the cart created that brings this cart into existence")
-        yield cartCreated
-      }
       on quiescence "30 minutes" is {
         tell command AbandonCart(cartId = self.id) to entity CartContext.Cart
       }
@@ -735,37 +706,13 @@ event-sourced entity Cart as flow is {
       |Cart with items being managed.
     }
   }
-  state CheckedOutState of record Cart.CheckedOutCartData is {
-    initial handler CheckedOutStateInitHandler is {
-      on init is {
-        let cartCheckedOut: type CartCheckedOut = prompt("the cart checked out that brings this cart into existence")
-        yield cartCheckedOut
-      }
-    } with {
-      briefly "Checked out state init handler"
-      described as {
-        |Initializes the Checked Out state.
-      }
-    }
-  } with {
+  state CheckedOutState of record Cart.CheckedOutCartData with {
     briefly "Checked out state"
     described as {
       |Cart has been checked out.
     }
   }
-  state AbandonedState of record Cart.AbandonedCartData is {
-    initial handler AbandonedStateInitHandler is {
-      on init is {
-        let cartAbandoned: type CartAbandoned = prompt("the cart abandoned that brings this cart into existence")
-        yield cartAbandoned
-      }
-    } with {
-      briefly "Abandoned state init handler"
-      described as {
-        |Initializes the Abandoned state.
-      }
-    }
-  } with {
+  state AbandonedState of record Cart.AbandonedCartData with {
     briefly "Abandoned state"
     described as {
       |Cart has been abandoned.
@@ -773,14 +720,15 @@ event-sourced entity Cart as flow is {
   }
   // Handler
   handler CartHandler is {
+    on init(customerId: type CustomerId?, sessionId: type SessionId, createdAt: TimeStamp) is {
+      morph entity Cart to state Cart.ActiveState with record Cart.ActiveCartData(cartId = self.id, customerId = customerId, sessionId = sessionId, items = prompt("the items of this active cart data"), discounts = prompt("the discounts of this active cart data"), shippingAddress = empty, summary = prompt("the summary of this active cart data"), createdAt = prompt("the created at of this active cart data"), lastUpdatedAt = prompt("the last updated at of this active cart data"), shippingEstimate = empty)
+      send event CartCreated(cartId = self.id, customerId = customerId, sessionId = sessionId, createdAt = createdAt) to outlet CartContext.Cart.CartEvents2
+    }
     on cartAbandoned: event CartAbandoned is {
       morph entity Cart to state Cart.AbandonedState with record Cart.AbandonedCartData(cartId = cartAbandoned.cartId, customerId = empty, items = prompt("the items of this abandoned cart data"), cartValue = prompt("the cart value of this abandoned cart data"), abandonedAt = prompt("the abandoned at of this abandoned cart data"))
     }
     on cartCheckedOut: event CartCheckedOut is {
       morph entity Cart to state Cart.CheckedOutState with record Cart.CheckedOutCartData(cartId = cartCheckedOut.cartId, orderId = prompt("the order id of this checked out cart data"), total = prompt("the total of this checked out cart data"), checkedOutAt = prompt("the checked out at of this checked out cart data"))
-    }
-    on cartCreated: event CartCreated is {
-      morph entity Cart to state Cart.ActiveState with record Cart.ActiveCartData(cartId = cartCreated.cartId, customerId = cartCreated.customerId, sessionId = cartCreated.sessionId, items = prompt("the items of this active cart data"), discounts = prompt("the discounts of this active cart data"), shippingAddress = empty, summary = prompt("the summary of this active cart data"), createdAt = prompt("the created at of this active cart data"), lastUpdatedAt = prompt("the last updated at of this active cart data"), shippingEstimate = empty)
     }
     on cartsMerged: event CartsMerged is {
       set field Cart.ActiveState.items to prompt("the items with the source cart's items merged in; the event carries only their count")
@@ -815,9 +763,6 @@ event-sourced entity Cart as flow is {
       set field Cart.ActiveState.shippingAddress to shippingAddressSet.address
       set field Cart.ActiveState.shippingEstimate to shippingAddressSet.shippingEstimate
       set field Cart.ActiveState.lastUpdatedAt to shippingAddressSet.setAt
-    }
-    on createCart: command CreateCart is {
-      yield event CartCreated(cartId = createCart.cartId, customerId = createCart.customerId, sessionId = createCart.sessionId, createdAt = prompt("the created at of this cart created"))
     }
     on addItem: command AddItem is {
       yield event ItemAdded(cartId = addItem.cartId, item = prompt("the item of this item added"), newTotal = prompt("the new total of this item added"), addedAt = prompt("the added at of this item added"))

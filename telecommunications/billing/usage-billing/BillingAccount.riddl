@@ -1,7 +1,7 @@
 // Billing Account Entity for Usage Billing Domain
 aggregate event-sourced entity BillingAccount as flow is {
   type BillingAccountCommand is one of {
-    BillingAccount.CreateAccount or BillingAccount.UpdateCustomerInfo or BillingAccount.ChangeRatePlan or BillingAccount.RecordUsage or BillingAccount.GenerateInvoice or BillingAccount.ApplyPayment or BillingAccount.ApplyCredit or BillingAccount.SuspendAccount or BillingAccount.ReactivateAccount or BillingAccount.CloseAccount
+    BillingAccount.UpdateCustomerInfo or BillingAccount.ChangeRatePlan or BillingAccount.RecordUsage or BillingAccount.GenerateInvoice or BillingAccount.ApplyPayment or BillingAccount.ApplyCredit or BillingAccount.SuspendAccount or BillingAccount.ReactivateAccount or BillingAccount.CloseAccount
   } with {
     briefly "BillingAccount command alternation"
     described as {
@@ -45,37 +45,6 @@ aggregate event-sourced entity BillingAccount as flow is {
     }
   }
   // === Commands ===
-  command CreateAccount yields event AccountCreated is {
-    accountId: AccountId with {
-      briefly "Account"
-      described as {
-        |Account identifier.
-      }
-    }
-    customer: CustomerInfo with {
-      briefly "Customer"
-      described as {
-        |Customer info.
-      }
-    }
-    ratePlanId: RatePlanId with {
-      briefly "Plan"
-      described as {
-        |Rate plan.
-      }
-    }
-    paymentMethod: PaymentMethod with {
-      briefly "Method"
-      described as {
-        |Payment method.
-      }
-    }
-  } with {
-    briefly "Create a new billing account"
-    described as {
-      |Establishes a new customer billing account with initial settings.
-    }
-  }
   command UpdateCustomerInfo yields event CustomerInfoUpdated is {
     accountId: AccountId with {
       briefly "Account"
@@ -752,10 +721,6 @@ aggregate event-sourced entity BillingAccount as flow is {
         let billingAccountResult: type BillingAccountResult = prompt("read the billing account from the store")
         reply billingAccountResult
       }
-      on init is {
-        let accountCreated: type AccountCreated = prompt("the account created that brings this billing account into existence")
-        yield accountCreated
-      }
     } with {
       briefly "PendingActivation initialization"
       described as {
@@ -769,58 +734,19 @@ aggregate event-sourced entity BillingAccount as flow is {
       |The pending activation of the BillingAccount entity, carrying PendingActivationData.
     }
   }
-  state ActiveState of record BillingAccount.ActiveData is {
-    initial handler ActiveStateInitHandler is {
-      on init is {
-        let accountReactivated: type AccountReactivated = prompt("the account reactivated that brings this billing account into existence")
-        yield accountReactivated
-      }
-    } with {
-      briefly "ActiveState initialization"
-      described as {
-        |Initializes ActiveState from the message that caused the
-        |entity to enter it.
-      }
-    }
-  } with {
+  state ActiveState of record BillingAccount.ActiveData with {
     briefly "Active state"
     described as {
       |The active state of the BillingAccount entity, carrying ActiveData.
     }
   }
-  state SuspendedState of record BillingAccount.SuspendedData is {
-    initial handler SuspendedStateInitHandler is {
-      on init is {
-        let accountSuspended: type AccountSuspended = prompt("the account suspended that brings this billing account into existence")
-        yield accountSuspended
-      }
-    } with {
-      briefly "SuspendedState initialization"
-      described as {
-        |Initializes SuspendedState from the message that caused the
-        |entity to enter it.
-      }
-    }
-  } with {
+  state SuspendedState of record BillingAccount.SuspendedData with {
     briefly "Suspended state"
     described as {
       |The suspended state of the BillingAccount entity, carrying SuspendedData.
     }
   }
-  state ClosedState of record BillingAccount.ClosedData is {
-    initial handler ClosedStateInitHandler is {
-      on init is {
-        let accountClosed: type AccountClosed = prompt("the account closed that brings this billing account into existence")
-        yield accountClosed
-      }
-    } with {
-      briefly "ClosedState initialization"
-      described as {
-        |Initializes ClosedState from the message that caused the
-        |entity to enter it.
-      }
-    }
-  } with {
+  state ClosedState of record BillingAccount.ClosedData with {
     briefly "Closed state"
     described as {
       |The closed state of the BillingAccount entity, carrying ClosedData.
@@ -828,8 +754,9 @@ aggregate event-sourced entity BillingAccount as flow is {
   }
   // === Handler ===
   handler BillingAccountHandler is {
-    on createAccount: command CreateAccount is {
-      yield event AccountCreated(accountId = createAccount.accountId, customer = createAccount.customer, ratePlanId = createAccount.ratePlanId, paymentMethod = createAccount.paymentMethod, createdAt = prompt("the created at of this account created"))
+    on init(customer: type CustomerInfo, ratePlanId: type RatePlanId, paymentMethod: type PaymentMethod, createdAt: TimeStamp) is {
+      morph entity BillingContext.BillingAccount to state BillingContext.BillingAccount.PendingActivation with record BillingAccount.PendingActivationData(accountId = self.id, customer = customer, ratePlanId = ratePlanId, paymentMethod = paymentMethod, createdAt = createdAt)
+      send event AccountCreated(accountId = self.id, customer = customer, ratePlanId = ratePlanId, paymentMethod = paymentMethod, createdAt = createdAt) to outlet BillingContext.BillingAccount.BillingAccountEvents2
     }
     on updateCustomerInfo: command UpdateCustomerInfo is {
       yield event CustomerInfoUpdated(accountId = updateCustomerInfo.accountId, customer = updateCustomerInfo.customer, updatedAt = prompt("the updated at of this customer info updated"))
@@ -857,9 +784,6 @@ aggregate event-sourced entity BillingAccount as flow is {
     }
     on closeAccount: command CloseAccount is {
       yield event AccountClosed(accountId = closeAccount.accountId, reason = closeAccount.reason, closedAt = prompt("the closed at of this account closed"), finalBalance = prompt("the final balance of this account closed"))
-    }
-    on accountCreated: event AccountCreated is {
-      morph entity BillingContext.BillingAccount to state BillingContext.BillingAccount.PendingActivation with record BillingAccount.PendingActivationData(accountId = accountCreated.accountId, customer = accountCreated.customer, ratePlanId = accountCreated.ratePlanId, paymentMethod = accountCreated.paymentMethod, createdAt = accountCreated.createdAt)
     }
     on customerInfoUpdated: event CustomerInfoUpdated is {
       set field BillingAccount.ActiveState.customer to customerInfoUpdated.customer

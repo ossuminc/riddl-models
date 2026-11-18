@@ -1,7 +1,7 @@
 // Policy Administration - Policy Entity
 event-sourced entity Policy as flow is {
   type PolicyCommand is one of {
-    Policy.IssuePolicy or Policy.AddEndorsement or Policy.ProcessRenewal or Policy.CancelPolicy or Policy.ReinstatPolicy or Policy.UpdateBilling or Policy.GenerateRenewalOffer or Policy.DeclineRenewal
+    Policy.AddEndorsement or Policy.ProcessRenewal or Policy.CancelPolicy or Policy.ReinstatPolicy or Policy.UpdateBilling or Policy.GenerateRenewalOffer or Policy.DeclineRenewal
   } with {
     briefly "Policy command alternation"
     described as {
@@ -11,37 +11,6 @@ event-sourced entity Policy as flow is {
   inlet PolicyCommands is type PolicyCommand
   outlet PolicyEvents2 is type PolicyEvent
   // Commands
-  command IssuePolicy yields event PolicyIssued is {
-    policyId: PolicyId with {
-      briefly "Policy ID"
-      described as {
-        |New policy identifier.
-      }
-    }
-    details: PolicyDetails with {
-      briefly "Details"
-      described as {
-        |Policy details.
-      }
-    }
-    billingSchedule: BillingSchedule with {
-      briefly "Billing"
-      described as {
-        |Billing schedule.
-      }
-    }
-    issuedBy: String(1,100) with {
-      briefly "Issued by"
-      described as {
-        |Person issuing policy.
-      }
-    }
-  } with {
-    briefly "Issue new policy"
-    described as {
-      |Issues a new insurance policy after underwriting approval.
-    }
-  }
   command AddEndorsement yields event EndorsementAdded is {
     policyId: PolicyId with {
       briefly "Policy ID"
@@ -676,73 +645,25 @@ event-sourced entity Policy as flow is {
     }
   }
   // States
-  state QuotedState of record Policy.QuotedStateData is {
-    initial handler QuotedStateInitHandler is {
-      on init is {
-        let policyIssued: type PolicyIssued = prompt("the policy issued that brings this policy into existence")
-        yield policyIssued
-      }
-    } with {
-      briefly "Quoted state init handler"
-      described as {
-        |Initializes the Quoted state.
-      }
-    }
-  } with {
+  state QuotedState of record Policy.QuotedStateData with {
     briefly "Quoted state"
     described as {
       |Policy is in quoted/proposed status.
     }
   }
-  state ActiveState of record Policy.ActiveStateData is {
-    initial handler ActiveStateInitHandler is {
-      on init is {
-        let policyIssued: type PolicyIssued = prompt("the policy issued that brings this policy into existence")
-        yield policyIssued
-      }
-    } with {
-      briefly "Active state init handler"
-      described as {
-        |Initializes the Active state.
-      }
-    }
-  } with {
+  state ActiveState of record Policy.ActiveStateData with {
     briefly "Active state"
     described as {
       |Policy is active and in force.
     }
   }
-  state CancelledState of record Policy.CancelledStateData is {
-    initial handler CancelledStateInitHandler is {
-      on init is {
-        let policyCancelled: type PolicyCancelled = prompt("the policy cancelled that brings this policy into existence")
-        yield policyCancelled
-      }
-    } with {
-      briefly "Cancelled state init handler"
-      described as {
-        |Initializes the Cancelled state.
-      }
-    }
-  } with {
+  state CancelledState of record Policy.CancelledStateData with {
     briefly "Cancelled state"
     described as {
       |Policy has been cancelled.
     }
   }
-  state ExpiredState of record Policy.ExpiredStateData is {
-    initial handler ExpiredStateInitHandler is {
-      on init is {
-        let renewalDeclined: type RenewalDeclined = prompt("the renewal declined that brings this policy into existence")
-        yield renewalDeclined
-      }
-    } with {
-      briefly "Expired state init handler"
-      described as {
-        |Initializes the Expired state.
-      }
-    }
-  } with {
+  state ExpiredState of record Policy.ExpiredStateData with {
     briefly "Expired state"
     described as {
       |Policy has expired without renewal.
@@ -750,11 +671,12 @@ event-sourced entity Policy as flow is {
   }
   // Handler
   handler PolicyHandler is {
+    on init(details: type PolicyDetails, billingSchedule: type BillingSchedule, issuedAt: TimeStamp, issuedBy: String(1,100)) is {
+      morph entity PolicyContext.Policy to state PolicyContext.Policy.ActiveState with record Policy.ActiveStateData(policyId = self.id, details = details, billingSchedule = billingSchedule, endorsements = empty, renewalHistory = empty, createdAt = prompt("the created at of this active state data"), lastModifiedAt = prompt("the last modified at of this active state data"), renewedToPolicyId = empty)
+      send event PolicyIssued(policyId = self.id, details = details, billingSchedule = billingSchedule, issuedAt = issuedAt, issuedBy = issuedBy) to outlet PolicyContext.Policy.PolicyEvents2
+    }
     on declineRenewal: command DeclineRenewal is {
       yield event RenewalDeclined(policyId = declineRenewal.policyId, renewalId = declineRenewal.renewalId, declinedAt = prompt("the declined at of this renewal declined"), declineReason = declineRenewal.declineReason)
-    }
-    on issuePolicy: command IssuePolicy is {
-      yield event PolicyIssued(policyId = issuePolicy.policyId, details = issuePolicy.details, billingSchedule = issuePolicy.billingSchedule, issuedBy = issuePolicy.issuedBy, issuedAt = prompt("the issued at of this policy issued"))
     }
     on addEndorsement: command AddEndorsement is {
       yield event EndorsementAdded(policyId = addEndorsement.policyId, endorsement = addEndorsement.endorsement, updatedDetails = prompt("the updated details of this endorsement added"), addedAt = prompt("the added at of this endorsement added"))
@@ -788,9 +710,6 @@ event-sourced entity Policy as flow is {
     }
     on policyCancelled: event PolicyCancelled is {
       morph entity PolicyContext.Policy to state PolicyContext.Policy.CancelledState with record Policy.CancelledStateData(policyId = policyCancelled.policyId, cancellationDate = policyCancelled.cancellationDate, reason = policyCancelled.reason, details = prompt("the details of this cancelled state data"), returnPremium = prompt("the return premium of this cancelled state data"), cancelledAt = prompt("the cancelled at of this cancelled state data"))
-    }
-    on policyIssued: event PolicyIssued is {
-      morph entity PolicyContext.Policy to state PolicyContext.Policy.ActiveState with record Policy.ActiveStateData(policyId = policyIssued.policyId, details = policyIssued.details, billingSchedule = policyIssued.billingSchedule, endorsements = empty, renewalHistory = empty, createdAt = prompt("the created at of this active state data"), lastModifiedAt = prompt("the last modified at of this active state data"), renewedToPolicyId = empty)
     }
     on policyReinstated: event PolicyReinstated is {
       morph entity PolicyContext.Policy to state PolicyContext.Policy.ActiveState with record Policy.ActiveStateData(policyId = policyReinstated.policyId, details = prompt("the details of this active state data"), billingSchedule = prompt("the billing schedule of this active state data"), endorsements = empty, renewalHistory = empty, createdAt = prompt("the created at of this active state data"), lastModifiedAt = prompt("the last modified at of this active state data"), renewedToPolicyId = empty)

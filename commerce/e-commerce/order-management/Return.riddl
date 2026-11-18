@@ -2,7 +2,7 @@
 // Handles return requests, refunds, and restocking
 event-sourced entity Return as flow is {
   type ReturnCommand is one of {
-    Return.RequestReturn or Return.ApproveReturn or Return.DenyReturn or Return.ReceiveReturn or Return.ProcessRefund
+    Return.ApproveReturn or Return.DenyReturn or Return.ReceiveReturn or Return.ProcessRefund
   } with {
     briefly "Return command alternation"
     described as {
@@ -97,49 +97,6 @@ event-sourced entity Return as flow is {
     }
   }
   // Commands
-  command RequestReturn yields event ReturnRequested is {
-    returnId: ReturnId with {
-      briefly "Return ID"
-      described as {
-        |Unique return identifier.
-      }
-    }
-    orderId: OrderId with {
-      briefly "Order ID"
-      described as {
-        |Original order reference.
-      }
-    }
-    customerId: CustomerId with {
-      briefly "Customer ID"
-      described as {
-        |Customer making request.
-      }
-    }
-    returnItems: ReturnItemRecord+ with {
-      briefly "Items"
-      described as {
-        |Items to return.
-      }
-    }
-    returnReason: ReturnReason with {
-      briefly "Reason"
-      described as {
-        |Primary return reason.
-      }
-    }
-    comments: String(1,1000)? with {
-      briefly "Comments"
-      described as {
-        |Additional comments.
-      }
-    }
-  } with {
-    briefly "Initiate a return request"
-    described as {
-      |Submits a request to return one or more items from a delivered order.
-    }
-  }
   command ApproveReturn yields event ReturnApproved is {
     returnId: ReturnId with {
       briefly "Return ID"
@@ -688,10 +645,6 @@ event-sourced entity Return as flow is {
         let returnResult: type ReturnResult = prompt("read the return from the store")
         reply returnResult
       }
-      on init is {
-        let returnRequested: type ReturnRequested = prompt("the return requested that brings this return into existence")
-        yield returnRequested
-      }
     } with {
       briefly "Requested init handler"
       described as {
@@ -704,73 +657,25 @@ event-sourced entity Return as flow is {
       |The Requested state of the Return.
     }
   }
-  state Approved of record Return.ApprovedReturnData is {
-    initial handler ApprovedInitHandler is {
-      on init is {
-        let returnApproved: type ReturnApproved = prompt("the return approved that brings this return into existence")
-        yield returnApproved
-      }
-    } with {
-      briefly "Approved init handler"
-      described as {
-        |Initializes the Approved state.
-      }
-    }
-  } with {
+  state Approved of record Return.ApprovedReturnData with {
     briefly "Approved state"
     described as {
       |The Approved state of the Return.
     }
   }
-  state Received of record Return.ReceivedReturnData is {
-    initial handler ReceivedInitHandler is {
-      on init is {
-        let returnReceived: type ReturnReceived = prompt("the return received that brings this return into existence")
-        yield returnReceived
-      }
-    } with {
-      briefly "Received init handler"
-      described as {
-        |Initializes the Received state.
-      }
-    }
-  } with {
+  state Received of record Return.ReceivedReturnData with {
     briefly "Received state"
     described as {
       |The Received state of the Return.
     }
   }
-  state Refunded of record Return.RefundedReturnData is {
-    initial handler RefundedInitHandler is {
-      on init is {
-        let refundProcessed: type RefundProcessed = prompt("the refund processed that brings this return into existence")
-        yield refundProcessed
-      }
-    } with {
-      briefly "Refunded init handler"
-      described as {
-        |Initializes the Refunded state.
-      }
-    }
-  } with {
+  state Refunded of record Return.RefundedReturnData with {
     briefly "Refunded state"
     described as {
       |The Refunded state of the Return.
     }
   }
-  state Denied of record Return.DeniedReturnData is {
-    initial handler DeniedInitHandler is {
-      on init is {
-        let returnDenied: type ReturnDenied = prompt("the return denied that brings this return into existence")
-        yield returnDenied
-      }
-    } with {
-      briefly "Denied init handler"
-      described as {
-        |Initializes the Denied state.
-      }
-    }
-  } with {
+  state Denied of record Return.DeniedReturnData with {
     briefly "Denied state"
     described as {
       |The Denied state of the Return.
@@ -778,8 +683,9 @@ event-sourced entity Return as flow is {
   }
   // Handler
   handler ReturnHandler is {
-    on requestReturn: command RequestReturn is {
-      yield event ReturnRequested(returnId = requestReturn.returnId, orderId = requestReturn.orderId, customerId = requestReturn.customerId, returnItems = requestReturn.returnItems, returnReason = requestReturn.returnReason, requestedAt = prompt("the requested at of this return requested"), comments = requestReturn.comments)
+    on init(orderId: type OrderId, customerId: type CustomerId, returnItems: type ReturnItemRecord+, returnReason: type ReturnReason, requestedAt: TimeStamp, comments: String(1,1000)?) is {
+      morph entity Return to state Return.Requested with record Return.RequestedReturnData(returnId = self.id, orderId = orderId, customerId = customerId, returnItems = returnItems, returnReason = returnReason, comments = comments, stateValue = prompt("the state value of this requested return data"), requestedAt = prompt("the requested at of this requested return data"))
+      send event ReturnRequested(returnId = self.id, orderId = orderId, customerId = customerId, returnItems = returnItems, returnReason = returnReason, requestedAt = requestedAt, comments = comments) to outlet OrderContext.Return.ReturnEvents2
     }
     on approveReturn: command ApproveReturn is {
       yield event ReturnApproved(returnId = approveReturn.returnId, approvedBy = approveReturn.approvedBy, returnLabel = approveReturn.returnLabel, approvedAt = prompt("the approved at of this return approved"))
@@ -804,9 +710,6 @@ event-sourced entity Return as flow is {
     }
     on returnApproved: event ReturnApproved is {
       morph entity Return to state Return.Approved with record Return.ApprovedReturnData(returnId = returnApproved.returnId, returnLabel = returnApproved.returnLabel, approvedBy = returnApproved.approvedBy, stateValue = prompt("the state value of this approved return data"), orderId = prompt("the order id of this approved return data"), customerId = prompt("the customer id of this approved return data"), returnItems = prompt("the return items of this approved return data"), approvedAt = prompt("the approved at of this approved return data"))
-    }
-    on returnRequested: event ReturnRequested is {
-      morph entity Return to state Return.Requested with record Return.RequestedReturnData(returnId = returnRequested.returnId, orderId = returnRequested.orderId, customerId = returnRequested.customerId, returnItems = returnRequested.returnItems, returnReason = returnRequested.returnReason, comments = returnRequested.comments, stateValue = prompt("the state value of this requested return data"), requestedAt = prompt("the requested at of this requested return data"))
     }
   } with {
     briefly "Processes return lifecycle commands"

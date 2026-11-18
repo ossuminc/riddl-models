@@ -7,7 +7,7 @@ aggregate event-sourced entity Player as merge is {
     }
   }
   type PlayerCommand is one of {
-    Player.SignPlayer or Player.AssignToRoster or Player.ExtendContract or Player.TradePlayer or Player.ReleasePlayer or Player.PlaceOnInjuredReserve
+    Player.AssignToRoster or Player.ExtendContract or Player.TradePlayer or Player.ReleasePlayer or Player.PlaceOnInjuredReserve
   } with {
     briefly "Player command alternation"
     described as {
@@ -17,38 +17,6 @@ aggregate event-sourced entity Player as merge is {
   inlet PlayerCommands is type PlayerCommand
   outlet PlayerEvents2 is type PlayerEvent
   // Commands
-  command SignPlayer yields event PlayerSigned is {
-    playerId: PlayerId with {
-      briefly "Player to sign"
-      described as {
-        |Identifier of the player being signed.
-      }
-    }
-    playerInfo: PlayerInfo with {
-      briefly "Player information"
-      described as {
-        |Biographical and physical information about the player.
-      }
-    }
-    contract: ContractInfo with {
-      briefly "Contract terms"
-      described as {
-        |Financial terms of the contract being offered.
-      }
-    }
-    teamId: TeamId with {
-      briefly "Signing team"
-      described as {
-        |Team that is signing the player.
-      }
-    }
-  } with {
-    briefly "Sign a new player to the team"
-    described as {
-      | Initiates the signing of a player including their biographical
-      | information and contract terms. Requires salary cap validation.
-    }
-  }
   command AssignToRoster yields event PlayerAssignedToRoster is {
     playerId: PlayerId with {
       briefly "Player to assign"
@@ -566,73 +534,25 @@ aggregate event-sourced entity Player as merge is {
     }
   }
   // States
-  state UnsignedState of record Player.UnsignedStateData is {
-    initial handler UnsignedStateInitHandler is {
-      on init is {
-        let playerSigned: type PlayerSigned = prompt("the player signed that brings this player into existence")
-        yield playerSigned
-      }
-    } with {
-      briefly "Unsigned state init handler"
-      described as {
-        |Initializes the Unsigned state.
-      }
-    }
-  } with {
+  state UnsignedState of record Player.UnsignedStateData with {
     briefly "Unsigned state"
     described as {
       |Player is unsigned.
     }
   }
-  state SignedState of record Player.SignedStateData is {
-    initial handler SignedStateInitHandler is {
-      on init is {
-        let playerSigned: type PlayerSigned = prompt("the player signed that brings this player into existence")
-        yield playerSigned
-      }
-    } with {
-      briefly "Signed state init handler"
-      described as {
-        |Initializes the Signed state.
-      }
-    }
-  } with {
+  state SignedState of record Player.SignedStateData with {
     briefly "Signed state"
     described as {
       |Player is signed to a team.
     }
   }
-  state InjuredReserveState of record Player.InjuredReserveStateData is {
-    initial handler InjuredReserveStateInitHandler is {
-      on init is {
-        let playerPlacedOnInjuredReserve: type PlayerPlacedOnInjuredReserve = prompt("the player placed on injured reserve that brings this player into existence")
-        yield playerPlacedOnInjuredReserve
-      }
-    } with {
-      briefly "Injured reserve state init handler"
-      described as {
-        |Initializes the Injured Reserve state.
-      }
-    }
-  } with {
+  state InjuredReserveState of record Player.InjuredReserveStateData with {
     briefly "Injured reserve state"
     described as {
       |Player is on injured reserve.
     }
   }
-  state ReleasedState of record Player.ReleasedStateData is {
-    initial handler ReleasedStateInitHandler is {
-      on init is {
-        let playerReleased: type PlayerReleased = prompt("the player released that brings this player into existence")
-        yield playerReleased
-      }
-    } with {
-      briefly "Released state init handler"
-      described as {
-        |Initializes the Released state.
-      }
-    }
-  } with {
+  state ReleasedState of record Player.ReleasedStateData with {
     briefly "Released state"
     described as {
       |Player has been released.
@@ -640,6 +560,10 @@ aggregate event-sourced entity Player as merge is {
   }
   // Handler
   handler PlayerHandler is {
+    on init(playerInfo: type PlayerInfo, contract: type ContractInfo, teamId: type TeamId, signedAt: TimeStamp) is {
+      morph entity Player to state Player.SignedState with record Player.SignedStateData(playerId = self.id, playerInfo = playerInfo, contract = contract, teamId = teamId, rosterSlot = empty, rosterStatus = empty, rosterAssignedAt = empty)
+      send event PlayerSigned(playerId = self.id, playerInfo = playerInfo, contract = contract, teamId = teamId, signedAt = signedAt) to outlet TeamContext.Player.PlayerEvents2
+    }
     on contractExtended: event ContractExtended is {
       set field Player.SignedState.contract.endDate to contractExtended.newEndDate
       set field Player.SignedState.contract.totalValue to contractExtended.newTotalValue
@@ -655,14 +579,8 @@ aggregate event-sourced entity Player as merge is {
     on playerReleased: event PlayerReleased is {
       morph entity Player to state Player.ReleasedState with record Player.ReleasedStateData(playerId = playerReleased.playerId, releaseDate = playerReleased.releaseDate, reason = playerReleased.reason, playerInfo = prompt("the player info of this released state data"), previousTeamId = prompt("the previous team id of this released state data"))
     }
-    on playerSigned: event PlayerSigned is {
-      morph entity Player to state Player.SignedState with record Player.SignedStateData(playerId = playerSigned.playerId, playerInfo = playerSigned.playerInfo, contract = playerSigned.contract, teamId = playerSigned.teamId, rosterSlot = empty, rosterStatus = empty, rosterAssignedAt = empty)
-    }
     on playerTraded: event PlayerTraded is {
       morph entity Player to state Player.SignedState with record Player.SignedStateData(playerId = playerTraded.playerId, playerInfo = prompt("the player info of this signed state data"), contract = prompt("the contract of this signed state data"), teamId = prompt("the team id of this signed state data"), rosterSlot = empty, rosterStatus = empty, rosterAssignedAt = empty)
-    }
-    on signPlayer: command SignPlayer is {
-      yield event PlayerSigned(playerId = signPlayer.playerId, playerInfo = signPlayer.playerInfo, contract = signPlayer.contract, teamId = signPlayer.teamId, signedAt = prompt("the signed at of this player signed"))
     }
     on assignToRoster: command AssignToRoster is {
       yield event PlayerAssignedToRoster(playerId = assignToRoster.playerId, position = assignToRoster.position, jerseyNumber = assignToRoster.jerseyNumber, status = assignToRoster.status, assignedAt = prompt("the assigned at of this player assigned to roster"))

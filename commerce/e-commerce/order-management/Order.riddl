@@ -2,7 +2,7 @@
 // The primary aggregate for order lifecycle management
 event-sourced entity Order as flow is {
   type OrderCommand is one of {
-    Order.PlaceOrder or Order.ConfirmPayment or Order.AllocateInventory or Order.ShipOrder or Order.DeliverOrder or Order.NotifyCustomer or Order.CancelOrder
+    Order.ConfirmPayment or Order.AllocateInventory or Order.ShipOrder or Order.DeliverOrder or Order.NotifyCustomer or Order.CancelOrder
   } with {
     briefly "Order command alternation"
     described as {
@@ -46,50 +46,6 @@ event-sourced entity Order as flow is {
     }
   }
   // Commands
-  command PlaceOrder yields event OrderPlaced is {
-    orderId: OrderId with {
-      briefly "Order identifier"
-      described as {
-        |The unique identifier for the new order.
-      }
-    }
-    customerId: CustomerId with {
-      briefly "Customer reference"
-      described as {
-        |Reference to the customer placing the order.
-      }
-    }
-    items: OrderItemRecord+ with {
-      briefly "Order line items"
-      described as {
-        |The products being ordered with quantities and prices.
-      }
-    }
-    shippingAddress: Address with {
-      briefly "Shipping destination"
-      described as {
-        |The address where the order should be delivered.
-      }
-    }
-    billingAddress: Address with {
-      briefly "Billing address"
-      described as {
-        |The address associated with the payment method.
-      }
-    }
-    paymentMethod: PaymentMethod with {
-      briefly "Payment method"
-      described as {
-        |How the customer will pay for the order.
-      }
-    }
-  } with {
-    briefly "Create a new order from cart items"
-    described as {
-      | Initiates a new order with the specified items and addresses.
-      | The order starts in PendingPayment state awaiting payment confirmation.
-    }
-  }
   command ConfirmPayment yields event PaymentConfirmed is {
     orderId: OrderId with {
       briefly "Order identifier"
@@ -841,10 +797,6 @@ event-sourced entity Order as flow is {
         let orderResult: type OrderResult = prompt("read the order from the store")
         reply orderResult
       }
-      on init is {
-        let orderPlaced: type OrderPlaced = prompt("the order placed that brings this order into existence")
-        yield orderPlaced
-      }
     } with {
       briefly "PendingPayment init handler"
       described as {
@@ -857,73 +809,25 @@ event-sourced entity Order as flow is {
       |The PendingPayment state of the Order.
     }
   }
-  state AwaitingFulfillment of record Order.AwaitingFulfillmentData is {
-    initial handler AwaitingFulfillmentInitHandler is {
-      on init is {
-        let paymentConfirmed: type PaymentConfirmed = prompt("the payment confirmed that brings this order into existence")
-        yield paymentConfirmed
-      }
-    } with {
-      briefly "AwaitingFulfillment init handler"
-      described as {
-        |Initializes the AwaitingFulfillment state.
-      }
-    }
-  } with {
+  state AwaitingFulfillment of record Order.AwaitingFulfillmentData with {
     briefly "AwaitingFulfillment state"
     described as {
       |The AwaitingFulfillment state of the Order.
     }
   }
-  state InTransit of record Order.InTransitData is {
-    initial handler InTransitInitHandler is {
-      on init is {
-        let orderShipped: type OrderShipped = prompt("the order shipped that brings this order into existence")
-        yield orderShipped
-      }
-    } with {
-      briefly "InTransit init handler"
-      described as {
-        |Initializes the InTransit state.
-      }
-    }
-  } with {
+  state InTransit of record Order.InTransitData with {
     briefly "InTransit state"
     described as {
       |The InTransit state of the Order.
     }
   }
-  state Delivered of record Order.DeliveredData is {
-    initial handler DeliveredInitHandler is {
-      on init is {
-        let orderDelivered: type OrderDelivered = prompt("the order delivered that brings this order into existence")
-        yield orderDelivered
-      }
-    } with {
-      briefly "Delivered init handler"
-      described as {
-        |Initializes the Delivered state.
-      }
-    }
-  } with {
+  state Delivered of record Order.DeliveredData with {
     briefly "Delivered state"
     described as {
       |The Delivered state of the Order.
     }
   }
-  state Cancelled of record Order.CancelledData is {
-    initial handler CancelledInitHandler is {
-      on init is {
-        let orderCancelled: type OrderCancelled = prompt("the order cancelled that brings this order into existence")
-        yield orderCancelled
-      }
-    } with {
-      briefly "Cancelled init handler"
-      described as {
-        |Initializes the Cancelled state.
-      }
-    }
-  } with {
+  state Cancelled of record Order.CancelledData with {
     briefly "Cancelled state"
     described as {
       |The Cancelled state of the Order.
@@ -931,6 +835,10 @@ event-sourced entity Order as flow is {
   }
   // Handler
   handler OrderHandler is {
+    on init(customerId: type CustomerId, items: type OrderItemRecord+, subtotal: type Money, tax: type Money, shippingCost: type Money, total: type Money, shippingAddress: type Address, billingAddress: type Address, placedAt: TimeStamp, paymentMethod: type PaymentMethod) is {
+      morph entity Order to state Order.PendingPayment with record Order.PendingPaymentData(orderId = self.id, customerId = customerId, items = items, shippingAddress = shippingAddress, billingAddress = billingAddress, paymentMethod = paymentMethod, subtotal = prompt("the subtotal of this pending payment data"), tax = prompt("the tax of this pending payment data"), shippingCost = prompt("the shipping cost of this pending payment data"), total = prompt("the total of this pending payment data"), placedAt = prompt("the placed at of this pending payment data"))
+      send event OrderPlaced(orderId = self.id, customerId = customerId, items = items, subtotal = subtotal, tax = tax, shippingCost = shippingCost, total = total, shippingAddress = shippingAddress, billingAddress = billingAddress, placedAt = placedAt, paymentMethod = paymentMethod) to outlet OrderContext.Order.OrderEvents2
+    }
     on customerNotified: event CustomerNotified is {
       set field Order.Delivered.lastNotifiedAt to customerNotified.notifiedAt
     }
@@ -944,17 +852,11 @@ event-sourced entity Order as flow is {
     on orderDelivered: event OrderDelivered is {
       morph entity Order to state Order.Delivered with record Order.DeliveredData(orderId = orderDelivered.orderId, deliveredAt = orderDelivered.deliveredAt, signedBy = orderDelivered.signedBy, customerId = prompt("the customer id of this delivered data"), items = prompt("the items of this delivered data"), total = prompt("the total of this delivered data"), shippingAddress = prompt("the shipping address of this delivered data"), shipmentId = prompt("the shipment id of this delivered data"), carrier = prompt("the carrier of this delivered data"), trackingNumber = prompt("the tracking number of this delivered data"), lastNotifiedAt = empty)
     }
-    on orderPlaced: event OrderPlaced is {
-      morph entity Order to state Order.PendingPayment with record Order.PendingPaymentData(orderId = orderPlaced.orderId, customerId = orderPlaced.customerId, items = orderPlaced.items, shippingAddress = orderPlaced.shippingAddress, billingAddress = orderPlaced.billingAddress, paymentMethod = orderPlaced.paymentMethod, subtotal = prompt("the subtotal of this pending payment data"), tax = prompt("the tax of this pending payment data"), shippingCost = prompt("the shipping cost of this pending payment data"), total = prompt("the total of this pending payment data"), placedAt = prompt("the placed at of this pending payment data"))
-    }
     on orderShipped: event OrderShipped is {
       morph entity Order to state Order.InTransit with record Order.InTransitData(orderId = orderShipped.orderId, shipmentId = orderShipped.shipmentId, carrier = orderShipped.carrier, trackingNumber = orderShipped.trackingNumber, customerId = prompt("the customer id of this in transit data"), items = prompt("the items of this in transit data"), total = prompt("the total of this in transit data"), shippingAddress = prompt("the shipping address of this in transit data"), shippedAt = prompt("the shipped at of this in transit data"))
     }
     on paymentConfirmed: event PaymentConfirmed is {
       morph entity Order to state Order.AwaitingFulfillment with record Order.AwaitingFulfillmentData(orderId = paymentConfirmed.orderId, transactionId = paymentConfirmed.transactionId, amountPaid = paymentConfirmed.amountPaid, customerId = prompt("the customer id of this awaiting fulfillment data"), items = prompt("the items of this awaiting fulfillment data"), subtotal = prompt("the subtotal of this awaiting fulfillment data"), tax = prompt("the tax of this awaiting fulfillment data"), shippingCost = prompt("the shipping cost of this awaiting fulfillment data"), total = prompt("the total of this awaiting fulfillment data"), shippingAddress = prompt("the shipping address of this awaiting fulfillment data"), billingAddress = prompt("the billing address of this awaiting fulfillment data"), confirmedAt = prompt("the confirmed at of this awaiting fulfillment data"), allItemsAllocated = empty, allocatedAt = empty)
-    }
-    on placeOrder: command PlaceOrder is {
-      yield event OrderPlaced(orderId = placeOrder.orderId, customerId = placeOrder.customerId, items = placeOrder.items, shippingAddress = placeOrder.shippingAddress, billingAddress = placeOrder.billingAddress, subtotal = prompt("the subtotal of this order placed"), tax = prompt("the tax of this order placed"), shippingCost = prompt("the shipping cost of this order placed"), total = prompt("the total of this order placed"), placedAt = prompt("the placed at of this order placed"), paymentMethod = placeOrder.paymentMethod)
     }
     on confirmPayment: command ConfirmPayment is {
       yield event PaymentConfirmed(orderId = confirmPayment.orderId, transactionId = confirmPayment.transactionId, amountPaid = confirmPayment.amountPaid, confirmedAt = prompt("the confirmed at of this payment confirmed"))

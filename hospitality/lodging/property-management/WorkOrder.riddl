@@ -5,7 +5,7 @@
 // "PendingParts", and it outlives every work order raised against it.
 aggregate entity WorkOrder as flow is {
   type WorkOrderCommand is one of {
-    WorkOrder.OpenWorkOrder or WorkOrder.AssignWorkOrder or WorkOrder.StartWork or WorkOrder.AwaitParts or WorkOrder.ResumeWork or WorkOrder.CompleteWorkOrder or WorkOrder.CancelWorkOrder
+    WorkOrder.AssignWorkOrder or WorkOrder.StartWork or WorkOrder.AwaitParts or WorkOrder.ResumeWork or WorkOrder.CompleteWorkOrder or WorkOrder.CancelWorkOrder
   } with {
     briefly "Work order command alternation"
     described as {
@@ -46,25 +46,6 @@ aggregate entity WorkOrder as flow is {
     briefly "Work order result"
     described as {
       |Result carrying the requested work order data.
-    }
-  }
-  command OpenWorkOrder is {
-    workOrderId: WorkOrderId with {
-      briefly "Work order"
-      described as {
-        |The work order this command addresses.
-      }
-    }
-    roomId: RoomId with {
-      briefly "Room"
-      described as {
-        |The room the work concerns.
-      }
-    }
-  } with {
-    briefly "Raise a work order"
-    described as {
-      |Raises a work order against a room from a maintenance report.
     }
   }
   command AssignWorkOrder is {
@@ -422,73 +403,25 @@ aggregate entity WorkOrder as flow is {
       |A work order abandoned without completion.
     }
   }
-  state OpenState of record WorkOrder.OpenStateData is {
-    initial handler OpenInitHandler is {
-      on init is {
-        set state OpenState to "initialize from the preceding event"
-        set field WorkOrder.OpenStateData.stateValue to "Open"
-      }
-    } with {
-      briefly "Open init handler"
-      described as {
-        |Initializes a work order on entry to the Open state.
-      }
-    }
-  } with {
+  state OpenState of record WorkOrder.OpenStateData with {
     briefly "Open state"
     described as {
       |A work order raised but not yet assigned to anyone.
     }
   }
-  state AssignedState of record WorkOrder.AssignedStateData is {
-    initial handler AssignedInitHandler is {
-      on init is {
-        set state AssignedState to "initialize from the preceding event"
-        set field WorkOrder.AssignedStateData.stateValue to "Assigned"
-      }
-    } with {
-      briefly "Assigned init handler"
-      described as {
-        |Initializes a work order on entry to the Assigned state.
-      }
-    }
-  } with {
+  state AssignedState of record WorkOrder.AssignedStateData with {
     briefly "Assigned state"
     described as {
       |A work order assigned to a technician who has not started.
     }
   }
-  state InProgressState of record WorkOrder.InProgressStateData is {
-    initial handler InProgressInitHandler is {
-      on init is {
-        set state InProgressState to "initialize from the preceding event"
-        set field WorkOrder.InProgressStateData.stateValue to "InProgress"
-      }
-    } with {
-      briefly "InProgress init handler"
-      described as {
-        |Initializes a work order on entry to the InProgress state.
-      }
-    }
-  } with {
+  state InProgressState of record WorkOrder.InProgressStateData with {
     briefly "InProgress state"
     described as {
       |A work order being worked on.
     }
   }
-  state PendingPartsState of record WorkOrder.PendingPartsStateData is {
-    initial handler PendingPartsInitHandler is {
-      on init is {
-        set state PendingPartsState to "initialize from the preceding event"
-        set field WorkOrder.PendingPartsStateData.stateValue to "PendingParts"
-      }
-    } with {
-      briefly "PendingParts init handler"
-      described as {
-        |Initializes a work order on entry to the PendingParts state.
-      }
-    }
-  } with {
+  state PendingPartsState of record WorkOrder.PendingPartsStateData with {
     briefly "PendingParts state"
     described as {
       |A work order halted awaiting parts.
@@ -496,10 +429,6 @@ aggregate entity WorkOrder as flow is {
   }
   state CompletedState of record WorkOrder.CompletedStateData is {
     initial handler CompletedInitHandler is {
-      on init is {
-        set state CompletedState to "initialize from the preceding event"
-        set field WorkOrder.CompletedStateData.stateValue to "Completed"
-      }
       on query GetWorkOrder is {
         let workOrderResult: type WorkOrder.WorkOrderResult = prompt("read the work order from the store")
         reply workOrderResult
@@ -521,10 +450,6 @@ aggregate entity WorkOrder as flow is {
   }
   state CancelledState of record WorkOrder.CancelledStateData is {
     initial handler CancelledInitHandler is {
-      on init is {
-        set state CancelledState to "initialize from the preceding event"
-        set field WorkOrder.CancelledStateData.stateValue to "Cancelled"
-      }
       on other is {
         error "the work order was cancelled and accepts no further activity"
       }
@@ -541,13 +466,13 @@ aggregate entity WorkOrder as flow is {
     }
   }
   handler WorkOrderHandler is {
+    on init(roomId: type RoomId) is {
+      morph entity RoomContext.WorkOrder to state RoomContext.WorkOrder.OpenState with record WorkOrder.OpenStateData(workOrderId = self.id, roomId = roomId, stateValue = prompt("the state value of this open state data"))
+      send event WorkOrder.WorkOrderOpened(workOrderId = self.id) to outlet WorkOrderEvents
+    }
     on query GetWorkOrder is {
       let workOrderResult: type WorkOrder.WorkOrderResult = prompt("read the work order from the store")
       reply workOrderResult
-    }
-    on openWorkOrder: command OpenWorkOrder is {
-      morph entity RoomContext.WorkOrder to state RoomContext.WorkOrder.OpenState with record WorkOrder.OpenStateData(workOrderId = openWorkOrder.workOrderId, roomId = openWorkOrder.roomId, stateValue = prompt("the state value of this open state data"))
-      send event WorkOrder.WorkOrderOpened(workOrderId = openWorkOrder.workOrderId) to outlet WorkOrderEvents
     }
     on assignWorkOrder: command AssignWorkOrder is {
       morph entity RoomContext.WorkOrder to state RoomContext.WorkOrder.AssignedState with record WorkOrder.AssignedStateData(workOrderId = assignWorkOrder.workOrderId, roomId = assignWorkOrder.roomId, stateValue = prompt("the state value of this assigned state data"))

@@ -1,7 +1,7 @@
 // Product Catalog - Product Entity
 event-sourced entity Product as flow is {
   type ProductCommand is one of {
-    Product.CreateProduct or Product.UpdateProduct or Product.SetPrice or Product.AddVariant or Product.AssignCategory or Product.PublishProduct or Product.RetireProduct
+    Product.UpdateProduct or Product.SetPrice or Product.AddVariant or Product.AssignCategory or Product.PublishProduct or Product.RetireProduct
   } with {
     briefly "Product command alternation"
     described as {
@@ -11,55 +11,6 @@ event-sourced entity Product as flow is {
   inlet ProductCommands is type ProductCommand
   outlet ProductEvents2 is type ProductEvent
   // Commands
-  command CreateProduct yields event ProductCreated is {
-    productId: ProductId with {
-      briefly "Product ID"
-      described as {
-        |Unique identifier for the new product.
-      }
-    }
-    sku: SKU with {
-      briefly "SKU"
-      described as {
-        |Stock keeping unit for the product.
-      }
-    }
-    name: ProductName with {
-      briefly "Name"
-      described as {
-        |Display name for the product.
-      }
-    }
-    description: ProductDescription with {
-      briefly "Description"
-      described as {
-        |Detailed product description.
-      }
-    }
-    basePrice: Money with {
-      briefly "Base price"
-      described as {
-        |Default price before tier adjustments.
-      }
-    }
-    attributes: AttributeValue+ with {
-      briefly "Attributes"
-      described as {
-        |Product attributes like color, material, size.
-      }
-    }
-    images: ImageUrl+ with {
-      briefly "Images"
-      described as {
-        |Product image URLs.
-      }
-    }
-  } with {
-    briefly "Create a new product"
-    described as {
-      |Adds a new product to the catalog in draft status.
-    }
-  }
   command UpdateProduct yields event ProductUpdated is {
     productId: ProductId with {
       briefly "Product ID"
@@ -639,55 +590,19 @@ event-sourced entity Product as flow is {
     }
   }
   // States
-  state Draft of record Product.DraftProductData is {
-    initial handler DraftInitHandler is {
-      on init is {
-        let productCreated: type ProductCreated = prompt("the product created that brings this product into existence")
-        yield productCreated
-      }
-    } with {
-      briefly "Draft init handler"
-      described as {
-        |Initializes the Draft state.
-      }
-    }
-  } with {
+  state Draft of record Product.DraftProductData with {
     briefly "Draft state"
     described as {
       |Product in draft.
     }
   }
-  state Active of record Product.ActiveProductData is {
-    initial handler ActiveInitHandler is {
-      on init is {
-        let productPublished: type ProductPublished = prompt("the product published that brings this product into existence")
-        yield productPublished
-      }
-    } with {
-      briefly "Active init handler"
-      described as {
-        |Initializes the Active state.
-      }
-    }
-  } with {
+  state Active of record Product.ActiveProductData with {
     briefly "Active state"
     described as {
       |Product published and active.
     }
   }
-  state Retired of record Product.RetiredProductData is {
-    initial handler RetiredInitHandler is {
-      on init is {
-        let productRetired: type ProductRetired = prompt("the product retired that brings this product into existence")
-        yield productRetired
-      }
-    } with {
-      briefly "Retired init handler"
-      described as {
-        |Initializes the Retired state.
-      }
-    }
-  } with {
+  state Retired of record Product.RetiredProductData with {
     briefly "Retired state"
     described as {
       |Product has been retired.
@@ -695,15 +610,16 @@ event-sourced entity Product as flow is {
   }
   // Handler
   handler ProductHandler is {
+    on init(sku: type SKU, name: type ProductName, description: type ProductDescription, basePrice: type Money, createdAt: TimeStamp, attributes: type AttributeValue+, images: type ImageUrl+) is {
+      morph entity Product to state Product.Draft with record Product.DraftProductData(productId = self.id, sku = sku, name = name, description = description, basePrice = basePrice, attributes = attributes, images = images, variants = prompt("the variants of this draft product data"), categories = prompt("the categories of this draft product data"), primaryCategory = empty, createdAt = prompt("the created at of this draft product data"))
+      send event ProductCreated(productId = self.id, sku = sku, name = name, description = description, basePrice = basePrice, createdAt = createdAt, attributes = attributes, images = images) to outlet CatalogContext.Product.ProductEvents2
+    }
     on categoryAssigned: event CategoryAssigned is {
       append categoryAssigned.categoryId to field Product.Active.categories
       set field Product.Active.primaryCategory to prompt("categoryId when isPrimary, else unchanged")
     }
     on priceChanged: event PriceChanged is {
       set field Product.Active.basePrice to priceChanged.newPrice
-    }
-    on productCreated: event ProductCreated is {
-      morph entity Product to state Product.Draft with record Product.DraftProductData(productId = productCreated.productId, sku = productCreated.sku, name = productCreated.name, description = productCreated.description, basePrice = productCreated.basePrice, attributes = productCreated.attributes, images = productCreated.images, variants = prompt("the variants of this draft product data"), categories = prompt("the categories of this draft product data"), primaryCategory = empty, createdAt = prompt("the created at of this draft product data"))
     }
     on productPublished: event ProductPublished is {
       morph entity Product to state Product.Active with record Product.ActiveProductData(productId = productPublished.productId, sku = prompt("the sku of this active product data"), name = prompt("the name of this active product data"), description = prompt("the description of this active product data"), basePrice = prompt("the base price of this active product data"), priceTiers = prompt("the price tiers of this active product data"), attributes = prompt("the attributes of this active product data"), images = prompt("the images of this active product data"), variants = prompt("the variants of this active product data"), categories = prompt("the categories of this active product data"), primaryCategory = empty, publishedAt = prompt("the published at of this active product data"), updatedAt = empty, lastVariantAddedAt = empty)
@@ -719,9 +635,6 @@ event-sourced entity Product as flow is {
     on variantAdded: event VariantAdded is {
       append variantAdded.variant to field Product.Active.variants
       set field Product.Active.lastVariantAddedAt to variantAdded.addedAt
-    }
-    on createProduct: command CreateProduct is {
-      yield event ProductCreated(productId = createProduct.productId, sku = createProduct.sku, name = createProduct.name, description = createProduct.description, basePrice = createProduct.basePrice, createdAt = prompt("the created at of this product created"), attributes = createProduct.attributes, images = createProduct.images)
     }
     on updateProduct: command UpdateProduct is {
       yield event ProductUpdated(productId = updateProduct.productId, updatedName = updateProduct.updatedName, updatedDescription = updateProduct.updatedDescription, updatedAt = prompt("the updated at of this product updated"))

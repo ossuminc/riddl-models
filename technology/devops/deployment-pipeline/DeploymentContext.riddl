@@ -1,5 +1,65 @@
 // Deployment Context - Bounded context for deployment management
 context DeploymentContext as router is {
+  command InitiateDeployment yields event Deployment.DeploymentInitiated is {
+    artifactId: ArtifactId with {
+      briefly "Artifact reference"
+      described as {
+        |The artifact to be deployed.
+      }
+    }
+    targetEnvironment: EnvironmentId with {
+      briefly "Target environment"
+      described as {
+        |The environment where the artifact will be deployed.
+      }
+    }
+    deploymentStrategy: DeploymentStrategy with {
+      briefly "Deployment strategy"
+      described as {
+        |How the deployment should be executed.
+      }
+    }
+    healthCheckUrl: URL with {
+      briefly "Health check URL"
+      described as {
+        |Endpoint to verify deployment health.
+      }
+    }
+    timeoutMinutes: Integer with {
+      briefly "Timeout"
+      described as {
+        |Maximum time allowed for deployment in minutes.
+      }
+    }
+    requiresApproval: Boolean with {
+      briefly "Requires approval"
+      described as {
+        |Whether manual approval is needed before execution.
+      }
+    }
+    initiatedBy: String(1,100) with {
+      briefly "Initiated by"
+      described as {
+        |User or system that initiated the deployment.
+      }
+    }
+  } with {
+    briefly "Initiates a new deployment request"
+    described as {
+      | Creates a new deployment with the specified configuration. If the
+      | target environment requires approval, the deployment enters the
+      | AwaitingApproval state; otherwise it proceeds directly to execution.
+    }
+  }
+  type DeploymentRequest is one of {
+    DeploymentContext.InitiateDeployment or Deployment.DeploymentCommand
+  } with {
+    briefly "Deployment requests"
+    described as {
+      |What may be asked of DeploymentContext about a Deployment: InitiateDeployment, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
   inlet DeploymentContextFromInfrastructureService is command Deployment.RollbackDeployment with {
     briefly "What FromInfrastructureService makes of that service's news"
   }
@@ -12,15 +72,17 @@ context DeploymentContext as router is {
   connector 'FromMonitoringService Intake' is from outlet DeploymentContext.FromMonitoringService.FromMonitoringServiceToDeploymentContext to inlet DeploymentContext.DeploymentContextFromMonitoringService with {
     briefly "What FromMonitoringService makes of that news, on its way in"
   }
-  inlet DeploymentCommandStreamIn is type DeploymentCommand
+  inlet DeploymentCommandStreamIn is type DeploymentContext.DeploymentRequest
   outlet DeploymentCommandStreamOut is type DeploymentCommand
   inlet EnvironmentCommandStreamIn is type EnvironmentCommand
   outlet EnvironmentCommandStreamOut is type EnvironmentCommand
   inlet DeploymentQueryResultStreamIn is result Deployment.DeploymentQueryResult
   outlet DeploymentQueryResultStreamOut is result Deployment.DeploymentQueryResult
   handler DeploymentContextBoundary is {
-    on initiateDeployment: command Deployment.InitiateDeployment is {
-      forward initiateDeployment to outlet DeploymentContext.DeploymentCommandStreamOut
+    on initiateDeployment: command DeploymentContext.InitiateDeployment is {
+      let givenInitiatedAt: type TimeStamp = prompt("the initiated at of this deployment initiated")
+      let newDeployment = create entity DeploymentContext.Deployment(artifactId = initiateDeployment.artifactId, targetEnvironment = initiateDeployment.targetEnvironment, initiatedBy = initiateDeployment.initiatedBy, initiatedAt = givenInitiatedAt, deploymentStrategy = initiateDeployment.deploymentStrategy, healthCheckUrl = initiateDeployment.healthCheckUrl, timeoutMinutes = initiateDeployment.timeoutMinutes, requiresApproval = initiateDeployment.requiresApproval)
+      yield event Deployment.DeploymentInitiated(deploymentId = newDeployment, artifactId = initiateDeployment.artifactId, targetEnvironment = initiateDeployment.targetEnvironment, initiatedBy = initiateDeployment.initiatedBy, initiatedAt = givenInitiatedAt, deploymentStrategy = initiateDeployment.deploymentStrategy, healthCheckUrl = initiateDeployment.healthCheckUrl, timeoutMinutes = initiateDeployment.timeoutMinutes, requiresApproval = initiateDeployment.requiresApproval)
     }
     on approveDeployment: command Deployment.ApproveDeployment is {
       forward approveDeployment to outlet DeploymentContext.DeploymentCommandStreamOut

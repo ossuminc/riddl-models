@@ -1,7 +1,7 @@
 // Payment Processing - Payment Entity
 event-sourced entity Payment as flow is {
   type PaymentCommand is one of {
-    Payment.InitiatePayment or Payment.RecordAuthentication or Payment.AuthorizePayment or Payment.DeclinePayment or Payment.CapturePayment or Payment.VoidPayment or Payment.RefundPayment or Payment.SettlePayment or Payment.RecordDispute or Payment.ResolveDispute
+    Payment.InitiatePayment or Payment.RecordAuthentication or Payment.DeclinePayment or Payment.CapturePayment or Payment.VoidPayment or Payment.RefundPayment or Payment.SettlePayment or Payment.RecordDispute or Payment.ResolveDispute
   } with {
     briefly "Payment command alternation"
     described as {
@@ -58,31 +58,6 @@ event-sourced entity Payment as flow is {
     described as {
       |Record the outcome of 3-D Secure, which is what makes a payment fit to
       |send to the card network for authorization.
-    }
-  }
-  command AuthorizePayment yields event PaymentAuthorized is {
-    paymentId: PaymentId with {
-      briefly "Payment ID"
-      described as {
-        |New payment identifier.
-      }
-    }
-    info: PaymentInfo with {
-      briefly "Info"
-      described as {
-        |Payment information.
-      }
-    }
-    card: CardDetails with {
-      briefly "Card"
-      described as {
-        |Card details.
-      }
-    }
-  } with {
-    briefly "Authorize payment"
-    described as {
-      |Requests payment authorization.
     }
   }
   command DeclinePayment yields event PaymentDeclined is {
@@ -689,55 +664,19 @@ event-sourced entity Payment as flow is {
     }
   }
   // States
-  state AuthorizedState of record Payment.AuthorizedStateData is {
-    initial handler AuthorizedStateInitHandler is {
-      on init is {
-        let paymentAuthorized: type PaymentAuthorized = prompt("the payment authorized that brings this payment into existence")
-        yield paymentAuthorized
-      }
-    } with {
-      briefly "Authorized state init handler"
-      described as {
-        |Initializes the Authorized state.
-      }
-    }
-  } with {
+  state AuthorizedState of record Payment.AuthorizedStateData with {
     briefly "Authorized state"
     described as {
       |Payment has been authorized.
     }
   }
-  state CapturedState of record Payment.CapturedStateData is {
-    initial handler CapturedStateInitHandler is {
-      on init is {
-        let paymentCaptured: type PaymentCaptured = prompt("the payment captured that brings this payment into existence")
-        yield paymentCaptured
-      }
-    } with {
-      briefly "Captured state init handler"
-      described as {
-        |Initializes the Captured state.
-      }
-    }
-  } with {
+  state CapturedState of record Payment.CapturedStateData with {
     briefly "Captured state"
     described as {
       |Payment has been captured for settlement.
     }
   }
-  state SettledState of record Payment.SettledStateData is {
-    initial handler SettledStateInitHandler is {
-      on init is {
-        let paymentSettled: type PaymentSettled = prompt("the payment settled that brings this payment into existence")
-        yield paymentSettled
-      }
-    } with {
-      briefly "Settled state init handler"
-      described as {
-        |Initializes the Settled state.
-      }
-    }
-  } with {
+  state SettledState of record Payment.SettledStateData with {
     briefly "Settled state"
     described as {
       |Payment has been settled.
@@ -745,6 +684,10 @@ event-sourced entity Payment as flow is {
   }
   // Handler
   handler PaymentHandler is {
+    on init(info: type PaymentInfo, card: type CardDetails, resultValue: type AuthorizationResult, authorizedAt: TimeStamp) is {
+      morph entity PaymentContext.Payment to state PaymentContext.Payment.AuthorizedState with record Payment.AuthorizedStateData(paymentId = self.id, info = info, card = card, status = prompt("the status of this authorized state data"), authResult = prompt("the auth result of this authorized state data"), authorizedAt = prompt("the authorized at of this authorized state data"), authenticationOutcome = empty, declinedAt = empty, voidReason = empty, voidedAt = empty)
+      send event PaymentAuthorized(paymentId = self.id, info = info, card = card, result = resultValue, authorizedAt = authorizedAt) to outlet PaymentContext.Payment.PaymentEvents2
+    }
     on initiatePayment: command InitiatePayment is {
       yield event PaymentInitiated(paymentId = initiatePayment.paymentId, info = initiatePayment.info, card = initiatePayment.card)
     }
@@ -761,9 +704,6 @@ event-sourced entity Payment as flow is {
     }
     on declinePayment: command DeclinePayment is {
       yield event PaymentDeclined(paymentId = declinePayment.paymentId, info = prompt("the info of this payment declined"), result = declinePayment.result, declinedAt = prompt("the declined at of this payment declined"))
-    }
-    on authorizePayment: command AuthorizePayment is {
-      yield event PaymentAuthorized(paymentId = authorizePayment.paymentId, info = authorizePayment.info, card = authorizePayment.card, result = prompt("the result of this payment authorized"), authorizedAt = prompt("the authorized at of this payment authorized"))
     }
     on capturePayment: command CapturePayment is {
       yield event PaymentCaptured(paymentId = capturePayment.paymentId, capturedAmount = prompt("the captured amount of this payment captured"), capturedAt = prompt("the captured at of this payment captured"))
@@ -794,9 +734,6 @@ event-sourced entity Payment as flow is {
       set field Payment.CapturedState.status to prompt("Captured when wonDispute, else Disputed")
       set field Payment.CapturedState.disputes to prompt("the disputes with disputeId marked resolved with resolution")
       set field Payment.CapturedState.lastDisputeResolvedAt to disputeResolved.resolvedAt
-    }
-    on paymentAuthorized: event PaymentAuthorized is {
-      morph entity PaymentContext.Payment to state PaymentContext.Payment.AuthorizedState with record Payment.AuthorizedStateData(paymentId = paymentAuthorized.paymentId, info = paymentAuthorized.info, card = paymentAuthorized.card, status = prompt("the status of this authorized state data"), authResult = prompt("the auth result of this authorized state data"), authorizedAt = prompt("the authorized at of this authorized state data"), authenticationOutcome = empty, declinedAt = empty, voidReason = empty, voidedAt = empty)
     }
     on paymentCaptured: event PaymentCaptured is {
       morph entity PaymentContext.Payment to state PaymentContext.Payment.CapturedState with record Payment.CapturedStateData(paymentId = paymentCaptured.paymentId, info = prompt("the info of this captured state data"), card = prompt("the card of this captured state data"), status = prompt("the status of this captured state data"), capturedAmount = prompt("the captured amount of this captured state data"), refunds = prompt("the refunds of this captured state data"), disputes = prompt("the disputes of this captured state data"), capturedAt = prompt("the captured at of this captured state data"), lastDisputeResolvedAt = empty, lastRefundedAt = empty)

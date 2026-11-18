@@ -1,5 +1,28 @@
 // Claims Processing Bounded Context
 context ClaimsContext as router is {
+  command FileClaim yields event Claim.ClaimFiled is {
+    claimInfo: ClaimInfo with {
+      briefly "Claim information"
+      described as {
+        |Core claim details from first notice of loss.
+      }
+    }
+  } with {
+    briefly "Submit a new claim for processing"
+    described as {
+      | Initiates a new claim based on first notice of loss information.
+      | Validates required fields and creates the claim in Filed status.
+    }
+  }
+  type ClaimRequest is one of {
+    ClaimsContext.FileClaim or Claim.ClaimCommand
+  } with {
+    briefly "Claim requests"
+    described as {
+      |What may be asked of ClaimsContext about a Claim: FileClaim, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
   connector 'CycleTimeProjector Storage' is from outlet ClaimsContext.CycleTimeProjector.CycleTimeProjectorToRepository to inlet ClaimsContext.ClaimRepository.ClaimRepositoryFromCycleTimeProjector with {
     briefly "CycleTimeProjector messages on their way to ClaimRepository"
     described as {
@@ -12,7 +35,7 @@ context ClaimsContext as router is {
       |The channel the `tell` travels.
     }
   }
-  inlet ClaimsContextFromFraudAdapter is type ClaimCommand with {
+  inlet ClaimsContextFromFraudAdapter is type ClaimsContext.ClaimRequest with {
     briefly "What FraudAdapter sends ClaimsContext"
     described as {
       |Its own inlet: an inlet accepts exactly one connector.
@@ -24,7 +47,7 @@ context ClaimsContext as router is {
       |The channel the `tell` travels.
     }
   }
-  inlet ClaimsContextFromPaymentAdapter is type ClaimCommand with {
+  inlet ClaimsContextFromPaymentAdapter is type ClaimsContext.ClaimRequest with {
     briefly "What PaymentAdapter sends ClaimsContext"
     described as {
       |Its own inlet: an inlet accepts exactly one connector.
@@ -36,19 +59,21 @@ context ClaimsContext as router is {
       |The channel the `tell` travels.
     }
   }
-  inlet ClaimsContextFromPolicyAdapter is type ClaimCommand with {
+  inlet ClaimsContextFromPolicyAdapter is type ClaimsContext.ClaimRequest with {
     briefly "What PolicyAdapter sends ClaimsContext"
     described as {
       |Its own inlet: an inlet accepts exactly one connector.
     }
   }
-  inlet ClaimCommandStreamIn is type ClaimCommand
+  inlet ClaimCommandStreamIn is type ClaimsContext.ClaimRequest
   outlet ClaimCommandStreamOut is type ClaimCommand
   inlet ClaimResultStreamIn is result Claim.ClaimResult
   outlet ClaimResultStreamOut is result Claim.ClaimResult
   handler ClaimsContextBoundary is {
-    on fileClaim: command Claim.FileClaim is {
-      forward fileClaim to outlet ClaimsContext.ClaimCommandStreamOut
+    on fileClaim: command ClaimsContext.FileClaim is {
+      let givenFiledAt: type TimeStamp = prompt("the filed at of this claim filed")
+      let newClaim = create entity ClaimsContext.Claim(claimInfo = fileClaim.claimInfo, filedAt = givenFiledAt)
+      yield event Claim.ClaimFiled(claimId = newClaim, claimInfo = fileClaim.claimInfo, filedAt = givenFiledAt)
     }
     on assignAdjuster: command Claim.AssignAdjuster is {
       forward assignAdjuster to outlet ClaimsContext.ClaimCommandStreamOut
@@ -144,7 +169,7 @@ context ClaimsContext as router is {
   }
   adaptor PolicyAdapter from context PolicyService as flow is { 
     inlet PolicyAdapterIn is type PolicyService.PolicyServiceEvent
-    outlet PolicyAdapterToClaimsContext is type ClaimCommand
+    outlet PolicyAdapterToClaimsContext is type ClaimsContext.ClaimRequest
  with {
       briefly "What PolicyAdapter publishes to ClaimsContext"
       described as {
@@ -206,7 +231,7 @@ context ClaimsContext as router is {
   }
   adaptor PaymentAdapter from context PaymentService as flow is { 
     inlet PaymentAdapterIn is type PaymentService.PaymentServiceEvent
-    outlet PaymentAdapterToClaimsContext is type ClaimCommand
+    outlet PaymentAdapterToClaimsContext is type ClaimsContext.ClaimRequest
  with {
       briefly "What PaymentAdapter publishes to ClaimsContext"
       described as {
@@ -241,7 +266,7 @@ context ClaimsContext as router is {
   }
   adaptor FraudAdapter from context FraudDetection as flow is { 
     inlet FraudAdapterIn is type FraudDetection.FraudDetectionEvent
-    outlet FraudAdapterToClaimsContext is type ClaimCommand
+    outlet FraudAdapterToClaimsContext is type ClaimsContext.ClaimRequest
  with {
       briefly "What FraudAdapter publishes to ClaimsContext"
       described as {

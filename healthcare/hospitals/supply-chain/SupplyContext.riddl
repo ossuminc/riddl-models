@@ -1,18 +1,43 @@
 // Supply Context - the main bounded context for hospital supply chain
 context SupplyContext as router is {
-  inlet SupplyContextFromClinicalUsage is command SupplyOrder.CreateRequisition with {
+  command CreateRequisition yields event SupplyOrder.RequisitionCreated is {
+    requisitionId: String
+    requestedBy: String
+    requestDate: DateTime
+    items: PurchaseOrderLine+
+    justification: String
+    urgency: String
+  } with {
+    briefly "Create a new supply requisition"
+    described as {
+      | Initiates a new requisition for supplies. The requisition must include
+      | at least one line item and justification for the request. Urgency can
+      | be routine, urgent, or emergency which affects approval routing.
+    }
+  }
+  type SupplyOrderRequest is one of {
+    SupplyContext.CreateRequisition or SupplyOrder.SupplyOrderCommand
+  } with {
+    briefly "SupplyOrder requests"
+    described as {
+      |What may be asked of SupplyContext about a SupplyOrder: CreateRequisition, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
+  inlet SupplyContextFromClinicalUsage is command SupplyContext.CreateRequisition with {
     briefly "What FromClinicalUsage makes of that service's news"
   }
   connector 'FromClinicalUsage Intake' is from outlet SupplyContext.FromClinicalUsage.FromClinicalUsageToSupplyContext to inlet SupplyContext.SupplyContextFromClinicalUsage with {
     briefly "What FromClinicalUsage makes of that news, on its way in"
   }
-  inlet SupplyOrderCommandStreamIn is type SupplyOrderCommand
+  inlet SupplyOrderCommandStreamIn is type SupplyContext.SupplyOrderRequest
   outlet SupplyOrderCommandStreamOut is type SupplyOrderCommand
   inlet StockItemResultStreamIn is result SupplyOrder.SupplyOrderResult
   outlet StockItemResultStreamOut is result SupplyOrder.SupplyOrderResult
   handler SupplyContextBoundary is {
-    on createRequisition: command SupplyOrder.CreateRequisition is {
-      forward createRequisition to outlet SupplyContext.SupplyOrderCommandStreamOut
+    on createRequisition: command SupplyContext.CreateRequisition is {
+      let newSupplyOrder = create entity SupplyContext.SupplyOrder(requisitionId = createRequisition.requisitionId, requestedBy = createRequisition.requestedBy, requestDate = createRequisition.requestDate, items = createRequisition.items, justification = createRequisition.justification, urgency = createRequisition.urgency)
+      yield event SupplyOrder.RequisitionCreated(supplyOrderId = newSupplyOrder, requisitionId = createRequisition.requisitionId, requestedBy = createRequisition.requestedBy, requestDate = createRequisition.requestDate, items = createRequisition.items, justification = createRequisition.justification, urgency = createRequisition.urgency)
     }
     on approveRequisition: command SupplyOrder.ApproveRequisition is {
       forward approveRequisition to outlet SupplyContext.SupplyOrderCommandStreamOut
@@ -44,10 +69,10 @@ context SupplyContext as router is {
   connector 'StockItemResult Stream Egress' is from outlet SupplyContext.InventoryRepository.InventoryRepositoryResponses to inlet SupplyContext.StockItemResultStreamIn
   adaptor FromClinicalUsage from context ClinicalUsage as flow is { 
     inlet FromClinicalUsageIn is type ClinicalUsage.ClinicalUsageEvent
-    outlet FromClinicalUsageToSupplyContext is command SupplyOrder.CreateRequisition
+    outlet FromClinicalUsageToSupplyContext is command SupplyContext.CreateRequisition
     handler FromClinicalUsageHandler is {
       on parLevelBreach: event ClinicalUsage.ParLevelBreach is {
-        let item0: type SupplyOrder.CreateRequisition = prompt("translate the parLevelBreach event into a CreateRequisition, stock below par is what a requisition exists to correct")
+        let item0: type SupplyContext.CreateRequisition = prompt("translate the parLevelBreach event into a CreateRequisition, stock below par is what a requisition exists to correct")
         send item0 to outlet SupplyContext.FromClinicalUsage.FromClinicalUsageToSupplyContext
       }
       on supplyConsumed: event ClinicalUsage.SupplyConsumed is {

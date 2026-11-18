@@ -1,5 +1,33 @@
 // Outage Management - Outage Context
 context OutageContext as router is {
+  command ReportOutage is {
+    outageInfo: OutageInfo with {
+      briefly "Outage info"
+      described as {
+        |Outage event details.
+      }
+    }
+    affectedDevices: AffectedDevice+ with {
+      briefly "Devices"
+      described as {
+        |Affected grid devices.
+      }
+    }
+  } with {
+    briefly "Report outage"
+    described as {
+      |Reports a new outage event.
+    }
+  }
+  type OutageEventRequest is one of {
+    OutageContext.ReportOutage or OutageEvent.OutageEventCommand
+  } with {
+    briefly "OutageEvent requests"
+    described as {
+      |What may be asked of OutageContext about a OutageEvent: ReportOutage, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
   inlet OutageContextFromToCrewDispatchSystem is command OutageEvent.DispatchCrew with {
     briefly "What ToCrewDispatchSystem makes of the answers it gets"
   }
@@ -18,19 +46,20 @@ context OutageContext as router is {
   connector 'FromCrewDispatchSystem Intake' is from outlet OutageContext.FromCrewDispatchSystem.FromCrewDispatchSystemToOutageContext to inlet OutageContext.OutageContextFromCrewDispatchSystem with {
     briefly "What FromCrewDispatchSystem makes of that news, on its way in"
   }
-  inlet OutageContextFromSCADASystem is command OutageEvent.ReportOutage with {
+  inlet OutageContextFromSCADASystem is command OutageContext.ReportOutage with {
     briefly "What FromSCADASystem makes of that service's news"
   }
   connector 'FromSCADASystem Intake' is from outlet OutageContext.FromSCADASystem.FromSCADASystemToOutageContext to inlet OutageContext.OutageContextFromSCADASystem with {
     briefly "What FromSCADASystem makes of that news, on its way in"
   }
-  inlet OutageEventCommandStreamIn is type OutageEventCommand
+  inlet OutageEventCommandStreamIn is type OutageContext.OutageEventRequest
   outlet OutageEventCommandStreamOut is type OutageEventCommand
   inlet OutageEventResultStreamIn is result OutageEvent.OutageEventResult
   outlet OutageEventResultStreamOut is result OutageEvent.OutageEventResult
   handler OutageContextBoundary is {
-    on reportOutage: command OutageEvent.ReportOutage is {
-      send reportOutage to outlet OutageContext.OutageEventCommandStreamOut
+    on reportOutage: command OutageContext.ReportOutage is {
+      let newOutageEvent = create entity OutageContext.OutageEvent(outageInfo = reportOutage.outageInfo)
+      log newOutageEvent
     }
     on confirmOutage: command OutageEvent.ConfirmOutage is {
       send confirmOutage to outlet OutageContext.OutageEventCommandStreamOut
@@ -137,13 +166,13 @@ context OutageContext as router is {
   }
   adaptor FromSCADASystem from context SCADASystem as flow is { 
     inlet FromSCADASystemIn is type SCADASystem.SCADASystemEvent
-    outlet FromSCADASystemToOutageContext is command OutageEvent.ReportOutage
+    outlet FromSCADASystemToOutageContext is command OutageContext.ReportOutage
     handler FromSCADASystemHandler is {
       on feederIsolated: event SCADASystem.FeederIsolated is {
         do "the feeder is isolated; confirming the outage was recorded here and restoration follows"
       }
       on outageDetected: event SCADASystem.OutageDetected is {
-        let item0: type OutageEvent.ReportOutage = prompt("translate the outageDetected event into a ReportOutage, an outage SCADA detects is reported by the instrument that saw it")
+        let item0: type OutageContext.ReportOutage = prompt("translate the outageDetected event into a ReportOutage, an outage SCADA detects is reported by the instrument that saw it")
         send item0 to outlet OutageContext.FromSCADASystem.FromSCADASystemToOutageContext
       }
       on other is {

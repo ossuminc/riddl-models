@@ -1,7 +1,35 @@
 // Payroll Processing - Payroll Context
 context PayrollContext as router is {
+  command InitiatePayroll is {
+    payPeriod: PayPeriod with {
+      briefly "Period"
+      described as {
+        |Pay period.
+      }
+    }
+    employeeIds: EmployeeId+ with {
+      briefly "Employees"
+      described as {
+        |Employees in payroll.
+      }
+    }
+  } with {
+    briefly "Initiate payroll"
+    described as {
+      |Initiates a new payroll run.
+    }
+  }
+  type PayrollRunRequest is one of {
+    PayrollContext.InitiatePayroll or PayrollRun.PayrollRunCommand
+  } with {
+    briefly "PayrollRun requests"
+    described as {
+      |What may be asked of PayrollContext about a PayrollRun: InitiatePayroll, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
   type ToHRISSystemCommand is one of {
-    PayrollRun.ApplyDeduction or PayrollRun.InitiatePayroll
+    PayrollRun.ApplyDeduction or PayrollContext.InitiatePayroll
   } with {
     briefly "What ToHRISSystem turns its answers into"
   }
@@ -29,13 +57,14 @@ context PayrollContext as router is {
   connector 'FromBankingService Intake' is from outlet PayrollContext.FromBankingService.FromBankingServiceToPayrollContext to inlet PayrollContext.PayrollContextFromBankingService with {
     briefly "What FromBankingService makes of that news, on its way in"
   }
-  inlet PayrollRunCommandStreamIn is type PayrollRunCommand
+  inlet PayrollRunCommandStreamIn is type PayrollContext.PayrollRunRequest
   outlet PayrollRunCommandStreamOut is type PayrollRunCommand
   inlet PayrollRunResultStreamIn is result PayrollRun.PayrollRunResult
   outlet PayrollRunResultStreamOut is result PayrollRun.PayrollRunResult
   handler PayrollContextBoundary is {
-    on initiatePayroll: command PayrollRun.InitiatePayroll is {
-      send initiatePayroll to outlet PayrollContext.PayrollRunCommandStreamOut
+    on initiatePayroll: command PayrollContext.InitiatePayroll is {
+      let newPayrollRun = create entity PayrollContext.PayrollRun(payPeriod = initiatePayroll.payPeriod)
+      log newPayrollRun
     }
     on calculatePayroll: command PayrollRun.CalculatePayroll is {
       send calculatePayroll to outlet PayrollContext.PayrollRunCommandStreamOut
@@ -183,7 +212,7 @@ context PayrollContext as router is {
         let askAnswer: type HRISSystem.EmployeeList = ask query HRISSystem.GetEmployeeList(activeOnly = prompt("the active only this asks about")) of context HRISSystem
         do "a payroll run needing everyone who should be paid in it"
         when prompt("the run's roster differs from askAnswer.employees") then
-          send command PayrollRun.InitiatePayroll(runId = payrollInitiated.runId, payPeriod = payrollInitiated.payPeriod, employeeIds = askAnswer.employees) to outlet PayrollContext.ToHRISSystem.ToHRISSystemToPayrollContext
+          send command PayrollContext.InitiatePayroll(payPeriod = payrollInitiated.payPeriod, employeeIds = askAnswer.employees) to outlet PayrollContext.ToHRISSystem.ToHRISSystemToPayrollContext
         end
       }
       on payrollCalculated: event PayrollRun.PayrollCalculated is {

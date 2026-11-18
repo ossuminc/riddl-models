@@ -1,0 +1,518 @@
+#!/usr/bin/env python3
+"""Move every stateful entity to riddl 2.8.0's creation model.
+
+The context creates; the entity's entity-level `on init(args)` morphs it into
+its starting state (Reid's ruling (B), 2026-11-18, applied to patterns/ in
+94a1b4480 and to reactive-bbq in 7e1ff5bc2). riddlc 2.7.0-20 reports the old
+shape as `entity-init-in-state` and `entity-init-no-morph`.
+
+Per entity, with S0 its first declared state:
+
+  event-sourced -- S0's on init yields the creation event E; E's fold morphs;
+    one command clause CC yields E.
+      on init(<E's fields but the id>) = the fold's body, each `e.f` read as
+      the argument f and the id as `self.id`
+  CRUD -- one command clause CC morphs into S0.
+      on init(<the fields of C that CC reads, but the id>) = CC's body, each
+      `c.f` read as the argument f and the id as `self.id`
+
+Then: every old `on init` goes (a handler left empty goes with it), CC and
+the fold go, and the context's boundary clause for C creates the entity,
+passing what CC passed. An event-sourced creator also yields E there, with
+the new id, as the answer to whoever asked (C declares `yields event E`).
+
+Anything not exactly one of those shapes is reported, not guessed at.
+
+Usage:
+    ./scripts/creation/migrate.py [--apply] [model-dir ...]
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+_r = os.environ.get("RIDDLC", str(ROOT.parent / "bin" / "riddlc"))
+RIDDLC = Path(_r) if os.path.isabs(_r) else (ROOT / _r).resolve()
+
+
+class Skip(Exception):
+    pass
+
+
+KEYWORDS = {"result", "event", "command", "query", "type", "record", "state",
+            "entity", "context", "handler", "on", "is", "of", "to", "from",
+            "with", "yield", "reply", "send", "tell", "morph", "become", "set",
+            "let", "when", "then", "else", "end", "error", "do", "init", "self",
+            "empty", "true", "false", "inlet", "outlet", "domain", "function"}
+
+
+def pname(f):
+    """An on-init parameter name for field f; a keyword cannot be one."""
+    return f + "Value" if f in KEYWORDS else f
+
+
+def models():
+    for conf in sorted(ROOT.rglob("*.conf")):
+        rel = conf.parent.relative_to(ROOT)
+        if rel.parts and rel.parts[0] in ("patterns", "project", "target", "scripts"):
+            continue
+        if conf.stem == conf.parent.name and (conf.parent / (conf.stem + ".riddl")).exists():
+            yield conf.parent
+
+
+def dump(mdir):
+    out = subprocess.run([str(RIDDLC), "dump", mdir.name + ".riddl", "--json"],
+                         cwd=mdir, capture_output=True, text=True)
+    if not out.stdout.strip():
+        raise SystemExit(f"dump failed: {mdir}\n{out.stderr[-400:]}")
+    return json.loads(out.stdout)
+
+
+def under(path, prefix):
+    return path == prefix or path.startswith(prefix + ".")
+
+
+def split_args(text):
+    """'a = x, b = f(y, "z,")' -> {'a': 'x', 'b': 'f(y, "z,")'}; top level only."""
+    out, depth, cur, q = [], 0, "", False
+    for ch in text:
+        if q:
+            cur += ch
+            if ch == '"':
+                q = False
+            continue
+        if ch == '"':
+            q = True
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        out.append(cur)
+    args = {}
+    for a in out:
+        k, _, v = a.partition("=")
+        args[k.strip()] = v.strip()
+    return args
+
+
+def ctor_args(stmt_text):
+    """The argument text of the first constructor in a statement."""
+    i = stmt_text.index("(")
+    depth, q = 0, False
+    for j in range(i, len(stmt_text)):
+        ch = stmt_text[j]
+        if q:
+            q = ch != '"'
+            continue
+        if ch == '"':
+            q = True
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return stmt_text[i + 1:j]
+    raise Skip("unbalanced constructor")
+
+
+def body_of(clause_text):
+    """Statements inside an 'on ... is { ... }' clause."""
+    i = clause_text.index("{")
+    j = clause_text.rindex("}")
+    return clause_text[i + 1:j].strip()
+
+
+class Model:
+    def __init__(self, mdir):
+        self.dir = mdir
+        self.nodes = dump(mdir)
+        self.by_path = {n["path"]: n for n in self.nodes if "path" in n}
+        self.kids = defaultdict(list)
+        for n in self.nodes:
+            self.kids[n.get("parent", "")].append(n)
+        self.src = {}
+        self.edits = defaultdict(list)
+        self.renames = []
+        self.drops = []  # (constructor head, field) -- an argument C lost
+
+    def text(self, n):
+        f = n["file"]
+        if f not in self.src:
+            self.src[f] = (self.dir / f).read_text()
+        s = self.src[f]
+        return s[n["span"]["start"]["offset"]:n["span"]["end"]["offset"]]
+
+    def fields(self, path):
+        return [n for n in self.kids[path] if n["kind"] == "field"]
+
+    def type_text(self, field):
+        """The field's type as written: 'Currency(USD)', not 'Currency'."""
+        t = self.text(field)
+        t = t[t.index(":") + 1:]
+        cut = len(t)
+        for stop in (" with {", " with{", "\n"):
+            i = t.find(stop)
+            if i >= 0:
+                cut = min(cut, i)
+        return t[:cut].strip()
+
+    def is_id_of(self, field, ent):
+        t = field.get("type", "")
+        if not t.startswith("type "):
+            return False
+        name = t[5:]
+        for n in self.nodes:
+            if n["kind"] == "type" and n["id"] == name.split(".")[-1] \
+                    and re.fullmatch(rf"Id\((?:[\w.]+\.)?{ent['id']}\)", n.get("type", "")):
+                return True
+        return False
+
+    def edit(self, n, new):
+        self.edits[n["file"]].append((n["span"]["start"]["offset"],
+                                      n["span"]["end"]["offset"], new))
+
+
+def migrate_entity(m, ent):
+    ep = ent["path"]
+    ctx = m.by_path[ent["parent"]]
+    states = sorted([n for n in m.nodes if n["kind"] == "state" and n["parent"] == ep],
+                    key=lambda s: (s["file"], s["span"]["start"]["offset"]))
+    if not states:
+        return None
+    s0 = states[0]
+    inits = [n for n in m.nodes if n["kind"] == "on-init" and under(n["parent"], ep)]
+    clauses = [n for n in m.nodes if n["kind"] == "onmessageclause"
+               and under(n["parent"], ep) and n["id"].startswith("command ")]
+    s0_inits = [i for i in inits if under(i["parent"], s0["path"])]
+    event = None
+    if s0_inits:
+        lets = [n for n in m.kids[s0_inits[0]["path"]] if n["kind"] == "let-statement"]
+        if lets and lets[0].get("declaredType"):
+            event = lets[0]["declaredType"].get("resolved")
+            if m.by_path.get(event, {}).get("kind") != "event":
+                event = None
+
+    fold = None
+    if event:
+        cc = [c for c in clauses if any(
+            y["kind"] == "yield-statement" and y.get("message", {}).get("resolved") == event
+            for y in m.kids[c["path"]])]
+        folds = [n for n in m.nodes if n["kind"] == "on-event" and under(n["parent"], ep)
+                 and n.get("message", {}).get("resolved") == event]
+        if len(cc) != 1 or len(folds) != 1:
+            raise Skip(f"event-sourced: {len(cc)} creators, {len(folds)} folds of "
+                       f"{event.rsplit('.', 1)[-1]}")
+        cc, fold = cc[0], folds[0]
+        if not any(n["kind"] == "morph-statement" for n in m.kids[fold["path"]]):
+            raise Skip("creation fold does not morph")
+    else:
+        cc = [c for c in clauses if any(
+            s["kind"] == "morph-statement" and s.get("state", {}).get("resolved") == s0["path"]
+            for s in m.kids[c["path"]])]
+        if len(cc) != 1:
+            raise Skip(f"CRUD: {len(cc)} command clauses morph into {s0['id']}")
+        cc = cc[0]
+    cmd = m.by_path.get(cc.get("message", {}).get("resolved", ""))
+    if not cmd:
+        raise Skip("creating command unresolved")
+    if len([f for f in m.fields(cmd["path"]) if not m.is_id_of(f, ent)]) == 0:
+        raise Skip(f"{cmd['id']} carries nothing but the id, so it creates nothing")
+    cc_bind = cc.get("binding")
+    if not cc_bind:
+        raise Skip("creating clause has no binding")
+
+    # what the creator passes, field by field, as text in terms of cc_bind
+    cmd_fields = m.fields(cmd["path"])
+    cmd_id = [f["id"] for f in cmd_fields if m.is_id_of(f, ent)]
+    if fold:
+        ev = m.by_path[event]
+        ev_fields = m.fields(event)
+        ev_id = [f["id"] for f in ev_fields if m.is_id_of(f, ent)]
+        if len(ev_id) != 1:
+            raise Skip(f"creation event has {len(ev_id)} id fields")
+        yields = [y for y in m.kids[cc["path"]] if y["kind"] == "yield-statement"]
+        passed = split_args(ctor_args(m.text(yields[0])))
+        params = [(f["id"], m.type_text(f)) for f in ev_fields if f["id"] != ev_id[0]]
+        args = {p: passed.get(p) for p, _ in params}
+        missing = [p for p, v in args.items() if v is None]
+        if missing:
+            raise Skip(f"creator yield omits {missing}")
+        body = body_of(m.text(fold))
+        fb = fold.get("binding")
+        if not fb:
+            raise Skip("fold has no binding")
+        body = re.sub(rf"\b{fb}\.{ev_id[0]}\b", "self.id", body)
+        body = re.sub(rf"\b{fb}\.(\w+)", lambda mm: pname(mm.group(1)), body)
+        if re.search(rf"\b{fb}\b", body):
+            raise Skip("fold reads the whole event")
+    else:
+        body = body_of(m.text(cc))
+        if len(cmd_id) > 1:
+            raise Skip("creating command has several ids")
+        if cmd_id:
+            body = re.sub(rf"\b{cc_bind}\.{cmd_id[0]}\b", "self.id", body)
+        used = sorted(set(re.findall(rf"\b{cc_bind}\.(\w+)", body)),
+                      key=[f["id"] for f in cmd_fields].index)
+        ftype = {f["id"]: m.type_text(f) for f in cmd_fields}
+        params = [(f, ftype[f]) for f in used]
+        args = {f: f"{cc_bind}.{f}" for f in used}
+        body = re.sub(rf"\b{cc_bind}\.(\w+)", lambda mm: pname(mm.group(1)), body)
+        if re.search(rf"\b{cc_bind}\b", body):
+            raise Skip("creator reads the whole command")
+        if not params:
+            raise Skip("creator reads no fields of its command")
+
+    # riddlc prettify writes an on-init parameter 'Currency(USD)' back as
+    # 'Currency', which does not parse (filed with riddl, 2026-11-18)
+    if any(t.startswith("Currency(") for _, t in params):
+        raise Skip("a Currency(...) argument, which prettify mangles")
+
+    # the context's boundary clause for C
+    relays = [n for n in m.nodes if n["kind"] == "onmessageclause"
+              and n["parent"].rsplit(".", 1)[0] == ctx["path"]
+              and m.by_path[n["parent"]]["kind"] == "handler"
+              and n.get("message", {}).get("resolved") == cmd["path"]]
+    if len(relays) != 1:
+        raise Skip(f"{len(relays)} boundary clauses for {cmd['id']}")
+    relay = relays[0]
+    rb = relay.get("binding")
+    if not rb:
+        raise Skip("boundary clause has no binding")
+    relay_kinds = {k["kind"] for k in m.kids[relay["path"]] if k["kind"].endswith("-statement")}
+    if not relay_kinds <= {"forward-statement", "send-statement", "tell-statement"}:
+        raise Skip(f"boundary clause does more than relay: {sorted(relay_kinds)}")
+
+    def rebind(v):
+        return re.sub(rf"\b{cc_bind}\b", rb, v)
+
+    move_command(m, ent, ctx, cmd, cmd_id, relay)
+
+    new_var = "new" + ent["id"]
+    # a value the creator only prompts for is asked once, not once for the
+    # create and again for the event (a let cannot hold a collection)
+    ids = {n.get("id") for n in m.nodes}
+    lets = []
+    ptype = dict(params)
+    for p, _ in params:
+        v = args[p]
+        t = ptype[p]
+        if fold and v.startswith("prompt(") and not t.endswith(("+", "*", "?")):
+            name = "given" + p[0].upper() + p[1:]
+            if name in ids:
+                continue
+            lets.append(f"let {name}: {t if t.startswith('type ') else 'type ' + t} = {v}")
+            args[p] = name
+    create = (f"let {new_var} = create entity {ctx['id']}.{ent['id']}("
+              + ", ".join(f"{p} = {rebind(args[p])}" for p, _ in params) + ")")
+    ctx_body = lets + [create]
+    if fold:
+        ev_args = [f"{ev_id[0]} = {new_var}"] + [f"{p} = {rebind(args[p])}" for p, _ in params]
+        ctx_body.append(f"yield event {ent['id']}.{ev['id']}(" + ", ".join(ev_args) + ")")
+    else:
+        ctx_body.append(f"log {new_var}")
+    head = m.text(relay)
+    head = head[:head.index("{") + 1]
+    m.edit(relay, head + "\n" + "\n".join(ctx_body) + "\n}\n")
+
+    # the entity side. An event-sourced entity published its creation event
+    # on its outlet when it yielded it; now the context yields it, so on init
+    # sends it there for the stores and projections (reactive-bbq 7e1ff5bc2)
+    if fold:
+        outs = [n for n in m.nodes if n["kind"] == "outlet" and n["parent"] == ep
+                and isinstance(n.get("type"), dict)
+                and (n["type"].get("resolved") == event
+                     or any(a.get("resolved") == event
+                            for a in n["type"].get("alternation", [])))]
+        if len(outs) > 1:
+            raise Skip(f"{len(outs)} outlets carry {ev['id']}")
+        if outs:
+            ev_vals = [f"{ev_id[0]} = self.id"] + [f"{p} = {pname(p)}" for p, _ in params]
+            body += (f"\nsend event {ev['id']}(" + ", ".join(ev_vals) + ") to outlet "
+                     f"{ctx['id']}.{ent['id']}.{outs[0]['id']}")
+    on_init = ("on init(" + ", ".join(f"{pname(p)}: {t}" for p, t in params) + ") is {\n"
+               + body + "\n}\n")
+    handlers = [n for n in m.nodes if n["kind"] == "handler" and n["parent"] == ep]
+    if not handlers:
+        raise Skip("no entity-level handler")
+    h = handlers[0]
+    h_text = m.text(h)
+    first = h_text.index("{") + 1
+    m.edits[h["file"]].append((h["span"]["start"]["offset"] + first,
+                               h["span"]["start"]["offset"] + first, "\n" + on_init))
+    for n in [cc] + ([fold] if fold else []):
+        m.edit(n, "")
+    for i in inits:
+        hh = m.by_path[i["parent"]]
+        rest = [k for k in m.kids[hh["path"]] if k is not i and k["kind"] not in ("linecomment",)
+                and k["kind"] in ("onmessageclause", "on-event", "on-other", "on-init")
+                or (k is not i and k["kind"].startswith("on"))]
+        rest = [k for k in rest if k not in (cc, fold)]
+        if not rest and hh["parent"] != ep:
+            m.edit(hh, "")
+        else:
+            m.edit(i, "")
+    return (f"{ent['id']}: {'event-sourced' if fold else 'CRUD'}, {cmd['id']} creates "
+            f"via {ctx['id']}, on init({', '.join(p for p, _ in params)})")
+
+
+def move_command(m, ent, ctx, cmd, cmd_id, relay):
+    """C becomes a request to the context (reactive-bbq d9b975949).
+
+    The entity no longer handles C, so it leaves the entity -- minus its id,
+    which create mints -- and the entity's alternation. A context-level
+    <X>Request alternation carries C beside the entity's commands, and every
+    port outside the entity that carried the entity alternation carries it
+    instead, except those feeding the entity itself.
+    """
+    ep, X, Ctx = ent["path"], ent["id"], ctx["id"]
+    alts = [n for n in m.nodes if n["kind"] == "type" and n["parent"] == ep
+            and "one of" in n.get("type", "")
+            and re.search(rf"\b{re.escape(cmd['id'])}\b", n.get("type", ""))]
+    if len(alts) != 1:
+        raise Skip(f"{cmd['id']} is in {len(alts)} alternations")
+    alt = alts[0]
+    members = re.findall(r"type ([\w.]+)", alt["type"])
+    if len(members) < 3:
+        raise Skip(f"{alt['id']} would be left with {len(members) - 1} member")
+    req = f"{X}Request"
+    if any(n.get("id") == req for n in m.nodes):
+        raise Skip(f"{req} already exists")
+    # the definition, moved
+    ctext = m.text(cmd)
+    for f in m.fields(cmd["path"]):
+        if f["id"] in cmd_id:
+            ctext = ctext.replace(m.text(f), "", 1)
+    local = {n["id"] for n in m.nodes if n.get("parent") == ep
+             and n["kind"] in ("type", "record", "event", "command", "query", "result")}
+    ctext = re.sub(r"(yields event )(\w+)\b",
+                   lambda mm: mm.group(1) + (f"{X}.{mm.group(2)}" if mm.group(2) in local else mm.group(2)),
+                   ctext, count=1)
+    ctext = re.sub(r"(:\s*)(\w+)\b",
+                   lambda mm: mm.group(1) + (f"{X}.{mm.group(2)}" if mm.group(2) in local else mm.group(2)),
+                   ctext)
+    m.edit(cmd, "")
+    atext = m.text(alt)
+    body = atext[atext.index("{") + 1:atext.index("}")]
+    kept = [t for t in re.split(r"\s+or\s+", body.strip())
+            if t.split(".")[-1] != cmd["id"]]
+    m.edits[alt["file"]].append((alt["span"]["start"]["offset"] + atext.index("{") + 1,
+                                 alt["span"]["start"]["offset"] + atext.index("}"),
+                                 "\n    " + " or ".join(kept) + "\n  "))
+    ctx_text = m.text(ctx)
+    at = ctx["span"]["start"]["offset"] + ctx_text.index("{") + 1
+    m.edits[ctx["file"]].append((at, at, "\n" + ctext.strip() + "\n"
+        f"type {req} is one of {{\n  {Ctx}.{cmd['id']} or {X}.{alt['id']}\n}} with {{\n"
+        f"  briefly \"{X} requests\"\n  described as {{\n"
+        f"    |What may be asked of {Ctx} about a {X}: {cmd['id']}, which the\n"
+        f"    |context does itself by creating one, or any command for an existing one.\n"
+        f"  }}\n}}\n"))
+    # ports
+    feeds_entity = set()
+    for c in [n for n in m.nodes if n["kind"] == "connector"]:
+        if under(c["to"].get("resolved", ""), ep):
+            feeds_entity.add(c["from"].get("resolved"))
+    for p in [n for n in m.nodes if n["kind"] in ("inlet", "outlet")]:
+        t = p.get("type") if isinstance(p.get("type"), dict) else {}
+        if t.get("resolved") != alt["path"] or under(p["path"], ep) \
+                or p["path"] in feeds_entity:
+            continue
+        ptext = m.text(p)
+        ref = t["ref"]
+        i = ptext.index(" is ") + 4
+        i = ptext.index(ref, i)
+        start = p["span"]["start"]["offset"] + i
+        m.edits[p["file"]].append((start, start + len(ref), f"{Ctx}.{req}"))
+    m.renames.append((rf"\b(?:{Ctx}\.)?{X}\.{cmd['id']}\b", f"{Ctx}.{cmd['id']}"))
+    if cmd_id:
+        m.drops.append((f"{Ctx}.{cmd['id']}(", cmd_id[0]))
+
+
+def drop_arg(text, head, field):
+    """Remove 'field = value' from every constructor 'head(...)' in text."""
+    out, i = "", 0
+    while True:
+        j = text.find(head, i)
+        if j < 0:
+            return out + text[i:]
+        k = j + len(head)
+        inner = ctor_args(text[j:])
+        end = k + len(inner)
+        args = split_args(inner)
+        if field in args:
+            del args[field]
+            inner = ", ".join(f"{a} = {v}" for a, v in args.items())
+        out += text[i:k] + inner
+        i = end
+
+
+def apply_edits(m):
+    for f, es in m.edits.items():
+        s = (m.dir / f).read_text()
+        es = sorted(es, key=lambda e: (e[0], e[1]))
+        for a, b in zip(es, es[1:]):
+            if a[1] > b[0] and not (a[0] == a[1] or b[0] == b[1]):
+                raise Skip(f"overlapping edits in {f}")
+        for start, end, new in sorted(es, key=lambda e: (e[0], e[1]), reverse=True):
+            s = s[:start] + new + s[end:]
+        # a state whose only handler went is left 'is { }'
+        s = re.sub(r"(state \w+ of record [\w.]+) is \{\s*\}", r"\1", s)
+        (m.dir / f).write_text(s)
+    for f in m.dir.rglob("*.riddl"):
+        s = f.read_text()
+        t = s
+        for pat, rep in m.renames:
+            t = re.sub(pat, rep, t)
+        for head, field in m.drops:
+            t = drop_arg(t, head, field)
+        if t != s:
+            f.write_text(t)
+
+
+def main():
+    argv = sys.argv[1:]
+    apply = "--apply" in argv
+    dirs = [ROOT / a for a in argv if not a.startswith("--")] or list(models())
+    done = skipped = 0
+    for d in dirs:
+        m = Model(d)
+        ents = [n for n in m.nodes if n["kind"] == "entity"]
+        notes = []
+        for e in ents:
+            before = {f: list(v) for f, v in m.edits.items()}
+            before_renames = list(m.renames)
+            before_drops = list(m.drops)
+            try:
+                r = migrate_entity(m, e)
+                if r:
+                    notes.append("  ok    " + r)
+                    done += 1
+            except Skip as x:
+                m.edits = defaultdict(list, before)
+                m.renames = before_renames
+                m.drops = before_drops
+                if any(n["kind"] == "state" and n["parent"] == e["path"] for n in m.nodes):
+                    notes.append(f"  SKIP  {e['id']}: {x}")
+                    skipped += 1
+        print(d.relative_to(ROOT))
+        print("\n".join(notes))
+        if apply and m.edits:
+            try:
+                apply_edits(m)
+            except Skip as x:
+                print(f"  NOT APPLIED: {x}")
+        sys.stdout.flush()
+    print(f"# {done} migrated, {skipped} skipped", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
