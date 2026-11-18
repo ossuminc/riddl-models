@@ -15,13 +15,45 @@ domain Commerce is {
     }
   }
   context Shopping as router is {
-    inlet ShoppingCommandsIn is type Cart.CartCommand
+    command OpenCart yields event Cart.CartOpened is {
+      openedAt: TimeStamp with {
+        briefly "Opened at"
+        described as {
+          |When the shopper started the cart.
+        }
+      }
+    } with {
+      briefly "Open a cart"
+      described as {
+        |Starts an empty cart. The context handles it, not the entity: a cart
+        |comes into being only by `create`, which mints its id, and the
+        |CartOpened this command yields carries that id back to the shopper.
+      }
+    }
+    type ShoppingRequest is one of {
+      Shopping.OpenCart or Cart.CartCommand or Cart.GetCart
+    } with {
+      briefly "Everything the application may ask of Shopping"
+      described as {
+        |Opening a cart, which the context does itself; any change to an
+        |existing cart; and a look-up of one cart, which that cart answers.
+      }
+    }
+    inlet ShoppingCommandsIn is type ShoppingRequest
     outlet ShoppingCommandsFwd is type Cart.CartCommand
+    outlet CartQueriesOut is query Cart.GetCart
     inlet CartResultStreamIn is result Cart.CartResult
     outlet CartResultStreamOut is result Cart.CartResult
     handler ShoppingBoundary is {
       on cartResult: result Cart.CartResult is {
         send cartResult to outlet Shopping.CartResultStreamOut
+      }
+      on openCart: command Shopping.OpenCart is {
+        let newCart = create entity Shopping.Cart(startedAt = openCart.openedAt)
+        yield event Cart.CartOpened(cartId = newCart, openedAt = openCart.openedAt)
+      }
+      on getCart: query Cart.GetCart is {
+        forward getCart to outlet Shopping.CartQueriesOut
       }
       on addLineItem: command Cart.AddLineItem is {
         send addLineItem to outlet Shopping.ShoppingCommandsFwd
@@ -45,7 +77,10 @@ domain Commerce is {
     connector AppCommandsToCartIntake is from outlet Shopping.ShoppingCommandsFwd to inlet Shopping.Cart.CartCommands with {
       briefly "Boundary to the aggregate"
     }
-    connector 'CartResult Stream Egress' is from outlet Shopping.CartRepository.CartRepositoryResponses to inlet Shopping.CartResultStreamIn with {
+    connector 'CartQuery Intake' is from outlet Shopping.CartQueriesOut to inlet Shopping.Cart.CartQueries with {
+      briefly "Look-ups of one cart, on their way to it"
+    }
+    connector 'CartResult Stream Egress' is from outlet Shopping.Cart.CartReplies to inlet Shopping.CartResultStreamIn with {
       briefly "Query results on their way out to the application"
     }
     type ProductId is UUID with {
@@ -98,7 +133,7 @@ domain Commerce is {
         |One product line inside a cart, addressed only through the root.
       }
     }
-    aggregate entity Cart as flow is {
+    aggregate entity Cart as router is {
       type CartCommand is one of {
         Cart.AddLineItem or Cart.UpdateQuantity or Cart.RemoveLineItem or
         Cart.ClearCart
@@ -109,8 +144,8 @@ domain Commerce is {
         }
       }
       type CartEvent is one of {
-        Cart.LineItemAdded or Cart.QuantityUpdated or Cart.LineItemRemoved or
-        Cart.CartCleared
+        Cart.CartOpened or Cart.LineItemAdded or Cart.QuantityUpdated or
+        Cart.LineItemRemoved or Cart.CartCleared
       } with {
         briefly "Cart event alternation"
         described as {
@@ -118,7 +153,28 @@ domain Commerce is {
         }
       }
       inlet CartCommands is type CartCommand
+      inlet CartQueries is query GetCart
       outlet CartEvents is type CartEvent
+      outlet CartReplies is result CartResult
+      event CartOpened is {
+        cartId: Shopping.CartId with {
+          briefly "Cart"
+          described as {
+            |The new cart's id, minted by its creation.
+          }
+        }
+        openedAt: TimeStamp with {
+          briefly "Opened at"
+          described as {
+            |When the cart was started.
+          }
+        }
+      } with {
+        briefly "Cart opened"
+        described as {
+          |An empty cart came into being.
+        }
+      }
       command AddLineItem is {
         cartId: Shopping.CartId with {
           briefly "Cart"
@@ -348,26 +404,19 @@ domain Commerce is {
           |Result carrying the requested cart.
         }
       }
-      state Active of record Cart.ActiveCartData is {
-        handler ActiveCartHandler is {
-          on init is {
-            set state Active to "initialize the cart from the creating message"
-          }
-        } with {
-          briefly "Active cart handler"
-          described as {
-            |Initializes a cart on entry to the active state.
-          }
-        }
-      } with {
+      state Active of record Cart.ActiveCartData with {
         briefly "Active state"
         described as {
           |The cart is open and accepting changes.
         }
       }
       handler CartHandler is {
+        on init(startedAt: TimeStamp) is {
+          morph entity Shopping.Cart to state Shopping.Cart.Active with record Cart.ActiveCartData(cartId = self.id, items = empty, itemCount = 0, subtotal = 0.00)
+          send event Cart.CartOpened(cartId = self.id, openedAt = startedAt) to outlet CartEvents
+        }
         on query GetCart is {
-          let cartResult: Cart.CartResult = prompt("read the cart from the store")
+          let cartResult: Cart.CartResult = prompt("the cart as this entity holds it now")
           reply cartResult
         }
         on addLineItem: command AddLineItem is {
@@ -401,6 +450,7 @@ domain Commerce is {
       }
     }
     type CartRepositoryCommand is one of {
+      Shopping.CartRepository.PersistCartOpened or
       Shopping.CartRepository.PersistLineItemAdded or
       Shopping.CartRepository.PersistQuantityUpdated or
       Shopping.CartRepository.PersistLineItemRemoved or
@@ -414,9 +464,8 @@ domain Commerce is {
         |of a command is a database update, the effect of a query is a result.
       }
     }
-    repository CartRepository as flow is {
+    repository CartRepository as sink is {
       inlet CartRepositoryFromProjection is type CartRepositoryCommand
-      outlet CartRepositoryResponses is result Cart.CartResult
       record StoredCart is {
         cartId: Shopping.CartId with {
           briefly "cartId"
@@ -490,6 +539,19 @@ domain Commerce is {
           |because storing a row records no new aggregate state.
         }
       }
+      command PersistCartOpened is {
+        cartId: Shopping.CartId with {
+          briefly "Row addressed"
+          described as {
+            |Which stored cart row CartOpened creates.
+          }
+        }
+      } with {
+        briefly "Persist CartOpened"
+        described as {
+          |Instructs this repository to insert the row for a new, empty cart.
+        }
+      }
       command PersistCartCleared is {
         cartId: Shopping.CartId with {
           briefly "Row addressed"
@@ -506,6 +568,9 @@ domain Commerce is {
         }
       }
       handler CartPersistence is {
+        on command CartRepository.PersistCartOpened is {
+          do "insert an empty stored cart row"
+        }
         on command CartRepository.PersistLineItemAdded is {
           do "apply LineItemAdded to the stored cart row"
         }
@@ -517,10 +582,6 @@ domain Commerce is {
         }
         on command CartRepository.PersistCartCleared is {
           do "apply CartCleared to the stored cart row"
-        }
-        on query Cart.GetCart is {
-          let cartResult: Shopping.Cart.CartResult = prompt("read the cart from the store")
-          reply cartResult
         }
       } with {
         briefly "Cart persistence"
@@ -539,6 +600,9 @@ domain Commerce is {
       inlet CartProjectionFromCart is type Cart.CartEvent
       outlet CartProjectionToRepository is type CartRepositoryCommand
       handler CartProjectionHandler is {
+        on cartOpened: event Cart.CartOpened is {
+          tell command Shopping.CartRepository.PersistCartOpened(cartId = cartOpened.cartId) to repository Shopping.CartRepository
+        }
         on lineItemAdded: event Cart.LineItemAdded is {
           tell command Shopping.CartRepository.PersistLineItemAdded(cartId = lineItemAdded.cartId) to repository Shopping.CartRepository
         }
@@ -597,9 +661,40 @@ domain Commerce is {
         |Where hard errors raised anywhere in Commerce are delivered.
       }
     }
-    outlet AppCartCommands is type Shopping.Cart.CartCommand
+    outlet AppCartCommands is type Shopping.ShoppingRequest
     inlet AppCartResults is result Shopping.Cart.CartResult
     group CartScreen is {
+      input OpenCartInput acquires command Shopping.OpenCart with {
+        briefly "Start a cart control"
+        described as {
+          |The control through which a shopper starts a cart.
+        }
+      }
+      input UpdateQuantityInput acquires command Shopping.Cart.UpdateQuantity with {
+        briefly "Change quantity control"
+        described as {
+          |The control through which a shopper changes how many of a line
+          |they want.
+        }
+      }
+      input RemoveLineItemInput acquires command Shopping.Cart.RemoveLineItem with {
+        briefly "Remove line control"
+        described as {
+          |The control through which a shopper removes a line.
+        }
+      }
+      input ClearCartInput acquires command Shopping.Cart.ClearCart with {
+        briefly "Empty cart control"
+        described as {
+          |The control through which a shopper empties the cart.
+        }
+      }
+      input GetCartInput acquires query Shopping.Cart.GetCart with {
+        briefly "View cart control"
+        described as {
+          |The control through which a shopper opens the cart to see it.
+        }
+      }
       input AddLineItemInput acquires command Shopping.Cart.AddLineItem with {
         briefly "Add to cart control"
         described as {

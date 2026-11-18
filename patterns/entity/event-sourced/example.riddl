@@ -20,16 +20,54 @@ domain Banking is {
     }
   }
   context Accounts as router is {
-    inlet AccountsCommandsIn is type Account.AccountCommand
+    command OpenAccount yields event Account.AccountOpened is {
+      ownerName: String(1, 100) with {
+        briefly "Owner"
+        described as {
+          |Name of the account holder.
+        }
+      }
+      initialDeposit: Banking.Money with {
+        briefly "Initial deposit"
+        described as {
+          |Amount the account is opened with.
+        }
+      }
+    } with {
+      briefly "Open an account"
+      described as {
+        |Opens a new account for a named owner with an initial deposit. The
+        |context handles it, not the entity: an account comes into being only
+        |by `create`, which mints its id, and the AccountOpened this command
+        |yields carries that id back to whoever asked.
+      }
+    }
+    type AccountsRequest is one of {
+      Accounts.OpenAccount or Account.AccountCommand or Account.GetAccount
+    } with {
+      briefly "Everything the application may ask of Accounts"
+      described as {
+        |Opening an account, which the context does itself; any command for
+        |an existing account; and a look-up of one account, which that
+        |account answers.
+      }
+    }
+    inlet AccountsCommandsIn is type AccountsRequest
     outlet AccountsCommandsFwd is type Account.AccountCommand
+    outlet AccountQueriesOut is query Account.GetAccount
     inlet AccountResultStreamIn is result Account.AccountResult
     outlet AccountResultStreamOut is result Account.AccountResult
     handler AccountsBoundary is {
       on accountResult: result Account.AccountResult is {
         send accountResult to outlet Accounts.AccountResultStreamOut
       }
-      on openAccount: command Account.OpenAccount is {
-        forward openAccount to outlet Accounts.AccountsCommandsFwd
+      on openAccount: command Accounts.OpenAccount is {
+        let openingTime: type TimeStamp = system.now
+        let newAccount = create entity Accounts.Account(owner = openAccount.ownerName, deposit = openAccount.initialDeposit, openedAt = openingTime)
+        yield event Account.AccountOpened(accountId = newAccount, ownerName = openAccount.ownerName, initialBalance = openAccount.initialDeposit, openedAt = openingTime)
+      }
+      on getAccount: query Account.GetAccount is {
+        forward getAccount to outlet Accounts.AccountQueriesOut
       }
       on deposit: command Account.Deposit is {
         forward deposit to outlet Accounts.AccountsCommandsFwd
@@ -47,17 +85,13 @@ domain Banking is {
         |never to a definition inside.
       }
     }
-    connector AccountEventSinkToAccountIntake is from outlet Accounts.AccountEventSink.AccountEventSinkToAccount to inlet Accounts.Account.AccountFromEventSink with {
-      briefly "Account events replayed back to the aggregate"
-      described as {
-        |The channel the sink's delivery travels. A sender publishes only
-        |through its own outlet.
-      }
-    }
     connector AppCommandsToAccountIntake is from outlet Accounts.AccountsCommandsFwd to inlet Accounts.Account.AccountCommands with {
       briefly "Boundary to the aggregate"
     }
-    connector 'AccountResult Stream Egress' is from outlet Accounts.AccountRepository.AccountRepositoryResponses to inlet Accounts.AccountResultStreamIn with {
+    connector 'AccountQuery Intake' is from outlet Accounts.AccountQueriesOut to inlet Accounts.Account.AccountQueries with {
+      briefly "Look-ups of one account, on their way to it"
+    }
+    connector 'AccountResult Stream Egress' is from outlet Accounts.Account.AccountReplies to inlet Accounts.AccountResultStreamIn with {
       briefly "Query results on their way out to the application"
     }
     type AccountId is Id(Accounts.Account) with {
@@ -66,10 +100,9 @@ domain Banking is {
         |Uniquely identifies an account.
       }
     }
-    aggregate event-sourced entity Account as merge is {
+    aggregate event-sourced entity Account as router is {
       type AccountCommand is one of {
-        Account.OpenAccount or Account.Deposit or Account.Withdraw or
-        Account.CloseAccount
+        Account.Deposit or Account.Withdraw or Account.CloseAccount
       } with {
         briefly "Account command alternation"
         described as {
@@ -86,33 +119,9 @@ domain Banking is {
         }
       }
       inlet AccountCommands is type AccountCommand
-      inlet AccountFromEventSink is event AccountOpened
+      inlet AccountQueries is query GetAccount
       outlet AccountEvents is type AccountEvent
-      command OpenAccount yields event AccountOpened is {
-        accountId: AccountId with {
-          briefly "Account"
-          described as {
-            |The account being opened.
-          }
-        }
-        ownerName: String(1, 100) with {
-          briefly "Owner"
-          described as {
-            |Name of the account holder.
-          }
-        }
-        initialDeposit: Banking.Money with {
-          briefly "Initial deposit"
-          described as {
-            |Amount the account is opened with.
-          }
-        }
-      } with {
-        briefly "Open an account"
-        described as {
-          |Opens a new account for a named owner with an initial deposit.
-        }
-      }
+      outlet AccountReplies is result AccountResult
       command Deposit yields event MoneyDeposited is {
         accountId: AccountId with {
           briefly "Account"
@@ -332,37 +341,13 @@ domain Banking is {
           |The data a closed account retains.
         }
       }
-      state Active of record Account.ActiveStateData is {
-        handler ActiveHandler is {
-          on init is {
-            let accountOpened: Account.AccountOpened = prompt("the account opened that brings this account into existence")
-            yield accountOpened
-          }
-        } with {
-          briefly "Active state handler"
-          described as {
-            |Initializes an account on entry to the active state.
-          }
-        }
-      } with {
+      state Active of record Account.ActiveStateData with {
         briefly "Active state"
         described as {
           |The account is open and transacting.
         }
       }
-      state Closed of record Account.ClosedStateData is {
-        handler ClosedHandler is {
-          on init is {
-            let accountClosed: Account.AccountClosed = prompt("the account closed that brings this account into existence")
-            yield accountClosed
-          }
-        } with {
-          briefly "Closed state handler"
-          described as {
-            |Initializes an account on entry to the closed state.
-          }
-        }
-      } with {
+      state Closed of record Account.ClosedStateData with {
         briefly "Closed state"
         described as {
           |The account is closed and no longer transacting.
@@ -403,13 +388,13 @@ domain Banking is {
         }
       }
       handler AccountHandler is {
-        on query GetAccount is {
-          let accountResult: Account.AccountResult = prompt("read the account from the store")
-          reply accountResult
+        on init(owner: String(1, 100), deposit: type Banking.Money, openedAt: TimeStamp) is {
+          morph entity Accounts.Account to state Accounts.Account.Active with record Account.ActiveStateData(accountId = self.id, ownerName = owner, balance = deposit, openedAt = openedAt)
+          send event Account.AccountOpened(accountId = self.id, ownerName = owner, initialBalance = deposit, openedAt = openedAt) to outlet AccountEvents
         }
-        on openAccount: command OpenAccount is {
-          yield event Account.AccountOpened(accountId = openAccount.accountId, ownerName = openAccount.ownerName, initialBalance = 0.00, openedAt = system.now)
-          send event Account.AccountOpened(accountId = openAccount.accountId, ownerName = openAccount.ownerName, initialBalance = 0.00, openedAt = system.now) to outlet AccountEvents
+        on query GetAccount is {
+          let accountResult: Account.AccountResult = prompt("the account as this entity holds it now")
+          reply accountResult
         }
         on deposit: command Deposit is {
           yield event Account.MoneyDeposited(accountId = deposit.accountId, amount = deposit.amount, newBalance = ActiveStateData.balance + deposit.amount, depositedAt = system.now)
@@ -423,9 +408,6 @@ domain Banking is {
           yield event Account.AccountClosed(accountId = closeAccount.accountId, finalBalance = ActiveStateData.balance, closedAt = system.now)
           send event Account.AccountClosed(accountId = closeAccount.accountId, finalBalance = ActiveStateData.balance, closedAt = system.now) to outlet AccountEvents
         }
-        on accountOpened: event Account.AccountOpened is {
-          morph entity Accounts.Account to state Accounts.Account.Active with record Account.ActiveStateData(accountId = accountOpened.accountId, ownerName = accountOpened.ownerName, openedAt = accountOpened.openedAt, balance = prompt("the balance of this active state data"))
-        }
         on event Account.MoneyDeposited is {
           set field Account.ActiveStateData.balance to "balance plus the deposited amount"
         }
@@ -438,7 +420,10 @@ domain Banking is {
       } with {
         briefly "Account command handler"
         described as {
-          |Turns each accepted command into the event that records it.
+          |Creates the account, opening it in the Active state with the
+          |deposit it was opened with, and turns each accepted command into
+          |the event that records it. On replay, `on init` runs again with the
+          |same arguments, which is why it needs no creation event of its own.
         }
       }
     } with {
@@ -463,9 +448,8 @@ domain Banking is {
         |is a result.
       }
     }
-    repository AccountRepository as flow is {
+    repository AccountRepository as sink is {
       inlet AccountRepositoryFromProjection is type AccountRepositoryCommand
-      outlet AccountRepositoryResponses is result Account.AccountResult
       record StoredAccount is {
         accountId: Accounts.AccountId with {
           briefly "accountId"
@@ -567,10 +551,6 @@ domain Banking is {
         on command PersistAccountClosed is {
           do "mark the stored account row closed"
         }
-        on query GetAccount is {
-          let accountResult: Accounts.Account.AccountResult = prompt("read the account from the store")
-          reply accountResult
-        }
       } with {
         briefly "Account persistence"
         described as {
@@ -651,12 +631,10 @@ domain Banking is {
         |Fans the account event stream out to the projection and to publication.
       }
     }
-    streamlet AccountEventSink as flow is {
+    streamlet AccountEventSink as sink is {
       inlet IncomingAccountEvents is type Account.AccountEvent
-      outlet AccountEventSinkToAccount is event Account.AccountOpened
       handler AccountEventReceiver is {
         on accountOpened: event Account.AccountOpened is {
-          send accountOpened to outlet Accounts.AccountEventSink.AccountEventSinkToAccount
           do "record that an account was opened"
         }
         on other is {
@@ -718,13 +696,38 @@ domain Banking is {
         |Where hard errors raised anywhere in Banking are delivered.
       }
     }
-    outlet AppAccountCommands is type Accounts.Account.AccountCommand
+    outlet AppAccountCommands is type Accounts.AccountsRequest
     inlet AppAccountResults is result Accounts.Account.AccountResult
     group AccountScreen is {
-      input OpenAccountInput acquires command Accounts.Account.OpenAccount with {
+      input OpenAccountInput acquires command Accounts.OpenAccount with {
         briefly "Open account control"
         described as {
           |The control through which a customer opens an account.
+        }
+      }
+      input DepositInput acquires command Accounts.Account.Deposit with {
+        briefly "Deposit control"
+        described as {
+          |The control through which a customer pays money in.
+        }
+      }
+      input WithdrawInput acquires command Accounts.Account.Withdraw with {
+        briefly "Withdraw control"
+        described as {
+          |The control through which a customer takes money out.
+        }
+      }
+      input CloseAccountInput acquires command Accounts.Account.CloseAccount with {
+        briefly "Close account control"
+        described as {
+          |The control through which a customer closes an account.
+        }
+      }
+      input GetAccountInput acquires query Accounts.Account.GetAccount with {
+        briefly "Look up account control"
+        described as {
+          |The control through which a customer opens one account to see its
+          |balance.
         }
       }
     } with {

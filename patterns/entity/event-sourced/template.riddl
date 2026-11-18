@@ -7,12 +7,49 @@
 //
 //   1. every handled command's TYPE declares `yields`
 //   2. every event so named has an `on event` clause to apply it on replay
-//   3. `set`/`morph`/`become` appear ONLY in `on event` -- `on init` included
+//   3. `set`/`morph`/`become` appear ONLY in `on event` and in `on init`
 //   4. a foreign event may not touch state; it yields one of ours first
 //
 // Together they say one thing: replay must reproduce the same state changes,
 // so the change belongs where the event is applied, never on the command.
+//
+// Creation is the exception that proves the rule. An instance comes into
+// being only by `create`, which runs the entity's `on init` with the
+// creator's arguments. That invocation IS the instance's first journal entry,
+// and replay re-runs it, so `on init` may `morph` into the starting state
+// directly. It needs no creation event of its own to fold.
+//
+// So the creating command belongs to the CONTEXT, not the entity: there is no
+// instance yet to send it to. The context creates the instance and yields
+// the creation event, which carries the new id back to whoever asked.
 
+command Create{EntityName} yields event {EntityName}.{EntityName}Created is {
+  createdAt: TimeStamp with {
+    briefly "Created at"
+    described as {
+      |When the creator asked. TODO: add the fields creation needs.
+    }
+  }
+} with {
+  briefly "Create a {EntityName}"
+  described as {
+    |Requests a new {EntityName}. The context handles it; the entity cannot,
+    |because it does not exist yet.
+  }
+}
+handler {EntityName}Creation is {
+  on create{EntityName}: command Create{EntityName} is {
+    let new{EntityName} = create entity {EntityName}(startedAt = create{EntityName}.createdAt)
+    yield event {EntityName}.{EntityName}Created(id = new{EntityName}, createdAt = create{EntityName}.createdAt)
+  }
+} with {
+  briefly "{EntityName} creation"
+  described as {
+    |The context's own clause for the creating command. In a real model it
+    |sits in the context's boundary handler, beside the clauses that forward
+    |each other command to the entity.
+  }
+}
 event-sourced entity {EntityName} is {
   type {EntityName}Id is Id({EntityName}) with {
     briefly "{EntityName} identifier"
@@ -21,19 +58,6 @@ event-sourced entity {EntityName} is {
     }
   }
   // Commands are requests. Each declares what it records when it succeeds.
-  command Create{EntityName} yields event {EntityName}Created is {
-    id: {EntityName}Id with {
-      briefly "ID"
-      described as {
-        |The {EntityName} to create.
-      }
-    }
-  } with {
-    briefly "Create a {EntityName}"
-    described as {
-      |Requests creation. TODO: add the fields creation needs.
-    }
-  }
   command Update{EntityName} yields event {EntityName}Updated is {
     id: {EntityName}Id with {
       briefly "ID"
@@ -158,47 +182,26 @@ event-sourced entity {EntityName} is {
       |What remains after deletion.
     }
   }
-  // `on init` may not `set` (rule 3). Initial state arrives by replaying the
-  // creation event, which is what event sourcing means.
-  initial state Active of record {EntityName}.ActiveData is {
-    initial handler ActiveInitHandler is {
-      on init is {
-        yield event {EntityName}Created
-      }
-    } with {
-      briefly "Active init handler"
-      described as {
-        |Rebuilds the active state by replaying creation.
-      }
-    }
-  } with {
+  // There is no initial state: `on init` morphs into the state the
+  // instance starts in, chosen from its arguments.
+  state Active of record {EntityName}.ActiveData with {
     briefly "Active state"
     described as {
       |The {EntityName} is live.
     }
   }
-  state Deleted of record {EntityName}.DeletedData is {
-    initial handler DeletedInitHandler is {
-      on init is {
-        yield event {EntityName}Deleted
-      }
-    } with {
-      briefly "Deleted init handler"
-      described as {
-        |Rebuilds the deleted state by replaying deletion.
-      }
-    }
-  } with {
+  state Deleted of record {EntityName}.DeletedData with {
     briefly "Deleted state"
     described as {
       |The {EntityName} is gone. Terminal.
     }
   }
   handler {EntityName}Handler is {
-    // The command clause decides and records. It does not change state.
-    on command Create{EntityName} is {
-      yield event {EntityName}Created
+    // Creation: the arguments `create` passed. Replay re-runs this.
+    on init(startedAt: TimeStamp) is {
+      morph entity {EntityName} to state {EntityName}.Active with record {EntityName}.ActiveData(id = self.id, createdAt = startedAt)
     }
+    // The command clause decides and records. It does not change state.
     on command Update{EntityName} is {
       yield event {EntityName}Updated
     }
@@ -206,21 +209,17 @@ event-sourced entity {EntityName} is {
       yield event {EntityName}Deleted
     }
     // The event clause changes state, so replay can re-run it.
-    on event {EntityName}Created is {
-      morph entity {EntityName} to state {EntityName}.Active with record {EntityName}.ActiveData
-      set state Active to "initialize from the creation event"
-    }
     on event {EntityName}Updated is {
       set field {EntityName}.ActiveData.createdAt to "unchanged; TODO apply your update"
     }
     on event {EntityName}Deleted is {
       morph entity {EntityName} to state {EntityName}.Deleted with record {EntityName}.DeletedData
-      set state Deleted to "initialize from the deletion event"
     }
   } with {
     briefly "{EntityName} handler"
     described as {
-      |Turns commands into recorded events, and applies those events to state.
+      |Creates the {EntityName}, turns commands into recorded events, and
+      |applies those events to state.
     }
   }
 } with {
