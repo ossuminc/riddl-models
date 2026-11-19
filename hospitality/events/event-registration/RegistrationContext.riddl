@@ -111,7 +111,12 @@ context RegistrationContext as router is {
   connector 'ToTicketAvailabilityService Intake' is from outlet RegistrationContext.ToTicketAvailabilityService.ToTicketAvailabilityServiceToRegistrationContext to inlet RegistrationContext.RegistrationContextFromToTicketAvailabilityService with {
     briefly "Answers translated by ToTicketAvailabilityService, on their way in"
   }
-  inlet RegistrationContextFromPaymentProcessingService is command Registration.ConfirmRegistration with {
+  type FromPaymentProcessingServiceCommand is one of {
+    Registration.ProcessPayment or Registration.ConfirmRegistration or Registration.ProcessRefund
+  } with {
+    briefly "What FromPaymentProcessingService turns that service's news into"
+  }
+  inlet RegistrationContextFromPaymentProcessingService is type RegistrationContext.FromPaymentProcessingServiceCommand with {
     briefly "What FromPaymentProcessingService makes of that service's news"
   }
   connector 'FromPaymentProcessingService Intake' is from outlet RegistrationContext.FromPaymentProcessingService.FromPaymentProcessingServiceToRegistrationContext to inlet RegistrationContext.RegistrationContextFromPaymentProcessingService with {
@@ -359,17 +364,21 @@ context RegistrationContext as router is {
   }
   adaptor FromPaymentProcessingService from context PaymentProcessingService as flow is { 
     inlet FromPaymentProcessingServiceIn is type PaymentProcessingService.PaymentProcessingServiceEvent
-    outlet FromPaymentProcessingServiceToRegistrationContext is command Registration.ConfirmRegistration
+    outlet FromPaymentProcessingServiceToRegistrationContext is type RegistrationContext.FromPaymentProcessingServiceCommand
     handler FromPaymentProcessingServiceHandler is {
       on paymentFailed: event PaymentProcessingService.PaymentFailed is {
         do "an unpaid registration stays unconfirmed; the attendee is asked again"
       }
       on paymentSucceeded: event PaymentProcessingService.PaymentSucceeded is {
+        let processPayment: type Registration.ProcessPayment = prompt("the payment the processor took, with its transaction")
+        send processPayment to outlet RegistrationContext.FromPaymentProcessingService.FromPaymentProcessingServiceToRegistrationContext
         let item0: type Registration.ConfirmRegistration = prompt("translate the paymentSucceeded event into a ConfirmRegistration, a registration is confirmed when the money is actually taken")
         send item0 to outlet RegistrationContext.FromPaymentProcessingService.FromPaymentProcessingServiceToRegistrationContext
       }
       on refundSucceeded: event PaymentProcessingService.RefundSucceeded is {
         do "the refund has gone; cancelling the registration was recorded here"
+        let processRefund: type Registration.ProcessRefund = prompt("the refund the processor returned")
+        send processRefund to outlet RegistrationContext.FromPaymentProcessingService.FromPaymentProcessingServiceToRegistrationContext
       }
       on other is {
         error "Unexpected message for adaptor FromPaymentProcessingService"

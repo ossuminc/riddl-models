@@ -15,14 +15,14 @@ deprecations.** Tracked as **BACKLOG #43**. `checkAll` is green but does NOT
 enforce the zero; the sweep does: `./scripts/collect-warnings.py
 --include-patterns`.
 
-### Where #43 stands (sweep on -27, after `fc28e083e`): 164 findings, 68 models
+### Where #43 stands (sweep on -27, after step 3 (b)): 147 findings, 53 models
 
 | finding | count | state |
 |---|---:|---|
 | errors, deprecations | 0 | done (steps 1, 2; -25's 8 `value-not-natural` fixed) |
 | `stmt-yield-argument-prompt` | 14 | WAITS for riddl's value forms ([1.27]: not in -27, being written now) |
 | `value-optional-for-required` | 25 | WAITS for `x otherwise y`, then a default per site (Reid's ruling) |
-| `msg-clause-undeliverable` | 118 | steps 3 (a), 4, projector events DONE. Await Reid: 17 (b) + 46 (c), 14 queries without `replies`, 41 event/command sites (BACKLOG #43) |
+| `msg-clause-undeliverable` | 101 | steps 3 (a), (b), 4, projector events DONE. Await Reid: 46 (c), 14 queries without `replies`, 41 event/command sites (BACKLOG #43) |
 | `stream-outlet-never-sent` | 3 | with the 41 |
 | `entity-no-query-clause` | 4 | code-generator x3 (its app is a source process: Reid), SurveyStation (riddlc crash, filed) |
 

@@ -52,7 +52,9 @@ rows, found each command's connected app outlet from the dump, and inserted
 `input <Cmd>Input acquires command <path>` into the app's screen group (688),
 or into a new `<Name>Screen` group (547 into 75 apps); it refused 0. Nothing
 else in the sweep moved; gates, prettify and BAST round trip (189/189) green.
-**Left: the 17 (b) and 46 (c) below, for Reid.**
+**(b) APPLIED 2026-11-19 (Reid: option A).** All 17 wired through their
+adaptors by `scripts/undeliverable/apply-b-sites.py`; sweep 164 -> 147, 0
+new. **Left: the 46 (c) below, for Reid.**
 
 **Classified 2026-11-19 on -27.** 1,298 of the 2,178
 undeliverables are command clauses on a context boundary (the rest are step
@@ -74,7 +76,7 @@ one (GPSAdapter, FromCardNetworkService) and need an outlet added.
 Seen in passing, not step 3: claims-processing translates
 `PaymentService.PaymentVoided` into `IssuePay`, which looks inverted.
 
-**(b), 17: wire through the adaptor**
+**(b), 17: wire through the adaptor -- APPLIED, kept for the record**
 
 | model | command | adaptor / trigger | why |
 |---|---|---|---|
@@ -101,6 +103,12 @@ Weakest: the five shipment-tracking rows share one generic
 status guard. Four triggers already drive another command, so the adaptor
 would send two: CreditReportReceived, PolicyEvaluated, TradeMatchFound,
 ShipmentPickedUp (and event-registration's PaymentSucceeded).
+Reid ruled option A: guard with `when prompt(...)` rather than give
+CarrierIntegration five specific events (that would change an external
+interface corpus-wide) or make them app controls (carriers report scans,
+people do not). A single-command adaptor outlet became a `<Adaptor>Command`
+alternation shared with its intake inlet; the two sinks gained an outlet,
+an intake inlet and connector, and `as flow`.
 
 **(c), 46: for the session with Reid**
 
