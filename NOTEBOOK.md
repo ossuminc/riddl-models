@@ -4,86 +4,81 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.7.0-22-efa3dc80`, UNPUBLISHED riddl `main`, override ON** --
-`riddlcPath := Some(file("../bin/riddlc"))`, libraries from `publishLocal`.
-It carries 2.8.0's creation model, `ask query Q(args) of P`, and the
-external-context exemption for `stmt-yield-argument-prompt`. BAST revision
-33. **Take the override off at the 2.8.0 tag.**
-
--22 (2026-11-18) fixes riddl's prettify dropping `Currency(USD)`; the libraries
-are `publishLocal`ed at -22 (checked on the test classpath). Numbers taken on
--20 are not comparable with -22 ones.
+**Pin `2.7.0-22-efa3dc80`, UNPUBLISHED riddl `main`, override ON:**
+`riddlcPath := Some(file("../bin/riddlc"))`; libraries from `publishLocal`
+(verified at -22 on `Test/dependencyClasspath`). It carries 2.8.0's creation
+model, `ask query Q(args) of P`, and the prettify fix for `Currency(USD)`.
+**Take the override off at the 2.8.0 tag.** riddl is restaging often: run
+`../bin/riddlc info` first, and compare sweeps only within one binary
+(-20 and -22 disagree on the same tree).
 
 **Reid's goal (2026-11-18): every model free of errors, warnings and
-deprecations on this pin.** Tracked as **BACKLOG #43**, with the per-rule
-table, his rulings for each step, and the cases collected for him. Gates are
-green throughout (`checkAll`); the zero is measured by
-`RIDDLC=/Users/reid/Code/ossuminc/bin/riddlc ./scripts/collect-warnings.py
---include-patterns` (every severity), which the gates do NOT enforce.
+deprecations.** Tracked as **BACKLOG #43**: per-rule table, rulings, and the
+cases collected for him. `checkAll` is green but does NOT enforce the zero;
+the sweep does: `./scripts/collect-warnings.py --include-patterns` (every
+severity; reads stdout+stderr).
 
-### In flight
+### Where #43 stands (sweep on -22, after `cc6338d56`)
 
-- **Done:** reactive-bbq at 0; (1) all 373 bare asks given arguments
-  (`b9ee4cf3d`); (2) creation migration, 718 of 725 deprecations
-  (`1ec22dbef`, `9fbbde7b0`, `771efc733`); Reid's rulings 1, 2, 4, 5, 6 on
-  the leftovers, then Ticket (LiveEvent) and PriceList/Fund (see § 2026-11-18).
-  **Step 2 is complete: 0 deprecations corpus-wide.**
-- **In flight, by Reid 2026-11-18: step (5)**, `stmt-yield-argument-prompt`.
-  302 -> 74 (BACKLOG #43 § Step 5): 32 held on a riddl question about
-  `Date`, and 42 left by named blocker, mostly for Reid to rule (id minting)
-  or for riddl (collection lookup, sum, conditional value). Then (3)
-  the ~1,300 undelivered commands and (4) queries and results; neither has
-  started. First step-3 case known:
-  deployment-pipeline's `RollbackDeployment`, undeliverable since ruling 6. Expect several sessions.
-- **Collect, do not ask one at a time:** cases needing a ruling go in BACKLOG
-  #43 § Awaiting Reid's ruling for one session with Reid.
-- **Not pushed:** everything after `219186e1c`. Ask before pushing.
-- riddl-generator and Synapify: Reid will tell them later. Do not hand off.
+- **Steps 1 and 2 DONE.** 0 deprecations of any kind. BAST round trip
+  189/189, and riddl's `RiddlModelsRoundTripTest` passes 189/189 on JVM.
+- **Step 5 (`stmt-yield-argument-prompt`) IN FLIGHT: 302 -> 63.** Reid put it
+  ahead of 3 and 4. The 63 are 32 `Date`/`DateTime` sites (held on riddl), 13
+  needing value forms the grammar lacks (filed with riddl, being worked
+  concurrently), and **18 for Reid to rule case by case**. Those 18 are a
+  table in BACKLOG #43 § Step 5 and are the next session's work with him.
+  `scripts/yield-prompts/census.py` regenerates the site list from a sweep.
+- **Step 3** (~2,178 `msg-clause-undeliverable`, rule a/b/c) and **step 4**
+  (queries/results, `entity-no-query-clause` x5) have NOT started. A known
+  step-3 case: deployment-pipeline's `RollbackDeployment`.
+- **Open riddl tasks from us** (`../riddl/task/2026-11-18-*`): Date/DateTime
+  literals and conversions; an optional value accepted into a required field;
+  five value forms. When riddl answers, re-run the census.
+- riddl-generator and Synapify: Reid will tell them. Do not hand off.
 
-### Creation-migration traps (scripts/creation/migrate.py)
+### Traps that bit this session
 
-- riddlc **prettify mangles `Currency(USD)` in an on-init argument** to
-  `Currency`, which does not parse; filed with riddl. The script skips such
-  entities (PriceList, Fund).
-- A field named for a **keyword** (`result`, `call`) cannot be a parameter or
-  a value reference; the script uses `<field>Value`.
-- Moving the creating command out of the entity needs **three** follow-ons
-  or the model goes red: drop it from the entity alternation (alias when one
-  member is left), a context `<X>Request` alternation on every non-entity
-  port that carried the entity's, and dropping the id argument from every
-  other constructor of it.
-- An event-sourced `on init` must also **send the creation event** on the
-  entity's outlet, or the splits that persisted it go undeliverable.
-- An entity gaining its **first entity-level handler** exposes
-  `entity-no-query-clause` if it never answered a query. Not a regression.
-
-### Traps, still live
-
+- **An agent's headline count can be wrong while its per-model counts are
+  right.** Four step-5 agents claimed 74 fixes and the sweep dropped 80.
+  Reconcile per model against the sweep, never against a summary.
+- **A yield and the `send event` that echoes it must carry the same
+  arguments.** Rewriting yields alone left 8 sends still prompting.
+  `scripts/yield-prompts/census.py --apply` touches yields only; check the
+  pairs afterwards.
+- **A literal ruling can hide a dead state.** "on entry yielding the event"
+  validated clean while both states stayed unreachable (each was entered only
+  by the fold of the event its own entry yielded). Check that the original
+  had an effect before preserving it.
+- **A clean validate is not evidence for a value's type.** A `DateTime` field
+  accepts `5` and `"tomorrow"`. Canary every new spelling RED.
+- **Value spellings that work** (canaried): `<Entity>.<State>.<f>` reads
+  current state; `record Money(amount = ..., currency = ...)`;
+  `count of xs`; `all of xs as e where p`; `create entity X(...)` inside
+  `foreach`; `system.now` only in a command clause, never `on init`/a fold.
 - **A repository's row is `Stored<Entity that yielded the event>`,** not the
-  schema's first table. Picking by position inverts orders/returns/shipments
-  and VALIDATES, because every table admits the write.
-- **A `while` loop over `re.finditer` while mutating the text** splices garbage
-  at stale offsets. Two scripts did it; re-`search` after every write.
+  schema's first table; a wrong pick still validates.
 - **`git checkout <file>` reverts every uncommitted edit to it.**
-- **A denominator guard catches a wholesale failure, not a per-item one.**
 - **`log "..." + someId`** does not typecheck; `log <message>` does.
-- **`x != empty` IS a comparand on 2.5.0** (re-measured 2026-11-07; this
-  line used to say it had no spelling). Both sides resolve: a misspelled field
-  and `emptyX` each draw `value-comparand-unresolved`.
-- **`hospitality/food-service/reactive-bbq/1/`** is riddl-generator debug
-  output, untracked, not ours.
 
 ### Certainty
 
-Verified: every count, by sweep and gate. Assumed: the per-clause judgements in
-the migrations — which column a `store` fills, which enumerator a created row
-starts in, that the kitchen is what puts an order in preparation. Each is one
-line to change.
+Verified: every count, by sweep and gate, on -22. Assumed: per-site value
+choices in step 5 (e.g. cart `cartValue` = subtotal, not estimatedTotal;
+ticket `PurchaseTicket` runs in ReservedState; billing balance subtracts
+credits). Each is one argument to change, listed in the agents' reasoning in
+`7eb1c9021`'s diff.
+
+### task/ (not triaged here)
+
+- `2026-11-14-order-submitted-...`: blocked on riddl-generator confirming its
+  e2e (Reid relays).
+- `2026-11-16-reactive-bbq-creates-by-command-...`: blocked only on telling
+  riddl-generator and Synapify (Reid's).
 
 ### Pointers
 
-Open work: **BACKLOG.md** #40 (`query one`), #30, #1, #23, #34. Durable facts:
-**CLAUDE.md**. Lessons: § 2026-09-23 below.
+Open work: **BACKLOG.md** #43 first; also #40 (`query one`), #30, #1, #23,
+#34. Durable facts: **CLAUDE.md**. Lessons: § 2026-11-18 below.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
