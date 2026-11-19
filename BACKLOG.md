@@ -119,28 +119,28 @@ submission, `coverageStartDate` from `requestedEffectiveDate`,
 `ExpireTreaty.finalSettlementDue` as a new command field.
 `newPaidToDate` joined the value-forms task as a conditional.
 
-**Now 32** = 14 waiting on riddl's value forms + 18 model-by-model (Reid:
-"need the details on a case-by-case basis"). The 18, for one session with
-Reid. Each is a yield argument still prompting, with the reason it has no
-source:
+**Now 32** = 14 waiting on riddl's value forms + 18 model-by-model.
 
-| model | argument | why it has no source |
+**Reid's rulings on the 18, 2026-11-19 (asked one at a time; NOT YET
+IMPLEMENTED):**
+
+| # | site | ruling |
 |---|---|---|
-| shopping-cart | `ApplyPromoCode.discount`, and its `newTotal` | the command carries only the code; the amount comes from promotion evaluation |
-| shopping-cart | `SetShippingAddress.shippingEstimate` | a carrier rate; nothing supplies it |
-| shopping-cart | `MergeCart.addedItems` | the SOURCE cart's item count, which is another instance's state |
-| shopping-cart | `Checkout.orderId` | the order is created only AFTER `CartCheckedOut`, so the cart cannot know it |
-| code-generator | `RunGreenGate` `failureDetail` | what the test suite printed in the `do` step |
-| fund-accounting | `CalculateNAV` `netAssetValue`, `navPerShare` | assets minus liabilities, from holdings and market prices not in state |
-| usage-billing | `CloseAccount.finalBalance` | the current balance, or that plus final charges ("generates a final bill")? |
-| ticket-sales | `RefundTicket.refundAmount` | `amountPaid`, the face value, or whatever the free-text `refundPolicy` says |
-| policy-administration | `CancelPolicy.returnPremium` | pro rata over dates, which is date arithmetic |
-| policy-administration | `renewalOffer` | three held `Date` subfields, a fresh id, and a narrowing decimal |
-| policy-lifecycle | two `loanTransaction`s | the record has a held `Date` subfield |
-| treaty-management | `ProcessSettlement.settlement` | the command carries only `treatyId`; the record has 3 dates, 7 totals and a direction |
-| supply-chain | `ReceiveShipment.hasDiscrepancies` | compare lines against the order, or "notes are non-empty"? |
-| drug-supply-chain | `VerifyAuthenticity.verificationResult` | `verified` is derivable; source, suspect flag and reason are not |
-| drug-supply-chain | `notificationsSent` | the outcome of sending the recall notices |
+| 1 | cart `ApplyPromoCode` | `PromoCodeApplied` records `code` + `discountPercent`, not money; the fold computes the saving. The command gains `discountPercent`, which the PricingAdapter fills from `PromotionActivated`. |
+| 2 | cart `SetShippingAddress` | Drop `shippingEstimate` from `ShippingAddressSet`. New `EstimateShipping` command and `ShippingEstimated` event; its fold sets the state's estimate. The sender is the app. |
+| 3 | cart `MergeCart` | Command gains `sourceItems: CartItem+` (the sender reads the guest cart). `CartsMerged` carries `mergedItems`, `addedItems = count of` them, and the fold appends with `foreach`. |
+| 4 | cart `Checkout` | Drop `orderId` from `CartCheckedOut`. FromOrderService turns `OrderCreated` into `RecordOrder(cartId, orderId)`, which yields `OrderLinked`; its fold sets an optional `CheckedOutState.orderId`. |
+| 5 | code-gen `RunGreenGate` | External `TestRunner`, with query `RunSuite(artifactId)` replying `SuiteResult{passed, output}`. Proving asks it; `when not passed`, it yields `ProofFailed(failureDetail = output)`. Wire both legs. |
+| 6 | fund `CalculateNAV` | `CustodianContext` gains query `GetValuation(fundId, valuationDate)` replying `{totalAssets, totalLiabilities}`. NAV = assets − liabilities; per share = NAV ÷ sharesOutstanding. |
+| 7 | billing `CloseAccount` | Per-state clauses (Active, Suspended), each yielding its own `currentBalance`. **And `ApplyPayment`/`ApplyCredit` likewise**, with their folds writing per state. |
+| 8 | ticket `RefundTicket` | The ticket starts a refund: the command gains `refundAmount` (the requester applied the show's policy). The PaymentAdapter's `RefundCompleted` no longer sends `RefundTicket`, which breaks the loop. |
+| 9 | policy `CancelPolicy` | `RatingEngine` gains query `ComputeReturnPremium(policyId, cancellationDate)`; the handler asks it. |
+| 10 | policy `GenerateRenewalOffer` | Build `RenewalOffer`: `renewalId` as a new command field; offerDate `system.now`; effective = the current expiration; expiration = expiration + (expiration − effective); premiumChange = proposed − totalPremium. |
+| 11 | life `RequestLoan`/`RepayLoan` | `record LoanTransaction(system.now, "Disbursement"/"Repayment", the command's amount, cashValue.loanInterestRate)`. The disbursement fold's balance = balance + amount. |
+| 12 | treaty `ProcessSettlement` | `AccountingService` gains query `GetSettlementStatement(treatyId, periodStart, periodEnd)`; the handler builds `SettlementInfo` from the answer; netBalance is computed. |
+| 13 | supply `ReceiveShipment` | `discrepancyNotes` becomes `String?`; `hasDiscrepancies = discrepancyNotes != empty`. |
+| 14 | drug `VerifyAuthenticity` | `when any of ReceivedState.serializations as s where s.serialNumber == …` yields the verified result, `else` the suspect result. |
+| 15 | drug `InitiateRecall` | Drop `notificationsSent` from `RecallInitiated`. |
 
 **The 154 left need a reading, not a rule.** (As of the mechanical half.) Census groups (the census
 prints each site):
