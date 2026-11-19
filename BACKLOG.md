@@ -296,11 +296,15 @@ new. **Follow-up to offer Reid:** the seven adaptor clauses are still prose
 (`do "Add shift to store schedule"`); the event now arrives but nothing acts
 on it.
 
-**Left for Reid (18):**
-- **Outbound adaptor clauses, 4** (assembly-operations `ToQualityService`
-  x2 and `ToWorkOrderService` handle their own entity's events, but are fed
-  commands; point-of-sale `ToReceiptService` handles `GenerateReceipt` but
-  is fed TransactionEvents). Look stale; deleting needs Reid's say.
+**Outbound adaptor clauses, 4: DONE 2026-11-19 (Reid: A, A).** The filing
+called all four stale; only point-of-sale's was. assembly-operations' three
+are ask/answer clauses (inspection plan, defect codes, work-order details)
+starved because each adaptor's one inlet takes the entity's commands: each
+gained an `AssemblyOrderEvent` inlet fed by `AssemblyOrderEventSplit`.
+point-of-sale `ToReceiptService`'s second, older handler (`ReceiptGeneration`,
+doing the receipt service's own job) is deleted. Sweep 60 -> 56, 0 new.
+
+**Left for Reid (14):**
 - **Repository commands, 9** (api-management, clinical-trials,
   identity-management `Store…`/`Delete…`; language-coverage
   `PersistStationCommissioned`/`Retired`). No inlet admits them. The first
