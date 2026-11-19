@@ -23,6 +23,13 @@ entity Meter as router is {
   }
   inlet MeterCommands is type MeterCommand
   outlet MeterEvents is type MeterEvent
+  outlet MeterClock is command AggregateUsage
+  inlet MeterClockIn is command AggregateUsage with {
+    briefly "The meter's own aggregation clock"
+    described as {
+      |Each period's AggregateUsage, scheduled by the meter when it was created.
+    }
+  }
   // Commands
   command RecordUsageEvent is {
     meterId: MeterId with {
@@ -652,6 +659,22 @@ entity Meter as router is {
     on init(customerId: type CustomerId, subscriptionId: type SubscriptionId, definition: type MeterDefinition) is {
       morph entity MeterContext.Meter to state MeterContext.Meter.ActiveState with record Meter.ActiveStateData(meterId = self.id, customerId = customerId, subscriptionId = subscriptionId, definition = definition, status = prompt("the status of this active state data"), currentPeriodStart = prompt("the current period start of this active state data"), currentPeriodUsage = empty, alertThresholds = empty, billingHistory = empty, createdAt = prompt("the created at of this active state data"), updatedClosedAt = empty)
       tell event MeterCreated(meterId = self.id, customerId = customerId, subscriptionId = subscriptionId, definition = definition, createdAt = prompt("the created at of this meter created")) to entity MeterContext.Meter
+      match definition.billingPeriod {
+        case == BillingPeriod.Hourly {
+          send command AggregateUsage(meterId = self.id, periodStart = system.now - 1 hour, periodEnd = system.now) to outlet MeterContext.Meter.MeterClock every 1 hour starting at system.now + 1 hour
+        }
+        case == BillingPeriod.Daily {
+          send command AggregateUsage(meterId = self.id, periodStart = system.now - 1 day, periodEnd = system.now) to outlet MeterContext.Meter.MeterClock every 1 day starting at system.now + 1 day
+        }
+        case == BillingPeriod.Weekly {
+          send command AggregateUsage(meterId = self.id, periodStart = system.now - 7 days, periodEnd = system.now) to outlet MeterContext.Meter.MeterClock every 7 days starting at system.now + 7 days
+        }
+        default {
+          let firstPeriodEnd: type TimeStamp = prompt("the end of the meter's first calendar billing period")
+          send command AggregateUsage(meterId = self.id, periodStart = system.now, periodEnd = firstPeriodEnd) to outlet MeterContext.Meter.MeterClock at firstPeriodEnd
+          do "monthly, quarterly and yearly periods are calendar periods; only the first is scheduled until riddl gives calendar schedules (riddl BACKLOG [1.32])"
+        }
+      }
     }
     on recordUsageEvent: command RecordUsageEvent is {
       tell event UsageEventRecorded(meterId = recordUsageEvent.meterId, event = recordUsageEvent.event, recordedAt = prompt("the recorded at of this usage event recorded")) to entity MeterContext.Meter

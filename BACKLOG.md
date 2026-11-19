@@ -95,8 +95,16 @@ sweep 105 -> 101, 0 new. FailReport (client-reporting, marketing-analytics)
 became the `when prompt(...)` outcome of ComposeReport / CompleteReport;
 usage-rating's ValidateUsageRecord folds into submission and
 CalculateCharges into ApplyRatePlan. The four commands, their clauses and
-relays are deleted. **Step 3 is complete. Left from it: usage-metering's
-recurring AggregateUsage once riddl restages.**
+relays are deleted. **Step 3 is complete.**
+
+**usage-metering recurrence (Reid: A for now, 2026-11-19).** On -45 each
+Meter schedules its own AggregateUsage from its creation `on init`, on a
+looped `MeterClock` outlet -> inlet: `match definition.billingPeriod`,
+Hourly/Daily/Weekly as `send ... every 1 hour / 1 day / 7 days`; Monthly,
+Quarterly and Yearly are calendar periods, so only their FIRST period is
+scheduled. **NEXT, right after #43's item 5 (Reid): revisit for calendar
+periods (option C) -- riddl BACKLOG [1.32] calendar schedules, or the
+corpus waits on it.**
 
 **The 14 queries without `replies`: DONE 2026-11-19, sweep 101 -> 87, 0
 new.** 8 entity queries that told their result to themselves took Reid's
