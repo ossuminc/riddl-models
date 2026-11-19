@@ -72,7 +72,40 @@ entity state", type-checked), arithmetic (type-checked; `Money + Natural` is
 an Error), and `record T(f = ...)`. `Money` is a record, so a money sum is
 `record Money(amount = a.amount + b.amount, currency = a.currency)`.
 
-**The 154 left need a reading, not a rule.** Census groups (the census
+**Judgment half, first pass DONE 2026-11-18: 154 -> 74.** Four agents read 122
+non-date sites against Reid's rulings (compute in the handler; read ids and
+prior values from state; a command field only where the requester is the
+sole source). They fixed 80 and left 42, each with a reason. Every other
+finding is unchanged. Command fields were added: `RollbackDeployment.
+restoreArtifactId`, `CloseStudy.finalStatus`, `ScheduleExam.scheduledBy`,
+`ProcessRenewal.newPolicyId`, `RenewTreaty.newTreatyId`,
+`TransferPrescription.sourcePharmacyId`. Eight `send event`s
+that echo a yield were aligned with it, since the yields had gained values the
+sends still prompted for.
+
+**The 42 left, by blocker** (census: `scripts/yield-prompts/census.py`):
+- **Minting a new id** (8: wallet `transactionId` x4, `navId`, `invoiceId`,
+  `reportId`, `newEnrollmentId`): the handler can name only `self.id`.
+  Either the requester supplies it (a command field) or the language needs a
+  way to mint one. Reid to rule once for all of them.
+- **No language form** (13): the element of a collection where a key
+  matches (cart `oldQuantity` and three `newTotal`s, supply `costCharged`);
+  a sum over a collection (maintenance x2, supply x2); a conditional value
+  (fund `netAmount` by buy/sell, payment `capturedAmount` defaulting to the
+  authorised amount); `Duration` to minutes (deploy `durationMinutes`); a
+  collection value (incident `timeline`).
+- **A context-level yield with no entity state** (3: WalletContext:81 x2,
+  PaymentContext:61). These probably should `forward` to the entity.
+- **No source in state or message** (18): carrier rates, promotion results,
+  test output, policy-driven refunds, NAV from market prices, records whose
+  subfields are held `Date`s, and so on. The agents' reasons are in their
+  reports; re-derive them with the census.
+
+Filed: `../riddl/task/2026-11-18-optional-value-accepted-for-a-required-
+field.md`. `FundInfo.latestNavPerShare: Price?` goes into a required `Price`
+at 0 errors.
+
+**The 154 left need a reading, not a rule.** (As of the mechanical half.) Census groups (the census
 prints each site):
 - 32 `Date`/`DateTime`: `system.now` validates, but so do `5` and
   `"tomorrow"`, so the silence proves nothing. **Held**, filed as

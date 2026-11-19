@@ -29,8 +29,9 @@ green throughout (`checkAll`); the zero is measured by
   the leftovers, then Ticket (LiveEvent) and PriceList/Fund (see § 2026-11-18).
   **Step 2 is complete: 0 deprecations corpus-wide.**
 - **In flight, by Reid 2026-11-18: step (5)**, `stmt-yield-argument-prompt`.
-  The mechanical half is done (302 -> 154, BACKLOG #43 § Step 5); 154 sites
-  need a reading, 32 of them held on a riddl question about `Date`. Then (3)
+  302 -> 74 (BACKLOG #43 § Step 5): 32 held on a riddl question about
+  `Date`, and 42 left by named blocker, mostly for Reid to rule (id minting)
+  or for riddl (collection lookup, sum, conditional value). Then (3)
   the ~1,300 undelivered commands and (4) queries and results; neither has
   started. First step-3 case known:
   deployment-pipeline's `RollbackDeployment`, undeliverable since ruling 6. Expect several sessions.
@@ -131,6 +132,13 @@ finding's span covers the whole ARGUMENT (`f = prompt(...)`) while the prompt
 node starts after the `=`, so joining on equal columns matched none of 302.
 And a `DateTime` field accepts `5` and `"tomorrow"`, so a clean validate of
 `system.now` there was not evidence (filed with riddl).
+
+**Agents' headline counts were wrong, and their per-model counts were right.**
+Four agents reported 74 fixes in total; the sweep fell by 80. Summed per
+model, the drops came to exactly 80, every one within its worklist, and all
+32 held `Date` sites were still present. Three of the four reports had
+miscounted their own totals. Reconcile against the sweep, never the
+summary.
 
 **The binary changed mid-run.** Reid restaged `../bin/riddlc` to -22 during
 the gates. The same tree reads differently on -20 and -22 (13 vs 15
