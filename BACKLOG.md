@@ -98,11 +98,8 @@ effect is the original's.
 6. **DeploymentAwaitingApproval, DeploymentFailed** (deployment-pipeline):
    only ever yielded by state on-inits that never ran; now undeliverable.
 
-**Blocked on riddl:** PriceList (product-catalog) and Fund (fund-accounting)
-take a `Currency(USD)` creation argument, which riddlc prettify writes back
-as `Currency` and then cannot parse
-(`../riddl/task/2026-11-18-prettify-drops-currency-code-on-init-argument.md`).
-Re-run `migrate.py` on both when it is fixed.
+**PriceList and Fund: DONE 2026-11-18** on riddlc -22, which fixed prettify
+dropping `Currency(USD)` (riddl `efa3dc80c`); `migrate.py`'s guard is gone.
 
 ---
 

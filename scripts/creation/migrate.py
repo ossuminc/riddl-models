@@ -385,11 +385,6 @@ def migrate_entity(m, ent):
             body = body.replace("__MORPH__", synth_morph(
                 m, ent, ctx, s0, {p for p, _ in params}, cmd_id[0] if cmd_id else ""))
 
-    # riddlc prettify writes an on-init parameter 'Currency(USD)' back as
-    # 'Currency', which does not parse (filed with riddl, 2026-11-18)
-    if any(t.startswith("Currency(") for _, t in params):
-        raise Skip("a Currency(...) argument, which prettify mangles")
-
     # the context's boundary clause for C
     relays = [n for n in m.nodes if n["kind"] == "onmessageclause"
               and n["parent"].rsplit(".", 1)[0] == ctx["path"]
