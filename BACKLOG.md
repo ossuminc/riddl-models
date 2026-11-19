@@ -19,19 +19,18 @@ comparable with it**: on 2026-11-18 `../bin/riddlc` was restaged to
 init deprecations and 308 advisories there. The rulings commit was measured
 before and after on -22 alone.
 
-| rule | start | -20 | -22 before | -22 after rulings |
-|---|---:|---:|---:|---:|
-| `value-ask-bare-query` (deprecated) | 373 | **0** | 0 | 0 |
-| `entity-init-in-state` (deprecated) | 524 | 13 | 15 | 9 |
-| `entity-init-no-morph` (deprecated) | 201 | 5 | 5 | 3 |
-| `msg-clause-undeliverable` (completeness) | 2,182 | 2,184 | 2,184 | 2,181 |
-| `stream-outlet-never-sent` (completeness) | 268 | 268 | 268 | 266 |
-| `entity-no-query-clause` (completeness) | 0 | 4 | 4 | 4 |
-| `entity-no-command-types` / `entity-no-inlet` | 0 | 1 / 1 | 1 / 1 | 0 / 0 |
-| `stmt-yield-argument-prompt` (advisory) | 340 | 307 | 308 | 308 |
+| rule | start | -20 | -22 before | -22 after rulings | -22, step 2 done |
+|---|---:|---:|---:|---:|---:|
+| `value-ask-bare-query` (deprecated) | 373 | **0** | 0 | 0 | 0 |
+| `entity-init-in-state` (deprecated) | 524 | 13 | 15 | 9 | **0** |
+| `entity-init-no-morph` (deprecated) | 201 | 5 | 5 | 3 | **0** |
+| `msg-clause-undeliverable` (completeness) | 2,182 | 2,184 | 2,184 | 2,181 | 2,180 |
+| `stream-outlet-never-sent` (completeness) | 268 | 268 | 268 | 266 | 266 |
+| `entity-no-query-clause` (completeness) | 0 | 4 | 4 | 4 | 5 (+LiveEvent) |
+| `entity-no-command-types` / `entity-no-inlet` | 0 | 1 / 1 | 1 / 1 | 0 / 0 | 0 / 0 |
+| `stmt-yield-argument-prompt` (advisory) | 340 | 307 | 308 | 308 | 302 |
 
-The 12 deprecations left are exactly Ticket (case 3, deferred) and
-PriceList/Fund (blocked on riddl, below).
+**Step 2 is complete: 0 deprecations of any kind**, BAST round trip 189/189.
 
 **Tools:** `scripts/ask-arguments.py` (step 1, done);
 `scripts/creation/census.py` and `scripts/creation/migrate.py` (step 2). The
@@ -76,7 +75,7 @@ case, rollback being a decision taken from FailedState.
 Original rulings:
 1 — add `RegisterMachine` as the creator; `SetupMachine` stays a command on
 an existing machine. 2 — both create: `StartTrial` a subscription on trial
-terms, `CreateSubscription` a paid one. 3 — DEFERRED, Reid to look later.
+terms, `CreateSubscription` a paid one. 3 — DONE 2026-11-18 (see below).
 4 — give Team real commands for an existing team (rename, relocate). 5 —
 delete `NewAccountState`. 6 — use the new `on entry` clause on the state each
 event belongs to, yielding the event as the old state on-init did, so the
@@ -97,6 +96,17 @@ effect is the original's.
    OnboardCustomer starts an account in Onboarding. Delete the dead state?
 6. **DeploymentAwaitingApproval, DeploymentFailed** (deployment-pipeline):
    only ever yielded by state on-inits that never ran; now undeliverable.
+
+**Ticket (case 3): DONE 2026-11-18**, Reid's choice of a show entity. `CreateEvent`
+described a show, not a ticket, and `ReleaseTickets` carried only a quantity,
+which nothing can loop over. Now `LiveEvent` (`Event` is a keyword) is created
+by `CreateEvent` at the context and owns `EventCreated`/`TicketsReleased`;
+`ReleaseTickets` carries `seats: SeatInfo+` and a `faceValue`, and the context
+creates one `Ticket` per seat with `foreach`, then sends `RecordRelease` to
+the show. `EventId` is now `Id(LiveEvent)`. The show's nine columns moved off
+`StoredTicket` into a linked `liveEvents` table, and the split takes the
+show's stream on a second inlet (`as router`). LiveEvent answers no query yet
+(`entity-no-query-clause`, step 4).
 
 **PriceList and Fund: DONE 2026-11-18** on riddlc -22, which fixed prettify
 dropping `Currency(USD)` (riddl `efa3dc80c`); `migrate.py`'s guard is gone.

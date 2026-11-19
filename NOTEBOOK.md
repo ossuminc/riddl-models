@@ -26,11 +26,11 @@ green throughout (`checkAll`); the zero is measured by
 - **Done:** reactive-bbq at 0; (1) all 373 bare asks given arguments
   (`b9ee4cf3d`); (2) creation migration, 718 of 725 deprecations
   (`1ec22dbef`, `9fbbde7b0`, `771efc733`); Reid's rulings 1, 2, 4, 5, 6 on
-  the leftovers (see § 2026-11-18). Left: Ticket (deferred), PriceList/Fund
-  (blocked on riddl's prettify).
-- **Next:** (3) the ~1,300 undelivered commands at context boundaries, by
-  Reid's (a)/(b)/(c) rule; then (4) queries and results; then (5) the 307
-  advisories. Neither 3 nor 4 has started. First step-3 case known:
+  the leftovers, then Ticket (LiveEvent) and PriceList/Fund (see § 2026-11-18).
+  **Step 2 is complete: 0 deprecations corpus-wide.**
+- **Next, by Reid 2026-11-18: step (5)**, the 302 `stmt-yield-argument-prompt`
+  advisories, ahead of (3) the ~1,300 undelivered commands and (4) queries and
+  results. Neither 3 nor 4 has started. First step-3 case known:
   deployment-pipeline's `RollbackDeployment`, undeliverable since ruling 6. Expect several sessions.
 - **Collect, do not ask one at a time:** cases needing a ruling go in BACKLOG
   #43 § Awaiting Reid's ruling for one session with Reid.
@@ -112,6 +112,15 @@ an entity's alternation draws `stream-inlet-not-received` on every inlet
 typed with it, so the split, the projectors and a `Persist<E>` all have to
 follow. A CRUD `on init` keeps the self-`tell` of its creation event (159
 corpus sites), which is what keeps the entity's own `on event` delivered.
+
+**Ticket, PriceList and Fund closed step 2 the same evening**, after the pin moved
+to -22. PriceList and Fund needed only `migrate.py`, once -22's prettify kept
+`Currency(USD)`; a five-line repro confirmed it before the guard came out.
+Ticket needed a show entity, `LiveEvent`, because neither creator was really
+a ticket's. `foreach seat in field TicketContext.ReleaseTickets.seats { let t
+= create entity … }` works: creation inside a loop validates. A second table
+in a relational schema draws `repo-relational-no-links` until a `link` joins
+them.
 
 **The binary changed mid-run.** Reid restaged `../bin/riddlc` to -22 during
 the gates. The same tree reads differently on -20 and -22 (13 vs 15
