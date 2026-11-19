@@ -110,8 +110,27 @@ field.md`. `FundInfo.latestNavPerShare: Price?` goes into a required `Price`
 at 0 errors.
 
 **Now 63** = 32 held `Date` + 13 waiting on riddl + 18 model-by-model (Reid:
-"need the details on a case-by-case basis"). The two incident/code-gen
-context sites are in those 18.
+"need the details on a case-by-case basis"). The 18, for one session with
+Reid. Each is a yield argument still prompting, with the reason it has no
+source:
+
+| model | argument | why it has no source |
+|---|---|---|
+| shopping-cart | `ApplyPromoCode.discount`, and its `newTotal` | the command carries only the code; the amount comes from promotion evaluation |
+| shopping-cart | `SetShippingAddress.shippingEstimate` | a carrier rate; nothing supplies it |
+| shopping-cart | `MergeCart.addedItems` | the SOURCE cart's item count, which is another instance's state |
+| shopping-cart | `Checkout.orderId` | the order is created only AFTER `CartCheckedOut`, so the cart cannot know it |
+| code-generator | `RunGreenGate` `failureDetail` | what the test suite printed in the `do` step |
+| fund-accounting | `CalculateNAV` `netAssetValue`, `navPerShare` | assets minus liabilities, from holdings and market prices not in state |
+| usage-billing | `CloseAccount.finalBalance` | the current balance, or that plus final charges ("generates a final bill")? |
+| ticket-sales | `RefundTicket.refundAmount` | `amountPaid`, the face value, or whatever the free-text `refundPolicy` says |
+| policy-administration | `CancelPolicy.returnPremium` | pro rata over dates, which is date arithmetic |
+| policy-administration | `renewalOffer` | three held `Date` subfields, a fresh id, and a narrowing decimal |
+| policy-lifecycle | two `loanTransaction`s | the record has a held `Date` subfield |
+| treaty-management | `ProcessSettlement.settlement` | the command carries only `treatyId`; the record has 3 dates, 7 totals and a direction |
+| supply-chain | `ReceiveShipment.hasDiscrepancies` | compare lines against the order, or "notes are non-empty"? |
+| drug-supply-chain | `VerifyAuthenticity.verificationResult` | `verified` is derivable; source, suspect flag and reason are not |
+| drug-supply-chain | `notificationsSent` | the outcome of sending the recall notices |
 
 **The 154 left need a reading, not a rule.** (As of the mechanical half.) Census groups (the census
 prints each site):
