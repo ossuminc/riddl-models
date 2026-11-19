@@ -4,7 +4,7 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.7.0-27-faf60865`, UNPUBLISHED riddl `main`, override ON:**
+**Pin `2.7.0-41-67efe607`, UNPUBLISHED riddl `main`, override ON:**
 `riddlcPath := Some(file("../bin/riddlc"))`; libraries from `publishLocal`
 (verified at -25 on `Test/dependencyClasspath`). **Take the override off at
 the 2.8.0 tag.** riddl restages often, and did so mid-session twice: run
@@ -20,11 +20,11 @@ enforce the zero; the sweep does: `./scripts/collect-warnings.py
 | finding | count | state |
 |---|---:|---|
 | errors, deprecations | 0 | done (steps 1, 2; -25's 8 `value-not-natural` fixed) |
-| `stmt-yield-argument-prompt` | 14 | WAITS for riddl's value forms ([1.27]: not in -27, being written now) |
-| `value-optional-for-required` | 25 | WAITS for `x otherwise y`, then a default per site (Reid's ruling) |
+| `stmt-yield-argument-prompt` | 14 | UNBLOCKED: -41 has the value forms (`task/2026-11-19-riddl-value-forms-landed.md`) |
+| `value-optional-for-required` | 25 | UNBLOCKED: -41 has `x otherwise y`; a default per site (Reid's ruling) |
 | `msg-clause-undeliverable` | 101 | steps 3 (a), (b), 4, projector events DONE. Await Reid: 46 (c), 14 queries without `replies`, 41 event/command sites (BACKLOG #43) |
 | `stream-outlet-never-sent` | 3 | with the 41 |
-| `entity-no-query-clause` | 4 | code-generator x3 (its app is a source process: Reid), SurveyStation (riddlc crash, filed) |
+| `entity-no-query-clause` | 4 | code-generator x3 (its app is a source process: Reid), SurveyStation (crash fixed in -41: put the look-up back) |
 
 - **Next: Reid's rulings on what is left**, one question at a time; the
   lists are in BACKLOG #43. Step 3's original rule, per site: (a) an app control when the app
