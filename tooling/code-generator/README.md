@@ -63,7 +63,7 @@ patterns already moved that work into the deterministic tier.
 
 **`Proving`** runs the two-gate cycle: pass-1 (compiles, augments,
 boots — behaviour not asserted) and pass-2 (the generated suite goes
-green). A failed pass-2 emits `ProofFailed`, which `HoleFilling`
+green). Every pass-2 run emits `GateRun`; a red one is what `HoleFilling`
 answers by reopening the named holes and refilling them. The retry is
 an event cycle, not a loop construct, and it is bounded by an attempt
 count on `Hole` so an AI-backed fill/prove cycle cannot run away.

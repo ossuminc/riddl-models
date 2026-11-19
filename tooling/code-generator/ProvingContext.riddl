@@ -1,4 +1,4 @@
-context Proving as flow is {
+context Proving as router is {
   command RunBootGate is {
     gateArtifactId: CodeEmission.ArtifactId with {
       briefly "Artifact"
@@ -21,7 +21,7 @@ context Proving as flow is {
       |the whole of pass-1's acceptance.
     }
   }
-  command RunGreenGate yields event ProofFailed is {
+  command RunGreenGate yields event GateRun is {
     gateArtifactId: CodeEmission.ArtifactId with {
       briefly "Artifact"
       described as {
@@ -39,7 +39,7 @@ context Proving as flow is {
     described as {
       |Runs the generated suite, now that hole filling has supplied the
       |behaviour pass-1 could not assert. Acceptance is the suite going
-      |green; a red result is what ProofFailed reports.
+      |green; every run reports GateRun, green or red.
     }
   }
   command DiscardProof is {
@@ -79,33 +79,136 @@ context Proving as flow is {
       |Where peers deliver commands for Proving.
     }
   }
-  event ProofFailed is {
-    failedArtifactId: CodeEmission.ArtifactId with {
+  event GateRun is {
+    gateArtifactId: CodeEmission.ArtifactId with {
       briefly "Artifact"
       described as {
-        |The artifact whose proof did not go green.
+        |The artifact whose green gate was run.
       }
     }
-    failureDetail: String(1,4096) with {
+    passed: Boolean with {
+      briefly "Passed"
+      described as {
+        |Whether the generated suite went green.
+      }
+    }
+    failureDetail: String(1,4096)? with {
       briefly "Detail"
       described as {
-        |What the generated suite reported when it did not go green.
+        |What the generated suite reported when it did not go green; empty
+        |when it did.
       }
     }
   } with {
-    briefly "A proof gate did not pass"
+    briefly "A green gate was run"
     described as {
-      |Published so HoleFilling can reopen the holes implicated in the
-      |failure. This is the retry cycle's whole mechanism: an event, not a
-      |loop. A reactive system re-enters a prior stage by publishing what
-      |went wrong rather than iterating until something changes.
+      |The outcome of every pass-2 run, green or red. Published so
+      |HoleFilling can reopen the holes implicated in a red one. This is
+      |the retry cycle's whole mechanism: an event, not a loop. A reactive
+      |system re-enters a prior stage by publishing what went wrong rather
+      |than iterating until something changes.
     }
   }
-  outlet ProofFailures is event ProofFailed
+  outlet GateRuns is event GateRun
  with {
-    briefly "Proof failure egress"
+    briefly "Green-gate outcome egress"
     described as {
-      |Where a failed green gate republishes ProofFailed for HoleFilling.
+      |Where every green-gate run republishes GateRun for HoleFilling.
+    }
+  }
+  outlet TestRunnerQueries is query TestRunner.RunSuite
+ with {
+    briefly "Suite runs, on their way to the test runner"
+    described as {
+      |Where the green gate asks the test runner to run a suite.
+    }
+  }
+  inlet TestRunnerReplies is result TestRunner.SuiteResult with {
+    briefly "Suite outcomes, on their way back"
+    described as {
+      |Where the test runner's answer to the green gate arrives.
+    }
+  }
+  adaptor ToTestRunner to context TestRunner as flow is { 
+    inlet ToTestRunnerIn is query TestRunner.RunSuite with {
+      briefly "Suite runs from the green gate"
+      described as {
+        |Where the green gate's question reaches the adaptor.
+      }
+    }
+    outlet ToTestRunnerOut is query TestRunner.RunSuite
+ with {
+      briefly "Suite runs to the test runner"
+      described as {
+        |Where the question leaves Proving for the test runner.
+      }
+    }
+    handler ToTestRunnerHandler is {
+      on runSuite: query TestRunner.RunSuite is {
+        send runSuite to outlet Proving.ToTestRunner.ToTestRunnerOut
+      }
+      on other is {
+        error "Unexpected message for adaptor ToTestRunner"
+      }
+    } with {
+      briefly "to test runner"
+      described as {
+        |Relays each suite run the green gate asks for to the test runner.
+      }
+    }
+  } with {
+    briefly "TestRunner integration"
+    described as {
+      |Proving's outbound boundary toward the test runner: the question leg
+      |of the green gate's ask.
+    }
+  }
+  adaptor FromTestRunner from context TestRunner as flow is { 
+    inlet FromTestRunnerIn is result TestRunner.SuiteResult with {
+      briefly "Suite outcomes from the test runner"
+      described as {
+        |Where the test runner's answer reaches Proving.
+      }
+    }
+    outlet FromTestRunnerToProving is result TestRunner.SuiteResult
+ with {
+      briefly "Suite outcomes to the green gate"
+      described as {
+        |Where the answer is handed on to Proving's own reply inlet.
+      }
+    }
+    handler FromTestRunnerHandler is {
+      on suiteResult: result TestRunner.SuiteResult is {
+        send suiteResult to outlet Proving.FromTestRunner.FromTestRunnerToProving
+      }
+      on other is {
+        error "Unexpected message for adaptor FromTestRunner"
+      }
+    } with {
+      briefly "from test runner"
+      described as {
+        |Relays each suite outcome back to the green gate that asked.
+      }
+    }
+  } with {
+    briefly "TestRunner answers"
+    described as {
+      |Proving's inbound boundary from the test runner: the reply leg of
+      |the green gate's ask.
+    }
+  }
+  connector 'TestRunner Question' is from outlet Proving.TestRunnerQueries to inlet Proving.ToTestRunner.ToTestRunnerIn with {
+    briefly "Suite runs on their way to the outbound adaptor"
+    described as {
+      |Carries the green gate's question to the adaptor that crosses the
+      |boundary.
+    }
+  }
+  connector 'TestRunner Answer' is from outlet Proving.FromTestRunner.FromTestRunnerToProving to inlet Proving.TestRunnerReplies with {
+    briefly "Suite outcomes on their way to the green gate"
+    described as {
+      |Carries the test runner's answer from the inbound adaptor to the
+      |green gate.
     }
   }
   handler ProvingBoundary is {
@@ -116,10 +219,15 @@ context Proving as flow is {
     on command RunGreenGate is {
       do "run the generated suite for the artifact identified by
          RunGreenGate.gateArtifactId"
-      yield event ProofFailed(failedArtifactId = RunGreenGate.gateArtifactId, failureDetail = prompt("what the generated suite reported when it did not go green"))
+      let suiteResult: type TestRunner.SuiteResult = ask query TestRunner.RunSuite(artifactId = RunGreenGate.gateArtifactId) of context TestRunner
+      when not suiteResult.passed then
+        yield event GateRun(gateArtifactId = RunGreenGate.gateArtifactId, passed = suiteResult.passed, failureDetail = suiteResult.output)
+      else
+        yield event GateRun(gateArtifactId = RunGreenGate.gateArtifactId, passed = suiteResult.passed, failureDetail = empty)
+      end
     }
-    on failureEvent: event ProofFailed is {
-      send failureEvent to outlet Proving.ProofFailures
+    on gateRun: event GateRun is {
+      send gateRun to outlet Proving.GateRuns
     }
     on command DiscardProof is {
       do "acknowledge that nothing is stored for
@@ -133,9 +241,10 @@ context Proving as flow is {
     briefly "Context boundary and gate runner"
     described as {
       |Nothing inside needs routing to, so the boundary handler runs both
-      |gates directly rather than forwarding them. RunGreenGate's failure
-      |path is the one that matters: it yields ProofFailed and the same
-      |handler republishes it to ProofFailures, which is what closes the
+      |gates directly rather than forwarding them. RunGreenGate asks the
+      |test runner for the suite's outcome and yields GateRun on every
+      |path; the same handler republishes it to GateRuns, which is what
+      |closes the
       |cycle back to HoleFilling rather than looping in place here.
       |DiscardProof exists only for the saga's compensation symmetry —
       |Proving is stateless, so there is nothing here to actually forget.
@@ -153,8 +262,8 @@ context Proving as flow is {
     |
     |There is no loop construct here, and that is the correct shape.
     |Retry-until-green is an event cycle, not iteration: a failed green
-    |gate yields ProofFailed, which this boundary republishes to
-    |ProofFailures; HoleFilling reopens the holes the failure implicates
+    |gate yields a red GateRun, which this boundary republishes to
+    |GateRuns; HoleFilling reopens the holes the failure implicates
     |and refills them. Re-running RunGreenGate itself is outside this
     |cycle's reach — that is the driver's job, telling Proving again once
     |HoleFilling's refill pass has completed. That is what a
