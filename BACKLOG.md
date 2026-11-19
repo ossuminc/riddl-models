@@ -78,7 +78,19 @@ x2, ClickTracker, GameServer, SCADASystem, PassengerCounter,
 UsageCollector), its events carrying the commands' fields, and a `From<X>`
 adaptor. advertising-delivery's player events are VAST beacons
 (`StartBeaconFired`...) because `AdStarted` etc. are the entity's own.
-**Left: 2c (4 time-driven), 2d (4 internal steps).**
+
+**(c) group 2c APPLIED 2026-11-19, 4 sites**, sweep 109 -> 105, 0 new.
+Case 1 (Reid: A): Cart and ConversionPath already time themselves with
+`on quiescence`, so the contexts' AbandonCart/ExpirePath relays were
+deleted. Case 2 (Reid: P1, R1): `PlaceOrder`'s relay schedules
+`ExpireOrder ... at orderExpiry` and `CreateMeter`'s schedules the first
+`AggregateUsage` straight to the entity stream (reactive-bbq's MarkNoShow
+shape); the two context relays were deleted. `send ... to inlet` is
+deprecated and a scheduled re-emission from `on X` is `stream-graph-cycle`,
+so LATER aggregation periods wait on
+`../riddl/task/2026-11-19-recurring-scheduled-send-is-a-cycle.md` (riddl is
+building it). **Left: 2d (4 internal steps); then usage-metering's
+recurrence once riddl restages.**
 
 **Classified 2026-11-19 on -27.** 1,298 of the 2,178
 undeliverables are command clauses on a context boundary (the rest are step
