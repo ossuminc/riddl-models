@@ -1,7 +1,7 @@
 // The one entity in the coverage model. It exists to give the exotic type
 // expressions somewhere real to live, and to carry a second state so the
 // `morph` here has somewhere to go.
-aggregate event-sourced entity SurveyStation as flow is {
+aggregate event-sourced entity SurveyStation as router is {
   handler SurveyStationCreation is {
     on init(regionCode: type RegionCode) is {
       morph entity Cartography.SurveyStation to state Cartography.SurveyStation.Commissioned with record SurveyStation.CommissionedData(stationId = self.id, regionCode = regionCode, sightlines = prompt("the sightlines a newly commissioned station starts with"), elevationTile = prompt("the elevation tile a newly commissioned station starts with"), sampleTally = 0, regionTally = prompt("the region tally a newly commissioned station starts with"), observedSpecies = prompt("the observed species a newly commissioned station starts with"), stationSummary = prompt("the station summary a newly commissioned station starts with"))
@@ -11,6 +11,19 @@ aggregate event-sourced entity SurveyStation as flow is {
     briefly "SurveyStation creation"
     described as {
       |Puts a new SurveyStation in its starting state.
+    }
+  }
+  inlet SurveyStationQueries is query GetSurveyStation with {
+    briefly "Look-ups of this survey station"
+    described as {
+      |What SurveyViewer asks of the survey station, by way of Cartography.
+    }
+  }
+  outlet SurveyStationReplies is result StationResult
+ with {
+    briefly "This survey station's answers"
+    described as {
+      |What the survey station answers, on its way back to Cartography.
     }
   }
   inlet StationCommands is type StationCommand
@@ -76,6 +89,21 @@ aggregate event-sourced entity SurveyStation as flow is {
     briefly "Ask for a station's summary"
     described as {
       |Read a station's current summary without changing it.
+    }
+  }
+  query GetSurveyStation replies result StationResult is {
+    surveyedStationId: StationId with {
+      briefly "Station to look up"
+      described as {
+        |The station whose summary is wanted.
+      }
+    }
+  } with {
+    briefly "Get a station's summary"
+    described as {
+      |Asks the station itself for its summary. The answer is built from
+      |state, so it passes a record that declares methods as a constructor
+      |value -- the shape that crashed riddlc before 2.7.0-41.
     }
   }
   result StationResult is {
@@ -260,6 +288,9 @@ aggregate event-sourced entity SurveyStation as flow is {
   // ---- States ----
   state Commissioned of record SurveyStation.CommissionedData is {
     initial handler CommissionedHandler is {
+      on getSurveyStation: query GetSurveyStation is {
+        reply result StationResult(stationId = getSurveyStation.surveyedStationId, stationSummary = SurveyStation.Commissioned.stationSummary)
+      }
       on recordReading: command RecordReading is {
         yield event ReadingRecorded(stationId = recordReading.stationId, readingElevation = recordReading.readingElevation)
         send event ReadingRecorded(stationId = recordReading.stationId, readingElevation = recordReading.readingElevation) to outlet Cartography.SurveyStation.StationEvents
@@ -295,6 +326,9 @@ aggregate event-sourced entity SurveyStation as flow is {
   }
   state Retired of record SurveyStation.RetiredData is {
     initial handler RetiredHandler is {
+      on getSurveyStation: query GetSurveyStation is {
+        reply result StationResult(stationId = getSurveyStation.surveyedStationId, stationSummary = SurveyStation.Retired.finalSummary)
+      }
       on other is {
         error "A retired station takes no further readings"
       }

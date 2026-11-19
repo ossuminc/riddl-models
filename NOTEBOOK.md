@@ -15,7 +15,7 @@ deprecations.** Tracked as **BACKLOG #43**. `checkAll` is green but does NOT
 enforce the zero; the sweep does: `./scripts/collect-warnings.py
 --include-patterns`.
 
-### Where #43 stands (sweep on -41/-45, after code-generator): 84 findings
+### Where #43 stands (sweep on -45, after SurveyStation): 83 findings
 
 | finding | count | state |
 |---|---:|---|
@@ -24,7 +24,6 @@ enforce the zero; the sweep does: `./scripts/collect-warnings.py
 | `value-optional-for-required` | 25 | UNBLOCKED: -41 has `x otherwise y`; a default per site (Reid's ruling) |
 | `msg-clause-undeliverable` | 41 | steps 3, 4, the 14 queries, projector events DONE. Await Reid: 41 event/command sites (BACKLOG #43) |
 | `stream-outlet-never-sent` | 3 | with the 41 |
-| `entity-no-query-clause` | 1 | SurveyStation (crash fixed in -41: put the look-up back) |
 
 - **Next: Reid's rulings on what is left**, one question at a time; the
   lists are in BACKLOG #43. Step 3's original rule, per site: (a) an app control when the app
