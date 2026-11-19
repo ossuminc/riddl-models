@@ -287,14 +287,16 @@ and the split routes it to FleetAnalytics. Sweep 83 -> 67, 0 new. Open
 question for Reid: should a cancelled voyage also `ClearVesselVoyage`, as a
 completed one does?
 
-**Left for Reid (25):**
-- **External adaptor events, 7** (store-operations FromHRService x2,
-  job-site-management x2, bid-management x2, supply-chain x1). The adaptor
-  handles an event the external context declares, but the external's
-  outlet publishes a single event or an alternation missing it. Recommended:
-  give each external context an `<Ext>Event` alternation of what it
-  publishes and type its outlet and the adaptor's inlet with it. That
-  changes the external system's interface, hence the ruling.
+**External adaptor events, 7: DONE 2026-11-19 (Reid: A).** Each external's
+outlet now carries an `<Ext>Event` alternation of every event it declares
+(HRService, two ProjectServices, WeatherService, ContractorService,
+ClinicalUsage), the adaptors' single-event inlets widened to it, and
+ClinicalUsage publishes `SupplyRequested` under a guard. Sweep 67 -> 60, 0
+new. **Follow-up to offer Reid:** the seven adaptor clauses are still prose
+(`do "Add shift to store schedule"`); the event now arrives but nothing acts
+on it.
+
+**Left for Reid (18):**
 - **Outbound adaptor clauses, 4** (assembly-operations `ToQualityService`
   x2 and `ToWorkOrderService` handle their own entity's events, but are fed
   commands; point-of-sale `ToReceiptService` handles `GenerateReceipt` but
