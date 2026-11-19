@@ -98,6 +98,15 @@ CalculateCharges into ApplyRatePlan. The four commands, their clauses and
 relays are deleted. **Step 3 is complete. Left from it: usage-metering's
 recurring AggregateUsage once riddl restages.**
 
+**The 14 queries without `replies`: DONE 2026-11-19, sweep 101 -> 87, 0
+new.** 8 entity queries that told their result to themselves took Reid's
+2026-10-30 ruling (`replies result R` + `reply r`). supply-chain's
+InventoryRepository (Reid: A) keeps the two look-ups its `StoredSupplyOrder`
+rows can answer (`GetIssuanceHistory`, `GetPendingRequisitions`, each
+replying a `StoredSupplyOrder*` result); the four asking for an item master,
+par levels and on-hand stock nothing in the model holds are deleted.
+`wire-queries.py` then wired all 10 both ways.
+
 **Classified 2026-11-19 on -27.** 1,298 of the 2,178
 undeliverables are command clauses on a context boundary (the rest are step
 4). Structure alone puts 1,297 in (a): the app already has an outlet that
