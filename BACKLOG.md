@@ -109,7 +109,17 @@ Filed: `../riddl/task/2026-11-18-optional-value-accepted-for-a-required-
 field.md`. `FundInfo.latestNavPerShare: Price?` goes into a required `Price`
 at 0 errors.
 
-**Now 63** = 32 held `Date` + 13 waiting on riddl + 18 model-by-model (Reid:
+**Dates DONE 2026-11-19 (63 -> 32).** riddl recorded Reid's ruling in the
+filed task: TimeStamp -> Date/DateTime is intended (the generator takes the
+date part), and literals will be typed ([1.28], [1.29]). `census.py --dates`
+wrote `system.now` to the 26 occurrence dates (`...At`, orderDate,
+issueDate, ...). Five came from data: bordereau periods from the
+submission, `coverageStartDate` from `requestedEffectiveDate`,
+`gracePeriodEnd = paidToDate + 31 days` (typed, canaried RED), and
+`ExpireTreaty.finalSettlementDue` as a new command field.
+`newPaidToDate` joined the value-forms task as a conditional.
+
+**Now 32** = 14 waiting on riddl's value forms + 18 model-by-model (Reid:
 "need the details on a case-by-case basis"). The 18, for one session with
 Reid. Each is a yield argument still prompting, with the reason it has no
 source:

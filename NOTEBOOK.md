@@ -22,10 +22,10 @@ severity; reads stdout+stderr).
 
 - **Steps 1 and 2 DONE.** 0 deprecations of any kind. BAST round trip
   189/189, and riddl's `RiddlModelsRoundTripTest` passes 189/189 on JVM.
-- **Step 5 (`stmt-yield-argument-prompt`) IN FLIGHT: 302 -> 63.** Reid put it
-  ahead of 3 and 4. The 63 are 32 `Date`/`DateTime` sites (held on riddl), 13
-  needing value forms the grammar lacks (filed with riddl, being worked
-  concurrently), and **18 for Reid to rule case by case**. Those 18 are a
+- **Step 5 (`stmt-yield-argument-prompt`) IN FLIGHT: 302 -> 32.** Reid put it
+  ahead of 3 and 4. The 32 are 14 needing value forms the grammar lacks
+  (filed with riddl, which is staging them) and **18 for Reid to rule case by
+  case**. Those 18 are a
   table in BACKLOG #43 § Step 5 and are the next session's work with him.
   `scripts/yield-prompts/census.py` regenerates the site list from a sweep.
 - **Step 3** (~2,178 `msg-clause-undeliverable`, rule a/b/c) and **step 4**
@@ -34,7 +34,9 @@ severity; reads stdout+stderr).
 - **Open riddl tasks from us** (`../riddl/task/2026-11-18-*`): Date/DateTime
   literals and conversions; an optional value accepted into a required field;
   five value forms. When riddl answers, re-run the census.
-- riddl-generator and Synapify: Reid will tell them. Do not hand off.
+- **Never wait on a consumer** (Reid, 2026-11-19): riddl and riddl-models are
+  the base everything depends on. Drop a notice in `../<consumer>/task/` and
+  close our task. Both consumer-blocked tasks were closed that way.
 
 ### Traps that bit this session
 

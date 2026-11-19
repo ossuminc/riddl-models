@@ -20,6 +20,11 @@ event's declared type for the argument, and a proposed class:
 Usage:  ./scripts/yield-prompts/census.py [--sweep FILE.jsonl] [--apply] [model ...]
   --sweep  a collect-warnings.py JSONL to take the advisories from
            (default: run collect-warnings.py)
+  --dates  also class as NOW a Date/DateTime field that records WHEN the act
+           happened: a name ending in `At`, or one of OCCURRENCE_DATES. Reid,
+           2026-11-18: TimeStamp -> Date/DateTime is intended (the generator
+           takes the date part). Effective and computed dates (coverageStartDate,
+           gracePeriodEnd, ...) are NOT occurrences and stay OTHER.
   --apply  rewrite every NOW and MSG site: the prompt node's own span (from
            the dump) is replaced by the fix. A site whose text there is not
            exactly `prompt("...")` is refused and reported, never guessed at.
@@ -37,6 +42,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 _r = os.environ.get("RIDDLC", str(ROOT.parent / "bin" / "riddlc"))
 RIDDLC = Path(_r) if os.path.isabs(_r) else (ROOT / _r).resolve()
 RULE = "stmt-yield-argument-prompt"
+OCCURRENCE_DATES = {"orderDate", "issueDate", "addedDate", "removedDate",
+                    "disbursementDate", "surrenderDate", "initiatedDate"}
 
 
 def advisories(argv):
@@ -79,6 +86,9 @@ def main(argv):
     apply = "--apply" in argv
     if apply:
         argv.remove("--apply")
+    dates = "--dates" in argv
+    if dates:
+        argv.remove("--dates")
     adv = advisories(argv)
     edits = defaultdict(list)   # (model, file) -> [(start, end, fix)]
     by_model = defaultdict(list)
@@ -119,7 +129,10 @@ def main(argv):
                     if fields[r["path"]].get(arg) == ftype:
                         state_hit = r["id"]
                         break
-            if ftype == "TimeStamp":
+            occurrence = arg.endswith("At") or arg in OCCURRENCE_DATES
+            in_command = clause.get("id", "").startswith("command ")
+            if ftype == "TimeStamp" or (dates and in_command and occurrence
+                                        and ftype in ("Date", "DateTime")):
                 c, fix = "NOW", "system.now"
             elif binding and mfields.get(arg) == ftype:
                 c, fix = "MSG", f"{binding}.{arg}"
