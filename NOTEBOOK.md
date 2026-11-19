@@ -6,77 +6,76 @@ Development journal for active work on the riddl-models repository.
 
 **Pin `2.7.0-25-2d17025b`, UNPUBLISHED riddl `main`, override ON:**
 `riddlcPath := Some(file("../bin/riddlc"))`; libraries from `publishLocal`
-(verified at -25 on `Test/dependencyClasspath`). It carries 2.8.0's creation
-model, `ask query Q(args) of P`, and the prettify fix for `Currency(USD)`.
-**Take the override off at the 2.8.0 tag.** riddl is restaging often: run
-`../bin/riddlc info` first, and compare sweeps only within one binary
-(-20 and -22 disagree on the same tree).
+(verified at -25 on `Test/dependencyClasspath`). **Take the override off at
+the 2.8.0 tag.** riddl restages often, and did so mid-session twice: run
+`../bin/riddlc info` first, and compare sweeps only within one binary.
 
 **Reid's goal (2026-11-18): every model free of errors, warnings and
-deprecations.** Tracked as **BACKLOG #43**: per-rule table, rulings, and the
-cases collected for him. `checkAll` is green but does NOT enforce the zero;
-the sweep does: `./scripts/collect-warnings.py --include-patterns` (every
-severity; reads stdout+stderr).
+deprecations.** Tracked as **BACKLOG #43**. `checkAll` is green but does NOT
+enforce the zero; the sweep does: `./scripts/collect-warnings.py
+--include-patterns`.
 
-### Where #43 stands (sweep on -22, after `cc6338d56`)
+### Where #43 stands (sweep on -25, after `0059831c1`)
 
-- **Steps 1 and 2 DONE.** 0 deprecations of any kind. BAST round trip
-  189/189, and riddl's `RiddlModelsRoundTripTest` passes 189/189 on JVM.
-- **Step 5 (`stmt-yield-argument-prompt`): 302 -> 14, the rest WAITS.** All
-  18 of Reid's case-by-case rulings are implemented. The 14 left need riddl's
-  five value forms, and the 25 `value-optional-for-required` advisories (new
-  in -25) wait for `x otherwise y` by Reid's ruling. riddl is staging those
-  now; when it lands, re-run `scripts/yield-prompts/census.py`. Those 18 are a
-  table in BACKLOG #43 § Step 5 and are the next session's work with him.
-  `scripts/yield-prompts/census.py` regenerates the site list from a sweep.
-- **Step 3** (~2,178 `msg-clause-undeliverable`, rule a/b/c) and **step 4**
-  (queries/results, `entity-no-query-clause` x5) have NOT started. A known
-  step-3 case: deployment-pipeline's `RollbackDeployment`.
-- **Open riddl tasks from us** (`../riddl/task/2026-11-18-*`): Date/DateTime
-  literals and conversions; an optional value accepted into a required field;
-  five value forms. When riddl answers, re-run the census.
-- **Never wait on a consumer** (Reid, 2026-11-19): riddl and riddl-models are
-  the base everything depends on. Drop a notice in `../<consumer>/task/` and
-  close our task. Both consumer-blocked tasks were closed that way.
+| finding | count | state |
+|---|---:|---|
+| errors, deprecations | 0 | done (steps 1, 2; -25's 8 `value-not-natural` fixed) |
+| `stmt-yield-argument-prompt` | 14 | WAITS for riddl's five value forms (not in -25; riddl is working on them now) |
+| `value-optional-for-required` | 25 | WAITS for `x otherwise y`, then a default per site (Reid's ruling) |
+| `msg-clause-undeliverable` | 2,178 | **step 3, NEXT: not started** |
+| `stream-outlet-never-sent` | 266 | step 3/4 |
+| `entity-no-query-clause` | 5 | step 4 (queries/results), not started |
+
+- **Next: step 3**, by Reid's rule per site: (a) an app control when the app
+  already has an outlet for that stream; (b) wire it through the existing
+  inbound adaptor when it clearly comes from another system; (c) otherwise
+  collect it in #43 for one session with Reid. Never delete a clause without
+  his say. Known cases: deployment-pipeline `RollbackDeployment`; and every
+  new command this session added an app control for where one fitted.
+- **When riddl stages the value forms**: re-run
+  `scripts/yield-prompts/census.py` (it takes `--dates` and `--apply`), then
+  the 25 optional-for-required sites with `otherwise`.
+- **Asking Reid**: ONE question at a time, each with context, alternatives,
+  consequences and a recommendation. A table of 18 rows was rejected as
+  unanswerable.
+- **Never wait on a consumer** (riddlg, Synapify): drop a notice in their
+  `task/`, close ours.
 
 ### Traps that bit this session
 
-- **An agent's headline count can be wrong while its per-model counts are
-  right.** Four step-5 agents claimed 74 fixes and the sweep dropped 80.
-  Reconcile per model against the sweep, never against a summary.
-- **A yield and the `send event` that echoes it must carry the same
-  arguments.** Rewriting yields alone left 8 sends still prompting.
-  `scripts/yield-prompts/census.py --apply` touches yields only; check the
-  pairs afterwards.
-- **A literal ruling can hide a dead state.** "on entry yielding the event"
-  validated clean while both states stayed unreachable (each was entered only
-  by the fold of the event its own entry yielded). Check that the original
-  had an effect before preserving it.
-- **A clean validate is not evidence for a value's type.** A `DateTime` field
-  accepts `5` and `"tomorrow"`. Canary every new spelling RED.
-- **Value spellings that work** (canaried): `<Entity>.<State>.<f>` reads
-  current state; `record Money(amount = ..., currency = ...)`;
-  `count of xs`; `all of xs as e where p`; `create entity X(...)` inside
-  `foreach`; `system.now` only in a command clause, never `on init`/a fold.
-- **A repository's row is `Stored<Entity that yielded the event>`,** not the
-  schema's first table; a wrong pick still validates.
-- **`git checkout <file>` reverts every uncommitted edit to it.**
-- **`log "..." + someId`** does not typecheck; `log <message>` does.
+- **A riddlc restage changes what is true mid-run.** -25 turned clean models
+  into 8 Errors between two gate runs. If counts jump, check the binary first.
+- **Prettify refuses a model with errors** (`riddlcPrettify ... failed`), so
+  fix errors before `sbt r`.
+- **Agents' summaries miscount; per-model sweep deltas don't.** Reconcile
+  against the sweep. Also re-run an agent's claimed riddlc GAP before filing:
+  one of two did not reproduce.
+- **A yield and the `send event` echoing it must match**: check the pairs
+  after rewriting yields: `scripts/yield-prompts/align-sends.py` (dry run;
+  `--apply` copies the yield's args onto a send that still prompts).
+- **A field path through a `let` binding is not resolved**: a misspelling
+  there validates at 0 (filed with riddl). Canary `let`-path reads by eye.
+- **Value spellings that work** (canaried RED): `<Entity>.<State>.<f>` reads
+  current state; `record Money(...)`; `count of`; `any of xs as e where p`;
+  `Date + 31 days`; `create` inside `foreach`; statement `when/else` with a
+  yield per branch; `system.now` only in a command clause. NOT available:
+  `Duration / Duration`, sum, element-by-key, conditional VALUE.
+- **A command declaring `yields` must yield (or refuse) on EVERY path.**
+- **`Natural` is positive**: a counter starting at 0 is `Whole`.
 
 ### Certainty
 
-Verified: every count, by sweep and gate, on -22. Assumed: per-site value
-choices in step 5 (e.g. cart `cartValue` = subtotal, not estimatedTotal;
-ticket `PurchaseTicket` runs in ReservedState; billing balance subtracts
-credits). Each is one argument to change, listed in the agents' reasoning in
-`7eb1c9021`'s diff.
+Verified on -25: every count, by sweep and gate; BAST round trip 189/189 was
+last run on -22. Assumed: the implementers' unruled choices listed in BACKLOG
+#43 § Step 5 (promo description = code, loan balance after transaction,
+treaty net formula and TreatyRef prompt, ...). Each is one line to change.
 
 ### task/ (not triaged here)
 
-- `2026-11-14-order-submitted-...`: blocked on riddl-generator confirming its
-  e2e (Reid relays).
-- `2026-11-16-reactive-bbq-creates-by-command-...`: blocked only on telling
-  riddl-generator and Synapify (Reid's).
+- `2026-11-19-riddl-value-checks-corpus-findings.md` (from riddl): UNTRIAGED.
+  It reports -25's 8 Errors and 25 Advisories. Likely already answered by
+  `2f2291b63` (Errors fixed) and Reid's wait-for-`otherwise` ruling; verify
+  its acceptance criteria before closing.
 
 ### Pointers
 
