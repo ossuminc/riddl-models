@@ -28,9 +28,11 @@ green throughout (`checkAll`); the zero is measured by
   (`1ec22dbef`, `9fbbde7b0`, `771efc733`); Reid's rulings 1, 2, 4, 5, 6 on
   the leftovers, then Ticket (LiveEvent) and PriceList/Fund (see § 2026-11-18).
   **Step 2 is complete: 0 deprecations corpus-wide.**
-- **Next, by Reid 2026-11-18: step (5)**, the 302 `stmt-yield-argument-prompt`
-  advisories, ahead of (3) the ~1,300 undelivered commands and (4) queries and
-  results. Neither 3 nor 4 has started. First step-3 case known:
+- **In flight, by Reid 2026-11-18: step (5)**, `stmt-yield-argument-prompt`.
+  The mechanical half is done (302 -> 154, BACKLOG #43 § Step 5); 154 sites
+  need a reading, 32 of them held on a riddl question about `Date`. Then (3)
+  the ~1,300 undelivered commands and (4) queries and results; neither has
+  started. First step-3 case known:
   deployment-pipeline's `RollbackDeployment`, undeliverable since ruling 6. Expect several sessions.
 - **Collect, do not ask one at a time:** cases needing a ruling go in BACKLOG
   #43 § Awaiting Reid's ruling for one session with Reid.
@@ -121,6 +123,14 @@ a ticket's. `foreach seat in field TicketContext.ReleaseTickets.seats { let t
 = create entity … }` works: creation inside a loop validates. A second table
 in a relational schema draws `repo-relational-no-links` until a `link` joins
 them.
+
+**Step 5 began with a census, not a sweep of edits.** `riddlc dump --json`
+gives each prompt's clause, binding, message and event-field type, enough to
+apply 146 fixes by exact span with zero refusals. Two traps on the way: a
+finding's span covers the whole ARGUMENT (`f = prompt(...)`) while the prompt
+node starts after the `=`, so joining on equal columns matched none of 302.
+And a `DateTime` field accepts `5` and `"tomorrow"`, so a clean validate of
+`system.now` there was not evidence (filed with riddl).
 
 **The binary changed mid-run.** Reid restaged `../bin/riddlc` to -22 during
 the gates. The same tree reads differently on -20 and -22 (13 vs 15

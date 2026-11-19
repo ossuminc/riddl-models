@@ -53,6 +53,39 @@ outlet to the app. Also clears most repository `stream-outlet-never-sent`,
 and should give the four `entity-no-query-clause` entities (GenerationRun,
 Artifact, Hole, SurveyStation) a look-up of themselves. NOT STARTED.
 
+### Step 5 — `stmt-yield-argument-prompt` (Reid, 2026-11-18: do it now, ahead of 3 and 4)
+
+**Mechanical half DONE 2026-11-18: 302 -> 154.** `scripts/yield-prompts/
+census.py` classifies every advisory from `riddlc dump --json`, with no
+regex. `--apply` rewrites only NOW (a TimeStamp field in a command clause:
+`system.now`; folds are never yield sites) and MSG (the clause's own message
+carries the field by name and type), by the prompt node's own span, and
+refuses any site that is not exactly `prompt("...")`. It applied 146 and
+refused 0. Two more were done by hand: deployment-pipeline's `on init`
+cannot read `system.now`, so `registeredAt` became a parameter the context
+fills. Nothing else in the sweep moved.
+
+**The vocabulary, measured on -22 and canaried RED:** a command clause can
+state `system.now`, `<binding>.<field>`, the entity's current state as
+`<Entity>.<State>.<field>` (resolved as "a field of the handled message or
+entity state", type-checked), arithmetic (type-checked; `Money + Natural` is
+an Error), and `record T(f = ...)`. `Money` is a record, so a money sum is
+`record Money(amount = a.amount + b.amount, currency = a.currency)`.
+
+**The 154 left need a reading, not a rule.** Census groups (the census
+prints each site):
+- 32 `Date`/`DateTime`: `system.now` validates, but so do `5` and
+  `"tomorrow"`, so the silence proves nothing. **Held**, filed as
+  `../riddl/task/2026-11-18-what-may-a-date-or-datetime-field-be-given.md`.
+- 26 ids (`orderId`, `eventId`, ...) and 13 prior values (`previousStatus`,
+  `oldQuantity`): mostly state the entity holds, read as
+  `<Entity>.<State>.<f>`. Which state, and under which name, varies per
+  site.
+- 32 computed (`newTotal`, `newBalance`, `navPerShare`): arithmetic over
+  state and message, or drop the field from the event and let the fold
+  compute it (riddlc's own second suggestion).
+- 51 other (`item`, `discount`, `allItemsAllocated`, ...): per site.
+
 ### Awaiting Reid's ruling — collect here, decide in one session
 
 **RULED 2026-11-18; 1, 2, 4, 5 and 6 DONE 2026-11-18** (one commit). How each
