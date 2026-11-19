@@ -70,12 +70,11 @@ last run on -22. Assumed: the implementers' unruled choices listed in BACKLOG
 #43 § Step 5 (promo description = code, loan balance after transaction,
 treaty net formula and TreatyRef prompt, ...). Each is one line to change.
 
-### task/ (not triaged here)
+### task/
 
-- `2026-11-19-riddl-value-checks-corpus-findings.md` (from riddl): UNTRIAGED.
-  It reports -25's 8 Errors and 25 Advisories. Likely already answered by
-  `2f2291b63` (Errors fixed) and Reid's wait-for-`otherwise` ruling; verify
-  its acceptance criteria before closing.
+Empty. The riddl value-checks task was closed 2026-11-19 (in `task/done/`):
+the Errors were fixed by `2f2291b63`, and the 25 advisories are deferred
+under #43's `otherwise` ruling.
 
 ### Pointers
 
