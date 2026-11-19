@@ -107,6 +107,17 @@ replying a `StoredSupplyOrder*` result); the four asking for an item master,
 par levels and on-hand stock nothing in the model holds are deleted.
 `wire-queries.py` then wired all 10 both ways.
 
+**code-generator's look-ups: DONE 2026-11-19 (Reid: C'), sweep 87 -> 84.**
+GenerationRun, Artifact and Hole answer `Get<X>` (result = the state
+record) in every state; GeneratorDriver asks through the step-4 path and is
+now a console: `group GeneratorConsole` with an input per subcommand (17) and
+per status query (3), and a handler that `log`s the answers. Measured on the
+way: a handler-less app's outlets count as transmitting but its inlets are
+`stream-inlet-not-received`, and adding a handler flips it to literal on both
+sides; filed (with Reid's question of where a handler-less app's sends could
+even live) as `../riddl/task/2026-11-19-handlerless-app-sends-but-cannot-
+receive.md`. code-generator is at 0 of every severity.
+
 **Classified 2026-11-19 on -27.** 1,298 of the 2,178
 undeliverables are command clauses on a context boundary (the rest are step
 4). Structure alone puts 1,297 in (a): the app already has an outlet that
