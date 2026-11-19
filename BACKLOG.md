@@ -278,13 +278,16 @@ type carries the event, but the split's routing table never sent it there
 route-split-events.py` added 33 sends to existing split clauses and 2 new
 clauses (4 sends); 37 -> 0, nothing else moved.
 
-**Left for Reid (41):**
-- **Split events, 16** (port-operations `BerthEventSplit` x11,
-  vessel-management `VesselEventSplit` x5). The split turns PortCall/Voyage
-  milestones into Berth/Vessel commands, but is fed only by the Berth/Vessel
-  entity's own `…Events2` outlet; PortCall's events go to PortAnalytics alone
-  (an outlet feeds one connector). Fix needs a second event outlet on
-  PortCall/Voyage into the split, making it a router.
+**Split events, 16: DONE 2026-11-19 (Reid: A).** port-operations'
+`BerthEventSplit` and vessel-management's `VesselEventSplit` were written for
+two entities' events but fed by one; each is now a router with a second inlet
+fed by PortCall / Voyage, and the projector's direct feed (now redundant, the
+split already forwards to it) is gone. `VoyageCancelled` joined `VesselEvent`
+and the split routes it to FleetAnalytics. Sweep 83 -> 67, 0 new. Open
+question for Reid: should a cancelled voyage also `ClearVesselVoyage`, as a
+completed one does?
+
+**Left for Reid (25):**
 - **External adaptor events, 7** (store-operations FromHRService x2,
   job-site-management x2, bid-management x2, supply-chain x1). The adaptor
   handles an event the external context declares, but the external's

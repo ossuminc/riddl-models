@@ -282,8 +282,8 @@ context VesselContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
-  connector 'VoyageEvent Feed' is from outlet VesselContext.Voyage.VoyageEvents to inlet VesselContext.FleetAnalytics.FleetAnalyticsFromVoyage with {
-    briefly "Voyage events feeding the FleetAnalytics projection"
+  connector 'VoyageEvent Stream' is from outlet VesselContext.Voyage.VoyageEvents to inlet VesselContext.VesselEventSplit.VesselEventSplitFromVoyage with {
+    briefly "Voyage events, fanned out by the VesselEventSplit"
   }
   connector 'VoyageCommand Stream Intake' is from outlet VesselContext.VoyageCommandStreamOut to inlet VesselContext.Voyage.VoyageCommands
   connector 'VesselCommand Stream Intake' is from outlet VesselContext.VesselCommandStreamOut to inlet VesselContext.Vessel.VesselCommands
@@ -1243,9 +1243,8 @@ context VesselContext as router is {
       |Read model view carrying the fleet stats projection.
     }
   }
-  projector FleetAnalytics as merge is {
+  projector FleetAnalytics as flow is {
     updates repository VesselContext.VesselRepository
-    inlet FleetAnalyticsFromVoyage is type VoyageEvent
     outlet FleetAnalyticsToRepository is type VesselRepositoryCommand
     inlet FleetAnalyticsFromVessel is type VesselEvent
     record FleetStats is {
@@ -1381,7 +1380,7 @@ context VesselContext as router is {
   }
   // ---- Event publication for Vessel ----
   type VesselEvent is one of {
-    VesselContext.Vessel.VesselRegistered or VesselContext.Vessel.SpecificationsUpdated or VesselContext.Vessel.PositionUpdated or VesselContext.Voyage.VoyageCreated or VesselContext.Voyage.VoyageUpdated or VesselContext.Voyage.PortArrivalRecorded or VesselContext.Voyage.PortDepartureRecorded or VesselContext.Voyage.VoyageCompleted or VesselContext.Vessel.CrewMemberAdded or VesselContext.Vessel.CrewMemberRemoved or VesselContext.Vessel.CertificateAdded or VesselContext.Vessel.CertificateRenewed or VesselContext.Vessel.BunkerReportSubmitted or VesselContext.Vessel.MaintenanceRecorded or VesselContext.Vessel.VesselStatusChanged
+    VesselContext.Vessel.VesselRegistered or VesselContext.Vessel.SpecificationsUpdated or VesselContext.Vessel.PositionUpdated or VesselContext.Voyage.VoyageCreated or VesselContext.Voyage.VoyageUpdated or VesselContext.Voyage.PortArrivalRecorded or VesselContext.Voyage.PortDepartureRecorded or VesselContext.Voyage.VoyageCompleted or VesselContext.Vessel.CrewMemberAdded or VesselContext.Vessel.CrewMemberRemoved or VesselContext.Vessel.CertificateAdded or VesselContext.Vessel.CertificateRenewed or VesselContext.Vessel.BunkerReportSubmitted or VesselContext.Vessel.MaintenanceRecorded or VesselContext.Vessel.VesselStatusChanged or VesselContext.Voyage.VoyageCancelled
   } with {
     briefly "Vessel event alternation"
     described as {
@@ -1389,7 +1388,7 @@ context VesselContext as router is {
       |persistence.
     }
   }
-  streamlet VesselEventSplit as split is {
+  streamlet VesselEventSplit as router is {
     outlet VesselEventSplitToVesselContext is type VesselContext.VesselRequest
     outlet VesselEventSplitToToCrewManagementService is type VesselEvent
     outlet VesselEventSplitToToBunkerSupplierService is type VesselEvent
@@ -1397,6 +1396,7 @@ context VesselContext as router is {
     outlet VesselEventSplitToToClassificationSocietyService is type VesselEvent
     outlet VesselEventSplitToToCharterPartyService is type VesselEvent
     outlet VesselEventSplitToToAISService is type VesselEvent
+    inlet VesselEventSplitFromVoyage is type VoyageEvent
     inlet VesselEventSplitIn is type VesselEvent
     outlet VesselEventSplitToFleetAnalytics is type VesselEvent
     handler VesselEventSplitHandler is {
@@ -1433,6 +1433,9 @@ context VesselContext as router is {
       on voyageCompleted: event Voyage.VoyageCompleted is {
         send voyageCompleted to outlet VesselEventSplitToFleetAnalytics
         send command Vessel.ClearVesselVoyage(vesselId = voyageCompleted.vesselId, voyageId = voyageCompleted.voyageId) to outlet VesselContext.VesselEventSplit.VesselEventSplitToVesselContext
+      }
+      on voyageCancelled: event Voyage.VoyageCancelled is {
+        send voyageCancelled to outlet VesselEventSplitToFleetAnalytics
       }
       on crewMemberAdded: event Vessel.CrewMemberAdded is {
         send crewMemberAdded to outlet VesselEventSplitToFleetAnalytics
