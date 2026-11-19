@@ -45,7 +45,16 @@ wire it through the existing inbound adaptor when it clearly comes from
 another system; **(c)** otherwise collect it below for one session with Reid.
 Never delete a clause without his say.
 
-**Classified 2026-11-19 on -27, nothing applied yet.** 1,298 of the 2,178
+**(a) APPLIED 2026-11-19 on -27: 1,235 controls, `msg-clause-undeliverable`
+2,178 -> 943, and 83 app outlets stopped being `stream-outlet-never-sent`
+(266 -> 183).** `scripts/undeliverable/apply-app-controls.py` read the (a)
+rows, found each command's connected app outlet from the dump, and inserted
+`input <Cmd>Input acquires command <path>` into the app's screen group (688),
+or into a new `<Name>Screen` group (547 into 75 apps); it refused 0. Nothing
+else in the sweep moved; gates, prettify and BAST round trip (189/189) green.
+**Left: the 17 (b) and 46 (c) below, for Reid.**
+
+**Classified 2026-11-19 on -27.** 1,298 of the 2,178
 undeliverables are command clauses on a context boundary (the rest are step
 4). Structure alone puts 1,297 in (a): the app already has an outlet that
 carries the command, connected to that context (canaried: an `input` that
