@@ -15,15 +15,15 @@ deprecations.** Tracked as **BACKLOG #43**. `checkAll` is green but does NOT
 enforce the zero; the sweep does: `./scripts/collect-warnings.py
 --include-patterns`.
 
-### Where #43 stands (sweep on -25, after `0059831c1`)
+### Where #43 stands (sweep on -27, after `2ea5f73fb`)
 
 | finding | count | state |
 |---|---:|---|
 | errors, deprecations | 0 | done (steps 1, 2; -25's 8 `value-not-natural` fixed) |
 | `stmt-yield-argument-prompt` | 14 | WAITS for riddl's five value forms (not in -25; riddl is working on them now) |
 | `value-optional-for-required` | 25 | WAITS for `x otherwise y`, then a default per site (Reid's ruling) |
-| `msg-clause-undeliverable` | 2,178 | **step 3, NEXT: not started** |
-| `stream-outlet-never-sent` | 266 | step 3/4 |
+| `msg-clause-undeliverable` | 943 | step 3 (a) DONE (-1,235); 17 (b) + 46 (c) await Reid; rest is step 4 |
+| `stream-outlet-never-sent` | 183 | step 3/4 |
 | `entity-no-query-clause` | 5 | step 4 (queries/results), not started |
 
 - **Next: step 3**, by Reid's rule per site: (a) an app control when the app
