@@ -22,10 +22,11 @@ severity; reads stdout+stderr).
 
 - **Steps 1 and 2 DONE.** 0 deprecations of any kind. BAST round trip
   189/189, and riddl's `RiddlModelsRoundTripTest` passes 189/189 on JVM.
-- **Step 5 (`stmt-yield-argument-prompt`) IN FLIGHT: 302 -> 32.** Reid put it
-  ahead of 3 and 4. The 32 are 14 needing value forms the grammar lacks
-  (filed with riddl, which is staging them) and **18 for Reid to rule case by
-  case**. Those 18 are a
+- **Step 5 (`stmt-yield-argument-prompt`): 302 -> 14, the rest WAITS.** All
+  18 of Reid's case-by-case rulings are implemented. The 14 left need riddl's
+  five value forms, and the 25 `value-optional-for-required` advisories (new
+  in -25) wait for `x otherwise y` by Reid's ruling. riddl is staging those
+  now; when it lands, re-run `scripts/yield-prompts/census.py`. Those 18 are a
   table in BACKLOG #43 § Step 5 and are the next session's work with him.
   `scripts/yield-prompts/census.py` regenerates the site list from a sweep.
 - **Step 3** (~2,178 `msg-clause-undeliverable`, rule a/b/c) and **step 4**

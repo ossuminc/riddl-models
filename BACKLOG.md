@@ -150,9 +150,11 @@ resolved.md`. `valuation.totalAssetsX.amount` validates at 0.
 six fields became `Whole`) and adds `value-optional-for-required`
 (advisory, 25 sites; Reid ruled it a Warning asking for a guard). Step 5
 stands at **14**, all waiting on riddl's five value forms, which are NOT in
--25 (Reid: being addressed now). The 25 new advisories are the next work
-that needs no new forms, though most want `x otherwise y`, which is one of
-those forms.
+-25 (Reid: being addressed now). **Reid, 2026-11-19: the 25
+`value-optional-for-required` sites WAIT for `x otherwise y`**, and each then
+gets a default rather than a guard (reactive-bbq 16, subscription-management
+4, fund-accounting 3, advertising-delivery 1, streaming-platform 1). So all
+of step 5's remainder waits on riddl's next staging; steps 3 and 4 do not.
 
 | # | site | ruling |
 |---|---|---|
