@@ -1429,7 +1429,7 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-**As of 2026-11-19 the pin is the UNPUBLISHED staged `2.7.0-41-67efe607`, override
+**As of 2026-11-19 the pin is the UNPUBLISHED staged `2.7.0-45-1ac25949`, override
 ON** (`riddlcPath := Some(file("../bin/riddlc"))`, libraries from `publishLocal`),
 for 2.8.0's creation model; take it off at the 2.8.0 tag. The paragraph below
 describes the last PUBLISHED pin.
@@ -1609,7 +1609,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.7.0-41-67efe607 | `riddlVersion` in `build.sbt` (staged; override ON until 2.8.0) |
+| riddlc | 2.7.0-45-1ac25949 | `riddlVersion` in `build.sbt` (staged; override ON until 2.8.0) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
@@ -1807,7 +1807,7 @@ needs drive language changes, which land here as model changes. riddl's
 `release/2` is merged, tagged `2.0.0` and deleted, so the line to track is now
 **`main`**, and the corpus prefers **published tags wherever possible**.
 
-It is currently (2026-11-19) on the STAGED **2.7.0-41-67efe607** with the
+It is currently (2026-11-19) on the STAGED **2.7.0-45-1ac25949** with the
 override ON, until the 2.8.0 tag. Point
 `riddlcPath` at a staged `../bin/riddlc` only to track a commit that has not
 been published yet, and **take the override off the moment it is** — a stale
