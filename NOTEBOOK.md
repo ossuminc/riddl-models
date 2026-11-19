@@ -15,18 +15,19 @@ deprecations.** Tracked as **BACKLOG #43**. `checkAll` is green but does NOT
 enforce the zero; the sweep does: `./scripts/collect-warnings.py
 --include-patterns`.
 
-### Where #43 stands (sweep on -27, after `2ea5f73fb`)
+### Where #43 stands (sweep on -27, after `fc28e083e`): 164 findings, 68 models
 
 | finding | count | state |
 |---|---:|---|
 | errors, deprecations | 0 | done (steps 1, 2; -25's 8 `value-not-natural` fixed) |
-| `stmt-yield-argument-prompt` | 14 | WAITS for riddl's five value forms (not in -25; riddl is working on them now) |
+| `stmt-yield-argument-prompt` | 14 | WAITS for riddl's value forms ([1.27]: not in -27, being written now) |
 | `value-optional-for-required` | 25 | WAITS for `x otherwise y`, then a default per site (Reid's ruling) |
-| `msg-clause-undeliverable` | 943 | step 3 (a) DONE (-1,235); 17 (b) + 46 (c) await Reid; rest is step 4 |
-| `stream-outlet-never-sent` | 183 | step 3/4 |
-| `entity-no-query-clause` | 5 | step 4 (queries/results), not started |
+| `msg-clause-undeliverable` | 118 | steps 3 (a), 4, projector events DONE. Await Reid: 17 (b) + 46 (c), 14 queries without `replies`, 41 event/command sites (BACKLOG #43) |
+| `stream-outlet-never-sent` | 3 | with the 41 |
+| `entity-no-query-clause` | 4 | code-generator x3 (its app is a source process: Reid), SurveyStation (riddlc crash, filed) |
 
-- **Next: step 3**, by Reid's rule per site: (a) an app control when the app
+- **Next: Reid's rulings on what is left**, one question at a time; the
+  lists are in BACKLOG #43. Step 3's original rule, per site: (a) an app control when the app
   already has an outlet for that stream; (b) wire it through the existing
   inbound adaptor when it clearly comes from another system; (c) otherwise
   collect it in #43 for one session with Reid. Never delete a clause without
