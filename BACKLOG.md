@@ -255,25 +255,9 @@ converges on the existing relay clause (the handler dispatches on type), and
 no second relay is written.
 
 **Left, for Reid:**
-- **14 queries declare no `replies`**, so there is nothing to wire them to:
-  supply-chain x7 (GetSupplyOrder, GetItemById, GetParLevels,
-  GetInventoryPosition, GetIssuanceHistory, GetItemsBelowParLevel,
-  GetPendingRequisitions), fund-accounting x3 (GetNAVHistory, GetHoldings,
-  GetPerformance), order-management GetShipment, team-management GetTeam,
-  radiology-workflow GetImagingExam, case-management GetLegalCase. Some
-  clauses `tell` a result to an entity instead of replying (order-management
-  `OrderRepository.GetShipment`).
-- **code-generator GenerationRun / Artifact / Hole**: look-ups written and
-  then reverted; each was a `Get<E>` query, an `<E>Result` of the state
-  record's fields, and a per-state clause replying from `<E>.<State>.<f>`,
-  so redoing them is quick once the asker is decided. The only app is
-  `GeneratorDriver`, a process `as source` with no screen; who asks a
-  generation run about itself is a modelling choice.
-- **language-coverage SurveyStation**: its look-up crashes riddlc
-  (`ClassCastException: AST$Method cannot be cast to AST$Field`) because
-  `SurveySummary` declares methods. Filed:
-  `../riddl/task/2026-11-19-record-with-method-as-value-crashes.md`, with a
-  22-line repro. Held out until riddl fixes it.
+- **RESOLVED 2026-11-19:** the 14 queries without `replies`, code-generator's
+  three look-ups, and SurveyStation's (crash fixed in -41) -- see the step 3
+  section above.
 - ticket-sales `LiveEvent` got its look-up and is at 0.
 
 ### The other 78 undeliverables: events and commands outside steps 3 and 4
