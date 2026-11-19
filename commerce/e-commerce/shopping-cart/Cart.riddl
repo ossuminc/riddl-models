@@ -1,7 +1,7 @@
 // Shopping Cart - Cart Entity
 event-sourced entity Cart as flow is {
   type CartCommand is one of {
-    Cart.AddItem or Cart.UpdateQuantity or Cart.RemoveItem or Cart.ApplyPromoCode or Cart.RemovePromoCode or Cart.SetShippingAddress or Cart.MergeCart or Cart.Checkout or Cart.AbandonCart
+    Cart.AddItem or Cart.UpdateQuantity or Cart.RemoveItem or Cart.ApplyPromoCode or Cart.RemovePromoCode or Cart.SetShippingAddress or Cart.MergeCart or Cart.Checkout or Cart.AbandonCart or Cart.EstimateShipping or Cart.RecordOrder
   } with {
     briefly "Cart command alternation"
     described as {
@@ -111,6 +111,12 @@ event-sourced entity Cart as flow is {
         |Promotional code to apply.
       }
     }
+    discountPercent: Decimal(5,2) with {
+      briefly "Discount percent"
+      described as {
+        |The promotion's percentage off, as the pricing service announced it.
+      }
+    }
   } with {
     briefly "Apply promotional code"
     described as {
@@ -168,10 +174,55 @@ event-sourced entity Cart as flow is {
         |Cart to merge from.
       }
     }
+    sourceItems: CartItem+ with {
+      briefly "Source items"
+      described as {
+        |The guest cart's items, as the sender read them.
+      }
+    }
   } with {
     briefly "Merge carts"
     described as {
       |Merges a guest cart into a customer cart after login.
+    }
+  }
+  command EstimateShipping yields event ShippingEstimated is {
+    cartId: CartId with {
+      briefly "Cart ID"
+      described as {
+        |Cart to estimate shipping for.
+      }
+    }
+    shippingEstimate: Money with {
+      briefly "Shipping estimate"
+      described as {
+        |Estimated shipping cost to the cart's address.
+      }
+    }
+  } with {
+    briefly "Estimate shipping"
+    described as {
+      |Records the estimated shipping cost the application obtained for the
+      |cart's shipping address.
+    }
+  }
+  command RecordOrder yields event OrderLinked is {
+    cartId: CartId with {
+      briefly "Cart ID"
+      described as {
+        |Checked-out cart the order was created from.
+      }
+    }
+    orderId: UUID with {
+      briefly "Order ID"
+      described as {
+        |The order the order service created.
+      }
+    }
+  } with {
+    briefly "Record the resulting order"
+    described as {
+      |Links a checked-out cart to the order the order service created from it.
     }
   }
   command Checkout yields event CartCheckedOut is {
@@ -344,16 +395,16 @@ event-sourced entity Cart as flow is {
         |Cart identifier.
       }
     }
-    discount: DiscountAmount with {
-      briefly "Discount"
+    code: PromoCode with {
+      briefly "Code"
       described as {
-        |Applied discount.
+        |Applied code.
       }
     }
-    newTotal: Money with {
-      briefly "New total"
+    discountPercent: Decimal(5,2) with {
+      briefly "Discount percent"
       described as {
-        |Updated cart total.
+        |Percentage off; the fold computes the saving from it.
       }
     }
     appliedAt: TimeStamp with {
@@ -412,12 +463,6 @@ event-sourced entity Cart as flow is {
         |Set address.
       }
     }
-    shippingEstimate: Money with {
-      briefly "Shipping"
-      described as {
-        |Estimated shipping cost.
-      }
-    }
     setAt: TimeStamp with {
       briefly "Set at"
       described as {
@@ -441,6 +486,12 @@ event-sourced entity Cart as flow is {
       briefly "Source"
       described as {
         |Merged from cart.
+      }
+    }
+    mergedItems: CartItem+ with {
+      briefly "Merged items"
+      described as {
+        |The source cart's items, appended to the target.
       }
     }
     addedItems: Natural with {
@@ -468,12 +519,6 @@ event-sourced entity Cart as flow is {
         |Checked out cart.
       }
     }
-    orderId: UUID with {
-      briefly "Order ID"
-      described as {
-        |Resulting order.
-      }
-    }
     total: Money with {
       briefly "Total"
       described as {
@@ -490,6 +535,56 @@ event-sourced entity Cart as flow is {
     briefly "Cart was checked out"
     described as {
       |Emitted when cart is converted to an order.
+    }
+  }
+  event ShippingEstimated is {
+    cartId: CartId with {
+      briefly "Cart ID"
+      described as {
+        |Cart identifier.
+      }
+    }
+    shippingEstimate: Money with {
+      briefly "Shipping"
+      described as {
+        |Estimated shipping cost.
+      }
+    }
+    estimatedAt: TimeStamp with {
+      briefly "Estimated at"
+      described as {
+        |When the estimate was recorded.
+      }
+    }
+  } with {
+    briefly "Shipping was estimated"
+    described as {
+      |Emitted when a shipping cost estimate is recorded for the cart.
+    }
+  }
+  event OrderLinked is {
+    cartId: CartId with {
+      briefly "Cart ID"
+      described as {
+        |Checked out cart.
+      }
+    }
+    orderId: UUID with {
+      briefly "Order ID"
+      described as {
+        |Resulting order.
+      }
+    }
+    linkedAt: TimeStamp with {
+      briefly "Linked at"
+      described as {
+        |When the order was recorded against the cart.
+      }
+    }
+  } with {
+    briefly "Order was linked to the cart"
+    described as {
+      |Emitted when the order created from a checked-out cart is recorded.
     }
   }
   event CartAbandoned is {
@@ -595,10 +690,10 @@ event-sourced entity Cart as flow is {
         |Cart identifier.
       }
     }
-    orderId: UUID with {
+    orderId: UUID? with {
       briefly "Order ID"
       described as {
-        |Resulting order.
+        |Resulting order, once the order service reports it.
       }
     }
     total: Money with {
@@ -728,10 +823,12 @@ event-sourced entity Cart as flow is {
       morph entity Cart to state Cart.AbandonedState with record Cart.AbandonedCartData(cartId = cartAbandoned.cartId, customerId = empty, items = prompt("the items of this abandoned cart data"), cartValue = prompt("the cart value of this abandoned cart data"), abandonedAt = prompt("the abandoned at of this abandoned cart data"))
     }
     on cartCheckedOut: event CartCheckedOut is {
-      morph entity Cart to state Cart.CheckedOutState with record Cart.CheckedOutCartData(cartId = cartCheckedOut.cartId, orderId = prompt("the order id of this checked out cart data"), total = prompt("the total of this checked out cart data"), checkedOutAt = prompt("the checked out at of this checked out cart data"))
+      morph entity Cart to state Cart.CheckedOutState with record Cart.CheckedOutCartData(cartId = cartCheckedOut.cartId, orderId = empty, total = prompt("the total of this checked out cart data"), checkedOutAt = prompt("the checked out at of this checked out cart data"))
     }
     on cartsMerged: event CartsMerged is {
-      set field Cart.ActiveState.items to prompt("the items with the source cart's items merged in; the event carries only their count")
+      foreach mergedItem in field Cart.CartsMerged.mergedItems {
+        append mergedItem to field Cart.ActiveState.items
+      }
       set field Cart.ActiveState.lastUpdatedAt to cartsMerged.mergedAt
     }
     on itemAdded: event ItemAdded is {
@@ -750,8 +847,9 @@ event-sourced entity Cart as flow is {
       set field Cart.ActiveState.lastUpdatedAt to itemRemoved.removedAt
     }
     on promoCodeApplied: event PromoCodeApplied is {
-      append promoCodeApplied.discount to field Cart.ActiveState.discounts
-      set field Cart.ActiveState.summary.subtotal to promoCodeApplied.newTotal
+      let saving: type Money = record Money(amount = Cart.ActiveState.summary.subtotal.amount * promoCodeApplied.discountPercent / 100, currency = Cart.ActiveState.summary.subtotal.currency)
+      append record DiscountAmount(code = promoCodeApplied.code, description = promoCodeApplied.code, discountAmount = saving) to field Cart.ActiveState.discounts
+      set field Cart.ActiveState.summary.subtotal to record Money(amount = Cart.ActiveState.summary.subtotal.amount - saving.amount, currency = Cart.ActiveState.summary.subtotal.currency)
       set field Cart.ActiveState.lastUpdatedAt to promoCodeApplied.appliedAt
     }
     on promoCodeRemoved: event PromoCodeRemoved is {
@@ -761,8 +859,14 @@ event-sourced entity Cart as flow is {
     }
     on shippingAddressSet: event ShippingAddressSet is {
       set field Cart.ActiveState.shippingAddress to shippingAddressSet.address
-      set field Cart.ActiveState.shippingEstimate to shippingAddressSet.shippingEstimate
       set field Cart.ActiveState.lastUpdatedAt to shippingAddressSet.setAt
+    }
+    on shippingEstimated: event ShippingEstimated is {
+      set field Cart.ActiveState.shippingEstimate to shippingEstimated.shippingEstimate
+      set field Cart.ActiveState.lastUpdatedAt to shippingEstimated.estimatedAt
+    }
+    on orderLinked: event OrderLinked is {
+      set field Cart.CheckedOutState.orderId to orderLinked.orderId
     }
     on addItem: command AddItem is {
       yield event ItemAdded(cartId = addItem.cartId, item = record CartItem(productId = addItem.productId, sku = addItem.sku, name = addItem.name, quantity = addItem.quantity, unitPrice = addItem.unitPrice, lineTotal = record Money(amount = addItem.unitPrice.amount * addItem.quantity, currency = addItem.unitPrice.currency), addedAt = system.now), newTotal = record Money(amount = Cart.ActiveState.summary.subtotal.amount + addItem.unitPrice.amount * addItem.quantity, currency = Cart.ActiveState.summary.subtotal.currency), addedAt = system.now)
@@ -774,19 +878,25 @@ event-sourced entity Cart as flow is {
       yield event ItemRemoved(cartId = removeItem.cartId, productId = removeItem.productId, newTotal = prompt("the new total of this item removed"), removedAt = system.now)
     }
     on applyPromoCode: command ApplyPromoCode is {
-      yield event PromoCodeApplied(cartId = applyPromoCode.cartId, discount = prompt("the discount of this promo code applied"), newTotal = prompt("the new total of this promo code applied"), appliedAt = system.now)
+      yield event PromoCodeApplied(cartId = applyPromoCode.cartId, code = applyPromoCode.code, discountPercent = applyPromoCode.discountPercent, appliedAt = system.now)
     }
     on removePromoCode: command RemovePromoCode is {
       yield event PromoCodeRemoved(cartId = removePromoCode.cartId, code = removePromoCode.code, newTotal = prompt("the new total of this promo code removed"), removedAt = system.now)
     }
     on setShippingAddress: command SetShippingAddress is {
-      yield event ShippingAddressSet(cartId = setShippingAddress.cartId, address = setShippingAddress.address, shippingEstimate = prompt("the shipping estimate of this shipping address set"), setAt = system.now)
+      yield event ShippingAddressSet(cartId = setShippingAddress.cartId, address = setShippingAddress.address, setAt = system.now)
+    }
+    on estimateShipping: command EstimateShipping is {
+      yield event ShippingEstimated(cartId = estimateShipping.cartId, shippingEstimate = estimateShipping.shippingEstimate, estimatedAt = system.now)
     }
     on mergeCart: command MergeCart is {
-      yield event CartsMerged(targetCartId = mergeCart.targetCartId, sourceCartId = mergeCart.sourceCartId, addedItems = prompt("the added items of this carts merged"), mergedAt = system.now)
+      yield event CartsMerged(targetCartId = mergeCart.targetCartId, sourceCartId = mergeCart.sourceCartId, mergedItems = mergeCart.sourceItems, addedItems = count of mergeCart.sourceItems, mergedAt = system.now)
     }
     on checkout: command Checkout is {
-      yield event CartCheckedOut(cartId = checkout.cartId, orderId = prompt("the order id of this cart checked out"), total = Cart.ActiveState.summary.estimatedTotal, checkedOutAt = system.now)
+      yield event CartCheckedOut(cartId = checkout.cartId, total = Cart.ActiveState.summary.estimatedTotal, checkedOutAt = system.now)
+    }
+    on recordOrder: command RecordOrder is {
+      yield event OrderLinked(cartId = recordOrder.cartId, orderId = recordOrder.orderId, linkedAt = system.now)
     }
     on abandonCart: command AbandonCart is {
       yield event CartAbandoned(cartId = abandonCart.cartId, itemCount = Cart.ActiveState.summary.itemCount, cartValue = Cart.ActiveState.summary.subtotal, abandonedAt = system.now)

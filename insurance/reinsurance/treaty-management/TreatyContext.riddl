@@ -106,10 +106,20 @@ context TreatyContext as router is {
   }
   connector 'TreatyCommand Stream Intake' is from outlet TreatyContext.TreatyCommandStreamOut to inlet TreatyContext.Treaty.TreatyCommands
   connector 'TreatyQueryResult Stream Egress' is from outlet TreatyContext.TreatyRepository.TreatyRepositoryResponses to inlet TreatyContext.TreatyQueryResultStreamIn
-  adaptor ToAccountingService to context AccountingService as flow is { 
+  connector 'SettlementStatement Question' is from outlet TreatyContext.Treaty.TreatyStatementQueries to inlet TreatyContext.ToAccountingService.ToAccountingServiceQueries with {
+    briefly "The treaty's settlement-statement questions, on their way out"
+  }
+  connector 'SettlementStatement Answer' is from outlet TreatyContext.FromAccountingService.FromAccountingServiceToTreaty to inlet TreatyContext.Treaty.TreatyStatementReplies with {
+    briefly "The ledger's settlement statements, on their way to the treaty"
+  }
+  adaptor ToAccountingService to context AccountingService as merge is { 
     inlet ToAccountingServiceIn is type TreatyEvent
+    inlet ToAccountingServiceQueries is query AccountingService.GetSettlementStatement
     outlet ToAccountingServiceOut is type AccountingService.AccountingServiceCommand
     handler ToAccountingServiceHandler is {
+      on getSettlementStatement: query AccountingService.GetSettlementStatement is {
+        send getSettlementStatement to outlet TreatyContext.ToAccountingService.ToAccountingServiceOut
+      }
       on cessionRecorded: event Treaty.CessionRecorded is {
         let receipt: type AccountingService.RecordPremiumReceipt = prompt("translate the cessionRecorded event into a RecordPremiumReceipt booking the premium the cession cedes to us")
         send receipt to outlet TreatyContext.ToAccountingService.ToAccountingServiceOut
@@ -219,9 +229,14 @@ context TreatyContext as router is {
       |The model's side of the ActuarialService conversation.
     }
   }
-  adaptor FromAccountingService from context AccountingService as sink is { 
+  adaptor FromAccountingService from context AccountingService as merge is { 
     inlet FromAccountingServiceIn is event AccountingService.PaymentFailed
+    inlet FromAccountingServiceReplies is result AccountingService.SettlementStatement
+    outlet FromAccountingServiceToTreaty is result AccountingService.SettlementStatement
     handler FromAccountingServiceHandler is {
+      on settlementStatement: result AccountingService.SettlementStatement is {
+        send settlementStatement to outlet TreatyContext.FromAccountingService.FromAccountingServiceToTreaty
+      }
       on paymentFailed: event AccountingService.PaymentFailed is {
         do "the settlement did not clear; asking again is accounting's act and suspension is a decision"
       }

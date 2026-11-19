@@ -58,6 +58,12 @@ context CartContext as router is {
       |Its own inlet: an inlet accepts exactly one connector.
     }
   }
+  inlet CartContextFromFromOrderService is command Cart.RecordOrder with {
+    briefly "What FromOrderService makes of that service's news"
+  }
+  connector 'FromOrderService Intake' is from outlet CartContext.FromOrderService.FromOrderServiceToCartContext to inlet CartContext.CartContextFromFromOrderService with {
+    briefly "What FromOrderService makes of that news, on its way in"
+  }
   inlet CartCommandStreamIn is type CartContext.CartRequest
   outlet CartCommandStreamOut is type CartCommand
   inlet CartResultStreamIn is result Cart.CartResult
@@ -91,6 +97,12 @@ context CartContext as router is {
     }
     on checkout: command Cart.Checkout is {
       forward checkout to outlet CartContext.CartCommandStreamOut
+    }
+    on estimateShipping: command Cart.EstimateShipping is {
+      forward estimateShipping to outlet CartContext.CartCommandStreamOut
+    }
+    on recordOrder: command Cart.RecordOrder is {
+      forward recordOrder to outlet CartContext.CartCommandStreamOut
     }
     on abandonCart: command Cart.AbandonCart is {
       forward abandonCart to outlet CartContext.CartCommandStreamOut
@@ -172,11 +184,12 @@ context CartContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor FromOrderService from context OrderService as sink is { 
+  adaptor FromOrderService from context OrderService as flow is { 
     inlet FromOrderServiceIn is event OrderService.OrderCreated
+    outlet FromOrderServiceToCartContext is command Cart.RecordOrder
     handler FromOrderServiceHandler is {
       on orderCreated: event OrderService.OrderCreated is {
-        do "the order now owns what the cart held, so the cart is spent and waits to be discarded"
+        send command Cart.RecordOrder(cartId = orderCreated.cartId, orderId = orderCreated.orderId) to outlet CartContext.FromOrderService.FromOrderServiceToCartContext
       }
       on other is {
         error "Unexpected message for adaptor FromOrderService"
@@ -208,7 +221,7 @@ context CartContext as router is {
         tell command Cart.UpdateQuantity(productId = priceChanged.productId, cartId = prompt("the cart id of this update quantity"), newQuantity = prompt("the new quantity of this update quantity")) to context CartContext
       }
       on promotionActivated: event PricingService.PromotionActivated is {
-        tell command Cart.ApplyPromoCode(code = promotionActivated.code, cartId = prompt("the cart id of this apply promo code")) to context CartContext
+        tell command Cart.ApplyPromoCode(code = promotionActivated.code, discountPercent = promotionActivated.discountPercent, cartId = prompt("the cart id of this apply promo code")) to context CartContext
       }
       on promotionDeactivated: event PricingService.PromotionDeactivated is {
         tell command Cart.RemovePromoCode(code = prompt("the code of the promotion that was deactivated"), cartId = prompt("the cart id of this remove promo code")) to context CartContext
@@ -262,7 +275,7 @@ context CartContext as router is {
   }
   // Repository for cart persistence
   type CartRepositoryCommand is one of {
-    CartContext.CartRepository.PersistCartAbandoned or CartContext.CartRepository.PersistCartCheckedOut or CartContext.CartRepository.PersistCartCreated or CartContext.CartRepository.PersistCartsMerged or CartContext.CartRepository.PersistItemAdded or CartContext.CartRepository.PersistItemQuantityUpdated or CartContext.CartRepository.PersistItemRemoved or CartContext.CartRepository.PersistPromoCodeApplied or CartContext.CartRepository.PersistPromoCodeRemoved or CartContext.CartRepository.PersistShippingAddressSet
+    CartContext.CartRepository.PersistCartAbandoned or CartContext.CartRepository.PersistCartCheckedOut or CartContext.CartRepository.PersistCartCreated or CartContext.CartRepository.PersistCartsMerged or CartContext.CartRepository.PersistItemAdded or CartContext.CartRepository.PersistItemQuantityUpdated or CartContext.CartRepository.PersistItemRemoved or CartContext.CartRepository.PersistPromoCodeApplied or CartContext.CartRepository.PersistPromoCodeRemoved or CartContext.CartRepository.PersistShippingAddressSet or CartContext.CartRepository.PersistShippingEstimated or CartContext.CartRepository.PersistOrderLinked
   } with {
     briefly "Anything that writes the CartRepository"
     described as {
@@ -455,14 +468,14 @@ context CartContext as router is {
           |Which stored row PromoCodeApplied applies to.
         }
       }
-      discount: DiscountAmount? with {
-        briefly "Discount"
+      code: PromoCode? with {
+        briefly "Code"
         described as {
           |Carried from the event the projector folded, so the row can hold it.
         }
       }
-      newTotal: Money? with {
-        briefly "New total"
+      discountPercent: Decimal(5,2)? with {
+        briefly "Discount percent"
         described as {
           |Carried from the event the projector folded, so the row can hold it.
         }
@@ -527,12 +540,6 @@ context CartContext as router is {
           |Carried from the event the projector folded, so the row can hold it.
         }
       }
-      shippingEstimate: Money? with {
-        briefly "Shipping estimate"
-        described as {
-          |Carried from the event the projector folded, so the row can hold it.
-        }
-      }
       setAt: TimeStamp? with {
         briefly "Set at"
         described as {
@@ -587,12 +594,6 @@ context CartContext as router is {
           |Which stored row CartCheckedOut applies to.
         }
       }
-      orderId: UUID? with {
-        briefly "Order id"
-        described as {
-          |Carried from the event the projector folded, so the row can hold it.
-        }
-      }
       total: Money? with {
         briefly "Total"
         described as {
@@ -609,6 +610,60 @@ context CartContext as router is {
       briefly "Persist CartCheckedOut"
       described as {
         |Instructs this repository to apply CartCheckedOut to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistShippingEstimated is {
+      cartId: CartId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ShippingEstimated applies to.
+        }
+      }
+      shippingEstimate: Money? with {
+        briefly "Shipping estimate"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+      estimatedAt: TimeStamp? with {
+        briefly "Estimated at"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+    } with {
+      briefly "Persist ShippingEstimated"
+      described as {
+        |Instructs this repository to apply ShippingEstimated to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistOrderLinked is {
+      cartId: CartId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row OrderLinked applies to.
+        }
+      }
+      orderId: UUID? with {
+        briefly "Order id"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+      linkedAt: TimeStamp? with {
+        briefly "Linked at"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+    } with {
+      briefly "Persist OrderLinked"
+      described as {
+        |Instructs this repository to apply OrderLinked to the stored row. A
         |persistence command, not a domain command: it declares no `yields`
         |because storing a row records no new entity state.
       }
@@ -712,8 +767,8 @@ context CartContext as router is {
           |As the persisting projector last wrote it.
         }
       }
-      discount: DiscountAmount? with {
-        briefly "Discount"
+      discountPercent: Decimal(5,2)? with {
+        briefly "Discount percent"
         described as {
           |As the persisting projector last wrote it.
         }
@@ -784,6 +839,18 @@ context CartContext as router is {
           |As the persisting projector last wrote it.
         }
       }
+      estimatedAt: TimeStamp? with {
+        briefly "Estimated at"
+        described as {
+          |As the persisting projector last wrote it.
+        }
+      }
+      linkedAt: TimeStamp? with {
+        briefly "Linked at"
+        described as {
+          |As the persisting projector last wrote it.
+        }
+      }
     } with {
       briefly "Stored cart row"
       described as {
@@ -818,19 +885,25 @@ context CartContext as router is {
         update CartData.carts set productId = persistItemRemoved.productId, newTotal = persistItemRemoved.newTotal, removedAt = persistItemRemoved.removedAt where cartId == persistItemRemoved.cartId
       }
       on persistPromoCodeApplied: command PersistPromoCodeApplied is {
-        update CartData.carts set discount = persistPromoCodeApplied.discount, newTotal = persistPromoCodeApplied.newTotal, appliedAt = persistPromoCodeApplied.appliedAt where cartId == persistPromoCodeApplied.cartId
+        update CartData.carts set code = persistPromoCodeApplied.code, discountPercent = persistPromoCodeApplied.discountPercent, appliedAt = persistPromoCodeApplied.appliedAt where cartId == persistPromoCodeApplied.cartId
       }
       on persistPromoCodeRemoved: command PersistPromoCodeRemoved is {
         update CartData.carts set code = persistPromoCodeRemoved.code, newTotal = persistPromoCodeRemoved.newTotal, removedAt = persistPromoCodeRemoved.removedAt where cartId == persistPromoCodeRemoved.cartId
       }
       on persistShippingAddressSet: command PersistShippingAddressSet is {
-        update CartData.carts set address = persistShippingAddressSet.address, shippingEstimate = persistShippingAddressSet.shippingEstimate, setAt = persistShippingAddressSet.setAt where cartId == persistShippingAddressSet.cartId
+        update CartData.carts set address = persistShippingAddressSet.address, setAt = persistShippingAddressSet.setAt where cartId == persistShippingAddressSet.cartId
+      }
+      on persistShippingEstimated: command PersistShippingEstimated is {
+        update CartData.carts set shippingEstimate = persistShippingEstimated.shippingEstimate, estimatedAt = persistShippingEstimated.estimatedAt where cartId == persistShippingEstimated.cartId
+      }
+      on persistOrderLinked: command PersistOrderLinked is {
+        update CartData.carts set orderId = persistOrderLinked.orderId, linkedAt = persistOrderLinked.linkedAt where cartId == persistOrderLinked.cartId
       }
       on persistCartAbandoned: command PersistCartAbandoned is {
         update CartData.carts set itemCount = persistCartAbandoned.itemCount, cartValue = persistCartAbandoned.cartValue, abandonedAt = persistCartAbandoned.abandonedAt where cartId == persistCartAbandoned.cartId
       }
       on persistCartCheckedOut: command PersistCartCheckedOut is {
-        update CartData.carts set orderId = persistCartCheckedOut.orderId, total = persistCartCheckedOut.total, checkedOutAt = persistCartCheckedOut.checkedOutAt where cartId == persistCartCheckedOut.cartId
+        update CartData.carts set total = persistCartCheckedOut.total, checkedOutAt = persistCartCheckedOut.checkedOutAt where cartId == persistCartCheckedOut.cartId
       }
       on query GetAbandonedCartMetrics is {
         let abandonedCartMetricsView: type AbandonedCartMetricsView = prompt("read the abandoned cart metrics projection")
@@ -933,7 +1006,7 @@ context CartContext as router is {
         do "apply ItemRemoved to the CartAnalytics projection"
       }
       on promoCodeApplied: event Cart.PromoCodeApplied is {
-        tell command CartContext.CartRepository.PersistPromoCodeApplied(cartId = promoCodeApplied.cartId, discount = promoCodeApplied.discount, newTotal = promoCodeApplied.newTotal, appliedAt = promoCodeApplied.appliedAt) to repository CartContext.CartRepository
+        tell command CartContext.CartRepository.PersistPromoCodeApplied(cartId = promoCodeApplied.cartId, code = promoCodeApplied.code, discountPercent = promoCodeApplied.discountPercent, appliedAt = promoCodeApplied.appliedAt) to repository CartContext.CartRepository
         do "apply PromoCodeApplied to the CartAnalytics projection"
       }
       on promoCodeRemoved: event Cart.PromoCodeRemoved is {
@@ -941,14 +1014,20 @@ context CartContext as router is {
         do "apply PromoCodeRemoved to the CartAnalytics projection"
       }
       on shippingAddressSet: event Cart.ShippingAddressSet is {
-        tell command CartContext.CartRepository.PersistShippingAddressSet(cartId = shippingAddressSet.cartId, address = shippingAddressSet.address, shippingEstimate = shippingAddressSet.shippingEstimate, setAt = shippingAddressSet.setAt) to repository CartContext.CartRepository
+        tell command CartContext.CartRepository.PersistShippingAddressSet(cartId = shippingAddressSet.cartId, address = shippingAddressSet.address, setAt = shippingAddressSet.setAt) to repository CartContext.CartRepository
         do "apply ShippingAddressSet to the CartAnalytics projection"
+      }
+      on shippingEstimated: event Cart.ShippingEstimated is {
+        tell command CartContext.CartRepository.PersistShippingEstimated(cartId = shippingEstimated.cartId, shippingEstimate = shippingEstimated.shippingEstimate, estimatedAt = shippingEstimated.estimatedAt) to repository CartContext.CartRepository
+      }
+      on orderLinked: event Cart.OrderLinked is {
+        tell command CartContext.CartRepository.PersistOrderLinked(cartId = orderLinked.cartId, orderId = orderLinked.orderId, linkedAt = orderLinked.linkedAt) to repository CartContext.CartRepository
       }
       on cartAbandoned: event Cart.CartAbandoned is {
         tell command CartContext.CartRepository.PersistCartAbandoned(cartId = cartAbandoned.cartId, itemCount = cartAbandoned.itemCount, cartValue = cartAbandoned.cartValue, abandonedAt = cartAbandoned.abandonedAt) to repository CartContext.CartRepository
       }
       on cartCheckedOut: event Cart.CartCheckedOut is {
-        tell command CartContext.CartRepository.PersistCartCheckedOut(cartId = cartCheckedOut.cartId, orderId = cartCheckedOut.orderId, total = cartCheckedOut.total, checkedOutAt = cartCheckedOut.checkedOutAt) to repository CartContext.CartRepository
+        tell command CartContext.CartRepository.PersistCartCheckedOut(cartId = cartCheckedOut.cartId, total = cartCheckedOut.total, checkedOutAt = cartCheckedOut.checkedOutAt) to repository CartContext.CartRepository
       }
     } with {
       briefly "Maintains analytics views"
@@ -997,6 +1076,12 @@ context CartContext as router is {
       }
       on cartAbandoned: event Cart.CartAbandoned is {
         send cartAbandoned to outlet CartEventSplitToCartAnalytics
+      }
+      on shippingEstimated: event Cart.ShippingEstimated is {
+        send shippingEstimated to outlet CartEventSplitToCartAnalytics
+      }
+      on orderLinked: event Cart.OrderLinked is {
+        send orderLinked to outlet CartEventSplitToCartAnalytics
       }
       on other is {
         error "Unexpected message for processor CartEventSplit"

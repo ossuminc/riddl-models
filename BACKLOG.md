@@ -121,8 +121,26 @@ submission, `coverageStartDate` from `requestedEffectiveDate`,
 
 **Now 32** = 14 waiting on riddl's value forms + 18 model-by-model.
 
-**Reid's rulings on the 18, 2026-11-19 (asked one at a time; NOT YET
-IMPLEMENTED):**
+**Reid's rulings on the 18, 2026-11-19 (asked one at a time). IMPLEMENTED
+2026-11-19 (32 -> 15), all but row 5.** Row 5 stopped: `RunGreenGate`
+declares `yields ProofFailed`, which must be yielded on EVERY path
+(`msg-yield-undeclared`), so a green suite has nowhere to go; dropping
+`yields` draws `[style] msg-answers-undeclared`, which code-generator's
+strict .conf counts. The working wiring is known: ToTestRunner relays the
+query out and FromTestRunner relays the result in (an outbound adaptor may
+not carry a result). It needs a ruling on the green path.
+
+Choices the implementers made that the rulings did not name (one line each
+to change): (1) `DiscountAmount.description` = the promo code; (8) the
+PaymentAdapter keeps a do-only `RefundCompleted` clause rather than deleting
+it, since `on other` would error; (11) `LoanTransaction.balance` = the balance
+after the transaction; (12) the ask passes a prompt for the ledger's
+`TreatyRef` (the query could take `TreatyId` instead), net = ceded -
+commission - losses, and `paymentDirection` follows its sign through
+when/else; (14) `verificationSource` = "batch serialization register".
+
+Filed: `../riddl/task/2026-11-19-a-path-through-a-let-binding-is-not-
+resolved.md`. `valuation.totalAssetsX.amount` validates at 0.
 
 | # | site | ruling |
 |---|---|---|

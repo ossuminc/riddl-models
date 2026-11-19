@@ -1,6 +1,6 @@
 // Fund Entity
 // Core entity representing an investment fund
-event-sourced entity Fund as flow is {
+event-sourced entity Fund as router is {
   type FundCommand is one of {
     Fund.CalculateNAV or Fund.RecordTransaction or Fund.UpdateHolding or Fund.ProcessSubscription or Fund.ProcessRedemption or Fund.SuspendFund or Fund.ResumeFund
   } with {
@@ -11,6 +11,8 @@ event-sourced entity Fund as flow is {
   }
   inlet FundCommands is type FundCommand
   outlet FundEvents2 is type FundEvent
+  outlet FundValuationQueries is query CustodianContext.GetValuation
+  inlet FundValuationReplies is result CustodianContext.FundValuation
   // === Commands ===
   command CalculateNAV yields event NAVCalculated is {
     fundId: FundId
@@ -354,7 +356,8 @@ event-sourced entity Fund as flow is {
       do "Calculate total assets by summing holding market values"
       do "Calculate total liabilities including accrued fees"
       do "Compute net asset value and per-share NAV"
-      yield event NAVCalculated(fundId = calculateNAV.fundId, valuationDate = calculateNAV.valuationDate, isOfficial = calculateNAV.isOfficial, navId = calculateNAV.navId, netAssetValue = prompt("the net asset value of this n a v calculated"), navPerShare = prompt("the nav per share of this n a v calculated"), sharesOutstanding = Fund.ActiveFund.sharesOutstanding, calculatedAt = system.now)
+      let valuation: type CustodianContext.FundValuation = ask query CustodianContext.GetValuation(fundId = calculateNAV.fundId, valuationDate = calculateNAV.valuationDate) of context CustodianContext
+      yield event NAVCalculated(fundId = calculateNAV.fundId, valuationDate = calculateNAV.valuationDate, isOfficial = calculateNAV.isOfficial, navId = calculateNAV.navId, netAssetValue = record Money(amount = valuation.totalAssets.amount - valuation.totalLiabilities.amount, currency = valuation.totalAssets.currency), navPerShare = (valuation.totalAssets.amount - valuation.totalLiabilities.amount) / Fund.ActiveFund.sharesOutstanding, sharesOutstanding = Fund.ActiveFund.sharesOutstanding, calculatedAt = system.now)
     } with {
       briefly "Handles NAV calculation requests"
       described as {

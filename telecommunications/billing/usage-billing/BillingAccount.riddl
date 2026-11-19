@@ -741,13 +741,62 @@ aggregate event-sourced entity BillingAccount as flow is {
       |The pending activation of the BillingAccount entity, carrying PendingActivationData.
     }
   }
-  state ActiveState of record BillingAccount.ActiveData with {
+  state ActiveState of record BillingAccount.ActiveData is {
+    initial handler ActiveHandler is {
+      on applyPayment: command ApplyPayment is {
+        yield event PaymentApplied(accountId = applyPayment.accountId, payment = applyPayment.payment, newBalance = record MonetaryAmount(numericAmount = BillingAccount.ActiveState.currentBalance.numericAmount - applyPayment.payment.amount.numericAmount, currency = BillingAccount.ActiveState.currentBalance.currency))
+      }
+      on applyCredit: command ApplyCredit is {
+        yield event CreditApplied(accountId = applyCredit.accountId, amount = applyCredit.amount, reason = applyCredit.reason, targetInvoiceId = applyCredit.targetInvoiceId, newBalance = record MonetaryAmount(numericAmount = BillingAccount.ActiveState.currentBalance.numericAmount - applyCredit.amount.numericAmount, currency = BillingAccount.ActiveState.currentBalance.currency))
+      }
+      on closeAccount: command CloseAccount is {
+        yield event AccountClosed(accountId = closeAccount.accountId, reason = closeAccount.reason, closedAt = system.now, finalBalance = BillingAccount.ActiveState.currentBalance)
+      }
+      on paymentApplied: event PaymentApplied is {
+        set field BillingAccount.ActiveState.currentBalance to paymentApplied.newBalance
+        set field BillingAccount.ActiveState.lastPayment to paymentApplied.payment
+      }
+      on creditApplied: event CreditApplied is {
+        set field BillingAccount.ActiveState.currentBalance to creditApplied.newBalance
+        set field BillingAccount.ActiveState.lastCreditAmount to creditApplied.amount
+        set field BillingAccount.ActiveState.lastCreditReason to creditApplied.reason
+      }
+    } with {
+      briefly "Active state handler"
+      described as {
+        |Takes payments, credits and closure against the active balance.
+      }
+    }
+  } with {
     briefly "Active state"
     described as {
       |The active state of the BillingAccount entity, carrying ActiveData.
     }
   }
-  state SuspendedState of record BillingAccount.SuspendedData with {
+  state SuspendedState of record BillingAccount.SuspendedData is {
+    initial handler SuspendedHandler is {
+      on applyPayment: command ApplyPayment is {
+        yield event PaymentApplied(accountId = applyPayment.accountId, payment = applyPayment.payment, newBalance = record MonetaryAmount(numericAmount = BillingAccount.SuspendedState.currentBalance.numericAmount - applyPayment.payment.amount.numericAmount, currency = BillingAccount.SuspendedState.currentBalance.currency))
+      }
+      on applyCredit: command ApplyCredit is {
+        yield event CreditApplied(accountId = applyCredit.accountId, amount = applyCredit.amount, reason = applyCredit.reason, targetInvoiceId = applyCredit.targetInvoiceId, newBalance = record MonetaryAmount(numericAmount = BillingAccount.SuspendedState.currentBalance.numericAmount - applyCredit.amount.numericAmount, currency = BillingAccount.SuspendedState.currentBalance.currency))
+      }
+      on closeAccount: command CloseAccount is {
+        yield event AccountClosed(accountId = closeAccount.accountId, reason = closeAccount.reason, closedAt = system.now, finalBalance = BillingAccount.SuspendedState.currentBalance)
+      }
+      on paymentApplied: event PaymentApplied is {
+        set field BillingAccount.SuspendedState.currentBalance to paymentApplied.newBalance
+      }
+      on creditApplied: event CreditApplied is {
+        set field BillingAccount.SuspendedState.currentBalance to creditApplied.newBalance
+      }
+    } with {
+      briefly "Suspended state handler"
+      described as {
+        |Takes payments, credits and closure against the suspended balance.
+      }
+    }
+  } with {
     briefly "Suspended state"
     described as {
       |The suspended state of the BillingAccount entity, carrying SuspendedData.
@@ -777,20 +826,11 @@ aggregate event-sourced entity BillingAccount as flow is {
     on generateInvoice: command GenerateInvoice is {
       yield event InvoiceGenerated(accountId = generateInvoice.accountId, invoiceId = generateInvoice.invoiceId, generatedAt = system.now)
     }
-    on applyPayment: command ApplyPayment is {
-      yield event PaymentApplied(accountId = applyPayment.accountId, payment = applyPayment.payment, newBalance = record MonetaryAmount(numericAmount = BillingAccount.ActiveState.currentBalance.numericAmount - applyPayment.payment.amount.numericAmount, currency = BillingAccount.ActiveState.currentBalance.currency))
-    }
-    on applyCredit: command ApplyCredit is {
-      yield event CreditApplied(accountId = applyCredit.accountId, amount = applyCredit.amount, reason = applyCredit.reason, targetInvoiceId = applyCredit.targetInvoiceId, newBalance = record MonetaryAmount(numericAmount = BillingAccount.ActiveState.currentBalance.numericAmount - applyCredit.amount.numericAmount, currency = BillingAccount.ActiveState.currentBalance.currency))
-    }
     on suspendAccount: command SuspendAccount is {
       yield event AccountSuspended(accountId = suspendAccount.accountId, reason = suspendAccount.reason, suspendedAt = system.now)
     }
     on reactivateAccount: command ReactivateAccount is {
       yield event AccountReactivated(accountId = reactivateAccount.accountId, reactivatedAt = system.now)
-    }
-    on closeAccount: command CloseAccount is {
-      yield event AccountClosed(accountId = closeAccount.accountId, reason = closeAccount.reason, closedAt = system.now, finalBalance = prompt("the final balance of this account closed"))
     }
     on customerInfoUpdated: event CustomerInfoUpdated is {
       set field BillingAccount.ActiveState.customer to customerInfoUpdated.customer
@@ -806,15 +846,6 @@ aggregate event-sourced entity BillingAccount as flow is {
     on invoiceGenerated: event InvoiceGenerated is {
       set field BillingAccount.ActiveState.lastInvoiceId to invoiceGenerated.invoiceId
       set field BillingAccount.ActiveState.lastInvoicedAt to invoiceGenerated.generatedAt
-    }
-    on paymentApplied: event PaymentApplied is {
-      set field BillingAccount.ActiveState.currentBalance to paymentApplied.newBalance
-      set field BillingAccount.ActiveState.lastPayment to paymentApplied.payment
-    }
-    on creditApplied: event CreditApplied is {
-      set field BillingAccount.ActiveState.currentBalance to creditApplied.newBalance
-      set field BillingAccount.ActiveState.lastCreditAmount to creditApplied.amount
-      set field BillingAccount.ActiveState.lastCreditReason to creditApplied.reason
     }
     on accountSuspended: event AccountSuspended is {
       morph entity BillingContext.BillingAccount to state BillingContext.BillingAccount.SuspendedState with record BillingAccount.SuspendedData(accountId = accountSuspended.accountId, suspendedAt = accountSuspended.suspendedAt, customer = prompt("the customer of this suspended data"), ratePlanId = prompt("the rate plan id of this suspended data"), paymentMethod = prompt("the payment method of this suspended data"), currentBalance = prompt("the current balance of this suspended data"), suspensionReason = prompt("the suspension reason of this suspended data"))

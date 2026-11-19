@@ -1,6 +1,6 @@
 // Treaty Entity
 // Core entity managing reinsurance treaty lifecycle
-aggregate event-sourced entity Treaty as flow is {
+aggregate event-sourced entity Treaty as router is {
   type TreatyCommand is one of {
     Treaty.ExecuteTreaty or Treaty.RecordCession or Treaty.SubmitBordereau or Treaty.ProcessSettlement or Treaty.RenewTreaty or Treaty.SuspendTreaty or Treaty.TerminateTreaty or Treaty.ExpireTreaty
   } with {
@@ -11,6 +11,8 @@ aggregate event-sourced entity Treaty as flow is {
   }
   inlet TreatyCommands is type TreatyCommand
   outlet TreatyEvents2 is type TreatyEvent
+  outlet TreatyStatementQueries is query AccountingService.GetSettlementStatement
+  inlet TreatyStatementReplies is result AccountingService.SettlementStatement
   query FetchTreaty replies result TreatyQueryResult is {
     treatyId: TreatyId with {
       briefly "ID"
@@ -1030,7 +1032,12 @@ aggregate event-sourced entity Treaty as flow is {
       yield event BordereauReceived(treatyId = submitBordereau.treatyId, bordereauxId = submitBordereau.bordereau.bordereauxId, bordereauxType = submitBordereau.bordereau.bordereauxType, recordCount = count of submitBordereau.bordereau.records, periodStart = submitBordereau.bordereau.periodStart, periodEnd = submitBordereau.bordereau.periodEnd, timestamp = system.now)
     }
     on processSettlement: command ProcessSettlement is {
-      yield event SettlementProcessed(treatyId = processSettlement.treatyId, settlement = prompt("the settlement of this settlement processed"), timestamp = system.now)
+      let statement: type AccountingService.SettlementStatement = ask query AccountingService.GetSettlementStatement(treatyId = prompt("the ledger's reference for the treaty processSettlement.treatyId names"), periodStart = processSettlement.settlementPeriodStart, periodEnd = processSettlement.settlementPeriodEnd) of context AccountingService
+      when statement.cededPremium.amount >= statement.commissionAmount.amount + statement.paidLosses.amount then
+        yield event SettlementProcessed(treatyId = processSettlement.treatyId, settlement = record SettlementInfo(settlementDate = system.now, periodStart = processSettlement.settlementPeriodStart, periodEnd = processSettlement.settlementPeriodEnd, grossPremium = statement.grossPremium, cededPremium = statement.cededPremium, commissionAmount = statement.commissionAmount, paidLosses = statement.paidLosses, outstandingReserves = statement.outstandingReserves, netBalance = record MonetaryAmount(amount = statement.cededPremium.amount - statement.commissionAmount.amount - statement.paidLosses.amount, currency = statement.cededPremium.currency), paymentDirection = PaymentDirection.DueToReinsurer), timestamp = system.now)
+      else
+        yield event SettlementProcessed(treatyId = processSettlement.treatyId, settlement = record SettlementInfo(settlementDate = system.now, periodStart = processSettlement.settlementPeriodStart, periodEnd = processSettlement.settlementPeriodEnd, grossPremium = statement.grossPremium, cededPremium = statement.cededPremium, commissionAmount = statement.commissionAmount, paidLosses = statement.paidLosses, outstandingReserves = statement.outstandingReserves, netBalance = record MonetaryAmount(amount = statement.commissionAmount.amount + statement.paidLosses.amount - statement.cededPremium.amount, currency = statement.cededPremium.currency), paymentDirection = PaymentDirection.DueToCedent), timestamp = system.now)
+      end
     }
     on renewTreaty: command RenewTreaty is {
       yield event TreatyRenewed(treatyId = renewTreaty.treatyId, renewalTerms = renewTreaty.renewalTerms, newCoveragePeriod = renewTreaty.newCoveragePeriod, newTreatyId = renewTreaty.newTreatyId, timestamp = system.now)
