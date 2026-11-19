@@ -206,6 +206,44 @@ no second relay is written.
   22-line repro. Held out until riddl fixes it.
 - ticket-sales `LiveEvent` got its look-up and is at 0.
 
+### The other 78 undeliverables: events and commands outside steps 3 and 4
+
+Classified 2026-11-19 on -27.
+
+**Projector events, 37: DONE.** Every one was fed by a split outlet whose
+type carries the event, but the split's routing table never sent it there
+(events added after the split was written). `scripts/undeliverable/
+route-split-events.py` added 33 sends to existing split clauses and 2 new
+clauses (4 sends); 37 -> 0, nothing else moved.
+
+**Left for Reid (41):**
+- **Split events, 16** (port-operations `BerthEventSplit` x11,
+  vessel-management `VesselEventSplit` x5). The split turns PortCall/Voyage
+  milestones into Berth/Vessel commands, but is fed only by the Berth/Vessel
+  entity's own `…Events2` outlet; PortCall's events go to PortAnalytics alone
+  (an outlet feeds one connector). Fix needs a second event outlet on
+  PortCall/Voyage into the split, making it a router.
+- **External adaptor events, 7** (store-operations FromHRService x2,
+  job-site-management x2, bid-management x2, supply-chain x1). The adaptor
+  handles an event the external context declares, but the external's
+  outlet publishes a single event or an alternation missing it. Recommended:
+  give each external context an `<Ext>Event` alternation of what it
+  publishes and type its outlet and the adaptor's inlet with it. That
+  changes the external system's interface, hence the ruling.
+- **Outbound adaptor clauses, 4** (assembly-operations `ToQualityService`
+  x2 and `ToWorkOrderService` handle their own entity's events, but are fed
+  commands; point-of-sale `ToReceiptService` handles `GenerateReceipt` but
+  is fed TransactionEvents). Look stale; deleting needs Reid's say.
+- **Repository commands, 9** (api-management, clinical-trials,
+  identity-management `Store…`/`Delete…`; language-coverage
+  `PersistStationCommissioned`/`Retired`). No inlet admits them. The first
+  three look like leftover CRUD beside the `Persist…` path; language-coverage
+  needs the four-step repository wiring.
+- **Entity commands, 5** (lab-orders ConfirmCriticalValueReadBack,
+  learning-management x2, order-management ProcessRefund,
+  policy-administration DeclineRenewal): the entity handles the command and
+  its context never relays it there.
+
 ### Step 5 — `stmt-yield-argument-prompt` (Reid, 2026-11-18: do it now, ahead of 3 and 4)
 
 **Mechanical half DONE 2026-11-18: 302 -> 154.** `scripts/yield-prompts/
