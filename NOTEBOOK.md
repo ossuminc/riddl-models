@@ -4,9 +4,9 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.7.0-22-efa3dc80`, UNPUBLISHED riddl `main`, override ON:**
+**Pin `2.7.0-25-2d17025b`, UNPUBLISHED riddl `main`, override ON:**
 `riddlcPath := Some(file("../bin/riddlc"))`; libraries from `publishLocal`
-(verified at -22 on `Test/dependencyClasspath`). It carries 2.8.0's creation
+(verified at -25 on `Test/dependencyClasspath`). It carries 2.8.0's creation
 model, `ask query Q(args) of P`, and the prettify fix for `Currency(USD)`.
 **Take the override off at the 2.8.0 tag.** riddl is restaging often: run
 `../bin/riddlc info` first, and compare sweeps only within one binary

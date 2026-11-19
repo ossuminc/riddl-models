@@ -142,6 +142,18 @@ when/else; (14) `verificationSource` = "batch serialization register".
 Filed: `../riddl/task/2026-11-19-a-path-through-a-let-binding-is-not-
 resolved.md`. `valuation.totalAssetsX.amount` validates at 0.
 
+**Row 5 DONE 2026-11-19 (`fd9ecbc5a`)**, as Reid re-ruled: one result event,
+`GateRun(passed, failureDetail?)`, yielded on both paths.
+
+**riddlc -25 (2026-11-19)** holds written literals to their position's type
+(8 `value-not-natural`: counters starting at `0` were typed `Natural`, so
+six fields became `Whole`) and adds `value-optional-for-required`
+(advisory, 25 sites; Reid ruled it a Warning asking for a guard). Step 5
+stands at **14**, all waiting on riddl's five value forms, which are NOT in
+-25 (Reid: being addressed now). The 25 new advisories are the next work
+that needs no new forms, though most want `x otherwise y`, which is one of
+those forms.
+
 | # | site | ruling |
 |---|---|---|
 | 1 | cart `ApplyPromoCode` | `PromoCodeApplied` records `code` + `discountPercent`, not money; the fold computes the saving. The command gains `discountPercent`, which the PricingAdapter fills from `PromotionActivated`. |
