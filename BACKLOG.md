@@ -89,8 +89,14 @@ shape); the two context relays were deleted. `send ... to inlet` is
 deprecated and a scheduled re-emission from `on X` is `stream-graph-cycle`,
 so LATER aggregation periods wait on
 `../riddl/task/2026-11-19-recurring-scheduled-send-is-a-cycle.md` (riddl is
-building it). **Left: 2d (4 internal steps); then usage-metering's
-recurrence once riddl restages.**
+building it). 
+**(c) group 2d APPLIED 2026-11-19 (Reid: A, A), 4 sites** (`apply-c-2d.py`),
+sweep 105 -> 101, 0 new. FailReport (client-reporting, marketing-analytics)
+became the `when prompt(...)` outcome of ComposeReport / CompleteReport;
+usage-rating's ValidateUsageRecord folds into submission and
+CalculateCharges into ApplyRatePlan. The four commands, their clauses and
+relays are deleted. **Step 3 is complete. Left from it: usage-metering's
+recurring AggregateUsage once riddl restages.**
 
 **Classified 2026-11-19 on -27.** 1,298 of the 2,178
 undeliverables are command clauses on a context boundary (the rest are step
