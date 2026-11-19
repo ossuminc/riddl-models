@@ -84,18 +84,22 @@ that echo a yield were aligned with it, since the yields had gained values the
 sends still prompted for.
 
 **The 42 left, by blocker** (census: `scripts/yield-prompts/census.py`):
-- **Minting a new id** (8: wallet `transactionId` x4, `navId`, `invoiceId`,
-  `reportId`, `newEnrollmentId`): the handler can name only `self.id`.
-  Either the requester supplies it (a command field) or the language needs a
-  way to mint one. Reid to rule once for all of them.
-- **No language form** (13): the element of a collection where a key
+- **Minting a new id** (8): DONE 2026-11-18. Reid ruled that ids are created
+  by the `create` value, which returns the id, and are passed by message to
+  whatever needs them, so the sender supplies them. Each command gained the id
+  field, and the yield reads it from the binding.
+- **No language form** (13), filed as
+  `../riddl/task/2026-11-18-value-forms-the-corpus-cannot-write.md`: the element of a collection where a key
   matches (cart `oldQuantity` and three `newTotal`s, supply `costCharged`);
   a sum over a collection (maintenance x2, supply x2); a conditional value
   (fund `netAmount` by buy/sell, payment `capturedAmount` defaulting to the
   authorised amount); `Duration` to minutes (deploy `durationMinutes`); a
   collection value (incident `timeline`).
-- **A context-level yield with no entity state** (3: WalletContext:81 x2,
-  PaymentContext:61). These probably should `forward` to the entity.
+- **A context-level yield with no entity state** (3): DONE 2026-11-18. Both
+  clauses now `forward` to the entity, which already handled the command, so
+  2 undeliverables cleared too. Reid: a context has no state, so it rarely
+  yields an event. One that records the context's own act, such as
+  `MessageWasForwarded`, is legitimate.
 - **No source in state or message** (18): carrier rates, promotion results,
   test output, policy-driven refunds, NAV from market prices, records whose
   subfields are held `Date`s, and so on. The agents' reasons are in their
@@ -104,6 +108,10 @@ sends still prompted for.
 Filed: `../riddl/task/2026-11-18-optional-value-accepted-for-a-required-
 field.md`. `FundInfo.latestNavPerShare: Price?` goes into a required `Price`
 at 0 errors.
+
+**Now 63** = 32 held `Date` + 13 waiting on riddl + 18 model-by-model (Reid:
+"need the details on a case-by-case basis"). The two incident/code-gen
+context sites are in those 18.
 
 **The 154 left need a reading, not a rule.** (As of the mechanical half.) Census groups (the census
 prints each site):
