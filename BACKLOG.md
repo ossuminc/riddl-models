@@ -43,7 +43,113 @@ Per site: **(a)** an app control (`input …Input acquires command X`) when
 the command belongs to a stream the app already has an outlet for; **(b)**
 wire it through the existing inbound adaptor when it clearly comes from
 another system; **(c)** otherwise collect it below for one session with Reid.
-Never delete a clause without his say. NOT STARTED.
+Never delete a clause without his say.
+
+**Classified 2026-11-19 on -27, nothing applied yet.** 1,298 of the 2,178
+undeliverables are command clauses on a context boundary (the rest are step
+4). Structure alone puts 1,297 in (a): the app already has an outlet that
+carries the command, connected to that context (canaried: an `input` that
+acquires it clears the site). Reid chose to separate (b) by reading first
+(option 1 of 3), so four reviewers read every site against its inbound
+adaptors' received events and existing clauses. Result, one row per site in
+`scripts/undeliverable/step3-verdicts.tsv`: **1,235 (a), 17 (b), 46 (c)**,
+reconciled against the site list (0 missing, 0 extra).
+
+Reviewers' conventions: (b) needs a NAMED received event that triggers the
+command; a received event whose clause already carries a `do` note ruling
+the act a person's (e.g. "activation is a person's act") keeps it (a).
+Caveat: the briefs omitted sink adaptors (no outlet, so no connector into
+the context); the reviewers read those from source, and two (b) rows sit on
+one (GPSAdapter, FromCardNetworkService) and need an outlet added.
+
+Seen in passing, not step 3: claims-processing translates
+`PaymentService.PaymentVoided` into `IssuePay`, which looks inverted.
+
+**(b), 17: wire through the adaptor**
+
+| model | command | adaptor / trigger | why |
+|---|---|---|---|
+| e-commerce/order-management | ShipOrder | ShippingAdapter / ShipmentPickedUp | carrier pickup is the order shipping; tracking number arrives with it |
+| field-operations/equipment-tracking | UpdateLocation | GPSAdapter / LocationPing | GPS ping updates equipment location (GPSAdapter is a sink with no outlet yet, so not in input's adaptor list) |
+| banking/credit-decisioning | ApplyPolicy | FromPolicyEngineService / PolicyEvaluated | policy engine's rule results are what PolicyApplied records (already drives RenderDecision) |
+| banking/credit-decisioning | CalculateScore | FromCreditBureauService / CreditReportReceived | bureau report arrival triggers scoring (already drives AddBureauData) |
+| payments/payment-processing | DeclinePayment | FromCardNetworkService / AuthResponseReceived | a declining network auth response is the decline; adaptor is a sink (not in input list) whose prose already says declining follows from it |
+| trading/order-management | ReportExecution | FromExecutionVenueService / VenueExecution | each venue execution is an execution report; FillOrder stays for the final fill |
+| trading/trade-settlement | AffirmTrade | FromTradeMatchingService / TradeMatchFound | a confirmed match is what affirmation follows (already drives MatchTrade) |
+| events/event-registration | ProcessPayment | FromPaymentProcessingService / PaymentSucceeded | the processor's success carries the transaction the PaymentProcessed record needs; same event already confirms the registration (as airline-reservations wires PaymentSucceeded->ProcessPayment) |
+| events/event-registration | ProcessRefund | FromPaymentProcessingService / RefundSucceeded | money actually returned is the refund processed; airline-reservations wires the same pair |
+| freight/shipment-tracking | MarkOutForDelivery | FromCarrierIntegration / TrackingUpdateReceived | out-for-delivery is a carrier scan in the tracking update; guard on status |
+| freight/shipment-tracking | RecordDelivery | FromCarrierIntegration / TrackingUpdateReceived | delivery is a carrier scan in the tracking update; guard on status |
+| freight/shipment-tracking | RecordPickup | FromCarrierIntegration / TrackingUpdateReceived | carrier pickup scan arrives in the tracking update; guard on reported status |
+| freight/shipment-tracking | UpdateETA | FromCarrierIntegration / TrackingUpdateReceived | carrier-revised ETA arrives in the tracking update; guard on presence |
+| freight/shipment-tracking | UpdateLocation | FromCarrierIntegration / TrackingUpdateReceived | carrier scans report the shipment's location |
+| devops/deployment-pipeline | UpdateEnvironmentArtifact | FromInfrastructureService / InfrastructureDeploymentCompleted | rollout landing on infrastructure is what changes the environment's deployed artifact |
+| devops/incident-management | ResolveIncident | AlertAdapter / AlertResolved | adaptor's own clause already says 'check if incident should be auto-resolved'; guard with when |
+| metering/smart-metering | RecordIntervalData | FromHeadEndSystem / MeterResponseReceived | interval reads are delivered by the head-end system |
+
+Weakest: the five shipment-tracking rows share one generic
+`TrackingUpdateReceived` (already -> `AddTrackingEvent`), each needing a
+status guard. Four triggers already drive another command, so the adaptor
+would send two: CreditReportReceived, PolicyEvaluated, TradeMatchFound,
+ShipmentPickedUp (and event-registration's PaymentSucceeded).
+
+**(c), 46: for the session with Reid**
+
+| model | command | reason |
+|---|---|---|
+| e-commerce/order-management | MarkFailed | failed delivery is reported by the carrier but ShippingAdapter receives no delivery-failure event |
+| e-commerce/shopping-cart | AbandonCart | cart abandonment is inactivity-driven, not a person; no event triggers it (quiescence?) |
+| retail/inventory-management | DeductStock | deduction driven by fulfillment/shipping; no inbound adaptor from that system |
+| retail/inventory-management | ReleaseReservation | release driven by order cancellation/expiry; no inbound adaptor from an order system |
+| retail/inventory-management | ReserveStock | reservation driven by order management; no inbound adaptor from an order system |
+| product-development/plm-integration | ProcessChangeEvent | PLM change notifications come from the PLM system; adaptor receives only ProductFetched |
+| gaming/matchmaking | EndMatch | match end reported by the game server; no game-server adaptor |
+| gaming/matchmaking | StartMatch | match start is game-server/lobby driven; no adaptor event triggers it (ServerAllocated already -> AssignServer) |
+| gaming/matchmaking | UpdateScore | scores come from the game server; no game-server adaptor |
+| media/advertising-delivery | OpenImpressionOpportunity | ad request from player/SSP; no inbound adaptor |
+| media/advertising-delivery | RecordClick | click telemetry; no inbound adaptor |
+| media/advertising-delivery | RecordComplete | player beacon telemetry; no inbound adaptor |
+| media/advertising-delivery | RecordError | player error telemetry; no inbound adaptor |
+| media/advertising-delivery | RecordQuartile | player beacon telemetry; no inbound adaptor |
+| media/advertising-delivery | RecordSkip | player beacon telemetry; no inbound adaptor |
+| media/advertising-delivery | RecordStart | player beacon telemetry; no inbound adaptor |
+| media/streaming-platform | ReportError | player-emitted error telemetry, no adaptor receives it |
+| media/streaming-platform | ReportMetrics | playback telemetry from the player client, no adaptor receives it |
+| banking/fund-transfer | ReturnTransfer | returns originate on the ACH/wire network (receiving bank); adaptors receive only ACHProcessed/WireProcessed, no return event |
+| payments/payment-processing | RecordDispute | chargebacks arrive from the card network/issuer; no inbound adaptor receives a dispute event |
+| payments/payment-processing | SettlePayment | settlement confirmation comes from the settlement system; FromSettlementService receives only SettlementSubmitted, an echo of our own submission |
+| trading/order-management | ExpireOrder | time-in-force expiry is clock-driven, not a person; no adaptor event |
+| trading/trade-settlement | RecordPartialSettlement | partial settlement is reported by the custodian but no partial-settlement event is received; SettlementExecuted maps to ConfirmSettlement |
+| asset-management/client-reporting | FailReport | report generation failure is system-raised; unclear whether a person issues it |
+| fulfillment/order-fulfillment | ConfirmDelivery | delivery confirmation comes from the carrier but FromCarrierSystem receives only ShipmentBooked |
+| fulfillment/order-fulfillment | FailDelivery | delivery failure comes from the carrier but FromCarrierSystem receives only ShipmentBooked |
+| supply-chain/demand-planning | RecordActuals | actual demand originates in ERP/POS; ERP adaptor receives only ForecastPublished/HistoricalDemandFetched |
+| supply-chain/order-fulfillment | ConfirmDelivery | delivery confirmed by carrier; ShippingCarrier adaptor receives only ShipmentCreated |
+| advertising/ad-serving | RecordClick | ad-click telemetry from the ad server/browser, no adaptor |
+| analytics/attribution | ExpirePath | lookback-window timeout, not a person or another system; likely a quiescence/timer |
+| analytics/attribution | RecordConversion | conversion telemetry from site/CRM; no adaptor receives a conversion event (EventTracked is generic and ruled an echo) |
+| analytics/attribution | CreateConversionPath | web-analytics telemetry (first touch); FromWebAnalytics receives only generic EventTracked, ruled an echo of our touchpoint |
+| analytics/marketing-analytics | FailReport | report generation failure is system-raised; unclear whether a person issues it |
+| oil-gas/pipeline-operations | RecordFlowReading | flow readings come from SCADA/meters, model has no inbound adaptor |
+| devops/observability | CreateAlert | alerts come from rule evaluation over metrics; FromMetricsCollectionService receives only MetricsIngested, not a threshold breach |
+| saas/multi-tenant | RecordUsage | usage metering telemetry from the platform; no adaptor receives a usage event |
+| saas/usage-metering | AggregateUsage | periodic system aggregation, not a person and no triggering event; maybe on quiescence/timer |
+| saas/usage-metering | RecordBatchEvents | usage events come from customer systems via ingestion API, no adaptor |
+| billing/usage-rating | SubmitUsageRecord | usage records come from network mediation, no adaptor receives them |
+| billing/usage-rating | CalculateCharges | automated rating-pipeline step; unclear who issues it (internal follow-on of validate?) |
+| billing/usage-rating | ValidateUsageRecord | automated rating-pipeline step; unclear who issues it (internal follow-on of submit?) |
+| freight/customs-brokerage | RecordLiquidation | liquidation is posted by CBP; ACE adaptor receives no liquidation event |
+| passenger/transit-operations | UpdatePassengerLoad | automatic passenger counter telemetry; no inbound adaptor |
+| metering/smart-metering | RaiseAlert | meter alarms come from the head-end; it sends no alarm event, only MeterResponseReceived |
+| water/water-distribution | RecordPressure | pressure telemetry from SCADA/sensors; model has no SCADA adaptor |
+| water/water-distribution | UpdateReservoirLevel | reservoir level telemetry from SCADA/sensors; model has no SCADA adaptor |
+
+Themes: telemetry with no adaptor at all (advertising-delivery x7,
+streaming-platform, ad-serving, water-distribution, pipeline, transit,
+multi-tenant, usage-*); carrier/network outcomes whose adaptor receives no
+such event (order-fulfillment x2 models, fund-transfer, payment-processing,
+customs, trade-settlement); clock-driven (AbandonCart, ExpireOrder,
+ExpirePath, AggregateUsage: `on quiescence` candidates).
 
 ### Step 4 — undelivered queries (622) and results (180) (Reid's ruling)
 
