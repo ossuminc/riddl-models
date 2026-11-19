@@ -4,17 +4,15 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.7.0-20-8f855a52`, UNPUBLISHED riddl `main`, override ON** --
+**Pin `2.7.0-22-efa3dc80`, UNPUBLISHED riddl `main`, override ON** --
 `riddlcPath := Some(file("../bin/riddlc"))`, libraries from `publishLocal`.
 It carries 2.8.0's creation model, `ask query Q(args) of P`, and the
 external-context exemption for `stmt-yield-argument-prompt`. BAST revision
 33. **Take the override off at the 2.8.0 tag.**
 
-**`../bin/riddlc` is now `2.7.0-22-efa3dc80`** (Reid restaged it
-2026-11-18 19:04) while `riddlVersion` still says -20 and the test suite
-links the -20 `publishLocal` libraries. -20 has no backup. Moving the pin and
-`publishLocal` to -22 is pending, and is Reid's call. Compare sweeps only
-within one binary.
+-22 (2026-11-18) fixes riddl's prettify dropping `Currency(USD)`; the libraries
+are `publishLocal`ed at -22 (checked on the test classpath). Numbers taken on
+-20 are not comparable with -22 ones.
 
 **Reid's goal (2026-11-18): every model free of errors, warnings and
 deprecations on this pin.** Tracked as **BACKLOG #43**, with the per-rule
