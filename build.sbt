@@ -53,7 +53,7 @@ enablePlugins(RiddlSbtPlugin)
 // Whenever a rule the corpus needs lands after a tag, the override goes back
 // on -- and comes off at the first published tag that carries it, which is
 // this edit.
-lazy val riddlVersion = "2.7.0-25-2d17025b"
+lazy val riddlVersion = "2.7.0-27-faf60865"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
