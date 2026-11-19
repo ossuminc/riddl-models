@@ -151,15 +151,20 @@ context PaymentContext as router is {
   }
   connector 'PaymentCommand Stream Intake' is from outlet PaymentContext.PaymentCommandStreamOut to inlet PaymentContext.Payment.PaymentCommands
   connector 'PaymentResult Stream Egress' is from outlet PaymentContext.Payment.PaymentReplies to inlet PaymentContext.PaymentResultStreamIn
-  inlet PaymentContextFromFromCardNetworkService is command Payment.DeclinePayment with {
+  type FromCardNetworkServiceCommand is one of {
+    Payment.DeclinePayment or Payment.RecordDispute
+  } with {
+    briefly "What FromCardNetworkService turns that service's news into"
+  }
+  inlet PaymentContextFromCardNetworkService is type PaymentContext.FromCardNetworkServiceCommand with {
     briefly "What FromCardNetworkService makes of that service's news"
   }
-  connector 'FromCardNetworkService Intake' is from outlet PaymentContext.FromCardNetworkService.FromCardNetworkServiceToPaymentContext to inlet PaymentContext.PaymentContextFromFromCardNetworkService with {
+  connector 'FromCardNetworkService Intake' is from outlet PaymentContext.FromCardNetworkService.FromCardNetworkServiceToPaymentContext to inlet PaymentContext.PaymentContextFromCardNetworkService with {
     briefly "What FromCardNetworkService makes of that news, on its way in"
   }
   adaptor FromCardNetworkService from context CardNetworkService as flow is { 
-    inlet FromCardNetworkServiceIn is event CardNetworkService.AuthResponseReceived
-    outlet FromCardNetworkServiceToPaymentContext is command Payment.DeclinePayment
+    inlet FromCardNetworkServiceIn is type CardNetworkService.CardNetworkServiceEvent
+    outlet FromCardNetworkServiceToPaymentContext is type PaymentContext.FromCardNetworkServiceCommand
     handler FromCardNetworkServiceHandler is {
       on authResponseReceived: event CardNetworkService.AuthResponseReceived is {
         do "the network has answered; authorising or declining follows from what it says"
@@ -167,6 +172,9 @@ context PaymentContext as router is {
           let declinePayment: type Payment.DeclinePayment = prompt("the decline the network's answer records")
           send declinePayment to outlet PaymentContext.FromCardNetworkService.FromCardNetworkServiceToPaymentContext
         end
+      }
+      on chargebackReceived: event CardNetworkService.ChargebackReceived is {
+        send command Payment.RecordDispute(paymentId = chargebackReceived.paymentId, dispute = chargebackReceived.dispute) to outlet PaymentContext.FromCardNetworkService.FromCardNetworkServiceToPaymentContext
       }
       on other is {
         error "Unexpected message for adaptor FromCardNetworkService"
@@ -315,11 +323,21 @@ context PaymentContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromSettlementService from context SettlementService as sink is { 
-    inlet FromSettlementServiceIn is event SettlementService.SettlementSubmitted
+  inlet PaymentContextFromSettlementService is command Payment.SettlePayment with {
+    briefly "What FromSettlementService makes of that service's news"
+  }
+  connector 'FromSettlementService Intake' is from outlet PaymentContext.FromSettlementService.FromSettlementServiceToPaymentContext to inlet PaymentContext.PaymentContextFromSettlementService with {
+    briefly "What FromSettlementService makes of that news, on its way in"
+  }
+  adaptor FromSettlementService from context SettlementService as flow is { 
+    inlet FromSettlementServiceIn is type SettlementService.SettlementServiceEvent
+    outlet FromSettlementServiceToPaymentContext is command Payment.SettlePayment
     handler FromSettlementServiceHandler is {
       on settlementSubmitted: event SettlementService.SettlementSubmitted is {
         do "settlement has the batch; the payment was captured before it was sent"
+      }
+      on settlementCompleted: event SettlementService.SettlementCompleted is {
+        send command Payment.SettlePayment(paymentId = settlementCompleted.paymentId, settlement = settlementCompleted.settlement) to outlet PaymentContext.FromSettlementService.FromSettlementServiceToPaymentContext
       }
       on other is {
         error "Unexpected message for adaptor FromSettlementService"

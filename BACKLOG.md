@@ -56,6 +56,17 @@ else in the sweep moved; gates, prettify and BAST round trip (189/189) green.
 adaptors by `scripts/undeliverable/apply-b-sites.py`; sweep 164 -> 147, 0
 new. **Left: the 46 (c) below, for Reid.**
 
+**(c) group 2a APPLIED 2026-11-19 (Reid: option A), 13 sites.** The source
+system was wired in but never published the trigger, so each external
+context gained that event (carrying the command's fields), its `<Ext>Event`
+alternation, and a guarded publication at the end of the clause it
+follows; the adaptor sends the command field for field
+(`scripts/undeliverable/apply-c-2a.py`). Sweep 147 -> 134, 0 new. Rows:
+MarkFailed, ProcessChangeEvent, ReturnTransfer (ACH only), RecordDispute,
+SettlePayment, RecordPartialSettlement, ConfirmDelivery x2, FailDelivery,
+RecordActuals, CreateAlert, RecordLiquidation, RaiseAlert. **Left: 2b (25
+sources with no adaptor), 2c (4 time-driven), 2d (4 internal steps).**
+
 **Classified 2026-11-19 on -27.** 1,298 of the 2,178
 undeliverables are command clauses on a context boundary (the rest are step
 4). Structure alone puts 1,297 in (a): the app already has an outlet that

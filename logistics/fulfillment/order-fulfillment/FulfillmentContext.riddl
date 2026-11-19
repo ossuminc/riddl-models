@@ -87,7 +87,12 @@ context FulfillmentContext as router is {
   connector 'ToWarehouseSystem Intake' is from outlet FulfillmentContext.ToWarehouseSystem.ToWarehouseSystemToFulfillmentContext to inlet FulfillmentContext.FulfillmentContextFromToWarehouseSystem with {
     briefly "Answers translated by ToWarehouseSystem, on their way in"
   }
-  inlet FulfillmentContextFromCarrierSystem is command FulfillmentOrder.CreateShippingLabel with {
+  type FromCarrierSystemCommand is one of {
+    FulfillmentOrder.CreateShippingLabel or FulfillmentOrder.FailDelivery or FulfillmentOrder.ConfirmDelivery
+  } with {
+    briefly "What FromCarrierSystem turns that service's news into"
+  }
+  inlet FulfillmentContextFromCarrierSystem is type FulfillmentContext.FromCarrierSystemCommand with {
     briefly "What FromCarrierSystem makes of that service's news"
   }
   connector 'FromCarrierSystem Intake' is from outlet FulfillmentContext.FromCarrierSystem.FromCarrierSystemToFulfillmentContext to inlet FulfillmentContext.FulfillmentContextFromCarrierSystem with {
@@ -164,12 +169,18 @@ context FulfillmentContext as router is {
   connector 'FulfillmentOrderCommand Stream Intake' is from outlet FulfillmentContext.FulfillmentOrderCommandStreaOut to inlet FulfillmentContext.FulfillmentOrder.FulfillmentOrderCommands
   connector 'FulfillmentOrderResult Stream Egress' is from outlet FulfillmentContext.FulfillmentOrder.FulfillmentOrderReplies to inlet FulfillmentContext.FulfillmentOrderResultStreamIn
   adaptor FromCarrierSystem from context CarrierSystem as flow is { 
-    inlet FromCarrierSystemIn is event CarrierSystem.ShipmentBooked
-    outlet FromCarrierSystemToFulfillmentContext is command FulfillmentOrder.CreateShippingLabel
+    inlet FromCarrierSystemIn is type CarrierSystem.CarrierSystemEvent
+    outlet FromCarrierSystemToFulfillmentContext is type FulfillmentContext.FromCarrierSystemCommand
     handler FromCarrierSystemHandler is {
       on shipmentBooked: event CarrierSystem.ShipmentBooked is {
         let item0: type FulfillmentOrder.CreateShippingLabel = prompt("translate the shipmentBooked event into a CreateShippingLabel, the carrier's booking is what the label and its tracking number are printed from")
         send item0 to outlet FulfillmentContext.FromCarrierSystem.FromCarrierSystemToFulfillmentContext
+      }
+      on deliveryConfirmedByCarrier: event CarrierSystem.DeliveryConfirmedByCarrier is {
+        send command FulfillmentOrder.ConfirmDelivery(orderId = deliveryConfirmedByCarrier.orderId, confirmation = deliveryConfirmedByCarrier.confirmation) to outlet FulfillmentContext.FromCarrierSystem.FromCarrierSystemToFulfillmentContext
+      }
+      on deliveryFailedByCarrier: event CarrierSystem.DeliveryFailedByCarrier is {
+        send command FulfillmentOrder.FailDelivery(orderId = deliveryFailedByCarrier.orderId, reason = deliveryFailedByCarrier.reason, failedAt = deliveryFailedByCarrier.failedAt) to outlet FulfillmentContext.FromCarrierSystem.FromCarrierSystemToFulfillmentContext
       }
       on other is {
         error "Unexpected message for adaptor FromCarrierSystem"

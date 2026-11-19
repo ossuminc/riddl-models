@@ -88,7 +88,10 @@ def main():
                 continue
             line = lines[lineno - 1]
             # Only rewrite the ascription belonging to THIS identifier.
-            pat = re.compile(rf"(\b{re.escape(name)}\s+)as\s+{re.escape(old)}\b")
+            # An adaptor's ascription follows its context reference
+            # (`adaptor A from context X as sink`), so allow that between.
+            pat = re.compile(rf"(\b{re.escape(name)}\s+(?:(?:from|to)\s+context\s+[\w.]+\s+)?)"
+                             rf"as\s+{re.escape(old)}\b")
             if not pat.search(line):
                 print(f"SKIP {arg}:{fname}:{lineno} no 'as {old}' after '{name}':\n     {line.strip()[:120]}")
                 skipped += 1
