@@ -64,8 +64,21 @@ follows; the adaptor sends the command field for field
 (`scripts/undeliverable/apply-c-2a.py`). Sweep 147 -> 134, 0 new. Rows:
 MarkFailed, ProcessChangeEvent, ReturnTransfer (ACH only), RecordDispute,
 SettlePayment, RecordPartialSettlement, ConfirmDelivery x2, FailDelivery,
-RecordActuals, CreateAlert, RecordLiquidation, RaiseAlert. **Left: 2b (25
-sources with no adaptor), 2c (4 time-driven), 2d (4 internal steps).**
+RecordActuals, CreateAlert, RecordLiquidation, RaiseAlert.
+
+**(c) group 2b APPLIED 2026-11-19, 25 sites** (`apply-c-2b.py`), sweep 134
+-> 109, 0 new. Filed as "no adaptor", but the reviewers' briefs omitted
+sinks: re-read, 5 were (b) (inventory-management's OrderAdapter x3,
+usage-rating's mediation CDR, usage-metering's ingestion -- guarded on
+attribution) and 3 were 2a (pipeline SCADA flow reading, attribution's
+WebAnalytics first touch and conversion); applied under those rulings.
+The other 17 took option A with Reid's rider to minimise external
+contexts: ONE new `external context <X> as source` per model (VideoPlayer
+x2, ClickTracker, GameServer, SCADASystem, PassengerCounter,
+UsageCollector), its events carrying the commands' fields, and a `From<X>`
+adaptor. advertising-delivery's player events are VAST beacons
+(`StartBeaconFired`...) because `AdStarted` etc. are the entity's own.
+**Left: 2c (4 time-driven), 2d (4 internal steps).**
 
 **Classified 2026-11-19 on -27.** 1,298 of the 2,178
 undeliverables are command clauses on a context boundary (the rest are step

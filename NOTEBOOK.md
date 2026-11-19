@@ -15,14 +15,14 @@ deprecations.** Tracked as **BACKLOG #43**. `checkAll` is green but does NOT
 enforce the zero; the sweep does: `./scripts/collect-warnings.py
 --include-patterns`.
 
-### Where #43 stands (sweep on -41, after (c) 2a): 134 findings
+### Where #43 stands (sweep on -41, after (c) 2b): 109 findings
 
 | finding | count | state |
 |---|---:|---|
 | errors, deprecations | 0 | done (steps 1, 2; -25's 8 `value-not-natural` fixed) |
 | `stmt-yield-argument-prompt` | 14 | UNBLOCKED: -41 has the value forms (`task/2026-11-19-riddl-value-forms-landed.md`) |
 | `value-optional-for-required` | 25 | UNBLOCKED: -41 has `x otherwise y`; a default per site (Reid's ruling) |
-| `msg-clause-undeliverable` | 88 | steps 3 (a), (b), (c) 2a, 4, projector events DONE. Await Reid: 33 (c) in 2b/2c/2d, 14 queries without `replies`, 41 event/command sites (BACKLOG #43) |
+| `msg-clause-undeliverable` | 63 | steps 3 (a), (b), (c) 2a/2b, 4, projector events DONE. Await Reid: 8 (c) in 2c/2d, 14 queries without `replies`, 41 event/command sites (BACKLOG #43) |
 | `stream-outlet-never-sent` | 3 | with the 41 |
 | `entity-no-query-clause` | 4 | code-generator x3 (its app is a source process: Reid), SurveyStation (crash fixed in -41: put the look-up back) |
 

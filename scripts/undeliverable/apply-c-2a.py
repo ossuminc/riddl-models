@@ -155,9 +155,14 @@ class Files:
 
 
 def main():
-    apply = "--apply" in sys.argv
+    run(SITES, "--apply" in sys.argv)
+
+
+def run(sites, apply):
+    """plan, and with `apply` write, the given 2a-shaped sites (also used by
+    apply-c-2b.py for the sites that turned out to be 2a)"""
     by_model = defaultdict(list)
-    for s in SITES:
+    for s in sites:
         by_model[s[0]].append(s)
     total = 0
     pending = []
@@ -170,6 +175,7 @@ def main():
             kids[n.get("parent")].append(n)
         F = Files(md)
         alt_done, adaptor_done = set(), set()
+        sink_made, prev_alt = {}, {}
         for (_, ext, ev, antecedent, guard, adaptor, cmdrel, brief) in sites:
             # the command, its fields and source
             cmd = [n for n in nodes if n["kind"] == "command" and n["path"].endswith("." + cmdrel)]
@@ -223,9 +229,24 @@ def main():
             if single_in and adaptor not in adaptor_done:
                 F.sub(af, f"    inlet {inl[0]['id']} is event {ext}.{single_in}\n",
                       f"    inlet {inl[0]['id']} is type {ext}.{ext}Event\n")
-            if not outs:  # a sink: give it an outlet, an intake inlet and a connector
+            if not outs and adaptor in sink_made:  # a second command for a sink made above
+                on, iname, first = sink_made[adaptor]
+                altname = f"{adaptor}Command"
+                if first is not None:
+                    F.sub(af, f"    outlet {on} is command {first}\n", f"    outlet {on} is type {ctx}.{altname}\n")
+                    F.sub(af, f"  inlet {iname} is command {first} with {{\n",
+                          f"  type {altname} is one of {{\n    {first} or {cmdrel}\n  }} with {{\n"
+                          f"    briefly \"What {adaptor} turns that service's news into\"\n  }}\n"
+                          f"  inlet {iname} is type {ctx}.{altname} with {{\n")
+                    sink_made[adaptor] = (on, iname, None)
+                else:
+                    F.sub(af, f"    {prev_alt[adaptor]}\n", f"    {prev_alt[adaptor]} or {cmdrel}\n")
+                prev_alt[adaptor] = (prev_alt.get(adaptor) or first) + " or " + cmdrel
+                outlet_id = on
+            elif not outs:  # a sink: give it an outlet, an intake inlet and a connector
                 on = f"{adaptor}To{ctx}"
                 iname = f"{ctx}From{adaptor.removeprefix('From')}"
+                sink_made[adaptor] = (on, iname, cmdrel)
                 F.after(af, f"    inlet {inl[0]['id']} is ", ahead, f"    outlet {on} is command {cmdrel}\n")
                 F.before(af, ahead.strip(), ahead,
                          f"  inlet {iname} is command {cmdrel} with {{\n"
