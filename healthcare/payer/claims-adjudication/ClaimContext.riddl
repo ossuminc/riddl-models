@@ -40,8 +40,56 @@ context ClaimContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet ClaimRepositoryQueriesIn is query GetClaimsStats with {
+    briefly "Look-ups of the claim repository"
+    described as {
+      |ClaimsAdjudicationApp's look-ups, on their way to the claim repository.
+    }
+  }
+  outlet ClaimRepositoryQueriesOut is query GetClaimsStats
+ with {
+    briefly "Look-ups on their way to the claim repository"
+    described as {
+      |Each look-up goes to the claim repository it names.
+    }
+  }
+  inlet ClaimRepositoryRepliesIn is result ClaimsStatsView with {
+    briefly "The claim repository's answers"
+    described as {
+      |What the claim repository answers about itself.
+    }
+  }
+  outlet ClaimRepositoryRepliesOut is result ClaimsStatsView
+ with {
+    briefly "Answers to ClaimsAdjudicationApp"
+    described as {
+      |The reply leg of ClaimsAdjudicationApp's look-ups of the claim repository.
+    }
+  }
+  inlet ClaimQueriesIn is query Claim.GetClaim with {
+    briefly "Look-ups of the claim"
+    described as {
+      |ClaimsAdjudicationApp's look-ups, on their way to the claim.
+    }
+  }
+  outlet ClaimQueriesOut is query Claim.GetClaim
+ with {
+    briefly "Look-ups on their way to the claim"
+    described as {
+      |Each look-up goes to the claim it names.
+    }
+  }
   inlet ClaimContextFromToAuthorizationService is command Claim.PendClaim with {
     briefly "What ToAuthorizationService makes of the answers it gets"
+  }
+  connector 'ClaimRepositoryQuery Intake' is from outlet ClaimContext.ClaimRepositoryQueriesOut to inlet ClaimContext.ClaimRepository.ClaimRepositoryQueries with {
+    briefly "Look-ups on their way to the claim repository"
+  }
+  connector 'ClaimRepositoryReply Egress' is from outlet ClaimContext.ClaimRepository.ClaimRepositoryResponses to inlet ClaimContext.ClaimRepositoryRepliesIn with {
+    briefly "The claim repository's answers on their way to the boundary"
+  }
+  connector 'ClaimQuery Intake' is from outlet ClaimContext.ClaimQueriesOut to inlet ClaimContext.Claim.ClaimQueries with {
+    briefly "Look-ups on their way to the claim"
   }
   connector 'ToAuthorizationService Intake' is from outlet ClaimContext.ToAuthorizationService.ToAuthorizationServiceToClaimContext to inlet ClaimContext.ClaimContextFromToAuthorizationService with {
     briefly "Answers translated by ToAuthorizationService, on their way in"
@@ -69,6 +117,15 @@ context ClaimContext as router is {
   inlet ClaimResultStreamIn is result Claim.ClaimResult
   outlet ClaimResultStreamOut is result Claim.ClaimResult
   handler ClaimContextBoundary is {
+    on getClaimsStats: query GetClaimsStats is {
+      forward getClaimsStats to outlet ClaimContext.ClaimRepositoryQueriesOut
+    }
+    on claimsStatsView: result ClaimsStatsView is {
+      send claimsStatsView to outlet ClaimContext.ClaimRepositoryRepliesOut
+    }
+    on getClaim: query Claim.GetClaim is {
+      forward getClaim to outlet ClaimContext.ClaimQueriesOut
+    }
     on submitClaim: command ClaimContext.SubmitClaim is {
       let newClaim = create entity ClaimContext.Claim(member = submitClaim.member, provider = submitClaim.provider, header = submitClaim.header, serviceLines = submitClaim.serviceLines)
       log newClaim
@@ -115,7 +172,7 @@ context ClaimContext as router is {
     }
   }
   connector 'ClaimCommand Stream Intake' is from outlet ClaimContext.ClaimCommandStreamOut to inlet ClaimContext.Claim.ClaimCommands
-  connector 'ClaimResult Stream Egress' is from outlet ClaimContext.ClaimRepository.ClaimRepositoryResponses to inlet ClaimContext.ClaimResultStreamIn
+  connector 'ClaimResult Stream Egress' is from outlet ClaimContext.Claim.ClaimReplies to inlet ClaimContext.ClaimResultStreamIn
   adaptor ToAuthorizationService to context AuthorizationService as router is { 
     outlet ToAuthorizationServiceToClaimContext is command Claim.PendClaim
     inlet ToAuthorizationServiceIn is type ClaimEvent
@@ -321,7 +378,13 @@ context ClaimContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository ClaimRepository as flow is {
+  repository ClaimRepository as merge is {
+    inlet ClaimRepositoryQueries is query GetClaimsStats with {
+      briefly "Look-ups of this claim repository"
+      described as {
+        |What ClaimsAdjudicationApp asks of the claim repository, by way of ClaimContext.
+      }
+    }
     inlet ClaimRepositoryFromClaimsAnalytics is type ClaimRepositoryCommand
     command PersistAppealResolved is {
       claimId: ClaimId with {
@@ -617,7 +680,7 @@ context ClaimContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet ClaimRepositoryResponses is result Claim.ClaimResult
+    outlet ClaimRepositoryResponses is result ClaimsStatsView
     record StoredClaim is {
       claimId: ClaimId with {
         briefly "claimId"

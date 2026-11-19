@@ -66,10 +66,58 @@ context MaintenanceContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  connector 'MaintenanceRepositoryQuery Intake' is from outlet MaintenanceContext.MaintenanceRepositoryQueriesOut to inlet MaintenanceContext.MaintenanceRepository.MaintenanceRepositoryQueries with {
+    briefly "Look-ups on their way to the maintenance repository"
+  }
+  connector 'MaintenanceRepositoryReply Egress' is from outlet MaintenanceContext.MaintenanceRepository.MaintenanceRepositoryResponses to inlet MaintenanceContext.MaintenanceRepositoryRepliesIn with {
+    briefly "The maintenance repository's answers on their way to the boundary"
+  }
+  connector 'MaintenanceOrderQuery Intake' is from outlet MaintenanceContext.MaintenanceOrderQueriesOut to inlet MaintenanceContext.MaintenanceOrder.MaintenanceOrderQueries with {
+    briefly "Look-ups on their way to the maintenance order"
+  }
   connector 'InventoryAdapter Intake' is from outlet MaintenanceContext.InventoryAdapter.InventoryAdapterToMaintenanceContext to inlet MaintenanceContext.MaintenanceContextFromInventoryAdapter with {
     briefly "InventoryAdapter messages on their way to MaintenanceContext"
     described as {
       |The channel the `tell` travels.
+    }
+  }
+  inlet MaintenanceRepositoryQueriesIn is type MaintenanceRepository.MaintenanceRepositoryQuery with {
+    briefly "Look-ups of the maintenance repository"
+    described as {
+      |EquipmentMaintenanceApp's look-ups, on their way to the maintenance repository.
+    }
+  }
+  outlet MaintenanceRepositoryQueriesOut is type MaintenanceRepository.MaintenanceRepositoryQuery
+ with {
+    briefly "Look-ups on their way to the maintenance repository"
+    described as {
+      |Each look-up goes to the maintenance repository it names.
+    }
+  }
+  inlet MaintenanceRepositoryRepliesIn is type MaintenanceRepository.MaintenanceRepositoryReply with {
+    briefly "The maintenance repository's answers"
+    described as {
+      |What the maintenance repository answers about itself.
+    }
+  }
+  outlet MaintenanceRepositoryRepliesOut is type MaintenanceRepository.MaintenanceRepositoryReply
+ with {
+    briefly "Answers to EquipmentMaintenanceApp"
+    described as {
+      |The reply leg of EquipmentMaintenanceApp's look-ups of the maintenance repository.
+    }
+  }
+  inlet MaintenanceOrderQueriesIn is query MaintenanceOrder.GetMaintenanceOrder with {
+    briefly "Look-ups of the maintenance order"
+    described as {
+      |EquipmentMaintenanceApp's look-ups, on their way to the maintenance order.
+    }
+  }
+  outlet MaintenanceOrderQueriesOut is query MaintenanceOrder.GetMaintenanceOrder
+ with {
+    briefly "Look-ups on their way to the maintenance order"
+    described as {
+      |Each look-up goes to the maintenance order it names.
     }
   }
   inlet MaintenanceContextFromInventoryAdapter is type MaintenanceContext.MaintenanceOrderRequest with {
@@ -83,6 +131,21 @@ context MaintenanceContext as router is {
   inlet MaintenanceOrderResultStreamIn is result MaintenanceOrder.MaintenanceOrderResult
   outlet MaintenanceOrderResultStreamOut is result MaintenanceOrder.MaintenanceOrderResult
   handler MaintenanceContextBoundary is {
+    on getEquipmentReliabilityMetrics: query GetEquipmentReliabilityMetrics is {
+      forward getEquipmentReliabilityMetrics to outlet MaintenanceContext.MaintenanceRepositoryQueriesOut
+    }
+    on getMaintenanceWorkMetrics: query GetMaintenanceWorkMetrics is {
+      forward getMaintenanceWorkMetrics to outlet MaintenanceContext.MaintenanceRepositoryQueriesOut
+    }
+    on equipmentReliabilityMetricsView: result EquipmentReliabilityMetricsView is {
+      send equipmentReliabilityMetricsView to outlet MaintenanceContext.MaintenanceRepositoryRepliesOut
+    }
+    on maintenanceWorkMetricsView: result MaintenanceWorkMetricsView is {
+      send maintenanceWorkMetricsView to outlet MaintenanceContext.MaintenanceRepositoryRepliesOut
+    }
+    on getMaintenanceOrder: query MaintenanceOrder.GetMaintenanceOrder is {
+      forward getMaintenanceOrder to outlet MaintenanceContext.MaintenanceOrderQueriesOut
+    }
     on createMaintenanceOrder: command MaintenanceContext.CreateMaintenanceOrder is {
       let givenCreatedAt: type TimeStamp = prompt("the created at of this maintenance order created")
       let newMaintenanceOrder = create entity MaintenanceContext.MaintenanceOrder(equipmentId = createMaintenanceOrder.equipmentId, equipmentName = createMaintenanceOrder.equipmentName, maintenanceType = createMaintenanceOrder.maintenanceType, priority = createMaintenanceOrder.priority, scheduledDate = createMaintenanceOrder.scheduledDate, createdAt = givenCreatedAt, description = createMaintenanceOrder.description, estimatedDuration = createMaintenanceOrder.estimatedDuration, tasks = createMaintenanceOrder.tasks)
@@ -118,7 +181,7 @@ context MaintenanceContext as router is {
     }
   }
   connector 'MaintenanceOrderCommand Stream Intake' is from outlet MaintenanceContext.MaintenanceOrderCommandStreaOut to inlet MaintenanceContext.MaintenanceOrder.MaintenanceOrderCommands
-  connector 'MaintenanceOrderResult Stream Egress' is from outlet MaintenanceContext.MaintenanceRepository.MaintenanceRepositoryResponses to inlet MaintenanceContext.MaintenanceOrderResultStreamIn
+  connector 'MaintenanceOrderResult Stream Egress' is from outlet MaintenanceContext.MaintenanceOrder.MaintenanceOrderReplies to inlet MaintenanceContext.MaintenanceOrderResultStreamIn
   include "types.riddl"
   include "MaintenanceOrder.riddl"
   // Adaptors for external system integration
@@ -318,7 +381,29 @@ context MaintenanceContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository MaintenanceRepository as flow is {
+  repository MaintenanceRepository as merge is {
+    type MaintenanceRepositoryQuery is one of {
+      GetEquipmentReliabilityMetrics or GetMaintenanceWorkMetrics
+    } with {
+      briefly "What may be asked of MaintenanceRepository"
+      described as {
+        |The look-ups the maintenance repository answers.
+      }
+    }
+    type MaintenanceRepositoryReply is one of {
+      EquipmentReliabilityMetricsView or MaintenanceWorkMetricsView
+    } with {
+      briefly "What MaintenanceRepository answers"
+      described as {
+        |The answers the maintenance repository gives.
+      }
+    }
+    inlet MaintenanceRepositoryQueries is type MaintenanceRepositoryQuery with {
+      briefly "Look-ups of this maintenance repository"
+      described as {
+        |What EquipmentMaintenanceApp asks of the maintenance repository, by way of MaintenanceContext.
+      }
+    }
     inlet MaintenanceRepositoryFromMaintenanceMetrics is type MaintenanceRepositoryCommand
     command PersistMaintenanceStarted is {
       orderId: MaintenanceOrderId with {
@@ -596,7 +681,7 @@ context MaintenanceContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet MaintenanceRepositoryResponses is result MaintenanceOrder.MaintenanceOrderResult
+    outlet MaintenanceRepositoryResponses is type MaintenanceRepositoryReply
     record StoredMaintenanceOrder is {
       maintenanceOrderId: MaintenanceOrderId with {
         briefly "maintenanceOrderId"

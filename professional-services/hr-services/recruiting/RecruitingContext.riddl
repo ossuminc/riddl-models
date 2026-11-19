@@ -34,8 +34,56 @@ context RecruitingContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet RecruitingRepositoryQueriesIn is query GetPipelineMetrics with {
+    briefly "Look-ups of the recruiting repository"
+    described as {
+      |RecruitingApp's look-ups, on their way to the recruiting repository.
+    }
+  }
+  outlet RecruitingRepositoryQueriesOut is query GetPipelineMetrics
+ with {
+    briefly "Look-ups on their way to the recruiting repository"
+    described as {
+      |Each look-up goes to the recruiting repository it names.
+    }
+  }
+  inlet RecruitingRepositoryRepliesIn is result PipelineMetricsView with {
+    briefly "The recruiting repository's answers"
+    described as {
+      |What the recruiting repository answers about itself.
+    }
+  }
+  outlet RecruitingRepositoryRepliesOut is result PipelineMetricsView
+ with {
+    briefly "Answers to RecruitingApp"
+    described as {
+      |The reply leg of RecruitingApp's look-ups of the recruiting repository.
+    }
+  }
+  inlet JobRequisitionQueriesIn is query JobRequisition.GetJobRequisition with {
+    briefly "Look-ups of the job requisition"
+    described as {
+      |RecruitingApp's look-ups, on their way to the job requisition.
+    }
+  }
+  outlet JobRequisitionQueriesOut is query JobRequisition.GetJobRequisition
+ with {
+    briefly "Look-ups on their way to the job requisition"
+    described as {
+      |Each look-up goes to the job requisition it names.
+    }
+  }
   inlet RecruitingContextFromToBackgroundCheckService is command JobRequisition.RejectCandidate with {
     briefly "What ToBackgroundCheckService makes of the answers it gets"
+  }
+  connector 'RecruitingRepositoryQuery Intake' is from outlet RecruitingContext.RecruitingRepositoryQueriesOut to inlet RecruitingContext.RecruitingRepository.RecruitingRepositoryQueries with {
+    briefly "Look-ups on their way to the recruiting repository"
+  }
+  connector 'RecruitingRepositoryReply Egress' is from outlet RecruitingContext.RecruitingRepository.RecruitingRepositoryResponses to inlet RecruitingContext.RecruitingRepositoryRepliesIn with {
+    briefly "The recruiting repository's answers on their way to the boundary"
+  }
+  connector 'JobRequisitionQuery Intake' is from outlet RecruitingContext.JobRequisitionQueriesOut to inlet RecruitingContext.JobRequisition.JobRequisitionQueries with {
+    briefly "Look-ups on their way to the job requisition"
   }
   connector 'ToBackgroundCheckService Intake' is from outlet RecruitingContext.ToBackgroundCheckService.ToBackgroundCheckServiceToRecruitingContext to inlet RecruitingContext.RecruitingContextFromToBackgroundCheckService with {
     briefly "Answers translated by ToBackgroundCheckService, on their way in"
@@ -51,6 +99,15 @@ context RecruitingContext as router is {
   inlet JobRequisitionResultStreamIn is result JobRequisition.JobRequisitionResult
   outlet JobRequisitionResultStreamOut is result JobRequisition.JobRequisitionResult
   handler RecruitingContextBoundary is {
+    on getPipelineMetrics: query GetPipelineMetrics is {
+      forward getPipelineMetrics to outlet RecruitingContext.RecruitingRepositoryQueriesOut
+    }
+    on pipelineMetricsView: result PipelineMetricsView is {
+      send pipelineMetricsView to outlet RecruitingContext.RecruitingRepositoryRepliesOut
+    }
+    on getJobRequisition: query JobRequisition.GetJobRequisition is {
+      forward getJobRequisition to outlet RecruitingContext.JobRequisitionQueriesOut
+    }
     on createRequisition: command RecruitingContext.CreateRequisition is {
       let newJobRequisition = create entity RecruitingContext.JobRequisition(requisitionInfo = createRequisition.requisitionInfo, jobDescription = createRequisition.jobDescription, compensation = createRequisition.compensation)
       log newJobRequisition
@@ -103,7 +160,7 @@ context RecruitingContext as router is {
     }
   }
   connector 'JobRequisitionCommand Stream Intake' is from outlet RecruitingContext.JobRequisitionCommandStreamOut to inlet RecruitingContext.JobRequisition.JobRequisitionCommands
-  connector 'JobRequisitionResult Stream Egress' is from outlet RecruitingContext.RecruitingRepository.RecruitingRepositoryResponses to inlet RecruitingContext.JobRequisitionResultStreamIn
+  connector 'JobRequisitionResult Stream Egress' is from outlet RecruitingContext.JobRequisition.JobRequisitionReplies to inlet RecruitingContext.JobRequisitionResultStreamIn
   adaptor FromBackgroundCheckService from context BackgroundCheckService as sink is { 
     inlet FromBackgroundCheckServiceIn is event BackgroundCheckService.BackgroundCheckCompleted
     handler FromBackgroundCheckServiceHandler is {
@@ -226,7 +283,13 @@ context RecruitingContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository RecruitingRepository as flow is {
+  repository RecruitingRepository as merge is {
+    inlet RecruitingRepositoryQueries is query GetPipelineMetrics with {
+      briefly "Look-ups of this recruiting repository"
+      described as {
+        |What RecruitingApp asks of the recruiting repository, by way of RecruitingContext.
+      }
+    }
     inlet RecruitingRepositoryFromRecruitingMetrics is type RecruitingRepositoryCommand
     command PersistCandidateRejected is {
       requisitionId: RequisitionId with {
@@ -633,7 +696,7 @@ context RecruitingContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet RecruitingRepositoryResponses is result JobRequisition.JobRequisitionResult
+    outlet RecruitingRepositoryResponses is result PipelineMetricsView
     record StoredJobRequisition is {
       jobRequisitionId: UUID with {
         briefly "jobRequisitionId"

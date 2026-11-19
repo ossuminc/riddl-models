@@ -34,11 +34,65 @@ context PolicyContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet PolicyRepositoryQueriesIn is type PolicyRepository.PolicyRepositoryQuery with {
+    briefly "Look-ups of the policy repository"
+    described as {
+      |PolicyAdministrationApp's look-ups, on their way to the policy repository.
+    }
+  }
+  outlet PolicyRepositoryQueriesOut is type PolicyRepository.PolicyRepositoryQuery
+ with {
+    briefly "Look-ups on their way to the policy repository"
+    described as {
+      |Each look-up goes to the policy repository it names.
+    }
+  }
+  inlet PolicyRepositoryRepliesIn is type PolicyRepository.PolicyRepositoryReply with {
+    briefly "The policy repository's answers"
+    described as {
+      |What the policy repository answers about itself.
+    }
+  }
+  outlet PolicyRepositoryRepliesOut is type PolicyRepository.PolicyRepositoryReply
+ with {
+    briefly "Answers to PolicyAdministrationApp"
+    described as {
+      |The reply leg of PolicyAdministrationApp's look-ups of the policy repository.
+    }
+  }
+  inlet PolicyQueriesIn is query Policy.GetPolicy with {
+    briefly "Look-ups of the policy"
+    described as {
+      |PolicyAdministrationApp's look-ups, on their way to the policy.
+    }
+  }
+  outlet PolicyQueriesOut is query Policy.GetPolicy
+ with {
+    briefly "Look-ups on their way to the policy"
+    described as {
+      |Each look-up goes to the policy it names.
+    }
+  }
   inlet PolicyCommandStreamIn is type PolicyContext.PolicyRequest
   outlet PolicyCommandStreamOut is type PolicyCommand
   inlet PolicyResultStreamIn is result Policy.PolicyResult
   outlet PolicyResultStreamOut is result Policy.PolicyResult
   handler PolicyContextBoundary is {
+    on getPolicyMetricsView: query GetPolicyMetricsView is {
+      forward getPolicyMetricsView to outlet PolicyContext.PolicyRepositoryQueriesOut
+    }
+    on getPortfolioSummary: query GetPortfolioSummary is {
+      forward getPortfolioSummary to outlet PolicyContext.PolicyRepositoryQueriesOut
+    }
+    on policyMetricsViewView: result PolicyMetricsViewView is {
+      send policyMetricsViewView to outlet PolicyContext.PolicyRepositoryRepliesOut
+    }
+    on portfolioSummaryView: result PortfolioSummaryView is {
+      send portfolioSummaryView to outlet PolicyContext.PolicyRepositoryRepliesOut
+    }
+    on getPolicy: query Policy.GetPolicy is {
+      forward getPolicy to outlet PolicyContext.PolicyQueriesOut
+    }
     on issuePolicy: command PolicyContext.IssuePolicy is {
       let givenIssuedAt: type TimeStamp = prompt("the issued at of this policy issued")
       let newPolicy = create entity PolicyContext.Policy(details = issuePolicy.details, billingSchedule = issuePolicy.billingSchedule, issuedAt = givenIssuedAt, issuedBy = issuePolicy.issuedBy)
@@ -79,8 +133,17 @@ context PolicyContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'PolicyRepositoryQuery Intake' is from outlet PolicyContext.PolicyRepositoryQueriesOut to inlet PolicyContext.PolicyRepository.PolicyRepositoryQueries with {
+    briefly "Look-ups on their way to the policy repository"
+  }
+  connector 'PolicyRepositoryReply Egress' is from outlet PolicyContext.PolicyRepository.PolicyRepositoryResponses to inlet PolicyContext.PolicyRepositoryRepliesIn with {
+    briefly "The policy repository's answers on their way to the boundary"
+  }
+  connector 'PolicyQuery Intake' is from outlet PolicyContext.PolicyQueriesOut to inlet PolicyContext.Policy.PolicyQueries with {
+    briefly "Look-ups on their way to the policy"
+  }
   connector 'PolicyCommand Stream Intake' is from outlet PolicyContext.PolicyCommandStreamOut to inlet PolicyContext.Policy.PolicyCommands
-  connector 'PolicyResult Stream Egress' is from outlet PolicyContext.PolicyRepository.PolicyRepositoryResponses to inlet PolicyContext.PolicyResultStreamIn
+  connector 'PolicyResult Stream Egress' is from outlet PolicyContext.Policy.PolicyReplies to inlet PolicyContext.PolicyResultStreamIn
   adaptor FromBillingService from context BillingService as sink is { 
     inlet FromBillingServiceIn is type BillingService.BillingServiceEvent
     handler FromBillingServiceHandler is {
@@ -272,7 +335,29 @@ context PolicyContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository PolicyRepository as flow is {
+  repository PolicyRepository as merge is {
+    type PolicyRepositoryQuery is one of {
+      GetPolicyMetricsView or GetPortfolioSummary
+    } with {
+      briefly "What may be asked of PolicyRepository"
+      described as {
+        |The look-ups the policy repository answers.
+      }
+    }
+    type PolicyRepositoryReply is one of {
+      PolicyMetricsViewView or PortfolioSummaryView
+    } with {
+      briefly "What PolicyRepository answers"
+      described as {
+        |The answers the policy repository gives.
+      }
+    }
+    inlet PolicyRepositoryQueries is type PolicyRepositoryQuery with {
+      briefly "Look-ups of this policy repository"
+      described as {
+        |What PolicyAdministrationApp asks of the policy repository, by way of PolicyContext.
+      }
+    }
     inlet PolicyRepositoryFromPolicyMetricsProjector is type PolicyRepositoryCommand
     command PersistBillingUpdated is {
       policyId: PolicyId with {
@@ -550,7 +635,7 @@ context PolicyContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet PolicyRepositoryResponses is result Policy.PolicyResult
+    outlet PolicyRepositoryResponses is type PolicyRepositoryReply
     record StoredPolicy is {
       policyId: PolicyId with {
         briefly "policyId"

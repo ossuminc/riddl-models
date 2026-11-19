@@ -34,8 +34,56 @@ context PatientContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet PatientRepositoryQueriesIn is query GetPatientStats with {
+    briefly "Look-ups of the patient repository"
+    described as {
+      |PatientRegistrationApp's look-ups, on their way to the patient repository.
+    }
+  }
+  outlet PatientRepositoryQueriesOut is query GetPatientStats
+ with {
+    briefly "Look-ups on their way to the patient repository"
+    described as {
+      |Each look-up goes to the patient repository it names.
+    }
+  }
+  inlet PatientRepositoryRepliesIn is result PatientStatsView with {
+    briefly "The patient repository's answers"
+    described as {
+      |What the patient repository answers about itself.
+    }
+  }
+  outlet PatientRepositoryRepliesOut is result PatientStatsView
+ with {
+    briefly "Answers to PatientRegistrationApp"
+    described as {
+      |The reply leg of PatientRegistrationApp's look-ups of the patient repository.
+    }
+  }
+  inlet PatientQueriesIn is query Patient.GetPatient with {
+    briefly "Look-ups of the patient"
+    described as {
+      |PatientRegistrationApp's look-ups, on their way to the patient.
+    }
+  }
+  outlet PatientQueriesOut is query Patient.GetPatient
+ with {
+    briefly "Look-ups on their way to the patient"
+    described as {
+      |Each look-up goes to the patient it names.
+    }
+  }
   inlet PatientContextFromInsuranceEligibilityService is command Patient.UpdateInsurance with {
     briefly "What FromInsuranceEligibilityService makes of that service's news"
+  }
+  connector 'PatientRepositoryQuery Intake' is from outlet PatientContext.PatientRepositoryQueriesOut to inlet PatientContext.PatientRepository.PatientRepositoryQueries with {
+    briefly "Look-ups on their way to the patient repository"
+  }
+  connector 'PatientRepositoryReply Egress' is from outlet PatientContext.PatientRepository.PatientRepositoryResponses to inlet PatientContext.PatientRepositoryRepliesIn with {
+    briefly "The patient repository's answers on their way to the boundary"
+  }
+  connector 'PatientQuery Intake' is from outlet PatientContext.PatientQueriesOut to inlet PatientContext.Patient.PatientQueries with {
+    briefly "Look-ups on their way to the patient"
   }
   connector 'FromInsuranceEligibilityService Intake' is from outlet PatientContext.FromInsuranceEligibilityService.FromInsuranceEligibilityServiceToPatientContext to inlet PatientContext.PatientContextFromInsuranceEligibilityService with {
     briefly "What FromInsuranceEligibilityService makes of that news, on its way in"
@@ -45,6 +93,15 @@ context PatientContext as router is {
   inlet PatientResultStreamIn is result Patient.PatientResult
   outlet PatientResultStreamOut is result Patient.PatientResult
   handler PatientContextBoundary is {
+    on getPatientStats: query GetPatientStats is {
+      forward getPatientStats to outlet PatientContext.PatientRepositoryQueriesOut
+    }
+    on patientStatsView: result PatientStatsView is {
+      send patientStatsView to outlet PatientContext.PatientRepositoryRepliesOut
+    }
+    on getPatient: query Patient.GetPatient is {
+      forward getPatient to outlet PatientContext.PatientQueriesOut
+    }
     on registerPatient: command PatientContext.RegisterPatient is {
       let newPatient = create entity PatientContext.Patient(demographics = registerPatient.demographics, contact = registerPatient.contact)
       log newPatient
@@ -94,7 +151,7 @@ context PatientContext as router is {
     }
   }
   connector 'PatientCommand Stream Intake' is from outlet PatientContext.PatientCommandStreamOut to inlet PatientContext.Patient.PatientCommands
-  connector 'PatientResult Stream Egress' is from outlet PatientContext.PatientRepository.PatientRepositoryResponses to inlet PatientContext.PatientResultStreamIn
+  connector 'PatientResult Stream Egress' is from outlet PatientContext.Patient.PatientReplies to inlet PatientContext.PatientResultStreamIn
   adaptor FromDocumentStorageService from context DocumentStorageService as sink is { 
     inlet FromDocumentStorageServiceIn is event DocumentStorageService.DocumentStored
     handler FromDocumentStorageServiceHandler is {
@@ -323,7 +380,13 @@ context PatientContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository PatientRepository as flow is {
+  repository PatientRepository as merge is {
+    inlet PatientRepositoryQueries is query GetPatientStats with {
+      briefly "Look-ups of this patient repository"
+      described as {
+        |What PatientRegistrationApp asks of the patient repository, by way of PatientContext.
+      }
+    }
     inlet PatientRepositoryFromPatientAnalytics is type PatientRepositoryCommand
     command PersistAddressUpdated is {
       patientId: PatientId with {
@@ -628,7 +691,7 @@ context PatientContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet PatientRepositoryResponses is result Patient.PatientResult
+    outlet PatientRepositoryResponses is result PatientStatsView
     record StoredPatient is {
       patientId: PatientId with {
         briefly "patientId"

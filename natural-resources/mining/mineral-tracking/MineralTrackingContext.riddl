@@ -22,8 +22,56 @@ context MineralTrackingContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet MineralTrackingRepositoryQueriesIn is query GetBatchMetrics with {
+    briefly "Look-ups of the mineral tracking repository"
+    described as {
+      |MineralTrackingApp's look-ups, on their way to the mineral tracking repository.
+    }
+  }
+  outlet MineralTrackingRepositoryQueriesOut is query GetBatchMetrics
+ with {
+    briefly "Look-ups on their way to the mineral tracking repository"
+    described as {
+      |Each look-up goes to the mineral tracking repository it names.
+    }
+  }
+  inlet MineralTrackingRepositoryRepliesIn is result BatchMetricsView with {
+    briefly "The mineral tracking repository's answers"
+    described as {
+      |What the mineral tracking repository answers about itself.
+    }
+  }
+  outlet MineralTrackingRepositoryRepliesOut is result BatchMetricsView
+ with {
+    briefly "Answers to MineralTrackingApp"
+    described as {
+      |The reply leg of MineralTrackingApp's look-ups of the mineral tracking repository.
+    }
+  }
+  inlet MineralBatchQueriesIn is query MineralBatch.GetMineralBatch with {
+    briefly "Look-ups of the mineral batch"
+    described as {
+      |MineralTrackingApp's look-ups, on their way to the mineral batch.
+    }
+  }
+  outlet MineralBatchQueriesOut is query MineralBatch.GetMineralBatch
+ with {
+    briefly "Look-ups on their way to the mineral batch"
+    described as {
+      |Each look-up goes to the mineral batch it names.
+    }
+  }
   inlet MineralTrackingContextFromToAssayLaboratory is command MineralBatch.ReconcileGrade with {
     briefly "What ToAssayLaboratory makes of the answers it gets"
+  }
+  connector 'MineralTrackingRepositoryQuery Intake' is from outlet MineralTrackingContext.MineralTrackingRepositoryQueriesOut to inlet MineralTrackingContext.MineralTrackingRepository.MineralTrackingRepositoryQueries with {
+    briefly "Look-ups on their way to the mineral tracking repository"
+  }
+  connector 'MineralTrackingRepositoryReply Egress' is from outlet MineralTrackingContext.MineralTrackingRepository.MineralTrackingRepositoryResponses to inlet MineralTrackingContext.MineralTrackingRepositoryRepliesIn with {
+    briefly "The mineral tracking repository's answers on their way to the boundary"
+  }
+  connector 'MineralBatchQuery Intake' is from outlet MineralTrackingContext.MineralBatchQueriesOut to inlet MineralTrackingContext.MineralBatch.MineralBatchQueries with {
+    briefly "Look-ups on their way to the mineral batch"
   }
   connector 'ToAssayLaboratory Intake' is from outlet MineralTrackingContext.ToAssayLaboratory.ToAssayLaboratoryToMineralTrackingContext to inlet MineralTrackingContext.MineralTrackingContextFromToAssayLaboratory with {
     briefly "Answers translated by ToAssayLaboratory, on their way in"
@@ -51,6 +99,15 @@ context MineralTrackingContext as router is {
   inlet MineralBatchResultStreamIn is result MineralBatch.MineralBatchResult
   outlet MineralBatchResultStreamOut is result MineralBatch.MineralBatchResult
   handler MineralTrackingContextBoundary is {
+    on getBatchMetrics: query GetBatchMetrics is {
+      forward getBatchMetrics to outlet MineralTrackingContext.MineralTrackingRepositoryQueriesOut
+    }
+    on batchMetricsView: result BatchMetricsView is {
+      send batchMetricsView to outlet MineralTrackingContext.MineralTrackingRepositoryRepliesOut
+    }
+    on getMineralBatch: query MineralBatch.GetMineralBatch is {
+      forward getMineralBatch to outlet MineralTrackingContext.MineralBatchQueriesOut
+    }
     on recordExtraction: command MineralTrackingContext.RecordExtraction is {
       let newMineralBatch = create entity MineralTrackingContext.MineralBatch(extractionInfo = recordExtraction.extractionInfo)
       log newMineralBatch
@@ -94,7 +151,7 @@ context MineralTrackingContext as router is {
     }
   }
   connector 'MineralBatchCommand Stream Intake' is from outlet MineralTrackingContext.MineralBatchCommandStreamOut to inlet MineralTrackingContext.MineralBatch.MineralBatchCommands
-  connector 'MineralBatchResult Stream Egress' is from outlet MineralTrackingContext.MineralTrackingRepository.MineralTrackingRepositoryResponses to inlet MineralTrackingContext.MineralBatchResultStreamIn
+  connector 'MineralBatchResult Stream Egress' is from outlet MineralTrackingContext.MineralBatch.MineralBatchReplies to inlet MineralTrackingContext.MineralBatchResultStreamIn
   adaptor FromAssayLaboratory from context AssayLaboratory as flow is { 
     inlet FromAssayLaboratoryIn is event AssayLaboratory.AssayCompleted
     outlet FromAssayLaboratoryToMineralTrackingContext is command MineralBatch.RecordAssayResult
@@ -216,7 +273,13 @@ context MineralTrackingContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository MineralTrackingRepository as flow is {
+  repository MineralTrackingRepository as merge is {
+    inlet MineralTrackingRepositoryQueries is query GetBatchMetrics with {
+      briefly "Look-ups of this mineral tracking repository"
+      described as {
+        |What MineralTrackingApp asks of the mineral tracking repository, by way of MineralTrackingContext.
+      }
+    }
     inlet MineralTrackingRepositoryFromMineralTrackingMetrics is type MineralTrackingRepositoryCommand
     command PersistAssayResultRecorded is {
       batchId: MineralBatchId with {
@@ -461,7 +524,7 @@ context MineralTrackingContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet MineralTrackingRepositoryResponses is result MineralBatch.MineralBatchResult
+    outlet MineralTrackingRepositoryResponses is result BatchMetricsView
     record StoredMineralBatch is {
       mineralBatchId: MineralBatchId with {
         briefly "mineralBatchId"

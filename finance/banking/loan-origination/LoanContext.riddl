@@ -28,8 +28,56 @@ context LoanContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet LoanRepositoryQueriesIn is query GetLoanStats with {
+    briefly "Look-ups of the loan repository"
+    described as {
+      |LoanOriginationApp's look-ups, on their way to the loan repository.
+    }
+  }
+  outlet LoanRepositoryQueriesOut is query GetLoanStats
+ with {
+    briefly "Look-ups on their way to the loan repository"
+    described as {
+      |Each look-up goes to the loan repository it names.
+    }
+  }
+  inlet LoanRepositoryRepliesIn is result LoanStatsView with {
+    briefly "The loan repository's answers"
+    described as {
+      |What the loan repository answers about itself.
+    }
+  }
+  outlet LoanRepositoryRepliesOut is result LoanStatsView
+ with {
+    briefly "Answers to LoanOriginationApp"
+    described as {
+      |The reply leg of LoanOriginationApp's look-ups of the loan repository.
+    }
+  }
+  inlet LoanQueriesIn is query Loan.GetLoan with {
+    briefly "Look-ups of the loan"
+    described as {
+      |LoanOriginationApp's look-ups, on their way to the loan.
+    }
+  }
+  outlet LoanQueriesOut is query Loan.GetLoan
+ with {
+    briefly "Look-ups on their way to the loan"
+    described as {
+      |Each look-up goes to the loan it names.
+    }
+  }
   inlet LoanContextFromDisbursementService is command Loan.FundLoan with {
     briefly "What FromDisbursementService makes of that service's news"
+  }
+  connector 'LoanRepositoryQuery Intake' is from outlet LoanContext.LoanRepositoryQueriesOut to inlet LoanContext.LoanRepository.LoanRepositoryQueries with {
+    briefly "Look-ups on their way to the loan repository"
+  }
+  connector 'LoanRepositoryReply Egress' is from outlet LoanContext.LoanRepository.LoanRepositoryResponses to inlet LoanContext.LoanRepositoryRepliesIn with {
+    briefly "The loan repository's answers on their way to the boundary"
+  }
+  connector 'LoanQuery Intake' is from outlet LoanContext.LoanQueriesOut to inlet LoanContext.Loan.LoanQueries with {
+    briefly "Look-ups on their way to the loan"
   }
   connector 'FromDisbursementService Intake' is from outlet LoanContext.FromDisbursementService.FromDisbursementServiceToLoanContext to inlet LoanContext.LoanContextFromDisbursementService with {
     briefly "What FromDisbursementService makes of that news, on its way in"
@@ -45,6 +93,15 @@ context LoanContext as router is {
   inlet LoanResultStreamIn is result Loan.LoanResult
   outlet LoanResultStreamOut is result Loan.LoanResult
   handler LoanContextBoundary is {
+    on getLoanStats: query GetLoanStats is {
+      forward getLoanStats to outlet LoanContext.LoanRepositoryQueriesOut
+    }
+    on loanStatsView: result LoanStatsView is {
+      send loanStatsView to outlet LoanContext.LoanRepositoryRepliesOut
+    }
+    on getLoan: query Loan.GetLoan is {
+      forward getLoan to outlet LoanContext.LoanQueriesOut
+    }
     on submitApplication: command LoanContext.SubmitApplication is {
       let newLoan = create entity LoanContext.Loan(borrower = submitApplication.borrower, request = submitApplication.request)
       log newLoan
@@ -97,7 +154,7 @@ context LoanContext as router is {
     }
   }
   connector 'LoanCommand Stream Intake' is from outlet LoanContext.LoanCommandStreamOut to inlet LoanContext.Loan.LoanCommands
-  connector 'LoanResult Stream Egress' is from outlet LoanContext.LoanRepository.LoanRepositoryResponses to inlet LoanContext.LoanResultStreamIn
+  connector 'LoanResult Stream Egress' is from outlet LoanContext.Loan.LoanReplies to inlet LoanContext.LoanResultStreamIn
   adaptor FromCreditDecisioningService from context CreditDecisioningService as sink is { 
     inlet FromCreditDecisioningServiceIn is event CreditDecisioningService.DecisionReceived
     handler FromCreditDecisioningServiceHandler is {
@@ -417,7 +474,13 @@ context LoanContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository LoanRepository as flow is {
+  repository LoanRepository as merge is {
+    inlet LoanRepositoryQueries is query GetLoanStats with {
+      briefly "Look-ups of this loan repository"
+      described as {
+        |What LoanOriginationApp asks of the loan repository, by way of LoanContext.
+      }
+    }
     inlet LoanRepositoryFromLoanAnalytics is type LoanRepositoryCommand
     command PersistApplicationWithdrawn is {
       loanId: LoanId with {
@@ -761,7 +824,7 @@ context LoanContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet LoanRepositoryResponses is result Loan.LoanResult
+    outlet LoanRepositoryResponses is result LoanStatsView
     record StoredLoan is {
       loanId: LoanId with {
         briefly "loanId"

@@ -28,8 +28,56 @@ context PropertyContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet PropertyRepositoryQueriesIn is query GetPropertySummary with {
+    briefly "Look-ups of the property repository"
+    described as {
+      |PropertyManagementApp's look-ups, on their way to the property repository.
+    }
+  }
+  outlet PropertyRepositoryQueriesOut is query GetPropertySummary
+ with {
+    briefly "Look-ups on their way to the property repository"
+    described as {
+      |Each look-up goes to the property repository it names.
+    }
+  }
+  inlet PropertyRepositoryRepliesIn is result PropertySummaryView with {
+    briefly "The property repository's answers"
+    described as {
+      |What the property repository answers about itself.
+    }
+  }
+  outlet PropertyRepositoryRepliesOut is result PropertySummaryView
+ with {
+    briefly "Answers to PropertyManagementApp"
+    described as {
+      |The reply leg of PropertyManagementApp's look-ups of the property repository.
+    }
+  }
+  inlet PropertyQueriesIn is query Property.GetProperty with {
+    briefly "Look-ups of the property"
+    described as {
+      |PropertyManagementApp's look-ups, on their way to the property.
+    }
+  }
+  outlet PropertyQueriesOut is query Property.GetProperty
+ with {
+    briefly "Look-ups on their way to the property"
+    described as {
+      |Each look-up goes to the property it names.
+    }
+  }
   inlet PropertyContextFromPaymentProcessingService is command Property.RecordPayment with {
     briefly "What FromPaymentProcessingService makes of that service's news"
+  }
+  connector 'PropertyRepositoryQuery Intake' is from outlet PropertyContext.PropertyRepositoryQueriesOut to inlet PropertyContext.PropertyRepository.PropertyRepositoryQueries with {
+    briefly "Look-ups on their way to the property repository"
+  }
+  connector 'PropertyRepositoryReply Egress' is from outlet PropertyContext.PropertyRepository.PropertyRepositoryResponses to inlet PropertyContext.PropertyRepositoryRepliesIn with {
+    briefly "The property repository's answers on their way to the boundary"
+  }
+  connector 'PropertyQuery Intake' is from outlet PropertyContext.PropertyQueriesOut to inlet PropertyContext.Property.PropertyQueries with {
+    briefly "Look-ups on their way to the property"
   }
   connector 'FromPaymentProcessingService Intake' is from outlet PropertyContext.FromPaymentProcessingService.FromPaymentProcessingServiceToPropertyContext to inlet PropertyContext.PropertyContextFromPaymentProcessingService with {
     briefly "What FromPaymentProcessingService makes of that news, on its way in"
@@ -39,6 +87,15 @@ context PropertyContext as router is {
   inlet PropertyResultStreamIn is result Property.PropertyResult
   outlet PropertyResultStreamOut is result Property.PropertyResult
   handler PropertyContextBoundary is {
+    on getPropertySummary: query GetPropertySummary is {
+      forward getPropertySummary to outlet PropertyContext.PropertyRepositoryQueriesOut
+    }
+    on propertySummaryView: result PropertySummaryView is {
+      send propertySummaryView to outlet PropertyContext.PropertyRepositoryRepliesOut
+    }
+    on getProperty: query Property.GetProperty is {
+      forward getProperty to outlet PropertyContext.PropertyQueriesOut
+    }
     on addProperty: command PropertyContext.AddProperty is {
       let newProperty = create entity PropertyContext.Property(info = addProperty.info, units = addProperty.units)
       log newProperty
@@ -82,7 +139,7 @@ context PropertyContext as router is {
     }
   }
   connector 'PropertyCommand Stream Intake' is from outlet PropertyContext.PropertyCommandStreamOut to inlet PropertyContext.Property.PropertyCommands
-  connector 'PropertyResult Stream Egress' is from outlet PropertyContext.PropertyRepository.PropertyRepositoryResponses to inlet PropertyContext.PropertyResultStreamIn
+  connector 'PropertyResult Stream Egress' is from outlet PropertyContext.Property.PropertyReplies to inlet PropertyContext.PropertyResultStreamIn
   adaptor FromMaintenanceDispatchService from context MaintenanceDispatchService as sink is { 
     inlet FromMaintenanceDispatchServiceIn is event MaintenanceDispatchService.TechnicianDispatched
     handler FromMaintenanceDispatchServiceHandler is {
@@ -264,7 +321,13 @@ context PropertyContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository PropertyRepository as flow is {
+  repository PropertyRepository as merge is {
+    inlet PropertyRepositoryQueries is query GetPropertySummary with {
+      briefly "Look-ups of this property repository"
+      described as {
+        |What PropertyManagementApp asks of the property repository, by way of PropertyContext.
+      }
+    }
     inlet PropertyRepositoryFromPropertyAnalytics is type PropertyRepositoryCommand
     command PersistLeaseRenewed is {
       propertyId: PropertyId with {
@@ -515,7 +578,7 @@ context PropertyContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet PropertyRepositoryResponses is result Property.PropertyResult
+    outlet PropertyRepositoryResponses is result PropertySummaryView
     record StoredProperty is {
       propertyId: PropertyId with {
         briefly "propertyId"

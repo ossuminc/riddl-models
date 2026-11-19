@@ -40,8 +40,56 @@ context OrchestrationContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet OrderRepositoryQueriesIn is query GetVendorFulfillmentMetrics with {
+    briefly "Look-ups of the order repository"
+    described as {
+      |OrderOrchestrationApp's look-ups, on their way to the order repository.
+    }
+  }
+  outlet OrderRepositoryQueriesOut is query GetVendorFulfillmentMetrics
+ with {
+    briefly "Look-ups on their way to the order repository"
+    described as {
+      |Each look-up goes to the order repository it names.
+    }
+  }
+  inlet OrderRepositoryRepliesIn is result VendorFulfillmentMetricsView with {
+    briefly "The order repository's answers"
+    described as {
+      |What the order repository answers about itself.
+    }
+  }
+  outlet OrderRepositoryRepliesOut is result VendorFulfillmentMetricsView
+ with {
+    briefly "Answers to OrderOrchestrationApp"
+    described as {
+      |The reply leg of OrderOrchestrationApp's look-ups of the order repository.
+    }
+  }
+  inlet MarketplaceOrderQueriesIn is query MarketplaceOrder.GetMarketplaceOrder with {
+    briefly "Look-ups of the marketplace order"
+    described as {
+      |OrderOrchestrationApp's look-ups, on their way to the marketplace order.
+    }
+  }
+  outlet MarketplaceOrderQueriesOut is query MarketplaceOrder.GetMarketplaceOrder
+ with {
+    briefly "Look-ups on their way to the marketplace order"
+    described as {
+      |Each look-up goes to the marketplace order it names.
+    }
+  }
   inlet OrchestrationContextFromInventoryService is command MarketplaceOrder.CancelSubOrder with {
     briefly "What FromInventoryService makes of that service's news"
+  }
+  connector 'OrderRepositoryQuery Intake' is from outlet OrchestrationContext.OrderRepositoryQueriesOut to inlet OrchestrationContext.OrderRepository.OrderRepositoryQueries with {
+    briefly "Look-ups on their way to the order repository"
+  }
+  connector 'OrderRepositoryReply Egress' is from outlet OrchestrationContext.OrderRepository.OrderRepositoryResponses to inlet OrchestrationContext.OrderRepositoryRepliesIn with {
+    briefly "The order repository's answers on their way to the boundary"
+  }
+  connector 'MarketplaceOrderQuery Intake' is from outlet OrchestrationContext.MarketplaceOrderQueriesOut to inlet OrchestrationContext.MarketplaceOrder.MarketplaceOrderQueries with {
+    briefly "Look-ups on their way to the marketplace order"
   }
   connector 'FromInventoryService Intake' is from outlet OrchestrationContext.FromInventoryService.FromInventoryServiceToOrchestrationContext to inlet OrchestrationContext.OrchestrationContextFromInventoryService with {
     briefly "What FromInventoryService makes of that news, on its way in"
@@ -62,6 +110,15 @@ context OrchestrationContext as router is {
   inlet MarketplaceOrderResultStreamIn is result MarketplaceOrder.MarketplaceOrderResult
   outlet MarketplaceOrderResultStreamOut is result MarketplaceOrder.MarketplaceOrderResult
   handler OrchestrationContextBoundary is {
+    on getVendorFulfillmentMetrics: query GetVendorFulfillmentMetrics is {
+      forward getVendorFulfillmentMetrics to outlet OrchestrationContext.OrderRepositoryQueriesOut
+    }
+    on vendorFulfillmentMetricsView: result VendorFulfillmentMetricsView is {
+      send vendorFulfillmentMetricsView to outlet OrchestrationContext.OrderRepositoryRepliesOut
+    }
+    on getMarketplaceOrder: query MarketplaceOrder.GetMarketplaceOrder is {
+      forward getMarketplaceOrder to outlet OrchestrationContext.MarketplaceOrderQueriesOut
+    }
     on createOrder: command OrchestrationContext.CreateOrder is {
       let newMarketplaceOrder = create entity OrchestrationContext.MarketplaceOrder(customerId = createOrder.customerId, shippingAddress = createOrder.shippingAddress, paymentInfo = createOrder.paymentInfo)
       log newMarketplaceOrder
@@ -96,7 +153,7 @@ context OrchestrationContext as router is {
     }
   }
   connector 'MarketplaceOrderCommand Stream Intake' is from outlet OrchestrationContext.MarketplaceOrderCommandStreaOut to inlet OrchestrationContext.MarketplaceOrder.MarketplaceOrderCommands
-  connector 'MarketplaceOrderResult Stream Egress' is from outlet OrchestrationContext.OrderRepository.OrderRepositoryResponses to inlet OrchestrationContext.MarketplaceOrderResultStreamIn
+  connector 'MarketplaceOrderResult Stream Egress' is from outlet OrchestrationContext.MarketplaceOrder.MarketplaceOrderReplies to inlet OrchestrationContext.MarketplaceOrderResultStreamIn
   adaptor FromInventoryService from context InventoryService as flow is { 
     inlet FromInventoryServiceIn is type InventoryService.InventoryServiceEvent
     outlet FromInventoryServiceToOrchestrationContext is command MarketplaceOrder.CancelSubOrder
@@ -299,7 +356,13 @@ context OrchestrationContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository OrderRepository as flow is {
+  repository OrderRepository as merge is {
+    inlet OrderRepositoryQueries is query GetVendorFulfillmentMetrics with {
+      briefly "Look-ups of this order repository"
+      described as {
+        |What OrderOrchestrationApp asks of the order repository, by way of OrchestrationContext.
+      }
+    }
     inlet OrderRepositoryFromOrderAnalytics is type OrderRepositoryCommand
     command PersistOrderCancelled is {
       orderId: OrderId with {
@@ -559,7 +622,7 @@ context OrchestrationContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet OrderRepositoryResponses is result MarketplaceOrder.MarketplaceOrderResult
+    outlet OrderRepositoryResponses is result VendorFulfillmentMetricsView
     record StoredMarketplaceOrder is {
       marketplaceOrderId: UUID with {
         briefly "marketplaceOrderId"

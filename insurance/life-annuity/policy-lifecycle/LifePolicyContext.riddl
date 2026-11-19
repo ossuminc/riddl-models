@@ -76,11 +76,77 @@ context LifePolicyContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet LifePolicyRepositoryQueriesIn is type LifePolicyRepository.LifePolicyRepositoryQuery with {
+    briefly "Look-ups of the life policy repository"
+    described as {
+      |PolicyLifecycleApp's look-ups, on their way to the life policy repository.
+    }
+  }
+  outlet LifePolicyRepositoryQueriesOut is type LifePolicyRepository.LifePolicyRepositoryQuery
+ with {
+    briefly "Look-ups on their way to the life policy repository"
+    described as {
+      |Each look-up goes to the life policy repository it names.
+    }
+  }
+  inlet LifePolicyRepositoryRepliesIn is type LifePolicyRepository.LifePolicyRepositoryReply with {
+    briefly "The life policy repository's answers"
+    described as {
+      |What the life policy repository answers about itself.
+    }
+  }
+  outlet LifePolicyRepositoryRepliesOut is type LifePolicyRepository.LifePolicyRepositoryReply
+ with {
+    briefly "Answers to PolicyLifecycleApp"
+    described as {
+      |The reply leg of PolicyLifecycleApp's look-ups of the life policy repository.
+    }
+  }
+  inlet LifePolicyQueriesIn is query LifePolicy.GetLifePolicy with {
+    briefly "Look-ups of the life policy"
+    described as {
+      |PolicyLifecycleApp's look-ups, on their way to the life policy.
+    }
+  }
+  outlet LifePolicyQueriesOut is query LifePolicy.GetLifePolicy
+ with {
+    briefly "Look-ups on their way to the life policy"
+    described as {
+      |Each look-up goes to the life policy it names.
+    }
+  }
   inlet LifePolicyCommandStreamIn is type LifePolicyContext.LifePolicyRequest
   outlet LifePolicyCommandStreamOut is type LifePolicyCommand
   inlet LifePolicyResultStreamIn is result LifePolicy.LifePolicyResult
   outlet LifePolicyResultStreamOut is result LifePolicy.LifePolicyResult
   handler LifePolicyContextBoundary is {
+    on getPersistencyMetrics: query GetPersistencyMetrics is {
+      forward getPersistencyMetrics to outlet LifePolicyContext.LifePolicyRepositoryQueriesOut
+    }
+    on getProductionMetrics: query GetProductionMetrics is {
+      forward getProductionMetrics to outlet LifePolicyContext.LifePolicyRepositoryQueriesOut
+    }
+    on getClaimsMetrics: query GetClaimsMetrics is {
+      forward getClaimsMetrics to outlet LifePolicyContext.LifePolicyRepositoryQueriesOut
+    }
+    on getLoanMetrics: query GetLoanMetrics is {
+      forward getLoanMetrics to outlet LifePolicyContext.LifePolicyRepositoryQueriesOut
+    }
+    on claimsMetricsView: result ClaimsMetricsView is {
+      send claimsMetricsView to outlet LifePolicyContext.LifePolicyRepositoryRepliesOut
+    }
+    on loanMetricsView: result LoanMetricsView is {
+      send loanMetricsView to outlet LifePolicyContext.LifePolicyRepositoryRepliesOut
+    }
+    on persistencyMetricsView: result PersistencyMetricsView is {
+      send persistencyMetricsView to outlet LifePolicyContext.LifePolicyRepositoryRepliesOut
+    }
+    on productionMetricsView: result ProductionMetricsView is {
+      send productionMetricsView to outlet LifePolicyContext.LifePolicyRepositoryRepliesOut
+    }
+    on getLifePolicy: query LifePolicy.GetLifePolicy is {
+      forward getLifePolicy to outlet LifePolicyContext.LifePolicyQueriesOut
+    }
     on issueLifePolicy: command LifePolicyContext.IssueLifePolicy is {
       let givenPolicyInfo: type LifePolicyInfo = prompt("the policy info of this life policy issued")
       let givenIssueDate: type Date = prompt("the issue date of this life policy issued")
@@ -135,8 +201,17 @@ context LifePolicyContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'LifePolicyRepositoryQuery Intake' is from outlet LifePolicyContext.LifePolicyRepositoryQueriesOut to inlet LifePolicyContext.LifePolicyRepository.LifePolicyRepositoryQueries with {
+    briefly "Look-ups on their way to the life policy repository"
+  }
+  connector 'LifePolicyRepositoryReply Egress' is from outlet LifePolicyContext.LifePolicyRepository.LifePolicyRepositoryResponses to inlet LifePolicyContext.LifePolicyRepositoryRepliesIn with {
+    briefly "The life policy repository's answers on their way to the boundary"
+  }
+  connector 'LifePolicyQuery Intake' is from outlet LifePolicyContext.LifePolicyQueriesOut to inlet LifePolicyContext.LifePolicy.LifePolicyQueries with {
+    briefly "Look-ups on their way to the life policy"
+  }
   connector 'LifePolicyCommand Stream Intake' is from outlet LifePolicyContext.LifePolicyCommandStreamOut to inlet LifePolicyContext.LifePolicy.LifePolicyCommands
-  connector 'LifePolicyResult Stream Egress' is from outlet LifePolicyContext.LifePolicyRepository.LifePolicyRepositoryResponses to inlet LifePolicyContext.LifePolicyResultStreamIn
+  connector 'LifePolicyResult Stream Egress' is from outlet LifePolicyContext.LifePolicy.LifePolicyReplies to inlet LifePolicyContext.LifePolicyResultStreamIn
   include "types.riddl"
   include "LifePolicy.riddl"
   // Repository for policy persistence
@@ -149,7 +224,29 @@ context LifePolicyContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository LifePolicyRepository as flow is {
+  repository LifePolicyRepository as merge is {
+    type LifePolicyRepositoryQuery is one of {
+      GetPersistencyMetrics or GetProductionMetrics or GetClaimsMetrics or GetLoanMetrics
+    } with {
+      briefly "What may be asked of LifePolicyRepository"
+      described as {
+        |The look-ups the life policy repository answers.
+      }
+    }
+    type LifePolicyRepositoryReply is one of {
+      ClaimsMetricsView or LoanMetricsView or PersistencyMetricsView or ProductionMetricsView
+    } with {
+      briefly "What LifePolicyRepository answers"
+      described as {
+        |The answers the life policy repository gives.
+      }
+    }
+    inlet LifePolicyRepositoryQueries is type LifePolicyRepositoryQuery with {
+      briefly "Look-ups of this life policy repository"
+      described as {
+        |What PolicyLifecycleApp asks of the life policy repository, by way of LifePolicyContext.
+      }
+    }
     inlet LifePolicyRepositoryFromLifePolicyMetricsProjector is type LifePolicyRepositoryCommand
     command PersistBeneficiaryAdded is {
       policyId: LifePolicyId with {
@@ -659,7 +756,7 @@ context LifePolicyContext as router is {
         |The relational schema persisting life policy records for this repository.
       }
     }
-    outlet LifePolicyRepositoryResponses is result LifePolicy.LifePolicyResult
+    outlet LifePolicyRepositoryResponses is type LifePolicyRepositoryReply
     handler LifePolicyRepositoryHandler is {
       on persistBeneficiaryAdded: command PersistBeneficiaryAdded is {
         do "apply BeneficiaryAdded to the stored row"

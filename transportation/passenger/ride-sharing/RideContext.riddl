@@ -46,8 +46,56 @@ context RideContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet RideRepositoryQueriesIn is query GetRideStats with {
+    briefly "Look-ups of the ride repository"
+    described as {
+      |RideSharingApp's look-ups, on their way to the ride repository.
+    }
+  }
+  outlet RideRepositoryQueriesOut is query GetRideStats
+ with {
+    briefly "Look-ups on their way to the ride repository"
+    described as {
+      |Each look-up goes to the ride repository it names.
+    }
+  }
+  inlet RideRepositoryRepliesIn is result RideStatsView with {
+    briefly "The ride repository's answers"
+    described as {
+      |What the ride repository answers about itself.
+    }
+  }
+  outlet RideRepositoryRepliesOut is result RideStatsView
+ with {
+    briefly "Answers to RideSharingApp"
+    described as {
+      |The reply leg of RideSharingApp's look-ups of the ride repository.
+    }
+  }
+  inlet RideQueriesIn is query Ride.GetRide with {
+    briefly "Look-ups of the ride"
+    described as {
+      |RideSharingApp's look-ups, on their way to the ride.
+    }
+  }
+  outlet RideQueriesOut is query Ride.GetRide
+ with {
+    briefly "Look-ups on their way to the ride"
+    described as {
+      |Each look-up goes to the ride it names.
+    }
+  }
   inlet RideContextFromToDriverMatchingService is command Ride.AssignDriver with {
     briefly "What ToDriverMatchingService makes of the answers it gets"
+  }
+  connector 'RideRepositoryQuery Intake' is from outlet RideContext.RideRepositoryQueriesOut to inlet RideContext.RideRepository.RideRepositoryQueries with {
+    briefly "Look-ups on their way to the ride repository"
+  }
+  connector 'RideRepositoryReply Egress' is from outlet RideContext.RideRepository.RideRepositoryResponses to inlet RideContext.RideRepositoryRepliesIn with {
+    briefly "The ride repository's answers on their way to the boundary"
+  }
+  connector 'RideQuery Intake' is from outlet RideContext.RideQueriesOut to inlet RideContext.Ride.RideQueries with {
+    briefly "Look-ups on their way to the ride"
   }
   connector 'ToDriverMatchingService Intake' is from outlet RideContext.ToDriverMatchingService.ToDriverMatchingServiceToRideContext to inlet RideContext.RideContextFromToDriverMatchingService with {
     briefly "Answers translated by ToDriverMatchingService, on their way in"
@@ -91,6 +139,15 @@ context RideContext as router is {
   inlet RideResultStreamIn is result Ride.RideResult
   outlet RideResultStreamOut is result Ride.RideResult
   handler RideContextBoundary is {
+    on getRideStats: query GetRideStats is {
+      forward getRideStats to outlet RideContext.RideRepositoryQueriesOut
+    }
+    on rideStatsView: result RideStatsView is {
+      send rideStatsView to outlet RideContext.RideRepositoryRepliesOut
+    }
+    on getRide: query Ride.GetRide is {
+      forward getRide to outlet RideContext.RideQueriesOut
+    }
     on requestRide: command RideContext.RequestRide is {
       let newRide = create entity RideContext.Ride(rider = requestRide.rider, pickup = requestRide.pickup, dropoff = requestRide.dropoff, vehicleType = requestRide.vehicleType, fareEstimate = requestRide.fareEstimate)
       log newRide
@@ -140,7 +197,7 @@ context RideContext as router is {
     }
   }
   connector 'RideCommand Stream Intake' is from outlet RideContext.RideCommandStreamOut to inlet RideContext.Ride.RideCommands
-  connector 'RideResult Stream Egress' is from outlet RideContext.RideRepository.RideRepositoryResponses to inlet RideContext.RideResultStreamIn
+  connector 'RideResult Stream Egress' is from outlet RideContext.Ride.RideReplies to inlet RideContext.RideResultStreamIn
   adaptor FromDriverMatchingService from context DriverMatchingService as flow is { 
     inlet FromDriverMatchingServiceIn is event DriverMatchingService.DriverDispatched
     outlet FromDriverMatchingServiceToRideContext is command Ride.DriverEnRoute
@@ -426,7 +483,13 @@ context RideContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository RideRepository as flow is {
+  repository RideRepository as merge is {
+    inlet RideRepositoryQueries is query GetRideStats with {
+      briefly "Look-ups of this ride repository"
+      described as {
+        |What RideSharingApp asks of the ride repository, by way of RideContext.
+      }
+    }
     inlet RideRepositoryFromRideAnalytics is type RideRepositoryCommand
     command PersistDriverAssigned is {
       rideId: RideId with {
@@ -755,7 +818,7 @@ context RideContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet RideRepositoryResponses is result Ride.RideResult
+    outlet RideRepositoryResponses is result RideStatsView
     record StoredRide is {
       rideId: RideId with {
         briefly "rideId"

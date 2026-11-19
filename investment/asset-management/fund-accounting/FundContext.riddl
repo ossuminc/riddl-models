@@ -26,8 +26,56 @@ context FundContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet FundRepositoryQueriesIn is type FundRepository.FundRepositoryQuery with {
+    briefly "Look-ups of the fund repository"
+    described as {
+      |FundAccountingApp's look-ups, on their way to the fund repository.
+    }
+  }
+  outlet FundRepositoryQueriesOut is type FundRepository.FundRepositoryQuery
+ with {
+    briefly "Look-ups on their way to the fund repository"
+    described as {
+      |Each look-up goes to the fund repository it names.
+    }
+  }
+  inlet FundRepositoryRepliesIn is type FundRepository.FundRepositoryReply with {
+    briefly "The fund repository's answers"
+    described as {
+      |What the fund repository answers about itself.
+    }
+  }
+  outlet FundRepositoryRepliesOut is type FundRepository.FundRepositoryReply
+ with {
+    briefly "Answers to FundAccountingApp"
+    described as {
+      |The reply leg of FundAccountingApp's look-ups of the fund repository.
+    }
+  }
+  inlet FundQueriesIn is query Fund.GetFundInfo with {
+    briefly "Look-ups of the fund"
+    described as {
+      |FundAccountingApp's look-ups, on their way to the fund.
+    }
+  }
+  outlet FundQueriesOut is query Fund.GetFundInfo
+ with {
+    briefly "Look-ups on their way to the fund"
+    described as {
+      |Each look-up goes to the fund it names.
+    }
+  }
   inlet FundContextFromMarketDataContext is command Fund.CalculateNAV with {
     briefly "What FromMarketDataContext makes of that service's news"
+  }
+  connector 'FundRepositoryQuery Intake' is from outlet FundContext.FundRepositoryQueriesOut to inlet FundContext.FundRepository.FundRepositoryQueries with {
+    briefly "Look-ups on their way to the fund repository"
+  }
+  connector 'FundRepositoryReply Egress' is from outlet FundContext.FundRepository.FundRepositoryResponses to inlet FundContext.FundRepositoryRepliesIn with {
+    briefly "The fund repository's answers on their way to the boundary"
+  }
+  connector 'FundQuery Intake' is from outlet FundContext.FundQueriesOut to inlet FundContext.Fund.FundQueries with {
+    briefly "Look-ups on their way to the fund"
   }
   connector 'FromMarketDataContext Intake' is from outlet FundContext.FromMarketDataContext.FromMarketDataContextToFundContext to inlet FundContext.FundContextFromMarketDataContext with {
     briefly "What FromMarketDataContext makes of that news, on its way in"
@@ -43,6 +91,21 @@ context FundContext as router is {
   inlet FundInfoResultStreamIn is result Fund.FundInfoResult
   outlet FundInfoResultStreamOut is result Fund.FundInfoResult
   handler FundContextBoundary is {
+    on getDashboardRecord: query GetDashboardRecord is {
+      forward getDashboardRecord to outlet FundContext.FundRepositoryQueriesOut
+    }
+    on getReportingRecord: query GetReportingRecord is {
+      forward getReportingRecord to outlet FundContext.FundRepositoryQueriesOut
+    }
+    on dashboardRecordView: result DashboardRecordView is {
+      send dashboardRecordView to outlet FundContext.FundRepositoryRepliesOut
+    }
+    on reportingRecordView: result ReportingRecordView is {
+      send reportingRecordView to outlet FundContext.FundRepositoryRepliesOut
+    }
+    on getFundInfo: query Fund.GetFundInfo is {
+      forward getFundInfo to outlet FundContext.FundQueriesOut
+    }
     on createFund: command FundContext.CreateFund is {
       let givenCreatedAt: type TimeStamp = prompt("the created at of this fund created")
       let newFund = create entity FundContext.Fund(name = createFund.name, fundType = createFund.fundType, inceptionDate = createFund.inceptionDate, createdAt = givenCreatedAt, baseCurrency = createFund.baseCurrency, managementFeeRate = createFund.managementFeeRate, performanceFeeRate = createFund.performanceFeeRate, minimumInvestment = createFund.minimumInvestment)
@@ -84,7 +147,7 @@ context FundContext as router is {
     }
   }
   connector 'FundCommand Stream Intake' is from outlet FundContext.FundCommandStreamOut to inlet FundContext.Fund.FundCommands
-  connector 'FundInfoResult Stream Egress' is from outlet FundContext.FundRepository.FundRepositoryResponses to inlet FundContext.FundInfoResultStreamIn
+  connector 'FundInfoResult Stream Egress' is from outlet FundContext.Fund.FundReplies to inlet FundContext.FundInfoResultStreamIn
   adaptor FromComplianceContext from context ComplianceContext as sink is { 
     inlet FromComplianceContextIn is type ComplianceContext.ComplianceContextEvent
     handler FromComplianceContextHandler is {
@@ -229,6 +292,28 @@ context FundContext as router is {
     }
   }
   repository FundRepository as merge is {
+    type FundRepositoryQuery is one of {
+      GetDashboardRecord or GetReportingRecord
+    } with {
+      briefly "What may be asked of FundRepository"
+      described as {
+        |The look-ups the fund repository answers.
+      }
+    }
+    type FundRepositoryReply is one of {
+      DashboardRecordView or ReportingRecordView
+    } with {
+      briefly "What FundRepository answers"
+      described as {
+        |The answers the fund repository gives.
+      }
+    }
+    inlet FundRepositoryQueries is type FundRepositoryQuery with {
+      briefly "Look-ups of this fund repository"
+      described as {
+        |What FundAccountingApp asks of the fund repository, by way of FundContext.
+      }
+    }
     inlet FundRepositoryFromRegulatoryReportingProjector is type FundRepositoryCommand with {
       briefly "What RegulatoryReportingProjector sends FundRepository"
       described as {
@@ -356,7 +441,7 @@ context FundContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet FundRepositoryResponses is result Fund.FundInfoResult
+    outlet FundRepositoryResponses is type FundRepositoryReply
     schema FundData is relational
       of fund as record FundInfo
       of holding as record HoldingRecord

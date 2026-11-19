@@ -15,8 +15,56 @@ context StudyContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet StudyRepositoryQueriesIn is type StudyRepository.StudyRepositoryQuery with {
+    briefly "Look-ups of the study repository"
+    described as {
+      |ClinicalTrialsApp's look-ups, on their way to the study repository.
+    }
+  }
+  outlet StudyRepositoryQueriesOut is type StudyRepository.StudyRepositoryQuery
+ with {
+    briefly "Look-ups on their way to the study repository"
+    described as {
+      |Each look-up goes to the study repository it names.
+    }
+  }
+  inlet StudyRepositoryRepliesIn is type StudyRepository.StudyRepositoryReply with {
+    briefly "The study repository's answers"
+    described as {
+      |What the study repository answers about itself.
+    }
+  }
+  outlet StudyRepositoryRepliesOut is type StudyRepository.StudyRepositoryReply
+ with {
+    briefly "Answers to ClinicalTrialsApp"
+    described as {
+      |The reply leg of ClinicalTrialsApp's look-ups of the study repository.
+    }
+  }
+  inlet ClinicalStudyQueriesIn is query ClinicalStudy.GetClinicalStudy with {
+    briefly "Look-ups of the clinical study"
+    described as {
+      |ClinicalTrialsApp's look-ups, on their way to the clinical study.
+    }
+  }
+  outlet ClinicalStudyQueriesOut is query ClinicalStudy.GetClinicalStudy
+ with {
+    briefly "Look-ups on their way to the clinical study"
+    described as {
+      |Each look-up goes to the clinical study it names.
+    }
+  }
   inlet StudyContextFromCTMSIntegration is command ClinicalStudy.ActivateSite with {
     briefly "What FromCTMSIntegration makes of that service's news"
+  }
+  connector 'StudyRepositoryQuery Intake' is from outlet StudyContext.StudyRepositoryQueriesOut to inlet StudyContext.StudyRepository.StudyRepositoryQueries with {
+    briefly "Look-ups on their way to the study repository"
+  }
+  connector 'StudyRepositoryReply Egress' is from outlet StudyContext.StudyRepository.StudyRepositoryResponses to inlet StudyContext.StudyRepositoryRepliesIn with {
+    briefly "The study repository's answers on their way to the boundary"
+  }
+  connector 'ClinicalStudyQuery Intake' is from outlet StudyContext.ClinicalStudyQueriesOut to inlet StudyContext.ClinicalStudy.ClinicalStudyQueries with {
+    briefly "Look-ups on their way to the clinical study"
   }
   connector 'FromCTMSIntegration Intake' is from outlet StudyContext.FromCTMSIntegration.FromCTMSIntegrationToStudyContext to inlet StudyContext.StudyContextFromCTMSIntegration with {
     briefly "What FromCTMSIntegration makes of that news, on its way in"
@@ -32,6 +80,30 @@ context StudyContext as router is {
   inlet ClinicalStudyResultStreamIn is result ClinicalStudy.ClinicalStudyResult
   outlet ClinicalStudyResultStreamOut is result ClinicalStudy.ClinicalStudyResult
   handler StudyContextBoundary is {
+    on getEnrollmentState: query GetEnrollmentState is {
+      forward getEnrollmentState to outlet StudyContext.StudyRepositoryQueriesOut
+    }
+    on findStudyById: query StudyRepository.FindStudyById is {
+      forward findStudyById to outlet StudyContext.StudyRepositoryQueriesOut
+    }
+    on findStudiesByStatus: query StudyRepository.FindStudiesByStatus is {
+      forward findStudiesByStatus to outlet StudyContext.StudyRepositoryQueriesOut
+    }
+    on findStudiesBySponsor: query StudyRepository.FindStudiesBySponsor is {
+      forward findStudiesBySponsor to outlet StudyContext.StudyRepositoryQueriesOut
+    }
+    on enrollmentStateView: result EnrollmentStateView is {
+      send enrollmentStateView to outlet StudyContext.StudyRepositoryRepliesOut
+    }
+    on studyListResult: result StudyRepository.StudyListResult is {
+      send studyListResult to outlet StudyContext.StudyRepositoryRepliesOut
+    }
+    on studyResult: result StudyRepository.StudyResult is {
+      send studyResult to outlet StudyContext.StudyRepositoryRepliesOut
+    }
+    on getClinicalStudy: query ClinicalStudy.GetClinicalStudy is {
+      forward getClinicalStudy to outlet StudyContext.ClinicalStudyQueriesOut
+    }
     on createStudy: command StudyContext.CreateStudy is {
       let givenCreatedAt: type DateTime = prompt("the created at of this study created")
       let newClinicalStudy = create entity StudyContext.ClinicalStudy(protocol = createStudy.protocol, createdAt = givenCreatedAt)
@@ -70,7 +142,7 @@ context StudyContext as router is {
     }
   }
   connector 'ClinicalStudyCommand Stream Intake' is from outlet StudyContext.ClinicalStudyCommandStreamOut to inlet StudyContext.ClinicalStudy.ClinicalStudyCommands
-  connector 'ClinicalStudyResult Stream Egress' is from outlet StudyContext.StudyRepository.StudyRepositoryResponses to inlet StudyContext.ClinicalStudyResultStreamIn
+  connector 'ClinicalStudyResult Stream Egress' is from outlet StudyContext.ClinicalStudy.ClinicalStudyReplies to inlet StudyContext.ClinicalStudyResultStreamIn
   adaptor FromCTMSIntegration from context CTMSIntegration as flow is { 
     inlet FromCTMSIntegrationIn is type CTMSIntegration.CTMSIntegrationEvent
     outlet FromCTMSIntegrationToStudyContext is command ClinicalStudy.ActivateSite
@@ -172,7 +244,29 @@ context StudyContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository StudyRepository as flow is {
+  repository StudyRepository as merge is {
+    type StudyRepositoryQuery is one of {
+      GetEnrollmentState or FindStudyById or FindStudiesByStatus or FindStudiesBySponsor
+    } with {
+      briefly "What may be asked of StudyRepository"
+      described as {
+        |The look-ups the study repository answers.
+      }
+    }
+    type StudyRepositoryReply is one of {
+      EnrollmentStateView or StudyListResult or StudyResult
+    } with {
+      briefly "What StudyRepository answers"
+      described as {
+        |The answers the study repository gives.
+      }
+    }
+    inlet StudyRepositoryQueries is type StudyRepositoryQuery with {
+      briefly "Look-ups of this study repository"
+      described as {
+        |What ClinicalTrialsApp asks of the study repository, by way of StudyContext.
+      }
+    }
     inlet StudyRepositoryFromEnrollmentMetricsProjector is type StudyRepositoryCommand
     command PersistDataSubmitted is {
       studyId: StudyId with {
@@ -535,7 +629,7 @@ context StudyContext as router is {
         |The relational schema persisting clinical study records for this repository.
       }
     }
-    outlet StudyRepositoryResponses is result ClinicalStudy.ClinicalStudyResult
+    outlet StudyRepositoryResponses is type StudyRepositoryReply
     type StudyRecord is {
       studyId: StudyId
       protocol: StudyProtocol

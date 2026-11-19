@@ -34,8 +34,56 @@ context InventoryContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet InventoryRepositoryQueriesIn is query GetInventoryStats with {
+    briefly "Look-ups of the inventory repository"
+    described as {
+      |InventoryManagementApp's look-ups, on their way to the inventory repository.
+    }
+  }
+  outlet InventoryRepositoryQueriesOut is query GetInventoryStats
+ with {
+    briefly "Look-ups on their way to the inventory repository"
+    described as {
+      |Each look-up goes to the inventory repository it names.
+    }
+  }
+  inlet InventoryRepositoryRepliesIn is result InventoryStatsView with {
+    briefly "The inventory repository's answers"
+    described as {
+      |What the inventory repository answers about itself.
+    }
+  }
+  outlet InventoryRepositoryRepliesOut is result InventoryStatsView
+ with {
+    briefly "Answers to InventoryManagementApp"
+    described as {
+      |The reply leg of InventoryManagementApp's look-ups of the inventory repository.
+    }
+  }
+  inlet InventoryQueriesIn is query Inventory.GetInventory with {
+    briefly "Look-ups of the inventory"
+    described as {
+      |InventoryManagementApp's look-ups, on their way to the inventory.
+    }
+  }
+  outlet InventoryQueriesOut is query Inventory.GetInventory
+ with {
+    briefly "Look-ups on their way to the inventory"
+    described as {
+      |Each look-up goes to the inventory it names.
+    }
+  }
   inlet InventoryContextFromToBarcodeService is command Inventory.ReceiveStock with {
     briefly "What ToBarcodeService makes of the answers it gets"
+  }
+  connector 'InventoryRepositoryQuery Intake' is from outlet InventoryContext.InventoryRepositoryQueriesOut to inlet InventoryContext.InventoryRepository.InventoryRepositoryQueries with {
+    briefly "Look-ups on their way to the inventory repository"
+  }
+  connector 'InventoryRepositoryReply Egress' is from outlet InventoryContext.InventoryRepository.InventoryRepositoryResponses to inlet InventoryContext.InventoryRepositoryRepliesIn with {
+    briefly "The inventory repository's answers on their way to the boundary"
+  }
+  connector 'InventoryQuery Intake' is from outlet InventoryContext.InventoryQueriesOut to inlet InventoryContext.Inventory.InventoryQueries with {
+    briefly "Look-ups on their way to the inventory"
   }
   connector 'ToBarcodeService Intake' is from outlet InventoryContext.ToBarcodeService.ToBarcodeServiceToInventoryContext to inlet InventoryContext.InventoryContextFromToBarcodeService with {
     briefly "Answers translated by ToBarcodeService, on their way in"
@@ -63,6 +111,15 @@ context InventoryContext as router is {
   inlet StockItemResultStreamIn is result Inventory.InventoryResult
   outlet StockItemResultStreamOut is result Inventory.InventoryResult
   handler InventoryContextBoundary is {
+    on getInventoryStats: query GetInventoryStats is {
+      forward getInventoryStats to outlet InventoryContext.InventoryRepositoryQueriesOut
+    }
+    on inventoryStatsView: result InventoryStatsView is {
+      send inventoryStatsView to outlet InventoryContext.InventoryRepositoryRepliesOut
+    }
+    on getInventory: query Inventory.GetInventory is {
+      forward getInventory to outlet InventoryContext.InventoryQueriesOut
+    }
     on initializeInventory: command InventoryContext.InitializeInventory is {
       let newInventory = create entity InventoryContext.Inventory(warehouseId = initializeInventory.warehouseId, product = initializeInventory.product, location = initializeInventory.location)
       log newInventory
@@ -112,7 +169,7 @@ context InventoryContext as router is {
     }
   }
   connector 'InventoryCommand Stream Intake' is from outlet InventoryContext.InventoryCommandStreamOut to inlet InventoryContext.Inventory.InventoryCommands
-  connector 'StockItemResult Stream Egress' is from outlet InventoryContext.InventoryRepository.InventoryRepositoryResponses to inlet InventoryContext.StockItemResultStreamIn
+  connector 'StockItemResult Stream Egress' is from outlet InventoryContext.Inventory.InventoryReplies to inlet InventoryContext.StockItemResultStreamIn
   adaptor FromBarcodeService from context BarcodeService as sink is { 
     inlet FromBarcodeServiceIn is event BarcodeService.LabelGenerated
     handler FromBarcodeServiceHandler is {
@@ -419,7 +476,13 @@ context InventoryContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository InventoryRepository as flow is {
+  repository InventoryRepository as merge is {
+    inlet InventoryRepositoryQueries is query GetInventoryStats with {
+      briefly "Look-ups of this inventory repository"
+      described as {
+        |What InventoryManagementApp asks of the inventory repository, by way of InventoryContext.
+      }
+    }
     inlet InventoryRepositoryFromInventoryAnalytics is type InventoryRepositoryCommand
     command PersistInventoryInitialized is {
       inventoryId: InventoryId with {
@@ -790,7 +853,7 @@ context InventoryContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet InventoryRepositoryResponses is result Inventory.InventoryResult
+    outlet InventoryRepositoryResponses is result InventoryStatsView
     record StoredInventory is {
       inventoryId: InventoryId with {
         briefly "inventoryId"

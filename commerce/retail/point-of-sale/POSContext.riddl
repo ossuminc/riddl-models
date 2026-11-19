@@ -28,8 +28,56 @@ context POSContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet TransactionRepositoryQueriesIn is query GetDailySalesSummary with {
+    briefly "Look-ups of the transaction repository"
+    described as {
+      |PointOfSaleApp's look-ups, on their way to the transaction repository.
+    }
+  }
+  outlet TransactionRepositoryQueriesOut is query GetDailySalesSummary
+ with {
+    briefly "Look-ups on their way to the transaction repository"
+    described as {
+      |Each look-up goes to the transaction repository it names.
+    }
+  }
+  inlet TransactionRepositoryRepliesIn is result DailySalesSummaryView with {
+    briefly "The transaction repository's answers"
+    described as {
+      |What the transaction repository answers about itself.
+    }
+  }
+  outlet TransactionRepositoryRepliesOut is result DailySalesSummaryView
+ with {
+    briefly "Answers to PointOfSaleApp"
+    described as {
+      |The reply leg of PointOfSaleApp's look-ups of the transaction repository.
+    }
+  }
+  inlet TransactionQueriesIn is query Transaction.GetTransaction with {
+    briefly "Look-ups of the transaction"
+    described as {
+      |PointOfSaleApp's look-ups, on their way to the transaction.
+    }
+  }
+  outlet TransactionQueriesOut is query Transaction.GetTransaction
+ with {
+    briefly "Look-ups on their way to the transaction"
+    described as {
+      |Each look-up goes to the transaction it names.
+    }
+  }
   inlet POSContextFromPaymentGateway is command Transaction.ProcessPayment with {
     briefly "What FromPaymentGateway makes of that service's news"
+  }
+  connector 'TransactionRepositoryQuery Intake' is from outlet POSContext.TransactionRepositoryQueriesOut to inlet POSContext.TransactionRepository.TransactionRepositoryQueries with {
+    briefly "Look-ups on their way to the transaction repository"
+  }
+  connector 'TransactionRepositoryReply Egress' is from outlet POSContext.TransactionRepository.TransactionRepositoryResponses to inlet POSContext.TransactionRepositoryRepliesIn with {
+    briefly "The transaction repository's answers on their way to the boundary"
+  }
+  connector 'TransactionQuery Intake' is from outlet POSContext.TransactionQueriesOut to inlet POSContext.Transaction.TransactionQueries with {
+    briefly "Look-ups on their way to the transaction"
   }
   connector 'FromPaymentGateway Intake' is from outlet POSContext.FromPaymentGateway.FromPaymentGatewayToPOSContext to inlet POSContext.POSContextFromPaymentGateway with {
     briefly "What FromPaymentGateway makes of that news, on its way in"
@@ -45,6 +93,15 @@ context POSContext as router is {
   inlet TransactionResultStreamIn is result Transaction.TransactionResult
   outlet TransactionResultStreamOut is result Transaction.TransactionResult
   handler POSContextBoundary is {
+    on getDailySalesSummary: query GetDailySalesSummary is {
+      forward getDailySalesSummary to outlet POSContext.TransactionRepositoryQueriesOut
+    }
+    on dailySalesSummaryView: result DailySalesSummaryView is {
+      send dailySalesSummaryView to outlet POSContext.TransactionRepositoryRepliesOut
+    }
+    on getTransaction: query Transaction.GetTransaction is {
+      forward getTransaction to outlet POSContext.TransactionQueriesOut
+    }
     on startTransaction: command POSContext.StartTransaction is {
       let newTransaction = create entity POSContext.Transaction(terminalId = startTransaction.terminalId, cashierId = startTransaction.cashierId)
       log newTransaction
@@ -88,7 +145,7 @@ context POSContext as router is {
     }
   }
   connector 'TransactionCommand Stream Intake' is from outlet POSContext.TransactionCommandStreamOut to inlet POSContext.Transaction.TransactionCommands
-  connector 'TransactionResult Stream Egress' is from outlet POSContext.TransactionRepository.TransactionRepositoryResponses to inlet POSContext.TransactionResultStreamIn
+  connector 'TransactionResult Stream Egress' is from outlet POSContext.Transaction.TransactionReplies to inlet POSContext.TransactionResultStreamIn
   adaptor FromInventoryService from context InventoryService as sink is { 
     inlet FromInventoryServiceIn is event InventoryService.StockDeducted
     handler FromInventoryServiceHandler is {
@@ -288,7 +345,13 @@ context POSContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository TransactionRepository as flow is {
+  repository TransactionRepository as merge is {
+    inlet TransactionRepositoryQueries is query GetDailySalesSummary with {
+      briefly "Look-ups of this transaction repository"
+      described as {
+        |What PointOfSaleApp asks of the transaction repository, by way of POSContext.
+      }
+    }
     inlet TransactionRepositoryFromSalesAnalytics is type TransactionRepositoryCommand
     command PersistDiscountApplied is {
       transactionId: TransactionId with {
@@ -569,7 +632,7 @@ context POSContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet TransactionRepositoryResponses is result Transaction.TransactionResult
+    outlet TransactionRepositoryResponses is result DailySalesSummaryView
     record StoredTransaction is {
       transactionId: TransactionId with {
         briefly "transactionId"

@@ -28,8 +28,56 @@ context RatingContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet RatingRepositoryQueriesIn is query GetUsageMetrics with {
+    briefly "Look-ups of the rating repository"
+    described as {
+      |UsageRatingApp's look-ups, on their way to the rating repository.
+    }
+  }
+  outlet RatingRepositoryQueriesOut is query GetUsageMetrics
+ with {
+    briefly "Look-ups on their way to the rating repository"
+    described as {
+      |Each look-up goes to the rating repository it names.
+    }
+  }
+  inlet RatingRepositoryRepliesIn is result UsageMetricsView with {
+    briefly "The rating repository's answers"
+    described as {
+      |What the rating repository answers about itself.
+    }
+  }
+  outlet RatingRepositoryRepliesOut is result UsageMetricsView
+ with {
+    briefly "Answers to UsageRatingApp"
+    described as {
+      |The reply leg of UsageRatingApp's look-ups of the rating repository.
+    }
+  }
+  inlet UsageRecordQueriesIn is query UsageRecord.GetUsageRecord with {
+    briefly "Look-ups of the usage record"
+    described as {
+      |UsageRatingApp's look-ups, on their way to the usage record.
+    }
+  }
+  outlet UsageRecordQueriesOut is query UsageRecord.GetUsageRecord
+ with {
+    briefly "Look-ups on their way to the usage record"
+    described as {
+      |Each look-up goes to the usage record it names.
+    }
+  }
   inlet RatingContextFromToBillingSystem is command UsageRecord.ApplyRatePlan with {
     briefly "What ToBillingSystem makes of the answers it gets"
+  }
+  connector 'RatingRepositoryQuery Intake' is from outlet RatingContext.RatingRepositoryQueriesOut to inlet RatingContext.RatingRepository.RatingRepositoryQueries with {
+    briefly "Look-ups on their way to the rating repository"
+  }
+  connector 'RatingRepositoryReply Egress' is from outlet RatingContext.RatingRepository.RatingRepositoryResponses to inlet RatingContext.RatingRepositoryRepliesIn with {
+    briefly "The rating repository's answers on their way to the boundary"
+  }
+  connector 'UsageRecordQuery Intake' is from outlet RatingContext.UsageRecordQueriesOut to inlet RatingContext.UsageRecord.UsageRecordQueries with {
+    briefly "Look-ups on their way to the usage record"
   }
   connector 'ToBillingSystem Intake' is from outlet RatingContext.ToBillingSystem.ToBillingSystemToRatingContext to inlet RatingContext.RatingContextFromToBillingSystem with {
     briefly "Answers translated by ToBillingSystem, on their way in"
@@ -51,6 +99,15 @@ context RatingContext as router is {
   inlet UsageRecordResultStreamIn is result UsageRecord.UsageRecordResult
   outlet UsageRecordResultStreamOut is result UsageRecord.UsageRecordResult
   handler RatingContextBoundary is {
+    on getUsageMetrics: query GetUsageMetrics is {
+      forward getUsageMetrics to outlet RatingContext.RatingRepositoryQueriesOut
+    }
+    on usageMetricsView: result UsageMetricsView is {
+      send usageMetricsView to outlet RatingContext.RatingRepositoryRepliesOut
+    }
+    on getUsageRecord: query UsageRecord.GetUsageRecord is {
+      forward getUsageRecord to outlet RatingContext.UsageRecordQueriesOut
+    }
     on submitUsageRecord: command RatingContext.SubmitUsageRecord is {
       let newUsageRecord = create entity RatingContext.UsageRecord(accountId = submitUsageRecord.accountId, cdr = submitUsageRecord.cdr)
       log newUsageRecord
@@ -88,7 +145,7 @@ context RatingContext as router is {
     }
   }
   connector 'UsageRecordCommand Stream Intake' is from outlet RatingContext.UsageRecordCommandStreamOut to inlet RatingContext.UsageRecord.UsageRecordCommands
-  connector 'UsageRecordResult Stream Egress' is from outlet RatingContext.RatingRepository.RatingRepositoryResponses to inlet RatingContext.UsageRecordResultStreamIn
+  connector 'UsageRecordResult Stream Egress' is from outlet RatingContext.UsageRecord.UsageRecordReplies to inlet RatingContext.UsageRecordResultStreamIn
   adaptor FromBillingSystem from context BillingSystem as flow is { 
     inlet FromBillingSystemIn is event BillingSystem.RatedUsageAccepted
     outlet FromBillingSystemToRatingContext is command UsageRecord.SubmitToBilling
@@ -206,7 +263,13 @@ context RatingContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository RatingRepository as flow is {
+  repository RatingRepository as merge is {
+    inlet RatingRepositoryQueries is query GetUsageMetrics with {
+      briefly "Look-ups of this rating repository"
+      described as {
+        |What UsageRatingApp asks of the rating repository, by way of RatingContext.
+      }
+    }
     inlet RatingRepositoryFromRatingMetrics is type RatingRepositoryCommand
     command PersistRatePlanApplied is {
       usageRecordId: UsageRecordId with {
@@ -391,7 +454,7 @@ context RatingContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet RatingRepositoryResponses is result UsageRecord.UsageRecordResult
+    outlet RatingRepositoryResponses is result UsageMetricsView
     record StoredUsageRecord is {
       usageRecordId: UsageRecordId with {
         briefly "usageRecordId"

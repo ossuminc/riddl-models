@@ -51,8 +51,56 @@ context RouteContext as router is {
   } with {
     briefly "What ToGeocodingService turns its answers into"
   }
+  inlet RouteRepositoryQueriesIn is query GetRouteStats with {
+    briefly "Look-ups of the route repository"
+    described as {
+      |RouteOptimizationApp's look-ups, on their way to the route repository.
+    }
+  }
+  outlet RouteRepositoryQueriesOut is query GetRouteStats
+ with {
+    briefly "Look-ups on their way to the route repository"
+    described as {
+      |Each look-up goes to the route repository it names.
+    }
+  }
+  inlet RouteRepositoryRepliesIn is result RouteStatsView with {
+    briefly "The route repository's answers"
+    described as {
+      |What the route repository answers about itself.
+    }
+  }
+  outlet RouteRepositoryRepliesOut is result RouteStatsView
+ with {
+    briefly "Answers to RouteOptimizationApp"
+    described as {
+      |The reply leg of RouteOptimizationApp's look-ups of the route repository.
+    }
+  }
+  inlet RouteQueriesIn is query Route.GetRoute with {
+    briefly "Look-ups of the route"
+    described as {
+      |RouteOptimizationApp's look-ups, on their way to the route.
+    }
+  }
+  outlet RouteQueriesOut is query Route.GetRoute
+ with {
+    briefly "Look-ups on their way to the route"
+    described as {
+      |Each look-up goes to the route it names.
+    }
+  }
   inlet RouteContextFromToGeocodingService is type ToGeocodingServiceCommand with {
     briefly "What ToGeocodingService makes of the answers it gets"
+  }
+  connector 'RouteRepositoryQuery Intake' is from outlet RouteContext.RouteRepositoryQueriesOut to inlet RouteContext.RouteRepository.RouteRepositoryQueries with {
+    briefly "Look-ups on their way to the route repository"
+  }
+  connector 'RouteRepositoryReply Egress' is from outlet RouteContext.RouteRepository.RouteRepositoryResponses to inlet RouteContext.RouteRepositoryRepliesIn with {
+    briefly "The route repository's answers on their way to the boundary"
+  }
+  connector 'RouteQuery Intake' is from outlet RouteContext.RouteQueriesOut to inlet RouteContext.Route.RouteQueries with {
+    briefly "Look-ups on their way to the route"
   }
   connector 'ToGeocodingService Intake' is from outlet RouteContext.ToGeocodingService.ToGeocodingServiceToRouteContext to inlet RouteContext.RouteContextFromToGeocodingService with {
     briefly "Answers translated by ToGeocodingService, on their way in"
@@ -85,6 +133,15 @@ context RouteContext as router is {
   inlet RouteResultStreamIn is result Route.RouteResult
   outlet RouteResultStreamOut is result Route.RouteResult
   handler RouteContextBoundary is {
+    on getRouteStats: query GetRouteStats is {
+      forward getRouteStats to outlet RouteContext.RouteRepositoryQueriesOut
+    }
+    on routeStatsView: result RouteStatsView is {
+      send routeStatsView to outlet RouteContext.RouteRepositoryRepliesOut
+    }
+    on getRoute: query Route.GetRoute is {
+      forward getRoute to outlet RouteContext.RouteQueriesOut
+    }
     on createRoute: command RouteContext.CreateRoute is {
       let newRoute = create entity RouteContext.Route(name = createRoute.name, scheduledDate = createRoute.scheduledDate, stops = createRoute.stops, startLocation = createRoute.startLocation, endLocation = createRoute.endLocation)
       log newRoute
@@ -140,7 +197,7 @@ context RouteContext as router is {
     }
   }
   connector 'RouteCommand Stream Intake' is from outlet RouteContext.RouteCommandStreamOut to inlet RouteContext.Route.RouteCommands
-  connector 'RouteResult Stream Egress' is from outlet RouteContext.RouteRepository.RouteRepositoryResponses to inlet RouteContext.RouteResultStreamIn
+  connector 'RouteResult Stream Egress' is from outlet RouteContext.Route.RouteReplies to inlet RouteContext.RouteResultStreamIn
   adaptor FromCustomerNotificationService from context CustomerNotificationService as sink is { 
     inlet FromCustomerNotificationServiceIn is type CustomerNotificationService.CustomerNotificationServiceEvent
     handler FromCustomerNotificationServiceHandler is {
@@ -437,7 +494,13 @@ context RouteContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository RouteRepository as flow is {
+  repository RouteRepository as merge is {
+    inlet RouteRepositoryQueries is query GetRouteStats with {
+      briefly "Look-ups of this route repository"
+      described as {
+        |What RouteOptimizationApp asks of the route repository, by way of RouteContext.
+      }
+    }
     inlet RouteRepositoryFromRouteAnalytics is type RouteRepositoryCommand
     command PersistArrivedAtStop is {
       routeId: RouteId with {
@@ -814,7 +877,7 @@ context RouteContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet RouteRepositoryResponses is result Route.RouteResult
+    outlet RouteRepositoryResponses is result RouteStatsView
     record StoredRoute is {
       routeId: RouteId with {
         briefly "routeId"

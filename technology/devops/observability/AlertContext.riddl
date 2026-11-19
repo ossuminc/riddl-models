@@ -28,8 +28,56 @@ context AlertContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet AlertRepositoryQueriesIn is query GetObservabilityStats with {
+    briefly "Look-ups of the alert repository"
+    described as {
+      |ObservabilityApp's look-ups, on their way to the alert repository.
+    }
+  }
+  outlet AlertRepositoryQueriesOut is query GetObservabilityStats
+ with {
+    briefly "Look-ups on their way to the alert repository"
+    described as {
+      |Each look-up goes to the alert repository it names.
+    }
+  }
+  inlet AlertRepositoryRepliesIn is result ObservabilityStatsView with {
+    briefly "The alert repository's answers"
+    described as {
+      |What the alert repository answers about itself.
+    }
+  }
+  outlet AlertRepositoryRepliesOut is result ObservabilityStatsView
+ with {
+    briefly "Answers to ObservabilityApp"
+    described as {
+      |The reply leg of ObservabilityApp's look-ups of the alert repository.
+    }
+  }
+  inlet AlertQueriesIn is query Alert.GetAlert with {
+    briefly "Look-ups of the alert"
+    described as {
+      |ObservabilityApp's look-ups, on their way to the alert.
+    }
+  }
+  outlet AlertQueriesOut is query Alert.GetAlert
+ with {
+    briefly "Look-ups on their way to the alert"
+    described as {
+      |Each look-up goes to the alert it names.
+    }
+  }
   inlet AlertContextFromToDashboardService is command Alert.AddComment with {
     briefly "What ToDashboardService makes of the answers it gets"
+  }
+  connector 'AlertRepositoryQuery Intake' is from outlet AlertContext.AlertRepositoryQueriesOut to inlet AlertContext.AlertRepository.AlertRepositoryQueries with {
+    briefly "Look-ups on their way to the alert repository"
+  }
+  connector 'AlertRepositoryReply Egress' is from outlet AlertContext.AlertRepository.AlertRepositoryResponses to inlet AlertContext.AlertRepositoryRepliesIn with {
+    briefly "The alert repository's answers on their way to the boundary"
+  }
+  connector 'AlertQuery Intake' is from outlet AlertContext.AlertQueriesOut to inlet AlertContext.Alert.AlertQueries with {
+    briefly "Look-ups on their way to the alert"
   }
   connector 'ToDashboardService Intake' is from outlet AlertContext.ToDashboardService.ToDashboardServiceToAlertContext to inlet AlertContext.AlertContextFromToDashboardService with {
     briefly "Answers translated by ToDashboardService, on their way in"
@@ -57,6 +105,15 @@ context AlertContext as router is {
   inlet AlertResultStreamIn is result Alert.AlertResult
   outlet AlertResultStreamOut is result Alert.AlertResult
   handler AlertContextBoundary is {
+    on getObservabilityStats: query GetObservabilityStats is {
+      forward getObservabilityStats to outlet AlertContext.AlertRepositoryQueriesOut
+    }
+    on observabilityStatsView: result ObservabilityStatsView is {
+      send observabilityStatsView to outlet AlertContext.AlertRepositoryRepliesOut
+    }
+    on getAlert: query Alert.GetAlert is {
+      forward getAlert to outlet AlertContext.AlertQueriesOut
+    }
     on createAlert: command AlertContext.CreateAlert is {
       let newAlert = create entity AlertContext.Alert(rule = createAlert.rule, value = createAlert.value)
       log newAlert
@@ -94,7 +151,7 @@ context AlertContext as router is {
     }
   }
   connector 'AlertCommand Stream Intake' is from outlet AlertContext.AlertCommandStreamOut to inlet AlertContext.Alert.AlertCommands
-  connector 'AlertResult Stream Egress' is from outlet AlertContext.AlertRepository.AlertRepositoryResponses to inlet AlertContext.AlertResultStreamIn
+  connector 'AlertResult Stream Egress' is from outlet AlertContext.Alert.AlertReplies to inlet AlertContext.AlertResultStreamIn
   adaptor FromDashboardService from context DashboardService as sink is { 
     inlet FromDashboardServiceIn is event DashboardService.DashboardCreated
     handler FromDashboardServiceHandler is {
@@ -373,7 +430,13 @@ context AlertContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository AlertRepository as flow is {
+  repository AlertRepository as merge is {
+    inlet AlertRepositoryQueries is query GetObservabilityStats with {
+      briefly "Look-ups of this alert repository"
+      described as {
+        |What ObservabilityApp asks of the alert repository, by way of AlertContext.
+      }
+    }
     inlet AlertRepositoryFromObservabilityAnalytics is type AlertRepositoryCommand
     command PersistAlertEscalated is {
       alertId: AlertId with {
@@ -594,7 +657,7 @@ context AlertContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet AlertRepositoryResponses is result Alert.AlertResult
+    outlet AlertRepositoryResponses is result ObservabilityStatsView
     record StoredAlert is {
       alertId: AlertId with {
         briefly "alertId"

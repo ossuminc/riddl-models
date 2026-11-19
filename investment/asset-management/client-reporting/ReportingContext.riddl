@@ -22,8 +22,56 @@ context ReportingContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet ReportingRepositoryQueriesIn is query GetClientReportMetrics with {
+    briefly "Look-ups of the reporting repository"
+    described as {
+      |ClientReportingApp's look-ups, on their way to the reporting repository.
+    }
+  }
+  outlet ReportingRepositoryQueriesOut is query GetClientReportMetrics
+ with {
+    briefly "Look-ups on their way to the reporting repository"
+    described as {
+      |Each look-up goes to the reporting repository it names.
+    }
+  }
+  inlet ReportingRepositoryRepliesIn is result ClientReportMetricsView with {
+    briefly "The reporting repository's answers"
+    described as {
+      |What the reporting repository answers about itself.
+    }
+  }
+  outlet ReportingRepositoryRepliesOut is result ClientReportMetricsView
+ with {
+    briefly "Answers to ClientReportingApp"
+    described as {
+      |The reply leg of ClientReportingApp's look-ups of the reporting repository.
+    }
+  }
+  inlet ClientReportQueriesIn is query ClientReport.GetClientReport with {
+    briefly "Look-ups of the client report"
+    described as {
+      |ClientReportingApp's look-ups, on their way to the client report.
+    }
+  }
+  outlet ClientReportQueriesOut is query ClientReport.GetClientReport
+ with {
+    briefly "Look-ups on their way to the client report"
+    described as {
+      |Each look-up goes to the client report it names.
+    }
+  }
   inlet ReportingContextFromToComplianceRegistry is command ClientReport.ComposeReport with {
     briefly "What ToComplianceRegistry makes of the answers it gets"
+  }
+  connector 'ReportingRepositoryQuery Intake' is from outlet ReportingContext.ReportingRepositoryQueriesOut to inlet ReportingContext.ReportingRepository.ReportingRepositoryQueries with {
+    briefly "Look-ups on their way to the reporting repository"
+  }
+  connector 'ReportingRepositoryReply Egress' is from outlet ReportingContext.ReportingRepository.ReportingRepositoryResponses to inlet ReportingContext.ReportingRepositoryRepliesIn with {
+    briefly "The reporting repository's answers on their way to the boundary"
+  }
+  connector 'ClientReportQuery Intake' is from outlet ReportingContext.ClientReportQueriesOut to inlet ReportingContext.ClientReport.ClientReportQueries with {
+    briefly "Look-ups on their way to the client report"
   }
   connector 'ToComplianceRegistry Intake' is from outlet ReportingContext.ToComplianceRegistry.ToComplianceRegistryToReportingContext to inlet ReportingContext.ReportingContextFromToComplianceRegistry with {
     briefly "Answers translated by ToComplianceRegistry, on their way in"
@@ -55,6 +103,15 @@ context ReportingContext as router is {
   inlet ClientReportResultStreamIn is result ClientReport.ClientReportResult
   outlet ClientReportResultStreamOut is result ClientReport.ClientReportResult
   handler ReportingContextBoundary is {
+    on getClientReportMetrics: query GetClientReportMetrics is {
+      forward getClientReportMetrics to outlet ReportingContext.ReportingRepositoryQueriesOut
+    }
+    on clientReportMetricsView: result ClientReportMetricsView is {
+      send clientReportMetricsView to outlet ReportingContext.ReportingRepositoryRepliesOut
+    }
+    on getClientReport: query ClientReport.GetClientReport is {
+      forward getClientReport to outlet ReportingContext.ClientReportQueriesOut
+    }
     on generateReport: command ReportingContext.GenerateReport is {
       let newClientReport = create entity ReportingContext.ClientReport(request = generateReport.request)
       log newClientReport
@@ -95,7 +152,7 @@ context ReportingContext as router is {
     }
   }
   connector 'ClientReportCommand Stream Intake' is from outlet ReportingContext.ClientReportCommandStreamOut to inlet ReportingContext.ClientReport.ClientReportCommands
-  connector 'ClientReportResult Stream Egress' is from outlet ReportingContext.ReportingRepository.ReportingRepositoryResponses to inlet ReportingContext.ClientReportResultStreamIn
+  connector 'ClientReportResult Stream Egress' is from outlet ReportingContext.ClientReport.ClientReportReplies to inlet ReportingContext.ClientReportResultStreamIn
   adaptor FromComplianceRegistry from context ComplianceRegistry as sink is { 
     inlet FromComplianceRegistryIn is event ComplianceRegistry.DistributionLogged
     handler FromComplianceRegistryHandler is {
@@ -225,7 +282,13 @@ context ReportingContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository ReportingRepository as flow is {
+  repository ReportingRepository as merge is {
+    inlet ReportingRepositoryQueries is query GetClientReportMetrics with {
+      briefly "Look-ups of this reporting repository"
+      described as {
+        |What ClientReportingApp asks of the reporting repository, by way of ReportingContext.
+      }
+    }
     inlet ReportingRepositoryFromReportingMetrics is type ReportingRepositoryCommand
     command PersistPerformanceCalculated is {
       reportId: ClientReportId with {
@@ -431,7 +494,7 @@ context ReportingContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet ReportingRepositoryResponses is result ClientReport.ClientReportResult
+    outlet ReportingRepositoryResponses is result ClientReportMetricsView
     record StoredClientReport is {
       clientReportId: ClientReportId with {
         briefly "clientReportId"

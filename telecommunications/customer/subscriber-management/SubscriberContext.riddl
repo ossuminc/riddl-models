@@ -40,8 +40,56 @@ context SubscriberContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet SubscriberRepositoryQueriesIn is query GetSubscriberMetrics with {
+    briefly "Look-ups of the subscriber repository"
+    described as {
+      |SubscriberManagementApp's look-ups, on their way to the subscriber repository.
+    }
+  }
+  outlet SubscriberRepositoryQueriesOut is query GetSubscriberMetrics
+ with {
+    briefly "Look-ups on their way to the subscriber repository"
+    described as {
+      |Each look-up goes to the subscriber repository it names.
+    }
+  }
+  inlet SubscriberRepositoryRepliesIn is result SubscriberMetricsView with {
+    briefly "The subscriber repository's answers"
+    described as {
+      |What the subscriber repository answers about itself.
+    }
+  }
+  outlet SubscriberRepositoryRepliesOut is result SubscriberMetricsView
+ with {
+    briefly "Answers to SubscriberManagementApp"
+    described as {
+      |The reply leg of SubscriberManagementApp's look-ups of the subscriber repository.
+    }
+  }
+  inlet SubscriberQueriesIn is query Subscriber.GetSubscriber with {
+    briefly "Look-ups of the subscriber"
+    described as {
+      |SubscriberManagementApp's look-ups, on their way to the subscriber.
+    }
+  }
+  outlet SubscriberQueriesOut is query Subscriber.GetSubscriber
+ with {
+    briefly "Look-ups on their way to the subscriber"
+    described as {
+      |Each look-up goes to the subscriber it names.
+    }
+  }
   inlet SubscriberContextFromToBillingSystem is command Subscriber.SuspendService with {
     briefly "What ToBillingSystem makes of the answers it gets"
+  }
+  connector 'SubscriberRepositoryQuery Intake' is from outlet SubscriberContext.SubscriberRepositoryQueriesOut to inlet SubscriberContext.SubscriberRepository.SubscriberRepositoryQueries with {
+    briefly "Look-ups on their way to the subscriber repository"
+  }
+  connector 'SubscriberRepositoryReply Egress' is from outlet SubscriberContext.SubscriberRepository.SubscriberRepositoryResponses to inlet SubscriberContext.SubscriberRepositoryRepliesIn with {
+    briefly "The subscriber repository's answers on their way to the boundary"
+  }
+  connector 'SubscriberQuery Intake' is from outlet SubscriberContext.SubscriberQueriesOut to inlet SubscriberContext.Subscriber.SubscriberQueries with {
+    briefly "Look-ups on their way to the subscriber"
   }
   connector 'ToBillingSystem Intake' is from outlet SubscriberContext.ToBillingSystem.ToBillingSystemToSubscriberContext to inlet SubscriberContext.SubscriberContextFromToBillingSystem with {
     briefly "Answers translated by ToBillingSystem, on their way in"
@@ -63,6 +111,15 @@ context SubscriberContext as router is {
   inlet SubscriberResultStreamIn is result Subscriber.SubscriberResult
   outlet SubscriberResultStreamOut is result Subscriber.SubscriberResult
   handler SubscriberContextBoundary is {
+    on getSubscriberMetrics: query GetSubscriberMetrics is {
+      forward getSubscriberMetrics to outlet SubscriberContext.SubscriberRepositoryQueriesOut
+    }
+    on subscriberMetricsView: result SubscriberMetricsView is {
+      send subscriberMetricsView to outlet SubscriberContext.SubscriberRepositoryRepliesOut
+    }
+    on getSubscriber: query Subscriber.GetSubscriber is {
+      forward getSubscriber to outlet SubscriberContext.SubscriberQueriesOut
+    }
     on createSubscriber: command SubscriberContext.CreateSubscriber is {
       let newSubscriber = create entity SubscriberContext.Subscriber(accountId = createSubscriber.accountId, accountType = createSubscriber.accountType, contactInfo = createSubscriber.contactInfo, paymentMethod = createSubscriber.paymentMethod)
       log newSubscriber
@@ -112,7 +169,7 @@ context SubscriberContext as router is {
     }
   }
   connector 'SubscriberCommand Stream Intake' is from outlet SubscriberContext.SubscriberCommandStreamOut to inlet SubscriberContext.Subscriber.SubscriberCommands
-  connector 'SubscriberResult Stream Egress' is from outlet SubscriberContext.SubscriberRepository.SubscriberRepositoryResponses to inlet SubscriberContext.SubscriberResultStreamIn
+  connector 'SubscriberResult Stream Egress' is from outlet SubscriberContext.Subscriber.SubscriberReplies to inlet SubscriberContext.SubscriberResultStreamIn
   adaptor FromBillingSystem from context BillingSystem as sink is { 
     inlet FromBillingSystemIn is event BillingSystem.BillingAccountCreated
     handler FromBillingSystemHandler is {
@@ -315,7 +372,13 @@ context SubscriberContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository SubscriberRepository as flow is {
+  repository SubscriberRepository as merge is {
+    inlet SubscriberRepositoryQueries is query GetSubscriberMetrics with {
+      briefly "Look-ups of this subscriber repository"
+      described as {
+        |What SubscriberManagementApp asks of the subscriber repository, by way of SubscriberContext.
+      }
+    }
     inlet SubscriberRepositoryFromSubscriberAnalytics is type SubscriberRepositoryCommand
     command PersistContactUpdated is {
       subscriberId: SubscriberId with {
@@ -626,7 +689,7 @@ context SubscriberContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet SubscriberRepositoryResponses is result Subscriber.SubscriberResult
+    outlet SubscriberRepositoryResponses is result SubscriberMetricsView
     record StoredSubscriber is {
       subscriberId: SubscriberId with {
         briefly "subscriberId"

@@ -22,8 +22,56 @@ context PipelineContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet PipelineRepositoryQueriesIn is query GetOperationsMetrics with {
+    briefly "Look-ups of the pipeline repository"
+    described as {
+      |PipelineOperationsApp's look-ups, on their way to the pipeline repository.
+    }
+  }
+  outlet PipelineRepositoryQueriesOut is query GetOperationsMetrics
+ with {
+    briefly "Look-ups on their way to the pipeline repository"
+    described as {
+      |Each look-up goes to the pipeline repository it names.
+    }
+  }
+  inlet PipelineRepositoryRepliesIn is result OperationsMetricsView with {
+    briefly "The pipeline repository's answers"
+    described as {
+      |What the pipeline repository answers about itself.
+    }
+  }
+  outlet PipelineRepositoryRepliesOut is result OperationsMetricsView
+ with {
+    briefly "Answers to PipelineOperationsApp"
+    described as {
+      |The reply leg of PipelineOperationsApp's look-ups of the pipeline repository.
+    }
+  }
+  inlet PipelineSegmentQueriesIn is query PipelineSegment.GetPipelineSegment with {
+    briefly "Look-ups of the pipeline segment"
+    described as {
+      |PipelineOperationsApp's look-ups, on their way to the pipeline segment.
+    }
+  }
+  outlet PipelineSegmentQueriesOut is query PipelineSegment.GetPipelineSegment
+ with {
+    briefly "Look-ups on their way to the pipeline segment"
+    described as {
+      |Each look-up goes to the pipeline segment it names.
+    }
+  }
   inlet PipelineContextFromToRegulatoryPortal is command PipelineSegment.ScheduleMaintenance with {
     briefly "What ToRegulatoryPortal makes of the answers it gets"
+  }
+  connector 'PipelineRepositoryQuery Intake' is from outlet PipelineContext.PipelineRepositoryQueriesOut to inlet PipelineContext.PipelineRepository.PipelineRepositoryQueries with {
+    briefly "Look-ups on their way to the pipeline repository"
+  }
+  connector 'PipelineRepositoryReply Egress' is from outlet PipelineContext.PipelineRepository.PipelineRepositoryResponses to inlet PipelineContext.PipelineRepositoryRepliesIn with {
+    briefly "The pipeline repository's answers on their way to the boundary"
+  }
+  connector 'PipelineSegmentQuery Intake' is from outlet PipelineContext.PipelineSegmentQueriesOut to inlet PipelineContext.PipelineSegment.PipelineSegmentQueries with {
+    briefly "Look-ups on their way to the pipeline segment"
   }
   connector 'ToRegulatoryPortal Intake' is from outlet PipelineContext.ToRegulatoryPortal.ToRegulatoryPortalToPipelineContext to inlet PipelineContext.PipelineContextFromToRegulatoryPortal with {
     briefly "Answers translated by ToRegulatoryPortal, on their way in"
@@ -39,6 +87,15 @@ context PipelineContext as router is {
   inlet PipelineResultStreamIn is result PipelineSegment.PipelineSegmentResult
   outlet PipelineResultStreamOut is result PipelineSegment.PipelineSegmentResult
   handler PipelineContextBoundary is {
+    on getOperationsMetrics: query GetOperationsMetrics is {
+      forward getOperationsMetrics to outlet PipelineContext.PipelineRepositoryQueriesOut
+    }
+    on operationsMetricsView: result OperationsMetricsView is {
+      send operationsMetricsView to outlet PipelineContext.PipelineRepositoryRepliesOut
+    }
+    on getPipelineSegment: query PipelineSegment.GetPipelineSegment is {
+      forward getPipelineSegment to outlet PipelineContext.PipelineSegmentQueriesOut
+    }
     on commissionSegment: command PipelineContext.CommissionSegment is {
       let newPipelineSegment = create entity PipelineContext.PipelineSegment(segmentInfo = commissionSegment.segmentInfo)
       log newPipelineSegment
@@ -85,7 +142,7 @@ context PipelineContext as router is {
     }
   }
   connector 'PipelineSegmentCommand Stream Intake' is from outlet PipelineContext.PipelineSegmentCommandStreamOut to inlet PipelineContext.PipelineSegment.PipelineSegmentCommands
-  connector 'PipelineResult Stream Egress' is from outlet PipelineContext.PipelineRepository.PipelineRepositoryResponses to inlet PipelineContext.PipelineResultStreamIn
+  connector 'PipelineResult Stream Egress' is from outlet PipelineContext.PipelineSegment.PipelineSegmentReplies to inlet PipelineContext.PipelineResultStreamIn
   adaptor FromRegulatoryPortal from context RegulatoryPortal as sink is { 
     inlet FromRegulatoryPortalIn is event RegulatoryPortal.FilingSubmitted
     handler FromRegulatoryPortalHandler is {
@@ -203,7 +260,13 @@ context PipelineContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository PipelineRepository as flow is {
+  repository PipelineRepository as merge is {
+    inlet PipelineRepositoryQueries is query GetOperationsMetrics with {
+      briefly "Look-ups of this pipeline repository"
+      described as {
+        |What PipelineOperationsApp asks of the pipeline repository, by way of PipelineContext.
+      }
+    }
     inlet PipelineRepositoryFromPipelineMetrics is type PipelineRepositoryCommand
     command PersistComplianceReportFiled is {
       segmentId: SegmentId with {
@@ -445,7 +508,7 @@ context PipelineContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet PipelineRepositoryResponses is result PipelineSegment.PipelineSegmentResult
+    outlet PipelineRepositoryResponses is result OperationsMetricsView
     record StoredPipelineSegment is {
       pipelineSegmentId: UUID with {
         briefly "pipelineSegmentId"

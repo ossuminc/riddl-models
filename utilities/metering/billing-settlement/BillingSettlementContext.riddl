@@ -40,8 +40,56 @@ context BillingSettlementContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet BillingRepositoryQueriesIn is query GetRevenueMetrics with {
+    briefly "Look-ups of the billing repository"
+    described as {
+      |BillingSettlementApp's look-ups, on their way to the billing repository.
+    }
+  }
+  outlet BillingRepositoryQueriesOut is query GetRevenueMetrics
+ with {
+    briefly "Look-ups on their way to the billing repository"
+    described as {
+      |Each look-up goes to the billing repository it names.
+    }
+  }
+  inlet BillingRepositoryRepliesIn is result RevenueMetricsView with {
+    briefly "The billing repository's answers"
+    described as {
+      |What the billing repository answers about itself.
+    }
+  }
+  outlet BillingRepositoryRepliesOut is result RevenueMetricsView
+ with {
+    briefly "Answers to BillingSettlementApp"
+    described as {
+      |The reply leg of BillingSettlementApp's look-ups of the billing repository.
+    }
+  }
+  inlet BillingAccountQueriesIn is query BillingAccount.GetBillingAccount with {
+    briefly "Look-ups of the billing account"
+    described as {
+      |BillingSettlementApp's look-ups, on their way to the billing account.
+    }
+  }
+  outlet BillingAccountQueriesOut is query BillingAccount.GetBillingAccount
+ with {
+    briefly "Look-ups on their way to the billing account"
+    described as {
+      |Each look-up goes to the billing account it names.
+    }
+  }
   inlet BillingSettlementContextFromToEnergySupplierGateway is command BillingAccount.GenerateBill with {
     briefly "What ToEnergySupplierGateway makes of the answers it gets"
+  }
+  connector 'BillingRepositoryQuery Intake' is from outlet BillingSettlementContext.BillingRepositoryQueriesOut to inlet BillingSettlementContext.BillingRepository.BillingRepositoryQueries with {
+    briefly "Look-ups on their way to the billing repository"
+  }
+  connector 'BillingRepositoryReply Egress' is from outlet BillingSettlementContext.BillingRepository.BillingRepositoryResponses to inlet BillingSettlementContext.BillingRepositoryRepliesIn with {
+    briefly "The billing repository's answers on their way to the boundary"
+  }
+  connector 'BillingAccountQuery Intake' is from outlet BillingSettlementContext.BillingAccountQueriesOut to inlet BillingSettlementContext.BillingAccount.BillingAccountQueries with {
+    briefly "Look-ups on their way to the billing account"
   }
   connector 'ToEnergySupplierGateway Intake' is from outlet BillingSettlementContext.ToEnergySupplierGateway.ToEnergySupplierGatewayToBillingSettlementContext to inlet BillingSettlementContext.BillingSettlementContextFromToEnergySupplierGateway with {
     briefly "Answers translated by ToEnergySupplierGateway, on their way in"
@@ -69,6 +117,15 @@ context BillingSettlementContext as router is {
   inlet BillingAccountResultStreamIn is result BillingAccount.BillingAccountResult
   outlet BillingAccountResultStreamOut is result BillingAccount.BillingAccountResult
   handler BillingSettlementContextBoundary is {
+    on getRevenueMetrics: query GetRevenueMetrics is {
+      forward getRevenueMetrics to outlet BillingSettlementContext.BillingRepositoryQueriesOut
+    }
+    on revenueMetricsView: result RevenueMetricsView is {
+      send revenueMetricsView to outlet BillingSettlementContext.BillingRepositoryRepliesOut
+    }
+    on getBillingAccount: query BillingAccount.GetBillingAccount is {
+      forward getBillingAccount to outlet BillingSettlementContext.BillingAccountQueriesOut
+    }
     on createAccount: command BillingSettlementContext.CreateAccount is {
       let newBillingAccount = create entity BillingSettlementContext.BillingAccount(customerId = createAccount.customerId, meterId = createAccount.meterId, rateSchedule = createAccount.rateSchedule, serviceAddress = createAccount.serviceAddress)
       log newBillingAccount
@@ -109,7 +166,7 @@ context BillingSettlementContext as router is {
     }
   }
   connector 'BillingAccountCommand Stream Intake' is from outlet BillingSettlementContext.BillingAccountCommandStreamOut to inlet BillingSettlementContext.BillingAccount.BillingAccountCommands
-  connector 'BillingAccountResult Stream Egress' is from outlet BillingSettlementContext.BillingRepository.BillingRepositoryResponses to inlet BillingSettlementContext.BillingAccountResultStreamIn
+  connector 'BillingAccountResult Stream Egress' is from outlet BillingSettlementContext.BillingAccount.BillingAccountReplies to inlet BillingSettlementContext.BillingAccountResultStreamIn
   adaptor FromEnergySupplierGateway from context EnergySupplierGateway as sink is { 
     inlet FromEnergySupplierGatewayIn is event EnergySupplierGateway.SettlementConfirmed
     handler FromEnergySupplierGatewayHandler is {
@@ -280,7 +337,13 @@ context BillingSettlementContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository BillingRepository as flow is {
+  repository BillingRepository as merge is {
+    inlet BillingRepositoryQueries is query GetRevenueMetrics with {
+      briefly "Look-ups of this billing repository"
+      described as {
+        |What BillingSettlementApp asks of the billing repository, by way of BillingSettlementContext.
+      }
+    }
     inlet BillingRepositoryFromBillingMetrics is type BillingRepositoryCommand
     command PersistAccountClosed is {
       accountId: BillingAccountId with {
@@ -504,7 +567,7 @@ context BillingSettlementContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet BillingRepositoryResponses is result BillingAccount.BillingAccountResult
+    outlet BillingRepositoryResponses is result RevenueMetricsView
     record StoredBillingAccount is {
       billingAccountId: BillingAccountId with {
         briefly "billingAccountId"

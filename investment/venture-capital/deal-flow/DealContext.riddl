@@ -52,8 +52,56 @@ context DealContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet DealRepositoryQueriesIn is query GetDealFlowStats with {
+    briefly "Look-ups of the deal repository"
+    described as {
+      |DealFlowApp's look-ups, on their way to the deal repository.
+    }
+  }
+  outlet DealRepositoryQueriesOut is query GetDealFlowStats
+ with {
+    briefly "Look-ups on their way to the deal repository"
+    described as {
+      |Each look-up goes to the deal repository it names.
+    }
+  }
+  inlet DealRepositoryRepliesIn is result DealFlowStatsView with {
+    briefly "The deal repository's answers"
+    described as {
+      |What the deal repository answers about itself.
+    }
+  }
+  outlet DealRepositoryRepliesOut is result DealFlowStatsView
+ with {
+    briefly "Answers to DealFlowApp"
+    described as {
+      |The reply leg of DealFlowApp's look-ups of the deal repository.
+    }
+  }
+  inlet DealQueriesIn is query Deal.GetDeal with {
+    briefly "Look-ups of the deal"
+    described as {
+      |DealFlowApp's look-ups, on their way to the deal.
+    }
+  }
+  outlet DealQueriesOut is query Deal.GetDeal
+ with {
+    briefly "Look-ups on their way to the deal"
+    described as {
+      |Each look-up goes to the deal it names.
+    }
+  }
   inlet DealContextFromToCompanyResearchService is command Deal.AddNote with {
     briefly "What ToCompanyResearchService makes of the answers it gets"
+  }
+  connector 'DealRepositoryQuery Intake' is from outlet DealContext.DealRepositoryQueriesOut to inlet DealContext.DealRepository.DealRepositoryQueries with {
+    briefly "Look-ups on their way to the deal repository"
+  }
+  connector 'DealRepositoryReply Egress' is from outlet DealContext.DealRepository.DealRepositoryResponses to inlet DealContext.DealRepositoryRepliesIn with {
+    briefly "The deal repository's answers on their way to the boundary"
+  }
+  connector 'DealQuery Intake' is from outlet DealContext.DealQueriesOut to inlet DealContext.Deal.DealQueries with {
+    briefly "Look-ups on their way to the deal"
   }
   connector 'ToCompanyResearchService Intake' is from outlet DealContext.ToCompanyResearchService.ToCompanyResearchServiceToDealContext to inlet DealContext.DealContextFromToCompanyResearchService with {
     briefly "Answers translated by ToCompanyResearchService, on their way in"
@@ -81,6 +129,15 @@ context DealContext as router is {
   inlet DealResultStreamIn is result Deal.DealResult
   outlet DealResultStreamOut is result Deal.DealResult
   handler DealContextBoundary is {
+    on getDealFlowStats: query GetDealFlowStats is {
+      forward getDealFlowStats to outlet DealContext.DealRepositoryQueriesOut
+    }
+    on dealFlowStatsView: result DealFlowStatsView is {
+      send dealFlowStatsView to outlet DealContext.DealRepositoryRepliesOut
+    }
+    on getDeal: query Deal.GetDeal is {
+      forward getDeal to outlet DealContext.DealQueriesOut
+    }
     on createDeal: command DealContext.CreateDeal is {
       let newDeal = create entity DealContext.Deal(company = createDeal.company, founders = createDeal.founders, round = createDeal.round, source = createDeal.source, assignedTo = createDeal.assignedTo)
       log newDeal
@@ -136,7 +193,7 @@ context DealContext as router is {
     }
   }
   connector 'DealCommand Stream Intake' is from outlet DealContext.DealCommandStreamOut to inlet DealContext.Deal.DealCommands
-  connector 'DealResult Stream Egress' is from outlet DealContext.DealRepository.DealRepositoryResponses to inlet DealContext.DealResultStreamIn
+  connector 'DealResult Stream Egress' is from outlet DealContext.Deal.DealReplies to inlet DealContext.DealResultStreamIn
   adaptor FromCalendarService from context CalendarService as sink is { 
     inlet FromCalendarServiceIn is type CalendarService.CalendarServiceEvent
     handler FromCalendarServiceHandler is {
@@ -461,7 +518,13 @@ context DealContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository DealRepository as flow is {
+  repository DealRepository as merge is {
+    inlet DealRepositoryQueries is query GetDealFlowStats with {
+      briefly "Look-ups of this deal repository"
+      described as {
+        |What DealFlowApp asks of the deal repository, by way of DealContext.
+      }
+    }
     inlet DealRepositoryFromDealFlowAnalytics is type DealRepositoryCommand
     command PersistDealWithdrawn is {
       dealId: DealId with {
@@ -856,7 +919,7 @@ context DealContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet DealRepositoryResponses is result Deal.DealResult
+    outlet DealRepositoryResponses is result DealFlowStatsView
     record StoredDeal is {
       dealId: DealId with {
         briefly "dealId"

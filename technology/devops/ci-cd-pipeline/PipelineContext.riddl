@@ -22,8 +22,56 @@ context PipelineContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet PipelineRepositoryQueriesIn is query GetPipelineStats with {
+    briefly "Look-ups of the pipeline repository"
+    described as {
+      |CICDPipelineApp's look-ups, on their way to the pipeline repository.
+    }
+  }
+  outlet PipelineRepositoryQueriesOut is query GetPipelineStats
+ with {
+    briefly "Look-ups on their way to the pipeline repository"
+    described as {
+      |Each look-up goes to the pipeline repository it names.
+    }
+  }
+  inlet PipelineRepositoryRepliesIn is result PipelineStatsView with {
+    briefly "The pipeline repository's answers"
+    described as {
+      |What the pipeline repository answers about itself.
+    }
+  }
+  outlet PipelineRepositoryRepliesOut is result PipelineStatsView
+ with {
+    briefly "Answers to CICDPipelineApp"
+    described as {
+      |The reply leg of CICDPipelineApp's look-ups of the pipeline repository.
+    }
+  }
+  inlet PipelineQueriesIn is query Pipeline.GetPipeline with {
+    briefly "Look-ups of the pipeline"
+    described as {
+      |CICDPipelineApp's look-ups, on their way to the pipeline.
+    }
+  }
+  outlet PipelineQueriesOut is query Pipeline.GetPipeline
+ with {
+    briefly "Look-ups on their way to the pipeline"
+    described as {
+      |Each look-up goes to the pipeline it names.
+    }
+  }
   inlet PipelineContextFromToArtifactStorageService is command Pipeline.RecordArtifactLocation with {
     briefly "What ToArtifactStorageService makes of the answers it gets"
+  }
+  connector 'PipelineRepositoryQuery Intake' is from outlet PipelineContext.PipelineRepositoryQueriesOut to inlet PipelineContext.PipelineRepository.PipelineRepositoryQueries with {
+    briefly "Look-ups on their way to the pipeline repository"
+  }
+  connector 'PipelineRepositoryReply Egress' is from outlet PipelineContext.PipelineRepository.PipelineRepositoryResponses to inlet PipelineContext.PipelineRepositoryRepliesIn with {
+    briefly "The pipeline repository's answers on their way to the boundary"
+  }
+  connector 'PipelineQuery Intake' is from outlet PipelineContext.PipelineQueriesOut to inlet PipelineContext.Pipeline.PipelineQueries with {
+    briefly "Look-ups on their way to the pipeline"
   }
   connector 'ToArtifactStorageService Intake' is from outlet PipelineContext.ToArtifactStorageService.ToArtifactStorageServiceToPipelineContext to inlet PipelineContext.PipelineContextFromToArtifactStorageService with {
     briefly "Answers translated by ToArtifactStorageService, on their way in"
@@ -45,6 +93,15 @@ context PipelineContext as router is {
   inlet PipelineResultStreamIn is result Pipeline.PipelineResult
   outlet PipelineResultStreamOut is result Pipeline.PipelineResult
   handler PipelineContextBoundary is {
+    on getPipelineStats: query GetPipelineStats is {
+      forward getPipelineStats to outlet PipelineContext.PipelineRepositoryQueriesOut
+    }
+    on pipelineStatsView: result PipelineStatsView is {
+      send pipelineStatsView to outlet PipelineContext.PipelineRepositoryRepliesOut
+    }
+    on getPipeline: query Pipeline.GetPipeline is {
+      forward getPipeline to outlet PipelineContext.PipelineQueriesOut
+    }
     on recordArtifactLocation: command Pipeline.RecordArtifactLocation is {
       send recordArtifactLocation to outlet PipelineContext.PipelineCommandStreamOut
     }
@@ -91,7 +148,7 @@ context PipelineContext as router is {
     }
   }
   connector 'PipelineCommand Stream Intake' is from outlet PipelineContext.PipelineCommandStreamOut to inlet PipelineContext.Pipeline.PipelineCommands
-  connector 'PipelineResult Stream Egress' is from outlet PipelineContext.PipelineRepository.PipelineRepositoryResponses to inlet PipelineContext.PipelineResultStreamIn
+  connector 'PipelineResult Stream Egress' is from outlet PipelineContext.Pipeline.PipelineReplies to inlet PipelineContext.PipelineResultStreamIn
   adaptor FromArtifactStorageService from context ArtifactStorageService as flow is { 
     inlet FromArtifactStorageServiceIn is event ArtifactStorageService.ArtifactUploaded
     outlet FromArtifactStorageServiceToPipelineContext is command Pipeline.StoreArtifact
@@ -355,7 +412,13 @@ context PipelineContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository PipelineRepository as flow is {
+  repository PipelineRepository as merge is {
+    inlet PipelineRepositoryQueries is query GetPipelineStats with {
+      briefly "Look-ups of this pipeline repository"
+      described as {
+        |What CICDPipelineApp asks of the pipeline repository, by way of PipelineContext.
+      }
+    }
     inlet PipelineRepositoryFromPipelineAnalytics is type PipelineRepositoryCommand
     command PersistApprovalRequested is {
       pipelineId: PipelineId with {
@@ -654,7 +717,7 @@ context PipelineContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet PipelineRepositoryResponses is result Pipeline.PipelineResult
+    outlet PipelineRepositoryResponses is result PipelineStatsView
     record StoredPipeline is {
       pipelineId: PipelineId with {
         briefly "pipelineId"

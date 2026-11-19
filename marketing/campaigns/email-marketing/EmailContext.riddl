@@ -45,8 +45,56 @@ context EmailContext as router is {
   } with {
     briefly "What FromEmailDeliveryService turns that service's news into"
   }
+  inlet EmailRepositoryQueriesIn is query GetEmailMetrics with {
+    briefly "Look-ups of the email repository"
+    described as {
+      |EmailMarketingApp's look-ups, on their way to the email repository.
+    }
+  }
+  outlet EmailRepositoryQueriesOut is query GetEmailMetrics
+ with {
+    briefly "Look-ups on their way to the email repository"
+    described as {
+      |Each look-up goes to the email repository it names.
+    }
+  }
+  inlet EmailRepositoryRepliesIn is result EmailMetricsView with {
+    briefly "The email repository's answers"
+    described as {
+      |What the email repository answers about itself.
+    }
+  }
+  outlet EmailRepositoryRepliesOut is result EmailMetricsView
+ with {
+    briefly "Answers to EmailMarketingApp"
+    described as {
+      |The reply leg of EmailMarketingApp's look-ups of the email repository.
+    }
+  }
+  inlet EmailCampaignQueriesIn is query EmailCampaign.GetEmailCampaign with {
+    briefly "Look-ups of the email campaign"
+    described as {
+      |EmailMarketingApp's look-ups, on their way to the email campaign.
+    }
+  }
+  outlet EmailCampaignQueriesOut is query EmailCampaign.GetEmailCampaign
+ with {
+    briefly "Look-ups on their way to the email campaign"
+    described as {
+      |Each look-up goes to the email campaign it names.
+    }
+  }
   inlet EmailContextFromEmailDeliveryService is type EmailContext.FromEmailDeliveryServiceCommand with {
     briefly "What FromEmailDeliveryService makes of that service's news"
+  }
+  connector 'EmailRepositoryQuery Intake' is from outlet EmailContext.EmailRepositoryQueriesOut to inlet EmailContext.EmailRepository.EmailRepositoryQueries with {
+    briefly "Look-ups on their way to the email repository"
+  }
+  connector 'EmailRepositoryReply Egress' is from outlet EmailContext.EmailRepository.EmailRepositoryResponses to inlet EmailContext.EmailRepositoryRepliesIn with {
+    briefly "The email repository's answers on their way to the boundary"
+  }
+  connector 'EmailCampaignQuery Intake' is from outlet EmailContext.EmailCampaignQueriesOut to inlet EmailContext.EmailCampaign.EmailCampaignQueries with {
+    briefly "Look-ups on their way to the email campaign"
   }
   connector 'FromEmailDeliveryService Intake' is from outlet EmailContext.FromEmailDeliveryService.FromEmailDeliveryServiceToEmailContext to inlet EmailContext.EmailContextFromEmailDeliveryService with {
     briefly "What FromEmailDeliveryService makes of that news, on its way in"
@@ -56,6 +104,15 @@ context EmailContext as router is {
   inlet EmailCampaignResultStreamIn is result EmailCampaign.EmailCampaignResult
   outlet EmailCampaignResultStreamOut is result EmailCampaign.EmailCampaignResult
   handler EmailContextBoundary is {
+    on getEmailMetrics: query GetEmailMetrics is {
+      forward getEmailMetrics to outlet EmailContext.EmailRepositoryQueriesOut
+    }
+    on emailMetricsView: result EmailMetricsView is {
+      send emailMetricsView to outlet EmailContext.EmailRepositoryRepliesOut
+    }
+    on getEmailCampaign: query EmailCampaign.GetEmailCampaign is {
+      forward getEmailCampaign to outlet EmailContext.EmailCampaignQueriesOut
+    }
     on createCampaign: command EmailContext.CreateCampaign is {
       let newEmailCampaign = create entity EmailContext.EmailCampaign(name = createCampaign.name, campaignType = createCampaign.campaignType, template = createCampaign.template, sendSettings = createCampaign.sendSettings)
       log newEmailCampaign
@@ -108,7 +165,7 @@ context EmailContext as router is {
     }
   }
   connector 'EmailCampaignCommand Stream Intake' is from outlet EmailContext.EmailCampaignCommandStreamOut to inlet EmailContext.EmailCampaign.EmailCampaignCommands
-  connector 'EmailCampaignResult Stream Egress' is from outlet EmailContext.EmailRepository.EmailRepositoryResponses to inlet EmailContext.EmailCampaignResultStreamIn
+  connector 'EmailCampaignResult Stream Egress' is from outlet EmailContext.EmailCampaign.EmailCampaignReplies to inlet EmailContext.EmailCampaignResultStreamIn
   adaptor FromEmailDeliveryService from context EmailDeliveryService as flow is { 
     inlet FromEmailDeliveryServiceIn is type EmailDeliveryService.EmailDeliveryServiceEvent
     outlet FromEmailDeliveryServiceToEmailContext is type EmailContext.FromEmailDeliveryServiceCommand
@@ -324,7 +381,13 @@ context EmailContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository EmailRepository as flow is {
+  repository EmailRepository as merge is {
+    inlet EmailRepositoryQueries is query GetEmailMetrics with {
+      briefly "Look-ups of this email repository"
+      described as {
+        |What EmailMarketingApp asks of the email repository, by way of EmailContext.
+      }
+    }
     inlet EmailRepositoryFromCampaignAnalytics is type EmailRepositoryCommand
     command PersistABTestConfigured is {
       campaignId: EmailCampaignId with {
@@ -662,7 +725,7 @@ context EmailContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet EmailRepositoryResponses is result EmailCampaign.EmailCampaignResult
+    outlet EmailRepositoryResponses is result EmailMetricsView
     record StoredEmailCampaign is {
       emailCampaignId: EmailCampaignId with {
         briefly "emailCampaignId"

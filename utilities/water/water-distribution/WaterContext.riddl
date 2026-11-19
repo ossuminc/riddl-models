@@ -34,11 +34,65 @@ context WaterContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet WaterRepositoryQueriesIn is type WaterRepository.WaterRepositoryQuery with {
+    briefly "Look-ups of the water repository"
+    described as {
+      |WaterDistributionApp's look-ups, on their way to the water repository.
+    }
+  }
+  outlet WaterRepositoryQueriesOut is type WaterRepository.WaterRepositoryQuery
+ with {
+    briefly "Look-ups on their way to the water repository"
+    described as {
+      |Each look-up goes to the water repository it names.
+    }
+  }
+  inlet WaterRepositoryRepliesIn is type WaterRepository.WaterRepositoryReply with {
+    briefly "The water repository's answers"
+    described as {
+      |What the water repository answers about itself.
+    }
+  }
+  outlet WaterRepositoryRepliesOut is type WaterRepository.WaterRepositoryReply
+ with {
+    briefly "Answers to WaterDistributionApp"
+    described as {
+      |The reply leg of WaterDistributionApp's look-ups of the water repository.
+    }
+  }
+  inlet DistributionZoneQueriesIn is query DistributionZone.GetDistributionZone with {
+    briefly "Look-ups of the distribution zone"
+    described as {
+      |WaterDistributionApp's look-ups, on their way to the distribution zone.
+    }
+  }
+  outlet DistributionZoneQueriesOut is query DistributionZone.GetDistributionZone
+ with {
+    briefly "Look-ups on their way to the distribution zone"
+    described as {
+      |Each look-up goes to the distribution zone it names.
+    }
+  }
   inlet DistributionZoneCommandStreaIn is type WaterContext.DistributionZoneRequest
   outlet DistributionZoneCommandStreaOut is type DistributionZoneCommand
   inlet DistributionZoneResultStreamIn is result DistributionZone.DistributionZoneResult
   outlet DistributionZoneResultStreamOut is result DistributionZone.DistributionZoneResult
   handler WaterContextBoundary is {
+    on getComplianceMetrics: query GetComplianceMetrics is {
+      forward getComplianceMetrics to outlet WaterContext.WaterRepositoryQueriesOut
+    }
+    on getSystemPerformance: query GetSystemPerformance is {
+      forward getSystemPerformance to outlet WaterContext.WaterRepositoryQueriesOut
+    }
+    on complianceMetricsView: result ComplianceMetricsView is {
+      send complianceMetricsView to outlet WaterContext.WaterRepositoryRepliesOut
+    }
+    on systemPerformanceView: result SystemPerformanceView is {
+      send systemPerformanceView to outlet WaterContext.WaterRepositoryRepliesOut
+    }
+    on getDistributionZone: query DistributionZone.GetDistributionZone is {
+      forward getDistributionZone to outlet WaterContext.DistributionZoneQueriesOut
+    }
     on createZone: command WaterContext.CreateZone is {
       let newDistributionZone = create entity WaterContext.DistributionZone(name = createZone.name, serviceArea = createZone.serviceArea, customerCount = createZone.customerCount)
       log newDistributionZone
@@ -78,8 +132,17 @@ context WaterContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'WaterRepositoryQuery Intake' is from outlet WaterContext.WaterRepositoryQueriesOut to inlet WaterContext.WaterRepository.WaterRepositoryQueries with {
+    briefly "Look-ups on their way to the water repository"
+  }
+  connector 'WaterRepositoryReply Egress' is from outlet WaterContext.WaterRepository.WaterRepositoryResponses to inlet WaterContext.WaterRepositoryRepliesIn with {
+    briefly "The water repository's answers on their way to the boundary"
+  }
+  connector 'DistributionZoneQuery Intake' is from outlet WaterContext.DistributionZoneQueriesOut to inlet WaterContext.DistributionZone.DistributionZoneQueries with {
+    briefly "Look-ups on their way to the distribution zone"
+  }
   connector 'DistributionZoneCommand Stream Intake' is from outlet WaterContext.DistributionZoneCommandStreaOut to inlet WaterContext.DistributionZone.DistributionZoneCommands
-  connector 'DistributionZoneResult Stream Egress' is from outlet WaterContext.WaterRepository.WaterRepositoryResponses to inlet WaterContext.DistributionZoneResultStreamIn
+  connector 'DistributionZoneResult Stream Egress' is from outlet WaterContext.DistributionZone.DistributionZoneReplies to inlet WaterContext.DistributionZoneResultStreamIn
   adaptor ToCustomerNotificationService to context CustomerNotificationService as flow is { 
     inlet ToCustomerNotificationServiceIn is type DistributionZoneEvent
     outlet ToCustomerNotificationServiceOut is type CustomerNotificationService.CustomerNotificationServiceCommand
@@ -215,7 +278,29 @@ context WaterContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository WaterRepository as flow is {
+  repository WaterRepository as merge is {
+    type WaterRepositoryQuery is one of {
+      GetComplianceMetrics or GetSystemPerformance
+    } with {
+      briefly "What may be asked of WaterRepository"
+      described as {
+        |The look-ups the water repository answers.
+      }
+    }
+    type WaterRepositoryReply is one of {
+      ComplianceMetricsView or SystemPerformanceView
+    } with {
+      briefly "What WaterRepository answers"
+      described as {
+        |The answers the water repository gives.
+      }
+    }
+    inlet WaterRepositoryQueries is type WaterRepositoryQuery with {
+      briefly "Look-ups of this water repository"
+      described as {
+        |What WaterDistributionApp asks of the water repository, by way of WaterContext.
+      }
+    }
     inlet WaterRepositoryFromWaterQualityAnalytics is type WaterRepositoryCommand
     command PersistBoilWaterAdvisoryIssued is {
       zoneId: DistributionZoneId with {
@@ -403,7 +488,7 @@ context WaterContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet WaterRepositoryResponses is result DistributionZone.DistributionZoneResult
+    outlet WaterRepositoryResponses is type WaterRepositoryReply
     record StoredDistributionZone is {
       distributionZoneId: DistributionZoneId with {
         briefly "distributionZoneId"

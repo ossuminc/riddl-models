@@ -34,8 +34,56 @@ context GasContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet GasRepositoryQueriesIn is query GetDistrictSafety with {
+    briefly "Look-ups of the gas repository"
+    described as {
+      |GasDistributionApp's look-ups, on their way to the gas repository.
+    }
+  }
+  outlet GasRepositoryQueriesOut is query GetDistrictSafety
+ with {
+    briefly "Look-ups on their way to the gas repository"
+    described as {
+      |Each look-up goes to the gas repository it names.
+    }
+  }
+  inlet GasRepositoryRepliesIn is result DistrictSafetyView with {
+    briefly "The gas repository's answers"
+    described as {
+      |What the gas repository answers about itself.
+    }
+  }
+  outlet GasRepositoryRepliesOut is result DistrictSafetyView
+ with {
+    briefly "Answers to GasDistributionApp"
+    described as {
+      |The reply leg of GasDistributionApp's look-ups of the gas repository.
+    }
+  }
+  inlet DistrictQueriesIn is query District.GetDistrict with {
+    briefly "Look-ups of the district"
+    described as {
+      |GasDistributionApp's look-ups, on their way to the district.
+    }
+  }
+  outlet DistrictQueriesOut is query District.GetDistrict
+ with {
+    briefly "Look-ups on their way to the district"
+    described as {
+      |Each look-up goes to the district it names.
+    }
+  }
   inlet GasContextFromToPipelineSCADA is command District.IsolateSection with {
     briefly "What ToPipelineSCADA makes of the answers it gets"
+  }
+  connector 'GasRepositoryQuery Intake' is from outlet GasContext.GasRepositoryQueriesOut to inlet GasContext.GasRepository.GasRepositoryQueries with {
+    briefly "Look-ups on their way to the gas repository"
+  }
+  connector 'GasRepositoryReply Egress' is from outlet GasContext.GasRepository.GasRepositoryResponses to inlet GasContext.GasRepositoryRepliesIn with {
+    briefly "The gas repository's answers on their way to the boundary"
+  }
+  connector 'DistrictQuery Intake' is from outlet GasContext.DistrictQueriesOut to inlet GasContext.District.DistrictQueries with {
+    briefly "Look-ups on their way to the district"
   }
   connector 'ToPipelineSCADA Intake' is from outlet GasContext.ToPipelineSCADA.ToPipelineSCADAToGasContext to inlet GasContext.GasContextFromToPipelineSCADA with {
     briefly "Answers translated by ToPipelineSCADA, on their way in"
@@ -45,6 +93,15 @@ context GasContext as router is {
   inlet DistrictResultStreamIn is result District.DistrictResult
   outlet DistrictResultStreamOut is result District.DistrictResult
   handler GasContextBoundary is {
+    on getDistrictSafety: query GetDistrictSafety is {
+      forward getDistrictSafety to outlet GasContext.GasRepositoryQueriesOut
+    }
+    on districtSafetyView: result DistrictSafetyView is {
+      send districtSafetyView to outlet GasContext.GasRepositoryRepliesOut
+    }
+    on getDistrict: query District.GetDistrict is {
+      forward getDistrict to outlet GasContext.DistrictQueriesOut
+    }
     on createDistrict: command GasContext.CreateDistrict is {
       let newDistrict = create entity GasContext.District(districtName = createDistrict.districtName, serviceArea = createDistrict.serviceArea, customerCount = createDistrict.customerCount)
       log newDistrict
@@ -88,7 +145,7 @@ context GasContext as router is {
     }
   }
   connector 'DistrictCommand Stream Intake' is from outlet GasContext.DistrictCommandStreamOut to inlet GasContext.District.DistrictCommands
-  connector 'DistrictResult Stream Egress' is from outlet GasContext.GasRepository.GasRepositoryResponses to inlet GasContext.DistrictResultStreamIn
+  connector 'DistrictResult Stream Egress' is from outlet GasContext.District.DistrictReplies to inlet GasContext.DistrictResultStreamIn
   adaptor ToCustomerNotification to context CustomerNotification as flow is { 
     inlet ToCustomerNotificationIn is type DistrictEvent
     outlet ToCustomerNotificationOut is command CustomerNotification.SendServiceAlert
@@ -269,7 +326,13 @@ context GasContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository GasRepository as flow is {
+  repository GasRepository as merge is {
+    inlet GasRepositoryQueries is query GetDistrictSafety with {
+      briefly "Look-ups of this gas repository"
+      described as {
+        |What GasDistributionApp asks of the gas repository, by way of GasContext.
+      }
+    }
     inlet GasRepositoryFromSafetyMetrics is type GasRepositoryCommand
     command PersistDistrictCreated is {
       districtId: DistrictId with {
@@ -514,7 +577,7 @@ context GasContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet GasRepositoryResponses is result District.DistrictResult
+    outlet GasRepositoryResponses is result DistrictSafetyView
     record StoredDistrict is {
       districtId: DistrictId with {
         briefly "districtId"

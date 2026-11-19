@@ -28,11 +28,59 @@ context TenantContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet TenantRepositoryQueriesIn is query GetPlatformMetrics with {
+    briefly "Look-ups of the tenant repository"
+    described as {
+      |MultiTenantManagementApp's look-ups, on their way to the tenant repository.
+    }
+  }
+  outlet TenantRepositoryQueriesOut is query GetPlatformMetrics
+ with {
+    briefly "Look-ups on their way to the tenant repository"
+    described as {
+      |Each look-up goes to the tenant repository it names.
+    }
+  }
+  inlet TenantRepositoryRepliesIn is result PlatformMetricsView with {
+    briefly "The tenant repository's answers"
+    described as {
+      |What the tenant repository answers about itself.
+    }
+  }
+  outlet TenantRepositoryRepliesOut is result PlatformMetricsView
+ with {
+    briefly "Answers to MultiTenantManagementApp"
+    described as {
+      |The reply leg of MultiTenantManagementApp's look-ups of the tenant repository.
+    }
+  }
+  inlet TenantQueriesIn is query Tenant.GetTenant with {
+    briefly "Look-ups of the tenant"
+    described as {
+      |MultiTenantManagementApp's look-ups, on their way to the tenant.
+    }
+  }
+  outlet TenantQueriesOut is query Tenant.GetTenant
+ with {
+    briefly "Look-ups on their way to the tenant"
+    described as {
+      |Each look-up goes to the tenant it names.
+    }
+  }
   inlet TenantCommandStreamIn is type TenantContext.TenantRequest
   outlet TenantCommandStreamOut is type TenantCommand
   inlet TenantResultStreamIn is result Tenant.TenantResult
   outlet TenantResultStreamOut is result Tenant.TenantResult
   handler TenantContextBoundary is {
+    on getPlatformMetrics: query GetPlatformMetrics is {
+      forward getPlatformMetrics to outlet TenantContext.TenantRepositoryQueriesOut
+    }
+    on platformMetricsView: result PlatformMetricsView is {
+      send platformMetricsView to outlet TenantContext.TenantRepositoryRepliesOut
+    }
+    on getTenant: query Tenant.GetTenant is {
+      forward getTenant to outlet TenantContext.TenantQueriesOut
+    }
     on provisionTenant: command TenantContext.ProvisionTenant is {
       let newTenant = create entity TenantContext.Tenant(tenantInfo = provisionTenant.tenantInfo, limits = provisionTenant.limits)
       log newTenant
@@ -84,8 +132,17 @@ context TenantContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'TenantRepositoryQuery Intake' is from outlet TenantContext.TenantRepositoryQueriesOut to inlet TenantContext.TenantRepository.TenantRepositoryQueries with {
+    briefly "Look-ups on their way to the tenant repository"
+  }
+  connector 'TenantRepositoryReply Egress' is from outlet TenantContext.TenantRepository.TenantRepositoryResponses to inlet TenantContext.TenantRepositoryRepliesIn with {
+    briefly "The tenant repository's answers on their way to the boundary"
+  }
+  connector 'TenantQuery Intake' is from outlet TenantContext.TenantQueriesOut to inlet TenantContext.Tenant.TenantQueries with {
+    briefly "Look-ups on their way to the tenant"
+  }
   connector 'TenantCommand Stream Intake' is from outlet TenantContext.TenantCommandStreamOut to inlet TenantContext.Tenant.TenantCommands
-  connector 'TenantResult Stream Egress' is from outlet TenantContext.TenantRepository.TenantRepositoryResponses to inlet TenantContext.TenantResultStreamIn
+  connector 'TenantResult Stream Egress' is from outlet TenantContext.Tenant.TenantReplies to inlet TenantContext.TenantResultStreamIn
   adaptor FromBillingSystem from context BillingSystem as sink is { 
     inlet FromBillingSystemIn is event BillingSystem.BillingAccountCreated
     handler FromBillingSystemHandler is {
@@ -292,7 +349,13 @@ context TenantContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository TenantRepository as flow is {
+  repository TenantRepository as merge is {
+    inlet TenantRepositoryQueries is query GetPlatformMetrics with {
+      briefly "Look-ups of this tenant repository"
+      described as {
+        |What MultiTenantManagementApp asks of the tenant repository, by way of TenantContext.
+      }
+    }
     inlet TenantRepositoryFromPlatformAnalytics is type TenantRepositoryCommand
     command PersistCustomDomainConfigured is {
       tenantId: TenantId with {
@@ -606,7 +669,7 @@ context TenantContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet TenantRepositoryResponses is result Tenant.TenantResult
+    outlet TenantRepositoryResponses is result PlatformMetricsView
     record StoredTenant is {
       tenantId: TenantId with {
         briefly "tenantId"

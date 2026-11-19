@@ -28,8 +28,56 @@ context AccountContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet AccountRepositoryQueriesIn is query GetAccountStats with {
+    briefly "Look-ups of the account repository"
+    described as {
+      |AccountManagementApp's look-ups, on their way to the account repository.
+    }
+  }
+  outlet AccountRepositoryQueriesOut is query GetAccountStats
+ with {
+    briefly "Look-ups on their way to the account repository"
+    described as {
+      |Each look-up goes to the account repository it names.
+    }
+  }
+  inlet AccountRepositoryRepliesIn is result AccountStatsView with {
+    briefly "The account repository's answers"
+    described as {
+      |What the account repository answers about itself.
+    }
+  }
+  outlet AccountRepositoryRepliesOut is result AccountStatsView
+ with {
+    briefly "Answers to AccountManagementApp"
+    described as {
+      |The reply leg of AccountManagementApp's look-ups of the account repository.
+    }
+  }
+  inlet AccountQueriesIn is query Account.GetAccount with {
+    briefly "Look-ups of the account"
+    described as {
+      |AccountManagementApp's look-ups, on their way to the account.
+    }
+  }
+  outlet AccountQueriesOut is query Account.GetAccount
+ with {
+    briefly "Look-ups on their way to the account"
+    described as {
+      |Each look-up goes to the account it names.
+    }
+  }
   inlet AccountContextFromToCustomerService is command Account.UpdateAccountInfo with {
     briefly "What ToCustomerService makes of the answers it gets"
+  }
+  connector 'AccountRepositoryQuery Intake' is from outlet AccountContext.AccountRepositoryQueriesOut to inlet AccountContext.AccountRepository.AccountRepositoryQueries with {
+    briefly "Look-ups on their way to the account repository"
+  }
+  connector 'AccountRepositoryReply Egress' is from outlet AccountContext.AccountRepository.AccountRepositoryResponses to inlet AccountContext.AccountRepositoryRepliesIn with {
+    briefly "The account repository's answers on their way to the boundary"
+  }
+  connector 'AccountQuery Intake' is from outlet AccountContext.AccountQueriesOut to inlet AccountContext.Account.AccountQueries with {
+    briefly "Look-ups on their way to the account"
   }
   connector 'ToCustomerService Intake' is from outlet AccountContext.ToCustomerService.ToCustomerServiceToAccountContext to inlet AccountContext.AccountContextFromToCustomerService with {
     briefly "Answers translated by ToCustomerService, on their way in"
@@ -45,6 +93,15 @@ context AccountContext as router is {
   inlet AccountResultStreamIn is result Account.AccountResult
   outlet AccountResultStreamOut is result Account.AccountResult
   handler AccountContextBoundary is {
+    on getAccountStats: query GetAccountStats is {
+      forward getAccountStats to outlet AccountContext.AccountRepositoryQueriesOut
+    }
+    on accountStatsView: result AccountStatsView is {
+      send accountStatsView to outlet AccountContext.AccountRepositoryRepliesOut
+    }
+    on getAccount: query Account.GetAccount is {
+      forward getAccount to outlet AccountContext.AccountQueriesOut
+    }
     on openAccount: command AccountContext.OpenAccount is {
       let newAccount = create entity AccountContext.Account(info = openAccount.info)
       log newAccount
@@ -91,7 +148,7 @@ context AccountContext as router is {
     }
   }
   connector 'AccountCommand Stream Intake' is from outlet AccountContext.AccountCommandStreamOut to inlet AccountContext.Account.AccountCommands
-  connector 'AccountResult Stream Egress' is from outlet AccountContext.AccountRepository.AccountRepositoryResponses to inlet AccountContext.AccountResultStreamIn
+  connector 'AccountResult Stream Egress' is from outlet AccountContext.Account.AccountReplies to inlet AccountContext.AccountResultStreamIn
   adaptor FromCoreBankingService from context CoreBankingService as sink is { 
     inlet FromCoreBankingServiceIn is event CoreBankingService.LedgerPosted
     handler FromCoreBankingServiceHandler is {
@@ -324,7 +381,13 @@ context AccountContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository AccountRepository as flow is {
+  repository AccountRepository as merge is {
+    inlet AccountRepositoryQueries is query GetAccountStats with {
+      briefly "Look-ups of this account repository"
+      described as {
+        |What AccountManagementApp asks of the account repository, by way of AccountContext.
+      }
+    }
     inlet AccountRepositoryFromAccountAnalytics is type AccountRepositoryCommand
     command PersistAccountFrozen is {
       accountId: AccountId with {
@@ -602,7 +665,7 @@ context AccountContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet AccountRepositoryResponses is result Account.AccountResult
+    outlet AccountRepositoryResponses is result AccountStatsView
     record StoredAccount is {
       accountId: AccountId with {
         briefly "accountId"

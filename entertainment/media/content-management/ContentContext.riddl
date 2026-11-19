@@ -28,8 +28,56 @@ context ContentContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet ContentRepositoryQueriesIn is query GetContentStats with {
+    briefly "Look-ups of the content repository"
+    described as {
+      |ContentManagementApp's look-ups, on their way to the content repository.
+    }
+  }
+  outlet ContentRepositoryQueriesOut is query GetContentStats
+ with {
+    briefly "Look-ups on their way to the content repository"
+    described as {
+      |Each look-up goes to the content repository it names.
+    }
+  }
+  inlet ContentRepositoryRepliesIn is result ContentStatsView with {
+    briefly "The content repository's answers"
+    described as {
+      |What the content repository answers about itself.
+    }
+  }
+  outlet ContentRepositoryRepliesOut is result ContentStatsView
+ with {
+    briefly "Answers to ContentManagementApp"
+    described as {
+      |The reply leg of ContentManagementApp's look-ups of the content repository.
+    }
+  }
+  inlet ContentQueriesIn is query Content.GetContent with {
+    briefly "Look-ups of the content"
+    described as {
+      |ContentManagementApp's look-ups, on their way to the content.
+    }
+  }
+  outlet ContentQueriesOut is query Content.GetContent
+ with {
+    briefly "Look-ups on their way to the content"
+    described as {
+      |Each look-up goes to the content it names.
+    }
+  }
   inlet ContentContextFromToRightsService is command Content.RejectContent with {
     briefly "What ToRightsService makes of the answers it gets"
+  }
+  connector 'ContentRepositoryQuery Intake' is from outlet ContentContext.ContentRepositoryQueriesOut to inlet ContentContext.ContentRepository.ContentRepositoryQueries with {
+    briefly "Look-ups on their way to the content repository"
+  }
+  connector 'ContentRepositoryReply Egress' is from outlet ContentContext.ContentRepository.ContentRepositoryResponses to inlet ContentContext.ContentRepositoryRepliesIn with {
+    briefly "The content repository's answers on their way to the boundary"
+  }
+  connector 'ContentQuery Intake' is from outlet ContentContext.ContentQueriesOut to inlet ContentContext.Content.ContentQueries with {
+    briefly "Look-ups on their way to the content"
   }
   connector 'ToRightsService Intake' is from outlet ContentContext.ToRightsService.ToRightsServiceToContentContext to inlet ContentContext.ContentContextFromToRightsService with {
     briefly "Answers translated by ToRightsService, on their way in"
@@ -51,6 +99,15 @@ context ContentContext as router is {
   inlet ContentResultStreamIn is result Content.ContentResult
   outlet ContentResultStreamOut is result Content.ContentResult
   handler ContentContextBoundary is {
+    on getContentStats: query GetContentStats is {
+      forward getContentStats to outlet ContentContext.ContentRepositoryQueriesOut
+    }
+    on contentStatsView: result ContentStatsView is {
+      send contentStatsView to outlet ContentContext.ContentRepositoryRepliesOut
+    }
+    on getContent: query Content.GetContent is {
+      forward getContent to outlet ContentContext.ContentQueriesOut
+    }
     on createContent: command ContentContext.CreateContent is {
       let newContent = create entity ContentContext.Content(info = createContent.info, createdBy = createContent.createdBy)
       log newContent
@@ -103,7 +160,7 @@ context ContentContext as router is {
     }
   }
   connector 'ContentCommand Stream Intake' is from outlet ContentContext.ContentCommandStreamOut to inlet ContentContext.Content.ContentCommands
-  connector 'ContentResult Stream Egress' is from outlet ContentContext.ContentRepository.ContentRepositoryResponses to inlet ContentContext.ContentResultStreamIn
+  connector 'ContentResult Stream Egress' is from outlet ContentContext.Content.ContentReplies to inlet ContentContext.ContentResultStreamIn
   adaptor FromCDNService from context CDNService as sink is { 
     inlet FromCDNServiceIn is event CDNService.ContentDistributed
     handler FromCDNServiceHandler is {
@@ -359,7 +416,13 @@ context ContentContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository ContentRepository as flow is {
+  repository ContentRepository as merge is {
+    inlet ContentRepositoryQueries is query GetContentStats with {
+      briefly "Look-ups of this content repository"
+      described as {
+        |What ContentManagementApp asks of the content repository, by way of ContentContext.
+      }
+    }
     inlet ContentRepositoryFromContentAnalytics is type ContentRepositoryCommand
     command PersistAssetRemoved is {
       contentId: ContentId with {
@@ -691,7 +754,7 @@ context ContentContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet ContentRepositoryResponses is result Content.ContentResult
+    outlet ContentRepositoryResponses is result ContentStatsView
     record StoredContent is {
       contentId: ContentId with {
         briefly "contentId"

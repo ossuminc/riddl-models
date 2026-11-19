@@ -67,6 +67,21 @@ context TeamContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  connector 'PlayerRepositoryQuery Intake' is from outlet TeamContext.PlayerRepositoryQueriesOut to inlet TeamContext.PlayerRepository.PlayerRepositoryQueries with {
+    briefly "Look-ups on their way to the player repository"
+  }
+  connector 'PlayerRepositoryReply Egress' is from outlet TeamContext.PlayerRepository.PlayerRepositoryResponses to inlet TeamContext.PlayerRepositoryRepliesIn with {
+    briefly "The player repository's answers on their way to the boundary"
+  }
+  connector 'TeamQuery Intake' is from outlet TeamContext.TeamQueriesOut to inlet TeamContext.Team.TeamQueries with {
+    briefly "Look-ups on their way to the team"
+  }
+  connector 'TeamReply Egress' is from outlet TeamContext.Team.TeamReplies to inlet TeamContext.TeamRepliesIn with {
+    briefly "The team's answers on their way to the boundary"
+  }
+  connector 'PlayerQuery Intake' is from outlet TeamContext.PlayerQueriesOut to inlet TeamContext.Player.PlayerQueries with {
+    briefly "Look-ups on their way to the player"
+  }
   connector 'PlayerEventSplit Intake' is from outlet TeamContext.PlayerEventSplit.PlayerEventSplitToPlayer to inlet TeamContext.Player.PlayerFromPlayerEventSplit with {
     briefly "PlayerEventSplit messages on their way to Player"
     described as {
@@ -77,6 +92,71 @@ context TeamContext as router is {
     briefly "RosterMetrics messages on their way to PlayerRepository"
     described as {
       |The channel the `tell` travels.
+    }
+  }
+  inlet PlayerRepositoryQueriesIn is type PlayerRepository.PlayerRepositoryQuery with {
+    briefly "Look-ups of the player repository"
+    described as {
+      |TeamManagementApp's look-ups, on their way to the player repository.
+    }
+  }
+  outlet PlayerRepositoryQueriesOut is type PlayerRepository.PlayerRepositoryQuery
+ with {
+    briefly "Look-ups on their way to the player repository"
+    described as {
+      |Each look-up goes to the player repository it names.
+    }
+  }
+  inlet PlayerRepositoryRepliesIn is type PlayerRepository.PlayerRepositoryReply with {
+    briefly "The player repository's answers"
+    described as {
+      |What the player repository answers about itself.
+    }
+  }
+  outlet PlayerRepositoryRepliesOut is type PlayerRepository.PlayerRepositoryReply
+ with {
+    briefly "Answers to TeamManagementApp"
+    described as {
+      |The reply leg of TeamManagementApp's look-ups of the player repository.
+    }
+  }
+  inlet TeamQueriesIn is query GetRosterMetrics with {
+    briefly "Look-ups of the team"
+    described as {
+      |TeamManagementApp's look-ups, on their way to the team.
+    }
+  }
+  outlet TeamQueriesOut is query GetRosterMetrics
+ with {
+    briefly "Look-ups on their way to the team"
+    described as {
+      |Each look-up goes to the team it names.
+    }
+  }
+  inlet TeamRepliesIn is result RosterMetricsView with {
+    briefly "The team's answers"
+    described as {
+      |What the team answers about itself.
+    }
+  }
+  outlet TeamRepliesOut is result RosterMetricsView
+ with {
+    briefly "Answers to TeamManagementApp"
+    described as {
+      |The reply leg of TeamManagementApp's look-ups of the team.
+    }
+  }
+  inlet PlayerQueriesIn is query Player.GetPlayer with {
+    briefly "Look-ups of the player"
+    described as {
+      |TeamManagementApp's look-ups, on their way to the player.
+    }
+  }
+  outlet PlayerQueriesOut is query Player.GetPlayer
+ with {
+    briefly "Look-ups on their way to the player"
+    described as {
+      |Each look-up goes to the player it names.
     }
   }
   inlet PlayerCommandStreamIn is type TeamContext.PlayerRequest
@@ -95,6 +175,33 @@ context TeamContext as router is {
   inlet PlayerResultStreamIn is result Player.PlayerResult
   outlet PlayerResultStreamOut is result Player.PlayerResult
   handler TeamContextBoundary is {
+    on getPlayerById: query PlayerRepository.GetPlayerById is {
+      forward getPlayerById to outlet TeamContext.PlayerRepositoryQueriesOut
+    }
+    on getPlayersByTeam: query PlayerRepository.GetPlayersByTeam is {
+      forward getPlayersByTeam to outlet TeamContext.PlayerRepositoryQueriesOut
+    }
+    on getPlayersByStatus: query PlayerRepository.GetPlayersByStatus is {
+      forward getPlayersByStatus to outlet TeamContext.PlayerRepositoryQueriesOut
+    }
+    on getFreeAgents: query PlayerRepository.GetFreeAgents is {
+      forward getFreeAgents to outlet TeamContext.PlayerRepositoryQueriesOut
+    }
+    on playerList: result PlayerRepository.PlayerList is {
+      send playerList to outlet TeamContext.PlayerRepositoryRepliesOut
+    }
+    on playerRecord: result PlayerRepository.PlayerRecord is {
+      send playerRecord to outlet TeamContext.PlayerRepositoryRepliesOut
+    }
+    on getRosterMetrics: query GetRosterMetrics is {
+      forward getRosterMetrics to outlet TeamContext.TeamQueriesOut
+    }
+    on rosterMetricsView: result RosterMetricsView is {
+      send rosterMetricsView to outlet TeamContext.TeamRepliesOut
+    }
+    on getPlayer: query Player.GetPlayer is {
+      forward getPlayer to outlet TeamContext.PlayerQueriesOut
+    }
     on signPlayer: command TeamContext.SignPlayer is {
       let givenSignedAt: type TimeStamp = prompt("the signed at of this player signed")
       let newPlayer = create entity TeamContext.Player(playerInfo = signPlayer.playerInfo, contract = signPlayer.contract, teamId = signPlayer.teamId, signedAt = givenSignedAt)
@@ -142,7 +249,7 @@ context TeamContext as router is {
   }
   connector 'PlayerCommand Stream Intake' is from outlet TeamContext.PlayerCommandStreamOut to inlet TeamContext.Player.PlayerCommands
   connector 'TeamCommand Stream Intake' is from outlet TeamContext.TeamCommandStreamOut to inlet TeamContext.Team.TeamCommands
-  connector 'PlayerResult Stream Egress' is from outlet TeamContext.PlayerRepository.PlayerRepositoryResponses to inlet TeamContext.PlayerResultStreamIn
+  connector 'PlayerResult Stream Egress' is from outlet TeamContext.Player.PlayerReplies to inlet TeamContext.PlayerResultStreamIn
   query GetRosterMetrics replies result RosterMetricsView is {
     teamId: TeamId with {
       briefly "Team ID"
@@ -178,7 +285,7 @@ context TeamContext as router is {
   include "types.riddl"
   include "Player.riddl"
   // Team entity for managing team-level operations
-  aggregate entity Team as flow is {
+  aggregate entity Team as router is {
     type TeamCommand is one of {
       Team.RenameTeam or Team.RelocateTeam
     } with {
@@ -193,6 +300,19 @@ context TeamContext as router is {
       briefly "Team event alternation"
       described as {
         |Events published by the Team entity.
+      }
+    }
+    inlet TeamQueries is query GetRosterMetrics with {
+      briefly "Look-ups of this team"
+      described as {
+        |What TeamManagementApp asks of the team, by way of TeamContext.
+      }
+    }
+    outlet TeamReplies is result RosterMetricsView
+ with {
+      briefly "This team's answers"
+      described as {
+        |What the team answers, on its way back to TeamContext.
       }
     }
     inlet TeamCommands is type TeamCommand
@@ -475,7 +595,29 @@ context TeamContext as router is {
     }
   }
   // Repository for player data persistence
-  repository PlayerRepository as flow is {
+  repository PlayerRepository as merge is {
+    type PlayerRepositoryQuery is one of {
+      GetPlayerById or GetPlayersByTeam or GetPlayersByStatus or GetFreeAgents
+    } with {
+      briefly "What may be asked of PlayerRepository"
+      described as {
+        |The look-ups the player repository answers.
+      }
+    }
+    type PlayerRepositoryReply is one of {
+      PlayerList or PlayerRecord
+    } with {
+      briefly "What PlayerRepository answers"
+      described as {
+        |The answers the player repository gives.
+      }
+    }
+    inlet PlayerRepositoryQueries is type PlayerRepositoryQuery with {
+      briefly "Look-ups of this player repository"
+      described as {
+        |What TeamManagementApp asks of the player repository, by way of TeamContext.
+      }
+    }
     inlet PlayerRepositoryFromRosterMetrics is type PlayerRepositoryCommand with {
       briefly "What RosterMetrics sends PlayerRepository"
       described as {
@@ -887,7 +1029,7 @@ context TeamContext as router is {
         |The relational schema persisting player records for this repository.
       }
     }
-    outlet PlayerRepositoryResponses is result Player.PlayerResult
+    outlet PlayerRepositoryResponses is type PlayerRepositoryReply
     query GetPlayerById replies result PlayerRecord is {
       playerId: PlayerId with {
         briefly "Player to retrieve"

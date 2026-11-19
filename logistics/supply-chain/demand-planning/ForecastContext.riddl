@@ -46,8 +46,56 @@ context ForecastContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet ForecastRepositoryQueriesIn is query GetPlanningMetrics with {
+    briefly "Look-ups of the forecast repository"
+    described as {
+      |DemandPlanningApp's look-ups, on their way to the forecast repository.
+    }
+  }
+  outlet ForecastRepositoryQueriesOut is query GetPlanningMetrics
+ with {
+    briefly "Look-ups on their way to the forecast repository"
+    described as {
+      |Each look-up goes to the forecast repository it names.
+    }
+  }
+  inlet ForecastRepositoryRepliesIn is result PlanningMetricsView with {
+    briefly "The forecast repository's answers"
+    described as {
+      |What the forecast repository answers about itself.
+    }
+  }
+  outlet ForecastRepositoryRepliesOut is result PlanningMetricsView
+ with {
+    briefly "Answers to DemandPlanningApp"
+    described as {
+      |The reply leg of DemandPlanningApp's look-ups of the forecast repository.
+    }
+  }
+  inlet ForecastQueriesIn is query Forecast.GetForecast with {
+    briefly "Look-ups of the forecast"
+    described as {
+      |DemandPlanningApp's look-ups, on their way to the forecast.
+    }
+  }
+  outlet ForecastQueriesOut is query Forecast.GetForecast
+ with {
+    briefly "Look-ups on their way to the forecast"
+    described as {
+      |Each look-up goes to the forecast it names.
+    }
+  }
   inlet ForecastContextFromERPIntegration is command Forecast.GenerateStatisticalForecast with {
     briefly "What FromERPIntegration makes of that service's news"
+  }
+  connector 'ForecastRepositoryQuery Intake' is from outlet ForecastContext.ForecastRepositoryQueriesOut to inlet ForecastContext.ForecastRepository.ForecastRepositoryQueries with {
+    briefly "Look-ups on their way to the forecast repository"
+  }
+  connector 'ForecastRepositoryReply Egress' is from outlet ForecastContext.ForecastRepository.ForecastRepositoryResponses to inlet ForecastContext.ForecastRepositoryRepliesIn with {
+    briefly "The forecast repository's answers on their way to the boundary"
+  }
+  connector 'ForecastQuery Intake' is from outlet ForecastContext.ForecastQueriesOut to inlet ForecastContext.Forecast.ForecastQueries with {
+    briefly "Look-ups on their way to the forecast"
   }
   connector 'FromERPIntegration Intake' is from outlet ForecastContext.FromERPIntegration.FromERPIntegrationToForecastContext to inlet ForecastContext.ForecastContextFromERPIntegration with {
     briefly "What FromERPIntegration makes of that news, on its way in"
@@ -63,6 +111,15 @@ context ForecastContext as router is {
   inlet ForecastResultStreamIn is result Forecast.ForecastResult
   outlet ForecastResultStreamOut is result Forecast.ForecastResult
   handler ForecastContextBoundary is {
+    on getPlanningMetrics: query GetPlanningMetrics is {
+      forward getPlanningMetrics to outlet ForecastContext.ForecastRepositoryQueriesOut
+    }
+    on planningMetricsView: result PlanningMetricsView is {
+      send planningMetricsView to outlet ForecastContext.ForecastRepositoryRepliesOut
+    }
+    on getForecast: query Forecast.GetForecast is {
+      forward getForecast to outlet ForecastContext.ForecastQueriesOut
+    }
     on createForecast: command ForecastContext.CreateForecast is {
       let newForecast = create entity ForecastContext.Forecast(name = createForecast.name, horizon = createForecast.horizon, method = createForecast.method)
       log newForecast
@@ -115,7 +172,7 @@ context ForecastContext as router is {
     }
   }
   connector 'ForecastCommand Stream Intake' is from outlet ForecastContext.ForecastCommandStreamOut to inlet ForecastContext.Forecast.ForecastCommands
-  connector 'ForecastResult Stream Egress' is from outlet ForecastContext.ForecastRepository.ForecastRepositoryResponses to inlet ForecastContext.ForecastResultStreamIn
+  connector 'ForecastResult Stream Egress' is from outlet ForecastContext.Forecast.ForecastReplies to inlet ForecastContext.ForecastResultStreamIn
   adaptor FromERPIntegration from context ERPIntegration as flow is { 
     inlet FromERPIntegrationIn is type ERPIntegration.ERPIntegrationEvent
     outlet FromERPIntegrationToForecastContext is command Forecast.GenerateStatisticalForecast
@@ -327,7 +384,13 @@ context ForecastContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository ForecastRepository as flow is {
+  repository ForecastRepository as merge is {
+    inlet ForecastRepositoryQueries is query GetPlanningMetrics with {
+      briefly "Look-ups of this forecast repository"
+      described as {
+        |What DemandPlanningApp asks of the forecast repository, by way of ForecastContext.
+      }
+    }
     inlet ForecastRepositoryFromForecastAnalytics is type ForecastRepositoryCommand
     command PersistActualsRecorded is {
       forecastId: ForecastId with {
@@ -653,7 +716,7 @@ context ForecastContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet ForecastRepositoryResponses is result Forecast.ForecastResult
+    outlet ForecastRepositoryResponses is result PlanningMetricsView
     record StoredForecast is {
       forecastId: ForecastId with {
         briefly "forecastId"

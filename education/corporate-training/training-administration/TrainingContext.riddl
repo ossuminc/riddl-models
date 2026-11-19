@@ -22,11 +22,59 @@ context TrainingContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet TrainingRepositoryQueriesIn is query GetTrainingStats with {
+    briefly "Look-ups of the training repository"
+    described as {
+      |TrainingAdministrationApp's look-ups, on their way to the training repository.
+    }
+  }
+  outlet TrainingRepositoryQueriesOut is query GetTrainingStats
+ with {
+    briefly "Look-ups on their way to the training repository"
+    described as {
+      |Each look-up goes to the training repository it names.
+    }
+  }
+  inlet TrainingRepositoryRepliesIn is result TrainingStatsView with {
+    briefly "The training repository's answers"
+    described as {
+      |What the training repository answers about itself.
+    }
+  }
+  outlet TrainingRepositoryRepliesOut is result TrainingStatsView
+ with {
+    briefly "Answers to TrainingAdministrationApp"
+    described as {
+      |The reply leg of TrainingAdministrationApp's look-ups of the training repository.
+    }
+  }
+  inlet TrainingQueriesIn is query Training.GetTraining with {
+    briefly "Look-ups of the training"
+    described as {
+      |TrainingAdministrationApp's look-ups, on their way to the training.
+    }
+  }
+  outlet TrainingQueriesOut is query Training.GetTraining
+ with {
+    briefly "Look-ups on their way to the training"
+    described as {
+      |Each look-up goes to the training it names.
+    }
+  }
   inlet TrainingCommandStreamIn is type TrainingContext.TrainingRequest
   outlet TrainingCommandStreamOut is type TrainingCommand
   inlet TrainingResultStreamIn is result Training.TrainingResult
   outlet TrainingResultStreamOut is result Training.TrainingResult
   handler TrainingContextBoundary is {
+    on getTrainingStats: query GetTrainingStats is {
+      forward getTrainingStats to outlet TrainingContext.TrainingRepositoryQueriesOut
+    }
+    on trainingStatsView: result TrainingStatsView is {
+      send trainingStatsView to outlet TrainingContext.TrainingRepositoryRepliesOut
+    }
+    on getTraining: query Training.GetTraining is {
+      forward getTraining to outlet TrainingContext.TrainingQueriesOut
+    }
     on createTrainingProgram: command TrainingContext.CreateTrainingProgram is {
       let newTraining = create entity TrainingContext.Training(program = createTrainingProgram.program)
       log newTraining
@@ -78,8 +126,17 @@ context TrainingContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'TrainingRepositoryQuery Intake' is from outlet TrainingContext.TrainingRepositoryQueriesOut to inlet TrainingContext.TrainingRepository.TrainingRepositoryQueries with {
+    briefly "Look-ups on their way to the training repository"
+  }
+  connector 'TrainingRepositoryReply Egress' is from outlet TrainingContext.TrainingRepository.TrainingRepositoryResponses to inlet TrainingContext.TrainingRepositoryRepliesIn with {
+    briefly "The training repository's answers on their way to the boundary"
+  }
+  connector 'TrainingQuery Intake' is from outlet TrainingContext.TrainingQueriesOut to inlet TrainingContext.Training.TrainingQueries with {
+    briefly "Look-ups on their way to the training"
+  }
   connector 'TrainingCommand Stream Intake' is from outlet TrainingContext.TrainingCommandStreamOut to inlet TrainingContext.Training.TrainingCommands
-  connector 'TrainingResult Stream Egress' is from outlet TrainingContext.TrainingRepository.TrainingRepositoryResponses to inlet TrainingContext.TrainingResultStreamIn
+  connector 'TrainingResult Stream Egress' is from outlet TrainingContext.Training.TrainingReplies to inlet TrainingContext.TrainingResultStreamIn
   adaptor FromCalendarService from context CalendarService as sink is { 
     inlet FromCalendarServiceIn is event CalendarService.CalendarEventCreated
     handler FromCalendarServiceHandler is {
@@ -319,7 +376,13 @@ context TrainingContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository TrainingRepository as flow is {
+  repository TrainingRepository as merge is {
+    inlet TrainingRepositoryQueries is query GetTrainingStats with {
+      briefly "Look-ups of this training repository"
+      described as {
+        |What TrainingAdministrationApp asks of the training repository, by way of TrainingContext.
+      }
+    }
     inlet TrainingRepositoryFromTrainingAnalytics is type TrainingRepositoryCommand
     command PersistAttendanceRecorded is {
       trainingId: TrainingId with {
@@ -681,7 +744,7 @@ context TrainingContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet TrainingRepositoryResponses is result Training.TrainingResult
+    outlet TrainingRepositoryResponses is result TrainingStatsView
     record StoredTraining is {
       trainingId: TrainingId with {
         briefly "trainingId"

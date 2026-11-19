@@ -28,8 +28,56 @@ context ProvisioningContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet ProvisioningRepositoryQueriesIn is query GetOrderMetrics with {
+    briefly "Look-ups of the provisioning repository"
+    described as {
+      |ServiceProvisioningApp's look-ups, on their way to the provisioning repository.
+    }
+  }
+  outlet ProvisioningRepositoryQueriesOut is query GetOrderMetrics
+ with {
+    briefly "Look-ups on their way to the provisioning repository"
+    described as {
+      |Each look-up goes to the provisioning repository it names.
+    }
+  }
+  inlet ProvisioningRepositoryRepliesIn is result OrderMetricsView with {
+    briefly "The provisioning repository's answers"
+    described as {
+      |What the provisioning repository answers about itself.
+    }
+  }
+  outlet ProvisioningRepositoryRepliesOut is result OrderMetricsView
+ with {
+    briefly "Answers to ServiceProvisioningApp"
+    described as {
+      |The reply leg of ServiceProvisioningApp's look-ups of the provisioning repository.
+    }
+  }
+  inlet ServiceOrderQueriesIn is query ServiceOrder.GetServiceOrder with {
+    briefly "Look-ups of the service order"
+    described as {
+      |ServiceProvisioningApp's look-ups, on their way to the service order.
+    }
+  }
+  outlet ServiceOrderQueriesOut is query ServiceOrder.GetServiceOrder
+ with {
+    briefly "Look-ups on their way to the service order"
+    described as {
+      |Each look-up goes to the service order it names.
+    }
+  }
   inlet ProvisioningContextFromToNetworkElementManager is command ServiceOrder.FailOrder with {
     briefly "What ToNetworkElementManager makes of the answers it gets"
+  }
+  connector 'ProvisioningRepositoryQuery Intake' is from outlet ProvisioningContext.ProvisioningRepositoryQueriesOut to inlet ProvisioningContext.ProvisioningRepository.ProvisioningRepositoryQueries with {
+    briefly "Look-ups on their way to the provisioning repository"
+  }
+  connector 'ProvisioningRepositoryReply Egress' is from outlet ProvisioningContext.ProvisioningRepository.ProvisioningRepositoryResponses to inlet ProvisioningContext.ProvisioningRepositoryRepliesIn with {
+    briefly "The provisioning repository's answers on their way to the boundary"
+  }
+  connector 'ServiceOrderQuery Intake' is from outlet ProvisioningContext.ServiceOrderQueriesOut to inlet ProvisioningContext.ServiceOrder.ServiceOrderQueries with {
+    briefly "Look-ups on their way to the service order"
   }
   connector 'ToNetworkElementManager Intake' is from outlet ProvisioningContext.ToNetworkElementManager.ToNetworkElementManagerToProvisioningContext to inlet ProvisioningContext.ProvisioningContextFromToNetworkElementManager with {
     briefly "Answers translated by ToNetworkElementManager, on their way in"
@@ -57,6 +105,15 @@ context ProvisioningContext as router is {
   inlet ServiceOrderResultStreamIn is result ServiceOrder.ServiceOrderResult
   outlet ServiceOrderResultStreamOut is result ServiceOrder.ServiceOrderResult
   handler ProvisioningContextBoundary is {
+    on getOrderMetrics: query GetOrderMetrics is {
+      forward getOrderMetrics to outlet ProvisioningContext.ProvisioningRepositoryQueriesOut
+    }
+    on orderMetricsView: result OrderMetricsView is {
+      send orderMetricsView to outlet ProvisioningContext.ProvisioningRepositoryRepliesOut
+    }
+    on getServiceOrder: query ServiceOrder.GetServiceOrder is {
+      forward getServiceOrder to outlet ProvisioningContext.ServiceOrderQueriesOut
+    }
     on createOrder: command ProvisioningContext.CreateOrder is {
       let newServiceOrder = create entity ProvisioningContext.ServiceOrder(orderInfo = createOrder.orderInfo, serviceSpec = createOrder.serviceSpec)
       log newServiceOrder
@@ -100,7 +157,7 @@ context ProvisioningContext as router is {
     }
   }
   connector 'ServiceOrderCommand Stream Intake' is from outlet ProvisioningContext.ServiceOrderCommandStreamOut to inlet ProvisioningContext.ServiceOrder.ServiceOrderCommands
-  connector 'ServiceOrderResult Stream Egress' is from outlet ProvisioningContext.ProvisioningRepository.ProvisioningRepositoryResponses to inlet ProvisioningContext.ServiceOrderResultStreamIn
+  connector 'ServiceOrderResult Stream Egress' is from outlet ProvisioningContext.ServiceOrder.ServiceOrderReplies to inlet ProvisioningContext.ServiceOrderResultStreamIn
   adaptor FromNetworkElementManager from context NetworkElementManager as flow is { 
     inlet FromNetworkElementManagerIn is event NetworkElementManager.ElementConfigured
     outlet FromNetworkElementManagerToProvisioningContext is command ServiceOrder.RecordTaskCompletion
@@ -266,7 +323,13 @@ context ProvisioningContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository ProvisioningRepository as flow is {
+  repository ProvisioningRepository as merge is {
+    inlet ProvisioningRepositoryQueries is query GetOrderMetrics with {
+      briefly "Look-ups of this provisioning repository"
+      described as {
+        |What ServiceProvisioningApp asks of the provisioning repository, by way of ProvisioningContext.
+      }
+    }
     inlet ProvisioningRepositoryFromProvisioningMetrics is type ProvisioningRepositoryCommand
     command PersistOrderCancelled is {
       orderId: ServiceOrderId with {
@@ -511,7 +574,7 @@ context ProvisioningContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet ProvisioningRepositoryResponses is result ServiceOrder.ServiceOrderResult
+    outlet ProvisioningRepositoryResponses is result OrderMetricsView
     record StoredServiceOrder is {
       serviceOrderId: ServiceOrderId with {
         briefly "serviceOrderId"

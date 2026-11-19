@@ -34,8 +34,56 @@ context ProjectContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet ProjectRepositoryQueriesIn is query GetProjectSummary with {
+    briefly "Look-ups of the project repository"
+    described as {
+      |ConstructionProjectApp's look-ups, on their way to the project repository.
+    }
+  }
+  outlet ProjectRepositoryQueriesOut is query GetProjectSummary
+ with {
+    briefly "Look-ups on their way to the project repository"
+    described as {
+      |Each look-up goes to the project repository it names.
+    }
+  }
+  inlet ProjectRepositoryRepliesIn is result ProjectSummaryView with {
+    briefly "The project repository's answers"
+    described as {
+      |What the project repository answers about itself.
+    }
+  }
+  outlet ProjectRepositoryRepliesOut is result ProjectSummaryView
+ with {
+    briefly "Answers to ConstructionProjectApp"
+    described as {
+      |The reply leg of ConstructionProjectApp's look-ups of the project repository.
+    }
+  }
+  inlet ProjectQueriesIn is query Project.GetProject with {
+    briefly "Look-ups of the project"
+    described as {
+      |ConstructionProjectApp's look-ups, on their way to the project.
+    }
+  }
+  outlet ProjectQueriesOut is query Project.GetProject
+ with {
+    briefly "Look-ups on their way to the project"
+    described as {
+      |Each look-up goes to the project it names.
+    }
+  }
   inlet ProjectContextFromAccountingService is command Project.UpdateBudget with {
     briefly "What FromAccountingService makes of that service's news"
+  }
+  connector 'ProjectRepositoryQuery Intake' is from outlet ProjectContext.ProjectRepositoryQueriesOut to inlet ProjectContext.ProjectRepository.ProjectRepositoryQueries with {
+    briefly "Look-ups on their way to the project repository"
+  }
+  connector 'ProjectRepositoryReply Egress' is from outlet ProjectContext.ProjectRepository.ProjectRepositoryResponses to inlet ProjectContext.ProjectRepositoryRepliesIn with {
+    briefly "The project repository's answers on their way to the boundary"
+  }
+  connector 'ProjectQuery Intake' is from outlet ProjectContext.ProjectQueriesOut to inlet ProjectContext.Project.ProjectQueries with {
+    briefly "Look-ups on their way to the project"
   }
   connector 'FromAccountingService Intake' is from outlet ProjectContext.FromAccountingService.FromAccountingServiceToProjectContext to inlet ProjectContext.ProjectContextFromAccountingService with {
     briefly "What FromAccountingService makes of that news, on its way in"
@@ -45,6 +93,15 @@ context ProjectContext as router is {
   inlet ProjectResultStreamIn is result Project.ProjectResult
   outlet ProjectResultStreamOut is result Project.ProjectResult
   handler ProjectContextBoundary is {
+    on getProjectSummary: query GetProjectSummary is {
+      forward getProjectSummary to outlet ProjectContext.ProjectRepositoryQueriesOut
+    }
+    on projectSummaryView: result ProjectSummaryView is {
+      send projectSummaryView to outlet ProjectContext.ProjectRepositoryRepliesOut
+    }
+    on getProject: query Project.GetProject is {
+      forward getProject to outlet ProjectContext.ProjectQueriesOut
+    }
     on createProject: command ProjectContext.CreateProject is {
       let newProject = create entity ProjectContext.Project(info = createProject.info, budget = createProject.budget, schedule = createProject.schedule)
       log newProject
@@ -100,7 +157,7 @@ context ProjectContext as router is {
     }
   }
   connector 'ProjectCommand Stream Intake' is from outlet ProjectContext.ProjectCommandStreamOut to inlet ProjectContext.Project.ProjectCommands
-  connector 'ProjectResult Stream Egress' is from outlet ProjectContext.ProjectRepository.ProjectRepositoryResponses to inlet ProjectContext.ProjectResultStreamIn
+  connector 'ProjectResult Stream Egress' is from outlet ProjectContext.Project.ProjectReplies to inlet ProjectContext.ProjectResultStreamIn
   adaptor FromAccountingService from context AccountingService as flow is { 
     inlet FromAccountingServiceIn is event AccountingService.ExpenseRecorded
     outlet FromAccountingServiceToProjectContext is command Project.UpdateBudget
@@ -290,7 +347,13 @@ context ProjectContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository ProjectRepository as flow is {
+  repository ProjectRepository as merge is {
+    inlet ProjectRepositoryQueries is query GetProjectSummary with {
+      briefly "Look-ups of this project repository"
+      described as {
+        |What ConstructionProjectApp asks of the project repository, by way of ProjectContext.
+      }
+    }
     inlet ProjectRepositoryFromProjectAnalytics is type ProjectRepositoryCommand
     command PersistChangeOrderSubmitted is {
       projectId: ProjectId with {
@@ -631,7 +694,7 @@ context ProjectContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet ProjectRepositoryResponses is result Project.ProjectResult
+    outlet ProjectRepositoryResponses is result ProjectSummaryView
     record StoredProject is {
       projectId: ProjectId with {
         briefly "projectId"

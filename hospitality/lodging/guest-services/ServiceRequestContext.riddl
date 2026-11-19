@@ -28,8 +28,56 @@ context ServiceRequestContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet ServiceRequestRepositoryQueriesIn is query GetServiceStats with {
+    briefly "Look-ups of the service request repository"
+    described as {
+      |GuestServicesApp's look-ups, on their way to the service request repository.
+    }
+  }
+  outlet ServiceRequestRepositoryQueriesOut is query GetServiceStats
+ with {
+    briefly "Look-ups on their way to the service request repository"
+    described as {
+      |Each look-up goes to the service request repository it names.
+    }
+  }
+  inlet ServiceRequestRepositoryRepliesIn is result ServiceStatsView with {
+    briefly "The service request repository's answers"
+    described as {
+      |What the service request repository answers about itself.
+    }
+  }
+  outlet ServiceRequestRepositoryRepliesOut is result ServiceStatsView
+ with {
+    briefly "Answers to GuestServicesApp"
+    described as {
+      |The reply leg of GuestServicesApp's look-ups of the service request repository.
+    }
+  }
+  inlet ServiceRequestQueriesIn is query ServiceRequest.GetServiceRequest with {
+    briefly "Look-ups of the service request"
+    described as {
+      |GuestServicesApp's look-ups, on their way to the service request.
+    }
+  }
+  outlet ServiceRequestQueriesOut is query ServiceRequest.GetServiceRequest
+ with {
+    briefly "Look-ups on their way to the service request"
+    described as {
+      |Each look-up goes to the service request it names.
+    }
+  }
   inlet ServiceRequestContextFromToStaffDispatchService is command ServiceRequest.AssignStaff with {
     briefly "What ToStaffDispatchService makes of the answers it gets"
+  }
+  connector 'ServiceRequestRepositoryQuery Intake' is from outlet ServiceRequestContext.ServiceRequestRepositoryQueriesOut to inlet ServiceRequestContext.ServiceRequestRepository.ServiceRequestRepositoryQueries with {
+    briefly "Look-ups on their way to the service request repository"
+  }
+  connector 'ServiceRequestRepositoryReply Egress' is from outlet ServiceRequestContext.ServiceRequestRepository.ServiceRequestRepositoryResponses to inlet ServiceRequestContext.ServiceRequestRepositoryRepliesIn with {
+    briefly "The service request repository's answers on their way to the boundary"
+  }
+  connector 'ServiceRequestQuery Intake' is from outlet ServiceRequestContext.ServiceRequestQueriesOut to inlet ServiceRequestContext.ServiceRequest.ServiceRequestQueries with {
+    briefly "Look-ups on their way to the service request"
   }
   connector 'ToStaffDispatchService Intake' is from outlet ServiceRequestContext.ToStaffDispatchService.ToStaffDispatchServiceToServiceRequestContext to inlet ServiceRequestContext.ServiceRequestContextFromToStaffDispatchService with {
     briefly "Answers translated by ToStaffDispatchService, on their way in"
@@ -69,6 +117,15 @@ context ServiceRequestContext as router is {
   inlet ServiceRequestResultStreamIn is result ServiceRequest.ServiceRequestResult
   outlet ServiceRequestResultStreamOut is result ServiceRequest.ServiceRequestResult
   handler ServiceRequestContextBoundary is {
+    on getServiceStats: query GetServiceStats is {
+      forward getServiceStats to outlet ServiceRequestContext.ServiceRequestRepositoryQueriesOut
+    }
+    on serviceStatsView: result ServiceStatsView is {
+      send serviceStatsView to outlet ServiceRequestContext.ServiceRequestRepositoryRepliesOut
+    }
+    on getServiceRequest: query ServiceRequest.GetServiceRequest is {
+      forward getServiceRequest to outlet ServiceRequestContext.ServiceRequestQueriesOut
+    }
     on createServiceRequest: command ServiceRequestContext.CreateServiceRequest is {
       let newServiceRequest = create entity ServiceRequestContext.ServiceRequest(guest = createServiceRequest.guest, request = createServiceRequest.request)
       log newServiceRequest
@@ -118,7 +175,7 @@ context ServiceRequestContext as router is {
     }
   }
   connector 'ServiceRequestCommand Stream Intake' is from outlet ServiceRequestContext.ServiceRequestCommandStreamOut to inlet ServiceRequestContext.ServiceRequest.ServiceRequestCommands
-  connector 'ServiceRequestResult Stream Egress' is from outlet ServiceRequestContext.ServiceRequestRepository.ServiceRequestRepositoryResponses to inlet ServiceRequestContext.ServiceRequestResultStreamIn
+  connector 'ServiceRequestResult Stream Egress' is from outlet ServiceRequestContext.ServiceRequest.ServiceRequestReplies to inlet ServiceRequestContext.ServiceRequestResultStreamIn
   adaptor FromBillingService from context BillingService as sink is { 
     inlet FromBillingServiceIn is event BillingService.ChargePosted
     handler FromBillingServiceHandler is {
@@ -496,7 +553,13 @@ context ServiceRequestContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository ServiceRequestRepository as flow is {
+  repository ServiceRequestRepository as merge is {
+    inlet ServiceRequestRepositoryQueries is query GetServiceStats with {
+      briefly "Look-ups of this service request repository"
+      described as {
+        |What GuestServicesApp asks of the service request repository, by way of ServiceRequestContext.
+      }
+    }
     inlet ServiceRequestRepositoryFromServiceAnalytics is type ServiceRequestRepositoryCommand
     command PersistLaundryOrderAdded is {
       requestId: ServiceRequestId with {
@@ -789,7 +852,7 @@ context ServiceRequestContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet ServiceRequestRepositoryResponses is result ServiceRequest.ServiceRequestResult
+    outlet ServiceRequestRepositoryResponses is result ServiceStatsView
     record StoredServiceRequest is {
       serviceRequestId: ServiceRequestId with {
         briefly "serviceRequestId"

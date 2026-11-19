@@ -46,8 +46,56 @@ context ShipmentContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet ShipmentRepositoryQueriesIn is query GetForwardingStats with {
+    briefly "Look-ups of the shipment repository"
+    described as {
+      |FreightForwardingApp's look-ups, on their way to the shipment repository.
+    }
+  }
+  outlet ShipmentRepositoryQueriesOut is query GetForwardingStats
+ with {
+    briefly "Look-ups on their way to the shipment repository"
+    described as {
+      |Each look-up goes to the shipment repository it names.
+    }
+  }
+  inlet ShipmentRepositoryRepliesIn is result ForwardingStatsView with {
+    briefly "The shipment repository's answers"
+    described as {
+      |What the shipment repository answers about itself.
+    }
+  }
+  outlet ShipmentRepositoryRepliesOut is result ForwardingStatsView
+ with {
+    briefly "Answers to FreightForwardingApp"
+    described as {
+      |The reply leg of FreightForwardingApp's look-ups of the shipment repository.
+    }
+  }
+  inlet ShipmentQueriesIn is query Shipment.GetShipment with {
+    briefly "Look-ups of the shipment"
+    described as {
+      |FreightForwardingApp's look-ups, on their way to the shipment.
+    }
+  }
+  outlet ShipmentQueriesOut is query Shipment.GetShipment
+ with {
+    briefly "Look-ups on their way to the shipment"
+    described as {
+      |Each look-up goes to the shipment it names.
+    }
+  }
   inlet ShipmentContextFromToAirCarrierService is command Shipment.BookCarrier with {
     briefly "What ToAirCarrierService makes of the answers it gets"
+  }
+  connector 'ShipmentRepositoryQuery Intake' is from outlet ShipmentContext.ShipmentRepositoryQueriesOut to inlet ShipmentContext.ShipmentRepository.ShipmentRepositoryQueries with {
+    briefly "Look-ups on their way to the shipment repository"
+  }
+  connector 'ShipmentRepositoryReply Egress' is from outlet ShipmentContext.ShipmentRepository.ShipmentRepositoryResponses to inlet ShipmentContext.ShipmentRepositoryRepliesIn with {
+    briefly "The shipment repository's answers on their way to the boundary"
+  }
+  connector 'ShipmentQuery Intake' is from outlet ShipmentContext.ShipmentQueriesOut to inlet ShipmentContext.Shipment.ShipmentQueries with {
+    briefly "Look-ups on their way to the shipment"
   }
   connector 'ToAirCarrierService Intake' is from outlet ShipmentContext.ToAirCarrierService.ToAirCarrierServiceToShipmentContext to inlet ShipmentContext.ShipmentContextFromToAirCarrierService with {
     briefly "Answers translated by ToAirCarrierService, on their way in"
@@ -116,6 +164,15 @@ context ShipmentContext as router is {
   inlet ShipmentResultStreamIn is result Shipment.ShipmentResult
   outlet ShipmentResultStreamOut is result Shipment.ShipmentResult
   handler ShipmentContextBoundary is {
+    on getForwardingStats: query GetForwardingStats is {
+      forward getForwardingStats to outlet ShipmentContext.ShipmentRepositoryQueriesOut
+    }
+    on forwardingStatsView: result ForwardingStatsView is {
+      send forwardingStatsView to outlet ShipmentContext.ShipmentRepositoryRepliesOut
+    }
+    on getShipment: query Shipment.GetShipment is {
+      forward getShipment to outlet ShipmentContext.ShipmentQueriesOut
+    }
     on createShipment: command ShipmentContext.CreateShipment is {
       let newShipment = create entity ShipmentContext.Shipment(serviceType = createShipment.serviceType, incoterms = createShipment.incoterms, parties = createShipment.parties, cargo = createShipment.cargo, route = createShipment.route)
       log newShipment
@@ -165,7 +222,7 @@ context ShipmentContext as router is {
     }
   }
   connector 'ShipmentCommand Stream Intake' is from outlet ShipmentContext.ShipmentCommandStreamOut to inlet ShipmentContext.Shipment.ShipmentCommands
-  connector 'ShipmentResult Stream Egress' is from outlet ShipmentContext.ShipmentRepository.ShipmentRepositoryResponses to inlet ShipmentContext.ShipmentResultStreamIn
+  connector 'ShipmentResult Stream Egress' is from outlet ShipmentContext.Shipment.ShipmentReplies to inlet ShipmentContext.ShipmentResultStreamIn
   adaptor FromAirCarrierService from context AirCarrierService as flow is { 
     inlet FromAirCarrierServiceIn is event AirCarrierService.AirBookingConfirmed
     outlet FromAirCarrierServiceToShipmentContext is command Shipment.BookCarrier
@@ -505,7 +562,13 @@ context ShipmentContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository ShipmentRepository as flow is {
+  repository ShipmentRepository as merge is {
+    inlet ShipmentRepositoryQueries is query GetForwardingStats with {
+      briefly "Look-ups of this shipment repository"
+      described as {
+        |What FreightForwardingApp asks of the shipment repository, by way of ShipmentContext.
+      }
+    }
     inlet ShipmentRepositoryFromForwardingAnalytics is type ShipmentRepositoryCommand
     command PersistContainerSealUpdated is {
       shipmentId: ShipmentId with {
@@ -828,7 +891,7 @@ context ShipmentContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet ShipmentRepositoryResponses is result Shipment.ShipmentResult
+    outlet ShipmentRepositoryResponses is result ForwardingStatsView
     record StoredShipment is {
       shipmentId: ShipmentId with {
         briefly "shipmentId"

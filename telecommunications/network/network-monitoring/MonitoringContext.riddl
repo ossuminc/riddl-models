@@ -33,8 +33,56 @@ context MonitoringContext as router is {
   } with {
     briefly "What FromSNMPCollector turns that service's news into"
   }
+  inlet DeviceRepositoryQueriesIn is query GetNetworkMetrics with {
+    briefly "Look-ups of the device repository"
+    described as {
+      |NetworkMonitoringApp's look-ups, on their way to the device repository.
+    }
+  }
+  outlet DeviceRepositoryQueriesOut is query GetNetworkMetrics
+ with {
+    briefly "Look-ups on their way to the device repository"
+    described as {
+      |Each look-up goes to the device repository it names.
+    }
+  }
+  inlet DeviceRepositoryRepliesIn is result NetworkMetricsView with {
+    briefly "The device repository's answers"
+    described as {
+      |What the device repository answers about itself.
+    }
+  }
+  outlet DeviceRepositoryRepliesOut is result NetworkMetricsView
+ with {
+    briefly "Answers to NetworkMonitoringApp"
+    described as {
+      |The reply leg of NetworkMonitoringApp's look-ups of the device repository.
+    }
+  }
+  inlet NetworkDeviceQueriesIn is query NetworkDevice.GetNetworkDevice with {
+    briefly "Look-ups of the network device"
+    described as {
+      |NetworkMonitoringApp's look-ups, on their way to the network device.
+    }
+  }
+  outlet NetworkDeviceQueriesOut is query NetworkDevice.GetNetworkDevice
+ with {
+    briefly "Look-ups on their way to the network device"
+    described as {
+      |Each look-up goes to the network device it names.
+    }
+  }
   inlet MonitoringContextFromSNMPCollector is type MonitoringContext.FromSNMPCollectorCommand with {
     briefly "What FromSNMPCollector makes of that service's news"
+  }
+  connector 'DeviceRepositoryQuery Intake' is from outlet MonitoringContext.DeviceRepositoryQueriesOut to inlet MonitoringContext.DeviceRepository.DeviceRepositoryQueries with {
+    briefly "Look-ups on their way to the device repository"
+  }
+  connector 'DeviceRepositoryReply Egress' is from outlet MonitoringContext.DeviceRepository.DeviceRepositoryResponses to inlet MonitoringContext.DeviceRepositoryRepliesIn with {
+    briefly "The device repository's answers on their way to the boundary"
+  }
+  connector 'NetworkDeviceQuery Intake' is from outlet MonitoringContext.NetworkDeviceQueriesOut to inlet MonitoringContext.NetworkDevice.NetworkDeviceQueries with {
+    briefly "Look-ups on their way to the network device"
   }
   connector 'FromSNMPCollector Intake' is from outlet MonitoringContext.FromSNMPCollector.FromSNMPCollectorToMonitoringContext to inlet MonitoringContext.MonitoringContextFromSNMPCollector with {
     briefly "What FromSNMPCollector makes of that news, on its way in"
@@ -44,6 +92,15 @@ context MonitoringContext as router is {
   inlet NetworkDeviceResultStreamIn is result NetworkDevice.NetworkDeviceResult
   outlet NetworkDeviceResultStreamOut is result NetworkDevice.NetworkDeviceResult
   handler MonitoringContextBoundary is {
+    on getNetworkMetrics: query GetNetworkMetrics is {
+      forward getNetworkMetrics to outlet MonitoringContext.DeviceRepositoryQueriesOut
+    }
+    on networkMetricsView: result NetworkMetricsView is {
+      send networkMetricsView to outlet MonitoringContext.DeviceRepositoryRepliesOut
+    }
+    on getNetworkDevice: query NetworkDevice.GetNetworkDevice is {
+      forward getNetworkDevice to outlet MonitoringContext.NetworkDeviceQueriesOut
+    }
     on registerDevice: command MonitoringContext.RegisterDevice is {
       let newNetworkDevice = create entity MonitoringContext.NetworkDevice(deviceInfo = registerDevice.deviceInfo, deviceType = registerDevice.deviceType)
       log newNetworkDevice
@@ -93,7 +150,7 @@ context MonitoringContext as router is {
     }
   }
   connector 'NetworkDeviceCommand Stream Intake' is from outlet MonitoringContext.NetworkDeviceCommandStreamOut to inlet MonitoringContext.NetworkDevice.NetworkDeviceCommands
-  connector 'NetworkDeviceResult Stream Egress' is from outlet MonitoringContext.DeviceRepository.DeviceRepositoryResponses to inlet MonitoringContext.NetworkDeviceResultStreamIn
+  connector 'NetworkDeviceResult Stream Egress' is from outlet MonitoringContext.NetworkDevice.NetworkDeviceReplies to inlet MonitoringContext.NetworkDeviceResultStreamIn
   adaptor ToAlertNotification to context AlertNotification as flow is { 
     inlet ToAlertNotificationIn is type NetworkDeviceEvent
     outlet ToAlertNotificationOut is command AlertNotification.SendAlertNotification
@@ -300,7 +357,13 @@ context MonitoringContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository DeviceRepository as flow is {
+  repository DeviceRepository as merge is {
+    inlet DeviceRepositoryQueries is query GetNetworkMetrics with {
+      briefly "Look-ups of this device repository"
+      described as {
+        |What NetworkMonitoringApp asks of the device repository, by way of MonitoringContext.
+      }
+    }
     inlet DeviceRepositoryFromNetworkAnalytics is type DeviceRepositoryCommand
     command PersistAlertAcknowledged is {
       deviceId: DeviceId with {
@@ -605,7 +668,7 @@ context MonitoringContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet DeviceRepositoryResponses is result NetworkDevice.NetworkDeviceResult
+    outlet DeviceRepositoryResponses is result NetworkMetricsView
     record StoredNetworkDevice is {
       networkDeviceId: UUID with {
         briefly "networkDeviceId"

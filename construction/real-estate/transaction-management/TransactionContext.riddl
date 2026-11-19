@@ -39,8 +39,56 @@ context TransactionContext as router is {
   } with {
     briefly "What FromEscrowService turns that service's news into"
   }
+  inlet TransactionRepositoryQueriesIn is query GetTransactionSummary with {
+    briefly "Look-ups of the transaction repository"
+    described as {
+      |TransactionManagementApp's look-ups, on their way to the transaction repository.
+    }
+  }
+  outlet TransactionRepositoryQueriesOut is query GetTransactionSummary
+ with {
+    briefly "Look-ups on their way to the transaction repository"
+    described as {
+      |Each look-up goes to the transaction repository it names.
+    }
+  }
+  inlet TransactionRepositoryRepliesIn is result TransactionSummaryView with {
+    briefly "The transaction repository's answers"
+    described as {
+      |What the transaction repository answers about itself.
+    }
+  }
+  outlet TransactionRepositoryRepliesOut is result TransactionSummaryView
+ with {
+    briefly "Answers to TransactionManagementApp"
+    described as {
+      |The reply leg of TransactionManagementApp's look-ups of the transaction repository.
+    }
+  }
+  inlet TransactionQueriesIn is query Transaction.GetTransaction with {
+    briefly "Look-ups of the transaction"
+    described as {
+      |TransactionManagementApp's look-ups, on their way to the transaction.
+    }
+  }
+  outlet TransactionQueriesOut is query Transaction.GetTransaction
+ with {
+    briefly "Look-ups on their way to the transaction"
+    described as {
+      |Each look-up goes to the transaction it names.
+    }
+  }
   inlet TransactionContextFromEscrowService is type TransactionContext.FromEscrowServiceCommand with {
     briefly "What FromEscrowService makes of that service's news"
+  }
+  connector 'TransactionRepositoryQuery Intake' is from outlet TransactionContext.TransactionRepositoryQueriesOut to inlet TransactionContext.TransactionRepository.TransactionRepositoryQueries with {
+    briefly "Look-ups on their way to the transaction repository"
+  }
+  connector 'TransactionRepositoryReply Egress' is from outlet TransactionContext.TransactionRepository.TransactionRepositoryResponses to inlet TransactionContext.TransactionRepositoryRepliesIn with {
+    briefly "The transaction repository's answers on their way to the boundary"
+  }
+  connector 'TransactionQuery Intake' is from outlet TransactionContext.TransactionQueriesOut to inlet TransactionContext.Transaction.TransactionQueries with {
+    briefly "Look-ups on their way to the transaction"
   }
   connector 'FromEscrowService Intake' is from outlet TransactionContext.FromEscrowService.FromEscrowServiceToTransactionContext to inlet TransactionContext.TransactionContextFromEscrowService with {
     briefly "What FromEscrowService makes of that news, on its way in"
@@ -62,6 +110,15 @@ context TransactionContext as router is {
   inlet TransactionResultStreamIn is result Transaction.TransactionResult
   outlet TransactionResultStreamOut is result Transaction.TransactionResult
   handler TransactionContextBoundary is {
+    on getTransactionSummary: query GetTransactionSummary is {
+      forward getTransactionSummary to outlet TransactionContext.TransactionRepositoryQueriesOut
+    }
+    on transactionSummaryView: result TransactionSummaryView is {
+      send transactionSummaryView to outlet TransactionContext.TransactionRepositoryRepliesOut
+    }
+    on getTransaction: query Transaction.GetTransaction is {
+      forward getTransaction to outlet TransactionContext.TransactionQueriesOut
+    }
     on initiateTransaction: command TransactionContext.InitiateTransaction is {
       let newTransaction = create entity TransactionContext.Transaction(transactionType = initiateTransaction.transactionType, property = initiateTransaction.property, seller = initiateTransaction.seller)
       log newTransaction
@@ -111,7 +168,7 @@ context TransactionContext as router is {
     }
   }
   connector 'TransactionCommand Stream Intake' is from outlet TransactionContext.TransactionCommandStreamOut to inlet TransactionContext.Transaction.TransactionCommands
-  connector 'TransactionResult Stream Egress' is from outlet TransactionContext.TransactionRepository.TransactionRepositoryResponses to inlet TransactionContext.TransactionResultStreamIn
+  connector 'TransactionResult Stream Egress' is from outlet TransactionContext.Transaction.TransactionReplies to inlet TransactionContext.TransactionResultStreamIn
   adaptor FromDocumentService from context DocumentService as sink is { 
     inlet FromDocumentServiceIn is event DocumentService.DocumentStored
     handler FromDocumentServiceHandler is {
@@ -338,7 +395,13 @@ context TransactionContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository TransactionRepository as flow is {
+  repository TransactionRepository as merge is {
+    inlet TransactionRepositoryQueries is query GetTransactionSummary with {
+      briefly "Look-ups of this transaction repository"
+      described as {
+        |What TransactionManagementApp asks of the transaction repository, by way of TransactionContext.
+      }
+    }
     inlet TransactionRepositoryFromTransactionAnalytics is type TransactionRepositoryCommand
     command PersistClosingScheduled is {
       transactionId: TransactionId with {
@@ -637,7 +700,7 @@ context TransactionContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet TransactionRepositoryResponses is result Transaction.TransactionResult
+    outlet TransactionRepositoryResponses is result TransactionSummaryView
     record StoredTransaction is {
       transactionId: TransactionId with {
         briefly "transactionId"

@@ -34,8 +34,56 @@ context CarePlanContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet CarePlanRepositoryQueriesIn is query GetCoordinationStats with {
+    briefly "Look-ups of the care plan repository"
+    described as {
+      |CareCoordinationApp's look-ups, on their way to the care plan repository.
+    }
+  }
+  outlet CarePlanRepositoryQueriesOut is query GetCoordinationStats
+ with {
+    briefly "Look-ups on their way to the care plan repository"
+    described as {
+      |Each look-up goes to the care plan repository it names.
+    }
+  }
+  inlet CarePlanRepositoryRepliesIn is result CoordinationStatsView with {
+    briefly "The care plan repository's answers"
+    described as {
+      |What the care plan repository answers about itself.
+    }
+  }
+  outlet CarePlanRepositoryRepliesOut is result CoordinationStatsView
+ with {
+    briefly "Answers to CareCoordinationApp"
+    described as {
+      |The reply leg of CareCoordinationApp's look-ups of the care plan repository.
+    }
+  }
+  inlet CarePlanQueriesIn is query CarePlan.GetCarePlan with {
+    briefly "Look-ups of the care plan"
+    described as {
+      |CareCoordinationApp's look-ups, on their way to the care plan.
+    }
+  }
+  outlet CarePlanQueriesOut is query CarePlan.GetCarePlan
+ with {
+    briefly "Look-ups on their way to the care plan"
+    described as {
+      |Each look-up goes to the care plan it names.
+    }
+  }
   inlet CarePlanContextFromToPatientService is command CarePlan.AddGoal with {
     briefly "What ToPatientService makes of the answers it gets"
+  }
+  connector 'CarePlanRepositoryQuery Intake' is from outlet CarePlanContext.CarePlanRepositoryQueriesOut to inlet CarePlanContext.CarePlanRepository.CarePlanRepositoryQueries with {
+    briefly "Look-ups on their way to the care plan repository"
+  }
+  connector 'CarePlanRepositoryReply Egress' is from outlet CarePlanContext.CarePlanRepository.CarePlanRepositoryResponses to inlet CarePlanContext.CarePlanRepositoryRepliesIn with {
+    briefly "The care plan repository's answers on their way to the boundary"
+  }
+  connector 'CarePlanQuery Intake' is from outlet CarePlanContext.CarePlanQueriesOut to inlet CarePlanContext.CarePlan.CarePlanQueries with {
+    briefly "Look-ups on their way to the care plan"
   }
   connector 'ToPatientService Intake' is from outlet CarePlanContext.ToPatientService.ToPatientServiceToCarePlanContext to inlet CarePlanContext.CarePlanContextFromToPatientService with {
     briefly "Answers translated by ToPatientService, on their way in"
@@ -57,6 +105,15 @@ context CarePlanContext as router is {
   inlet CarePlanResultStreamIn is result CarePlan.CarePlanResult
   outlet CarePlanResultStreamOut is result CarePlan.CarePlanResult
   handler CarePlanContextBoundary is {
+    on getCoordinationStats: query GetCoordinationStats is {
+      forward getCoordinationStats to outlet CarePlanContext.CarePlanRepositoryQueriesOut
+    }
+    on coordinationStatsView: result CoordinationStatsView is {
+      send coordinationStatsView to outlet CarePlanContext.CarePlanRepositoryRepliesOut
+    }
+    on getCarePlan: query CarePlan.GetCarePlan is {
+      forward getCarePlan to outlet CarePlanContext.CarePlanQueriesOut
+    }
     on createCarePlan: command CarePlanContext.CreateCarePlan is {
       let newCarePlan = create entity CarePlanContext.CarePlan(patientId = createCarePlan.patientId, conditions = createCarePlan.conditions, createdBy = createCarePlan.createdBy)
       log newCarePlan
@@ -106,7 +163,7 @@ context CarePlanContext as router is {
     }
   }
   connector 'CarePlanCommand Stream Intake' is from outlet CarePlanContext.CarePlanCommandStreamOut to inlet CarePlanContext.CarePlan.CarePlanCommands
-  connector 'CarePlanResult Stream Egress' is from outlet CarePlanContext.CarePlanRepository.CarePlanRepositoryResponses to inlet CarePlanContext.CarePlanResultStreamIn
+  connector 'CarePlanResult Stream Egress' is from outlet CarePlanContext.CarePlan.CarePlanReplies to inlet CarePlanContext.CarePlanResultStreamIn
   adaptor FromHIEService from context HIEService as sink is { 
     inlet FromHIEServiceIn is event HIEService.CarePlanShared
     handler FromHIEServiceHandler is {
@@ -303,7 +360,13 @@ context CarePlanContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository CarePlanRepository as flow is {
+  repository CarePlanRepository as merge is {
+    inlet CarePlanRepositoryQueries is query GetCoordinationStats with {
+      briefly "Look-ups of this care plan repository"
+      described as {
+        |What CareCoordinationApp asks of the care plan repository, by way of CarePlanContext.
+      }
+    }
     inlet CarePlanRepositoryFromCareCoordinationAnalytics is type CarePlanRepositoryCommand
     command PersistCarePlanActivated is {
       carePlanId: CarePlanId with {
@@ -614,7 +677,7 @@ context CarePlanContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet CarePlanRepositoryResponses is result CarePlan.CarePlanResult
+    outlet CarePlanRepositoryResponses is result CoordinationStatsView
     record StoredCarePlan is {
       carePlanId: CarePlanId with {
         briefly "carePlanId"

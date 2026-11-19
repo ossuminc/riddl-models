@@ -27,8 +27,56 @@ context SettlementContext as router is {
   } with {
     briefly "What FromClearinghouseService turns that service's news into"
   }
+  inlet SettlementRepositoryQueriesIn is query GetSettlementStats with {
+    briefly "Look-ups of the settlement repository"
+    described as {
+      |TradeSettlementApp's look-ups, on their way to the settlement repository.
+    }
+  }
+  outlet SettlementRepositoryQueriesOut is query GetSettlementStats
+ with {
+    briefly "Look-ups on their way to the settlement repository"
+    described as {
+      |Each look-up goes to the settlement repository it names.
+    }
+  }
+  inlet SettlementRepositoryRepliesIn is result SettlementStatsView with {
+    briefly "The settlement repository's answers"
+    described as {
+      |What the settlement repository answers about itself.
+    }
+  }
+  outlet SettlementRepositoryRepliesOut is result SettlementStatsView
+ with {
+    briefly "Answers to TradeSettlementApp"
+    described as {
+      |The reply leg of TradeSettlementApp's look-ups of the settlement repository.
+    }
+  }
+  inlet SettlementQueriesIn is query Settlement.GetSettlement with {
+    briefly "Look-ups of the settlement"
+    described as {
+      |TradeSettlementApp's look-ups, on their way to the settlement.
+    }
+  }
+  outlet SettlementQueriesOut is query Settlement.GetSettlement
+ with {
+    briefly "Look-ups on their way to the settlement"
+    described as {
+      |Each look-up goes to the settlement it names.
+    }
+  }
   inlet SettlementContextFromClearinghouseService is type SettlementContext.FromClearinghouseServiceCommand with {
     briefly "What FromClearinghouseService makes of that service's news"
+  }
+  connector 'SettlementRepositoryQuery Intake' is from outlet SettlementContext.SettlementRepositoryQueriesOut to inlet SettlementContext.SettlementRepository.SettlementRepositoryQueries with {
+    briefly "Look-ups on their way to the settlement repository"
+  }
+  connector 'SettlementRepositoryReply Egress' is from outlet SettlementContext.SettlementRepository.SettlementRepositoryResponses to inlet SettlementContext.SettlementRepositoryRepliesIn with {
+    briefly "The settlement repository's answers on their way to the boundary"
+  }
+  connector 'SettlementQuery Intake' is from outlet SettlementContext.SettlementQueriesOut to inlet SettlementContext.Settlement.SettlementQueries with {
+    briefly "Look-ups on their way to the settlement"
   }
   connector 'FromClearinghouseService Intake' is from outlet SettlementContext.FromClearinghouseService.FromClearinghouseServiceToSettlementContext to inlet SettlementContext.SettlementContextFromClearinghouseService with {
     briefly "What FromClearinghouseService makes of that news, on its way in"
@@ -60,6 +108,15 @@ context SettlementContext as router is {
   inlet SettlementResultStreamIn is result Settlement.SettlementResult
   outlet SettlementResultStreamOut is result Settlement.SettlementResult
   handler SettlementContextBoundary is {
+    on getSettlementStats: query GetSettlementStats is {
+      forward getSettlementStats to outlet SettlementContext.SettlementRepositoryQueriesOut
+    }
+    on settlementStatsView: result SettlementStatsView is {
+      send settlementStatsView to outlet SettlementContext.SettlementRepositoryRepliesOut
+    }
+    on getSettlement: query Settlement.GetSettlement is {
+      forward getSettlement to outlet SettlementContext.SettlementQueriesOut
+    }
     on initiateSettlement: command SettlementContext.InitiateSettlement is {
       let newSettlement = create entity SettlementContext.Settlement(trade = initiateSettlement.trade)
       log newSettlement
@@ -109,7 +166,7 @@ context SettlementContext as router is {
     }
   }
   connector 'SettlementCommand Stream Intake' is from outlet SettlementContext.SettlementCommandStreamOut to inlet SettlementContext.Settlement.SettlementCommands
-  connector 'SettlementResult Stream Egress' is from outlet SettlementContext.SettlementRepository.SettlementRepositoryResponses to inlet SettlementContext.SettlementResultStreamIn
+  connector 'SettlementResult Stream Egress' is from outlet SettlementContext.Settlement.SettlementReplies to inlet SettlementContext.SettlementResultStreamIn
   adaptor FromCashService from context CashService as sink is { 
     inlet FromCashServiceIn is event CashService.CashBalanceUpdated
     handler FromCashServiceHandler is {
@@ -398,7 +455,13 @@ context SettlementContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository SettlementRepository as flow is {
+  repository SettlementRepository as merge is {
+    inlet SettlementRepositoryQueries is query GetSettlementStats with {
+      briefly "Look-ups of this settlement repository"
+      described as {
+        |What TradeSettlementApp asks of the settlement repository, by way of SettlementContext.
+      }
+    }
     inlet SettlementRepositoryFromSettlementAnalytics is type SettlementRepositoryCommand
     command PersistHoldReleased is {
       settlementId: SettlementId with {
@@ -679,7 +742,7 @@ context SettlementContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet SettlementRepositoryResponses is result Settlement.SettlementResult
+    outlet SettlementRepositoryResponses is result SettlementStatsView
     record StoredSettlement is {
       settlementId: SettlementId with {
         briefly "settlementId"

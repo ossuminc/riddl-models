@@ -165,8 +165,46 @@ ExpirePath, AggregateUsage: `on quiescence` candidates).
 The `GetRestaurantMenuItem` path: an app control for the query, the context
 relays it to the entity or repository, the answer comes back through a reply
 outlet to the app. Also clears most repository `stream-outlet-never-sent`,
-and should give the four `entity-no-query-clause` entities (GenerationRun,
-Artifact, Hole, SurveyStation) a look-up of themselves. NOT STARTED.
+and should give the `entity-no-query-clause` entities a look-up of
+themselves.
+
+**DONE 2026-11-19 on -27, except what is listed below.** Entity queries
+205 -> 8, repository queries 417 -> 6, context result relays 180 -> 0,
+`stream-outlet-never-sent` 183 -> 3, corpus 1,170 -> 201 findings in 68
+models. `scripts/undeliverable/wire-queries.py` (from the dump; dry run by
+default) wired 604 queries on 381 processors, then `scripts/reascribe.py`
+re-derived 541 shapes. Gates, prettify, BAST round trip 189/189 green.
+
+What it found: every dead result relay had ONE shape. Its inlet was fed by
+the context's repository, which never answers that result, while exactly one
+entity does. The script repointed those 180 connectors to the entity's new
+reply outlet, and retyped each freed repository outlet to what the
+repository answers, reusing it as the repository's reply leg. Where a context
+already relays a result from another processor, the new reply inlet
+converges on the existing relay clause (the handler dispatches on type), and
+no second relay is written.
+
+**Left, for Reid:**
+- **14 queries declare no `replies`**, so there is nothing to wire them to:
+  supply-chain x7 (GetSupplyOrder, GetItemById, GetParLevels,
+  GetInventoryPosition, GetIssuanceHistory, GetItemsBelowParLevel,
+  GetPendingRequisitions), fund-accounting x3 (GetNAVHistory, GetHoldings,
+  GetPerformance), order-management GetShipment, team-management GetTeam,
+  radiology-workflow GetImagingExam, case-management GetLegalCase. Some
+  clauses `tell` a result to an entity instead of replying (order-management
+  `OrderRepository.GetShipment`).
+- **code-generator GenerationRun / Artifact / Hole**: look-ups written and
+  then reverted; each was a `Get<E>` query, an `<E>Result` of the state
+  record's fields, and a per-state clause replying from `<E>.<State>.<f>`,
+  so redoing them is quick once the asker is decided. The only app is
+  `GeneratorDriver`, a process `as source` with no screen; who asks a
+  generation run about itself is a modelling choice.
+- **language-coverage SurveyStation**: its look-up crashes riddlc
+  (`ClassCastException: AST$Method cannot be cast to AST$Field`) because
+  `SurveySummary` declares methods. Filed:
+  `../riddl/task/2026-11-19-record-with-method-as-value-crashes.md`, with a
+  22-line repro. Held out until riddl fixes it.
+- ticket-sales `LiveEvent` got its look-up and is at 0.
 
 ### Step 5 — `stmt-yield-argument-prompt` (Reid, 2026-11-18: do it now, ahead of 3 and 4)
 

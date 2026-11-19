@@ -28,8 +28,56 @@ context AuditContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet AuditRepositoryQueriesIn is query GetEngagementMetrics with {
+    briefly "Look-ups of the audit repository"
+    described as {
+      |AuditManagementApp's look-ups, on their way to the audit repository.
+    }
+  }
+  outlet AuditRepositoryQueriesOut is query GetEngagementMetrics
+ with {
+    briefly "Look-ups on their way to the audit repository"
+    described as {
+      |Each look-up goes to the audit repository it names.
+    }
+  }
+  inlet AuditRepositoryRepliesIn is result EngagementMetricsView with {
+    briefly "The audit repository's answers"
+    described as {
+      |What the audit repository answers about itself.
+    }
+  }
+  outlet AuditRepositoryRepliesOut is result EngagementMetricsView
+ with {
+    briefly "Answers to AuditManagementApp"
+    described as {
+      |The reply leg of AuditManagementApp's look-ups of the audit repository.
+    }
+  }
+  inlet AuditEngagementQueriesIn is query AuditEngagement.GetAuditEngagement with {
+    briefly "Look-ups of the audit engagement"
+    described as {
+      |AuditManagementApp's look-ups, on their way to the audit engagement.
+    }
+  }
+  outlet AuditEngagementQueriesOut is query AuditEngagement.GetAuditEngagement
+ with {
+    briefly "Look-ups on their way to the audit engagement"
+    described as {
+      |Each look-up goes to the audit engagement it names.
+    }
+  }
   inlet AuditContextFromToDocumentManagement is command AuditEngagement.SubmitWorkpaperForReview with {
     briefly "What ToDocumentManagement makes of the answers it gets"
+  }
+  connector 'AuditRepositoryQuery Intake' is from outlet AuditContext.AuditRepositoryQueriesOut to inlet AuditContext.AuditRepository.AuditRepositoryQueries with {
+    briefly "Look-ups on their way to the audit repository"
+  }
+  connector 'AuditRepositoryReply Egress' is from outlet AuditContext.AuditRepository.AuditRepositoryResponses to inlet AuditContext.AuditRepositoryRepliesIn with {
+    briefly "The audit repository's answers on their way to the boundary"
+  }
+  connector 'AuditEngagementQuery Intake' is from outlet AuditContext.AuditEngagementQueriesOut to inlet AuditContext.AuditEngagement.AuditEngagementQueries with {
+    briefly "Look-ups on their way to the audit engagement"
   }
   connector 'ToDocumentManagement Intake' is from outlet AuditContext.ToDocumentManagement.ToDocumentManagementToAuditContext to inlet AuditContext.AuditContextFromToDocumentManagement with {
     briefly "Answers translated by ToDocumentManagement, on their way in"
@@ -45,6 +93,15 @@ context AuditContext as router is {
   inlet AuditEngagementResultStreamIn is result AuditEngagement.AuditEngagementResult
   outlet AuditEngagementResultStreamOut is result AuditEngagement.AuditEngagementResult
   handler AuditContextBoundary is {
+    on getEngagementMetrics: query GetEngagementMetrics is {
+      forward getEngagementMetrics to outlet AuditContext.AuditRepositoryQueriesOut
+    }
+    on engagementMetricsView: result EngagementMetricsView is {
+      send engagementMetricsView to outlet AuditContext.AuditRepositoryRepliesOut
+    }
+    on getAuditEngagement: query AuditEngagement.GetAuditEngagement is {
+      forward getAuditEngagement to outlet AuditContext.AuditEngagementQueriesOut
+    }
     on createEngagement: command AuditContext.CreateEngagement is {
       let newAuditEngagement = create entity AuditContext.AuditEngagement(engagementInfo = createEngagement.engagementInfo, leadPartner = createEngagement.leadPartner)
       log newAuditEngagement
@@ -97,7 +154,7 @@ context AuditContext as router is {
     }
   }
   connector 'AuditEngagementCommand Stream Intake' is from outlet AuditContext.AuditEngagementCommandStreamOut to inlet AuditContext.AuditEngagement.AuditEngagementCommands
-  connector 'AuditEngagementResult Stream Egress' is from outlet AuditContext.AuditRepository.AuditRepositoryResponses to inlet AuditContext.AuditEngagementResultStreamIn
+  connector 'AuditEngagementResult Stream Egress' is from outlet AuditContext.AuditEngagement.AuditEngagementReplies to inlet AuditContext.AuditEngagementResultStreamIn
   adaptor FromDocumentManagement from context DocumentManagement as sink is { 
     inlet FromDocumentManagementIn is type DocumentManagement.DocumentManagementEvent
     handler FromDocumentManagementHandler is {
@@ -220,7 +277,13 @@ context AuditContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository AuditRepository as flow is {
+  repository AuditRepository as merge is {
+    inlet AuditRepositoryQueries is query GetEngagementMetrics with {
+      briefly "Look-ups of this audit repository"
+      described as {
+        |What AuditManagementApp asks of the audit repository, by way of AuditContext.
+      }
+    }
     inlet AuditRepositoryFromAuditMetrics is type AuditRepositoryCommand
     command PersistEngagementCancelled is {
       engagementId: EngagementId with {
@@ -558,7 +621,7 @@ context AuditContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet AuditRepositoryResponses is result AuditEngagement.AuditEngagementResult
+    outlet AuditRepositoryResponses is result EngagementMetricsView
     record StoredAuditEngagement is {
       auditEngagementId: UUID with {
         briefly "auditEngagementId"

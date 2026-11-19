@@ -46,8 +46,56 @@ context StreamContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet StreamRepositoryQueriesIn is query GetStreamStats with {
+    briefly "Look-ups of the stream repository"
+    described as {
+      |StreamingPlatformApp's look-ups, on their way to the stream repository.
+    }
+  }
+  outlet StreamRepositoryQueriesOut is query GetStreamStats
+ with {
+    briefly "Look-ups on their way to the stream repository"
+    described as {
+      |Each look-up goes to the stream repository it names.
+    }
+  }
+  inlet StreamRepositoryRepliesIn is result StreamStatsView with {
+    briefly "The stream repository's answers"
+    described as {
+      |What the stream repository answers about itself.
+    }
+  }
+  outlet StreamRepositoryRepliesOut is result StreamStatsView
+ with {
+    briefly "Answers to StreamingPlatformApp"
+    described as {
+      |The reply leg of StreamingPlatformApp's look-ups of the stream repository.
+    }
+  }
+  inlet StreamQueriesIn is query Stream.GetStream with {
+    briefly "Look-ups of the stream"
+    described as {
+      |StreamingPlatformApp's look-ups, on their way to the stream.
+    }
+  }
+  outlet StreamQueriesOut is query Stream.GetStream
+ with {
+    briefly "Look-ups on their way to the stream"
+    described as {
+      |Each look-up goes to the stream it names.
+    }
+  }
   inlet StreamContextFromToCDNService is command Stream.RecordStreamUrl with {
     briefly "What ToCDNService makes of the answers it gets"
+  }
+  connector 'StreamRepositoryQuery Intake' is from outlet StreamContext.StreamRepositoryQueriesOut to inlet StreamContext.StreamRepository.StreamRepositoryQueries with {
+    briefly "Look-ups on their way to the stream repository"
+  }
+  connector 'StreamRepositoryReply Egress' is from outlet StreamContext.StreamRepository.StreamRepositoryResponses to inlet StreamContext.StreamRepositoryRepliesIn with {
+    briefly "The stream repository's answers on their way to the boundary"
+  }
+  connector 'StreamQuery Intake' is from outlet StreamContext.StreamQueriesOut to inlet StreamContext.Stream.StreamQueries with {
+    briefly "Look-ups on their way to the stream"
   }
   connector 'ToCDNService Intake' is from outlet StreamContext.ToCDNService.ToCDNServiceToStreamContext to inlet StreamContext.StreamContextFromToCDNService with {
     briefly "Answers translated by ToCDNService, on their way in"
@@ -81,6 +129,15 @@ context StreamContext as router is {
   inlet StreamResultStreamIn is result Stream.StreamResult
   outlet StreamResultStreamOut is result Stream.StreamResult
   handler StreamContextBoundary is {
+    on getStreamStats: query GetStreamStats is {
+      forward getStreamStats to outlet StreamContext.StreamRepositoryQueriesOut
+    }
+    on streamStatsView: result StreamStatsView is {
+      send streamStatsView to outlet StreamContext.StreamRepositoryRepliesOut
+    }
+    on getStream: query Stream.GetStream is {
+      forward getStream to outlet StreamContext.StreamQueriesOut
+    }
     on recordRecommendations: command Stream.RecordRecommendations is {
       send recordRecommendations to outlet StreamContext.StreamCommandStreamOut
     }
@@ -127,7 +184,7 @@ context StreamContext as router is {
     }
   }
   connector 'StreamCommand Stream Intake' is from outlet StreamContext.StreamCommandStreamOut to inlet StreamContext.Stream.StreamCommands
-  connector 'StreamResult Stream Egress' is from outlet StreamContext.StreamRepository.StreamRepositoryResponses to inlet StreamContext.StreamResultStreamIn
+  connector 'StreamResult Stream Egress' is from outlet StreamContext.Stream.StreamReplies to inlet StreamContext.StreamResultStreamIn
   adaptor FromAnalyticsService from context AnalyticsService as sink is { 
     inlet FromAnalyticsServiceIn is event AnalyticsService.ViewEventTracked
     handler FromAnalyticsServiceHandler is {
@@ -344,7 +401,13 @@ context StreamContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository StreamRepository as flow is {
+  repository StreamRepository as merge is {
+    inlet StreamRepositoryQueries is query GetStreamStats with {
+      briefly "Look-ups of this stream repository"
+      described as {
+        |What StreamingPlatformApp asks of the stream repository, by way of StreamContext.
+      }
+    }
     inlet StreamRepositoryFromStreamAnalytics is type StreamRepositoryCommand
     command PersistPositionSeeked is {
       streamId: StreamId with {
@@ -604,7 +667,7 @@ context StreamContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet StreamRepositoryResponses is result Stream.StreamResult
+    outlet StreamRepositoryResponses is result StreamStatsView
     record StoredStream is {
       streamId: StreamId with {
         briefly "streamId"

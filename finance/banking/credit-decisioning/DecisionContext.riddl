@@ -34,8 +34,56 @@ context DecisionContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet DecisionRepositoryQueriesIn is query GetDecisionStats with {
+    briefly "Look-ups of the decision repository"
+    described as {
+      |CreditDecisioningApp's look-ups, on their way to the decision repository.
+    }
+  }
+  outlet DecisionRepositoryQueriesOut is query GetDecisionStats
+ with {
+    briefly "Look-ups on their way to the decision repository"
+    described as {
+      |Each look-up goes to the decision repository it names.
+    }
+  }
+  inlet DecisionRepositoryRepliesIn is result DecisionStatsView with {
+    briefly "The decision repository's answers"
+    described as {
+      |What the decision repository answers about itself.
+    }
+  }
+  outlet DecisionRepositoryRepliesOut is result DecisionStatsView
+ with {
+    briefly "Answers to CreditDecisioningApp"
+    described as {
+      |The reply leg of CreditDecisioningApp's look-ups of the decision repository.
+    }
+  }
+  inlet DecisionQueriesIn is query Decision.GetDecision with {
+    briefly "Look-ups of the decision"
+    described as {
+      |CreditDecisioningApp's look-ups, on their way to the decision.
+    }
+  }
+  outlet DecisionQueriesOut is query Decision.GetDecision
+ with {
+    briefly "Look-ups on their way to the decision"
+    described as {
+      |Each look-up goes to the decision it names.
+    }
+  }
   inlet DecisionContextFromCreditBureauService is command Decision.AddBureauData with {
     briefly "What FromCreditBureauService makes of that service's news"
+  }
+  connector 'DecisionRepositoryQuery Intake' is from outlet DecisionContext.DecisionRepositoryQueriesOut to inlet DecisionContext.DecisionRepository.DecisionRepositoryQueries with {
+    briefly "Look-ups on their way to the decision repository"
+  }
+  connector 'DecisionRepositoryReply Egress' is from outlet DecisionContext.DecisionRepository.DecisionRepositoryResponses to inlet DecisionContext.DecisionRepositoryRepliesIn with {
+    briefly "The decision repository's answers on their way to the boundary"
+  }
+  connector 'DecisionQuery Intake' is from outlet DecisionContext.DecisionQueriesOut to inlet DecisionContext.Decision.DecisionQueries with {
+    briefly "Look-ups on their way to the decision"
   }
   connector 'FromCreditBureauService Intake' is from outlet DecisionContext.FromCreditBureauService.FromCreditBureauServiceToDecisionContext to inlet DecisionContext.DecisionContextFromCreditBureauService with {
     briefly "What FromCreditBureauService makes of that news, on its way in"
@@ -51,6 +99,15 @@ context DecisionContext as router is {
   inlet DecisionQueryResultStreamIn is result Decision.DecisionQueryResult
   outlet DecisionQueryResultStreamOut is result Decision.DecisionQueryResult
   handler DecisionContextBoundary is {
+    on getDecisionStats: query GetDecisionStats is {
+      forward getDecisionStats to outlet DecisionContext.DecisionRepositoryQueriesOut
+    }
+    on decisionStatsView: result DecisionStatsView is {
+      send decisionStatsView to outlet DecisionContext.DecisionRepositoryRepliesOut
+    }
+    on getDecision: query Decision.GetDecision is {
+      forward getDecision to outlet DecisionContext.DecisionQueriesOut
+    }
     on evaluateApplication: command DecisionContext.EvaluateApplication is {
       let newDecision = create entity DecisionContext.Decision(applicationId = evaluateApplication.applicationId, applicant = evaluateApplication.applicant, request = evaluateApplication.request)
       log newDecision
@@ -94,7 +151,7 @@ context DecisionContext as router is {
     }
   }
   connector 'DecisionCommand Stream Intake' is from outlet DecisionContext.DecisionCommandStreamOut to inlet DecisionContext.Decision.DecisionCommands
-  connector 'DecisionQueryResult Stream Egress' is from outlet DecisionContext.DecisionRepository.DecisionRepositoryResponses to inlet DecisionContext.DecisionQueryResultStreamIn
+  connector 'DecisionQueryResult Stream Egress' is from outlet DecisionContext.Decision.DecisionReplies to inlet DecisionContext.DecisionQueryResultStreamIn
   adaptor FromCreditBureauService from context CreditBureauService as flow is { 
     inlet FromCreditBureauServiceIn is event CreditBureauService.CreditReportReceived
     outlet FromCreditBureauServiceToDecisionContext is command Decision.AddBureauData
@@ -370,7 +427,13 @@ context DecisionContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository DecisionRepository as flow is {
+  repository DecisionRepository as merge is {
+    inlet DecisionRepositoryQueries is query GetDecisionStats with {
+      briefly "Look-ups of this decision repository"
+      described as {
+        |What CreditDecisioningApp asks of the decision repository, by way of DecisionContext.
+      }
+    }
     inlet DecisionRepositoryFromDecisionAnalytics is type DecisionRepositoryCommand
     command PersistBureauDataAdded is {
       decisionId: DecisionId with {
@@ -657,7 +720,7 @@ context DecisionContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet DecisionRepositoryResponses is result Decision.DecisionQueryResult
+    outlet DecisionRepositoryResponses is result DecisionStatsView
     record StoredDecision is {
       decisionId: DecisionId with {
         briefly "decisionId"

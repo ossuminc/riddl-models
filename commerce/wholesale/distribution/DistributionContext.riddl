@@ -45,8 +45,56 @@ context DistributionContext as router is {
   } with {
     briefly "What FromInventoryService turns that service's news into"
   }
+  inlet OrderRepositoryQueriesIn is query GetCustomerOrderMetrics with {
+    briefly "Look-ups of the order repository"
+    described as {
+      |DistributionApp's look-ups, on their way to the order repository.
+    }
+  }
+  outlet OrderRepositoryQueriesOut is query GetCustomerOrderMetrics
+ with {
+    briefly "Look-ups on their way to the order repository"
+    described as {
+      |Each look-up goes to the order repository it names.
+    }
+  }
+  inlet OrderRepositoryRepliesIn is result CustomerOrderMetricsView with {
+    briefly "The order repository's answers"
+    described as {
+      |What the order repository answers about itself.
+    }
+  }
+  outlet OrderRepositoryRepliesOut is result CustomerOrderMetricsView
+ with {
+    briefly "Answers to DistributionApp"
+    described as {
+      |The reply leg of DistributionApp's look-ups of the order repository.
+    }
+  }
+  inlet DistributionOrderQueriesIn is query DistributionOrder.GetDistributionOrder with {
+    briefly "Look-ups of the distribution order"
+    described as {
+      |DistributionApp's look-ups, on their way to the distribution order.
+    }
+  }
+  outlet DistributionOrderQueriesOut is query DistributionOrder.GetDistributionOrder
+ with {
+    briefly "Look-ups on their way to the distribution order"
+    described as {
+      |Each look-up goes to the distribution order it names.
+    }
+  }
   inlet DistributionContextFromInventoryService is type DistributionContext.FromInventoryServiceCommand with {
     briefly "What FromInventoryService makes of that service's news"
+  }
+  connector 'OrderRepositoryQuery Intake' is from outlet DistributionContext.OrderRepositoryQueriesOut to inlet DistributionContext.OrderRepository.OrderRepositoryQueries with {
+    briefly "Look-ups on their way to the order repository"
+  }
+  connector 'OrderRepositoryReply Egress' is from outlet DistributionContext.OrderRepository.OrderRepositoryResponses to inlet DistributionContext.OrderRepositoryRepliesIn with {
+    briefly "The order repository's answers on their way to the boundary"
+  }
+  connector 'DistributionOrderQuery Intake' is from outlet DistributionContext.DistributionOrderQueriesOut to inlet DistributionContext.DistributionOrder.DistributionOrderQueries with {
+    briefly "Look-ups on their way to the distribution order"
   }
   connector 'FromInventoryService Intake' is from outlet DistributionContext.FromInventoryService.FromInventoryServiceToDistributionContext to inlet DistributionContext.DistributionContextFromInventoryService with {
     briefly "What FromInventoryService makes of that news, on its way in"
@@ -67,6 +115,15 @@ context DistributionContext as router is {
   inlet MarketplaceOrderResultStreamIn is result DistributionOrder.DistributionOrderResult
   outlet MarketplaceOrderResultStreamOut is result DistributionOrder.DistributionOrderResult
   handler DistributionContextBoundary is {
+    on getCustomerOrderMetrics: query GetCustomerOrderMetrics is {
+      forward getCustomerOrderMetrics to outlet DistributionContext.OrderRepositoryQueriesOut
+    }
+    on customerOrderMetricsView: result CustomerOrderMetricsView is {
+      send customerOrderMetricsView to outlet DistributionContext.OrderRepositoryRepliesOut
+    }
+    on getDistributionOrder: query DistributionOrder.GetDistributionOrder is {
+      forward getDistributionOrder to outlet DistributionContext.DistributionOrderQueriesOut
+    }
     on createOrder: command DistributionContext.CreateOrder is {
       let newDistributionOrder = create entity DistributionContext.DistributionOrder(customerId = createOrder.customerId, lines = createOrder.lines, shippingAddress = createOrder.shippingAddress, pricingTier = createOrder.pricingTier)
       log newDistributionOrder
@@ -101,7 +158,7 @@ context DistributionContext as router is {
     }
   }
   connector 'DistributionOrderCommand Stream Intake' is from outlet DistributionContext.DistributionOrderCommandStreOut to inlet DistributionContext.DistributionOrder.DistributionOrderCommands
-  connector 'MarketplaceOrderResult Stream Egress' is from outlet DistributionContext.OrderRepository.OrderRepositoryResponses to inlet DistributionContext.MarketplaceOrderResultStreamIn
+  connector 'MarketplaceOrderResult Stream Egress' is from outlet DistributionContext.DistributionOrder.DistributionOrderReplies to inlet DistributionContext.MarketplaceOrderResultStreamIn
   adaptor FromBillingService from context BillingService as sink is { 
     inlet FromBillingServiceIn is type BillingService.BillingServiceEvent
     handler FromBillingServiceHandler is {
@@ -290,7 +347,13 @@ context DistributionContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository OrderRepository as flow is {
+  repository OrderRepository as merge is {
+    inlet OrderRepositoryQueries is query GetCustomerOrderMetrics with {
+      briefly "Look-ups of this order repository"
+      described as {
+        |What DistributionApp asks of the order repository, by way of DistributionContext.
+      }
+    }
     inlet OrderRepositoryFromDistributionAnalytics is type OrderRepositoryCommand
     command PersistInventoryAllocated is {
       orderId: OrderId with {
@@ -472,7 +535,7 @@ context DistributionContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet OrderRepositoryResponses is result DistributionOrder.DistributionOrderResult
+    outlet OrderRepositoryResponses is result CustomerOrderMetricsView
     record StoredDistributionOrder is {
       distributionOrderId: UUID with {
         briefly "distributionOrderId"

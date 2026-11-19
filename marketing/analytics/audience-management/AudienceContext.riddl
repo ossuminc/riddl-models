@@ -40,8 +40,56 @@ context AudienceContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet AudienceRepositoryQueriesIn is query GetSegmentMetrics with {
+    briefly "Look-ups of the audience repository"
+    described as {
+      |AudienceManagementApp's look-ups, on their way to the audience repository.
+    }
+  }
+  outlet AudienceRepositoryQueriesOut is query GetSegmentMetrics
+ with {
+    briefly "Look-ups on their way to the audience repository"
+    described as {
+      |Each look-up goes to the audience repository it names.
+    }
+  }
+  inlet AudienceRepositoryRepliesIn is result SegmentMetricsView with {
+    briefly "The audience repository's answers"
+    described as {
+      |What the audience repository answers about itself.
+    }
+  }
+  outlet AudienceRepositoryRepliesOut is result SegmentMetricsView
+ with {
+    briefly "Answers to AudienceManagementApp"
+    described as {
+      |The reply leg of AudienceManagementApp's look-ups of the audience repository.
+    }
+  }
+  inlet AudienceSegmentQueriesIn is query AudienceSegment.GetAudienceSegment with {
+    briefly "Look-ups of the audience segment"
+    described as {
+      |AudienceManagementApp's look-ups, on their way to the audience segment.
+    }
+  }
+  outlet AudienceSegmentQueriesOut is query AudienceSegment.GetAudienceSegment
+ with {
+    briefly "Look-ups on their way to the audience segment"
+    described as {
+      |Each look-up goes to the audience segment it names.
+    }
+  }
   inlet AudienceContextFromToAdPlatform is command AudienceSegment.PauseSegment with {
     briefly "What ToAdPlatform makes of the answers it gets"
+  }
+  connector 'AudienceRepositoryQuery Intake' is from outlet AudienceContext.AudienceRepositoryQueriesOut to inlet AudienceContext.AudienceRepository.AudienceRepositoryQueries with {
+    briefly "Look-ups on their way to the audience repository"
+  }
+  connector 'AudienceRepositoryReply Egress' is from outlet AudienceContext.AudienceRepository.AudienceRepositoryResponses to inlet AudienceContext.AudienceRepositoryRepliesIn with {
+    briefly "The audience repository's answers on their way to the boundary"
+  }
+  connector 'AudienceSegmentQuery Intake' is from outlet AudienceContext.AudienceSegmentQueriesOut to inlet AudienceContext.AudienceSegment.AudienceSegmentQueries with {
+    briefly "Look-ups on their way to the audience segment"
   }
   connector 'ToAdPlatform Intake' is from outlet AudienceContext.ToAdPlatform.ToAdPlatformToAudienceContext to inlet AudienceContext.AudienceContextFromToAdPlatform with {
     briefly "Answers translated by ToAdPlatform, on their way in"
@@ -57,6 +105,15 @@ context AudienceContext as router is {
   inlet AudienceSegmentResultStreamIn is result AudienceSegment.AudienceSegmentResult
   outlet AudienceSegmentResultStreamOut is result AudienceSegment.AudienceSegmentResult
   handler AudienceContextBoundary is {
+    on getSegmentMetrics: query GetSegmentMetrics is {
+      forward getSegmentMetrics to outlet AudienceContext.AudienceRepositoryQueriesOut
+    }
+    on segmentMetricsView: result SegmentMetricsView is {
+      send segmentMetricsView to outlet AudienceContext.AudienceRepositoryRepliesOut
+    }
+    on getAudienceSegment: query AudienceSegment.GetAudienceSegment is {
+      forward getAudienceSegment to outlet AudienceContext.AudienceSegmentQueriesOut
+    }
     on createSegment: command AudienceContext.CreateSegment is {
       let newAudienceSegment = create entity AudienceContext.AudienceSegment(segmentName = createSegment.segmentName, segmentType = createSegment.segmentType, criteria = createSegment.criteria)
       log newAudienceSegment
@@ -103,7 +160,7 @@ context AudienceContext as router is {
     }
   }
   connector 'AudienceSegmentCommand Stream Intake' is from outlet AudienceContext.AudienceSegmentCommandStreamOut to inlet AudienceContext.AudienceSegment.AudienceSegmentCommands
-  connector 'AudienceSegmentResult Stream Egress' is from outlet AudienceContext.AudienceRepository.AudienceRepositoryResponses to inlet AudienceContext.AudienceSegmentResultStreamIn
+  connector 'AudienceSegmentResult Stream Egress' is from outlet AudienceContext.AudienceSegment.AudienceSegmentReplies to inlet AudienceContext.AudienceSegmentResultStreamIn
   adaptor FromAdPlatform from context AdPlatform as sink is { 
     inlet FromAdPlatformIn is type AdPlatform.AdPlatformEvent
     handler FromAdPlatformHandler is {
@@ -228,7 +285,13 @@ context AudienceContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository AudienceRepository as flow is {
+  repository AudienceRepository as merge is {
+    inlet AudienceRepositoryQueries is query GetSegmentMetrics with {
+      briefly "Look-ups of this audience repository"
+      described as {
+        |What AudienceManagementApp asks of the audience repository, by way of AudienceContext.
+      }
+    }
     inlet AudienceRepositoryFromAudienceMetrics is type AudienceRepositoryCommand
     command PersistCriteriaUpdated is {
       segmentId: SegmentId with {
@@ -512,7 +575,7 @@ context AudienceContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet AudienceRepositoryResponses is result AudienceSegment.AudienceSegmentResult
+    outlet AudienceRepositoryResponses is result SegmentMetricsView
     record StoredAudienceSegment is {
       audienceSegmentId: UUID with {
         briefly "audienceSegmentId"

@@ -50,8 +50,88 @@ context BerthContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet BerthRepositoryQueriesIn is query GetPortStats with {
+    briefly "Look-ups of the berth repository"
+    described as {
+      |PortOperationsApp's look-ups, on their way to the berth repository.
+    }
+  }
+  outlet BerthRepositoryQueriesOut is query GetPortStats
+ with {
+    briefly "Look-ups on their way to the berth repository"
+    described as {
+      |Each look-up goes to the berth repository it names.
+    }
+  }
+  inlet BerthRepositoryRepliesIn is result PortStatsView with {
+    briefly "The berth repository's answers"
+    described as {
+      |What the berth repository answers about itself.
+    }
+  }
+  outlet BerthRepositoryRepliesOut is result PortStatsView
+ with {
+    briefly "Answers to PortOperationsApp"
+    described as {
+      |The reply leg of PortOperationsApp's look-ups of the berth repository.
+    }
+  }
+  inlet PortCallQueriesIn is query PortCall.GetPortCall with {
+    briefly "Look-ups of the port call"
+    described as {
+      |PortOperationsApp's look-ups, on their way to the port call.
+    }
+  }
+  outlet PortCallQueriesOut is query PortCall.GetPortCall
+ with {
+    briefly "Look-ups on their way to the port call"
+    described as {
+      |Each look-up goes to the port call it names.
+    }
+  }
+  inlet PortCallRepliesIn is result PortCall.PortCallResult with {
+    briefly "The port call's answers"
+    described as {
+      |What the port call answers about itself.
+    }
+  }
+  outlet PortCallRepliesOut is result PortCall.PortCallResult
+ with {
+    briefly "Answers to PortOperationsApp"
+    described as {
+      |The reply leg of PortOperationsApp's look-ups of the port call.
+    }
+  }
+  inlet BerthQueriesIn is query Berth.GetBerth with {
+    briefly "Look-ups of the berth"
+    described as {
+      |PortOperationsApp's look-ups, on their way to the berth.
+    }
+  }
+  outlet BerthQueriesOut is query Berth.GetBerth
+ with {
+    briefly "Look-ups on their way to the berth"
+    described as {
+      |Each look-up goes to the berth it names.
+    }
+  }
   inlet BerthContextFromBerthEventSplit is type BerthContext.BerthRequest with {
     briefly "What a port call's progress asks of the berth"
+  }
+  connector 'BerthRepositoryQuery Intake' is from outlet BerthContext.BerthRepositoryQueriesOut to inlet BerthContext.BerthRepository.BerthRepositoryQueries with {
+    briefly "Look-ups on their way to the berth repository"
+  }
+  connector 'BerthRepositoryReply Egress' is from outlet BerthContext.BerthRepository.BerthRepositoryResponses to inlet BerthContext.BerthRepositoryRepliesIn with {
+    briefly "The berth repository's answers on their way to the boundary"
+  }
+  connector 'PortCallQuery Intake' is from outlet BerthContext.PortCallQueriesOut to inlet BerthContext.PortCall.PortCallQueries with {
+    briefly "Look-ups on their way to the port call"
+  }
+  connector 'PortCallReply Egress' is from outlet BerthContext.PortCall.PortCallReplies to inlet BerthContext.PortCallRepliesIn with {
+    briefly "The port call's answers on their way to the boundary"
+  }
+  connector 'BerthQuery Intake' is from outlet BerthContext.BerthQueriesOut to inlet BerthContext.Berth.BerthQueries with {
+    briefly "Look-ups on their way to the berth"
   }
   connector 'BerthEventSplit Intake' is from outlet BerthContext.BerthEventSplit.BerthEventSplitToBerthContext to inlet BerthContext.BerthContextFromBerthEventSplit with {
     briefly "Berth commands from port call events, on their way in"
@@ -99,6 +179,21 @@ context BerthContext as router is {
   inlet BerthResultStreamIn is result Berth.BerthResult
   outlet BerthResultStreamOut is result Berth.BerthResult
   handler BerthContextBoundary is {
+    on getPortStats: query GetPortStats is {
+      forward getPortStats to outlet BerthContext.BerthRepositoryQueriesOut
+    }
+    on portStatsView: result PortStatsView is {
+      send portStatsView to outlet BerthContext.BerthRepositoryRepliesOut
+    }
+    on getPortCall: query PortCall.GetPortCall is {
+      forward getPortCall to outlet BerthContext.PortCallQueriesOut
+    }
+    on portCallResult: result PortCall.PortCallResult is {
+      send portCallResult to outlet BerthContext.PortCallRepliesOut
+    }
+    on getBerth: query Berth.GetBerth is {
+      forward getBerth to outlet BerthContext.BerthQueriesOut
+    }
     on requestBerth: command BerthContext.RequestBerth is {
       let givenRequestedAt: type TimeStamp = prompt("the requested at of this berth requested")
       let newPortCall = create entity BerthContext.PortCall(berthId = requestBerth.berthId, request = requestBerth.request, requestedAt = givenRequestedAt)
@@ -172,7 +267,7 @@ context BerthContext as router is {
   }
   connector 'PortCallCommand Stream Intake' is from outlet BerthContext.PortCallCommandStreamOut to inlet BerthContext.PortCall.PortCallCommands
   connector 'BerthCommand Stream Intake' is from outlet BerthContext.BerthCommandStreamOut to inlet BerthContext.Berth.BerthCommands
-  connector 'BerthResult Stream Egress' is from outlet BerthContext.BerthRepository.BerthRepositoryResponses to inlet BerthContext.BerthResultStreamIn
+  connector 'BerthResult Stream Egress' is from outlet BerthContext.Berth.BerthReplies to inlet BerthContext.BerthResultStreamIn
   adaptor FromCustomsService from context CustomsService as sink is { 
     inlet FromCustomsServiceIn is type CustomsService.CustomsServiceEvent
     handler FromCustomsServiceHandler is {
@@ -511,7 +606,13 @@ context BerthContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository BerthRepository as flow is {
+  repository BerthRepository as merge is {
+    inlet BerthRepositoryQueries is query GetPortStats with {
+      briefly "Look-ups of this berth repository"
+      described as {
+        |What PortOperationsApp asks of the berth repository, by way of BerthContext.
+      }
+    }
     inlet BerthRepositoryFromPortAnalytics is type BerthRepositoryCommand
     command PersistBerthAssignmentConfirmed is {
       berthId: BerthId with {
@@ -765,7 +866,7 @@ context BerthContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet BerthRepositoryResponses is result Berth.BerthResult
+    outlet BerthRepositoryResponses is result PortStatsView
     record StoredBerth is {
       berthId: BerthId with {
         briefly "berthId"

@@ -28,8 +28,56 @@ context MeteringContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet MeteringRepositoryQueriesIn is query GetNetworkHealth with {
+    briefly "Look-ups of the metering repository"
+    described as {
+      |SmartMeteringApp's look-ups, on their way to the metering repository.
+    }
+  }
+  outlet MeteringRepositoryQueriesOut is query GetNetworkHealth
+ with {
+    briefly "Look-ups on their way to the metering repository"
+    described as {
+      |Each look-up goes to the metering repository it names.
+    }
+  }
+  inlet MeteringRepositoryRepliesIn is result NetworkHealthView with {
+    briefly "The metering repository's answers"
+    described as {
+      |What the metering repository answers about itself.
+    }
+  }
+  outlet MeteringRepositoryRepliesOut is result NetworkHealthView
+ with {
+    briefly "Answers to SmartMeteringApp"
+    described as {
+      |The reply leg of SmartMeteringApp's look-ups of the metering repository.
+    }
+  }
+  inlet MeterQueriesIn is query Meter.GetMeter with {
+    briefly "Look-ups of the meter"
+    described as {
+      |SmartMeteringApp's look-ups, on their way to the meter.
+    }
+  }
+  outlet MeterQueriesOut is query Meter.GetMeter
+ with {
+    briefly "Look-ups on their way to the meter"
+    described as {
+      |Each look-up goes to the meter it names.
+    }
+  }
   inlet MeteringContextFromToHeadEndSystem is command Meter.UpdateCommunication with {
     briefly "What ToHeadEndSystem makes of the answers it gets"
+  }
+  connector 'MeteringRepositoryQuery Intake' is from outlet MeteringContext.MeteringRepositoryQueriesOut to inlet MeteringContext.MeteringRepository.MeteringRepositoryQueries with {
+    briefly "Look-ups on their way to the metering repository"
+  }
+  connector 'MeteringRepositoryReply Egress' is from outlet MeteringContext.MeteringRepository.MeteringRepositoryResponses to inlet MeteringContext.MeteringRepositoryRepliesIn with {
+    briefly "The metering repository's answers on their way to the boundary"
+  }
+  connector 'MeterQuery Intake' is from outlet MeteringContext.MeterQueriesOut to inlet MeteringContext.Meter.MeterQueries with {
+    briefly "Look-ups on their way to the meter"
   }
   connector 'ToHeadEndSystem Intake' is from outlet MeteringContext.ToHeadEndSystem.ToHeadEndSystemToMeteringContext to inlet MeteringContext.MeteringContextFromToHeadEndSystem with {
     briefly "Answers translated by ToHeadEndSystem, on their way in"
@@ -51,6 +99,15 @@ context MeteringContext as router is {
   inlet MeterResultStreamIn is result Meter.MeterResult
   outlet MeterResultStreamOut is result Meter.MeterResult
   handler MeteringContextBoundary is {
+    on getNetworkHealth: query GetNetworkHealth is {
+      forward getNetworkHealth to outlet MeteringContext.MeteringRepositoryQueriesOut
+    }
+    on networkHealthView: result NetworkHealthView is {
+      send networkHealthView to outlet MeteringContext.MeteringRepositoryRepliesOut
+    }
+    on getMeter: query Meter.GetMeter is {
+      forward getMeter to outlet MeteringContext.MeterQueriesOut
+    }
     on installMeter: command MeteringContext.InstallMeter is {
       let newMeter = create entity MeteringContext.Meter(accountId = installMeter.accountId, meterInfo = installMeter.meterInfo)
       log newMeter
@@ -100,7 +157,7 @@ context MeteringContext as router is {
     }
   }
   connector 'MeterCommand Stream Intake' is from outlet MeteringContext.MeterCommandStreamOut to inlet MeteringContext.Meter.MeterCommands
-  connector 'MeterResult Stream Egress' is from outlet MeteringContext.MeteringRepository.MeteringRepositoryResponses to inlet MeteringContext.MeterResultStreamIn
+  connector 'MeterResult Stream Egress' is from outlet MeteringContext.Meter.MeterReplies to inlet MeteringContext.MeterResultStreamIn
   adaptor FromBillingSystem from context BillingSystem as sink is { 
     inlet FromBillingSystemIn is event BillingSystem.UsageAccepted
     handler FromBillingSystemHandler is {
@@ -301,7 +358,13 @@ context MeteringContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository MeteringRepository as flow is {
+  repository MeteringRepository as merge is {
+    inlet MeteringRepositoryQueries is query GetNetworkHealth with {
+      briefly "Look-ups of this metering repository"
+      described as {
+        |What SmartMeteringApp asks of the metering repository, by way of MeteringContext.
+      }
+    }
     inlet MeteringRepositoryFromMeteringAnalytics is type MeteringRepositoryCommand
     command PersistIntervalDataRecorded is {
       meterId: MeterId with {
@@ -570,7 +633,7 @@ context MeteringContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet MeteringRepositoryResponses is result Meter.MeterResult
+    outlet MeteringRepositoryResponses is result NetworkHealthView
     record StoredMeter is {
       meterId: MeterId with {
         briefly "meterId"

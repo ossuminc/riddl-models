@@ -40,11 +40,59 @@ context JobSiteContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet JobSiteRepositoryQueriesIn is query GetSiteSummary with {
+    briefly "Look-ups of the job site repository"
+    described as {
+      |JobSiteManagementApp's look-ups, on their way to the job site repository.
+    }
+  }
+  outlet JobSiteRepositoryQueriesOut is query GetSiteSummary
+ with {
+    briefly "Look-ups on their way to the job site repository"
+    described as {
+      |Each look-up goes to the job site repository it names.
+    }
+  }
+  inlet JobSiteRepositoryRepliesIn is result SiteSummaryView with {
+    briefly "The job site repository's answers"
+    described as {
+      |What the job site repository answers about itself.
+    }
+  }
+  outlet JobSiteRepositoryRepliesOut is result SiteSummaryView
+ with {
+    briefly "Answers to JobSiteManagementApp"
+    described as {
+      |The reply leg of JobSiteManagementApp's look-ups of the job site repository.
+    }
+  }
+  inlet JobSiteQueriesIn is query JobSite.GetJobSite with {
+    briefly "Look-ups of the job site"
+    described as {
+      |JobSiteManagementApp's look-ups, on their way to the job site.
+    }
+  }
+  outlet JobSiteQueriesOut is query JobSite.GetJobSite
+ with {
+    briefly "Look-ups on their way to the job site"
+    described as {
+      |Each look-up goes to the job site it names.
+    }
+  }
   inlet JobSiteCommandStreamIn is type JobSiteContext.JobSiteRequest
   outlet JobSiteCommandStreamOut is type JobSiteCommand
   inlet JobSiteResultStreamIn is result JobSite.JobSiteResult
   outlet JobSiteResultStreamOut is result JobSite.JobSiteResult
   handler JobSiteContextBoundary is {
+    on getSiteSummary: query GetSiteSummary is {
+      forward getSiteSummary to outlet JobSiteContext.JobSiteRepositoryQueriesOut
+    }
+    on siteSummaryView: result SiteSummaryView is {
+      send siteSummaryView to outlet JobSiteContext.JobSiteRepositoryRepliesOut
+    }
+    on getJobSite: query JobSite.GetJobSite is {
+      forward getJobSite to outlet JobSiteContext.JobSiteQueriesOut
+    }
     on establishSite: command JobSiteContext.EstablishSite is {
       let newJobSite = create entity JobSiteContext.JobSite(projectId = establishSite.projectId, name = establishSite.name, location = establishSite.location)
       log newJobSite
@@ -96,8 +144,17 @@ context JobSiteContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'JobSiteRepositoryQuery Intake' is from outlet JobSiteContext.JobSiteRepositoryQueriesOut to inlet JobSiteContext.JobSiteRepository.JobSiteRepositoryQueries with {
+    briefly "Look-ups on their way to the job site repository"
+  }
+  connector 'JobSiteRepositoryReply Egress' is from outlet JobSiteContext.JobSiteRepository.JobSiteRepositoryResponses to inlet JobSiteContext.JobSiteRepositoryRepliesIn with {
+    briefly "The job site repository's answers on their way to the boundary"
+  }
+  connector 'JobSiteQuery Intake' is from outlet JobSiteContext.JobSiteQueriesOut to inlet JobSiteContext.JobSite.JobSiteQueries with {
+    briefly "Look-ups on their way to the job site"
+  }
   connector 'JobSiteCommand Stream Intake' is from outlet JobSiteContext.JobSiteCommandStreamOut to inlet JobSiteContext.JobSite.JobSiteCommands
-  connector 'JobSiteResult Stream Egress' is from outlet JobSiteContext.JobSiteRepository.JobSiteRepositoryResponses to inlet JobSiteContext.JobSiteResultStreamIn
+  connector 'JobSiteResult Stream Egress' is from outlet JobSiteContext.JobSite.JobSiteReplies to inlet JobSiteContext.JobSiteResultStreamIn
   adaptor ToNotificationService to context NotificationService as flow is { 
     inlet ToNotificationServiceIn is type JobSiteEvent
     outlet ToNotificationServiceOut is type NotificationService.NotificationServiceCommand
@@ -251,7 +308,13 @@ context JobSiteContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository JobSiteRepository as flow is {
+  repository JobSiteRepository as merge is {
+    inlet JobSiteRepositoryQueries is query GetSiteSummary with {
+      briefly "Look-ups of this job site repository"
+      described as {
+        |What JobSiteManagementApp asks of the job site repository, by way of JobSiteContext.
+      }
+    }
     inlet JobSiteRepositoryFromSiteAnalytics is type JobSiteRepositoryCommand
     command PersistCrewAssigned is {
       jobSiteId: JobSiteId with {
@@ -541,7 +604,7 @@ context JobSiteContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet JobSiteRepositoryResponses is result JobSite.JobSiteResult
+    outlet JobSiteRepositoryResponses is result SiteSummaryView
     record StoredJobSite is {
       jobSiteId: JobSiteId with {
         briefly "jobSiteId"

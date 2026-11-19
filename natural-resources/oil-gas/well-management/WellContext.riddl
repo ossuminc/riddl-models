@@ -52,8 +52,56 @@ context WellContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet WellRepositoryQueriesIn is query GetFieldProduction with {
+    briefly "Look-ups of the well repository"
+    described as {
+      |WellManagementApp's look-ups, on their way to the well repository.
+    }
+  }
+  outlet WellRepositoryQueriesOut is query GetFieldProduction
+ with {
+    briefly "Look-ups on their way to the well repository"
+    described as {
+      |Each look-up goes to the well repository it names.
+    }
+  }
+  inlet WellRepositoryRepliesIn is result FieldProductionView with {
+    briefly "The well repository's answers"
+    described as {
+      |What the well repository answers about itself.
+    }
+  }
+  outlet WellRepositoryRepliesOut is result FieldProductionView
+ with {
+    briefly "Answers to WellManagementApp"
+    described as {
+      |The reply leg of WellManagementApp's look-ups of the well repository.
+    }
+  }
+  inlet WellQueriesIn is query Well.GetWell with {
+    briefly "Look-ups of the well"
+    described as {
+      |WellManagementApp's look-ups, on their way to the well.
+    }
+  }
+  outlet WellQueriesOut is query Well.GetWell
+ with {
+    briefly "Look-ups on their way to the well"
+    described as {
+      |Each look-up goes to the well it names.
+    }
+  }
   inlet WellContextFromToLandManagement is command Well.SubmitForPermit with {
     briefly "What ToLandManagement makes of the answers it gets"
+  }
+  connector 'WellRepositoryQuery Intake' is from outlet WellContext.WellRepositoryQueriesOut to inlet WellContext.WellRepository.WellRepositoryQueries with {
+    briefly "Look-ups on their way to the well repository"
+  }
+  connector 'WellRepositoryReply Egress' is from outlet WellContext.WellRepository.WellRepositoryResponses to inlet WellContext.WellRepositoryRepliesIn with {
+    briefly "The well repository's answers on their way to the boundary"
+  }
+  connector 'WellQuery Intake' is from outlet WellContext.WellQueriesOut to inlet WellContext.Well.WellQueries with {
+    briefly "Look-ups on their way to the well"
   }
   connector 'ToLandManagement Intake' is from outlet WellContext.ToLandManagement.ToLandManagementToWellContext to inlet WellContext.WellContextFromToLandManagement with {
     briefly "Answers translated by ToLandManagement, on their way in"
@@ -75,6 +123,15 @@ context WellContext as router is {
   inlet WellResultStreamIn is result Well.WellResult
   outlet WellResultStreamOut is result Well.WellResult
   handler WellContextBoundary is {
+    on getFieldProduction: query GetFieldProduction is {
+      forward getFieldProduction to outlet WellContext.WellRepositoryQueriesOut
+    }
+    on fieldProductionView: result FieldProductionView is {
+      send fieldProductionView to outlet WellContext.WellRepositoryRepliesOut
+    }
+    on getWell: query Well.GetWell is {
+      forward getWell to outlet WellContext.WellQueriesOut
+    }
     on planWell: command WellContext.PlanWell is {
       let newWell = create entity WellContext.Well(leaseId = planWell.leaseId, fieldId = planWell.fieldId, wellName = planWell.wellName, wellType = planWell.wellType, location = planWell.location, program = planWell.program)
       log newWell
@@ -127,7 +184,7 @@ context WellContext as router is {
     }
   }
   connector 'WellCommand Stream Intake' is from outlet WellContext.WellCommandStreamOut to inlet WellContext.Well.WellCommands
-  connector 'WellResult Stream Egress' is from outlet WellContext.WellRepository.WellRepositoryResponses to inlet WellContext.WellResultStreamIn
+  connector 'WellResult Stream Egress' is from outlet WellContext.Well.WellReplies to inlet WellContext.WellResultStreamIn
   adaptor ToLandManagement to context LandManagement as router is { 
     outlet ToLandManagementToWellContext is command Well.SubmitForPermit
     inlet ToLandManagementIn is type WellEvent
@@ -287,7 +344,13 @@ context WellContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository WellRepository as flow is {
+  repository WellRepository as merge is {
+    inlet WellRepositoryQueries is query GetFieldProduction with {
+      briefly "Look-ups of this well repository"
+      described as {
+        |What WellManagementApp asks of the well repository, by way of WellContext.
+      }
+    }
     inlet WellRepositoryFromProductionAnalytics is type WellRepositoryCommand
     command PersistDrillingProgressUpdated is {
       wellId: WellId with {
@@ -625,7 +688,7 @@ context WellContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet WellRepositoryResponses is result Well.WellResult
+    outlet WellRepositoryResponses is result FieldProductionView
     record StoredWell is {
       wellId: WellId with {
         briefly "wellId"

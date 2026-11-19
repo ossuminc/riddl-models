@@ -40,8 +40,56 @@ context MerchantContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet MerchantRepositoryQueriesIn is query GetMerchantStats with {
+    briefly "Look-ups of the merchant repository"
+    described as {
+      |MerchantAcquiringApp's look-ups, on their way to the merchant repository.
+    }
+  }
+  outlet MerchantRepositoryQueriesOut is query GetMerchantStats
+ with {
+    briefly "Look-ups on their way to the merchant repository"
+    described as {
+      |Each look-up goes to the merchant repository it names.
+    }
+  }
+  inlet MerchantRepositoryRepliesIn is result MerchantStatsView with {
+    briefly "The merchant repository's answers"
+    described as {
+      |What the merchant repository answers about itself.
+    }
+  }
+  outlet MerchantRepositoryRepliesOut is result MerchantStatsView
+ with {
+    briefly "Answers to MerchantAcquiringApp"
+    described as {
+      |The reply leg of MerchantAcquiringApp's look-ups of the merchant repository.
+    }
+  }
+  inlet MerchantQueriesIn is query Merchant.GetMerchant with {
+    briefly "Look-ups of the merchant"
+    described as {
+      |MerchantAcquiringApp's look-ups, on their way to the merchant.
+    }
+  }
+  outlet MerchantQueriesOut is query Merchant.GetMerchant
+ with {
+    briefly "Look-ups on their way to the merchant"
+    described as {
+      |Each look-up goes to the merchant it names.
+    }
+  }
   inlet MerchantContextFromProcessorGatewayService is command Merchant.ActivateMerchant with {
     briefly "What FromProcessorGatewayService makes of that service's news"
+  }
+  connector 'MerchantRepositoryQuery Intake' is from outlet MerchantContext.MerchantRepositoryQueriesOut to inlet MerchantContext.MerchantRepository.MerchantRepositoryQueries with {
+    briefly "Look-ups on their way to the merchant repository"
+  }
+  connector 'MerchantRepositoryReply Egress' is from outlet MerchantContext.MerchantRepository.MerchantRepositoryResponses to inlet MerchantContext.MerchantRepositoryRepliesIn with {
+    briefly "The merchant repository's answers on their way to the boundary"
+  }
+  connector 'MerchantQuery Intake' is from outlet MerchantContext.MerchantQueriesOut to inlet MerchantContext.Merchant.MerchantQueries with {
+    briefly "Look-ups on their way to the merchant"
   }
   connector 'FromProcessorGatewayService Intake' is from outlet MerchantContext.FromProcessorGatewayService.FromProcessorGatewayServiceToMerchantContext to inlet MerchantContext.MerchantContextFromProcessorGatewayService with {
     briefly "What FromProcessorGatewayService makes of that news, on its way in"
@@ -51,6 +99,15 @@ context MerchantContext as router is {
   inlet MerchantResultStreamIn is result Merchant.MerchantResult
   outlet MerchantResultStreamOut is result Merchant.MerchantResult
   handler MerchantContextBoundary is {
+    on getMerchantStats: query GetMerchantStats is {
+      forward getMerchantStats to outlet MerchantContext.MerchantRepositoryQueriesOut
+    }
+    on merchantStatsView: result MerchantStatsView is {
+      send merchantStatsView to outlet MerchantContext.MerchantRepositoryRepliesOut
+    }
+    on getMerchant: query Merchant.GetMerchant is {
+      forward getMerchant to outlet MerchantContext.MerchantQueriesOut
+    }
     on submitApplication: command MerchantContext.SubmitApplication is {
       let newMerchant = create entity MerchantContext.Merchant(business = submitApplication.business, contact = submitApplication.contact, banking = submitApplication.banking, volume = submitApplication.volume)
       log newMerchant
@@ -91,7 +148,7 @@ context MerchantContext as router is {
     }
   }
   connector 'MerchantCommand Stream Intake' is from outlet MerchantContext.MerchantCommandStreamOut to inlet MerchantContext.Merchant.MerchantCommands
-  connector 'MerchantResult Stream Egress' is from outlet MerchantContext.MerchantRepository.MerchantRepositoryResponses to inlet MerchantContext.MerchantResultStreamIn
+  connector 'MerchantResult Stream Egress' is from outlet MerchantContext.Merchant.MerchantReplies to inlet MerchantContext.MerchantResultStreamIn
   adaptor FromCreditBureauService from context CreditBureauService as sink is { 
     inlet FromCreditBureauServiceIn is event CreditBureauService.CreditReportReceived
     handler FromCreditBureauServiceHandler is {
@@ -372,7 +429,13 @@ context MerchantContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository MerchantRepository as flow is {
+  repository MerchantRepository as merge is {
+    inlet MerchantRepositoryQueries is query GetMerchantStats with {
+      briefly "Look-ups of this merchant repository"
+      described as {
+        |What MerchantAcquiringApp asks of the merchant repository, by way of MerchantContext.
+      }
+    }
     inlet MerchantRepositoryFromMerchantAnalytics is type MerchantRepositoryCommand
     command PersistApplicationDeclined is {
       merchantId: MerchantId with {
@@ -620,7 +683,7 @@ context MerchantContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet MerchantRepositoryResponses is result Merchant.MerchantResult
+    outlet MerchantRepositoryResponses is result MerchantStatsView
     record StoredMerchant is {
       merchantId: MerchantId with {
         briefly "merchantId"

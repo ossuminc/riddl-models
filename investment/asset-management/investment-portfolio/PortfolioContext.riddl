@@ -45,8 +45,56 @@ context PortfolioContext as router is {
   } with {
     briefly "What ToMarketDataFeed turns its answers into"
   }
+  inlet PortfolioRepositoryQueriesIn is query GetPortfolioAnalytics with {
+    briefly "Look-ups of the portfolio repository"
+    described as {
+      |InvestmentPortfolioApp's look-ups, on their way to the portfolio repository.
+    }
+  }
+  outlet PortfolioRepositoryQueriesOut is query GetPortfolioAnalytics
+ with {
+    briefly "Look-ups on their way to the portfolio repository"
+    described as {
+      |Each look-up goes to the portfolio repository it names.
+    }
+  }
+  inlet PortfolioRepositoryRepliesIn is result PortfolioAnalyticsView with {
+    briefly "The portfolio repository's answers"
+    described as {
+      |What the portfolio repository answers about itself.
+    }
+  }
+  outlet PortfolioRepositoryRepliesOut is result PortfolioAnalyticsView
+ with {
+    briefly "Answers to InvestmentPortfolioApp"
+    described as {
+      |The reply leg of InvestmentPortfolioApp's look-ups of the portfolio repository.
+    }
+  }
+  inlet PortfolioQueriesIn is query Portfolio.GetPortfolio with {
+    briefly "Look-ups of the portfolio"
+    described as {
+      |InvestmentPortfolioApp's look-ups, on their way to the portfolio.
+    }
+  }
+  outlet PortfolioQueriesOut is query Portfolio.GetPortfolio
+ with {
+    briefly "Look-ups on their way to the portfolio"
+    described as {
+      |Each look-up goes to the portfolio it names.
+    }
+  }
   inlet PortfolioContextFromToMarketDataFeed is type ToMarketDataFeedCommand with {
     briefly "What ToMarketDataFeed makes of the answers it gets"
+  }
+  connector 'PortfolioRepositoryQuery Intake' is from outlet PortfolioContext.PortfolioRepositoryQueriesOut to inlet PortfolioContext.PortfolioRepository.PortfolioRepositoryQueries with {
+    briefly "Look-ups on their way to the portfolio repository"
+  }
+  connector 'PortfolioRepositoryReply Egress' is from outlet PortfolioContext.PortfolioRepository.PortfolioRepositoryResponses to inlet PortfolioContext.PortfolioRepositoryRepliesIn with {
+    briefly "The portfolio repository's answers on their way to the boundary"
+  }
+  connector 'PortfolioQuery Intake' is from outlet PortfolioContext.PortfolioQueriesOut to inlet PortfolioContext.Portfolio.PortfolioQueries with {
+    briefly "Look-ups on their way to the portfolio"
   }
   connector 'ToMarketDataFeed Intake' is from outlet PortfolioContext.ToMarketDataFeed.ToMarketDataFeedToPortfolioContext to inlet PortfolioContext.PortfolioContextFromToMarketDataFeed with {
     briefly "Answers translated by ToMarketDataFeed, on their way in"
@@ -62,6 +110,15 @@ context PortfolioContext as router is {
   inlet PortfolioCompanyResultStreamIn is result Portfolio.PortfolioResult
   outlet PortfolioCompanyResultStreamOut is result Portfolio.PortfolioResult
   handler PortfolioContextBoundary is {
+    on getPortfolioAnalytics: query GetPortfolioAnalytics is {
+      forward getPortfolioAnalytics to outlet PortfolioContext.PortfolioRepositoryQueriesOut
+    }
+    on portfolioAnalyticsView: result PortfolioAnalyticsView is {
+      send portfolioAnalyticsView to outlet PortfolioContext.PortfolioRepositoryRepliesOut
+    }
+    on getPortfolio: query Portfolio.GetPortfolio is {
+      forward getPortfolio to outlet PortfolioContext.PortfolioQueriesOut
+    }
     on createPortfolio: command PortfolioContext.CreatePortfolio is {
       let newPortfolio = create entity PortfolioContext.Portfolio(accountId = createPortfolio.accountId, portfolioName = createPortfolio.portfolioName, benchmarkId = createPortfolio.benchmarkId, targets = createPortfolio.targets)
       log newPortfolio
@@ -105,7 +162,7 @@ context PortfolioContext as router is {
     }
   }
   connector 'PortfolioCommand Stream Intake' is from outlet PortfolioContext.PortfolioCommandStreamOut to inlet PortfolioContext.Portfolio.PortfolioCommands
-  connector 'PortfolioCompanyResult Stream Egress' is from outlet PortfolioContext.PortfolioRepository.PortfolioRepositoryResponses to inlet PortfolioContext.PortfolioCompanyResultStreamIn
+  connector 'PortfolioCompanyResult Stream Egress' is from outlet PortfolioContext.Portfolio.PortfolioReplies to inlet PortfolioContext.PortfolioCompanyResultStreamIn
   adaptor FromMarketDataFeed from context MarketDataFeed as sink is { 
     inlet FromMarketDataFeedIn is event MarketDataFeed.PriceUpdated
     handler FromMarketDataFeedHandler is {
@@ -227,7 +284,13 @@ context PortfolioContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository PortfolioRepository as flow is {
+  repository PortfolioRepository as merge is {
+    inlet PortfolioRepositoryQueries is query GetPortfolioAnalytics with {
+      briefly "Look-ups of this portfolio repository"
+      described as {
+        |What InvestmentPortfolioApp asks of the portfolio repository, by way of PortfolioContext.
+      }
+    }
     inlet PortfolioRepositoryFromPortfolioMetrics is type PortfolioRepositoryCommand
     command PersistAllocationsUpdated is {
       portfolioId: PortfolioId with {
@@ -496,7 +559,7 @@ context PortfolioContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet PortfolioRepositoryResponses is result Portfolio.PortfolioResult
+    outlet PortfolioRepositoryResponses is result PortfolioAnalyticsView
     record StoredPortfolio is {
       portfolioId: PortfolioId with {
         briefly "portfolioId"

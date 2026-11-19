@@ -28,8 +28,56 @@ context OutageContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet OutageRepositoryQueriesIn is query GetOutageMetricsData with {
+    briefly "Look-ups of the outage repository"
+    described as {
+      |OutageManagementApp's look-ups, on their way to the outage repository.
+    }
+  }
+  outlet OutageRepositoryQueriesOut is query GetOutageMetricsData
+ with {
+    briefly "Look-ups on their way to the outage repository"
+    described as {
+      |Each look-up goes to the outage repository it names.
+    }
+  }
+  inlet OutageRepositoryRepliesIn is result OutageMetricsDataView with {
+    briefly "The outage repository's answers"
+    described as {
+      |What the outage repository answers about itself.
+    }
+  }
+  outlet OutageRepositoryRepliesOut is result OutageMetricsDataView
+ with {
+    briefly "Answers to OutageManagementApp"
+    described as {
+      |The reply leg of OutageManagementApp's look-ups of the outage repository.
+    }
+  }
+  inlet OutageEventQueriesIn is query OutageEvent.GetOutageEvent with {
+    briefly "Look-ups of the outage event"
+    described as {
+      |OutageManagementApp's look-ups, on their way to the outage event.
+    }
+  }
+  outlet OutageEventQueriesOut is query OutageEvent.GetOutageEvent
+ with {
+    briefly "Look-ups on their way to the outage event"
+    described as {
+      |Each look-up goes to the outage event it names.
+    }
+  }
   inlet OutageContextFromToCrewDispatchSystem is command OutageEvent.DispatchCrew with {
     briefly "What ToCrewDispatchSystem makes of the answers it gets"
+  }
+  connector 'OutageRepositoryQuery Intake' is from outlet OutageContext.OutageRepositoryQueriesOut to inlet OutageContext.OutageRepository.OutageRepositoryQueries with {
+    briefly "Look-ups on their way to the outage repository"
+  }
+  connector 'OutageRepositoryReply Egress' is from outlet OutageContext.OutageRepository.OutageRepositoryResponses to inlet OutageContext.OutageRepositoryRepliesIn with {
+    briefly "The outage repository's answers on their way to the boundary"
+  }
+  connector 'OutageEventQuery Intake' is from outlet OutageContext.OutageEventQueriesOut to inlet OutageContext.OutageEvent.OutageEventQueries with {
+    briefly "Look-ups on their way to the outage event"
   }
   connector 'ToCrewDispatchSystem Intake' is from outlet OutageContext.ToCrewDispatchSystem.ToCrewDispatchSystemToOutageContext to inlet OutageContext.OutageContextFromToCrewDispatchSystem with {
     briefly "Answers translated by ToCrewDispatchSystem, on their way in"
@@ -57,6 +105,15 @@ context OutageContext as router is {
   inlet OutageEventResultStreamIn is result OutageEvent.OutageEventResult
   outlet OutageEventResultStreamOut is result OutageEvent.OutageEventResult
   handler OutageContextBoundary is {
+    on getOutageMetricsData: query GetOutageMetricsData is {
+      forward getOutageMetricsData to outlet OutageContext.OutageRepositoryQueriesOut
+    }
+    on outageMetricsDataView: result OutageMetricsDataView is {
+      send outageMetricsDataView to outlet OutageContext.OutageRepositoryRepliesOut
+    }
+    on getOutageEvent: query OutageEvent.GetOutageEvent is {
+      forward getOutageEvent to outlet OutageContext.OutageEventQueriesOut
+    }
     on reportOutage: command OutageContext.ReportOutage is {
       let newOutageEvent = create entity OutageContext.OutageEvent(outageInfo = reportOutage.outageInfo)
       log newOutageEvent
@@ -103,7 +160,7 @@ context OutageContext as router is {
     }
   }
   connector 'OutageEventCommand Stream Intake' is from outlet OutageContext.OutageEventCommandStreamOut to inlet OutageContext.OutageEvent.OutageEventCommands
-  connector 'OutageEventResult Stream Egress' is from outlet OutageContext.OutageRepository.OutageRepositoryResponses to inlet OutageContext.OutageEventResultStreamIn
+  connector 'OutageEventResult Stream Egress' is from outlet OutageContext.OutageEvent.OutageEventReplies to inlet OutageContext.OutageEventResultStreamIn
   adaptor FromCrewDispatchSystem from context CrewDispatchSystem as flow is { 
     inlet FromCrewDispatchSystemIn is type CrewDispatchSystem.CrewDispatchSystemEvent
     outlet FromCrewDispatchSystemToOutageContext is command OutageEvent.DispatchCrew
@@ -233,7 +290,13 @@ context OutageContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository OutageRepository as flow is {
+  repository OutageRepository as merge is {
+    inlet OutageRepositoryQueries is query GetOutageMetricsData with {
+      briefly "Look-ups of this outage repository"
+      described as {
+        |What OutageManagementApp asks of the outage repository, by way of OutageContext.
+      }
+    }
     inlet OutageRepositoryFromOutageMetrics is type OutageRepositoryCommand
     command PersistCrewArrived is {
       outageId: OutageEventId with {
@@ -505,7 +568,7 @@ context OutageContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet OutageRepositoryResponses is result OutageEvent.OutageEventResult
+    outlet OutageRepositoryResponses is result OutageMetricsDataView
     record StoredOutageEvent is {
       outageEventId: OutageEventId with {
         briefly "outageEventId"

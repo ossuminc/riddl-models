@@ -72,8 +72,72 @@ context DrugSupplyContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet SerializationRepositoryQueriesIn is query GetSerializationMetrics with {
+    briefly "Look-ups of the serialization repository"
+    described as {
+      |DrugSupplyChainApp's look-ups, on their way to the serialization repository.
+    }
+  }
+  outlet SerializationRepositoryQueriesOut is query GetSerializationMetrics
+ with {
+    briefly "Look-ups on their way to the serialization repository"
+    described as {
+      |Each look-up goes to the serialization repository it names.
+    }
+  }
+  inlet BatchRepositoryQueriesIn is query GetTraceabilityDashboard with {
+    briefly "Look-ups of the batch repository"
+    described as {
+      |DrugSupplyChainApp's look-ups, on their way to the batch repository.
+    }
+  }
+  outlet BatchRepositoryQueriesOut is query GetTraceabilityDashboard
+ with {
+    briefly "Look-ups on their way to the batch repository"
+    described as {
+      |Each look-up goes to the batch repository it names.
+    }
+  }
+  inlet BatchRepositoryRepliesIn is result TraceabilityDashboardView with {
+    briefly "The batch repository's answers"
+    described as {
+      |What the batch repository answers about itself.
+    }
+  }
+  outlet BatchRepositoryRepliesOut is result TraceabilityDashboardView
+ with {
+    briefly "Answers to DrugSupplyChainApp"
+    described as {
+      |The reply leg of DrugSupplyChainApp's look-ups of the batch repository.
+    }
+  }
+  inlet DrugBatchQueriesIn is query DrugBatch.GetDrugBatch with {
+    briefly "Look-ups of the drug batch"
+    described as {
+      |DrugSupplyChainApp's look-ups, on their way to the drug batch.
+    }
+  }
+  outlet DrugBatchQueriesOut is query DrugBatch.GetDrugBatch
+ with {
+    briefly "Look-ups on their way to the drug batch"
+    described as {
+      |Each look-up goes to the drug batch it names.
+    }
+  }
   inlet DrugSupplyContextFromManufacturingSystem is command DrugSupplyContext.ManufactureBatch with {
     briefly "What FromManufacturingSystem makes of that service's news"
+  }
+  connector 'SerializationRepositoryQuery Intake' is from outlet DrugSupplyContext.SerializationRepositoryQueriesOut to inlet DrugSupplyContext.SerializationRepository.SerializationRepositoryQueries with {
+    briefly "Look-ups on their way to the serialization repository"
+  }
+  connector 'BatchRepositoryQuery Intake' is from outlet DrugSupplyContext.BatchRepositoryQueriesOut to inlet DrugSupplyContext.BatchRepository.BatchRepositoryQueries with {
+    briefly "Look-ups on their way to the batch repository"
+  }
+  connector 'BatchRepositoryReply Egress' is from outlet DrugSupplyContext.BatchRepository.BatchRepositoryResponses to inlet DrugSupplyContext.BatchRepositoryRepliesIn with {
+    briefly "The batch repository's answers on their way to the boundary"
+  }
+  connector 'DrugBatchQuery Intake' is from outlet DrugSupplyContext.DrugBatchQueriesOut to inlet DrugSupplyContext.DrugBatch.DrugBatchQueries with {
+    briefly "Look-ups on their way to the drug batch"
   }
   connector 'FromManufacturingSystem Intake' is from outlet DrugSupplyContext.FromManufacturingSystem.FromManufacturingSystemToDrugSupplyContext to inlet DrugSupplyContext.DrugSupplyContextFromManufacturingSystem with {
     briefly "What FromManufacturingSystem makes of that news, on its way in"
@@ -102,6 +166,18 @@ context DrugSupplyContext as router is {
   inlet SerializationMetricsViewStreamIn is result SerializationMetricsView
   outlet SerializationMetricsViewStreamOut is result SerializationMetricsView
   handler DrugSupplyContextBoundary is {
+    on getSerializationMetrics: query GetSerializationMetrics is {
+      forward getSerializationMetrics to outlet DrugSupplyContext.SerializationRepositoryQueriesOut
+    }
+    on getTraceabilityDashboard: query GetTraceabilityDashboard is {
+      forward getTraceabilityDashboard to outlet DrugSupplyContext.BatchRepositoryQueriesOut
+    }
+    on traceabilityDashboardView: result TraceabilityDashboardView is {
+      send traceabilityDashboardView to outlet DrugSupplyContext.BatchRepositoryRepliesOut
+    }
+    on getDrugBatch: query DrugBatch.GetDrugBatch is {
+      forward getDrugBatch to outlet DrugSupplyContext.DrugBatchQueriesOut
+    }
     on manufactureBatch: command DrugSupplyContext.ManufactureBatch is {
       let givenBatch: type ManufacturingBatch = prompt("the batch of the new DrugBatch")
       let givenManufacturingTimestamp: type TimeStamp = prompt("the manufacturing timestamp of the new DrugBatch")
@@ -153,7 +229,7 @@ context DrugSupplyContext as router is {
     briefly "Serialization metrics on their way out to the application"
   }
   connector 'DrugBatchCommand Stream Intake' is from outlet DrugSupplyContext.DrugBatchCommandStreamOut to inlet DrugSupplyContext.DrugBatch.DrugBatchCommands
-  connector 'DrugBatchResult Stream Egress' is from outlet DrugSupplyContext.BatchRepository.BatchRepositoryResponses to inlet DrugSupplyContext.DrugBatchResultStreamIn
+  connector 'DrugBatchResult Stream Egress' is from outlet DrugSupplyContext.DrugBatch.DrugBatchReplies to inlet DrugSupplyContext.DrugBatchResultStreamIn
   adaptor FromManufacturingSystem from context ManufacturingSystem as flow is { 
     inlet FromManufacturingSystemIn is type ManufacturingSystem.ManufacturingSystemEvent
     outlet FromManufacturingSystemToDrugSupplyContext is command DrugSupplyContext.ManufactureBatch
@@ -247,6 +323,12 @@ context DrugSupplyContext as router is {
     }
   }
   repository BatchRepository as merge is {
+    inlet BatchRepositoryQueries is query GetTraceabilityDashboard with {
+      briefly "Look-ups of this batch repository"
+      described as {
+        |What DrugSupplyChainApp asks of the batch repository, by way of DrugSupplyContext.
+      }
+    }
     inlet BatchRepositoryFromTraceabilityDashboardProjector is type BatchRepositoryCommand with {
       briefly "What TraceabilityDashboardProjector sends BatchRepository"
       described as {
@@ -254,7 +336,7 @@ context DrugSupplyContext as router is {
       }
     }
     inlet BatchRepositoryFromSerializationMetricsProjector is type BatchRepositoryCommand
-    outlet BatchRepositoryResponses is result DrugBatch.DrugBatchResult
+    outlet BatchRepositoryResponses is result TraceabilityDashboardView
     record StoredDrugBatch is {
       drugBatchId: BatchId with {
         briefly "drugBatchId"
@@ -463,7 +545,13 @@ context DrugSupplyContext as router is {
       |reach it directly; the projector turns each event into one of these.
     }
   }
-  repository SerializationRepository as flow is {
+  repository SerializationRepository as merge is {
+    inlet SerializationRepositoryQueries is query GetSerializationMetrics with {
+      briefly "Look-ups of this serialization repository"
+      described as {
+        |What DrugSupplyChainApp asks of the serialization repository, by way of DrugSupplyContext.
+      }
+    }
     inlet SerializationRepositoryFromSerializationMetricsProjector is type SerializationRepositoryCommand
     outlet SerializationRepositoryResponses is result SerializationMetricsView
     command PersistAuthenticityVerified is {

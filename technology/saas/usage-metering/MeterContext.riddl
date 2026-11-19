@@ -34,8 +34,56 @@ context MeterContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet MeterRepositoryQueriesIn is type MeterRepository.MeterRepositoryQuery with {
+    briefly "Look-ups of the meter repository"
+    described as {
+      |UsageMeteringApp's look-ups, on their way to the meter repository.
+    }
+  }
+  outlet MeterRepositoryQueriesOut is type MeterRepository.MeterRepositoryQuery
+ with {
+    briefly "Look-ups on their way to the meter repository"
+    described as {
+      |Each look-up goes to the meter repository it names.
+    }
+  }
+  inlet MeterRepositoryRepliesIn is type MeterRepository.MeterRepositoryReply with {
+    briefly "The meter repository's answers"
+    described as {
+      |What the meter repository answers about itself.
+    }
+  }
+  outlet MeterRepositoryRepliesOut is type MeterRepository.MeterRepositoryReply
+ with {
+    briefly "Answers to UsageMeteringApp"
+    described as {
+      |The reply leg of UsageMeteringApp's look-ups of the meter repository.
+    }
+  }
+  inlet MeterQueriesIn is query Meter.GetMeter with {
+    briefly "Look-ups of the meter"
+    described as {
+      |UsageMeteringApp's look-ups, on their way to the meter.
+    }
+  }
+  outlet MeterQueriesOut is query Meter.GetMeter
+ with {
+    briefly "Look-ups on their way to the meter"
+    described as {
+      |Each look-up goes to the meter it names.
+    }
+  }
   inlet MeterContextFromToBillingService is command Meter.GenerateBillingRecord with {
     briefly "What ToBillingService makes of the answers it gets"
+  }
+  connector 'MeterRepositoryQuery Intake' is from outlet MeterContext.MeterRepositoryQueriesOut to inlet MeterContext.MeterRepository.MeterRepositoryQueries with {
+    briefly "Look-ups on their way to the meter repository"
+  }
+  connector 'MeterRepositoryReply Egress' is from outlet MeterContext.MeterRepository.MeterRepositoryResponses to inlet MeterContext.MeterRepositoryRepliesIn with {
+    briefly "The meter repository's answers on their way to the boundary"
+  }
+  connector 'MeterQuery Intake' is from outlet MeterContext.MeterQueriesOut to inlet MeterContext.Meter.MeterQueries with {
+    briefly "Look-ups on their way to the meter"
   }
   connector 'ToBillingService Intake' is from outlet MeterContext.ToBillingService.ToBillingServiceToMeterContext to inlet MeterContext.MeterContextFromToBillingService with {
     briefly "Answers translated by ToBillingService, on their way in"
@@ -57,6 +105,36 @@ context MeterContext as router is {
   inlet MeterQueryResultStreamIn is result Meter.MeterQueryResult
   outlet MeterQueryResultStreamOut is result Meter.MeterQueryResult
   handler MeterContextBoundary is {
+    on getAnalyticsData: query GetAnalyticsData is {
+      forward getAnalyticsData to outlet MeterContext.MeterRepositoryQueriesOut
+    }
+    on findMeterById: query MeterRepository.FindMeterById is {
+      forward findMeterById to outlet MeterContext.MeterRepositoryQueriesOut
+    }
+    on findByCustomer: query MeterRepository.FindByCustomer is {
+      forward findByCustomer to outlet MeterContext.MeterRepositoryQueriesOut
+    }
+    on findBySubscription: query MeterRepository.FindBySubscription is {
+      forward findBySubscription to outlet MeterContext.MeterRepositoryQueriesOut
+    }
+    on getCurrentUsage: query MeterRepository.GetCurrentUsage is {
+      forward getCurrentUsage to outlet MeterContext.MeterRepositoryQueriesOut
+    }
+    on getUsageHistory: query MeterRepository.GetUsageHistory is {
+      forward getUsageHistory to outlet MeterContext.MeterRepositoryQueriesOut
+    }
+    on analyticsDataView: result AnalyticsDataView is {
+      send analyticsDataView to outlet MeterContext.MeterRepositoryRepliesOut
+    }
+    on meterResult: result MeterRepository.MeterResult is {
+      send meterResult to outlet MeterContext.MeterRepositoryRepliesOut
+    }
+    on metersResult: result MeterRepository.MetersResult is {
+      send metersResult to outlet MeterContext.MeterRepositoryRepliesOut
+    }
+    on getMeter: query Meter.GetMeter is {
+      forward getMeter to outlet MeterContext.MeterQueriesOut
+    }
     on createMeter: command MeterContext.CreateMeter is {
       let newMeter = create entity MeterContext.Meter(customerId = createMeter.customerId, subscriptionId = createMeter.subscriptionId, definition = createMeter.definition)
       log newMeter
@@ -106,7 +184,7 @@ context MeterContext as router is {
     }
   }
   connector 'MeterCommand Stream Intake' is from outlet MeterContext.MeterCommandStreamOut to inlet MeterContext.Meter.MeterCommands
-  connector 'MeterQueryResult Stream Egress' is from outlet MeterContext.MeterRepository.MeterRepositoryResponses to inlet MeterContext.MeterQueryResultStreamIn
+  connector 'MeterQueryResult Stream Egress' is from outlet MeterContext.Meter.MeterReplies to inlet MeterContext.MeterQueryResultStreamIn
   adaptor FromAnalyticsExportService from context AnalyticsExportService as sink is { 
     inlet FromAnalyticsExportServiceIn is event AnalyticsExportService.ExportCompleted
     handler FromAnalyticsExportServiceHandler is {
@@ -341,7 +419,29 @@ context MeterContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository MeterRepository as flow is {
+  repository MeterRepository as merge is {
+    type MeterRepositoryQuery is one of {
+      GetAnalyticsData or FindMeterById or FindByCustomer or FindBySubscription or GetCurrentUsage or GetUsageHistory
+    } with {
+      briefly "What may be asked of MeterRepository"
+      described as {
+        |The look-ups the meter repository answers.
+      }
+    }
+    type MeterRepositoryReply is one of {
+      AnalyticsDataView or MeterResult or MetersResult
+    } with {
+      briefly "What MeterRepository answers"
+      described as {
+        |The answers the meter repository gives.
+      }
+    }
+    inlet MeterRepositoryQueries is type MeterRepositoryQuery with {
+      briefly "Look-ups of this meter repository"
+      described as {
+        |What UsageMeteringApp asks of the meter repository, by way of MeterContext.
+      }
+    }
     inlet MeterRepositoryFromUsageAnalytics is type MeterRepositoryCommand
     command PersistAlertThresholdRemoved is {
       meterId: MeterId with {
@@ -809,7 +909,7 @@ context MeterContext as router is {
         |The relational schema persisting meter records for this repository.
       }
     }
-    outlet MeterRepositoryResponses is result Meter.MeterQueryResult
+    outlet MeterRepositoryResponses is type MeterRepositoryReply
     query FindMeterById replies result MeterResult is {
       meterId: MeterId with {
         briefly "Meter"

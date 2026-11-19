@@ -33,8 +33,56 @@ context PayrollContext as router is {
   } with {
     briefly "What ToHRISSystem turns its answers into"
   }
+  inlet PayrollRepositoryQueriesIn is query GetPayrollMetrics with {
+    briefly "Look-ups of the payroll repository"
+    described as {
+      |PayrollProcessingApp's look-ups, on their way to the payroll repository.
+    }
+  }
+  outlet PayrollRepositoryQueriesOut is query GetPayrollMetrics
+ with {
+    briefly "Look-ups on their way to the payroll repository"
+    described as {
+      |Each look-up goes to the payroll repository it names.
+    }
+  }
+  inlet PayrollRepositoryRepliesIn is result PayrollMetricsView with {
+    briefly "The payroll repository's answers"
+    described as {
+      |What the payroll repository answers about itself.
+    }
+  }
+  outlet PayrollRepositoryRepliesOut is result PayrollMetricsView
+ with {
+    briefly "Answers to PayrollProcessingApp"
+    described as {
+      |The reply leg of PayrollProcessingApp's look-ups of the payroll repository.
+    }
+  }
+  inlet PayrollRunQueriesIn is query PayrollRun.GetPayrollRun with {
+    briefly "Look-ups of the payroll run"
+    described as {
+      |PayrollProcessingApp's look-ups, on their way to the payroll run.
+    }
+  }
+  outlet PayrollRunQueriesOut is query PayrollRun.GetPayrollRun
+ with {
+    briefly "Look-ups on their way to the payroll run"
+    described as {
+      |Each look-up goes to the payroll run it names.
+    }
+  }
   inlet PayrollContextFromToHRISSystem is type ToHRISSystemCommand with {
     briefly "What ToHRISSystem makes of the answers it gets"
+  }
+  connector 'PayrollRepositoryQuery Intake' is from outlet PayrollContext.PayrollRepositoryQueriesOut to inlet PayrollContext.PayrollRepository.PayrollRepositoryQueries with {
+    briefly "Look-ups on their way to the payroll repository"
+  }
+  connector 'PayrollRepositoryReply Egress' is from outlet PayrollContext.PayrollRepository.PayrollRepositoryResponses to inlet PayrollContext.PayrollRepositoryRepliesIn with {
+    briefly "The payroll repository's answers on their way to the boundary"
+  }
+  connector 'PayrollRunQuery Intake' is from outlet PayrollContext.PayrollRunQueriesOut to inlet PayrollContext.PayrollRun.PayrollRunQueries with {
+    briefly "Look-ups on their way to the payroll run"
   }
   connector 'ToHRISSystem Intake' is from outlet PayrollContext.ToHRISSystem.ToHRISSystemToPayrollContext to inlet PayrollContext.PayrollContextFromToHRISSystem with {
     briefly "Answers translated by ToHRISSystem, on their way in"
@@ -62,6 +110,15 @@ context PayrollContext as router is {
   inlet PayrollRunResultStreamIn is result PayrollRun.PayrollRunResult
   outlet PayrollRunResultStreamOut is result PayrollRun.PayrollRunResult
   handler PayrollContextBoundary is {
+    on getPayrollMetrics: query GetPayrollMetrics is {
+      forward getPayrollMetrics to outlet PayrollContext.PayrollRepositoryQueriesOut
+    }
+    on payrollMetricsView: result PayrollMetricsView is {
+      send payrollMetricsView to outlet PayrollContext.PayrollRepositoryRepliesOut
+    }
+    on getPayrollRun: query PayrollRun.GetPayrollRun is {
+      forward getPayrollRun to outlet PayrollContext.PayrollRunQueriesOut
+    }
     on initiatePayroll: command PayrollContext.InitiatePayroll is {
       let newPayrollRun = create entity PayrollContext.PayrollRun(payPeriod = initiatePayroll.payPeriod)
       log newPayrollRun
@@ -108,7 +165,7 @@ context PayrollContext as router is {
     }
   }
   connector 'PayrollRunCommand Stream Intake' is from outlet PayrollContext.PayrollRunCommandStreamOut to inlet PayrollContext.PayrollRun.PayrollRunCommands
-  connector 'PayrollRunResult Stream Egress' is from outlet PayrollContext.PayrollRepository.PayrollRepositoryResponses to inlet PayrollContext.PayrollRunResultStreamIn
+  connector 'PayrollRunResult Stream Egress' is from outlet PayrollContext.PayrollRun.PayrollRunReplies to inlet PayrollContext.PayrollRunResultStreamIn
   adaptor FromBankingService from context BankingService as flow is { 
     inlet FromBankingServiceIn is type BankingService.BankingServiceEvent
     outlet FromBankingServiceToPayrollContext is command PayrollRun.CompletePayroll
@@ -308,7 +365,13 @@ context PayrollContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository PayrollRepository as flow is {
+  repository PayrollRepository as merge is {
+    inlet PayrollRepositoryQueries is query GetPayrollMetrics with {
+      briefly "Look-ups of this payroll repository"
+      described as {
+        |What PayrollProcessingApp asks of the payroll repository, by way of PayrollContext.
+      }
+    }
     inlet PayrollRepositoryFromPayrollAnalytics is type PayrollRepositoryCommand
     command PersistDeductionApplied is {
       runId: PayrollRunId with {
@@ -604,7 +667,7 @@ context PayrollContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet PayrollRepositoryResponses is result PayrollRun.PayrollRunResult
+    outlet PayrollRepositoryResponses is result PayrollMetricsView
     record StoredPayrollRun is {
       payrollRunId: PayrollRunId with {
         briefly "payrollRunId"

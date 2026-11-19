@@ -46,8 +46,56 @@ context InventoryContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet InventoryRepositoryQueriesIn is query GetLocationInventorySummary with {
+    briefly "Look-ups of the inventory repository"
+    described as {
+      |InventoryManagementApp's look-ups, on their way to the inventory repository.
+    }
+  }
+  outlet InventoryRepositoryQueriesOut is query GetLocationInventorySummary
+ with {
+    briefly "Look-ups on their way to the inventory repository"
+    described as {
+      |Each look-up goes to the inventory repository it names.
+    }
+  }
+  inlet InventoryRepositoryRepliesIn is result LocationInventorySummaryView with {
+    briefly "The inventory repository's answers"
+    described as {
+      |What the inventory repository answers about itself.
+    }
+  }
+  outlet InventoryRepositoryRepliesOut is result LocationInventorySummaryView
+ with {
+    briefly "Answers to InventoryManagementApp"
+    described as {
+      |The reply leg of InventoryManagementApp's look-ups of the inventory repository.
+    }
+  }
+  inlet StockItemQueriesIn is query StockItem.GetStockItem with {
+    briefly "Look-ups of the stock item"
+    described as {
+      |InventoryManagementApp's look-ups, on their way to the stock item.
+    }
+  }
+  outlet StockItemQueriesOut is query StockItem.GetStockItem
+ with {
+    briefly "Look-ups on their way to the stock item"
+    described as {
+      |Each look-up goes to the stock item it names.
+    }
+  }
   inlet InventoryContextFromWarehouseService is command StockItem.TransferStock with {
     briefly "What FromWarehouseService makes of that service's news"
+  }
+  connector 'InventoryRepositoryQuery Intake' is from outlet InventoryContext.InventoryRepositoryQueriesOut to inlet InventoryContext.InventoryRepository.InventoryRepositoryQueries with {
+    briefly "Look-ups on their way to the inventory repository"
+  }
+  connector 'InventoryRepositoryReply Egress' is from outlet InventoryContext.InventoryRepository.InventoryRepositoryResponses to inlet InventoryContext.InventoryRepositoryRepliesIn with {
+    briefly "The inventory repository's answers on their way to the boundary"
+  }
+  connector 'StockItemQuery Intake' is from outlet InventoryContext.StockItemQueriesOut to inlet InventoryContext.StockItem.StockItemQueries with {
+    briefly "Look-ups on their way to the stock item"
   }
   connector 'FromWarehouseService Intake' is from outlet InventoryContext.FromWarehouseService.FromWarehouseServiceToInventoryContext to inlet InventoryContext.InventoryContextFromWarehouseService with {
     briefly "What FromWarehouseService makes of that news, on its way in"
@@ -57,6 +105,15 @@ context InventoryContext as router is {
   inlet StockItemResultStreamIn is result StockItem.StockItemResult
   outlet StockItemResultStreamOut is result StockItem.StockItemResult
   handler InventoryContextBoundary is {
+    on getLocationInventorySummary: query GetLocationInventorySummary is {
+      forward getLocationInventorySummary to outlet InventoryContext.InventoryRepositoryQueriesOut
+    }
+    on locationInventorySummaryView: result LocationInventorySummaryView is {
+      send locationInventorySummaryView to outlet InventoryContext.InventoryRepositoryRepliesOut
+    }
+    on getStockItem: query StockItem.GetStockItem is {
+      forward getStockItem to outlet InventoryContext.StockItemQueriesOut
+    }
     on createStockItem: command InventoryContext.CreateStockItem is {
       let newStockItem = create entity InventoryContext.StockItem(productId = createStockItem.productId, sku = createStockItem.sku, location = createStockItem.location, initialQuantity = createStockItem.initialQuantity, reorderPoint = createStockItem.reorderPoint)
       log newStockItem
@@ -100,7 +157,7 @@ context InventoryContext as router is {
     }
   }
   connector 'StockItemCommand Stream Intake' is from outlet InventoryContext.StockItemCommandStreamOut to inlet InventoryContext.StockItem.StockItemCommands
-  connector 'StockItemResult Stream Egress' is from outlet InventoryContext.InventoryRepository.InventoryRepositoryResponses to inlet InventoryContext.StockItemResultStreamIn
+  connector 'StockItemResult Stream Egress' is from outlet InventoryContext.StockItem.StockItemReplies to inlet InventoryContext.StockItemResultStreamIn
   adaptor FromPurchasingService from context PurchasingService as sink is { 
     inlet FromPurchasingServiceIn is event PurchasingService.PurchaseOrderCreated
     handler FromPurchasingServiceHandler is {
@@ -235,7 +292,13 @@ context InventoryContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository InventoryRepository as flow is {
+  repository InventoryRepository as merge is {
+    inlet InventoryRepositoryQueries is query GetLocationInventorySummary with {
+      briefly "Look-ups of this inventory repository"
+      described as {
+        |What InventoryManagementApp asks of the inventory repository, by way of InventoryContext.
+      }
+    }
     inlet InventoryRepositoryFromInventoryViews is type InventoryRepositoryCommand
     command PersistLowStockDetected is {
       stockItemId: StockItemId with {
@@ -576,7 +639,7 @@ context InventoryContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet InventoryRepositoryResponses is result StockItem.StockItemResult
+    outlet InventoryRepositoryResponses is result LocationInventorySummaryView
     record StoredStockItem is {
       stockItemId: StockItemId with {
         briefly "stockItemId"

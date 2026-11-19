@@ -50,8 +50,88 @@ context VesselContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet VesselRepositoryQueriesIn is query GetFleetStats with {
+    briefly "Look-ups of the vessel repository"
+    described as {
+      |VesselManagementApp's look-ups, on their way to the vessel repository.
+    }
+  }
+  outlet VesselRepositoryQueriesOut is query GetFleetStats
+ with {
+    briefly "Look-ups on their way to the vessel repository"
+    described as {
+      |Each look-up goes to the vessel repository it names.
+    }
+  }
+  inlet VesselRepositoryRepliesIn is result FleetStatsView with {
+    briefly "The vessel repository's answers"
+    described as {
+      |What the vessel repository answers about itself.
+    }
+  }
+  outlet VesselRepositoryRepliesOut is result FleetStatsView
+ with {
+    briefly "Answers to VesselManagementApp"
+    described as {
+      |The reply leg of VesselManagementApp's look-ups of the vessel repository.
+    }
+  }
+  inlet VoyageQueriesIn is query Voyage.GetVoyage with {
+    briefly "Look-ups of the voyage"
+    described as {
+      |VesselManagementApp's look-ups, on their way to the voyage.
+    }
+  }
+  outlet VoyageQueriesOut is query Voyage.GetVoyage
+ with {
+    briefly "Look-ups on their way to the voyage"
+    described as {
+      |Each look-up goes to the voyage it names.
+    }
+  }
+  inlet VoyageRepliesIn is result Voyage.VoyageResult with {
+    briefly "The voyage's answers"
+    described as {
+      |What the voyage answers about itself.
+    }
+  }
+  outlet VoyageRepliesOut is result Voyage.VoyageResult
+ with {
+    briefly "Answers to VesselManagementApp"
+    described as {
+      |The reply leg of VesselManagementApp's look-ups of the voyage.
+    }
+  }
+  inlet VesselQueriesIn is query Vessel.GetVessel with {
+    briefly "Look-ups of the vessel"
+    described as {
+      |VesselManagementApp's look-ups, on their way to the vessel.
+    }
+  }
+  outlet VesselQueriesOut is query Vessel.GetVessel
+ with {
+    briefly "Look-ups on their way to the vessel"
+    described as {
+      |Each look-up goes to the vessel it names.
+    }
+  }
   inlet VesselContextFromVesselEventSplit is type VesselContext.VesselRequest with {
     briefly "What a voyage's progress asks of the vessel"
+  }
+  connector 'VesselRepositoryQuery Intake' is from outlet VesselContext.VesselRepositoryQueriesOut to inlet VesselContext.VesselRepository.VesselRepositoryQueries with {
+    briefly "Look-ups on their way to the vessel repository"
+  }
+  connector 'VesselRepositoryReply Egress' is from outlet VesselContext.VesselRepository.VesselRepositoryResponses to inlet VesselContext.VesselRepositoryRepliesIn with {
+    briefly "The vessel repository's answers on their way to the boundary"
+  }
+  connector 'VoyageQuery Intake' is from outlet VesselContext.VoyageQueriesOut to inlet VesselContext.Voyage.VoyageQueries with {
+    briefly "Look-ups on their way to the voyage"
+  }
+  connector 'VoyageReply Egress' is from outlet VesselContext.Voyage.VoyageReplies to inlet VesselContext.VoyageRepliesIn with {
+    briefly "The voyage's answers on their way to the boundary"
+  }
+  connector 'VesselQuery Intake' is from outlet VesselContext.VesselQueriesOut to inlet VesselContext.Vessel.VesselQueries with {
+    briefly "Look-ups on their way to the vessel"
   }
   connector 'VesselEventSplit Intake' is from outlet VesselContext.VesselEventSplit.VesselEventSplitToVesselContext to inlet VesselContext.VesselContextFromVesselEventSplit with {
     briefly "Vessel commands from voyage events, on their way in"
@@ -117,6 +197,21 @@ context VesselContext as router is {
   inlet VesselResultStreamIn is result Vessel.VesselResult
   outlet VesselResultStreamOut is result Vessel.VesselResult
   handler VesselContextBoundary is {
+    on getFleetStats: query GetFleetStats is {
+      forward getFleetStats to outlet VesselContext.VesselRepositoryQueriesOut
+    }
+    on fleetStatsView: result FleetStatsView is {
+      send fleetStatsView to outlet VesselContext.VesselRepositoryRepliesOut
+    }
+    on getVoyage: query Voyage.GetVoyage is {
+      forward getVoyage to outlet VesselContext.VoyageQueriesOut
+    }
+    on voyageResult: result Voyage.VoyageResult is {
+      send voyageResult to outlet VesselContext.VoyageRepliesOut
+    }
+    on getVessel: query Vessel.GetVessel is {
+      forward getVessel to outlet VesselContext.VesselQueriesOut
+    }
     on createVoyage: command VesselContext.CreateVoyage is {
       let newVoyage = create entity VesselContext.Voyage(vesselId = createVoyage.vesselId, details = createVoyage.details)
       log newVoyage
@@ -192,7 +287,7 @@ context VesselContext as router is {
   }
   connector 'VoyageCommand Stream Intake' is from outlet VesselContext.VoyageCommandStreamOut to inlet VesselContext.Voyage.VoyageCommands
   connector 'VesselCommand Stream Intake' is from outlet VesselContext.VesselCommandStreamOut to inlet VesselContext.Vessel.VesselCommands
-  connector 'VesselResult Stream Egress' is from outlet VesselContext.VesselRepository.VesselRepositoryResponses to inlet VesselContext.VesselResultStreamIn
+  connector 'VesselResult Stream Egress' is from outlet VesselContext.Vessel.VesselReplies to inlet VesselContext.VesselResultStreamIn
   adaptor FromAISService from context AISService as flow is { 
     inlet FromAISServiceIn is type AISService.AISServiceEvent
     outlet FromAISServiceToVesselContext is command Vessel.UpdatePosition
@@ -537,7 +632,7 @@ context VesselContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository VesselRepository as flow is {
+  repository VesselRepository as merge is {
     command PersistVoyageCancelled is {
       voyageId: VoyageId with {
         briefly "Row addressed"
@@ -549,6 +644,12 @@ context VesselContext as router is {
       briefly "Persist VoyageCancelled"
       described as {
         |Instructs this repository to apply VoyageCancelled to the stored row.
+      }
+    }
+    inlet VesselRepositoryQueries is query GetFleetStats with {
+      briefly "Look-ups of this vessel repository"
+      described as {
+        |What VesselManagementApp asks of the vessel repository, by way of VesselContext.
       }
     }
     inlet VesselRepositoryFromFleetAnalytics is type VesselRepositoryCommand
@@ -903,7 +1004,7 @@ context VesselContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet VesselRepositoryResponses is result Vessel.VesselResult
+    outlet VesselRepositoryResponses is result FleetStatsView
     record StoredVessel is {
       vesselId: VesselId with {
         briefly "vesselId"

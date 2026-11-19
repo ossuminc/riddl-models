@@ -22,8 +22,56 @@ context RevenueAssuranceContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet AuditCaseRepositoryQueriesIn is query GetLeakageMetrics with {
+    briefly "Look-ups of the audit case repository"
+    described as {
+      |RevenueAssuranceApp's look-ups, on their way to the audit case repository.
+    }
+  }
+  outlet AuditCaseRepositoryQueriesOut is query GetLeakageMetrics
+ with {
+    briefly "Look-ups on their way to the audit case repository"
+    described as {
+      |Each look-up goes to the audit case repository it names.
+    }
+  }
+  inlet AuditCaseRepositoryRepliesIn is result LeakageMetricsView with {
+    briefly "The audit case repository's answers"
+    described as {
+      |What the audit case repository answers about itself.
+    }
+  }
+  outlet AuditCaseRepositoryRepliesOut is result LeakageMetricsView
+ with {
+    briefly "Answers to RevenueAssuranceApp"
+    described as {
+      |The reply leg of RevenueAssuranceApp's look-ups of the audit case repository.
+    }
+  }
+  inlet AuditCaseQueriesIn is query AuditCase.GetAuditCase with {
+    briefly "Look-ups of the audit case"
+    described as {
+      |RevenueAssuranceApp's look-ups, on their way to the audit case.
+    }
+  }
+  outlet AuditCaseQueriesOut is query AuditCase.GetAuditCase
+ with {
+    briefly "Look-ups on their way to the audit case"
+    described as {
+      |Each look-up goes to the audit case it names.
+    }
+  }
   inlet RevenueAssuranceContextFromToBillingSystem is command AuditCase.ReconcileRecords with {
     briefly "What ToBillingSystem makes of the answers it gets"
+  }
+  connector 'AuditCaseRepositoryQuery Intake' is from outlet RevenueAssuranceContext.AuditCaseRepositoryQueriesOut to inlet RevenueAssuranceContext.AuditCaseRepository.AuditCaseRepositoryQueries with {
+    briefly "Look-ups on their way to the audit case repository"
+  }
+  connector 'AuditCaseRepositoryReply Egress' is from outlet RevenueAssuranceContext.AuditCaseRepository.AuditCaseRepositoryResponses to inlet RevenueAssuranceContext.AuditCaseRepositoryRepliesIn with {
+    briefly "The audit case repository's answers on their way to the boundary"
+  }
+  connector 'AuditCaseQuery Intake' is from outlet RevenueAssuranceContext.AuditCaseQueriesOut to inlet RevenueAssuranceContext.AuditCase.AuditCaseQueries with {
+    briefly "Look-ups on their way to the audit case"
   }
   connector 'ToBillingSystem Intake' is from outlet RevenueAssuranceContext.ToBillingSystem.ToBillingSystemToRevenueAssuranceContext to inlet RevenueAssuranceContext.RevenueAssuranceContextFromToBillingSystem with {
     briefly "Answers translated by ToBillingSystem, on their way in"
@@ -44,6 +92,15 @@ context RevenueAssuranceContext as router is {
   inlet AuditCaseResultStreamIn is result AuditCase.AuditCaseResult
   outlet AuditCaseResultStreamOut is result AuditCase.AuditCaseResult
   handler RevenueAssuranceContextBoundary is {
+    on getLeakageMetrics: query GetLeakageMetrics is {
+      forward getLeakageMetrics to outlet RevenueAssuranceContext.AuditCaseRepositoryQueriesOut
+    }
+    on leakageMetricsView: result LeakageMetricsView is {
+      send leakageMetricsView to outlet RevenueAssuranceContext.AuditCaseRepositoryRepliesOut
+    }
+    on getAuditCase: query AuditCase.GetAuditCase is {
+      forward getAuditCase to outlet RevenueAssuranceContext.AuditCaseQueriesOut
+    }
     on openAuditCase: command RevenueAssuranceContext.OpenAuditCase is {
       let newAuditCase = create entity RevenueAssuranceContext.AuditCase(caseInfo = openAuditCase.caseInfo)
       log newAuditCase
@@ -81,7 +138,7 @@ context RevenueAssuranceContext as router is {
     }
   }
   connector 'AuditCaseCommand Stream Intake' is from outlet RevenueAssuranceContext.AuditCaseCommandStreamOut to inlet RevenueAssuranceContext.AuditCase.AuditCaseCommands
-  connector 'AuditCaseResult Stream Egress' is from outlet RevenueAssuranceContext.AuditCaseRepository.AuditCaseRepositoryResponses to inlet RevenueAssuranceContext.AuditCaseResultStreamIn
+  connector 'AuditCaseResult Stream Egress' is from outlet RevenueAssuranceContext.AuditCase.AuditCaseReplies to inlet RevenueAssuranceContext.AuditCaseResultStreamIn
   adaptor FromBillingSystem from context BillingSystem as sink is { 
     inlet FromBillingSystemIn is event BillingSystem.BillingAdjusted
     handler FromBillingSystemHandler is {
@@ -179,7 +236,13 @@ context RevenueAssuranceContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository AuditCaseRepository as flow is {
+  repository AuditCaseRepository as merge is {
+    inlet AuditCaseRepositoryQueries is query GetLeakageMetrics with {
+      briefly "Look-ups of this audit case repository"
+      described as {
+        |What RevenueAssuranceApp asks of the audit case repository, by way of RevenueAssuranceContext.
+      }
+    }
     inlet AuditCaseRepositoryFromRevenueAssuranceMetrics is type AuditCaseRepositoryCommand
     command PersistCaseCancelled is {
       caseId: AuditCaseId with {
@@ -382,7 +445,7 @@ context RevenueAssuranceContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet AuditCaseRepositoryResponses is result AuditCase.AuditCaseResult
+    outlet AuditCaseRepositoryResponses is result LeakageMetricsView
     record StoredAuditCase is {
       auditCaseId: AuditCaseId with {
         briefly "auditCaseId"

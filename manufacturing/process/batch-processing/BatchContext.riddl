@@ -46,8 +46,56 @@ context BatchContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet BatchRepositoryQueriesIn is type BatchRepository.BatchRepositoryQuery with {
+    briefly "Look-ups of the batch repository"
+    described as {
+      |BatchProcessingApp's look-ups, on their way to the batch repository.
+    }
+  }
+  outlet BatchRepositoryQueriesOut is type BatchRepository.BatchRepositoryQuery
+ with {
+    briefly "Look-ups on their way to the batch repository"
+    described as {
+      |Each look-up goes to the batch repository it names.
+    }
+  }
+  inlet BatchRepositoryRepliesIn is type BatchRepository.BatchRepositoryReply with {
+    briefly "The batch repository's answers"
+    described as {
+      |What the batch repository answers about itself.
+    }
+  }
+  outlet BatchRepositoryRepliesOut is type BatchRepository.BatchRepositoryReply
+ with {
+    briefly "Answers to BatchProcessingApp"
+    described as {
+      |The reply leg of BatchProcessingApp's look-ups of the batch repository.
+    }
+  }
+  inlet BatchQueriesIn is query Batch.GetBatch with {
+    briefly "Look-ups of the batch"
+    described as {
+      |BatchProcessingApp's look-ups, on their way to the batch.
+    }
+  }
+  outlet BatchQueriesOut is query Batch.GetBatch
+ with {
+    briefly "Look-ups on their way to the batch"
+    described as {
+      |Each look-up goes to the batch it names.
+    }
+  }
   inlet BatchContextFromToInventoryService is command Batch.RecordParameter with {
     briefly "What ToInventoryService makes of the answers it gets"
+  }
+  connector 'BatchRepositoryQuery Intake' is from outlet BatchContext.BatchRepositoryQueriesOut to inlet BatchContext.BatchRepository.BatchRepositoryQueries with {
+    briefly "Look-ups on their way to the batch repository"
+  }
+  connector 'BatchRepositoryReply Egress' is from outlet BatchContext.BatchRepository.BatchRepositoryResponses to inlet BatchContext.BatchRepositoryRepliesIn with {
+    briefly "The batch repository's answers on their way to the boundary"
+  }
+  connector 'BatchQuery Intake' is from outlet BatchContext.BatchQueriesOut to inlet BatchContext.Batch.BatchQueries with {
+    briefly "Look-ups on their way to the batch"
   }
   connector 'ToInventoryService Intake' is from outlet BatchContext.ToInventoryService.ToInventoryServiceToBatchContext to inlet BatchContext.BatchContextFromToInventoryService with {
     briefly "Answers translated by ToInventoryService, on their way in"
@@ -98,6 +146,27 @@ context BatchContext as router is {
   inlet DrugBatchResultStreamIn is result Batch.BatchResult
   outlet DrugBatchResultStreamOut is result Batch.BatchResult
   handler BatchContextBoundary is {
+    on getYieldMetrics: query GetYieldMetrics is {
+      forward getYieldMetrics to outlet BatchContext.BatchRepositoryQueriesOut
+    }
+    on getCycleTimeMetrics: query GetCycleTimeMetrics is {
+      forward getCycleTimeMetrics to outlet BatchContext.BatchRepositoryQueriesOut
+    }
+    on getUtilizationMetrics: query GetUtilizationMetrics is {
+      forward getUtilizationMetrics to outlet BatchContext.BatchRepositoryQueriesOut
+    }
+    on cycleTimeMetricsView: result CycleTimeMetricsView is {
+      send cycleTimeMetricsView to outlet BatchContext.BatchRepositoryRepliesOut
+    }
+    on utilizationMetricsView: result UtilizationMetricsView is {
+      send utilizationMetricsView to outlet BatchContext.BatchRepositoryRepliesOut
+    }
+    on yieldMetricsView: result YieldMetricsView is {
+      send yieldMetricsView to outlet BatchContext.BatchRepositoryRepliesOut
+    }
+    on getBatch: query Batch.GetBatch is {
+      forward getBatch to outlet BatchContext.BatchQueriesOut
+    }
     on createBatch: command BatchContext.CreateBatch is {
       let newBatch = create entity BatchContext.Batch(recipe = createBatch.recipe, vessel = createBatch.vessel, schedule = createBatch.schedule, plannedQuantity = createBatch.plannedQuantity, createdBy = createBatch.createdBy)
       log newBatch
@@ -147,7 +216,7 @@ context BatchContext as router is {
     briefly "BatchYieldAnalytics commands on their way to GenealogyRepository"
   }
   connector 'BatchCommand Stream Intake' is from outlet BatchContext.BatchCommandStreamOut to inlet BatchContext.Batch.BatchCommands
-  connector 'DrugBatchResult Stream Egress' is from outlet BatchContext.BatchRepository.BatchRepositoryResponses to inlet BatchContext.DrugBatchResultStreamIn
+  connector 'DrugBatchResult Stream Egress' is from outlet BatchContext.Batch.BatchReplies to inlet BatchContext.DrugBatchResultStreamIn
   adaptor FromInventoryService from context InventoryService as sink is { 
     inlet FromInventoryServiceIn is type InventoryService.InventoryServiceEvent
     handler FromInventoryServiceHandler is {
@@ -347,6 +416,28 @@ context BatchContext as router is {
     }
   }
   repository BatchRepository as merge is {
+    type BatchRepositoryQuery is one of {
+      GetYieldMetrics or GetCycleTimeMetrics or GetUtilizationMetrics
+    } with {
+      briefly "What may be asked of BatchRepository"
+      described as {
+        |The look-ups the batch repository answers.
+      }
+    }
+    type BatchRepositoryReply is one of {
+      CycleTimeMetricsView or UtilizationMetricsView or YieldMetricsView
+    } with {
+      briefly "What BatchRepository answers"
+      described as {
+        |The answers the batch repository gives.
+      }
+    }
+    inlet BatchRepositoryQueries is type BatchRepositoryQuery with {
+      briefly "Look-ups of this batch repository"
+      described as {
+        |What BatchProcessingApp asks of the batch repository, by way of BatchContext.
+      }
+    }
     inlet BatchRepositoryFromEquipmentUtilization is type BatchRepositoryCommand with {
       briefly "What EquipmentUtilization sends BatchRepository"
       described as {
@@ -633,7 +724,7 @@ context BatchContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet BatchRepositoryResponses is result Batch.BatchResult
+    outlet BatchRepositoryResponses is type BatchRepositoryReply
     record StoredBatch is {
       batchId: BatchId with {
         briefly "batchId"

@@ -34,11 +34,59 @@ context CarrierContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet CarrierRepositoryQueriesIn is query GetCarrierRankings with {
+    briefly "Look-ups of the carrier repository"
+    described as {
+      |CarrierManagementApp's look-ups, on their way to the carrier repository.
+    }
+  }
+  outlet CarrierRepositoryQueriesOut is query GetCarrierRankings
+ with {
+    briefly "Look-ups on their way to the carrier repository"
+    described as {
+      |Each look-up goes to the carrier repository it names.
+    }
+  }
+  inlet CarrierRepositoryRepliesIn is result CarrierRankingsView with {
+    briefly "The carrier repository's answers"
+    described as {
+      |What the carrier repository answers about itself.
+    }
+  }
+  outlet CarrierRepositoryRepliesOut is result CarrierRankingsView
+ with {
+    briefly "Answers to CarrierManagementApp"
+    described as {
+      |The reply leg of CarrierManagementApp's look-ups of the carrier repository.
+    }
+  }
+  inlet CarrierQueriesIn is query Carrier.GetCarrier with {
+    briefly "Look-ups of the carrier"
+    described as {
+      |CarrierManagementApp's look-ups, on their way to the carrier.
+    }
+  }
+  outlet CarrierQueriesOut is query Carrier.GetCarrier
+ with {
+    briefly "Look-ups on their way to the carrier"
+    described as {
+      |Each look-up goes to the carrier it names.
+    }
+  }
   inlet CarrierCommandStreamIn is type CarrierContext.CarrierRequest
   outlet CarrierCommandStreamOut is type CarrierCommand
   inlet CarrierResultStreamIn is result Carrier.CarrierResult
   outlet CarrierResultStreamOut is result Carrier.CarrierResult
   handler CarrierContextBoundary is {
+    on getCarrierRankings: query GetCarrierRankings is {
+      forward getCarrierRankings to outlet CarrierContext.CarrierRepositoryQueriesOut
+    }
+    on carrierRankingsView: result CarrierRankingsView is {
+      send carrierRankingsView to outlet CarrierContext.CarrierRepositoryRepliesOut
+    }
+    on getCarrier: query Carrier.GetCarrier is {
+      forward getCarrier to outlet CarrierContext.CarrierQueriesOut
+    }
     on registerCarrier: command CarrierContext.RegisterCarrier is {
       let newCarrier = create entity CarrierContext.Carrier(carrierInfo = registerCarrier.carrierInfo, carrierType = registerCarrier.carrierType, primaryContact = registerCarrier.primaryContact)
       log newCarrier
@@ -93,8 +141,17 @@ context CarrierContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'CarrierRepositoryQuery Intake' is from outlet CarrierContext.CarrierRepositoryQueriesOut to inlet CarrierContext.CarrierRepository.CarrierRepositoryQueries with {
+    briefly "Look-ups on their way to the carrier repository"
+  }
+  connector 'CarrierRepositoryReply Egress' is from outlet CarrierContext.CarrierRepository.CarrierRepositoryResponses to inlet CarrierContext.CarrierRepositoryRepliesIn with {
+    briefly "The carrier repository's answers on their way to the boundary"
+  }
+  connector 'CarrierQuery Intake' is from outlet CarrierContext.CarrierQueriesOut to inlet CarrierContext.Carrier.CarrierQueries with {
+    briefly "Look-ups on their way to the carrier"
+  }
   connector 'CarrierCommand Stream Intake' is from outlet CarrierContext.CarrierCommandStreamOut to inlet CarrierContext.Carrier.CarrierCommands
-  connector 'CarrierResult Stream Egress' is from outlet CarrierContext.CarrierRepository.CarrierRepositoryResponses to inlet CarrierContext.CarrierResultStreamIn
+  connector 'CarrierResult Stream Egress' is from outlet CarrierContext.Carrier.CarrierReplies to inlet CarrierContext.CarrierResultStreamIn
   adaptor FromInsuranceVerification from context InsuranceVerification as sink is { 
     inlet FromInsuranceVerificationIn is event InsuranceVerification.InsuranceVerified
     handler FromInsuranceVerificationHandler is {
@@ -290,7 +347,13 @@ context CarrierContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository CarrierRepository as flow is {
+  repository CarrierRepository as merge is {
+    inlet CarrierRepositoryQueries is query GetCarrierRankings with {
+      briefly "Look-ups of this carrier repository"
+      described as {
+        |What CarrierManagementApp asks of the carrier repository, by way of CarrierContext.
+      }
+    }
     inlet CarrierRepositoryFromCarrierPerformance is type CarrierRepositoryCommand
     command PersistCapacityUpdated is {
       carrierId: CarrierId with {
@@ -655,7 +718,7 @@ context CarrierContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet CarrierRepositoryResponses is result Carrier.CarrierResult
+    outlet CarrierRepositoryResponses is result CarrierRankingsView
     record StoredCarrier is {
       carrierId: CarrierId with {
         briefly "carrierId"

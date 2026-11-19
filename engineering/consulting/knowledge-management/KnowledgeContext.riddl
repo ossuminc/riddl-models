@@ -28,11 +28,59 @@ context KnowledgeContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet KnowledgeRepositoryQueriesIn is query GetKnowledgeStats with {
+    briefly "Look-ups of the knowledge repository"
+    described as {
+      |KnowledgeManagementApp's look-ups, on their way to the knowledge repository.
+    }
+  }
+  outlet KnowledgeRepositoryQueriesOut is query GetKnowledgeStats
+ with {
+    briefly "Look-ups on their way to the knowledge repository"
+    described as {
+      |Each look-up goes to the knowledge repository it names.
+    }
+  }
+  inlet KnowledgeRepositoryRepliesIn is result KnowledgeStatsView with {
+    briefly "The knowledge repository's answers"
+    described as {
+      |What the knowledge repository answers about itself.
+    }
+  }
+  outlet KnowledgeRepositoryRepliesOut is result KnowledgeStatsView
+ with {
+    briefly "Answers to KnowledgeManagementApp"
+    described as {
+      |The reply leg of KnowledgeManagementApp's look-ups of the knowledge repository.
+    }
+  }
+  inlet KnowledgeItemQueriesIn is query KnowledgeItem.GetKnowledgeItem with {
+    briefly "Look-ups of the knowledge item"
+    described as {
+      |KnowledgeManagementApp's look-ups, on their way to the knowledge item.
+    }
+  }
+  outlet KnowledgeItemQueriesOut is query KnowledgeItem.GetKnowledgeItem
+ with {
+    briefly "Look-ups on their way to the knowledge item"
+    described as {
+      |Each look-up goes to the knowledge item it names.
+    }
+  }
   inlet KnowledgeItemCommandStreamIn is type KnowledgeContext.KnowledgeItemRequest
   outlet KnowledgeItemCommandStreamOut is type KnowledgeItemCommand
   inlet KnowledgeItemResultStreamIn is result KnowledgeItem.KnowledgeItemResult
   outlet KnowledgeItemResultStreamOut is result KnowledgeItem.KnowledgeItemResult
   handler KnowledgeContextBoundary is {
+    on getKnowledgeStats: query GetKnowledgeStats is {
+      forward getKnowledgeStats to outlet KnowledgeContext.KnowledgeRepositoryQueriesOut
+    }
+    on knowledgeStatsView: result KnowledgeStatsView is {
+      send knowledgeStatsView to outlet KnowledgeContext.KnowledgeRepositoryRepliesOut
+    }
+    on getKnowledgeItem: query KnowledgeItem.GetKnowledgeItem is {
+      forward getKnowledgeItem to outlet KnowledgeContext.KnowledgeItemQueriesOut
+    }
     on createItem: command KnowledgeContext.CreateItem is {
       let newKnowledgeItem = create entity KnowledgeContext.KnowledgeItem(content = createItem.content, metadata = createItem.metadata)
       log newKnowledgeItem
@@ -78,8 +126,17 @@ context KnowledgeContext as router is {
       |that owns them; outbound ones are republished from here.
     }
   }
+  connector 'KnowledgeRepositoryQuery Intake' is from outlet KnowledgeContext.KnowledgeRepositoryQueriesOut to inlet KnowledgeContext.KnowledgeRepository.KnowledgeRepositoryQueries with {
+    briefly "Look-ups on their way to the knowledge repository"
+  }
+  connector 'KnowledgeRepositoryReply Egress' is from outlet KnowledgeContext.KnowledgeRepository.KnowledgeRepositoryResponses to inlet KnowledgeContext.KnowledgeRepositoryRepliesIn with {
+    briefly "The knowledge repository's answers on their way to the boundary"
+  }
+  connector 'KnowledgeItemQuery Intake' is from outlet KnowledgeContext.KnowledgeItemQueriesOut to inlet KnowledgeContext.KnowledgeItem.KnowledgeItemQueries with {
+    briefly "Look-ups on their way to the knowledge item"
+  }
   connector 'KnowledgeItemCommand Stream Intake' is from outlet KnowledgeContext.KnowledgeItemCommandStreamOut to inlet KnowledgeContext.KnowledgeItem.KnowledgeItemCommands
-  connector 'KnowledgeItemResult Stream Egress' is from outlet KnowledgeContext.KnowledgeRepository.KnowledgeRepositoryResponses to inlet KnowledgeContext.KnowledgeItemResultStreamIn
+  connector 'KnowledgeItemResult Stream Egress' is from outlet KnowledgeContext.KnowledgeItem.KnowledgeItemReplies to inlet KnowledgeContext.KnowledgeItemResultStreamIn
   adaptor FromAnalyticsService from context AnalyticsService as sink is { 
     inlet FromAnalyticsServiceIn is event AnalyticsService.EventTracked
     handler FromAnalyticsServiceHandler is {
@@ -279,7 +336,13 @@ context KnowledgeContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository KnowledgeRepository as flow is {
+  repository KnowledgeRepository as merge is {
+    inlet KnowledgeRepositoryQueries is query GetKnowledgeStats with {
+      briefly "Look-ups of this knowledge repository"
+      described as {
+        |What KnowledgeManagementApp asks of the knowledge repository, by way of KnowledgeContext.
+      }
+    }
     inlet KnowledgeRepositoryFromKnowledgeAnalytics is type KnowledgeRepositoryCommand
     command PersistAddedToCollection is {
       itemId: KnowledgeItemId with {
@@ -563,7 +626,7 @@ context KnowledgeContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet KnowledgeRepositoryResponses is result KnowledgeItem.KnowledgeItemResult
+    outlet KnowledgeRepositoryResponses is result KnowledgeStatsView
     record StoredKnowledgeItem is {
       knowledgeItemId: KnowledgeItemId with {
         briefly "knowledgeItemId"

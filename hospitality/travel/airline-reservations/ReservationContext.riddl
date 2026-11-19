@@ -34,8 +34,56 @@ context ReservationContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet ReservationRepositoryQueriesIn is query GetAirlineStats with {
+    briefly "Look-ups of the reservation repository"
+    described as {
+      |AirlineReservationsApp's look-ups, on their way to the reservation repository.
+    }
+  }
+  outlet ReservationRepositoryQueriesOut is query GetAirlineStats
+ with {
+    briefly "Look-ups on their way to the reservation repository"
+    described as {
+      |Each look-up goes to the reservation repository it names.
+    }
+  }
+  inlet ReservationRepositoryRepliesIn is result AirlineStatsView with {
+    briefly "The reservation repository's answers"
+    described as {
+      |What the reservation repository answers about itself.
+    }
+  }
+  outlet ReservationRepositoryRepliesOut is result AirlineStatsView
+ with {
+    briefly "Answers to AirlineReservationsApp"
+    described as {
+      |The reply leg of AirlineReservationsApp's look-ups of the reservation repository.
+    }
+  }
+  inlet ReservationQueriesIn is query Reservation.GetReservation with {
+    briefly "Look-ups of the reservation"
+    described as {
+      |AirlineReservationsApp's look-ups, on their way to the reservation.
+    }
+  }
+  outlet ReservationQueriesOut is query Reservation.GetReservation
+ with {
+    briefly "Look-ups on their way to the reservation"
+    described as {
+      |Each look-up goes to the reservation it names.
+    }
+  }
   inlet ReservationContextFromToFlightSearchService is command Reservation.ChangeFlightSegment with {
     briefly "What ToFlightSearchService makes of the answers it gets"
+  }
+  connector 'ReservationRepositoryQuery Intake' is from outlet ReservationContext.ReservationRepositoryQueriesOut to inlet ReservationContext.ReservationRepository.ReservationRepositoryQueries with {
+    briefly "Look-ups on their way to the reservation repository"
+  }
+  connector 'ReservationRepositoryReply Egress' is from outlet ReservationContext.ReservationRepository.ReservationRepositoryResponses to inlet ReservationContext.ReservationRepositoryRepliesIn with {
+    briefly "The reservation repository's answers on their way to the boundary"
+  }
+  connector 'ReservationQuery Intake' is from outlet ReservationContext.ReservationQueriesOut to inlet ReservationContext.Reservation.ReservationQueries with {
+    briefly "Look-ups on their way to the reservation"
   }
   connector 'ToFlightSearchService Intake' is from outlet ReservationContext.ToFlightSearchService.ToFlightSearchServiceToReservationContext to inlet ReservationContext.ReservationContextFromToFlightSearchService with {
     briefly "Answers translated by ToFlightSearchService, on their way in"
@@ -74,6 +122,15 @@ context ReservationContext as router is {
   inlet ReservationBoardViewStreamIn is result Reservation.ReservationResult
   outlet ReservationBoardViewStreamOut is result Reservation.ReservationResult
   handler ReservationContextBoundary is {
+    on getAirlineStats: query GetAirlineStats is {
+      forward getAirlineStats to outlet ReservationContext.ReservationRepositoryQueriesOut
+    }
+    on airlineStatsView: result AirlineStatsView is {
+      send airlineStatsView to outlet ReservationContext.ReservationRepositoryRepliesOut
+    }
+    on getReservation: query Reservation.GetReservation is {
+      forward getReservation to outlet ReservationContext.ReservationQueriesOut
+    }
     on createReservation: command ReservationContext.CreateReservation is {
       let newReservation = create entity ReservationContext.Reservation(passenger = createReservation.passenger, tripType = createReservation.tripType, segments = createReservation.segments)
       log newReservation
@@ -129,7 +186,7 @@ context ReservationContext as router is {
     }
   }
   connector 'ReservationCommand Stream Intake' is from outlet ReservationContext.ReservationCommandStreamOut to inlet ReservationContext.Reservation.ReservationCommands
-  connector 'ReservationBoardView Stream Egress' is from outlet ReservationContext.ReservationRepository.ReservationRepositoryResponses to inlet ReservationContext.ReservationBoardViewStreamIn
+  connector 'ReservationBoardView Stream Egress' is from outlet ReservationContext.Reservation.ReservationReplies to inlet ReservationContext.ReservationBoardViewStreamIn
   adaptor FromBoardingService from context BoardingService as flow is { 
     inlet FromBoardingServiceIn is type BoardingService.BoardingServiceEvent
     outlet FromBoardingServiceToReservationContext is command Reservation.BoardFlight
@@ -472,7 +529,13 @@ context ReservationContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository ReservationRepository as flow is {
+  repository ReservationRepository as merge is {
+    inlet ReservationRepositoryQueries is query GetAirlineStats with {
+      briefly "Look-ups of this reservation repository"
+      described as {
+        |What AirlineReservationsApp asks of the reservation repository, by way of ReservationContext.
+      }
+    }
     inlet ReservationRepositoryFromAirlineAnalytics is type ReservationRepositoryCommand
     command PersistBoardingPassIssued is {
       reservationId: ReservationId with {
@@ -873,7 +936,7 @@ context ReservationContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet ReservationRepositoryResponses is result Reservation.ReservationResult
+    outlet ReservationRepositoryResponses is result AirlineStatsView
     record StoredReservation is {
       reservationId: ReservationId with {
         briefly "reservationId"

@@ -40,8 +40,56 @@ context EntryContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet EntryRepositoryQueriesIn is query GetBrokerageStats with {
+    briefly "Look-ups of the entry repository"
+    described as {
+      |CustomsBrokerageApp's look-ups, on their way to the entry repository.
+    }
+  }
+  outlet EntryRepositoryQueriesOut is query GetBrokerageStats
+ with {
+    briefly "Look-ups on their way to the entry repository"
+    described as {
+      |Each look-up goes to the entry repository it names.
+    }
+  }
+  inlet EntryRepositoryRepliesIn is result BrokerageStatsView with {
+    briefly "The entry repository's answers"
+    described as {
+      |What the entry repository answers about itself.
+    }
+  }
+  outlet EntryRepositoryRepliesOut is result BrokerageStatsView
+ with {
+    briefly "Answers to CustomsBrokerageApp"
+    described as {
+      |The reply leg of CustomsBrokerageApp's look-ups of the entry repository.
+    }
+  }
+  inlet EntryQueriesIn is query Entry.GetEntry with {
+    briefly "Look-ups of the entry"
+    described as {
+      |CustomsBrokerageApp's look-ups, on their way to the entry.
+    }
+  }
+  outlet EntryQueriesOut is query Entry.GetEntry
+ with {
+    briefly "Look-ups on their way to the entry"
+    described as {
+      |Each look-up goes to the entry it names.
+    }
+  }
   inlet EntryContextFromToCBPAceService is command Entry.RecordCBPResponse with {
     briefly "What ToCBPAceService makes of the answers it gets"
+  }
+  connector 'EntryRepositoryQuery Intake' is from outlet EntryContext.EntryRepositoryQueriesOut to inlet EntryContext.EntryRepository.EntryRepositoryQueries with {
+    briefly "Look-ups on their way to the entry repository"
+  }
+  connector 'EntryRepositoryReply Egress' is from outlet EntryContext.EntryRepository.EntryRepositoryResponses to inlet EntryContext.EntryRepositoryRepliesIn with {
+    briefly "The entry repository's answers on their way to the boundary"
+  }
+  connector 'EntryQuery Intake' is from outlet EntryContext.EntryQueriesOut to inlet EntryContext.Entry.EntryQueries with {
+    briefly "Look-ups on their way to the entry"
   }
   connector 'ToCBPAceService Intake' is from outlet EntryContext.ToCBPAceService.ToCBPAceServiceToEntryContext to inlet EntryContext.EntryContextFromToCBPAceService with {
     briefly "Answers translated by ToCBPAceService, on their way in"
@@ -96,6 +144,15 @@ context EntryContext as router is {
   inlet EntryResultStreamIn is result Entry.EntryResult
   outlet EntryResultStreamOut is result Entry.EntryResult
   handler EntryContextBoundary is {
+    on getBrokerageStats: query GetBrokerageStats is {
+      forward getBrokerageStats to outlet EntryContext.EntryRepositoryQueriesOut
+    }
+    on brokerageStatsView: result BrokerageStatsView is {
+      send brokerageStatsView to outlet EntryContext.EntryRepositoryRepliesOut
+    }
+    on getEntry: query Entry.GetEntry is {
+      forward getEntry to outlet EntryContext.EntryQueriesOut
+    }
     on createEntry: command EntryContext.CreateEntry is {
       let newEntry = create entity EntryContext.Entry(entryType = createEntry.entryType, importer = createEntry.importer, shipment = createEntry.shipment, lineItems = createEntry.lineItems)
       log newEntry
@@ -148,7 +205,7 @@ context EntryContext as router is {
     }
   }
   connector 'EntryCommand Stream Intake' is from outlet EntryContext.EntryCommandStreamOut to inlet EntryContext.Entry.EntryCommands
-  connector 'EntryResult Stream Egress' is from outlet EntryContext.EntryRepository.EntryRepositoryResponses to inlet EntryContext.EntryResultStreamIn
+  connector 'EntryResult Stream Egress' is from outlet EntryContext.Entry.EntryReplies to inlet EntryContext.EntryResultStreamIn
   adaptor FromCBPAceService from context CBPAceService as flow is { 
     inlet FromCBPAceServiceIn is type CBPAceService.CBPAceServiceEvent
     outlet FromCBPAceServiceToEntryContext is type EntryContext.FromCBPAceServiceCommand
@@ -460,7 +517,13 @@ context EntryContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository EntryRepository as flow is {
+  repository EntryRepository as merge is {
+    inlet EntryRepositoryQueries is query GetBrokerageStats with {
+      briefly "Look-ups of this entry repository"
+      described as {
+        |What CustomsBrokerageApp asks of the entry repository, by way of EntryContext.
+      }
+    }
     inlet EntryRepositoryFromBrokerageAnalytics is type EntryRepositoryCommand
     command PersistDocumentAttached is {
       entryId: EntryId with {
@@ -774,7 +837,7 @@ context EntryContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet EntryRepositoryResponses is result Entry.EntryResult
+    outlet EntryRepositoryResponses is result BrokerageStatsView
     record StoredEntry is {
       entryId: EntryId with {
         briefly "entryId"

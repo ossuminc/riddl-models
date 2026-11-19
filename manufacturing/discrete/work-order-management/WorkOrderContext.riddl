@@ -40,8 +40,56 @@ context WorkOrderContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet WorkOrderRepositoryQueriesIn is query GetProductionStats with {
+    briefly "Look-ups of the work order repository"
+    described as {
+      |WorkOrderManagementApp's look-ups, on their way to the work order repository.
+    }
+  }
+  outlet WorkOrderRepositoryQueriesOut is query GetProductionStats
+ with {
+    briefly "Look-ups on their way to the work order repository"
+    described as {
+      |Each look-up goes to the work order repository it names.
+    }
+  }
+  inlet WorkOrderRepositoryRepliesIn is result ProductionStatsView with {
+    briefly "The work order repository's answers"
+    described as {
+      |What the work order repository answers about itself.
+    }
+  }
+  outlet WorkOrderRepositoryRepliesOut is result ProductionStatsView
+ with {
+    briefly "Answers to WorkOrderManagementApp"
+    described as {
+      |The reply leg of WorkOrderManagementApp's look-ups of the work order repository.
+    }
+  }
+  inlet WorkOrderQueriesIn is query WorkOrder.GetWorkOrder with {
+    briefly "Look-ups of the work order"
+    described as {
+      |WorkOrderManagementApp's look-ups, on their way to the work order.
+    }
+  }
+  outlet WorkOrderQueriesOut is query WorkOrder.GetWorkOrder
+ with {
+    briefly "Look-ups on their way to the work order"
+    described as {
+      |Each look-up goes to the work order it names.
+    }
+  }
   inlet WorkOrderContextFromToBillOfMaterialsService is command WorkOrder.IssueMaterials with {
     briefly "What ToBillOfMaterialsService makes of the answers it gets"
+  }
+  connector 'WorkOrderRepositoryQuery Intake' is from outlet WorkOrderContext.WorkOrderRepositoryQueriesOut to inlet WorkOrderContext.WorkOrderRepository.WorkOrderRepositoryQueries with {
+    briefly "Look-ups on their way to the work order repository"
+  }
+  connector 'WorkOrderRepositoryReply Egress' is from outlet WorkOrderContext.WorkOrderRepository.WorkOrderRepositoryResponses to inlet WorkOrderContext.WorkOrderRepositoryRepliesIn with {
+    briefly "The work order repository's answers on their way to the boundary"
+  }
+  connector 'WorkOrderQuery Intake' is from outlet WorkOrderContext.WorkOrderQueriesOut to inlet WorkOrderContext.WorkOrder.WorkOrderQueries with {
+    briefly "Look-ups on their way to the work order"
   }
   connector 'ToBillOfMaterialsService Intake' is from outlet WorkOrderContext.ToBillOfMaterialsService.ToBillOfMaterialsServiceToWorkOrderContext to inlet WorkOrderContext.WorkOrderContextFromToBillOfMaterialsService with {
     briefly "Answers translated by ToBillOfMaterialsService, on their way in"
@@ -86,6 +134,15 @@ context WorkOrderContext as router is {
   inlet WorkOrderResultStreamIn is result WorkOrder.WorkOrderResult
   outlet WorkOrderResultStreamOut is result WorkOrder.WorkOrderResult
   handler WorkOrderContextBoundary is {
+    on getProductionStats: query GetProductionStats is {
+      forward getProductionStats to outlet WorkOrderContext.WorkOrderRepositoryQueriesOut
+    }
+    on productionStatsView: result ProductionStatsView is {
+      send productionStatsView to outlet WorkOrderContext.WorkOrderRepositoryRepliesOut
+    }
+    on getWorkOrder: query WorkOrder.GetWorkOrder is {
+      forward getWorkOrder to outlet WorkOrderContext.WorkOrderQueriesOut
+    }
     on createWorkOrder: command WorkOrderContext.CreateWorkOrder is {
       let newWorkOrder = create entity WorkOrderContext.WorkOrder(product = createWorkOrder.product, quantity = createWorkOrder.quantity, priority = createWorkOrder.priority, dueDate = createWorkOrder.dueDate)
       log newWorkOrder
@@ -138,7 +195,7 @@ context WorkOrderContext as router is {
     }
   }
   connector 'WorkOrderCommand Stream Intake' is from outlet WorkOrderContext.WorkOrderCommandStreamOut to inlet WorkOrderContext.WorkOrder.WorkOrderCommands
-  connector 'WorkOrderResult Stream Egress' is from outlet WorkOrderContext.WorkOrderRepository.WorkOrderRepositoryResponses to inlet WorkOrderContext.WorkOrderResultStreamIn
+  connector 'WorkOrderResult Stream Egress' is from outlet WorkOrderContext.WorkOrder.WorkOrderReplies to inlet WorkOrderContext.WorkOrderResultStreamIn
   adaptor ToBillOfMaterialsService to context BillOfMaterialsService as router is { 
     outlet ToBillOfMaterialsServiceToWorkOrderContext is command WorkOrder.IssueMaterials
     inlet ToBillOfMaterialsServiceIn is type WorkOrderEvent
@@ -423,7 +480,13 @@ context WorkOrderContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository WorkOrderRepository as flow is {
+  repository WorkOrderRepository as merge is {
+    inlet WorkOrderRepositoryQueries is query GetProductionStats with {
+      briefly "Look-ups of this work order repository"
+      described as {
+        |What WorkOrderManagementApp asks of the work order repository, by way of WorkOrderContext.
+      }
+    }
     inlet WorkOrderRepositoryFromProductionAnalytics is type WorkOrderRepositoryCommand
     command PersistHoldReleased is {
       workOrderId: WorkOrderId with {
@@ -785,7 +848,7 @@ context WorkOrderContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet WorkOrderRepositoryResponses is result WorkOrder.WorkOrderResult
+    outlet WorkOrderRepositoryResponses is result ProductionStatsView
     record StoredWorkOrder is {
       workOrderId: WorkOrderId with {
         briefly "workOrderId"

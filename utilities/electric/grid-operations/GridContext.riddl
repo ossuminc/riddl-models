@@ -34,8 +34,56 @@ context GridContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet GridRepositoryQueriesIn is type GridRepository.GridRepositoryQuery with {
+    briefly "Look-ups of the grid repository"
+    described as {
+      |GridOperationsApp's look-ups, on their way to the grid repository.
+    }
+  }
+  outlet GridRepositoryQueriesOut is type GridRepository.GridRepositoryQuery
+ with {
+    briefly "Look-ups on their way to the grid repository"
+    described as {
+      |Each look-up goes to the grid repository it names.
+    }
+  }
+  inlet GridRepositoryRepliesIn is type GridRepository.GridRepositoryReply with {
+    briefly "The grid repository's answers"
+    described as {
+      |What the grid repository answers about itself.
+    }
+  }
+  outlet GridRepositoryRepliesOut is type GridRepository.GridRepositoryReply
+ with {
+    briefly "Answers to GridOperationsApp"
+    described as {
+      |The reply leg of GridOperationsApp's look-ups of the grid repository.
+    }
+  }
+  inlet GridSectionQueriesIn is query GridSection.GetGridSection with {
+    briefly "Look-ups of the grid section"
+    described as {
+      |GridOperationsApp's look-ups, on their way to the grid section.
+    }
+  }
+  outlet GridSectionQueriesOut is query GridSection.GetGridSection
+ with {
+    briefly "Look-ups on their way to the grid section"
+    described as {
+      |Each look-up goes to the grid section it names.
+    }
+  }
   inlet GridContextFromToEnergyMarketSystem is command GridSection.RecordLoad with {
     briefly "What ToEnergyMarketSystem makes of the answers it gets"
+  }
+  connector 'GridRepositoryQuery Intake' is from outlet GridContext.GridRepositoryQueriesOut to inlet GridContext.GridRepository.GridRepositoryQueries with {
+    briefly "Look-ups on their way to the grid repository"
+  }
+  connector 'GridRepositoryReply Egress' is from outlet GridContext.GridRepository.GridRepositoryResponses to inlet GridContext.GridRepositoryRepliesIn with {
+    briefly "The grid repository's answers on their way to the boundary"
+  }
+  connector 'GridSectionQuery Intake' is from outlet GridContext.GridSectionQueriesOut to inlet GridContext.GridSection.GridSectionQueries with {
+    briefly "Look-ups on their way to the grid section"
   }
   connector 'ToEnergyMarketSystem Intake' is from outlet GridContext.ToEnergyMarketSystem.ToEnergyMarketSystemToGridContext to inlet GridContext.GridContextFromToEnergyMarketSystem with {
     briefly "Answers translated by ToEnergyMarketSystem, on their way in"
@@ -57,6 +105,21 @@ context GridContext as router is {
   inlet GridSectionResultStreamIn is result GridSection.GridSectionResult
   outlet GridSectionResultStreamOut is result GridSection.GridSectionResult
   handler GridContextBoundary is {
+    on getReliabilityMetrics: query GetReliabilityMetrics is {
+      forward getReliabilityMetrics to outlet GridContext.GridRepositoryQueriesOut
+    }
+    on getLoadProfile: query GetLoadProfile is {
+      forward getLoadProfile to outlet GridContext.GridRepositoryQueriesOut
+    }
+    on loadProfileView: result LoadProfileView is {
+      send loadProfileView to outlet GridContext.GridRepositoryRepliesOut
+    }
+    on reliabilityMetricsView: result ReliabilityMetricsView is {
+      send reliabilityMetricsView to outlet GridContext.GridRepositoryRepliesOut
+    }
+    on getGridSection: query GridSection.GetGridSection is {
+      forward getGridSection to outlet GridContext.GridSectionQueriesOut
+    }
     on createSection: command GridContext.CreateSection is {
       let newGridSection = create entity GridContext.GridSection(substationId = createSection.substationId, name = createSection.name, voltageLevel = createSection.voltageLevel)
       log newGridSection
@@ -100,7 +163,7 @@ context GridContext as router is {
     }
   }
   connector 'GridSectionCommand Stream Intake' is from outlet GridContext.GridSectionCommandStreamOut to inlet GridContext.GridSection.GridSectionCommands
-  connector 'GridSectionResult Stream Egress' is from outlet GridContext.GridRepository.GridRepositoryResponses to inlet GridContext.GridSectionResultStreamIn
+  connector 'GridSectionResult Stream Egress' is from outlet GridContext.GridSection.GridSectionReplies to inlet GridContext.GridSectionResultStreamIn
   adaptor FromEnergyMarketSystem from context EnergyMarketSystem as sink is { 
     inlet FromEnergyMarketSystemIn is event EnergyMarketSystem.BidSubmitted
     handler FromEnergyMarketSystemHandler is {
@@ -269,7 +332,29 @@ context GridContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository GridRepository as flow is {
+  repository GridRepository as merge is {
+    type GridRepositoryQuery is one of {
+      GetReliabilityMetrics or GetLoadProfile
+    } with {
+      briefly "What may be asked of GridRepository"
+      described as {
+        |The look-ups the grid repository answers.
+      }
+    }
+    type GridRepositoryReply is one of {
+      LoadProfileView or ReliabilityMetricsView
+    } with {
+      briefly "What GridRepository answers"
+      described as {
+        |The answers the grid repository gives.
+      }
+    }
+    inlet GridRepositoryQueries is type GridRepositoryQuery with {
+      briefly "Look-ups of this grid repository"
+      described as {
+        |What GridOperationsApp asks of the grid repository, by way of GridContext.
+      }
+    }
     inlet GridRepositoryFromGridAnalytics is type GridRepositoryCommand
     command PersistCrewDispatched is {
       sectionId: GridSectionId with {
@@ -502,7 +587,7 @@ context GridContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet GridRepositoryResponses is result GridSection.GridSectionResult
+    outlet GridRepositoryResponses is type GridRepositoryReply
     record StoredGridSection is {
       gridSectionId: GridSectionId with {
         briefly "gridSectionId"

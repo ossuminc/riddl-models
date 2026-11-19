@@ -60,8 +60,56 @@ context IncidentContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet IncidentRepositoryQueriesIn is type IncidentRepository.IncidentRepositoryQuery with {
+    briefly "Look-ups of the incident repository"
+    described as {
+      |IncidentManagementApp's look-ups, on their way to the incident repository.
+    }
+  }
+  outlet IncidentRepositoryQueriesOut is type IncidentRepository.IncidentRepositoryQuery
+ with {
+    briefly "Look-ups on their way to the incident repository"
+    described as {
+      |Each look-up goes to the incident repository it names.
+    }
+  }
+  inlet IncidentRepositoryRepliesIn is type IncidentRepository.IncidentRepositoryReply with {
+    briefly "The incident repository's answers"
+    described as {
+      |What the incident repository answers about itself.
+    }
+  }
+  outlet IncidentRepositoryRepliesOut is type IncidentRepository.IncidentRepositoryReply
+ with {
+    briefly "Answers to IncidentManagementApp"
+    described as {
+      |The reply leg of IncidentManagementApp's look-ups of the incident repository.
+    }
+  }
+  inlet IncidentQueriesIn is query Incident.GetIncident with {
+    briefly "Look-ups of the incident"
+    described as {
+      |IncidentManagementApp's look-ups, on their way to the incident.
+    }
+  }
+  outlet IncidentQueriesOut is query Incident.GetIncident
+ with {
+    briefly "Look-ups on their way to the incident"
+    described as {
+      |Each look-up goes to the incident it names.
+    }
+  }
   inlet IncidentContextFromToPagerDutyIntegration is command Incident.AssignIncidentCommander with {
     briefly "What ToPagerDutyIntegration makes of the answers it gets"
+  }
+  connector 'IncidentRepositoryQuery Intake' is from outlet IncidentContext.IncidentRepositoryQueriesOut to inlet IncidentContext.IncidentRepository.IncidentRepositoryQueries with {
+    briefly "Look-ups on their way to the incident repository"
+  }
+  connector 'IncidentRepositoryReply Egress' is from outlet IncidentContext.IncidentRepository.IncidentRepositoryResponses to inlet IncidentContext.IncidentRepositoryRepliesIn with {
+    briefly "The incident repository's answers on their way to the boundary"
+  }
+  connector 'IncidentQuery Intake' is from outlet IncidentContext.IncidentQueriesOut to inlet IncidentContext.Incident.IncidentQueries with {
+    briefly "Look-ups on their way to the incident"
   }
   connector 'ToPagerDutyIntegration Intake' is from outlet IncidentContext.ToPagerDutyIntegration.ToPagerDutyIntegrationToIncidentContext to inlet IncidentContext.IncidentContextFromToPagerDutyIntegration with {
     briefly "Answers translated by ToPagerDutyIntegration, on their way in"
@@ -101,6 +149,21 @@ context IncidentContext as router is {
   inlet IncidentQueryResultStreamIn is result Incident.IncidentResult
   outlet IncidentQueryResultStreamOut is result Incident.IncidentResult
   handler IncidentContextBoundary is {
+    on getMetricsState: query GetMetricsState is {
+      forward getMetricsState to outlet IncidentContext.IncidentRepositoryQueriesOut
+    }
+    on getTrendsState: query GetTrendsState is {
+      forward getTrendsState to outlet IncidentContext.IncidentRepositoryQueriesOut
+    }
+    on metricsStateView: result MetricsStateView is {
+      send metricsStateView to outlet IncidentContext.IncidentRepositoryRepliesOut
+    }
+    on trendsStateView: result TrendsStateView is {
+      send trendsStateView to outlet IncidentContext.IncidentRepositoryRepliesOut
+    }
+    on getIncident: query Incident.GetIncident is {
+      forward getIncident to outlet IncidentContext.IncidentQueriesOut
+    }
     on createIncident: command IncidentContext.CreateIncident is {
       let givenInfo: type IncidentInfo = prompt("the info of the new Incident")
       let newIncident = create entity IncidentContext.Incident(info = givenInfo, timeline = prompt("the timeline of the new Incident"))
@@ -145,7 +208,7 @@ context IncidentContext as router is {
     }
   }
   connector 'IncidentCommand Stream Intake' is from outlet IncidentContext.IncidentCommandStreamOut to inlet IncidentContext.Incident.IncidentCommands
-  connector 'IncidentQueryResult Stream Egress' is from outlet IncidentContext.IncidentRepository.IncidentRepositoryResponses to inlet IncidentContext.IncidentQueryResultStreamIn
+  connector 'IncidentQueryResult Stream Egress' is from outlet IncidentContext.Incident.IncidentReplies to inlet IncidentContext.IncidentQueryResultStreamIn
   adaptor FromPagerDutyIntegration from context PagerDutyIntegration as flow is { 
     inlet FromPagerDutyIntegrationIn is event PagerDutyIntegration.PageAcknowledged
     outlet FromPagerDutyIntegrationToIncidentContext is type IncidentContext.IncidentRequest
@@ -188,6 +251,28 @@ context IncidentContext as router is {
     }
   }
   repository IncidentRepository as merge is {
+    type IncidentRepositoryQuery is one of {
+      GetMetricsState or GetTrendsState
+    } with {
+      briefly "What may be asked of IncidentRepository"
+      described as {
+        |The look-ups the incident repository answers.
+      }
+    }
+    type IncidentRepositoryReply is one of {
+      MetricsStateView or TrendsStateView
+    } with {
+      briefly "What IncidentRepository answers"
+      described as {
+        |The answers the incident repository gives.
+      }
+    }
+    inlet IncidentRepositoryQueries is type IncidentRepositoryQuery with {
+      briefly "Look-ups of this incident repository"
+      described as {
+        |What IncidentManagementApp asks of the incident repository, by way of IncidentContext.
+      }
+    }
     inlet IncidentRepositoryFromIncidentTrendsProjector is type IncidentRepositoryCommand with {
       briefly "What IncidentTrendsProjector sends IncidentRepository"
       described as {
@@ -195,7 +280,7 @@ context IncidentContext as router is {
       }
     }
     inlet IncidentRepositoryFromIncidentMetricsProjector is type IncidentRepositoryCommand
-    outlet IncidentRepositoryResponses is result Incident.IncidentResult
+    outlet IncidentRepositoryResponses is type IncidentRepositoryReply
     record StoredIncident is {
       incidentId: IncidentId with {
         briefly "incidentId"

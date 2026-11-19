@@ -27,8 +27,56 @@ context FulfillmentContext as router is {
   } with {
     briefly "What ToCarrierSystem turns its answers into"
   }
+  inlet FulfillmentRepositoryQueriesIn is query GetOrderMetrics with {
+    briefly "Look-ups of the fulfillment repository"
+    described as {
+      |OrderFulfillmentApp's look-ups, on their way to the fulfillment repository.
+    }
+  }
+  outlet FulfillmentRepositoryQueriesOut is query GetOrderMetrics
+ with {
+    briefly "Look-ups on their way to the fulfillment repository"
+    described as {
+      |Each look-up goes to the fulfillment repository it names.
+    }
+  }
+  inlet FulfillmentRepositoryRepliesIn is result OrderMetricsView with {
+    briefly "The fulfillment repository's answers"
+    described as {
+      |What the fulfillment repository answers about itself.
+    }
+  }
+  outlet FulfillmentRepositoryRepliesOut is result OrderMetricsView
+ with {
+    briefly "Answers to OrderFulfillmentApp"
+    described as {
+      |The reply leg of OrderFulfillmentApp's look-ups of the fulfillment repository.
+    }
+  }
+  inlet FulfillmentOrderQueriesIn is query FulfillmentOrder.GetFulfillmentOrder with {
+    briefly "Look-ups of the fulfillment order"
+    described as {
+      |OrderFulfillmentApp's look-ups, on their way to the fulfillment order.
+    }
+  }
+  outlet FulfillmentOrderQueriesOut is query FulfillmentOrder.GetFulfillmentOrder
+ with {
+    briefly "Look-ups on their way to the fulfillment order"
+    described as {
+      |Each look-up goes to the fulfillment order it names.
+    }
+  }
   inlet FulfillmentContextFromToCarrierSystem is type ToCarrierSystemCommand with {
     briefly "What ToCarrierSystem makes of the answers it gets"
+  }
+  connector 'FulfillmentRepositoryQuery Intake' is from outlet FulfillmentContext.FulfillmentRepositoryQueriesOut to inlet FulfillmentContext.FulfillmentRepository.FulfillmentRepositoryQueries with {
+    briefly "Look-ups on their way to the fulfillment repository"
+  }
+  connector 'FulfillmentRepositoryReply Egress' is from outlet FulfillmentContext.FulfillmentRepository.FulfillmentRepositoryResponses to inlet FulfillmentContext.FulfillmentRepositoryRepliesIn with {
+    briefly "The fulfillment repository's answers on their way to the boundary"
+  }
+  connector 'FulfillmentOrderQuery Intake' is from outlet FulfillmentContext.FulfillmentOrderQueriesOut to inlet FulfillmentContext.FulfillmentOrder.FulfillmentOrderQueries with {
+    briefly "Look-ups on their way to the fulfillment order"
   }
   connector 'ToCarrierSystem Intake' is from outlet FulfillmentContext.ToCarrierSystem.ToCarrierSystemToFulfillmentContext to inlet FulfillmentContext.FulfillmentContextFromToCarrierSystem with {
     briefly "Answers translated by ToCarrierSystem, on their way in"
@@ -56,6 +104,15 @@ context FulfillmentContext as router is {
   inlet FulfillmentOrderResultStreamIn is result FulfillmentOrder.FulfillmentOrderResult
   outlet FulfillmentOrderResultStreamOut is result FulfillmentOrder.FulfillmentOrderResult
   handler FulfillmentContextBoundary is {
+    on getOrderMetrics: query GetOrderMetrics is {
+      forward getOrderMetrics to outlet FulfillmentContext.FulfillmentRepositoryQueriesOut
+    }
+    on orderMetricsView: result OrderMetricsView is {
+      send orderMetricsView to outlet FulfillmentContext.FulfillmentRepositoryRepliesOut
+    }
+    on getFulfillmentOrder: query FulfillmentOrder.GetFulfillmentOrder is {
+      forward getFulfillmentOrder to outlet FulfillmentContext.FulfillmentOrderQueriesOut
+    }
     on createFulfillmentOrder: command FulfillmentContext.CreateFulfillmentOrder is {
       let newFulfillmentOrder = create entity FulfillmentContext.FulfillmentOrder(orderInfo = createFulfillmentOrder.orderInfo)
       log newFulfillmentOrder
@@ -105,7 +162,7 @@ context FulfillmentContext as router is {
     }
   }
   connector 'FulfillmentOrderCommand Stream Intake' is from outlet FulfillmentContext.FulfillmentOrderCommandStreaOut to inlet FulfillmentContext.FulfillmentOrder.FulfillmentOrderCommands
-  connector 'FulfillmentOrderResult Stream Egress' is from outlet FulfillmentContext.FulfillmentRepository.FulfillmentRepositoryResponses to inlet FulfillmentContext.FulfillmentOrderResultStreamIn
+  connector 'FulfillmentOrderResult Stream Egress' is from outlet FulfillmentContext.FulfillmentOrder.FulfillmentOrderReplies to inlet FulfillmentContext.FulfillmentOrderResultStreamIn
   adaptor FromCarrierSystem from context CarrierSystem as flow is { 
     inlet FromCarrierSystemIn is event CarrierSystem.ShipmentBooked
     outlet FromCarrierSystemToFulfillmentContext is command FulfillmentOrder.CreateShippingLabel
@@ -235,7 +292,13 @@ context FulfillmentContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository FulfillmentRepository as flow is {
+  repository FulfillmentRepository as merge is {
+    inlet FulfillmentRepositoryQueries is query GetOrderMetrics with {
+      briefly "Look-ups of this fulfillment repository"
+      described as {
+        |What OrderFulfillmentApp asks of the fulfillment repository, by way of FulfillmentContext.
+      }
+    }
     inlet FulfillmentRepositoryFromFulfillmentMetrics is type FulfillmentRepositoryCommand
     command PersistCarrierSelected is {
       orderId: FulfillmentOrderId with {
@@ -534,7 +597,7 @@ context FulfillmentContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet FulfillmentRepositoryResponses is result FulfillmentOrder.FulfillmentOrderResult
+    outlet FulfillmentRepositoryResponses is result OrderMetricsView
     record StoredFulfillmentOrder is {
       fulfillmentOrderId: FulfillmentOrderId with {
         briefly "fulfillmentOrderId"

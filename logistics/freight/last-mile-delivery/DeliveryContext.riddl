@@ -52,8 +52,56 @@ context DeliveryContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet DeliveryRepositoryQueriesIn is query GetDailyMetrics with {
+    briefly "Look-ups of the delivery repository"
+    described as {
+      |LastMileDeliveryApp's look-ups, on their way to the delivery repository.
+    }
+  }
+  outlet DeliveryRepositoryQueriesOut is query GetDailyMetrics
+ with {
+    briefly "Look-ups on their way to the delivery repository"
+    described as {
+      |Each look-up goes to the delivery repository it names.
+    }
+  }
+  inlet DeliveryRepositoryRepliesIn is result DailyMetricsView with {
+    briefly "The delivery repository's answers"
+    described as {
+      |What the delivery repository answers about itself.
+    }
+  }
+  outlet DeliveryRepositoryRepliesOut is result DailyMetricsView
+ with {
+    briefly "Answers to LastMileDeliveryApp"
+    described as {
+      |The reply leg of LastMileDeliveryApp's look-ups of the delivery repository.
+    }
+  }
+  inlet DeliveryQueriesIn is query Delivery.GetDelivery with {
+    briefly "Look-ups of the delivery"
+    described as {
+      |LastMileDeliveryApp's look-ups, on their way to the delivery.
+    }
+  }
+  outlet DeliveryQueriesOut is query Delivery.GetDelivery
+ with {
+    briefly "Look-ups on their way to the delivery"
+    described as {
+      |Each look-up goes to the delivery it names.
+    }
+  }
   inlet DeliveryContextFromRouteOptimization is command Delivery.UpdateETA with {
     briefly "What FromRouteOptimization makes of that service's news"
+  }
+  connector 'DeliveryRepositoryQuery Intake' is from outlet DeliveryContext.DeliveryRepositoryQueriesOut to inlet DeliveryContext.DeliveryRepository.DeliveryRepositoryQueries with {
+    briefly "Look-ups on their way to the delivery repository"
+  }
+  connector 'DeliveryRepositoryReply Egress' is from outlet DeliveryContext.DeliveryRepository.DeliveryRepositoryResponses to inlet DeliveryContext.DeliveryRepositoryRepliesIn with {
+    briefly "The delivery repository's answers on their way to the boundary"
+  }
+  connector 'DeliveryQuery Intake' is from outlet DeliveryContext.DeliveryQueriesOut to inlet DeliveryContext.Delivery.DeliveryQueries with {
+    briefly "Look-ups on their way to the delivery"
   }
   connector 'FromRouteOptimization Intake' is from outlet DeliveryContext.FromRouteOptimization.FromRouteOptimizationToDeliveryContext to inlet DeliveryContext.DeliveryContextFromRouteOptimization with {
     briefly "What FromRouteOptimization makes of that news, on its way in"
@@ -63,6 +111,15 @@ context DeliveryContext as router is {
   inlet DeliveryOrderResultStreamIn is result Delivery.DeliveryResult
   outlet DeliveryOrderResultStreamOut is result Delivery.DeliveryResult
   handler DeliveryContextBoundary is {
+    on getDailyMetrics: query GetDailyMetrics is {
+      forward getDailyMetrics to outlet DeliveryContext.DeliveryRepositoryQueriesOut
+    }
+    on dailyMetricsView: result DailyMetricsView is {
+      send dailyMetricsView to outlet DeliveryContext.DeliveryRepositoryRepliesOut
+    }
+    on getDelivery: query Delivery.GetDelivery is {
+      forward getDelivery to outlet DeliveryContext.DeliveryQueriesOut
+    }
     on createDelivery: command DeliveryContext.CreateDelivery is {
       let newDelivery = create entity DeliveryContext.Delivery(packageInfo = createDelivery.packageInfo, customer = createDelivery.customer, address = createDelivery.address, deliveryType = createDelivery.deliveryType, priority = createDelivery.priority, requestedWindow = createDelivery.requestedWindow)
       log newDelivery
@@ -106,7 +163,7 @@ context DeliveryContext as router is {
     }
   }
   connector 'DeliveryCommand Stream Intake' is from outlet DeliveryContext.DeliveryCommandStreamOut to inlet DeliveryContext.Delivery.DeliveryCommands
-  connector 'DeliveryOrderResult Stream Egress' is from outlet DeliveryContext.DeliveryRepository.DeliveryRepositoryResponses to inlet DeliveryContext.DeliveryOrderResultStreamIn
+  connector 'DeliveryOrderResult Stream Egress' is from outlet DeliveryContext.Delivery.DeliveryReplies to inlet DeliveryContext.DeliveryOrderResultStreamIn
   adaptor ToCustomerNotification to context CustomerNotification as flow is { 
     inlet ToCustomerNotificationIn is type DeliveryEvent
     outlet ToCustomerNotificationOut is command CustomerNotification.SendDeliveryNotification
@@ -365,7 +422,13 @@ context DeliveryContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository DeliveryRepository as flow is {
+  repository DeliveryRepository as merge is {
+    inlet DeliveryRepositoryQueries is query GetDailyMetrics with {
+      briefly "Look-ups of this delivery repository"
+      described as {
+        |What LastMileDeliveryApp asks of the delivery repository, by way of DeliveryContext.
+      }
+    }
     inlet DeliveryRepositoryFromDeliveryAnalytics is type DeliveryRepositoryCommand
     command PersistAssignedToRoute is {
       deliveryId: DeliveryId with {
@@ -628,7 +691,7 @@ context DeliveryContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet DeliveryRepositoryResponses is result Delivery.DeliveryResult
+    outlet DeliveryRepositoryResponses is result DailyMetricsView
     record StoredDelivery is {
       deliveryId: DeliveryId with {
         briefly "deliveryId"

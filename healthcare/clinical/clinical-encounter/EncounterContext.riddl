@@ -46,8 +46,56 @@ context EncounterContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet EncounterRepositoryQueriesIn is query GetEncounterStats with {
+    briefly "Look-ups of the encounter repository"
+    described as {
+      |ClinicalEncounterApp's look-ups, on their way to the encounter repository.
+    }
+  }
+  outlet EncounterRepositoryQueriesOut is query GetEncounterStats
+ with {
+    briefly "Look-ups on their way to the encounter repository"
+    described as {
+      |Each look-up goes to the encounter repository it names.
+    }
+  }
+  inlet EncounterRepositoryRepliesIn is result EncounterStatsView with {
+    briefly "The encounter repository's answers"
+    described as {
+      |What the encounter repository answers about itself.
+    }
+  }
+  outlet EncounterRepositoryRepliesOut is result EncounterStatsView
+ with {
+    briefly "Answers to ClinicalEncounterApp"
+    described as {
+      |The reply leg of ClinicalEncounterApp's look-ups of the encounter repository.
+    }
+  }
+  inlet EncounterQueriesIn is query Encounter.GetEncounter with {
+    briefly "Look-ups of the encounter"
+    described as {
+      |ClinicalEncounterApp's look-ups, on their way to the encounter.
+    }
+  }
+  outlet EncounterQueriesOut is query Encounter.GetEncounter
+ with {
+    briefly "Look-ups on their way to the encounter"
+    described as {
+      |Each look-up goes to the encounter it names.
+    }
+  }
   inlet EncounterContextFromToPatientRecordService is command Encounter.AddClinicalNote with {
     briefly "What ToPatientRecordService makes of the answers it gets"
+  }
+  connector 'EncounterRepositoryQuery Intake' is from outlet EncounterContext.EncounterRepositoryQueriesOut to inlet EncounterContext.EncounterRepository.EncounterRepositoryQueries with {
+    briefly "Look-ups on their way to the encounter repository"
+  }
+  connector 'EncounterRepositoryReply Egress' is from outlet EncounterContext.EncounterRepository.EncounterRepositoryResponses to inlet EncounterContext.EncounterRepositoryRepliesIn with {
+    briefly "The encounter repository's answers on their way to the boundary"
+  }
+  connector 'EncounterQuery Intake' is from outlet EncounterContext.EncounterQueriesOut to inlet EncounterContext.Encounter.EncounterQueries with {
+    briefly "Look-ups on their way to the encounter"
   }
   connector 'ToPatientRecordService Intake' is from outlet EncounterContext.ToPatientRecordService.ToPatientRecordServiceToEncounterContext to inlet EncounterContext.EncounterContextFromToPatientRecordService with {
     briefly "Answers translated by ToPatientRecordService, on their way in"
@@ -57,6 +105,15 @@ context EncounterContext as router is {
   inlet EncounterResultStreamIn is result Encounter.EncounterResult
   outlet EncounterResultStreamOut is result Encounter.EncounterResult
   handler EncounterContextBoundary is {
+    on getEncounterStats: query GetEncounterStats is {
+      forward getEncounterStats to outlet EncounterContext.EncounterRepositoryQueriesOut
+    }
+    on encounterStatsView: result EncounterStatsView is {
+      send encounterStatsView to outlet EncounterContext.EncounterRepositoryRepliesOut
+    }
+    on getEncounter: query Encounter.GetEncounter is {
+      forward getEncounter to outlet EncounterContext.EncounterQueriesOut
+    }
     on startEncounter: command EncounterContext.StartEncounter is {
       let newEncounter = create entity EncounterContext.Encounter(patient = startEncounter.patient, provider = startEncounter.provider, facilityId = startEncounter.facilityId, encounterType = startEncounter.encounterType, visitReason = startEncounter.visitReason)
       log newEncounter
@@ -103,7 +160,7 @@ context EncounterContext as router is {
     }
   }
   connector 'EncounterCommand Stream Intake' is from outlet EncounterContext.EncounterCommandStreamOut to inlet EncounterContext.Encounter.EncounterCommands
-  connector 'EncounterResult Stream Egress' is from outlet EncounterContext.EncounterRepository.EncounterRepositoryResponses to inlet EncounterContext.EncounterResultStreamIn
+  connector 'EncounterResult Stream Egress' is from outlet EncounterContext.Encounter.EncounterReplies to inlet EncounterContext.EncounterResultStreamIn
   adaptor FromBillingService from context BillingService as sink is { 
     inlet FromBillingServiceIn is event BillingService.BillingSubmitted
     handler FromBillingServiceHandler is {
@@ -341,7 +398,13 @@ context EncounterContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository EncounterRepository as flow is {
+  repository EncounterRepository as merge is {
+    inlet EncounterRepositoryQueries is query GetEncounterStats with {
+      briefly "Look-ups of this encounter repository"
+      described as {
+        |What ClinicalEncounterApp asks of the encounter repository, by way of EncounterContext.
+      }
+    }
     inlet EncounterRepositoryFromEncounterAnalytics is type EncounterRepositoryCommand
     command PersistChiefComplaintRecorded is {
       encounterId: EncounterId with {
@@ -607,7 +670,7 @@ context EncounterContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet EncounterRepositoryResponses is result Encounter.EncounterResult
+    outlet EncounterRepositoryResponses is result EncounterStatsView
     record StoredEncounter is {
       encounterId: EncounterId with {
         briefly "encounterId"

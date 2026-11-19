@@ -28,8 +28,56 @@ context ReviewContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet ReviewRepositoryQueriesIn is query GetReviewStats with {
+    briefly "Look-ups of the review repository"
+    described as {
+      |DesignReviewApp's look-ups, on their way to the review repository.
+    }
+  }
+  outlet ReviewRepositoryQueriesOut is query GetReviewStats
+ with {
+    briefly "Look-ups on their way to the review repository"
+    described as {
+      |Each look-up goes to the review repository it names.
+    }
+  }
+  inlet ReviewRepositoryRepliesIn is result ReviewStatsView with {
+    briefly "The review repository's answers"
+    described as {
+      |What the review repository answers about itself.
+    }
+  }
+  outlet ReviewRepositoryRepliesOut is result ReviewStatsView
+ with {
+    briefly "Answers to DesignReviewApp"
+    described as {
+      |The reply leg of DesignReviewApp's look-ups of the review repository.
+    }
+  }
+  inlet ReviewQueriesIn is query Review.GetReview with {
+    briefly "Look-ups of the review"
+    described as {
+      |DesignReviewApp's look-ups, on their way to the review.
+    }
+  }
+  outlet ReviewQueriesOut is query Review.GetReview
+ with {
+    briefly "Look-ups on their way to the review"
+    described as {
+      |Each look-up goes to the review it names.
+    }
+  }
   inlet ReviewContextFromToUserDirectoryService is command Review.AssignReviewer with {
     briefly "What ToUserDirectoryService makes of the answers it gets"
+  }
+  connector 'ReviewRepositoryQuery Intake' is from outlet ReviewContext.ReviewRepositoryQueriesOut to inlet ReviewContext.ReviewRepository.ReviewRepositoryQueries with {
+    briefly "Look-ups on their way to the review repository"
+  }
+  connector 'ReviewRepositoryReply Egress' is from outlet ReviewContext.ReviewRepository.ReviewRepositoryResponses to inlet ReviewContext.ReviewRepositoryRepliesIn with {
+    briefly "The review repository's answers on their way to the boundary"
+  }
+  connector 'ReviewQuery Intake' is from outlet ReviewContext.ReviewQueriesOut to inlet ReviewContext.Review.ReviewQueries with {
+    briefly "Look-ups on their way to the review"
   }
   connector 'ToUserDirectoryService Intake' is from outlet ReviewContext.ToUserDirectoryService.ToUserDirectoryServiceToReviewContext to inlet ReviewContext.ReviewContextFromToUserDirectoryService with {
     briefly "Answers translated by ToUserDirectoryService, on their way in"
@@ -51,6 +99,15 @@ context ReviewContext as router is {
   inlet ReviewResultStreamIn is result Review.ReviewResult
   outlet ReviewResultStreamOut is result Review.ReviewResult
   handler ReviewContextBoundary is {
+    on getReviewStats: query GetReviewStats is {
+      forward getReviewStats to outlet ReviewContext.ReviewRepositoryQueriesOut
+    }
+    on reviewStatsView: result ReviewStatsView is {
+      send reviewStatsView to outlet ReviewContext.ReviewRepositoryRepliesOut
+    }
+    on getReview: query Review.GetReview is {
+      forward getReview to outlet ReviewContext.ReviewQueriesOut
+    }
     on submitReview: command ReviewContext.SubmitReview is {
       let newReview = create entity ReviewContext.Review(info = submitReview.info, documents = submitReview.documents)
       log newReview
@@ -100,7 +157,7 @@ context ReviewContext as router is {
     }
   }
   connector 'ReviewCommand Stream Intake' is from outlet ReviewContext.ReviewCommandStreamOut to inlet ReviewContext.Review.ReviewCommands
-  connector 'ReviewResult Stream Egress' is from outlet ReviewContext.ReviewRepository.ReviewRepositoryResponses to inlet ReviewContext.ReviewResultStreamIn
+  connector 'ReviewResult Stream Egress' is from outlet ReviewContext.Review.ReviewReplies to inlet ReviewContext.ReviewResultStreamIn
   adaptor FromDocumentService from context DocumentService as sink is { 
     inlet FromDocumentServiceIn is event DocumentService.DocumentUploaded
     handler FromDocumentServiceHandler is {
@@ -294,7 +351,13 @@ context ReviewContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository ReviewRepository as flow is {
+  repository ReviewRepository as merge is {
+    inlet ReviewRepositoryQueries is query GetReviewStats with {
+      briefly "Look-ups of this review repository"
+      described as {
+        |What DesignReviewApp asks of the review repository, by way of ReviewContext.
+      }
+    }
     inlet ReviewRepositoryFromReviewAnalytics is type ReviewRepositoryCommand
     command PersistCommentResolved is {
       reviewId: ReviewId with {
@@ -629,7 +692,7 @@ context ReviewContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet ReviewRepositoryResponses is result Review.ReviewResult
+    outlet ReviewRepositoryResponses is result ReviewStatsView
     record StoredReview is {
       reviewId: ReviewId with {
         briefly "reviewId"

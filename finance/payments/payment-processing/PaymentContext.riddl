@@ -28,8 +28,56 @@ context PaymentContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet PaymentRepositoryQueriesIn is query GetPaymentStats with {
+    briefly "Look-ups of the payment repository"
+    described as {
+      |PaymentProcessingApp's look-ups, on their way to the payment repository.
+    }
+  }
+  outlet PaymentRepositoryQueriesOut is query GetPaymentStats
+ with {
+    briefly "Look-ups on their way to the payment repository"
+    described as {
+      |Each look-up goes to the payment repository it names.
+    }
+  }
+  inlet PaymentRepositoryRepliesIn is result PaymentStatsView with {
+    briefly "The payment repository's answers"
+    described as {
+      |What the payment repository answers about itself.
+    }
+  }
+  outlet PaymentRepositoryRepliesOut is result PaymentStatsView
+ with {
+    briefly "Answers to PaymentProcessingApp"
+    described as {
+      |The reply leg of PaymentProcessingApp's look-ups of the payment repository.
+    }
+  }
+  inlet PaymentQueriesIn is query Payment.GetPayment with {
+    briefly "Look-ups of the payment"
+    described as {
+      |PaymentProcessingApp's look-ups, on their way to the payment.
+    }
+  }
+  outlet PaymentQueriesOut is query Payment.GetPayment
+ with {
+    briefly "Look-ups on their way to the payment"
+    described as {
+      |Each look-up goes to the payment it names.
+    }
+  }
   inlet PaymentContextFromToMerchantService is command PaymentContext.AuthorizePayment with {
     briefly "What ToMerchantService makes of the answers it gets"
+  }
+  connector 'PaymentRepositoryQuery Intake' is from outlet PaymentContext.PaymentRepositoryQueriesOut to inlet PaymentContext.PaymentRepository.PaymentRepositoryQueries with {
+    briefly "Look-ups on their way to the payment repository"
+  }
+  connector 'PaymentRepositoryReply Egress' is from outlet PaymentContext.PaymentRepository.PaymentRepositoryResponses to inlet PaymentContext.PaymentRepositoryRepliesIn with {
+    briefly "The payment repository's answers on their way to the boundary"
+  }
+  connector 'PaymentQuery Intake' is from outlet PaymentContext.PaymentQueriesOut to inlet PaymentContext.Payment.PaymentQueries with {
+    briefly "Look-ups on their way to the payment"
   }
   connector 'ToMerchantService Intake' is from outlet PaymentContext.ToMerchantService.ToMerchantServiceToPaymentContext to inlet PaymentContext.PaymentContextFromToMerchantService with {
     briefly "Answers translated by ToMerchantService, on their way in"
@@ -45,6 +93,15 @@ context PaymentContext as router is {
   inlet PaymentResultStreamIn is result Payment.PaymentResult
   outlet PaymentResultStreamOut is result Payment.PaymentResult
   handler PaymentContextBoundary is {
+    on getPaymentStats: query GetPaymentStats is {
+      forward getPaymentStats to outlet PaymentContext.PaymentRepositoryQueriesOut
+    }
+    on paymentStatsView: result PaymentStatsView is {
+      send paymentStatsView to outlet PaymentContext.PaymentRepositoryRepliesOut
+    }
+    on getPayment: query Payment.GetPayment is {
+      forward getPayment to outlet PaymentContext.PaymentQueriesOut
+    }
     on initiatePayment: command Payment.InitiatePayment is {
       forward initiatePayment to outlet PaymentContext.PaymentCommandStreamOut
     }
@@ -93,7 +150,7 @@ context PaymentContext as router is {
     }
   }
   connector 'PaymentCommand Stream Intake' is from outlet PaymentContext.PaymentCommandStreamOut to inlet PaymentContext.Payment.PaymentCommands
-  connector 'PaymentResult Stream Egress' is from outlet PaymentContext.PaymentRepository.PaymentRepositoryResponses to inlet PaymentContext.PaymentResultStreamIn
+  connector 'PaymentResult Stream Egress' is from outlet PaymentContext.Payment.PaymentReplies to inlet PaymentContext.PaymentResultStreamIn
   adaptor FromCardNetworkService from context CardNetworkService as sink is { 
     inlet FromCardNetworkServiceIn is event CardNetworkService.AuthResponseReceived
     handler FromCardNetworkServiceHandler is {
@@ -349,7 +406,13 @@ context PaymentContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository PaymentRepository as flow is {
+  repository PaymentRepository as merge is {
+    inlet PaymentRepositoryQueries is query GetPaymentStats with {
+      briefly "Look-ups of this payment repository"
+      described as {
+        |What PaymentProcessingApp asks of the payment repository, by way of PaymentContext.
+      }
+    }
     inlet PaymentRepositoryFromPaymentAnalytics is type PaymentRepositoryCommand
     command PersistDisputeResolved is {
       paymentId: PaymentId with {
@@ -645,7 +708,7 @@ context PaymentContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet PaymentRepositoryResponses is result Payment.PaymentResult
+    outlet PaymentRepositoryResponses is result PaymentStatsView
     record StoredPayment is {
       paymentId: PaymentId with {
         briefly "paymentId"

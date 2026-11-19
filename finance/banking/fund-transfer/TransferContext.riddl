@@ -40,8 +40,56 @@ context TransferContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet TransferRepositoryQueriesIn is query GetTransferStats with {
+    briefly "Look-ups of the transfer repository"
+    described as {
+      |FundTransferApp's look-ups, on their way to the transfer repository.
+    }
+  }
+  outlet TransferRepositoryQueriesOut is query GetTransferStats
+ with {
+    briefly "Look-ups on their way to the transfer repository"
+    described as {
+      |Each look-up goes to the transfer repository it names.
+    }
+  }
+  inlet TransferRepositoryRepliesIn is result TransferStatsView with {
+    briefly "The transfer repository's answers"
+    described as {
+      |What the transfer repository answers about itself.
+    }
+  }
+  outlet TransferRepositoryRepliesOut is result TransferStatsView
+ with {
+    briefly "Answers to FundTransferApp"
+    described as {
+      |The reply leg of FundTransferApp's look-ups of the transfer repository.
+    }
+  }
+  inlet TransferQueriesIn is query Transfer.GetTransfer with {
+    briefly "Look-ups of the transfer"
+    described as {
+      |FundTransferApp's look-ups, on their way to the transfer.
+    }
+  }
+  outlet TransferQueriesOut is query Transfer.GetTransfer
+ with {
+    briefly "Look-ups on their way to the transfer"
+    described as {
+      |Each look-up goes to the transfer it names.
+    }
+  }
   inlet TransferContextFromToFXService is command Transfer.ApplyExchangeRate with {
     briefly "What ToFXService makes of the answers it gets"
+  }
+  connector 'TransferRepositoryQuery Intake' is from outlet TransferContext.TransferRepositoryQueriesOut to inlet TransferContext.TransferRepository.TransferRepositoryQueries with {
+    briefly "Look-ups on their way to the transfer repository"
+  }
+  connector 'TransferRepositoryReply Egress' is from outlet TransferContext.TransferRepository.TransferRepositoryResponses to inlet TransferContext.TransferRepositoryRepliesIn with {
+    briefly "The transfer repository's answers on their way to the boundary"
+  }
+  connector 'TransferQuery Intake' is from outlet TransferContext.TransferQueriesOut to inlet TransferContext.Transfer.TransferQueries with {
+    briefly "Look-ups on their way to the transfer"
   }
   connector 'ToFXService Intake' is from outlet TransferContext.ToFXService.ToFXServiceToTransferContext to inlet TransferContext.TransferContextFromToFXService with {
     briefly "Answers translated by ToFXService, on their way in"
@@ -69,6 +117,15 @@ context TransferContext as router is {
   inlet TransferResultStreamIn is result Transfer.TransferResult
   outlet TransferResultStreamOut is result Transfer.TransferResult
   handler TransferContextBoundary is {
+    on getTransferStats: query GetTransferStats is {
+      forward getTransferStats to outlet TransferContext.TransferRepositoryQueriesOut
+    }
+    on transferStatsView: result TransferStatsView is {
+      send transferStatsView to outlet TransferContext.TransferRepositoryRepliesOut
+    }
+    on getTransfer: query Transfer.GetTransfer is {
+      forward getTransfer to outlet TransferContext.TransferQueriesOut
+    }
     on submitTransfer: command TransferContext.SubmitTransfer is {
       let newTransfer = create entity TransferContext.Transfer(info = submitTransfer.info, domesticRecipient = submitTransfer.domesticRecipient, internationalRecipient = submitTransfer.internationalRecipient, customerId = submitTransfer.customerId)
       log newTransfer
@@ -112,7 +169,7 @@ context TransferContext as router is {
     }
   }
   connector 'TransferCommand Stream Intake' is from outlet TransferContext.TransferCommandStreamOut to inlet TransferContext.Transfer.TransferCommands
-  connector 'TransferResult Stream Egress' is from outlet TransferContext.TransferRepository.TransferRepositoryResponses to inlet TransferContext.TransferResultStreamIn
+  connector 'TransferResult Stream Egress' is from outlet TransferContext.Transfer.TransferReplies to inlet TransferContext.TransferResultStreamIn
   adaptor FromACHNetworkService from context ACHNetworkService as flow is { 
     inlet FromACHNetworkServiceIn is event ACHNetworkService.ACHProcessed
     outlet FromACHNetworkServiceToTransferContext is command Transfer.CompleteTransfer
@@ -364,7 +421,13 @@ context TransferContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository TransferRepository as flow is {
+  repository TransferRepository as merge is {
+    inlet TransferRepositoryQueries is query GetTransferStats with {
+      briefly "Look-ups of this transfer repository"
+      described as {
+        |What FundTransferApp asks of the transfer repository, by way of TransferContext.
+      }
+    }
     inlet TransferRepositoryFromTransferAnalytics is type TransferRepositoryCommand
     command PersistExchangeRateApplied is {
       transferId: TransferId with {
@@ -609,7 +672,7 @@ context TransferContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet TransferRepositoryResponses is result Transfer.TransferResult
+    outlet TransferRepositoryResponses is result TransferStatsView
     record StoredTransfer is {
       transferId: TransferId with {
         briefly "transferId"

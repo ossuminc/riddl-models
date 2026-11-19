@@ -34,8 +34,56 @@ context TenantContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  inlet TenantRepositoryQueriesIn is query GetTenantStats with {
+    briefly "Look-ups of the tenant repository"
+    described as {
+      |TenantProvisioningApp's look-ups, on their way to the tenant repository.
+    }
+  }
+  outlet TenantRepositoryQueriesOut is query GetTenantStats
+ with {
+    briefly "Look-ups on their way to the tenant repository"
+    described as {
+      |Each look-up goes to the tenant repository it names.
+    }
+  }
+  inlet TenantRepositoryRepliesIn is result TenantStatsView with {
+    briefly "The tenant repository's answers"
+    described as {
+      |What the tenant repository answers about itself.
+    }
+  }
+  outlet TenantRepositoryRepliesOut is result TenantStatsView
+ with {
+    briefly "Answers to TenantProvisioningApp"
+    described as {
+      |The reply leg of TenantProvisioningApp's look-ups of the tenant repository.
+    }
+  }
+  inlet TenantQueriesIn is query Tenant.GetTenant with {
+    briefly "Look-ups of the tenant"
+    described as {
+      |TenantProvisioningApp's look-ups, on their way to the tenant.
+    }
+  }
+  outlet TenantQueriesOut is query Tenant.GetTenant
+ with {
+    briefly "Look-ups on their way to the tenant"
+    described as {
+      |Each look-up goes to the tenant it names.
+    }
+  }
   inlet TenantContextFromToMonitoringService is command Tenant.ScaleResource with {
     briefly "What ToMonitoringService makes of the answers it gets"
+  }
+  connector 'TenantRepositoryQuery Intake' is from outlet TenantContext.TenantRepositoryQueriesOut to inlet TenantContext.TenantRepository.TenantRepositoryQueries with {
+    briefly "Look-ups on their way to the tenant repository"
+  }
+  connector 'TenantRepositoryReply Egress' is from outlet TenantContext.TenantRepository.TenantRepositoryResponses to inlet TenantContext.TenantRepositoryRepliesIn with {
+    briefly "The tenant repository's answers on their way to the boundary"
+  }
+  connector 'TenantQuery Intake' is from outlet TenantContext.TenantQueriesOut to inlet TenantContext.Tenant.TenantQueries with {
+    briefly "Look-ups on their way to the tenant"
   }
   connector 'ToMonitoringService Intake' is from outlet TenantContext.ToMonitoringService.ToMonitoringServiceToTenantContext to inlet TenantContext.TenantContextFromToMonitoringService with {
     briefly "Answers translated by ToMonitoringService, on their way in"
@@ -51,6 +99,15 @@ context TenantContext as router is {
   inlet TenantResultStreamIn is result Tenant.TenantResult
   outlet TenantResultStreamOut is result Tenant.TenantResult
   handler TenantContextBoundary is {
+    on getTenantStats: query GetTenantStats is {
+      forward getTenantStats to outlet TenantContext.TenantRepositoryQueriesOut
+    }
+    on tenantStatsView: result TenantStatsView is {
+      send tenantStatsView to outlet TenantContext.TenantRepositoryRepliesOut
+    }
+    on getTenant: query Tenant.GetTenant is {
+      forward getTenant to outlet TenantContext.TenantQueriesOut
+    }
     on createTenant: command TenantContext.CreateTenant is {
       let newTenant = create entity TenantContext.Tenant(organization = createTenant.organization, admin = createTenant.admin, configuration = createTenant.configuration)
       log newTenant
@@ -91,7 +148,7 @@ context TenantContext as router is {
     }
   }
   connector 'TenantCommand Stream Intake' is from outlet TenantContext.TenantCommandStreamOut to inlet TenantContext.Tenant.TenantCommands
-  connector 'TenantResult Stream Egress' is from outlet TenantContext.TenantRepository.TenantRepositoryResponses to inlet TenantContext.TenantResultStreamIn
+  connector 'TenantResult Stream Egress' is from outlet TenantContext.Tenant.TenantReplies to inlet TenantContext.TenantResultStreamIn
   adaptor FromBillingIntegrationService from context BillingIntegrationService as sink is { 
     inlet FromBillingIntegrationServiceIn is type BillingIntegrationService.BillingIntegrationServiceEvent
     handler FromBillingIntegrationServiceHandler is {
@@ -353,7 +410,13 @@ context TenantContext as router is {
       |reach it directly; a projector turns each into one of these.
     }
   }
-  repository TenantRepository as flow is {
+  repository TenantRepository as merge is {
+    inlet TenantRepositoryQueries is query GetTenantStats with {
+      briefly "Look-ups of this tenant repository"
+      described as {
+        |What TenantProvisioningApp asks of the tenant repository, by way of TenantContext.
+      }
+    }
     inlet TenantRepositoryFromTenantAnalytics is type TenantRepositoryCommand
     command PersistResourceScaled is {
       tenantId: TenantId with {
@@ -595,7 +658,7 @@ context TenantContext as router is {
         |because storing a row records no new entity state.
       }
     }
-    outlet TenantRepositoryResponses is result Tenant.TenantResult
+    outlet TenantRepositoryResponses is result TenantStatsView
     record StoredTenant is {
       tenantId: TenantId with {
         briefly "tenantId"
