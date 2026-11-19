@@ -1,7 +1,7 @@
 // Subscription Management - Subscription Entity
 entity Subscription as flow is {
   type SubscriptionCommand is one of {
-    Subscription.CreateSubscription or Subscription.StartTrial or Subscription.ConvertTrial or Subscription.ChangePlan or Subscription.ApplyDiscount or Subscription.RecordPayment or Subscription.RecordPaymentFailure or Subscription.SuspendSubscription or Subscription.ReactivateSubscription or Subscription.CancelSubscription or Subscription.RenewSubscription
+    Subscription.ConvertTrial or Subscription.ChangePlan or Subscription.ApplyDiscount or Subscription.RecordPayment or Subscription.RecordPaymentFailure or Subscription.SuspendSubscription or Subscription.ReactivateSubscription or Subscription.CancelSubscription or Subscription.RenewSubscription
   } with {
     briefly "Subscription command alternation"
     described as {
@@ -11,74 +11,6 @@ entity Subscription as flow is {
   inlet SubscriptionCommands is type SubscriptionCommand
   outlet SubscriptionEvents is type SubscriptionEvent
   // Commands
-  command CreateSubscription is {
-    subscriptionId: SubscriptionId with {
-      briefly "Subscription ID"
-      described as {
-        |New subscription identifier.
-      }
-    }
-    customer: CustomerInfo with {
-      briefly "Customer"
-      described as {
-        |Customer information.
-      }
-    }
-    plan: PlanInfo with {
-      briefly "Plan"
-      described as {
-        |Subscription plan.
-      }
-    }
-    paymentMethod: PaymentMethod with {
-      briefly "Payment"
-      described as {
-        |Payment method.
-      }
-    }
-    startDate: Date with {
-      briefly "Start"
-      described as {
-        |Subscription start date.
-      }
-    }
-  } with {
-    briefly "Create subscription"
-    described as {
-      |Creates a new subscription.
-    }
-  }
-  command StartTrial is {
-    subscriptionId: SubscriptionId with {
-      briefly "Subscription ID"
-      described as {
-        |New subscription identifier.
-      }
-    }
-    customer: CustomerInfo with {
-      briefly "Customer"
-      described as {
-        |Customer information.
-      }
-    }
-    plan: PlanInfo with {
-      briefly "Plan"
-      described as {
-        |Trial plan.
-      }
-    }
-    trialEndDate: Date with {
-      briefly "Trial end"
-      described as {
-        |When trial ends.
-      }
-    }
-  } with {
-    briefly "Start trial"
-    described as {
-      |Starts a free trial.
-    }
-  }
   command ConvertTrial is {
     subscriptionId: SubscriptionId with {
       briefly "Subscription ID"
@@ -671,35 +603,13 @@ entity Subscription as flow is {
     }
   }
   // States
-  state ActiveState of record Subscription.ActiveStateData is {
-    initial handler ActiveStateInitHandler is {
-      on init is {
-        set state ActiveState to "initialize from prior event"
-      }
-    } with {
-      briefly "Initializes Active state"
-      described as {
-        |Handles initialization of the Active state.
-      }
-    }
-  } with {
+  state ActiveState of record Subscription.ActiveStateData with {
     briefly "Active state"
     described as {
       |The entity in Active state.
     }
   }
-  state CanceledState of record Subscription.CanceledStateData is {
-    initial handler CanceledStateInitHandler is {
-      on init is {
-        set state CanceledState to "initialize from prior event"
-      }
-    } with {
-      briefly "Initializes Canceled state"
-      described as {
-        |Handles initialization of the Canceled state.
-      }
-    }
-  } with {
+  state CanceledState of record Subscription.CanceledStateData with {
     briefly "Canceled state"
     described as {
       |The entity in Canceled state.
@@ -707,13 +617,14 @@ entity Subscription as flow is {
   }
   // Handler
   handler SubscriptionHandler is {
-    on createSubscription: command CreateSubscription is {
-      morph entity SubscriptionContext.Subscription to state SubscriptionContext.Subscription.ActiveState with record Subscription.ActiveStateData(subscriptionId = createSubscription.subscriptionId, customer = createSubscription.customer, plan = createSubscription.plan, paymentMethod = createSubscription.paymentMethod, startDate = createSubscription.startDate, billing = prompt("the billing of this active state data"), updatedDiscount = empty, invoices = empty, status = prompt("the status of this active state data"))
-      tell event SubscriptionCreated(subscriptionId = createSubscription.subscriptionId, customer = createSubscription.customer, plan = createSubscription.plan, startDate = createSubscription.startDate, createdAt = prompt("the created at of this subscription created")) to entity SubscriptionContext.Subscription
-    }
-    on startTrial: command StartTrial is {
-      morph entity SubscriptionContext.Subscription to state SubscriptionContext.Subscription.ActiveState with record Subscription.ActiveStateData(subscriptionId = startTrial.subscriptionId, customer = startTrial.customer, plan = startTrial.plan, paymentMethod = prompt("the payment method of this active state data"), billing = prompt("the billing of this active state data"), updatedDiscount = empty, invoices = empty, status = prompt("the status of this active state data"), startDate = prompt("the start date of this active state data"))
-      tell event TrialStarted(subscriptionId = startTrial.subscriptionId, customer = startTrial.customer, plan = startTrial.plan, trialEndDate = startTrial.trialEndDate, startedAt = prompt("the started at of this trial started")) to entity SubscriptionContext.Subscription
+    on init(customer: type CustomerInfo, plan: type PlanInfo, paymentMethod: type PaymentMethod?, startDate: Date?, trialEndDate: Date?) is {
+      when trialEndDate != empty then
+        morph entity SubscriptionContext.Subscription to state SubscriptionContext.Subscription.ActiveState with record Subscription.ActiveStateData(subscriptionId = self.id, customer = customer, plan = plan, paymentMethod = prompt("the payment method on file for the trial, if any"), billing = prompt("billing on trial terms: nothing charged before trialEndDate"), updatedDiscount = empty, invoices = empty, status = Trial, startDate = prompt("the date the trial begins"))
+        tell event TrialStarted(subscriptionId = self.id, customer = customer, plan = plan, trialEndDate = trialEndDate, startedAt = prompt("the started at of this trial started")) to entity SubscriptionContext.Subscription
+      else
+        morph entity SubscriptionContext.Subscription to state SubscriptionContext.Subscription.ActiveState with record Subscription.ActiveStateData(subscriptionId = self.id, customer = customer, plan = plan, paymentMethod = paymentMethod, startDate = startDate, billing = prompt("the billing of this active state data"), updatedDiscount = empty, invoices = empty, status = Active)
+        tell event SubscriptionCreated(subscriptionId = self.id, customer = customer, plan = plan, startDate = startDate, createdAt = prompt("the created at of this subscription created")) to entity SubscriptionContext.Subscription
+      end
     }
     on convertTrial: command ConvertTrial is {
       tell event TrialConverted(subscriptionId = convertTrial.subscriptionId, convertedAt = prompt("the converted at of this trial converted")) to entity SubscriptionContext.Subscription

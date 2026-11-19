@@ -12,19 +12,26 @@ pin. Reid's order, 2026-11-18: (1) bare asks, (2) creation migration, (3)
 undelivered commands, (4) undelivered queries/results, (5) the
 `stmt-yield-argument-prompt` advisories LAST.
 
-**Where it stands** (sweep `collect-warnings.py --include-patterns`, after
-`771efc733`):
+**Where it stands** (sweep `collect-warnings.py --include-patterns`). The
+"-20" column is after `771efc733` on riddlc -20. **The -22 columns are not
+comparable with it**: on 2026-11-18 `../bin/riddlc` was restaged to
+`2.7.0-22-efa3dc80` mid-session, and the same tree (`8b42ebf37`) reads 15/5
+init deprecations and 308 advisories there. The rulings commit was measured
+before and after on -22 alone.
 
-| rule | start | now |
-|---|---:|---:|
-| `value-ask-bare-query` (deprecated) | 373 | **0** (`b9ee4cf3d`) |
-| `entity-init-in-state` (deprecated) | 524 | 13 |
-| `entity-init-no-morph` (deprecated) | 201 | 5 |
-| `msg-clause-undeliverable` (completeness) | 2,182 | 2,184 |
-| `stream-outlet-never-sent` (completeness) | 268 | 268 |
-| `entity-no-query-clause` (completeness) | 0 | 4 (newly visible) |
-| `entity-no-command-types` / `entity-no-inlet` | 0 | 1 / 1 (Team) |
-| `stmt-yield-argument-prompt` (advisory) | 340 | 307 |
+| rule | start | -20 | -22 before | -22 after rulings |
+|---|---:|---:|---:|---:|
+| `value-ask-bare-query` (deprecated) | 373 | **0** | 0 | 0 |
+| `entity-init-in-state` (deprecated) | 524 | 13 | 15 | 9 |
+| `entity-init-no-morph` (deprecated) | 201 | 5 | 5 | 3 |
+| `msg-clause-undeliverable` (completeness) | 2,182 | 2,184 | 2,184 | 2,181 |
+| `stream-outlet-never-sent` (completeness) | 268 | 268 | 268 | 266 |
+| `entity-no-query-clause` (completeness) | 0 | 4 | 4 | 4 |
+| `entity-no-command-types` / `entity-no-inlet` | 0 | 1 / 1 | 1 / 1 | 0 / 0 |
+| `stmt-yield-argument-prompt` (advisory) | 340 | 307 | 308 | 308 |
+
+The 12 deprecations left are exactly Ticket (case 3, deferred) and
+PriceList/Fund (blocked on riddl, below).
 
 **Tools:** `scripts/ask-arguments.py` (step 1, done);
 `scripts/creation/census.py` and `scripts/creation/migrate.py` (step 2). The
@@ -49,7 +56,24 @@ Artifact, Hole, SurveyStation) a look-up of themselves. NOT STARTED.
 
 ### Awaiting Reid's ruling — collect here, decide in one session
 
-**RULED 2026-11-18** (implement next session, before or alongside step 3):
+**RULED 2026-11-18; 1, 2, 4, 5 and 6 DONE 2026-11-18** (one commit). How each
+landed: 1 — `RegisterMachine` with a new `MachineRegistered` event, wired
+through the split, four projectors and a `PersistMachineRegistered`; then
+`migrate.py` moved it. 2 — by hand: ONE `on init(customer, plan,
+paymentMethod?, startDate?, trialEndDate?)` picks trial or paid terms on
+`trialEndDate != empty`; both requests create through it. 4 — `RenameTeam`,
+`RelocateTeam`, their events, a context relay, app controls (plus a missing
+`CreateTeamInput`). 5 — deleted. **6 — NOT as ruled; Reid re-ruled**: the
+literal `on entry` validated (4 findings gone) but each event was then
+yielded only inside the state its own fold enters, so both states stayed
+unreachable and riddlc could not see it. A command has exactly one `yields`
+(`msg-yield-mismatch`), so the producers are two new commands:
+`RequestDeploymentApproval` (app control) and `FailDeployment` (the
+InfrastructureService adaptor, which used to send `RollbackDeployment`).
+**Consequence: `RollbackDeployment` is now undeliverable** — a step-3 (a)
+case, rollback being a decision taken from FailedState.
+
+Original rulings:
 1 — add `RegisterMachine` as the creator; `SetupMachine` stays a command on
 an existing machine. 2 — both create: `StartTrial` a subscription on trial
 terms, `CreateSubscription` a paid one. 3 — DEFERRED, Reid to look later.

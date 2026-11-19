@@ -10,6 +10,12 @@ It carries 2.8.0's creation model, `ask query Q(args) of P`, and the
 external-context exemption for `stmt-yield-argument-prompt`. BAST revision
 33. **Take the override off at the 2.8.0 tag.**
 
+**`../bin/riddlc` is now `2.7.0-22-efa3dc80`** (Reid restaged it
+2026-11-18 19:04) while `riddlVersion` still says -20 and the test suite
+links the -20 `publishLocal` libraries. -20 has no backup. Moving the pin and
+`publishLocal` to -22 is pending, and is Reid's call. Compare sweeps only
+within one binary.
+
 **Reid's goal (2026-11-18): every model free of errors, warnings and
 deprecations on this pin.** Tracked as **BACKLOG #43**, with the per-rule
 table, his rulings for each step, and the cases collected for him. Gates are
@@ -21,13 +27,16 @@ green throughout (`checkAll`); the zero is measured by
 
 - **Done:** reactive-bbq at 0; (1) all 373 bare asks given arguments
   (`b9ee4cf3d`); (2) creation migration, 718 of 725 deprecations
-  (`1ec22dbef`, `9fbbde7b0`, `771efc733`).
+  (`1ec22dbef`, `9fbbde7b0`, `771efc733`); Reid's rulings 1, 2, 4, 5, 6 on
+  the leftovers (see § 2026-11-18). Left: Ticket (deferred), PriceList/Fund
+  (blocked on riddl's prettify).
 - **Next:** (3) the ~1,300 undelivered commands at context boundaries, by
   Reid's (a)/(b)/(c) rule; then (4) queries and results; then (5) the 307
-  advisories. Neither 3 nor 4 has started. Expect several sessions.
+  advisories. Neither 3 nor 4 has started. First step-3 case known:
+  deployment-pipeline's `RollbackDeployment`, undeliverable since ruling 6. Expect several sessions.
 - **Collect, do not ask one at a time:** cases needing a ruling go in BACKLOG
-  #43 § Awaiting Reid's ruling (six so far) for one session with Reid.
-- **Not pushed:** everything after `01e83726b`. Ask before pushing.
+  #43 § Awaiting Reid's ruling for one session with Reid.
+- **Not pushed:** everything after `219186e1c`. Ask before pushing.
 - riddl-generator and Synapify: Reid will tell them later. Do not hand off.
 
 ### Creation-migration traps (scripts/creation/migrate.py)
@@ -78,6 +87,39 @@ Open work: **BACKLOG.md** #40 (`query one`), #30, #1, #23, #34. Durable facts:
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
 ---
+
+## 2026-11-18 — the five rulings, and a ruling that would have hidden a dead state
+
+Rulings 1, 2, 4, 5 and 6 from BACKLOG #43 landed in one commit, measured
+before and after on riddlc -22 alone: 15 -> 9 `entity-init-in-state`, 5 -> 3
+`entity-init-no-morph`, Team's `entity-no-inlet`/`entity-no-command-types`
+gone, 2,184 -> 2,181 undeliverable, 268 -> 266 never-sent. Only the four
+touched models changed. `checkAll` green on -22.
+
+**Ruling 6 would have turned four warnings into silence and fixed nothing.**
+`DeploymentAwaitingApproval` had been yielded only by
+`AwaitingApprovalState`'s own on-init, and its fold was the only way INTO that
+state. An `on entry` there validated clean, because a `yield` exists, but the
+state still could not be entered, and `ApproveDeployment` could never
+succeed. A cycle of the form "state S yields E, E's fold enters S" is a dead
+state that riddlc cannot see. When a ruling says "keep the original's
+effect", check first whether the original had any. Reid re-ruled: real
+producers. My first proposal for them (a `when` inside `ExecuteDeployment`)
+failed on `msg-yield-mismatch`, since a command has exactly ONE `yields`, so
+each needed a command of its own.
+
+**Smaller lessons.** `drop-dead-states.py` matches only `state X ... is {`, not
+the body-less `with {` form the migration leaves behind. A new event added to
+an entity's alternation draws `stream-inlet-not-received` on every inlet
+typed with it, so the split, the projectors and a `Persist<E>` all have to
+follow. A CRUD `on init` keeps the self-`tell` of its creation event (159
+corpus sites), which is what keeps the entity's own `on event` delivered.
+
+**The binary changed mid-run.** Reid restaged `../bin/riddlc` to -22 during
+the gates. The same tree reads differently on -20 and -22 (13 vs 15
+init-in-state, 307 vs 308 advisories), so the before/after sweep was rerun
+on -22 for both sides via `git stash`. -22 re-bastifies the corpus
+byte-identically.
 
 ## 2026-11-17 — four tasks: deprecation lifetime, 2.7.0, OrderSubmitted, create
 

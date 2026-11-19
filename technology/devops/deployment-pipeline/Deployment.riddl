@@ -2,7 +2,7 @@
 // The primary aggregate for deployment lifecycle management
 event-sourced entity Deployment as flow is {
   type DeploymentCommand is one of {
-    Deployment.ApproveDeployment or Deployment.ExecuteDeployment or Deployment.VerifyDeployment or Deployment.CompleteDeployment or Deployment.RollbackDeployment
+    Deployment.RequestDeploymentApproval or Deployment.ApproveDeployment or Deployment.ExecuteDeployment or Deployment.VerifyDeployment or Deployment.CompleteDeployment or Deployment.FailDeployment or Deployment.RollbackDeployment
   } with {
     briefly "Deployment command alternation"
     described as {
@@ -88,6 +88,46 @@ event-sourced entity Deployment as flow is {
     described as {
       | Captures the results of post-deployment verification checks.
       | If verification passes, the deployment can be completed.
+    }
+  }
+  command RequestDeploymentApproval yields event DeploymentAwaitingApproval is {
+    deploymentId: DeploymentId with {
+      briefly "Deployment identifier"
+      described as {
+        |The deployment that needs approval.
+      }
+    }
+    targetEnvironment: EnvironmentId with {
+      briefly "Target environment"
+      described as {
+        |The environment whose policy requires the approval.
+      }
+    }
+  } with {
+    briefly "Asks for approval before a deployment proceeds"
+    described as {
+      |Holds a pending deployment until someone approves it, for a target
+      |environment that does not accept unapproved changes.
+    }
+  }
+  command FailDeployment yields event DeploymentFailed is {
+    deploymentId: DeploymentId with {
+      briefly "Deployment identifier"
+      described as {
+        |The deployment that failed.
+      }
+    }
+    failureReason: String(1,500) with {
+      briefly "Failure reason"
+      described as {
+        |Why the rollout could not complete.
+      }
+    }
+  } with {
+    briefly "Records that a deployment failed"
+    described as {
+      |Marks a rollout the infrastructure could not complete as failed. Whether
+      |to roll back is a separate decision taken from the failed state.
     }
   }
   command CompleteDeployment yields event DeploymentCompleted is {
@@ -933,6 +973,12 @@ event-sourced entity Deployment as flow is {
     }
     on completeDeployment: command CompleteDeployment is {
       yield event DeploymentCompleted(deploymentId = completeDeployment.deploymentId, completedAt = completeDeployment.completedAt, durationMinutes = prompt("the duration minutes of this deployment completed"))
+    }
+    on requestDeploymentApproval: command RequestDeploymentApproval is {
+      yield event DeploymentAwaitingApproval(deploymentId = requestDeploymentApproval.deploymentId, targetEnvironment = requestDeploymentApproval.targetEnvironment, requestedAt = system.now)
+    }
+    on failDeployment: command FailDeployment is {
+      yield event DeploymentFailed(deploymentId = failDeployment.deploymentId, failureReason = failDeployment.failureReason, failedAt = system.now)
     }
     on rollbackDeployment: command RollbackDeployment is {
       yield event DeploymentRolledBack(deploymentId = rollbackDeployment.deploymentId, rolledBackBy = rollbackDeployment.rolledBackBy, previousArtifactId = prompt("the previous artifact id of this deployment rolled back"), rollbackReason = prompt("the rollback reason of this deployment rolled back"), rolledBackAt = prompt("the rolled back at of this deployment rolled back"))

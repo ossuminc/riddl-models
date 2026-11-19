@@ -1,5 +1,28 @@
 // CNC Operations - CNC Context
 context CNCContext as router is {
+  command RegisterMachine is {
+    registeredBy: String(1,200) with {
+      briefly "Registered by"
+      described as {
+        |Person registering the machine.
+      }
+    }
+  } with {
+    briefly "Register machine"
+    described as {
+      |Brings a newly installed machine onto the shop floor, idle and
+      |unconfigured. Setting it up is a separate step on an existing machine.
+    }
+  }
+  type CNCMachineRequest is one of {
+    CNCContext.RegisterMachine or CNCMachine.CNCMachineCommand
+  } with {
+    briefly "CNCMachine requests"
+    described as {
+      |What may be asked of CNCContext about a CNCMachine: RegisterMachine, which the
+      |context does itself by creating one, or any command for an existing one.
+    }
+  }
   inlet CNCContextFromToMaintenanceService is command CNCMachine.PauseCycle with {
     briefly "What ToMaintenanceService makes of the answers it gets"
   }
@@ -53,13 +76,17 @@ context CNCContext as router is {
       |The channel the `tell` travels.
     }
   }
-  inlet CNCMachineCommandStreamIn is type CNCMachineCommand
+  inlet CNCMachineCommandStreamIn is type CNCContext.CNCMachineRequest
   outlet CNCMachineCommandStreamOut is type CNCMachineCommand
   inlet CNCMachineResultStreamIn is result CNCMachine.CNCMachineResult
   outlet CNCMachineResultStreamOut is result CNCMachine.CNCMachineResult
   handler CNCContextBoundary is {
     on loadProgram: command CNCMachine.LoadProgram is {
       send loadProgram to outlet CNCContext.CNCMachineCommandStreamOut
+    }
+    on registerMachine: command CNCContext.RegisterMachine is {
+      let newCNCMachine = create entity CNCContext.CNCMachine(registeredBy = registerMachine.registeredBy)
+      log newCNCMachine
     }
     on setupMachine: command CNCMachine.SetupMachine is {
       send setupMachine to outlet CNCContext.CNCMachineCommandStreamOut
@@ -298,7 +325,7 @@ context CNCContext as router is {
   include "CNCMachine.riddl"
   // Repository for CNC data persistence
   type CNCRepositoryCommand is one of {
-    CNCContext.CNCRepository.PersistAlarmCleared or CNCContext.CNCRepository.PersistAlarmRaised or CNCContext.CNCRepository.PersistCycleCompleted or CNCContext.CNCRepository.PersistCyclePaused or CNCContext.CNCRepository.PersistCycleStarted or CNCContext.CNCRepository.PersistMachineSetup or CNCContext.CNCRepository.PersistMetricsUpdated or CNCContext.CNCRepository.PersistProgramLoaded
+    CNCContext.CNCRepository.PersistAlarmCleared or CNCContext.CNCRepository.PersistAlarmRaised or CNCContext.CNCRepository.PersistCycleCompleted or CNCContext.CNCRepository.PersistCyclePaused or CNCContext.CNCRepository.PersistCycleStarted or CNCContext.CNCRepository.PersistMachineRegistered or CNCContext.CNCRepository.PersistMachineSetup or CNCContext.CNCRepository.PersistMetricsUpdated or CNCContext.CNCRepository.PersistProgramLoaded
   } with {
     briefly "Anything that writes CNCRepository"
     described as {
@@ -558,6 +585,27 @@ context CNCContext as router is {
         |Instructs this repository to apply CycleStarted to the stored row. A
         |persistence command, not a domain command: it declares no `yields`
         |because storing a row records no new entity state.
+      }
+    }
+    command PersistMachineRegistered is {
+      machineId: MachineId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row MachineRegistered creates.
+        }
+      }
+      registeredBy: String(1,200)? with {
+        briefly "Registered by"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+    } with {
+      briefly "Persist MachineRegistered"
+      described as {
+        |Instructs this repository to add the row for a newly registered
+        |machine. A persistence command, not a domain command: it declares no
+        |`yields` because storing a row records no new entity state.
       }
     }
     command PersistMachineSetup is {
@@ -862,6 +910,9 @@ context CNCContext as router is {
       on persistCycleStarted: command PersistCycleStarted is {
         do "apply CycleStarted to the stored row"
       }
+      on persistMachineRegistered: command PersistMachineRegistered is {
+        do "add the newly registered machine's row"
+      }
       on persistMachineSetup: command PersistMachineSetup is {
         do "apply MachineSetup to the stored row"
       }
@@ -1018,6 +1069,9 @@ context CNCContext as router is {
         tell command CNCContext.CNCRepository.PersistAlarmCleared(machineId = alarmCleared.machineId, alarmId = alarmCleared.alarmId, clearedBy = alarmCleared.clearedBy, resolution = alarmCleared.resolution, clearedAt = alarmCleared.clearedAt) to repository CNCContext.CNCRepository
         do "End downtime tracking"
       }
+      on machineRegistered: event CNCMachine.MachineRegistered is {
+        tell command CNCContext.CNCRepository.PersistMachineRegistered(machineId = machineRegistered.machineId, registeredBy = machineRegistered.registeredBy) to repository CNCContext.CNCRepository
+      }
       on machineSetup: event CNCMachine.MachineSetup is {
         tell command CNCContext.CNCRepository.PersistMachineSetup(machineId = machineSetup.machineId, tools = machineSetup.tools, fixtures = machineSetup.fixtures, setupBy = machineSetup.setupBy, setupAt = machineSetup.setupAt) to repository CNCContext.CNCRepository
         do "Track setup time"
@@ -1149,6 +1203,9 @@ context CNCContext as router is {
       on cycleStarted: event CNCMachine.CycleStarted is {
         tell command CNCContext.CNCRepository.PersistCycleStarted(machineId = cycleStarted.machineId, cycleId = cycleStarted.cycleId, cycleType = cycleStarted.cycleType, programId = cycleStarted.programId, workOrderId = cycleStarted.workOrderId, startedBy = cycleStarted.startedBy, startedAt = cycleStarted.startedAt) to repository CNCContext.CNCRepository
         do "apply CycleStarted to the CycleTimeAnalytics projection"
+      }
+      on machineRegistered: event CNCMachine.MachineRegistered is {
+        tell command CNCContext.CNCRepository.PersistMachineRegistered(machineId = machineRegistered.machineId, registeredBy = machineRegistered.registeredBy) to repository CNCContext.CNCRepository
       }
       on machineSetup: event CNCMachine.MachineSetup is {
         tell command CNCContext.CNCRepository.PersistMachineSetup(machineId = machineSetup.machineId, tools = machineSetup.tools, fixtures = machineSetup.fixtures, setupBy = machineSetup.setupBy, setupAt = machineSetup.setupAt) to repository CNCContext.CNCRepository
@@ -1324,6 +1381,9 @@ context CNCContext as router is {
         tell command CNCContext.CNCRepository.PersistAlarmCleared(machineId = alarmCleared.machineId, alarmId = alarmCleared.alarmId, clearedBy = alarmCleared.clearedBy, resolution = alarmCleared.resolution, clearedAt = alarmCleared.clearedAt) to repository CNCContext.CNCRepository
         do "End downtime period"
       }
+      on machineRegistered: event CNCMachine.MachineRegistered is {
+        tell command CNCContext.CNCRepository.PersistMachineRegistered(machineId = machineRegistered.machineId, registeredBy = machineRegistered.registeredBy) to repository CNCContext.CNCRepository
+      }
       on machineSetup: event CNCMachine.MachineSetup is {
         tell command CNCContext.CNCRepository.PersistMachineSetup(machineId = machineSetup.machineId, tools = machineSetup.tools, fixtures = machineSetup.fixtures, setupBy = machineSetup.setupBy, setupAt = machineSetup.setupAt) to repository CNCContext.CNCRepository
         do "Track setup as planned downtime"
@@ -1441,6 +1501,9 @@ context CNCContext as router is {
         tell command CNCContext.CNCRepository.PersistCycleStarted(machineId = cycleStarted.machineId, cycleId = cycleStarted.cycleId, cycleType = cycleStarted.cycleType, programId = cycleStarted.programId, workOrderId = cycleStarted.workOrderId, startedBy = cycleStarted.startedBy, startedAt = cycleStarted.startedAt) to repository CNCContext.CNCRepository
         do "apply CycleStarted to the AlarmAnalytics projection"
       }
+      on machineRegistered: event CNCMachine.MachineRegistered is {
+        tell command CNCContext.CNCRepository.PersistMachineRegistered(machineId = machineRegistered.machineId, registeredBy = machineRegistered.registeredBy) to repository CNCContext.CNCRepository
+      }
       on machineSetup: event CNCMachine.MachineSetup is {
         tell command CNCContext.CNCRepository.PersistMachineSetup(machineId = machineSetup.machineId, tools = machineSetup.tools, fixtures = machineSetup.fixtures, setupBy = machineSetup.setupBy, setupAt = machineSetup.setupAt) to repository CNCContext.CNCRepository
         do "apply MachineSetup to the AlarmAnalytics projection"
@@ -1475,7 +1538,7 @@ context CNCContext as router is {
   }
   // ---- Event publication for CNCMachine ----
   type CNCMachineEvent is one of {
-    CNCContext.CNCMachine.ProgramLoaded or CNCContext.CNCMachine.MachineSetup or CNCContext.CNCMachine.CycleStarted or CNCContext.CNCMachine.CyclePaused or CNCContext.CNCMachine.CycleCompleted or CNCContext.CNCMachine.AlarmRaised or CNCContext.CNCMachine.AlarmCleared or CNCContext.CNCMachine.MetricsUpdated
+    CNCContext.CNCMachine.ProgramLoaded or CNCContext.CNCMachine.MachineRegistered or CNCContext.CNCMachine.MachineSetup or CNCContext.CNCMachine.CycleStarted or CNCContext.CNCMachine.CyclePaused or CNCContext.CNCMachine.CycleCompleted or CNCContext.CNCMachine.AlarmRaised or CNCContext.CNCMachine.AlarmCleared or CNCContext.CNCMachine.MetricsUpdated
   } with {
     briefly "CNCMachine event alternation"
     described as {
@@ -1499,6 +1562,12 @@ context CNCContext as router is {
         send programLoaded to outlet CNCMachineEventSplitToOEEAnalytics
         send programLoaded to outlet CNCMachineEventSplitToAlarmAnalytics
         send programLoaded to outlet CNCMachineEventSplitToToToolManagementService
+      }
+      on machineRegistered: event CNCMachine.MachineRegistered is {
+        send machineRegistered to outlet CNCMachineEventSplitToMachineUtilization
+        send machineRegistered to outlet CNCMachineEventSplitToCycleTimeAnalytics
+        send machineRegistered to outlet CNCMachineEventSplitToOEEAnalytics
+        send machineRegistered to outlet CNCMachineEventSplitToAlarmAnalytics
       }
       on machineSetup: event CNCMachine.MachineSetup is {
         send machineSetup to outlet CNCMachineEventSplitToMachineUtilization
