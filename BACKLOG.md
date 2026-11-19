@@ -304,12 +304,15 @@ gained an `AssemblyOrderEvent` inlet fed by `AssemblyOrderEventSplit`.
 point-of-sale `ToReceiptService`'s second, older handler (`ReceiptGeneration`,
 doing the receipt service's own job) is deleted. Sweep 60 -> 56, 0 new.
 
-**Left for Reid (14):**
-- **Repository commands, 9** (api-management, clinical-trials,
-  identity-management `Store…`/`Delete…`; language-coverage
-  `PersistStationCommissioned`/`Retired`). No inlet admits them. The first
-  three look like leftover CRUD beside the `Persist…` path; language-coverage
-  needs the four-step repository wiring.
+**Repository commands, 9: DONE 2026-11-19 (Reid: A, A).** The 7 generic
+`Store…`/`Delete…` commands (api-management, clinical-trials,
+identity-management), `do`-prose beside a complete projector-fed `Persist…`
+path, are deleted. language-coverage's `StationEventLog` now sends
+`PersistStationCommissioned`/`Retired` (alongside the log entry) through a
+`StationLogCommand` alternation, so `GetStation` reads rows something writes.
+Sweep 56 -> 47, 0 new; language-coverage is at 0 of every severity.
+
+**Left for Reid (5):**
 - **Entity commands, 5** (lab-orders ConfirmCriticalValueReadBack,
   learning-management x2, order-management ProcessRefund,
   policy-administration DeclineRenewal): the entity handles the command and
