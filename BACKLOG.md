@@ -102,9 +102,13 @@ Meter schedules its own AggregateUsage from its creation `on init`, on a
 looped `MeterClock` outlet -> inlet: `match definition.billingPeriod`,
 Hourly/Daily/Weekly as `send ... every 1 hour / 1 day / 7 days`; Monthly,
 Quarterly and Yearly are calendar periods, so only their FIRST period is
-scheduled. **NEXT, right after #43's item 5 (Reid): revisit for calendar
-periods (option C) -- riddl BACKLOG [1.32] calendar schedules, or the
-corpus waits on it.**
+scheduled. **Revisited 2026-11-19 (Reid: C2): WAIT for riddl [1.32]
+calendar schedules to reach the staged riddlc**, then write the `default`
+case as a recurrence and drop its `do` note. Requested in
+`../riddl/task/2026-11-19-calendar-schedules-requested.md`. Rejected
+workaround, measured on -45: re-emitting from `on aggregateUsage` `at
+periodEnd + <prompted Duration>` validates at 0; `at <prompted instant>` is
+`stream-graph-cycle`.
 
 **The 14 queries without `replies`: DONE 2026-11-19, sweep 101 -> 87, 0
 new.** 8 entity queries that told their result to themselves took Reid's
