@@ -23,7 +23,7 @@ computed value, or a modelling decision.
 
 | # | family | fills | models | 2.8.0 form | effort |
 |---|---|---:|---:|---|---|
-| F1 | event-moment timestamps in a command clause (`recordedAt`, `createdAt`, `cancelledAt`, ...) | 1,295 | 172 | `system.now` | mechanical; `scheduledAt` (22) and similar business times excluded by hand |
+| F1 | event-moment timestamps in a command clause (`recordedAt`, `createdAt`, `cancelledAt`, ...) | 1,295 | 172 | `system.now` | **DONE 2026-11-20 (F1a): 1,250 in 167 models.** Left as fills: 45, being `scheduledAt`/`plannedAt`/`occurredAt` (24) and every `...Date`/`...Time` field (21), which are business times or may be typed `Date` |
 | F2 | creation timestamps in `on init` | 162 | 158 | an `on init` parameter (event-sourced, CM §4.5) or `system.now` (CRUD) | mechanical per entity kind |
 | F3 | carry-forward into a `morph` record ("the X of this Y state data") | 2,026 | 183 | M1: `status` by enumerator (160), others read from the state left, with the clause moved into that state's handler | structural, per entity |
 | F4 | `when prompt("askAnswer...")` conditions | 171 | 89 | real Boolean: `not askAnswer.x`, `askAnswer.xs != empty`, `askAnswer.n > 0` | about 100 direct, the rest need `any of`/`one of` |

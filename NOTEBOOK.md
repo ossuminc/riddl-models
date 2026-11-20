@@ -16,8 +16,9 @@ every severity on 2.8.0. Hold it there. `checkAll` does not enforce the zero;
 only the sweep does.
 
 **In flight: BACKLOG #44**, the 2.8.0 opportunities survey. It is filed and
-awaiting Reid's rulings, one family at a time; F1 (1,295 timestamp fills ->
-`system.now`) is the suggested first.
+awaiting Reid's rulings, one family at a time. **F1 DONE** (F1a, 1,250
+timestamp fills -> `system.now`, sweep still 0); next to ask: F4's direct
+subset, then F6's 79.
 
 - **Asking Reid**: ONE question at a time, each with context, alternatives,
   consequences and a recommendation. A table of 18 rows was rejected as
