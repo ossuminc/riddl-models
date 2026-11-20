@@ -502,6 +502,13 @@ handlers of ActiveFund and SuspendedFund (M1) -- exact per the CM, since
 the live handler is entity-level + current state's. 1 remains:
 streaming-platform.
 
+**D1 (Reid, 2026-11-20).** streaming-platform's entitlement denial sends
+`reason = askAnswer.denialReason otherwise "not entitled to this content"`,
+guards on `not askAnswer.entitled` and sends `finalPosition = 0 seconds`
+(both were prompts restating data in hand, as in I1). **The 4 fixable
+`value-optional-for-required` sites are done**; the 14 left wait on riddl's
+narrowing fix.
+
 | # | site | ruling |
 |---|---|---|
 | 1 | cart `ApplyPromoCode` | `PromoCodeApplied` records `code` + `discountPercent`, not money; the fold computes the saving. The command gains `discountPercent`, which the PricingAdapter fills from `PromotionActivated`. |
