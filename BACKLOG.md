@@ -287,9 +287,10 @@ clauses (4 sends); 37 -> 0, nothing else moved.
 two entities' events but fed by one; each is now a router with a second inlet
 fed by PortCall / Voyage, and the projector's direct feed (now redundant, the
 split already forwards to it) is gone. `VoyageCancelled` joined `VesselEvent`
-and the split routes it to FleetAnalytics. Sweep 83 -> 67, 0 new. Open
-question for Reid: should a cancelled voyage also `ClearVesselVoyage`, as a
-completed one does?
+and the split routes it to FleetAnalytics. Sweep 83 -> 67, 0 new. A
+cancelled voyage now frees its vessel, as a completed one does (Reid: V1,
+2026-11-19): `VoyageCancelled` gained `vesselId` and the split sends
+`ClearVesselVoyage` on it.
 
 **External adaptor events, 7: DONE 2026-11-19 (Reid: A).** Each external's
 outlet now carries an `<Ext>Event` alternation of every event it declares
