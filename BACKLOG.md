@@ -536,6 +536,12 @@ SuppliesIssued, lastIssuedItemId, PersistSuppliesIssued, the stored column;
 inventory keeps ItemId), and costCharged = quantityIssued * the line's
 unitCost, refusing an item not on the order. 3 yield prompts left.
 
+**W1 (Reid, 2026-11-20).** equipment-maintenance totalLaborMinutes sums
+each labor record's own span, `minutes of ((r.endTime otherwise
+completeMaintenance.completedAt) - r.startTime)`: a record still open at
+completion closes then; the optional `laborMinutes` is not read. 1 yield
+prompt left (incident timeline).
+
 | # | site | ruling |
 |---|---|---|
 | 1 | cart `ApplyPromoCode` | `PromoCodeApplied` records `code` + `discountPercent`, not money; the fold computes the saving. The command gains `discountPercent`, which the PricingAdapter fills from `PromotionActivated`. |

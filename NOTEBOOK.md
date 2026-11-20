@@ -15,12 +15,12 @@ deprecations.** Tracked as **BACKLOG #43**. `checkAll` is green but does NOT
 enforce the zero; the sweep does: `./scripts/collect-warnings.py
 --include-patterns`.
 
-### Where #43 stands (sweep on -58, after K1): 17 findings
+### Where #43 stands (sweep on -58, after W1): 16 findings
 
 | finding | count | state |
 |---|---:|---|
 | errors, deprecations | 0 | done (steps 1, 2; -25's 8 `value-not-natural` fixed) |
-| `stmt-yield-argument-prompt` | 2 | B1 8, P1 1, U1 2, K1 1; 2 need Reid's decisions: -41 has the value forms (`task/2026-11-19-riddl-value-forms-landed.md`) |
+| `stmt-yield-argument-prompt` | 1 | B1 8, P1 1, U1 2, K1 1, W1 1; incident timeline needs a decision: -41 has the value forms (`task/2026-11-19-riddl-value-forms-landed.md`) |
 | `value-optional-for-required` | 15 | all 15 guarded, WAIT on riddl (guard does not narrow; task filed) |
 | `msg-clause-undeliverable` | 0 | DONE: steps 3, 4, queries, projector events, 5a-5e |
 | `stream-outlet-never-sent` | 0 | DONE with 5e |
