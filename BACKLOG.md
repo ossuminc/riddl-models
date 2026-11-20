@@ -542,6 +542,13 @@ completeMaintenance.completedAt) - r.startTime)`: a record still open at
 completion closes then; the optional `laborMinutes` is not read. 1 yield
 prompt left (incident timeline).
 
+**T1 (Reid, 2026-11-20).** incident-management's timeline starts empty:
+`TimelineEntry*` on the four state records and PostMortem, dropped from
+`on init` and IncidentCreated (the creation event records the opening);
+entries arrive through AddTimelineEntry. **All `stmt-yield-argument-prompt`
+sites are done.** #43's remainder is the 15 guarded
+`value-optional-for-required` sites waiting on riddl's narrowing fix.
+
 | # | site | ruling |
 |---|---|---|
 | 1 | cart `ApplyPromoCode` | `PromoCodeApplied` records `code` + `discountPercent`, not money; the fold computes the saving. The command gains `discountPercent`, which the PricingAdapter fills from `PromotionActivated`. |

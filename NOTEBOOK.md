@@ -15,18 +15,20 @@ deprecations.** Tracked as **BACKLOG #43**. `checkAll` is green but does NOT
 enforce the zero; the sweep does: `./scripts/collect-warnings.py
 --include-patterns`.
 
-### Where #43 stands (sweep on -58, after W1): 16 findings
+### Where #43 stands (sweep on -58, after T1): 15 findings
 
 | finding | count | state |
 |---|---:|---|
 | errors, deprecations | 0 | done (steps 1, 2; -25's 8 `value-not-natural` fixed) |
-| `stmt-yield-argument-prompt` | 1 | B1 8, P1 1, U1 2, K1 1, W1 1; incident timeline needs a decision: -41 has the value forms (`task/2026-11-19-riddl-value-forms-landed.md`) |
+| `stmt-yield-argument-prompt` | 0 | DONE 2026-11-20 (B1 8, P1 1, U1 2, K1 1, W1 1, T1 1): -41 has the value forms (`task/2026-11-19-riddl-value-forms-landed.md`) |
 | `value-optional-for-required` | 15 | all 15 guarded, WAIT on riddl (guard does not narrow; task filed) |
 | `msg-clause-undeliverable` | 0 | DONE: steps 3, 4, queries, projector events, 5a-5e |
 | `stream-outlet-never-sent` | 0 | DONE with 5e |
 
 - **riddl's call-argument task is done** (2026-11-20, `task/done/`): -58
   carries riddl `8935713ec` and reactive-bbq has 0 errors on it.
+- **riddl's value-forms task is done** (2026-11-20, `task/done/`): every
+  yield prompt is written; `otherwise 0` errors on a Natural.
 - **-58 carries [1.32]** (calendar/cron schedules, `date + 1 month`;
   `task/2026-11-20-riddl-calendar-schedules.md`): usage-metering's monthly
   period (C2) and policy-lifecycle's `newPaidToDate` (P1) are DONE.
