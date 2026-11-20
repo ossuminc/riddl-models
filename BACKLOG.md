@@ -301,6 +301,21 @@ new. **Follow-up to offer Reid:** the seven adaptor clauses are still prose
 (`do "Add shift to store schedule"`); the event now arrives but nothing acts
 on it.
 
+**5b's seven prose adaptor clauses: DONE 2026-11-19 (Reid: P2).** Each now
+does real work. supply-chain `SupplyRequested` sends `CreateRequisition`.
+job-site `WeatherAlert` suspends the site when a prompt says it is severe
+enough; `ProjectUpdated` sends a new `JobSite.RecordProjectChange`
+(event `ProjectChangeRecorded`, split, projector, repository columns). The
+rest are REFERENCE DATA whose system of record is the other service, so
+they replicate into the local repository rather than becoming lifecycle
+entities: bid-management's `BidRepository` gains `opportunities` (from
+`RFPPublished`) and `contractors` (from `ContractorRegistered`), linked
+from `bids`; store-operations' `StoreRepository` gains a `shifts` table
+written by `ShiftScheduled` and deleted from by `ShiftCancelled`. The
+boundary relays each to the repository over a new intake. Duplicate
+second handlers in four adaptors were merged into one. Sweep unchanged
+(39), 0 new.
+
 **Outbound adaptor clauses, 4: DONE 2026-11-19 (Reid: A, A).** The filing
 called all four stale; only point-of-sale's was. assembly-operations' three
 are ask/answer clauses (inspection plan, defect codes, work-order details)

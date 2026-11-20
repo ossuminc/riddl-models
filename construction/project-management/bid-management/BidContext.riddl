@@ -19,6 +19,24 @@ context BidContext as router is {
       |Creates a new bid draft.
     }
   }
+  type BidReferenceCommand is one of {
+    BidContext.BidRepository.RecordBidOpportunity or BidContext.BidRepository.RecordContractor
+  } with {
+    briefly "Reference data for bidding"
+    described as {
+      |What the project and contractor services publish that bidding needs
+      |kept here: the RFPs open to bids, and the contractors who may bid.
+    }
+  }
+  type FromProjectServiceCommand is one of {
+    Bid.WithdrawBid or BidContext.BidRepository.RecordBidOpportunity
+  } with {
+    briefly "What the project service's news becomes here"
+    described as {
+      |A cancelled RFP withdraws its bids; a published one becomes an
+      |opportunity to bid.
+    }
+  }
   type BidRequest is one of {
     BidContext.CreateBid or Bid.BidCommand
   } with {
@@ -67,7 +85,7 @@ context BidContext as router is {
       |Each look-up goes to the bid it names.
     }
   }
-  inlet BidContextFromProjectService is command Bid.WithdrawBid with {
+  inlet BidContextFromProjectService is type BidContext.FromProjectServiceCommand with {
     briefly "What FromProjectService makes of that service's news"
   }
   connector 'BidRepositoryQuery Intake' is from outlet BidContext.BidRepositoryQueriesOut to inlet BidContext.BidRepository.BidRepositoryQueries with {
@@ -83,6 +101,22 @@ context BidContext as router is {
     briefly "What FromProjectService makes of that news, on its way in"
   }
   inlet BidCommandStreamIn is type BidContext.BidRequest
+  outlet BidReferenceDataOut is type BidContext.BidReferenceCommand
+ with {
+    briefly "Reference data on its way to the bid repository"
+  }
+  connector 'BidReferenceData Intake' is from outlet BidContext.BidReferenceDataOut to inlet BidContext.BidRepository.BidRepositoryFromBidContext with {
+    briefly "RFPs and contractors on their way to storage"
+  }
+  inlet BidContextFromContractorService is command BidContext.BidRepository.RecordContractor with {
+    briefly "What FromContractorService sends BidContext"
+    described as {
+      |Its own inlet: an inlet accepts exactly one connector.
+    }
+  }
+  connector 'FromContractorService Intake' is from outlet BidContext.FromContractorService.FromContractorServiceToBidContext to inlet BidContext.BidContextFromContractorService with {
+    briefly "Registered contractors on their way to the boundary"
+  }
   outlet BidCommandStreamOut is type BidCommand
   inlet BidResultStreamIn is result Bid.BidResult
   outlet BidResultStreamOut is result Bid.BidResult
@@ -92,6 +126,12 @@ context BidContext as router is {
     }
     on rFPSummaryView: result RFPSummaryView is {
       send rFPSummaryView to outlet BidContext.BidRepositoryRepliesOut
+    }
+    on recordBidOpportunity: command BidContext.BidRepository.RecordBidOpportunity is {
+      send recordBidOpportunity to outlet BidContext.BidReferenceDataOut
+    }
+    on recordContractor: command BidContext.BidRepository.RecordContractor is {
+      send recordContractor to outlet BidContext.BidReferenceDataOut
     }
     on getBid: query Bid.GetBid is {
       forward getBid to outlet BidContext.BidQueriesOut
@@ -184,11 +224,18 @@ context BidContext as router is {
       |The model's side of the ContractService conversation.
     }
   }
-  adaptor FromContractorService from context ContractorService as sink is { 
+  adaptor FromContractorService from context ContractorService as flow is { 
     inlet FromContractorServiceIn is type ContractorService.ContractorServiceEvent
+    outlet FromContractorServiceToBidContext is command BidContext.BidRepository.RecordContractor
+ with {
+      briefly "What FromContractorService tells BidContext"
+    }
     handler FromContractorServiceHandler is {
       on contractorQualified: event ContractorService.ContractorQualified is {
         do "qualification decides who may be invited; a bid already in flight is unaffected"
+      }
+      on contractorRegistered: event ContractorService.ContractorRegistered is {
+        send command BidContext.BidRepository.RecordContractor(contractorId = contractorRegistered.contractorId, contractorName = contractorRegistered.name, licenseNumber = contractorRegistered.licenseNumber, trades = contractorRegistered.trades, bondingLimit = contractorRegistered.bondingLimit, registeredAt = contractorRegistered.registeredAt) to outlet BidContext.FromContractorService.FromContractorServiceToBidContext
       }
       on other is {
         error "Unexpected message for adaptor FromContractorService"
@@ -196,20 +243,8 @@ context BidContext as router is {
     } with {
       briefly "from contractor service"
       described as {
-        |Carries messages from the external ContractorService.
-      }
-    }
-    handler ContractorEvents is {
-      on event ContractorService.ContractorRegistered is {
-        do "Store contractor information for bidding"
-      }
-      on other is {
-        error "Unexpected message for adaptor ContractorAdapter"
-      }
-    } with {
-      briefly "Handles contractor events"
-      described as {
-        |Processes contractor registrations.
+        |Carries messages from the external ContractorService; a registered
+        |contractor is recorded as one who may bid.
       }
     }
   } with {
@@ -255,11 +290,14 @@ context BidContext as router is {
   }
   adaptor FromProjectService from context ProjectService as flow is { 
     inlet FromProjectServiceIn is type ProjectService.ProjectServiceEvent
-    outlet FromProjectServiceToBidContext is command Bid.WithdrawBid
+    outlet FromProjectServiceToBidContext is type BidContext.FromProjectServiceCommand
     handler FromProjectServiceHandler is {
       on rFPCancelled: event ProjectService.RFPCancelled is {
         let item0: type Bid.WithdrawBid = prompt("translate the rFPCancelled event into a WithdrawBid, an RFP that no longer exists cannot be won, so the bid is withdrawn rather than left open")
         send item0 to outlet BidContext.FromProjectService.FromProjectServiceToBidContext
+      }
+      on rFPPublished: event ProjectService.RFPPublished is {
+        send command BidContext.BidRepository.RecordBidOpportunity(rfpId = rFPPublished.rfpId, projectId = rFPPublished.projectId, opportunityTitle = rFPPublished.title, bidType = rFPPublished.bidType, dueDate = rFPPublished.dueDate, publishedAt = rFPPublished.publishedAt) to outlet BidContext.FromProjectService.FromProjectServiceToBidContext
       }
       on rFPClosed: event ProjectService.RFPClosed is {
         do "the RFP is closed to new proposals; the bids already submitted proceed to review"
@@ -271,19 +309,6 @@ context BidContext as router is {
       briefly "from project service"
       described as {
         |Carries messages from the external ProjectService.
-      }
-    }
-    handler ProjectEvents is {
-      on event ProjectService.RFPPublished is {
-        do "Create bid opportunities for contractors"
-      }
-      on other is {
-        error "Unexpected message for adaptor ProjectAdapter"
-      }
-    } with {
-      briefly "Handles project events"
-      described as {
-        |Processes RFP publications.
       }
     }
   } with {
@@ -314,6 +339,99 @@ context BidContext as router is {
       }
     }
     inlet BidRepositoryFromBidAnalytics is type BidRepositoryCommand
+    inlet BidRepositoryFromBidContext is type BidContext.BidReferenceCommand with {
+      briefly "Reference data the boundary hands this repository"
+      described as {
+        |RFPs and contractors as their own services publish them.
+      }
+    }
+    command RecordBidOpportunity is {
+      rfpId: UUID with {
+        briefly "RFP"
+        described as {
+          |The RFP the opportunity is for.
+        }
+      }
+      projectId: ProjectId with {
+        briefly "Project"
+        described as {
+          |The project the RFP belongs to.
+        }
+      }
+      opportunityTitle: String(1,200) with {
+        briefly "Title"
+        described as {
+          |The RFP's title.
+        }
+      }
+      bidType: BidType with {
+        briefly "Bid type"
+        described as {
+          |How bids on this RFP are let.
+        }
+      }
+      dueDate: Date with {
+        briefly "Due"
+        described as {
+          |When proposals are due.
+        }
+      }
+      publishedAt: TimeStamp with {
+        briefly "Published"
+        described as {
+          |When the project service published the RFP.
+        }
+      }
+    } with {
+      briefly "Record an RFP as an opportunity to bid"
+      described as {
+        |The project service published an RFP; contractors may now bid on it.
+      }
+    }
+    command RecordContractor is {
+      contractorId: ContractorId with {
+        briefly "Contractor"
+        described as {
+          |The contractor registered.
+        }
+      }
+      contractorName: String(1,200) with {
+        briefly "Name"
+        described as {
+          |The contractor's name.
+        }
+      }
+      licenseNumber: String(1,50) with {
+        briefly "License"
+        described as {
+          |The contractor's license number.
+        }
+      }
+      trades: String(1,50)+ with {
+        briefly "Trades"
+        described as {
+          |The trades the contractor works in.
+        }
+      }
+      bondingLimit: Money with {
+        briefly "Bonding limit"
+        described as {
+          |The largest job the contractor can be bonded for.
+        }
+      }
+      registeredAt: TimeStamp with {
+        briefly "Registered"
+        described as {
+          |When the contractor service registered them.
+        }
+      }
+    } with {
+      briefly "Record a registered contractor"
+      described as {
+        |The contractor service registered a contractor who may now be
+        |invited to bid.
+      }
+    }
     command PersistBidCreated is {
       bidId: BidId with {
         briefly "Row addressed"
@@ -643,8 +761,100 @@ context BidContext as router is {
         |The persistence shape of bid data as this repository stores it.
       }
     }
+    record StoredBidOpportunity is {
+      rfpId: UUID with {
+        briefly "RFP"
+        described as {
+          |The RFP the opportunity is for.
+        }
+      }
+      projectId: ProjectId with {
+        briefly "Project"
+        described as {
+          |The project the RFP belongs to.
+        }
+      }
+      opportunityTitle: String(1,200) with {
+        briefly "Title"
+        described as {
+          |The RFP's title.
+        }
+      }
+      bidType: BidType with {
+        briefly "Bid type"
+        described as {
+          |How bids on this RFP are let.
+        }
+      }
+      dueDate: Date with {
+        briefly "Due"
+        described as {
+          |When proposals are due.
+        }
+      }
+      publishedAt: TimeStamp with {
+        briefly "Published"
+        described as {
+          |When the project service published the RFP.
+        }
+      }
+    } with {
+      briefly "Stored opportunity row"
+      described as {
+        |An RFP open to bids, as the project service published it.
+      }
+    }
+    record StoredContractor is {
+      contractorId: ContractorId with {
+        briefly "Contractor"
+        described as {
+          |The contractor registered.
+        }
+      }
+      contractorName: String(1,200) with {
+        briefly "Name"
+        described as {
+          |The contractor's name.
+        }
+      }
+      licenseNumber: String(1,50) with {
+        briefly "License"
+        described as {
+          |The contractor's license number.
+        }
+      }
+      trades: String(1,50)+ with {
+        briefly "Trades"
+        described as {
+          |The trades the contractor works in.
+        }
+      }
+      bondingLimit: Money with {
+        briefly "Bonding limit"
+        described as {
+          |The largest job the contractor can be bonded for.
+        }
+      }
+      registeredAt: TimeStamp with {
+        briefly "Registered"
+        described as {
+          |When the contractor service registered them.
+        }
+      }
+    } with {
+      briefly "Stored contractor row"
+      described as {
+        |A contractor as the contractor service registered them.
+      }
+    }
     schema BidData is relational
       of bids as record StoredBid
+      of contractors as record StoredContractor
+      of opportunities as record StoredBidOpportunity
+        link bidContractor as field StoredBid.contractorId to field StoredContractor.contractorId
+        link bidOpportunity as field StoredBid.rfpId to field StoredBidOpportunity.rfpId
+        key on field StoredContractor.contractorId
+        key on field StoredBidOpportunity.rfpId
         key on field StoredBid.bidId
         index on field StoredBid.rfpId
         index on field StoredBid.contractorId
@@ -655,6 +865,12 @@ context BidContext as router is {
       }
     }
     handler BidPersistence is {
+      on recordBidOpportunity: command RecordBidOpportunity is {
+        store record StoredBidOpportunity(rfpId = recordBidOpportunity.rfpId, projectId = recordBidOpportunity.projectId, opportunityTitle = recordBidOpportunity.opportunityTitle, bidType = recordBidOpportunity.bidType, dueDate = recordBidOpportunity.dueDate, publishedAt = recordBidOpportunity.publishedAt) in BidData.opportunities
+      }
+      on recordContractor: command RecordContractor is {
+        store record StoredContractor(contractorId = recordContractor.contractorId, contractorName = recordContractor.contractorName, licenseNumber = recordContractor.licenseNumber, trades = recordContractor.trades, bondingLimit = recordContractor.bondingLimit, registeredAt = recordContractor.registeredAt) in BidData.contractors
+      }
       on persistBidCreated: command PersistBidCreated is {
         update BidData.bids set rfpId = persistBidCreated.rfpId, contractorId = persistBidCreated.contractorId, createdAt = persistBidCreated.createdAt where bidId == persistBidCreated.bidId
       }

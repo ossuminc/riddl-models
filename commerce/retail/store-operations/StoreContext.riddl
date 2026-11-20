@@ -19,6 +19,23 @@ context StoreContext as router is {
       |Records store opening and enables operations.
     }
   }
+  type ShiftScheduleCommand is one of {
+    StoreContext.StoreRepository.ScheduleShift or StoreContext.StoreRepository.CancelScheduledShift
+  } with {
+    briefly "Changes to the store's shift schedule"
+    described as {
+      |What HR's scheduling news becomes here.
+    }
+  }
+  type FromHRServiceCommand is one of {
+    Store.EndShift or StoreContext.StoreRepository.ScheduleShift or StoreContext.StoreRepository.CancelScheduledShift
+  } with {
+    briefly "What the HR service's news becomes here"
+    described as {
+      |A terminated employee's open shift ends; scheduled and cancelled
+      |shifts change the store's schedule.
+    }
+  }
   type StoreRequest is one of {
     StoreContext.OpenStore or Store.StoreCommand
   } with {
@@ -87,13 +104,20 @@ context StoreContext as router is {
   connector 'FromFacilitiesService Intake' is from outlet StoreContext.FromFacilitiesService.FromFacilitiesServiceToStoreContext to inlet StoreContext.StoreContextFromFacilitiesService with {
     briefly "What FromFacilitiesService makes of that news, on its way in"
   }
-  inlet StoreContextFromHRService is command Store.EndShift with {
+  inlet StoreContextFromHRService is type StoreContext.FromHRServiceCommand with {
     briefly "What FromHRService makes of that service's news"
   }
   connector 'FromHRService Intake' is from outlet StoreContext.FromHRService.FromHRServiceToStoreContext to inlet StoreContext.StoreContextFromHRService with {
     briefly "What FromHRService makes of that news, on its way in"
   }
   inlet StoreCommandStreamIn is type StoreContext.StoreRequest
+  outlet ShiftScheduleOut is type StoreContext.ShiftScheduleCommand
+ with {
+    briefly "Schedule changes on their way to the store repository"
+  }
+  connector 'ShiftSchedule Intake' is from outlet StoreContext.ShiftScheduleOut to inlet StoreContext.StoreRepository.StoreRepositoryFromStoreContext with {
+    briefly "Shifts scheduled and cancelled, on their way to storage"
+  }
   outlet StoreCommandStreamOut is type StoreCommand
   inlet StoreResultStreamIn is result Store.StoreResult
   outlet StoreResultStreamOut is result Store.StoreResult
@@ -103,6 +127,12 @@ context StoreContext as router is {
     }
     on dailyOperationsSummaryView: result DailyOperationsSummaryView is {
       send dailyOperationsSummaryView to outlet StoreContext.StoreRepositoryRepliesOut
+    }
+    on scheduleShift: command StoreContext.StoreRepository.ScheduleShift is {
+      send scheduleShift to outlet StoreContext.ShiftScheduleOut
+    }
+    on cancelScheduledShift: command StoreContext.StoreRepository.CancelScheduledShift is {
+      send cancelScheduledShift to outlet StoreContext.ShiftScheduleOut
     }
     on getStore: query Store.GetStore is {
       forward getStore to outlet StoreContext.StoreQueriesOut
@@ -180,11 +210,17 @@ context StoreContext as router is {
   }
   adaptor FromHRService from context HRService as flow is { 
     inlet FromHRServiceIn is type HRService.HRServiceEvent
-    outlet FromHRServiceToStoreContext is command Store.EndShift
+    outlet FromHRServiceToStoreContext is type StoreContext.FromHRServiceCommand
     handler FromHRServiceHandler is {
       on employeeTerminated: event HRService.EmployeeTerminated is {
         let item0: type Store.EndShift = prompt("translate the employeeTerminated event into a EndShift, someone no longer employed cannot remain on an open shift")
         send item0 to outlet StoreContext.FromHRService.FromHRServiceToStoreContext
+      }
+      on shiftScheduled: event HRService.ShiftScheduled is {
+        send command StoreContext.StoreRepository.ScheduleShift(shiftId = shiftScheduled.shiftId, employeeId = shiftScheduled.employeeId, storeId = shiftScheduled.storeId, scheduledStartTime = shiftScheduled.startTime, scheduledEndTime = shiftScheduled.scheduledEndTime, scheduledAt = shiftScheduled.scheduledAt) to outlet StoreContext.FromHRService.FromHRServiceToStoreContext
+      }
+      on shiftCancelled: event HRService.ShiftCancelled is {
+        send command StoreContext.StoreRepository.CancelScheduledShift(shiftId = shiftCancelled.shiftId) to outlet StoreContext.FromHRService.FromHRServiceToStoreContext
       }
       on other is {
         error "Unexpected message for adaptor FromHRService"
@@ -193,22 +229,6 @@ context StoreContext as router is {
       briefly "from hr service"
       described as {
         |Carries messages from the external HRService.
-      }
-    }
-    handler ScheduleEvents is {
-      on event HRService.ShiftScheduled is {
-        do "Add shift to store schedule"
-      }
-      on event HRService.ShiftCancelled is {
-        do "Remove shift from schedule"
-      }
-      on other is {
-        error "Unexpected message for adaptor HRAdapter"
-      }
-    } with {
-      briefly "Handles HR events"
-      described as {
-        |Receives scheduling updates from HR.
       }
     }
   } with {
@@ -334,6 +354,69 @@ context StoreContext as router is {
       }
     }
     inlet StoreRepositoryFromOperationsAnalytics is type StoreRepositoryCommand
+    inlet StoreRepositoryFromStoreContext is type StoreContext.ShiftScheduleCommand with {
+      briefly "The shift schedule as HR keeps it"
+      described as {
+        |Shifts scheduled and cancelled by the HR service, which owns the
+        |schedule; the store keeps a copy to staff against.
+      }
+    }
+    command ScheduleShift is {
+      shiftId: ShiftId with {
+        briefly "Shift"
+        described as {
+          |The scheduled shift.
+        }
+      }
+      employeeId: EmployeeId with {
+        briefly "Employee"
+        described as {
+          |Who is scheduled to work it.
+        }
+      }
+      storeId: StoreId with {
+        briefly "Store"
+        described as {
+          |The store the shift is at.
+        }
+      }
+      scheduledStartTime: TimeStamp with {
+        briefly "Starts"
+        described as {
+          |When the shift is scheduled to start.
+        }
+      }
+      scheduledEndTime: TimeStamp with {
+        briefly "Ends"
+        described as {
+          |When the shift is scheduled to end.
+        }
+      }
+      scheduledAt: TimeStamp with {
+        briefly "Scheduled"
+        described as {
+          |When HR scheduled it.
+        }
+      }
+    } with {
+      briefly "Add a shift to the store's schedule"
+      described as {
+        |HR scheduled someone to work at this store.
+      }
+    }
+    command CancelScheduledShift is {
+      shiftId: ShiftId with {
+        briefly "Shift"
+        described as {
+          |The shift HR cancelled.
+        }
+      }
+    } with {
+      briefly "Remove a shift from the store's schedule"
+      described as {
+        |HR cancelled a shift it had scheduled.
+      }
+    }
     command PersistIncidentRecorded is {
       storeId: StoreId with {
         briefly "Row addressed"
@@ -729,8 +812,54 @@ context StoreContext as router is {
         |The persistence shape of store data as this repository stores it.
       }
     }
+    record ScheduledShift is {
+      shiftId: ShiftId with {
+        briefly "Shift"
+        described as {
+          |The scheduled shift.
+        }
+      }
+      employeeId: EmployeeId with {
+        briefly "Employee"
+        described as {
+          |Who is scheduled to work it.
+        }
+      }
+      storeId: StoreId with {
+        briefly "Store"
+        described as {
+          |The store the shift is at.
+        }
+      }
+      scheduledStartTime: TimeStamp with {
+        briefly "Starts"
+        described as {
+          |When the shift is scheduled to start.
+        }
+      }
+      scheduledEndTime: TimeStamp with {
+        briefly "Ends"
+        described as {
+          |When the shift is scheduled to end.
+        }
+      }
+      scheduledAt: TimeStamp with {
+        briefly "Scheduled"
+        described as {
+          |When HR scheduled it.
+        }
+      }
+    } with {
+      briefly "Scheduled shift row"
+      described as {
+        |One shift on the store's schedule, as HR scheduled it.
+      }
+    }
     schema StoreData is relational
+      of shifts as record ScheduledShift
       of stores as record StoredStore
+        link shiftStore as field ScheduledShift.storeId to field StoredStore.storeId
+        key on field ScheduledShift.shiftId
         key on field StoredStore.storeId
         index on field StoredStore.name
  with {
@@ -740,6 +869,12 @@ context StoreContext as router is {
       }
     }
     handler StorePersistence is {
+      on scheduleShift: command ScheduleShift is {
+        store record ScheduledShift(shiftId = scheduleShift.shiftId, employeeId = scheduleShift.employeeId, storeId = scheduleShift.storeId, scheduledStartTime = scheduleShift.scheduledStartTime, scheduledEndTime = scheduleShift.scheduledEndTime, scheduledAt = scheduleShift.scheduledAt) in StoreData.shifts
+      }
+      on cancelScheduledShift: command CancelScheduledShift is {
+        delete from StoreData.shifts where shiftId == cancelScheduledShift.shiftId
+      }
       on persistIncidentRecorded: command PersistIncidentRecorded is {
         update StoreData.stores set incident = persistIncidentRecorded.incident, recordedAt = persistIncidentRecorded.recordedAt where storeId == persistIncidentRecorded.storeId
       }

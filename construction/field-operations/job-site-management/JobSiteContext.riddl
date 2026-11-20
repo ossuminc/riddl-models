@@ -80,6 +80,24 @@ context JobSiteContext as router is {
     }
   }
   inlet JobSiteCommandStreamIn is type JobSiteContext.JobSiteRequest
+  inlet JobSiteContextFromProjectService is command JobSite.RecordProjectChange with {
+    briefly "What FromProjectService sends JobSiteContext"
+    described as {
+      |Its own inlet: an inlet accepts exactly one connector.
+    }
+  }
+  inlet JobSiteContextFromWeatherService is command JobSite.SuspendSite with {
+    briefly "What FromWeatherService sends JobSiteContext"
+    described as {
+      |Its own inlet: an inlet accepts exactly one connector.
+    }
+  }
+  connector 'FromProjectService Intake' is from outlet JobSiteContext.FromProjectService.FromProjectServiceToJobSiteContext to inlet JobSiteContext.JobSiteContextFromProjectService with {
+    briefly "Project changes on their way to the boundary"
+  }
+  connector 'FromWeatherService Intake' is from outlet JobSiteContext.FromWeatherService.FromWeatherServiceToJobSiteContext to inlet JobSiteContext.JobSiteContextFromWeatherService with {
+    briefly "Weather suspensions on their way to the boundary"
+  }
   outlet JobSiteCommandStreamOut is type JobSiteCommand
   inlet JobSiteResultStreamIn is result JobSite.JobSiteResult
   outlet JobSiteResultStreamOut is result JobSite.JobSiteResult
@@ -120,6 +138,9 @@ context JobSiteContext as router is {
     }
     on suspendSite: command JobSite.SuspendSite is {
       send suspendSite to outlet JobSiteContext.JobSiteCommandStreamOut
+    }
+    on recordProjectChange: command JobSite.RecordProjectChange is {
+      send recordProjectChange to outlet JobSiteContext.JobSiteCommandStreamOut
     }
     on resumeSite: command JobSite.ResumeSite is {
       send resumeSite to outlet JobSiteContext.JobSiteCommandStreamOut
@@ -182,11 +203,18 @@ context JobSiteContext as router is {
       |The model's side of the NotificationService conversation.
     }
   }
-  adaptor FromProjectService from context ProjectService as sink is { 
+  adaptor FromProjectService from context ProjectService as flow is { 
     inlet FromProjectServiceIn is type ProjectService.ProjectServiceEvent
+    outlet FromProjectServiceToJobSiteContext is command JobSite.RecordProjectChange
+ with {
+      briefly "What FromProjectService tells JobSiteContext"
+    }
     handler FromProjectServiceHandler is {
       on scheduleChanged: event ProjectService.ScheduleChanged is {
         do "a changed project schedule shifts what is planned; the site's own state is unaffected"
+      }
+      on projectUpdated: event ProjectService.ProjectUpdated is {
+        send command JobSite.RecordProjectChange(jobSiteId = prompt("a job site of the updated project"), projectId = projectUpdated.projectId, projectChangeType = projectUpdated.updateType, projectChangeDescription = projectUpdated.description, projectChangedAt = projectUpdated.updatedAt) to outlet JobSiteContext.FromProjectService.FromProjectServiceToJobSiteContext
       }
       on other is {
         error "Unexpected message for adaptor FromProjectService"
@@ -194,20 +222,8 @@ context JobSiteContext as router is {
     } with {
       briefly "from project service"
       described as {
-        |Carries messages from the external ProjectService.
-      }
-    }
-    handler ProjectEvents is {
-      on event ProjectService.ProjectUpdated is {
-        do "Update site with project changes"
-      }
-      on other is {
-        error "Unexpected message for adaptor ProjectAdapter"
-      }
-    } with {
-      briefly "Handles project events"
-      described as {
-        |Syncs site with project updates.
+        |Carries messages from the external ProjectService; a project change
+        |is recorded on the project's site.
       }
     }
   } with {
@@ -260,11 +276,20 @@ context JobSiteContext as router is {
       |The model's side of the SafetyComplianceService conversation.
     }
   }
-  adaptor FromWeatherService from context WeatherService as sink is { 
+  adaptor FromWeatherService from context WeatherService as flow is { 
     inlet FromWeatherServiceIn is type WeatherService.WeatherServiceEvent
+    outlet FromWeatherServiceToJobSiteContext is command JobSite.SuspendSite
+ with {
+      briefly "What FromWeatherService tells JobSiteContext"
+    }
     handler FromWeatherServiceHandler is {
       on forecastUpdated: event WeatherService.ForecastUpdated is {
         do "a forecast informs whoever decides to suspend work; it does not decide it"
+      }
+      on weatherAlert: event WeatherService.WeatherAlert is {
+        when prompt("the alert is severe enough to stop work at the site") then
+          send command JobSite.SuspendSite(jobSiteId = prompt("the job site at the alert's location"), reason = weatherAlert.message, suspendedBy = prompt("who suspends work for weather")) to outlet JobSiteContext.FromWeatherService.FromWeatherServiceToJobSiteContext
+        end
       }
       on other is {
         error "Unexpected message for adaptor FromWeatherService"
@@ -272,20 +297,8 @@ context JobSiteContext as router is {
     } with {
       briefly "from weather service"
       described as {
-        |Carries messages from the external WeatherService.
-      }
-    }
-    handler WeatherEvents is {
-      on event WeatherService.WeatherAlert is {
-        do "Notify site of weather conditions"
-      }
-      on other is {
-        error "Unexpected message for adaptor WeatherAdapter"
-      }
-    } with {
-      briefly "Handles weather events"
-      described as {
-        |Processes weather alerts for sites.
+        |Carries messages from the external WeatherService; an alert severe
+        |enough to stop work suspends the site.
       }
     }
   } with {
@@ -300,7 +313,7 @@ context JobSiteContext as router is {
   // Adaptor for project service integration
   // Repository for job site persistence
   type JobSiteRepositoryCommand is one of {
-    JobSiteContext.JobSiteRepository.PersistCrewAssigned or JobSiteContext.JobSiteRepository.PersistCrewRemoved or JobSiteContext.JobSiteRepository.PersistDailyReportSubmitted or JobSiteContext.JobSiteRepository.PersistIssueReported or JobSiteContext.JobSiteRepository.PersistIssueResolved or JobSiteContext.JobSiteRepository.PersistSafetyInspectionRecorded or JobSiteContext.JobSiteRepository.PersistSiteActivated or JobSiteContext.JobSiteRepository.PersistSiteClosed or JobSiteContext.JobSiteRepository.PersistSiteCompleted or JobSiteContext.JobSiteRepository.PersistSiteEstablished or JobSiteContext.JobSiteRepository.PersistSiteResumed or JobSiteContext.JobSiteRepository.PersistSiteSuspended
+    JobSiteContext.JobSiteRepository.PersistCrewAssigned or JobSiteContext.JobSiteRepository.PersistCrewRemoved or JobSiteContext.JobSiteRepository.PersistDailyReportSubmitted or JobSiteContext.JobSiteRepository.PersistIssueReported or JobSiteContext.JobSiteRepository.PersistIssueResolved or JobSiteContext.JobSiteRepository.PersistSafetyInspectionRecorded or JobSiteContext.JobSiteRepository.PersistSiteActivated or JobSiteContext.JobSiteRepository.PersistSiteClosed or JobSiteContext.JobSiteRepository.PersistSiteCompleted or JobSiteContext.JobSiteRepository.PersistSiteEstablished or JobSiteContext.JobSiteRepository.PersistSiteResumed or JobSiteContext.JobSiteRepository.PersistSiteSuspended or JobSiteContext.JobSiteRepository.PersistProjectChangeRecorded
   } with {
     briefly "Anything that writes JobSiteRepository"
     described as {
@@ -485,6 +498,39 @@ context JobSiteContext as router is {
         |Instructs this repository to apply SiteResumed to the stored row. A
         |persistence command, not a domain command: it declares no `yields`
         |because storing a row records no new entity state.
+      }
+    }
+    command PersistProjectChangeRecorded is {
+      jobSiteId: JobSiteId with {
+        briefly "Row addressed"
+        described as {
+          |Which stored row ProjectChangeRecorded applies to.
+        }
+      }
+      projectChangeType: String(1,50)? with {
+        briefly "Change type"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+      projectChangeDescription: String(1,500)? with {
+        briefly "Change"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+      projectChangedAt: TimeStamp? with {
+        briefly "Changed"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+    } with {
+      briefly "Persist ProjectChangeRecorded"
+      described as {
+        |Instructs this repository to apply ProjectChangeRecorded to the stored
+        |row. A persistence command, not a domain command: it declares no
+        |`yields` because storing a row records no new entity state.
       }
     }
     command PersistSiteSuspended is {
@@ -720,6 +766,24 @@ context JobSiteContext as router is {
           |As the persisting projector last wrote it.
         }
       }
+      projectChangeType: String(1,50)? with {
+        briefly "Change type"
+        described as {
+          |As the persisting projector last wrote it.
+        }
+      }
+      projectChangeDescription: String(1,500)? with {
+        briefly "Change"
+        described as {
+          |As the persisting projector last wrote it.
+        }
+      }
+      projectChangedAt: TimeStamp? with {
+        briefly "Changed"
+        described as {
+          |As the persisting projector last wrote it.
+        }
+      }
     } with {
       briefly "Stored jobSite row"
       described as {
@@ -757,6 +821,9 @@ context JobSiteContext as router is {
       }
       on persistSiteResumed: command PersistSiteResumed is {
         update JobSiteData.sites set resumedAt = persistSiteResumed.resumedAt where jobSiteId == persistSiteResumed.jobSiteId
+      }
+      on persistProjectChangeRecorded: command PersistProjectChangeRecorded is {
+        update JobSiteData.sites set projectChangeType = persistProjectChangeRecorded.projectChangeType, projectChangeDescription = persistProjectChangeRecorded.projectChangeDescription, projectChangedAt = persistProjectChangeRecorded.projectChangedAt where jobSiteId == persistProjectChangeRecorded.jobSiteId
       }
       on persistSiteSuspended: command PersistSiteSuspended is {
         update JobSiteData.sites set reason = persistSiteSuspended.reason, suspendedAt = persistSiteSuspended.suspendedAt where jobSiteId == persistSiteSuspended.jobSiteId
@@ -887,6 +954,10 @@ context JobSiteContext as router is {
         tell command JobSiteContext.JobSiteRepository.PersistSiteResumed(jobSiteId = siteResumed.jobSiteId, resumedAt = siteResumed.resumedAt) to repository JobSiteContext.JobSiteRepository
         do "apply SiteResumed to the SiteAnalytics projection"
       }
+      on projectChangeRecorded: event JobSite.ProjectChangeRecorded is {
+        tell command JobSiteContext.JobSiteRepository.PersistProjectChangeRecorded(jobSiteId = projectChangeRecorded.jobSiteId, projectChangeType = projectChangeRecorded.projectChangeType, projectChangeDescription = projectChangeRecorded.projectChangeDescription, projectChangedAt = projectChangeRecorded.projectChangedAt) to repository JobSiteContext.JobSiteRepository
+        do "apply ProjectChangeRecorded to the SiteAnalytics projection"
+      }
       on siteSuspended: event JobSite.SiteSuspended is {
         tell command JobSiteContext.JobSiteRepository.PersistSiteSuspended(jobSiteId = siteSuspended.jobSiteId, reason = siteSuspended.reason, suspendedAt = siteSuspended.suspendedAt) to repository JobSiteContext.JobSiteRepository
         do "apply SiteSuspended to the SiteAnalytics projection"
@@ -921,7 +992,7 @@ context JobSiteContext as router is {
   }
   // ---- Event publication for JobSite ----
   type JobSiteEvent is one of {
-    JobSiteContext.JobSite.SiteEstablished or JobSiteContext.JobSite.SiteActivated or JobSiteContext.JobSite.CrewAssigned or JobSiteContext.JobSite.CrewRemoved or JobSiteContext.JobSite.DailyReportSubmitted or JobSiteContext.JobSite.SafetyInspectionRecorded or JobSiteContext.JobSite.IssueReported or JobSiteContext.JobSite.IssueResolved or JobSiteContext.JobSite.SiteSuspended or JobSiteContext.JobSite.SiteResumed or JobSiteContext.JobSite.SiteCompleted or JobSiteContext.JobSite.SiteClosed
+    JobSiteContext.JobSite.SiteEstablished or JobSiteContext.JobSite.SiteActivated or JobSiteContext.JobSite.CrewAssigned or JobSiteContext.JobSite.CrewRemoved or JobSiteContext.JobSite.DailyReportSubmitted or JobSiteContext.JobSite.SafetyInspectionRecorded or JobSiteContext.JobSite.IssueReported or JobSiteContext.JobSite.IssueResolved or JobSiteContext.JobSite.SiteSuspended or JobSiteContext.JobSite.SiteResumed or JobSiteContext.JobSite.SiteCompleted or JobSiteContext.JobSite.SiteClosed or JobSiteContext.JobSite.ProjectChangeRecorded
   } with {
     briefly "JobSite event alternation"
     described as {
@@ -964,6 +1035,9 @@ context JobSiteContext as router is {
       }
       on siteSuspended: event JobSite.SiteSuspended is {
         send siteSuspended to outlet JobSiteEventSplitToSiteAnalytics
+      }
+      on projectChangeRecorded: event JobSite.ProjectChangeRecorded is {
+        send projectChangeRecorded to outlet JobSiteEventSplitToSiteAnalytics
       }
       on siteResumed: event JobSite.SiteResumed is {
         send siteResumed to outlet JobSiteEventSplitToSiteAnalytics
