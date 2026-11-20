@@ -459,6 +459,15 @@ anyway: riddlc does not narrow inside the guard its own suggestion offers
 OnlineOrder 812-813 (`orderCartItems`), MenuContext 540-541, Subscription 636.
 The other 18 are fixed now, one group at a time with Reid.
 
+**Optional identifiers (Reid: I1, 2026-11-19).** An id has no sensible
+default, so the "default, not a guard" ruling does not reach it: absence
+means nothing to address, and the send is guarded with `!= empty`.
+reactive-bbq MenuContext's release apply (233, nested in `onMenu`) and
+rollback (249/251) and advertising-delivery's `selectedAdUnit` (was
+`prompt("not askAnswer.noFill")`) are guarded; MenuContext 240 was
+already the `else` of `== empty`. All five join the riddl narrowing wait,
+which now covers 12 sites; 13 remain to fix.
+
 | # | site | ruling |
 |---|---|---|
 | 1 | cart `ApplyPromoCode` | `PromoCodeApplied` records `code` + `discountPercent`, not money; the fold computes the saving. The command gains `discountPercent`, which the PricingAdapter fills from `PromotionActivated`. |
