@@ -529,6 +529,13 @@ else yield ... end`); oldQuantity and newTotal come from the line. Its one
 advisory joins the narrowing wait (15 positions; the riddl task now names
 `let` bindings). 4 yield prompts left.
 
+**K1 (Reid, 2026-11-20).** supply-chain IssueSupplies keyed its item by the
+context's `ItemId` (UUID) while the order lines key on the domain's
+`ItemRef` (String). The issue path now uses `ItemRef` (IssueSupplies,
+SuppliesIssued, lastIssuedItemId, PersistSuppliesIssued, the stored column;
+inventory keeps ItemId), and costCharged = quantityIssued * the line's
+unitCost, refusing an item not on the order. 3 yield prompts left.
+
 | # | site | ruling |
 |---|---|---|
 | 1 | cart `ApplyPromoCode` | `PromoCodeApplied` records `code` + `discountPercent`, not money; the fold computes the saving. The command gains `discountPercent`, which the PricingAdapter fills from `PromotionActivated`. |
