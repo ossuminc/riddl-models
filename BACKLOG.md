@@ -489,6 +489,19 @@ otherwise system.now`. CreateSubscription's required fields still enforce a
 payment method for a paid subscription. 4 remain: fund-accounting 3,
 streaming-platform 1.
 
+**N1 + M1 (Reid, 2026-11-20).** fund-accounting's share price and count
+started `empty`, and the fund deadlocks without them (no NAV without shares,
+no shares without a NAV). A fund now launches at 0 shares and an
+`initialSharePrice` (new CreateFund / `on init` field), and both FundInfo
+fields are required. The FundSuspended/FundResumed folds rebuilt FundInfo
+from prompts and erased shares and price; they now carry every field
+forward and set status by enumerator. That read is
+`state-read-before-creation` in an entity-level handler (riddlc assumes
+any morph there may be creation), so the two folds moved into state
+handlers of ActiveFund and SuspendedFund (M1) -- exact per the CM, since
+the live handler is entity-level + current state's. 1 remains:
+streaming-platform.
+
 | # | site | ruling |
 |---|---|---|
 | 1 | cart `ApplyPromoCode` | `PromoCodeApplied` records `code` + `discountPercent`, not money; the fold computes the saving. The command gains `discountPercent`, which the PricingAdapter fills from `PromotionActivated`. |
