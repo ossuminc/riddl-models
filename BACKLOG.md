@@ -509,6 +509,20 @@ guards on `not askAnswer.entitled` and sends `finalPosition = 0 seconds`
 `value-optional-for-required` sites are done**; the 14 left wait on riddl's
 narrowing fix.
 
+**B1 (Reid, 2026-11-20): 8 yield prompts written with the ruled value
+forms** -- cart RemoveItem/RemovePromoCode (`one of ... otherwise 0`),
+payment `captureAmount otherwise` the authorised amount, supply-chain
+`sum of` for totalAmount and totalQuantityReceived, fund netAmount
+(`when Buy then gross + fees else gross - fees end`, the else covering
+every non-Buy type; the Buy/Sell guard is a real comparison), maintenance
+totalPartsCost (`sum of ... by p.quantity * p.unitCost`), deployment
+`minutes of (completedAt - VerifyingState.startedAt)` (verification time:
+the command is handled in Verifying). 5 left, each a decision: cart
+UpdateQuantity (Quantity is Natural, no zero default), supply IssueSupplies
+costCharged (command ItemId is a UUID, lines key on an ItemRef string),
+maintenance totalLaborMinutes (laborMinutes is Natural?), incident timeline
+(no collection literal, by ruling).
+
 | # | site | ruling |
 |---|---|---|
 | 1 | cart `ApplyPromoCode` | `PromoCodeApplied` records `code` + `discountPercent`, not money; the fold computes the saving. The command gains `discountPercent`, which the PricingAdapter fills from `PromotionActivated`. |
