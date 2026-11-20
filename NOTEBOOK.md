@@ -18,8 +18,8 @@ only the sweep does.
 **In flight: BACKLOG #44**, the 2.8.0 opportunities survey. It is filed and
 awaiting Reid's rulings, one family at a time. **F1 DONE** (F1a, 1,250
 timestamp fills -> `system.now`, sweep still 0). **F4a DONE** (64 ask
-conditions are real Booleans; 30 put back, see BACKLOG #44 F4). Next: the
-put-back ruling, then F6's 79.
+conditions are real Booleans; 30 put back, see BACKLOG #44 F4). E1 DONE (15 reply
+lists `T+` -> `T*`). Next: the literal-zero ruling, then F6's 79.
 
 - **Asking Reid**: ONE question at a time, each with context, alternatives,
   consequences and a recommendation. A table of 18 rows was rejected as
