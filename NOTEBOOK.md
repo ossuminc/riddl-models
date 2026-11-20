@@ -21,7 +21,7 @@ enforce the zero; the sweep does: `./scripts/collect-warnings.py
 |---|---:|---|
 | errors, deprecations | 0 | done (steps 1, 2; -25's 8 `value-not-natural` fixed) |
 | `stmt-yield-argument-prompt` | 14 | UNBLOCKED: -41 has the value forms (`task/2026-11-19-riddl-value-forms-landed.md`) |
-| `value-optional-for-required` | 25 | UNBLOCKED: -41 has `x otherwise y`; a default per site (Reid's ruling) |
+| `value-optional-for-required` | 25 | 7 guarded sites WAIT on riddl (guard does not narrow; task filed); 18 being fixed with Reid |
 | `msg-clause-undeliverable` | 0 | DONE: steps 3, 4, queries, projector events, 5a-5e |
 | `stream-outlet-never-sent` | 0 | DONE with 5e |
 

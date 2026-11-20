@@ -451,6 +451,14 @@ gets a default rather than a guard (reactive-bbq 16, subscription-management
 4, fund-accounting 3, advertising-delivery 1, streaming-platform 1). So all
 of step 5's remainder waits on riddl's next staging; steps 3 and 4 do not.
 
+**Revised 2026-11-19 (Reid: N3).** On -45, 7 of the 25 are already guarded
+(`when x != empty then`, or the `else` of `== empty then error`) and fire
+anyway: riddlc does not narrow inside the guard its own suggestion offers
+(40-line repro). They stay as written and wait for the fix, filed as
+`../riddl/task/2026-11-19-empty-guard-does-not-narrow.md`: TableOrder 668-669,
+OnlineOrder 812-813 (`orderCartItems`), MenuContext 540-541, Subscription 636.
+The other 18 are fixed now, one group at a time with Reid.
+
 | # | site | ruling |
 |---|---|---|
 | 1 | cart `ApplyPromoCode` | `PromoCodeApplied` records `code` + `discountPercent`, not money; the fold computes the saving. The command gains `discountPercent`, which the PricingAdapter fills from `PromotionActivated`. |
