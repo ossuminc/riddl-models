@@ -97,18 +97,15 @@ usage-rating's ValidateUsageRecord folds into submission and
 CalculateCharges into ApplyRatePlan. The four commands, their clauses and
 relays are deleted. **Step 3 is complete.**
 
-**usage-metering recurrence (Reid: A for now, 2026-11-19).** On -45 each
-Meter schedules its own AggregateUsage from its creation `on init`, on a
-looped `MeterClock` outlet -> inlet: `match definition.billingPeriod`,
-Hourly/Daily/Weekly as `send ... every 1 hour / 1 day / 7 days`; Monthly,
-Quarterly and Yearly are calendar periods, so only their FIRST period is
-scheduled. **Revisited 2026-11-19 (Reid: C2): WAIT for riddl [1.32]
-calendar schedules to reach the staged riddlc**, then write the `default`
-case as a recurrence and drop its `do` note. Requested in
-`../riddl/task/2026-11-19-calendar-schedules-requested.md`. Rejected
-workaround, measured on -45: re-emitting from `on aggregateUsage` `at
-periodEnd + <prompted Duration>` validates at 0; `at <prompted instant>` is
-`stream-graph-cycle`.
+**usage-metering recurrence: DONE 2026-11-20 on -58 (Reid: C2, then Q1).**
+Each Meter schedules its own AggregateUsage from its creation `on init` on
+the looped `MeterClock`, by `match definition.billingPeriod`: Hourly/Daily/
+Weekly as `every 1 hour / 1 day / 7 days`; Monthly `every month on day 1`,
+Quarterly `every cron "0 0 1 1,4,7,10 *"` (calendar quarters; `every 3
+months` would count from the creation month), Yearly `every year on
+january 1`, all in the default UTC, with `periodStart = system.now - 1
+month / 3 months / 1 year`. The riddl request is answered by riddl's
+`task/2026-11-20-riddl-calendar-schedules.md`.
 
 **The 14 queries without `replies`: DONE 2026-11-19, sweep 101 -> 87, 0
 new.** 8 entity queries that told their result to themselves took Reid's
