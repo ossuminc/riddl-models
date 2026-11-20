@@ -10,43 +10,22 @@ that as `RIDDLC` for manual evidence runs, since `../bin/riddlc` drifts the
 moment riddl restages. The bump changed nothing: prettify and `.bast`
 byte-identical, checkAll green, BAST 189/189, unsent 0.
 
-**Reid's goal (2026-11-18): every model free of errors, warnings and
-deprecations.** Tracked as **BACKLOG #43**. `checkAll` is green but does NOT
-enforce the zero; the sweep does: `./scripts/collect-warnings.py
---include-patterns`.
+**BACKLOG #43 is CLOSED at zero** (2026-11-20): the sweep
+(`./scripts/collect-warnings.py --include-patterns`) reports 0 findings of
+every severity on 2.8.0. Hold it there. `checkAll` does not enforce the zero;
+only the sweep does.
 
-### Where #43 stands (sweep on 2.8.0): 1 finding
+**In flight: BACKLOG #44**, the 2.8.0 opportunities survey. It is filed and
+awaiting Reid's rulings, one family at a time; F1 (1,295 timestamp fills ->
+`system.now`) is the suggested first.
 
-| finding | count | state |
-|---|---:|---|
-| errors, deprecations | 0 | done (steps 1, 2; -25's 8 `value-not-natural` fixed) |
-| `stmt-yield-argument-prompt` | 0 | DONE 2026-11-20 (B1 8, P1 1, U1 2, K1 1, W1 1, T1 1): -41 has the value forms (`task/2026-11-19-riddl-value-forms-landed.md`) |
-| `value-optional-for-required` | 1 | 2.8.0's guard narrowing cleared 14 with no edit; `Cart.riddl:892` (`line.quantity` under a guard on `line`, riddl [1.34]) to be rewritten by Reid's ruling |
-| `msg-clause-undeliverable` | 0 | DONE: steps 3, 4, queries, projector events, 5a-5e |
-| `stream-outlet-never-sent` | 0 | DONE with 5e |
-
-- **riddl's call-argument task is done** (2026-11-20, `task/done/`): -58
-  carries riddl `8935713ec` and reactive-bbq has 0 errors on it.
-- **riddl's value-forms task is done** (2026-11-20, `task/done/`): every
-  yield prompt is written; `otherwise 0` errors on a Natural.
-- **-58 carries [1.32]** (calendar/cron schedules, `date + 1 month`;
-  `task/2026-11-20-riddl-calendar-schedules.md`): usage-metering's monthly
-  period (C2) and policy-lifecycle's `newPaidToDate` (P1) are DONE.
-- **Next: Reid's rulings on what is left**, one question at a time; the
-  lists are in BACKLOG #43. Step 3's original rule, per site: (a) an app control when the app
-  already has an outlet for that stream; (b) wire it through the existing
-  inbound adaptor when it clearly comes from another system; (c) otherwise
-  collect it in #43 for one session with Reid. Never delete a clause without
-  his say. Known cases: deployment-pipeline `RollbackDeployment`; and every
-  new command this session added an app control for where one fitted.
-- **When riddl stages the value forms**: re-run
-  `scripts/yield-prompts/census.py` (it takes `--dates` and `--apply`), then
-  the 25 optional-for-required sites with `otherwise`.
 - **Asking Reid**: ONE question at a time, each with context, alternatives,
   consequences and a recommendation. A table of 18 rows was rejected as
   unanswerable.
 - **Never wait on a consumer** (riddlg, Synapify): drop a notice in their
   `task/`, close ours.
+- **Never delete a file in another project's `task/`**; moving our own to
+  its `done/` is the most allowed.
 
 ### Traps that bit this session
 
@@ -64,31 +43,61 @@ enforce the zero; the sweep does: `./scripts/collect-warnings.py
   there validates at 0 (filed with riddl). Canary `let`-path reads by eye.
 - **Value spellings that work** (canaried RED): `<Entity>.<State>.<f>` reads
   current state; `record Money(...)`; `count of`; `any of xs as e where p`;
-  `Date + 31 days`; `create` inside `foreach`; statement `when/else` with a
-  yield per branch; `system.now` only in a command clause. NOT available:
-  `Duration / Duration`, sum, element-by-key, conditional VALUE.
+  `Date + 31 days`, `date + 1 month`; `create` inside `foreach`; `sum of xs
+  as e by <expr>`; `one of xs as e where p` (gives `T?`); `x otherwise y`
+  (binds loosest, so parenthesise it inside `by`); `when c then a else b end`
+  as a value; `minutes of d`; `system.now` only in a command clause. NOT
+  available: `Duration / Duration`; `otherwise 0` on a `Natural` is
+  `value-not-natural`.
+- **Narrowing matches the WHOLE path** (riddl [1.34]): a guard on `line` does
+  not cover `line.quantity`. Guard the path itself (`when line.quantity ==
+  empty`); through optional chaining it means the same thing.
 - **A command declaring `yields` must yield (or refuse) on EVERY path.**
 - **`Natural` is positive**: a counter starting at 0 is `Whole`.
 
 ### Certainty
 
-Verified on -25: every count, by sweep and gate; BAST round trip 189/189 was
-last run on -22. Assumed: the implementers' unruled choices listed in BACKLOG
-#43 § Step 5 (promo description = code, loan balance after transaction,
-treaty net formula and TreatyRef prompt, ...). Each is one line to change.
+Verified on 2.8.0 (2026-11-20): sweep 0, checkAll green, BAST 189/189,
+unsent 0. #44's counts come from a regex census joined to `riddlc dump`
+(8,602 of 8,617 fills joined); family boundaries are heuristic, so treat them
+as a sizing, not a work list.
 
 ### task/
 
-Empty. The riddl value-checks task was closed 2026-11-19 (in `task/done/`):
-the Errors were fixed by `2f2291b63`, and the 25 advisories are deferred
-under #43's `otherwise` ruling.
+Empty. riddl's 2.8.0 upgrade task is in `task/done/` with Results.
 
 ### Pointers
 
-Open work: **BACKLOG.md** #43 first; also #40 (`query one`), #30, #1, #23,
-#34. Durable facts: **CLAUDE.md**. Lessons: § 2026-11-18 below.
+Open work: **BACKLOG.md** #44 first; also #42, #40 (`query one`), #30, #1,
+#23, #34. Durable facts: **CLAUDE.md**. Lessons: § 2026-11-20 below.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
+
+---
+
+## 2026-11-20 — 2.8.0 pinned, #43 closed at zero, the 2.8.0 survey
+
+riddl published 2.8.0 and dropped an upgrade task. Setting the pin and
+turning the override off moved nothing: prettify and bastify rewrote no
+file, because the `.bast` files were already at revision 37 from the staged
+-48. The guard narrowing that #43 had waited on cleared 14 of the 15
+`value-optional-for-required` sites with no edit.
+
+**The last one closed with a better guard, not a default.** `Cart.riddl:892`
+read `line.quantity` under `when line == empty`, and narrowing matches the
+whole path. `line.quantity otherwise 0` errors (`value-not-natural`), as
+predicted. `when line.quantity == empty then error ...` validates at 0 and
+means the same thing, because a missing line has an empty quantity. **When a
+guard does not narrow a path, guard the path itself** before inventing a
+default.
+
+**The survey's main lesson is about where fills come from**, not about 2.8.0
+syntax. Of 8,602 fills, only 147 name a field that the message their clause
+handles already carries, so the next large reduction is not mechanical
+substitution from the message. It comes from the clock (F1/F2), from the
+state being left (F3, the M1 shape), or from a decision. `on entry` found no
+use in the corpus. Recurrence found one clear case (reactive-bbq's
+day-of-silence clock) and a list of periodic commands to rule on.
 
 ---
 
