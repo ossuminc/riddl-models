@@ -410,6 +410,9 @@ submission, `coverageStartDate` from `requestedEffectiveDate`,
 `gracePeriodEnd = paidToDate + 31 days` (typed, canaried RED), and
 `ExpireTreaty.finalSettlementDue` as a new command field.
 `newPaidToDate` joined the value-forms task as a conditional.
+**Done 2026-11-20 on -58 (Reid: P1):** it matches the policy's
+`premiumFrequency` and yields `paidToDate + 1 month / 3 months / 6 months /
+1 year`, one period per premium.
 
 **Now 32** = 14 waiting on riddl's value forms + 18 model-by-model.
 
