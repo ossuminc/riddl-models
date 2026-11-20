@@ -17,8 +17,9 @@ only the sweep does.
 
 **In flight: BACKLOG #44**, the 2.8.0 opportunities survey. It is filed and
 awaiting Reid's rulings, one family at a time. **F1 DONE** (F1a, 1,250
-timestamp fills -> `system.now`, sweep still 0); next to ask: F4's direct
-subset, then F6's 79.
+timestamp fills -> `system.now`, sweep still 0). **F4a step 1 DONE** (49 ask
+conditions are real Booleans; 30 put back, see BACKLOG #44 F4). Next: F4's
+field comparisons, then the put-back ruling, then F6's 79.
 
 - **Asking Reid**: ONE question at a time, each with context, alternatives,
   consequences and a recommendation. A table of 18 rows was rejected as
