@@ -25,6 +25,11 @@ enforce the zero; the sweep does: `./scripts/collect-warnings.py
 | `msg-clause-undeliverable` | 0 | DONE: steps 3, 4, queries, projector events, 5a-5e |
 | `stream-outlet-never-sent` | 0 | DONE with 5e |
 
+- **riddl's call-argument task is done** (2026-11-20, `task/done/`): -58
+  carries riddl `8935713ec` and reactive-bbq has 0 errors on it.
+- **-58 carries [1.32]** (calendar/cron schedules, `date + 1 month`;
+  `task/2026-11-20-riddl-calendar-schedules.md`): usage-metering's monthly
+  period (C2) and policy-lifecycle's `newPaidToDate` are now writable.
 - **Next: Reid's rulings on what is left**, one question at a time; the
   lists are in BACKLOG #43. Step 3's original rule, per site: (a) an app control when the app
   already has an outlet for that stream; (b) wire it through the existing
