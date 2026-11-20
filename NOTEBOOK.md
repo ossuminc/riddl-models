@@ -4,7 +4,7 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.7.0-45-1ac25949`, UNPUBLISHED riddl `main`, override ON:**
+**Pin `2.7.0-48-a32abc4c`, UNPUBLISHED riddl `main`, override ON:**
 `riddlcPath := Some(file("../bin/riddlc"))`; libraries from `publishLocal`
 (verified at -25 on `Test/dependencyClasspath`). **Take the override off at
 the 2.8.0 tag.** riddl restages often, and did so mid-session twice: run
