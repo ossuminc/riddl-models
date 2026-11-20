@@ -1429,14 +1429,16 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-**As of 2026-11-20 the pin is the UNPUBLISHED staged `2.7.0-58-69f2b7a2`, override
-ON** (`riddlcPath := Some(file("../bin/riddlc"))`, libraries from `publishLocal`),
-for 2.8.0's creation model; take it off at the 2.8.0 tag. The paragraph below
-describes the last PUBLISHED pin.
-
-Current published version: **2.7.0** (2026-11-17). With that pin the override is
+Current published version: **2.8.0** (2026-11-20). With that pin the override is
 **OFF**: `riddlcPath := None`, the plugin downloads to
-`~/.cache/riddlc/2.7.0/bin/riddlc`, the libraries resolve from GitHub Packages.
+`~/.cache/riddlc/2.8.0/bin/riddlc`, the libraries resolve from GitHub Packages.
+2.8.0 makes `on init` the entity's creation clause (no initial state), adds
+`on entry`, recurrence (`every <period>` sends in `on init`, `on every`
+clauses, calendar and cron schedules), calendar-period arithmetic, the value
+forms (`sum of`, `one of ... where`, `otherwise`, `when ... end`, `<unit> of`),
+and `value-optional-for-required` with guard narrowing; BAST revision 37. The
+corpus tracked it on staged snapshots, so the bump changed nothing: prettify
+and `.bast` identical, gates green, sweep 1 (`Cart.riddl:892`, riddl [1.34]).
 2.7.0 renames the instance-creating value `initiate` to **`create
 <Entity>(args)`** (`initiate` still parses, `[deprecated]
 [value-initiate-keyword]`), lets a streamlet reference say `flow`/`router`/
@@ -1517,11 +1519,10 @@ V=$(sed -n 's/.*riddlVersion = "\(.*\)"/\1/p' build.sbt)
 RIDDLC=~/.cache/riddlc/$V/bin/riddlc ./scripts/collect-warnings.py
 ```
 
-**On the CURRENT unpublished pin that cache path does not exist**, because
-the plugin never downloaded anything — `../bin/riddlc` IS the pinned binary,
-so the scripts' default is correct for once. That coincidence ends the moment
-the pin returns to a published tag, so keep verifying with `riddlc info`
-rather than assuming either path.
+**On an unpublished pin that cache path does not exist**, because the plugin
+never downloads anything — `../bin/riddlc` IS the pinned binary then. On a
+published pin (2.8.0 now) the two diverge as soon as riddl restages, so keep
+verifying with `riddlc info` rather than assuming either path.
 
 **`RIDDLC=../bin/riddlc` is right for the PYTHON scripts and WRONG for
 `verify-bast-roundtrip.sh`.** The python ones resolve a relative value
@@ -1609,7 +1610,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.7.0-58-69f2b7a2 | `riddlVersion` in `build.sbt` (staged; override ON until 2.8.0) |
+| riddlc | 2.8.0 | `riddlVersion` in `build.sbt` (published; override OFF) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
@@ -1807,8 +1808,8 @@ needs drive language changes, which land here as model changes. riddl's
 `release/2` is merged, tagged `2.0.0` and deleted, so the line to track is now
 **`main`**, and the corpus prefers **published tags wherever possible**.
 
-It is currently (2026-11-20) on the STAGED **2.7.0-58-69f2b7a2** with the
-override ON, until the 2.8.0 tag. Point
+It is currently (2026-11-20) on the PUBLISHED **2.8.0** with the override
+OFF. Point
 `riddlcPath` at a staged `../bin/riddlc` only to track a commit that has not
 been published yet, and **take the override off the moment it is** — a stale
 override is indistinguishable from a clean corpus.

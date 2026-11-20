@@ -14,16 +14,17 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. The pin is an UNPUBLISHED riddl `main`
-// build, 2.7.0-17-f3ecdb82 (staged 2026-11-18), so `riddlcPath` points at the
-// staged ../bin/riddlc and the libraries come from `sbt publishLocal` in the
-// riddl checkout. It carries what riddl 2.8.0 will publish: `on init` is the
-// entity's CREATION clause, at entity level, and may `morph` in an
-// event-sourced entity; there is no initial state; and a state has `on entry`.
-// reactive-bbq's create bridge collapsed onto it. Take the override off at the
-// first published tag that carries it. 2.7.0 spells the creating value `create`
-// (`initiate` deprecated) and moves BAST to revision 31; the corpus needed no
-// change. 2.6.0 forbids `system.now`/`system.random` in a
+// same build, so one value pins both. The pin is the PUBLISHED 2.8.0
+// (2026-11-20), so the override is off and both download. 2.8.0 makes `on init`
+// the entity's CREATION clause, at entity level, morphing into the starting
+// state (there is no initial state); adds `on entry`, recurrence (`every
+// <period>` sends and `on every` clauses, calendar and cron schedules),
+// calendar-period arithmetic, the value forms `sum of`/`one of`/`otherwise`/
+// `when ... end`/`<unit> of`, and the `value-optional-for-required` advisory
+// with guard narrowing. BAST revision 37. The corpus tracked it on staged
+// snapshots from 2026-11-18 and needed no change at the bump. 2.7.0 spells
+// the creating value `create` (`initiate` deprecated) and moves BAST to
+// revision 31; the corpus needed no change. 2.6.0 forbids `system.now`/`system.random` in a
 // fold of an entity's own event (`entity-event-sourced-fold-nondeterministic`),
 // which the corpus cleared before the bump. 2.5.0 makes tell routing
 // type-aware: a tell no path CARRIES is an Error
@@ -53,7 +54,7 @@ enablePlugins(RiddlSbtPlugin)
 // Whenever a rule the corpus needs lands after a tag, the override goes back
 // on -- and comes off at the first published tag that carries it, which is
 // this edit.
-lazy val riddlVersion = "2.7.0-58-69f2b7a2"
+lazy val riddlVersion = "2.8.0"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -98,9 +99,8 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
 
     // The test suite validates the corpus through the library API, which is a
     // different path from the CLI that riddlcValidate drives. riddlVersion names
-    // an UNPUBLISHED snapshot, so these resolve from ~/.ivy2/local and require
-    // `sbt publishLocal` in the riddl checkout; a published tag would resolve
-    // from GitHub Packages with nothing else to do.
+    // a published tag, so these resolve from GitHub Packages; an unpublished
+    // snapshot would need `sbt publishLocal` in the riddl checkout.
     libraryDependencies ++= Seq(
       "com.ossuminc" %% "riddl-language" % riddlVersion % Test,
       "com.ossuminc" %% "riddl-passes" % riddlVersion % Test,
@@ -114,7 +114,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // is published -- a stale override is indistinguishable from a clean
     // corpus. While an override is on, this path WINS over riddlVersion, so
     // verify `riddlc info` against the pin rather than trusting the pin.
-    riddlcPath := Some(file("../bin/riddlc")),
+    riddlcPath := None,
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),
