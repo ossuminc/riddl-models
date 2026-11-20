@@ -479,6 +479,16 @@ asks for narrowing through `and`). The narrowing wait covers 14 advisory
 positions; 7 remain to fix (subscription 3, fund-accounting 3,
 streaming-platform 1).
 
+**S1 (Reid, 2026-11-20).** subscription-management's one `on init` serves
+both CreateSubscription and StartTrial, so `paymentMethod`/`startDate` are
+optional parameters (two `on init`s are `handler-duplicate-special-clause`:
+"a handler has one construction"). `ActiveStateData.paymentMethod` becomes
+`PaymentMethod?` (a trial may have none; the trial branch passes `empty`
+instead of an "if any" prompt), and the paid branch takes `startDate
+otherwise system.now`. CreateSubscription's required fields still enforce a
+payment method for a paid subscription. 4 remain: fund-accounting 3,
+streaming-platform 1.
+
 | # | site | ruling |
 |---|---|---|
 | 1 | cart `ApplyPromoCode` | `PromoCodeApplied` records `code` + `discountPercent`, not money; the fold computes the saving. The command gains `discountPercent`, which the PricingAdapter fills from `PromotionActivated`. |
