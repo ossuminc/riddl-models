@@ -146,6 +146,15 @@ context OrderContext as router is {
       |context does itself by creating one, or any command for an existing one.
     }
   }
+  type PaymentAdapterCommand is one of {
+    Order.ConfirmPayment or Return.ProcessRefund
+  } with {
+    briefly "What the payment gateway's outcomes become"
+    described as {
+      |A captured payment confirms the order; a completed refund settles the
+      |return it was issued for.
+    }
+  }
   connector 'ShipmentQuery Intake' is from outlet OrderContext.ShipmentQueriesOut to inlet OrderContext.Shipment.ShipmentQueries with {
     briefly "Look-ups on their way to the shipment"
   }
@@ -294,7 +303,7 @@ context OrderContext as router is {
       |The channel the `tell` travels.
     }
   }
-  inlet OrderContextFromPaymentAdapter is type OrderContext.OrderRequest with {
+  inlet OrderContextFromPaymentAdapter is type OrderContext.PaymentAdapterCommand with {
     briefly "What PaymentAdapter sends OrderContext"
     described as {
       |Its own inlet: an inlet accepts exactly one connector.
@@ -304,7 +313,6 @@ context OrderContext as router is {
   outlet OrderCommandStreamOut is type OrderCommand
   inlet ReturnCommandStreamIn is type OrderContext.ReturnRequest
   outlet ReturnCommandStreamOut is type ReturnCommand
-  inlet ShipmentCommandStreamIn is type OrderContext.ShipmentRequest
   outlet ShipmentCommandStreamOut is type ShipmentCommand
   inlet MarketplaceOrderResultStreamIn is result Order.OrderResult
   outlet MarketplaceOrderResultStreamOut is result Order.OrderResult
@@ -370,6 +378,9 @@ context OrderContext as router is {
     }
     on receiveReturn: command Return.ReceiveReturn is {
       forward receiveReturn to outlet OrderContext.ReturnCommandStreamOut
+    }
+    on processRefund: command Return.ProcessRefund is {
+      forward processRefund to outlet OrderContext.ReturnCommandStreamOut
     }
     on initShipment: command OrderContext.InitShipment is {
       let givenCreatedAt: type TimeStamp = prompt("the created at of this shipment created")
@@ -553,7 +564,7 @@ context OrderContext as router is {
   }
   adaptor PaymentAdapter from context PaymentGateway as flow is { 
     inlet PaymentAdapterIn is type PaymentGateway.PaymentGatewayEvent
-    outlet PaymentAdapterToOrderContext is type OrderContext.OrderRequest
+    outlet PaymentAdapterToOrderContext is type OrderContext.PaymentAdapterCommand
  with {
       briefly "What PaymentAdapter publishes to OrderContext"
       described as {
@@ -568,8 +579,8 @@ context OrderContext as router is {
       on event PaymentGateway.PaymentFailed is {
         do "Log payment failure and notify order processing"
       }
-      on event PaymentGateway.RefundCompleted is {
-        do "Update return status with refund confirmation"
+      on refundCompleted: event PaymentGateway.RefundCompleted is {
+        send command Return.ProcessRefund(returnId = prompt("the return this refund was issued for, by its transaction"), refundAmount = prompt("the refunded amount, from refundCompleted.paymentRefundAmount"), refundMethod = prompt("the method the refund was paid back by")) to outlet OrderContext.PaymentAdapter.PaymentAdapterToOrderContext
       }
       on other is {
         error "Unexpected message for adaptor PaymentAdapter"

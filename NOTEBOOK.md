@@ -15,15 +15,15 @@ deprecations.** Tracked as **BACKLOG #43**. `checkAll` is green but does NOT
 enforce the zero; the sweep does: `./scripts/collect-warnings.py
 --include-patterns`.
 
-### Where #43 stands (sweep on -45, after 5d repository commands): 47 findings
+### Where #43 stands (sweep on -45, after 5e): 39 findings
 
 | finding | count | state |
 |---|---:|---|
 | errors, deprecations | 0 | done (steps 1, 2; -25's 8 `value-not-natural` fixed) |
 | `stmt-yield-argument-prompt` | 14 | UNBLOCKED: -41 has the value forms (`task/2026-11-19-riddl-value-forms-landed.md`) |
 | `value-optional-for-required` | 25 | UNBLOCKED: -41 has `x otherwise y`; a default per site (Reid's ruling) |
-| `msg-clause-undeliverable` | 5 | steps 3, 4, queries, projector events, 5a-5d DONE. Await Reid: 5 entity commands (BACKLOG #43) |
-| `stream-outlet-never-sent` | 3 | with the 41 |
+| `msg-clause-undeliverable` | 0 | DONE: steps 3, 4, queries, projector events, 5a-5e |
+| `stream-outlet-never-sent` | 0 | DONE with 5e |
 
 - **Next: Reid's rulings on what is left**, one question at a time; the
   lists are in BACKLOG #43. Step 3's original rule, per site: (a) an app control when the app

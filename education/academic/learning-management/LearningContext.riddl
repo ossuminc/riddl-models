@@ -147,6 +147,12 @@ context LearningContext as router is {
   inlet CourseCommandStreamIn is type LearningContext.CourseRequest
   outlet CourseCommandStreamOut is type CourseCommand
   inlet LearnerEnrollmentCommandStreamIn is type LearningContext.LearnerEnrollmentRequest
+  inlet LearningContextFromCourseEventSplit is type LearnerEnrollment.LearnerEnrollmentCommand with {
+    briefly "What CourseEventSplit sends LearningContext"
+    described as {
+      |Its own inlet: an inlet accepts exactly one connector.
+    }
+  }
   outlet LearnerEnrollmentCommandStreamOut is type LearnerEnrollment.LearnerEnrollmentCommand
   inlet CourseResultStreamIn is result Course.CourseResult
   outlet CourseResultStreamOut is result Course.CourseResult
@@ -209,6 +215,12 @@ context LearningContext as router is {
     }
     on completeCourse: command Course.CompleteCourse is {
       send completeCourse to outlet LearningContext.CourseCommandStreamOut
+    }
+    on recordLearnerActivity: command LearnerEnrollment.RecordLearnerActivity is {
+      send recordLearnerActivity to outlet LearningContext.LearnerEnrollmentCommandStreamOut
+    }
+    on completeLearnerEnrollment: command LearnerEnrollment.CompleteLearnerEnrollment is {
+      send completeLearnerEnrollment to outlet LearningContext.LearnerEnrollmentCommandStreamOut
     }
     on courseResult: result Course.CourseResult is {
       send courseResult to outlet LearningContext.CourseResultStreamOut
@@ -1165,6 +1177,14 @@ context LearningContext as router is {
     }
   }
   streamlet CourseEventSplit as split is {
+    outlet CourseEventSplitToLearningContext is type LearnerEnrollment.LearnerEnrollmentCommand
+ with {
+      briefly "What a course event tells the learner's enrollment"
+      described as {
+        |Progress is activity on the enrollment, and finishing the course
+        |completes it; both re-enter the context to be relayed.
+      }
+    }
     outlet CourseEventSplitToToNotificationService is type CourseEvent
     outlet CourseEventSplitToToContentDeliveryService is type CourseEvent
     outlet CourseEventSplitToToCertificationService is type CourseEvent
@@ -1201,6 +1221,7 @@ context LearningContext as router is {
       }
       on progressRecorded: event Course.ProgressRecorded is {
         send progressRecorded to outlet CourseEventSplitToLearningAnalytics
+        send command LearnerEnrollment.RecordLearnerActivity(learnerEnrollmentId = prompt("the enrollment of this learner on this course"), activityAt = progressRecorded.recordedAt) to outlet LearningContext.CourseEventSplit.CourseEventSplitToLearningContext
       }
       on assessmentSubmitted: event Course.AssessmentSubmitted is {
         send assessmentSubmitted to outlet CourseEventSplitToLearningAnalytics
@@ -1212,6 +1233,7 @@ context LearningContext as router is {
         send courseCompleted to outlet CourseEventSplitToLearningAnalytics
         send courseCompleted to outlet CourseEventSplitToToCertificationService
         send courseCompleted to outlet CourseEventSplitToToNotificationService
+        send command LearnerEnrollment.CompleteLearnerEnrollment(learnerEnrollmentId = prompt("the enrollment of this learner on this course"), completedAt = courseCompleted.completedAt) to outlet LearningContext.CourseEventSplit.CourseEventSplitToLearningContext
       }
       on other is {
         error "Unexpected message for processor CourseEventSplit"
@@ -1236,6 +1258,9 @@ context LearningContext as router is {
   }
   connector 'ToNotificationService Course Feed' is from outlet LearningContext.CourseEventSplit.CourseEventSplitToToNotificationService to inlet LearningContext.ToNotificationService.ToNotificationServiceFromCourseIn with {
     briefly "The Course events ToNotificationService translates, on their way to it"
+  }
+  connector 'CourseEventSplit Intake' is from outlet LearningContext.CourseEventSplit.CourseEventSplitToLearningContext to inlet LearningContext.LearningContextFromCourseEventSplit with {
+    briefly "Enrollment commands a course event gives rise to, on their way to the boundary"
   }
   connector 'CourseEvent Stream' is from outlet LearningContext.Course.CourseEvents2 to inlet LearningContext.CourseEventSplit.CourseEventSplitIn with {
     briefly "Course events, fanned out to storage and read models"

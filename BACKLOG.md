@@ -312,11 +312,21 @@ path, are deleted. language-coverage's `StationEventLog` now sends
 `StationLogCommand` alternation, so `GetStation` reads rows something writes.
 Sweep 56 -> 47, 0 new; language-coverage is at 0 of every severity.
 
-**Left for Reid (5):**
-- **Entity commands, 5** (lab-orders ConfirmCriticalValueReadBack,
-  learning-management x2, order-management ProcessRefund,
-  policy-administration DeclineRenewal): the entity handles the command and
-  its context never relays it there.
+**Group 5e, the last 8: DONE 2026-11-19 (Reid: existing rulings, A1,
+B1).** policy-administration's boundary forwards `DeclineRenewal` instead of
+yielding the entity's event (2026-10-22). team-management's split tell-back
+leftovers (outlet, `'PlayerEventSplit Intake'`, Player's inlet) are deleted.
+order-management `PaymentAdapter` turns `RefundCompleted` into
+`Return.ProcessRefund` over a `PaymentAdapterCommand` alternation, relayed to
+the return; the app's controlless `AppShipmentCommands`, its connector and
+`ShipmentCommandStreamIn` are deleted (shipments are carrier-driven, B1).
+lab-orders gets a `ConfirmCriticalValueReadBackInput` control and relay.
+learning-management's `CourseEventSplit` sends `RecordLearnerActivity` on
+`ProgressRecorded` and `CompleteLearnerEnrollment` on `CourseCompleted` into
+the context (A1, 2026-10-30 #6), which relays them to the enrollment. The
+enrollment id is a prompt, since course events carry learner and course.
+Sweep 47 -> 39, 0 new. `msg-clause-undeliverable` and
+`stream-outlet-never-sent` are at 0.
 
 ### Step 5 — `stmt-yield-argument-prompt` (Reid, 2026-11-18: do it now, ahead of 3 and 4)
 
