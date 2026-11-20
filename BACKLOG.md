@@ -468,6 +468,17 @@ rollback (249/251) and advertising-delivery's `selectedAdUnit` (was
 already the `else` of `== empty`. All five join the riddl narrowing wait,
 which now covers 12 sites; 13 remain to fix.
 
+**L1 and F1 (Reid, 2026-11-20).** reactive-bbq LoyaltyAccount's two
+`CloseAccount` clauses read `closedAt` from the not-yet-closed state; they
+stamp `system.now` now (4 sites, a bug, not a default), and the
+`AccountSuspended` fold keeps `enrolledAt`. OnlineOrder's submit guard
+gains `and OnlineOrderData.selectedFulfillment != empty` (F1): the
+`FulfillmentChosen` state guarantees it, riddlc cannot see a state
+invariant, and the conjunction rides the same narrowing fix (its task now
+asks for narrowing through `and`). The narrowing wait covers 14 advisory
+positions; 7 remain to fix (subscription 3, fund-accounting 3,
+streaming-platform 1).
+
 | # | site | ruling |
 |---|---|---|
 | 1 | cart `ApplyPromoCode` | `PromoCodeApplied` records `code` + `discountPercent`, not money; the fold computes the saving. The command gains `discountPercent`, which the PricingAdapter fills from `PromotionActivated`. |

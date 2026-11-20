@@ -15,13 +15,13 @@ deprecations.** Tracked as **BACKLOG #43**. `checkAll` is green but does NOT
 enforce the zero; the sweep does: `./scripts/collect-warnings.py
 --include-patterns`.
 
-### Where #43 stands (sweep on -45, after 5e): 39 findings
+### Where #43 stands (sweep on -58, after F1): 35 findings
 
 | finding | count | state |
 |---|---:|---|
 | errors, deprecations | 0 | done (steps 1, 2; -25's 8 `value-not-natural` fixed) |
 | `stmt-yield-argument-prompt` | 14 | UNBLOCKED: -41 has the value forms (`task/2026-11-19-riddl-value-forms-landed.md`) |
-| `value-optional-for-required` | 25 | 7 guarded sites WAIT on riddl (guard does not narrow; task filed); 18 being fixed with Reid |
+| `value-optional-for-required` | 21 | 14 guarded WAIT on riddl (guard does not narrow; task filed); 7 being fixed with Reid |
 | `msg-clause-undeliverable` | 0 | DONE: steps 3, 4, queries, projector events, 5a-5e |
 | `stream-outlet-never-sent` | 0 | DONE with 5e |
 
