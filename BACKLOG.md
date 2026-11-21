@@ -5,7 +5,7 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
-## 45. reactive-bbq gaps from Synapify's simulated DineIn run (task 2026-11-21) — 3 OPEN
+## 45. reactive-bbq gaps from Synapify's simulated DineIn run (task 2026-11-21) — 2 BLOCKED ON RIDDL
 
 **What:** Synapify's simulator runs one DineInExperience through reactive-bbq
 and stopped at the Kitchen (`task/2026-11-21-reactive-bbq-gaps-from-
@@ -30,12 +30,19 @@ synapify-dinein-run.md`). riddlc reported none of the four gaps.
   parentheses and the result does not parse (`../riddl/task/2026-11-21-
   prettify-drops-parentheses-a-query-operand-needs.md`), and `query one`
   cannot be tested for absence. Stays a prompt.
-- **2, AWAITING RULING.** FrontOfHouse tells TableOrder three commands that
-  yield (`TicketRouted`, `DrinkOrderRouted`, `PointsAccrualRouted`). CM says a
-  yield goes to the envelope's sender, so the boundary's `on other` refuses
-  them. A `log` clause for each draws `msg-clause-undeliverable` x3, because
-  riddlc sees no connector carrying them there.
-
+- **2 DONE 2026-11-21 (Reid's ruling).** A yield publishes on the yielder's
+  admitting outlets, which is how the answer reaches the teller; there is no
+  unwired return channel (riddlc's `deliveries` walk already says so; the CM
+  did not, filed `../riddl/task/2026-11-21-cm-yield-publishes-on-outlets.md`).
+  The three events never reached FrontOfHouse because `TableOrderEventSplit`
+  sent them only to the repository. It now also feeds them to
+  `TableOrderEventSource`, which sends them on `...ToReporting` to the
+  boundary, which `log`s each. The `send` beside each `yield` in TableOrder
+  was redundant and is gone.
+- **Follow-on, NOT STARTED:** about 128 such redundant `yield event X(...)` +
+  `send event X(...) to outlet` pairs remain in 8 models (101 in
+  reactive-bbq; adjacent-line count), and CLAUDE.md's "a send-only clause
+  needs the yield beside the send" needs rewording. Wait for the CM text.
 ---
 
 ## 44. What riddl 2.8.0 can remove, purify or schedule (Reid, 2026-11-20) — AWAITING RULINGS
