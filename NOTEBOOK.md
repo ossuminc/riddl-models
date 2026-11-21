@@ -4,15 +4,21 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.8.0`, PUBLISHED, override OFF** (2026-11-20, riddl's upgrade task,
-now in `task/done/`). The build runs `~/.cache/riddlc/2.8.0/bin/riddlc`; pass
+**Pin `2.8.1`, PUBLISHED, override OFF** (2026-11-21, riddl's upgrade task,
+now in `task/done/`). The build runs `~/.cache/riddlc/2.8.1/bin/riddlc`; pass
 that as `RIDDLC` for manual evidence runs, since `../bin/riddlc` drifts the
 moment riddl restages. The bump changed nothing: prettify and `.bast`
-byte-identical, checkAll green, BAST 189/189, unsent 0.
+byte-identical to 2.8.0, checkAll green, sweep 0, BAST 189/189, unsent 0.
+
+**riddl's census WRITES into this tree** (`census.py`, run from riddl's
+session): it rewrote `prototype-management.bast` and touched
+`deployment-pipeline.bast` while it ran, and a `git add -A` committed the
+stray one (e10112fef; restored in the 2.8.1 bump). **Stage by path, never
+`-A`,** and check `ps` for a running census before trusting `git status`.
 
 **BACKLOG #43 is CLOSED at zero** (2026-11-20): the sweep
 (`./scripts/collect-warnings.py --include-patterns`) reports 0 findings of
-every severity on 2.8.0. Hold it there. `checkAll` does not enforce the zero;
+every severity on 2.8.1. Hold it there. `checkAll` does not enforce the zero;
 only the sweep does.
 
 **In flight: BACKLOG #44**, the 2.8.0 opportunities survey. It is filed and
@@ -60,7 +66,7 @@ riddl (task filed). Next: F6's 79.
 
 ### Certainty
 
-Verified on 2.8.0 (2026-11-20): sweep 0, checkAll green, BAST 189/189,
+Verified on 2.8.1 (2026-11-21): sweep 0, checkAll green, BAST 189/189,
 unsent 0. #44's counts come from a regex census joined to `riddlc dump`
 (8,602 of 8,617 fills joined); family boundaries are heuristic, so treat them
 as a sizing, not a work list.

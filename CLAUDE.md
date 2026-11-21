@@ -1429,10 +1429,12 @@ riddlc is available via:
 - **Staged build**:
   `../riddl/riddlc/jvm/target/universal/stage/bin/riddlc`
 
-Current published version: **2.8.0** (2026-11-20). With that pin the override is
+Current published version: **2.8.1** (2026-11-21). With that pin the override is
 **OFF**: `riddlcPath := None`, the plugin downloads to
-`~/.cache/riddlc/2.8.0/bin/riddlc`, the libraries resolve from GitHub Packages.
-2.8.0 makes `on init` the entity's creation clause (no initial state), adds
+`~/.cache/riddlc/2.8.1/bin/riddlc`, the libraries resolve from GitHub Packages.
+2.8.1 is a patch (unread-history no longer counts the creation morph; `on every`
+reports a bad period; four new listed keywords that stay legal identifiers);
+BAST unchanged, corpus unchanged. 2.8.0 makes `on init` the entity's creation clause (no initial state), adds
 `on entry`, recurrence (`every <period>` sends in `on init`, `on every`
 clauses, calendar and cron schedules), calendar-period arithmetic, the value
 forms (`sum of`, `one of ... where`, `otherwise`, `when ... end`, `<unit> of`),
@@ -1521,7 +1523,7 @@ RIDDLC=~/.cache/riddlc/$V/bin/riddlc ./scripts/collect-warnings.py
 
 **On an unpublished pin that cache path does not exist**, because the plugin
 never downloads anything — `../bin/riddlc` IS the pinned binary then. On a
-published pin (2.8.0 now) the two diverge as soon as riddl restages, so keep
+published pin (2.8.1 now) the two diverge as soon as riddl restages, so keep
 verifying with `riddlc info` rather than assuming either path.
 
 **`RIDDLC=../bin/riddlc` is right for the PYTHON scripts and WRONG for
@@ -1610,7 +1612,7 @@ Models in this repository are designed to work with the riddl-mcp-server tools:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| riddlc | 2.8.0 | `riddlVersion` in `build.sbt` (published; override OFF) |
+| riddlc | 2.8.1 | `riddlVersion` in `build.sbt` (published; override OFF) |
 | sbt-riddl | 2.0.0-rc.24 | Plugin in `project/plugins.sbt` |
 | sbt-ossuminc | 3.1.0 | Build plugin (needs sbt 2.0.2+) |
 
@@ -1808,7 +1810,7 @@ needs drive language changes, which land here as model changes. riddl's
 `release/2` is merged, tagged `2.0.0` and deleted, so the line to track is now
 **`main`**, and the corpus prefers **published tags wherever possible**.
 
-It is currently (2026-11-20) on the PUBLISHED **2.8.0** with the override
+It is currently (2026-11-21) on the PUBLISHED **2.8.1** with the override
 OFF. Point
 `riddlcPath` at a staged `../bin/riddlc` only to track a commit that has not
 been published yet, and **take the override off the moment it is** — a stale

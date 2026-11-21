@@ -14,8 +14,12 @@ enablePlugins(RiddlSbtPlugin)
 // covers that hole. It is wired into riddlcValidate and Test/test below, so the
 // exclusion can no longer hide anything.
 // The riddlc binary and the riddl libraries the test suite uses come from the
-// same build, so one value pins both. The pin is the PUBLISHED 2.8.0
-// (2026-11-20), so the override is off and both download. 2.8.0 makes `on init`
+// same build, so one value pins both. The pin is the PUBLISHED 2.8.1
+// (2026-11-21), so the override is off and both download. 2.8.1 is a patch:
+// `entity-event-sourced-unread-history` no longer counts the creation morph,
+// `on every <period>` reports a bad period, and `cron`/`entry`/`every`/
+// `starting` are listed keywords (still legal identifiers); BAST unchanged and
+// the corpus unchanged. 2.8.0 makes `on init`
 // the entity's CREATION clause, at entity level, morphing into the starting
 // state (there is no initial state); adds `on entry`, recurrence (`every
 // <period>` sends and `on every` clauses, calendar and cron schedules),
@@ -54,7 +58,7 @@ enablePlugins(RiddlSbtPlugin)
 // Whenever a rule the corpus needs lands after a tag, the override goes back
 // on -- and comes off at the first published tag that carries it, which is
 // this edit.
-lazy val riddlVersion = "2.8.0"
+lazy val riddlVersion = "2.8.1"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
