@@ -5,6 +5,39 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
+## 45. reactive-bbq gaps from Synapify's simulated DineIn run (task 2026-11-21) — 3 OPEN
+
+**What:** Synapify's simulator runs one DineInExperience through reactive-bbq
+and stopped at the Kitchen (`task/2026-11-21-reactive-bbq-gaps-from-
+synapify-dinein-run.md`). riddlc reported none of the four gaps.
+
+- **3, the blocker, DONE 2026-11-21.** `KitchenTicket` marked an item ready in
+  `do` prose, so `all of ticketItems ... where item.ticketItemReady` could
+  never hold. riddl has no element update for a state collection, so
+  `KitchenTicketData` gained `readyMenuItemIds: String(1,50)*`, the fold
+  appends to it, and the test is `item.ticketMenuItemId ==
+  itemMarkedReady.readyMenuItemId or KitchenTicketData.readyMenuItemIds
+  contains item.ticketMenuItemId`, which holds whether or not the append is
+  visible to the same clause. `TicketItem.ticketItemReady` is now a flag
+  nothing sets.
+- **4a DONE.** `FromKitchen` passes `preparationStarted.sourceOrderId` (the
+  Kitchen sends only DineIn tickets there, `KitchenContext.riddl:73-77`).
+- **4b, waits on riddl.** The ticket and drink items are a collection mapped
+  from the order's lines; riddl has no collection-valued map. Filed
+  `../riddl/task/2026-11-21-no-value-maps-one-collection-into-another.md`.
+- **1, waits on riddl.** The find-by-key read works as `when any of (query
+  MenuListings.listings) as stored where ...`, but prettify drops the
+  parentheses and the result does not parse (`../riddl/task/2026-11-21-
+  prettify-drops-parentheses-a-query-operand-needs.md`), and `query one`
+  cannot be tested for absence. Stays a prompt.
+- **2, AWAITING RULING.** FrontOfHouse tells TableOrder three commands that
+  yield (`TicketRouted`, `DrinkOrderRouted`, `PointsAccrualRouted`). CM says a
+  yield goes to the envelope's sender, so the boundary's `on other` refuses
+  them. A `log` clause for each draws `msg-clause-undeliverable` x3, because
+  riddlc sees no connector carrying them there.
+
+---
+
 ## 44. What riddl 2.8.0 can remove, purify or schedule (Reid, 2026-11-20) — AWAITING RULINGS
 
 **What:** Reid asked for a canvass of the corpus for places where 2.8.0's
