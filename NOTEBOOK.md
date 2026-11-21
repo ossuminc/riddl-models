@@ -28,7 +28,8 @@ conditions are real Booleans; 30 put back, see BACKLOG #44 F4). E1 DONE (15 repl
 lists `T+` -> `T*`). Z1: literal-zero guards wait on
 riddl (task filed). F6 T1 DONE (73 adaptor translations are
 constructors; a constructor must name EVERY field, so an optional the
-event lacks is `= empty`). Next: Reid's call on what follows F6.
+event lacks is `= empty`). S1 DONE (reactive-bbq close-out is `on every
+day at 04:00 in "America/Chicago"`). Next: F9, then an F3 pilot.
 
 - **Asking Reid**: ONE question at a time, each with context, alternatives,
   consequences and a recommendation. A table of 18 rows was rejected as

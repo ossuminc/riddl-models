@@ -302,15 +302,17 @@ and `set field F to prompt(…)` counts as a Derived fold since -51 — only
 collection-typed, so a collection the event does not carry (CartsMerged
 carries a count) stays a set-to-prompt.
 
-**A clock-driven job is `on quiescence` on the context, not a port-less
-void** (Reid, 2026-09-14, closing BACKLOG #30's last case). reactive-bbq's
-`NightlyCloseOut as void` — `on init { do "roll the day forward" }` plus an
-`on other` that refused everything — was a Missing finding once `on other`
-received: a message handler with no inlet. A day boundary is not an event
-any part of the restaurant emits, but a day of silence at the `Reporting`
-boundary is: `on quiescence "PT24H" is { do "…" }` on the boundary handler,
-which riddlg lowers to a receive-timeout. The `send … to <portlet> at
-<instant>` form exists for a deadline the model can name.
+**A clock-driven job is `on every <schedule>` on the context, not a
+port-less void** (Reid, 2026-09-14 and 2026-11-20). reactive-bbq's
+`NightlyCloseOut as void` was a message handler with no inlet; it became
+`on quiescence "PT24H"` on the `Reporting` boundary, and since 2.8.0 is
+`on every day at 04:00 in "America/Chicago" is { do "…" }`. Quiescence is
+an INACTIVITY timeout, not a clock: a day of silence never comes while the
+restaurant trades, so that close-out never ran. Absent `in`, a schedule is
+UTC; absent `at`, midnight. riddlc checks the time but not the zone string
+(`../riddl/task/2026-11-20-schedule-time-zone-is-not-checked.md`). The
+`send … to <portlet> at <instant>` form exists for a deadline the model can
+name.
 
 **A state nothing enters and nothing handles is dead** — the same class as
 an event nothing yields. Delete it with its record

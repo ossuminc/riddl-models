@@ -35,10 +35,11 @@ computed value, or a modelling decision.
 | F10 | `askAnswer`-derived arguments; the remainder | about 1,300 | | | judgement |
 
 **Scheduling.**
-- **S1:** reactive-bbq's `NightlyCloseOut`/`Reporting` close-out is `on
-  quiescence "PT24H"`, a day of silence standing in for a clock (the
-  2026-09-14 ruling predates `on every`). `on every day at <close time> in
-  "<zone>"` says what it means.
+- **S1 DONE 2026-11-20 (S1a):** reactive-bbq's close-out is `on every day
+  at 04:00 in "America/Chicago"` (zone assumed; the model names none). The
+  `on quiescence "PT24H"` it replaces never fired while the restaurant
+  traded. riddlc does not check the zone string: filed
+  `../riddl/task/2026-11-20-schedule-time-zone-is-not-checked.md`.
 - **S2:** commands that are periodic by nature and are driven by a person or
   an external system today, not a clock. Each one is a modelling decision:
   `CalculateNAV` (fund-accounting) and `CalculateNav` (fund-administration),
