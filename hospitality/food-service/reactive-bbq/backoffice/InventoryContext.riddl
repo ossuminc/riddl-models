@@ -145,7 +145,8 @@ context Inventory as router is {
       |applies them inside Inventory.
     }
   }
-  streamlet StockReceiptSink as flow is {
+  streamlet StockReceiptSink as merge is {
+    inlet InventoryItemAnswers is event InventoryItem.StockReceived
     outlet StockReceiptSinkToInventoryItem is command InventoryItem.ReceiveStock
     inlet IncomingStockDeliveries is type SupplierEvent
     handler StockReceiptHandler is {
@@ -153,6 +154,9 @@ context Inventory as router is {
         do "match the delivered quantity to the inventory item it
           replenishes"
         send command InventoryItem.ReceiveStock(inventoryItemId = shipmentDelivered.inventoryItemId, receivedQuantity = prompt("the received quantity of this receive stock"), receivedUnit = prompt("the received unit of this receive stock"), supplierRef = prompt("the supplier ref of this receive stock"), stockReceivedAt = system.now) to outlet Inventory.StockReceiptSink.StockReceiptSinkToInventoryItem
+      }
+      on stockReceived: event InventoryItem.StockReceived is {
+        log stockReceived
       }
       on other is {
         error "Unexpected message for sink StockReceiptSink"
@@ -438,7 +442,13 @@ context Inventory as router is {
       |Builds the stored InventoryItem view from the entity's events.
     }
   }
+  connector 'FromKitchen InventoryItem Answers' is from outlet Inventory.InventoryItemEventSource.InventoryItemEventSourceToFromKitchen to inlet Inventory.FromKitchen.InventoryItemAnswers
+  connector 'FromSupplyChain InventoryItem Answers' is from outlet Inventory.InventoryItemEventSource.InventoryItemEventSourceToFromSupplyChain to inlet Inventory.FromSupplyChain.InventoryItemAnswers
+  connector 'StockReceiptSink InventoryItem Answers' is from outlet Inventory.InventoryItemEventSource.InventoryItemEventSourceToStockReceiptSink to inlet Inventory.StockReceiptSink.InventoryItemAnswers
   streamlet InventoryItemEventSource as split is {
+    outlet InventoryItemEventSourceToFromKitchen is event InventoryItem.StockConsumed
+    outlet InventoryItemEventSourceToFromSupplyChain is event InventoryItem.StockReceived
+    outlet InventoryItemEventSourceToStockReceiptSink is event InventoryItem.StockReceived
     outlet InventoryItemEventSourceToInventoryItemProjection is type InventoryItemEvent
     inlet InventoryItemEventSourceIn is type InventoryItemEvent
     outlet InventoryItemEvents is type InventoryEvent
@@ -447,10 +457,13 @@ context Inventory as router is {
         error "Unexpected message for source InventoryItemEventSource"
       }
       on stockReceived: event InventoryItem.StockReceived is {
+        send stockReceived to outlet InventoryItemEventSourceToFromSupplyChain
+        send stockReceived to outlet InventoryItemEventSourceToStockReceiptSink
         send stockReceived to outlet InventoryItemEvents
         send stockReceived to outlet InventoryItemEventSourceToInventoryItemProjection
       }
       on stockConsumed: event InventoryItem.StockConsumed is {
+        send stockConsumed to outlet InventoryItemEventSourceToFromKitchen
         send stockConsumed to outlet InventoryItemEvents
         send stockConsumed to outlet InventoryItemEventSourceToInventoryItemProjection
       }
@@ -478,7 +491,8 @@ context Inventory as router is {
       |Publishes inventory item entity events.
     }
   }
-  adaptor FromSupplyChain from context Corporate.SupplyChain as flow is { 
+  adaptor FromSupplyChain from context Corporate.SupplyChain as merge is { 
+    inlet InventoryItemAnswers is event InventoryItem.StockReceived
     inlet FromSupplyChainIn is type SupplyChain.PurchaseOrderEvent
     outlet FromSupplyChainToInventory is command InventoryItem.ReceiveStock
     handler PurchaseOrderEventIntake is {
@@ -491,6 +505,9 @@ context Inventory as router is {
         let receiveStock: type InventoryItem.ReceiveStock = prompt("the receive stock that results from order shipped")
         send receiveStock to outlet Inventory.FromSupplyChain.FromSupplyChainToInventory
         do "prepare for incoming stock from shipped order"
+      }
+      on stockReceived: event InventoryItem.StockReceived is {
+        log stockReceived
       }
       on other is {
         error "Unexpected message for adaptor FromSupplyChain"
@@ -509,7 +526,8 @@ context Inventory as router is {
       |topology for stock receipt notification.
     }
   }
-  adaptor FromKitchen from context Restaurant.Kitchen as flow is { 
+  adaptor FromKitchen from context Restaurant.Kitchen as merge is { 
+    inlet InventoryItemAnswers is event InventoryItem.StockConsumed
     inlet FromKitchenIn is type Kitchen.KitchenTicketEvent
     outlet FromKitchenToInventory is command InventoryItem.ConsumeStock
     handler KitchenConsumptionIntake is {
@@ -522,6 +540,9 @@ context Inventory as router is {
         let consumeStock: type InventoryItem.ConsumeStock = prompt("the consume stock that results from ticket approved")
         send consumeStock to outlet Inventory.FromKitchen.FromKitchenToInventory
         do "finalize stock consumption for approved ticket"
+      }
+      on stockConsumed: event InventoryItem.StockConsumed is {
+        log stockConsumed
       }
       on other is {
         error "Unexpected message for adaptor FromKitchen"

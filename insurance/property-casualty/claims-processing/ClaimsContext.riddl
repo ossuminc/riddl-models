@@ -260,7 +260,8 @@ context ClaimsContext as router is {
       |The model's side of the FraudDetection conversation.
     }
   }
-  adaptor PolicyAdapter from context PolicyService as flow is { 
+  adaptor PolicyAdapter from context PolicyService as merge is { 
+    inlet ClaimAnswers is type ClaimEvent
     inlet PolicyAdapterIn is type PolicyService.PolicyServiceEvent
     outlet PolicyAdapterToClaimsContext is type ClaimsContext.ClaimRequest
  with {
@@ -278,6 +279,12 @@ context ClaimsContext as router is {
       on event PolicyService.CoverageVerified is {
         let approveClaim: type ApproveClaim = prompt("the approve claim that results from coverage verified")
         tell approveClaim to context ClaimsContext
+      }
+      on claimFiled: event Claim.ClaimFiled is {
+        log claimFiled
+      }
+      on claimApproved: event Claim.ClaimApproved is {
+        log claimApproved
       }
       on other is {
         error "Unexpected message for adaptor PolicyAdapter"
@@ -322,7 +329,8 @@ context ClaimsContext as router is {
       |The model's side of the PaymentService conversation.
     }
   }
-  adaptor PaymentAdapter from context PaymentService as flow is { 
+  adaptor PaymentAdapter from context PaymentService as merge is { 
+    inlet ClaimAnswers is event Claim.PaymentIssued
     inlet PaymentAdapterIn is type PaymentService.PaymentServiceEvent
     outlet PaymentAdapterToClaimsContext is type ClaimsContext.ClaimRequest
  with {
@@ -341,6 +349,9 @@ context ClaimsContext as router is {
         let issuePay: type IssuePay = prompt("the issue pay that results from payment voided")
         tell issuePay to context ClaimsContext
       }
+      on paymentIssued: event Claim.PaymentIssued is {
+        log paymentIssued
+      }
       on other is {
         error "Unexpected message for adaptor PaymentAdapter"
       }
@@ -357,7 +368,8 @@ context ClaimsContext as router is {
       | and updates claim payment status.
     }
   }
-  adaptor FraudAdapter from context FraudDetection as flow is { 
+  adaptor FraudAdapter from context FraudDetection as merge is { 
+    inlet ClaimAnswers is type ClaimEvent
     inlet FraudAdapterIn is type FraudDetection.FraudDetectionEvent
     outlet FraudAdapterToClaimsContext is type ClaimsContext.ClaimRequest
  with {
@@ -379,6 +391,12 @@ context ClaimsContext as router is {
       on event FraudDetection.SIUInvestigationClosed is {
         let approveClaim: type ApproveClaim = prompt("the approve claim that results from s i u investigation closed")
         tell approveClaim to context ClaimsContext
+      }
+      on investigationUpdated: event Claim.InvestigationUpdated is {
+        log investigationUpdated
+      }
+      on claimApproved: event Claim.ClaimApproved is {
+        log claimApproved
       }
       on other is {
         error "Unexpected message for adaptor FraudAdapter"
@@ -1021,7 +1039,13 @@ context ClaimsContext as router is {
       | improvement and staffing decisions.
     }
   }
+  connector 'FraudAdapter Claim Answers' is from outlet ClaimsContext.ClaimEventSplit.ClaimEventSplitToFraudAdapter to inlet ClaimsContext.FraudAdapter.ClaimAnswers
+  connector 'PaymentAdapter Claim Answers' is from outlet ClaimsContext.ClaimEventSplit.ClaimEventSplitToPaymentAdapter to inlet ClaimsContext.PaymentAdapter.ClaimAnswers
+  connector 'PolicyAdapter Claim Answers' is from outlet ClaimsContext.ClaimEventSplit.ClaimEventSplitToPolicyAdapter to inlet ClaimsContext.PolicyAdapter.ClaimAnswers
   streamlet ClaimEventSplit as split is {
+    outlet ClaimEventSplitToFraudAdapter is type ClaimEvent
+    outlet ClaimEventSplitToPaymentAdapter is event Claim.PaymentIssued
+    outlet ClaimEventSplitToPolicyAdapter is type ClaimEvent
     outlet ClaimEventSplitToToPolicyService is type ClaimEvent
     outlet ClaimEventSplitToToPaymentService is type ClaimEvent
     outlet ClaimEventSplitToToFraudDetection is type ClaimEvent
@@ -1030,6 +1054,7 @@ context ClaimsContext as router is {
     outlet ClaimEventSplitToCycleTimeProjector is type ClaimEvent
     handler ClaimEventSplitHandler is {
       on claimFiled: event Claim.ClaimFiled is {
+        send claimFiled to outlet ClaimEventSplitToPolicyAdapter
         send claimFiled to outlet ClaimEventSplitToLossRatioProjector
         send claimFiled to outlet ClaimEventSplitToCycleTimeProjector
         send claimFiled to outlet ClaimEventSplitToToPolicyService
@@ -1040,6 +1065,7 @@ context ClaimsContext as router is {
         send adjusterAssigned to outlet ClaimEventSplitToCycleTimeProjector
       }
       on investigationUpdated: event Claim.InvestigationUpdated is {
+        send investigationUpdated to outlet ClaimEventSplitToFraudAdapter
         send investigationUpdated to outlet ClaimEventSplitToLossRatioProjector
         send investigationUpdated to outlet ClaimEventSplitToCycleTimeProjector
         send investigationUpdated to outlet ClaimEventSplitToToFraudDetection
@@ -1049,11 +1075,14 @@ context ClaimsContext as router is {
         send reserveEstablished to outlet ClaimEventSplitToCycleTimeProjector
       }
       on claimApproved: event Claim.ClaimApproved is {
+        send claimApproved to outlet ClaimEventSplitToFraudAdapter
+        send claimApproved to outlet ClaimEventSplitToPolicyAdapter
         send claimApproved to outlet ClaimEventSplitToLossRatioProjector
         send claimApproved to outlet ClaimEventSplitToCycleTimeProjector
         send claimApproved to outlet ClaimEventSplitToToPaymentService
       }
       on paymentIssued: event Claim.PaymentIssued is {
+        send paymentIssued to outlet ClaimEventSplitToPaymentAdapter
         send paymentIssued to outlet ClaimEventSplitToLossRatioProjector
         send paymentIssued to outlet ClaimEventSplitToCycleTimeProjector
       }

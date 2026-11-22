@@ -177,7 +177,8 @@ context CartContext as router is {
   }
   connector 'CartCommand Stream Intake' is from outlet CartContext.CartCommandStreamOut to inlet CartContext.Cart.CartCommands
   connector 'CartResult Stream Egress' is from outlet CartContext.Cart.CartReplies to inlet CartContext.CartResultStreamIn
-  adaptor FromCustomerService from context CustomerService as flow is { 
+  adaptor FromCustomerService from context CustomerService as merge is { 
+    inlet CartAnswers is event Cart.CartsMerged
     inlet FromCustomerServiceIn is type CustomerService.CustomerServiceEvent
     outlet FromCustomerServiceToCartContext is command Cart.MergeCart
     handler FromCustomerServiceHandler is {
@@ -187,6 +188,9 @@ context CartContext as router is {
       }
       on customerLoggedOut: event CustomerService.CustomerLoggedOut is {
         do "the cart outlives the session, so logging out changes nothing here"
+      }
+      on cartsMerged: event Cart.CartsMerged is {
+        log cartsMerged
       }
       on other is {
         error "Unexpected message for adaptor FromCustomerService"
@@ -203,7 +207,8 @@ context CartContext as router is {
       |The model's side of the CustomerService conversation.
     }
   }
-  adaptor FromInventoryService from context InventoryService as flow is { 
+  adaptor FromInventoryService from context InventoryService as merge is { 
+    inlet CartAnswers is type CartEvent
     inlet FromInventoryServiceIn is type InventoryService.InventoryServiceEvent
     outlet FromInventoryServiceToCartContext is type CartContext.CartRequest
  with {
@@ -223,6 +228,12 @@ context CartContext as router is {
       on stockReserved: event InventoryService.StockReserved is {
         do "stock is held for the checkout; the cart is spent when the order is created"
       }
+      on itemRemoved: event Cart.ItemRemoved is {
+        log itemRemoved
+      }
+      on itemAdded: event Cart.ItemAdded is {
+        log itemAdded
+      }
       on other is {
         error "Unexpected message for adaptor InventoryAdapter"
       }
@@ -238,12 +249,16 @@ context CartContext as router is {
       |The model's side of the InventoryService conversation.
     }
   }
-  adaptor FromOrderService from context OrderService as flow is { 
+  adaptor FromOrderService from context OrderService as merge is { 
+    inlet CartAnswers is event Cart.OrderLinked
     inlet FromOrderServiceIn is event OrderService.OrderCreated
     outlet FromOrderServiceToCartContext is command Cart.RecordOrder
     handler FromOrderServiceHandler is {
       on orderCreated: event OrderService.OrderCreated is {
         send command Cart.RecordOrder(cartId = orderCreated.cartId, orderId = orderCreated.orderId) to outlet CartContext.FromOrderService.FromOrderServiceToCartContext
+      }
+      on orderLinked: event Cart.OrderLinked is {
+        log orderLinked
       }
       on other is {
         error "Unexpected message for adaptor FromOrderService"
@@ -260,7 +275,8 @@ context CartContext as router is {
       |The model's side of the OrderService conversation.
     }
   }
-  adaptor FromPricingService from context PricingService as flow is { 
+  adaptor FromPricingService from context PricingService as merge is { 
+    inlet CartAnswers is type CartEvent
     inlet FromPricingServiceIn is type PricingService.PricingServiceEvent
     outlet FromPricingServiceToCartContext is type CartContext.CartRequest
  with {
@@ -279,6 +295,15 @@ context CartContext as router is {
       }
       on promotionDeactivated: event PricingService.PromotionDeactivated is {
         tell command Cart.RemovePromoCode(code = prompt("the code of the promotion that was deactivated"), cartId = prompt("the cart id of this remove promo code")) to context CartContext
+      }
+      on itemQuantityUpdated: event Cart.ItemQuantityUpdated is {
+        log itemQuantityUpdated
+      }
+      on promoCodeApplied: event Cart.PromoCodeApplied is {
+        log promoCodeApplied
+      }
+      on promoCodeRemoved: event Cart.PromoCodeRemoved is {
+        log promoCodeRemoved
       }
       on other is {
         error "Unexpected message for adaptor PricingAdapter"
@@ -1101,7 +1126,15 @@ context CartContext as router is {
       |Maintains analytics views for cart behavior.
     }
   }
+  connector 'FromCustomerService Cart Answers' is from outlet CartContext.CartEventSplit.CartEventSplitToFromCustomerService to inlet CartContext.FromCustomerService.CartAnswers
+  connector 'FromInventoryService Cart Answers' is from outlet CartContext.CartEventSplit.CartEventSplitToFromInventoryService to inlet CartContext.FromInventoryService.CartAnswers
+  connector 'FromOrderService Cart Answers' is from outlet CartContext.CartEventSplit.CartEventSplitToFromOrderService to inlet CartContext.FromOrderService.CartAnswers
+  connector 'FromPricingService Cart Answers' is from outlet CartContext.CartEventSplit.CartEventSplitToFromPricingService to inlet CartContext.FromPricingService.CartAnswers
   streamlet CartEventSplit as split is {
+    outlet CartEventSplitToFromCustomerService is event Cart.CartsMerged
+    outlet CartEventSplitToFromInventoryService is type CartEvent
+    outlet CartEventSplitToFromOrderService is event Cart.OrderLinked
+    outlet CartEventSplitToFromPricingService is type CartEvent
     outlet CartEventSplitToOrderAdapter is type CartEvent
     inlet CartEventSplitIn is type CartEvent
     outlet CartEventSplitToCartAnalytics is type CartEvent
@@ -1110,24 +1143,30 @@ context CartContext as router is {
         send cartCreated to outlet CartEventSplitToCartAnalytics
       }
       on itemAdded: event Cart.ItemAdded is {
+        send itemAdded to outlet CartEventSplitToFromInventoryService
         send itemAdded to outlet CartEventSplitToCartAnalytics
       }
       on itemQuantityUpdated: event Cart.ItemQuantityUpdated is {
+        send itemQuantityUpdated to outlet CartEventSplitToFromPricingService
         send itemQuantityUpdated to outlet CartEventSplitToCartAnalytics
       }
       on itemRemoved: event Cart.ItemRemoved is {
+        send itemRemoved to outlet CartEventSplitToFromInventoryService
         send itemRemoved to outlet CartEventSplitToCartAnalytics
       }
       on promoCodeApplied: event Cart.PromoCodeApplied is {
+        send promoCodeApplied to outlet CartEventSplitToFromPricingService
         send promoCodeApplied to outlet CartEventSplitToCartAnalytics
       }
       on promoCodeRemoved: event Cart.PromoCodeRemoved is {
+        send promoCodeRemoved to outlet CartEventSplitToFromPricingService
         send promoCodeRemoved to outlet CartEventSplitToCartAnalytics
       }
       on shippingAddressSet: event Cart.ShippingAddressSet is {
         send shippingAddressSet to outlet CartEventSplitToCartAnalytics
       }
       on cartsMerged: event Cart.CartsMerged is {
+        send cartsMerged to outlet CartEventSplitToFromCustomerService
         send cartsMerged to outlet CartEventSplitToCartAnalytics
       }
       on cartCheckedOut: event Cart.CartCheckedOut is {
@@ -1141,6 +1180,7 @@ context CartContext as router is {
         send shippingEstimated to outlet CartEventSplitToCartAnalytics
       }
       on orderLinked: event Cart.OrderLinked is {
+        send orderLinked to outlet CartEventSplitToFromOrderService
         send orderLinked to outlet CartEventSplitToCartAnalytics
       }
       on other is {

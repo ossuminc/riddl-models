@@ -875,7 +875,11 @@ context OnlineOrdering as router is {
       |Wires published online order events to the context's event log.
     }
   }
+  connector 'DeliveryEventSink OnlineOrder Answers' is from outlet OnlineOrdering.OnlineOrderEventSource.OnlineOrderEventSourceToDeliveryEventSink to inlet OnlineOrdering.DeliveryEventSink.OnlineOrderAnswers
+  connector 'FromKitchen OnlineOrder Answers' is from outlet OnlineOrdering.OnlineOrderEventSource.OnlineOrderEventSourceToFromKitchen to inlet OnlineOrdering.FromKitchen.OnlineOrderAnswers
   streamlet OnlineOrderEventSource as split is {
+    outlet OnlineOrderEventSourceToDeliveryEventSink is type OnlineOrderEvent
+    outlet OnlineOrderEventSourceToFromKitchen is type OnlineOrderEvent
     outlet OnlineOrderEventSourceToReporting is type OnlineOrderEvent
     outlet OnlineOrderEventSourceToDelivery is type OnlineOrderEvent
     outlet OnlineOrderEventSourceToOnlineOrderProjection is type OnlineOrderEvent
@@ -909,18 +913,24 @@ context OnlineOrdering as router is {
         send onlinePaymentProcessed to outlet OnlineOrderEventSourceToReporting
       }
       on onlineOrderInPreparation: event OnlineOrder.OnlineOrderInPreparation is {
+        send onlineOrderInPreparation to outlet OnlineOrderEventSourceToFromKitchen
         send onlineOrderInPreparation to outlet OnlineOrderEventSourceToOnlineOrderProjection
       }
       on onlineOrderReadyForPickup: event OnlineOrder.OnlineOrderReadyForPickup is {
+        send onlineOrderReadyForPickup to outlet OnlineOrderEventSourceToFromKitchen
         send onlineOrderReadyForPickup to outlet OnlineOrderEventSourceToOnlineOrderProjection
       }
       on onlineOrderOutForDelivery: event OnlineOrder.OnlineOrderOutForDelivery is {
+        send onlineOrderOutForDelivery to outlet OnlineOrderEventSourceToDeliveryEventSink
         send onlineOrderOutForDelivery to outlet OnlineOrderEventSourceToOnlineOrderProjection
       }
       on onlineOrderCompleted: event OnlineOrder.OnlineOrderCompleted is {
+        send onlineOrderCompleted to outlet OnlineOrderEventSourceToDeliveryEventSink
+        send onlineOrderCompleted to outlet OnlineOrderEventSourceToFromKitchen
         send onlineOrderCompleted to outlet OnlineOrderEventSourceToOnlineOrderProjection
       }
       on onlineOrderCancelled: event OnlineOrder.OnlineOrderCancelled is {
+        send onlineOrderCancelled to outlet OnlineOrderEventSourceToDeliveryEventSink
         send onlineOrderCancelled to outlet OnlineOrderEventSourceToOnlineOrderProjection
       }
     } with {
@@ -938,7 +948,8 @@ context OnlineOrdering as router is {
       |kitchen routing.
     }
   }
-  adaptor FromKitchen from context Restaurant.Kitchen as flow is { 
+  adaptor FromKitchen from context Restaurant.Kitchen as merge is { 
+    inlet OnlineOrderAnswers is type OnlineOrderEvent
     inlet FromKitchenIn is type Kitchen.KitchenOnlineProgress with {
       briefly "Online orders' tickets as the kitchen works them"
       described as {
@@ -966,6 +977,15 @@ context OnlineOrdering as router is {
         when prompt("the online order whose id is serverNotified.sourceOrderId is for pickup, not delivery") then
           send command OnlineOrder.CompleteOnlineOrder(onlineOrderId = prompt("the online order whose id is serverNotified.sourceOrderId"), completedAt = serverNotified.notifiedAt) to outlet OnlineOrdering.FromKitchen.FromKitchenToOnlineOrdering
         end
+      }
+      on onlineOrderInPreparation: event OnlineOrder.OnlineOrderInPreparation is {
+        log onlineOrderInPreparation
+      }
+      on onlineOrderReadyForPickup: event OnlineOrder.OnlineOrderReadyForPickup is {
+        log onlineOrderReadyForPickup
+      }
+      on onlineOrderCompleted: event OnlineOrder.OnlineOrderCompleted is {
+        log onlineOrderCompleted
       }
       on other is {
         error "Unexpected message for adaptor FromKitchen"
@@ -995,10 +1015,20 @@ context OnlineOrdering as router is {
       |commands reach the boundary and the order.
     }
   }
-  streamlet DeliveryEventSink as flow is {
+  streamlet DeliveryEventSink as merge is {
+    inlet OnlineOrderAnswers is type OnlineOrderEvent
     outlet DeliveryEventSinkToOnlineOrder is type OnlineOrderCommand
     inlet IncomingDeliveryEvents is type DeliveryEvent
     handler DeliveryEventIntake is {
+      on onlineOrderOutForDelivery: event OnlineOrder.OnlineOrderOutForDelivery is {
+        log onlineOrderOutForDelivery
+      }
+      on onlineOrderCompleted: event OnlineOrder.OnlineOrderCompleted is {
+        log onlineOrderCompleted
+      }
+      on onlineOrderCancelled: event OnlineOrder.OnlineOrderCancelled is {
+        log onlineOrderCancelled
+      }
       on other as m is {
         log m
       }

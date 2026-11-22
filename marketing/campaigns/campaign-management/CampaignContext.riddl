@@ -224,7 +224,8 @@ context CampaignContext as router is {
       |The model's side of the AnalyticsContext conversation.
     }
   }
-  adaptor FromAudienceContext from context AudienceContext as flow is { 
+  adaptor FromAudienceContext from context AudienceContext as merge is { 
+    inlet CampaignAnswers is event Campaign.TargetAudienceRemoved
     inlet FromAudienceContextIn is type AudienceContext.AudienceContextEvent
     outlet FromAudienceContextToCampaignContext is command Campaign.RemoveTargetAudience
     handler FromAudienceContextHandler is {
@@ -234,6 +235,9 @@ context CampaignContext as router is {
       }
       on audienceUpdated: event AudienceContext.AudienceUpdated is {
         do "the audience changed; the campaign targets it by reference and needs nothing"
+      }
+      on targetAudienceRemoved: event Campaign.TargetAudienceRemoved is {
+        log targetAudienceRemoved
       }
       on other is {
         error "Unexpected message for adaptor FromAudienceContext"
@@ -250,7 +254,8 @@ context CampaignContext as router is {
       |The model's side of the AudienceContext conversation.
     }
   }
-  adaptor FromBillingContext from context BillingContext as flow is { 
+  adaptor FromBillingContext from context BillingContext as merge is { 
+    inlet CampaignAnswers is event Campaign.CampaignPaused
     inlet FromBillingContextIn is type BillingContext.BillingContextEvent
     outlet FromBillingContextToCampaignContext is command Campaign.PauseCampaign
     handler FromBillingContextHandler is {
@@ -263,6 +268,9 @@ context CampaignContext as router is {
       }
       on paymentFailed: event BillingContext.PaymentFailed is {
         do "the payment did not go through; billing asks again and the campaign runs on what budget remains"
+      }
+      on campaignPaused: event Campaign.CampaignPaused is {
+        log campaignPaused
       }
       on other is {
         error "Unexpected message for adaptor FromBillingContext"
@@ -279,7 +287,8 @@ context CampaignContext as router is {
       |The model's side of the BillingContext conversation.
     }
   }
-  adaptor FromChannelContext from context ChannelContext as flow is { 
+  adaptor FromChannelContext from context ChannelContext as merge is { 
+    inlet CampaignAnswers is event Campaign.PerformanceMetricsRecorded
     inlet FromChannelContextIn is type ChannelContext.ChannelContextEvent
     outlet FromChannelContextToCampaignContext is command Campaign.RecordPerformanceUpdate
     handler FromChannelContextHandler is {
@@ -292,6 +301,9 @@ context CampaignContext as router is {
       on channelMetricsReceived: event ChannelContext.ChannelMetricsReceived is {
         let item0: type Campaign.RecordPerformanceUpdate = prompt("translate the channelMetricsReceived event into a RecordPerformanceUpdate, the channel's metrics are the performance the campaign records for that channel")
         send item0 to outlet CampaignContext.FromChannelContext.FromChannelContextToCampaignContext
+      }
+      on performanceMetricsRecorded: event Campaign.PerformanceMetricsRecorded is {
+        log performanceMetricsRecorded
       }
       on other is {
         error "Unexpected message for adaptor FromChannelContext"
@@ -1311,7 +1323,13 @@ context CampaignContext as router is {
     }
   }
   // ---- Command intake and event publication wiring ----
+  connector 'FromAudienceContext Campaign Answers' is from outlet CampaignContext.CampaignEventSplit.CampaignEventSplitToFromAudienceContext to inlet CampaignContext.FromAudienceContext.CampaignAnswers
+  connector 'FromBillingContext Campaign Answers' is from outlet CampaignContext.CampaignEventSplit.CampaignEventSplitToFromBillingContext to inlet CampaignContext.FromBillingContext.CampaignAnswers
+  connector 'FromChannelContext Campaign Answers' is from outlet CampaignContext.CampaignEventSplit.CampaignEventSplitToFromChannelContext to inlet CampaignContext.FromChannelContext.CampaignAnswers
   streamlet CampaignEventSplit as split is {
+    outlet CampaignEventSplitToFromAudienceContext is event Campaign.TargetAudienceRemoved
+    outlet CampaignEventSplitToFromBillingContext is event Campaign.CampaignPaused
+    outlet CampaignEventSplitToFromChannelContext is event Campaign.PerformanceMetricsRecorded
     outlet CampaignEventSplitToToNotificationContext is type CampaignEvent
     inlet CampaignEventSplitIn is type CampaignEvent
     outlet CampaignEventSplitToCampaignDashboardProjector is type CampaignEvent
@@ -1334,6 +1352,7 @@ context CampaignContext as router is {
         send targetAudienceAdded to outlet CampaignEventSplitToCampaignPerformanceProjector
       }
       on targetAudienceRemoved: event Campaign.TargetAudienceRemoved is {
+        send targetAudienceRemoved to outlet CampaignEventSplitToFromAudienceContext
         send targetAudienceRemoved to outlet CampaignEventSplitToCampaignDashboardProjector
         send targetAudienceRemoved to outlet CampaignEventSplitToCampaignPerformanceProjector
       }
@@ -1346,6 +1365,7 @@ context CampaignContext as router is {
         send campaignLaunched to outlet CampaignEventSplitToCampaignPerformanceProjector
       }
       on campaignPaused: event Campaign.CampaignPaused is {
+        send campaignPaused to outlet CampaignEventSplitToFromBillingContext
         send campaignPaused to outlet CampaignEventSplitToCampaignDashboardProjector
         send campaignPaused to outlet CampaignEventSplitToCampaignPerformanceProjector
         send campaignPaused to outlet CampaignEventSplitToToNotificationContext
@@ -1355,6 +1375,7 @@ context CampaignContext as router is {
         send campaignResumed to outlet CampaignEventSplitToCampaignPerformanceProjector
       }
       on performanceMetricsRecorded: event Campaign.PerformanceMetricsRecorded is {
+        send performanceMetricsRecorded to outlet CampaignEventSplitToFromChannelContext
         send performanceMetricsRecorded to outlet CampaignEventSplitToCampaignDashboardProjector
         send performanceMetricsRecorded to outlet CampaignEventSplitToCampaignPerformanceProjector
         send performanceMetricsRecorded to outlet CampaignEventSplitToToNotificationContext

@@ -1696,7 +1696,8 @@ context FrontOfHouse as router is {
       |topology for order readiness notification.
     }
   }
-  adaptor FromKitchen from context Restaurant.Kitchen as flow is { 
+  adaptor FromKitchen from context Restaurant.Kitchen as merge is { 
+    inlet TableOrderAnswers is event TableOrder.OrderMarkedInPreparation
     inlet FromKitchenIn is event Kitchen.KitchenTicket.PreparationStarted with {
       briefly "Kitchen tickets that have started cooking"
       described as {
@@ -1716,6 +1717,9 @@ context FrontOfHouse as router is {
     handler KitchenPreparationIntake is {
       on preparationStarted: event Restaurant.Kitchen.KitchenTicket.PreparationStarted is {
         send command MarkOrderInPreparation(tableOrderId = preparationStarted.sourceOrderId) to outlet FrontOfHouse.FromKitchen.FromKitchenToFrontOfHouse
+      }
+      on orderMarkedInPreparation: event TableOrder.OrderMarkedInPreparation is {
+        log orderMarkedInPreparation
       }
       on other is {
         error "Unexpected message for adaptor FromKitchen"
@@ -1928,7 +1932,8 @@ context FrontOfHouse as router is {
       |Wires published table order events to the context's event log.
     }
   }
-  streamlet ReservationEventSplit as split is {
+  streamlet ReservationEventSplit as router is {
+    inlet TableOrderAnswers is event TableOrder.OrderCreated
     inlet ReservationEventSplitIn is type ReservationEvent
     outlet ReservationEventSplitToReservationEventSource is type ReservationEvent
     outlet ReservationEventSplitToReservationRepository is type ReservationEvent
@@ -1978,6 +1983,9 @@ context FrontOfHouse as router is {
         send reservationRescheduled to outlet ReservationEventSplitToReservationBoard
         send reservationRescheduled to outlet ReservationEventSplitToReservationEventSource
       }
+      on orderCreated: event TableOrder.OrderCreated is {
+        log orderCreated
+      }
       on other is {
         error "Unexpected message for processor ReservationEventSplit"
       }
@@ -1993,12 +2001,17 @@ context FrontOfHouse as router is {
       |Fans Reservation events out to the repository and projectors.
     }
   }
+  connector 'FromKitchen TableOrder Answers' is from outlet FrontOfHouse.TableOrderEventSplit.TableOrderEventSplitToFromKitchen to inlet FrontOfHouse.FromKitchen.TableOrderAnswers
+  connector 'ReservationEventSplit TableOrder Answers' is from outlet FrontOfHouse.TableOrderEventSplit.TableOrderEventSplitToReservationEventSplit to inlet FrontOfHouse.ReservationEventSplit.TableOrderAnswers
   streamlet TableOrderEventSplit as split is {
+    outlet TableOrderEventSplitToFromKitchen is event TableOrder.OrderMarkedInPreparation
+    outlet TableOrderEventSplitToReservationEventSplit is event TableOrder.OrderCreated
     inlet TableOrderEventSplitIn is type TableOrderEvent
     outlet TableOrderEventSplitToTableOrderEventSource is type TableOrderEvent
     outlet TableOrderEventSplitToTableOrderRepository is type TableOrderEvent
     handler TableOrderEventSplitHandler is {
       on orderCreated: event TableOrder.OrderCreated is {
+        send orderCreated to outlet TableOrderEventSplitToReservationEventSplit
         send orderCreated to outlet TableOrderEventSplitToTableOrderRepository
         send orderCreated to outlet TableOrderEventSplitToTableOrderEventSource
       }
@@ -2025,6 +2038,7 @@ context FrontOfHouse as router is {
         send orderClosed to outlet TableOrderEventSplitToTableOrderEventSource
       }
       on orderMarkedInPreparation: event TableOrder.OrderMarkedInPreparation is {
+        send orderMarkedInPreparation to outlet TableOrderEventSplitToFromKitchen
         send orderMarkedInPreparation to outlet TableOrderEventSplitToTableOrderRepository
       }
       on orderMarkedReadyToServe: event TableOrder.OrderMarkedReadyToServe is {

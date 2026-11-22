@@ -332,7 +332,9 @@ context DeploymentContext as router is {
       |The model's side of the ArtifactRegistry conversation.
     }
   }
-  adaptor FromInfrastructureService from context InfrastructureService as flow is { 
+  adaptor FromInfrastructureService from context InfrastructureService as merge is { 
+    inlet DeploymentAnswers is event Deployment.DeploymentFailed
+    inlet EnvironmentAnswers is event Environment.EnvironmentArtifactUpdated
     inlet FromInfrastructureServiceIn is type InfrastructureService.InfrastructureServiceEvent
     outlet FromInfrastructureServiceToDeploymentContext is type DeploymentContext.FromInfrastructureServiceCommand
     handler FromInfrastructureServiceHandler is {
@@ -346,6 +348,12 @@ context DeploymentContext as router is {
       }
       on infrastructureDeploymentStarted: event InfrastructureService.InfrastructureDeploymentStarted is {
         do "the infrastructure is rolling out; executing was recorded here"
+      }
+      on deploymentFailed: event Deployment.DeploymentFailed is {
+        log deploymentFailed
+      }
+      on environmentArtifactUpdated: event Environment.EnvironmentArtifactUpdated is {
+        log environmentArtifactUpdated
       }
       on other is {
         error "Unexpected message for adaptor FromInfrastructureService"
@@ -393,7 +401,8 @@ context DeploymentContext as router is {
       |The model's side of the InfrastructureService conversation.
     }
   }
-  adaptor FromMonitoringService from context MonitoringService as flow is { 
+  adaptor FromMonitoringService from context MonitoringService as merge is { 
+    inlet DeploymentAnswers is event Deployment.DeploymentVerified
     inlet FromMonitoringServiceIn is type MonitoringService.MonitoringServiceEvent
     outlet FromMonitoringServiceToDeploymentContext is command Deployment.VerifyDeployment
     handler FromMonitoringServiceHandler is {
@@ -406,6 +415,9 @@ context DeploymentContext as router is {
       }
       on serviceRecovered: event MonitoringService.ServiceRecovered is {
         do "the service is healthy again; the deployment's own state is unchanged"
+      }
+      on deploymentVerified: event Deployment.DeploymentVerified is {
+        log deploymentVerified
       }
       on other is {
         error "Unexpected message for adaptor FromMonitoringService"
@@ -1532,7 +1544,11 @@ context DeploymentContext as router is {
       |Union of all Deployment events for streaming.
     }
   }
+  connector 'FromInfrastructureService Deployment Answers' is from outlet DeploymentContext.DeploymentEventSplit.DeploymentEventSplitToFromInfrastructureService to inlet DeploymentContext.FromInfrastructureService.DeploymentAnswers
+  connector 'FromMonitoringService Deployment Answers' is from outlet DeploymentContext.DeploymentEventSplit.DeploymentEventSplitToFromMonitoringService to inlet DeploymentContext.FromMonitoringService.DeploymentAnswers
   streamlet DeploymentEventSplit as split is {
+    outlet DeploymentEventSplitToFromInfrastructureService is event Deployment.DeploymentFailed
+    outlet DeploymentEventSplitToFromMonitoringService is event Deployment.DeploymentVerified
     outlet DeploymentEventSplitToToMonitoringService is type DeploymentEvent
     outlet DeploymentEventSplitToToInfrastructureService is type DeploymentEvent
     outlet DeploymentEventSplitToToArtifactRegistry is type DeploymentEvent
@@ -1556,6 +1572,7 @@ context DeploymentContext as router is {
         send deploymentStarted to outlet DeploymentEventSplitToToMonitoringService
       }
       on deploymentVerified: event Deployment.DeploymentVerified is {
+        send deploymentVerified to outlet DeploymentEventSplitToFromMonitoringService
         send deploymentVerified to outlet DeploymentEventSplitToDeploymentMetricsProjector
         send deploymentVerified to outlet DeploymentEventSplitToToInfrastructureService
       }
@@ -1563,6 +1580,7 @@ context DeploymentContext as router is {
         send deploymentCompleted to outlet DeploymentEventSplitToDeploymentMetricsProjector
       }
       on deploymentFailed: event Deployment.DeploymentFailed is {
+        send deploymentFailed to outlet DeploymentEventSplitToFromInfrastructureService
         send deploymentFailed to outlet DeploymentEventSplitToDeploymentMetricsProjector
       }
       on deploymentRolledBack: event Deployment.DeploymentRolledBack is {
@@ -1584,7 +1602,9 @@ context DeploymentContext as router is {
       |Fans Deployment events out to the repository and projectors.
     }
   }
+  connector 'FromInfrastructureService Environment Answers' is from outlet DeploymentContext.EnvironmentEventSplit.EnvironmentEventSplitToFromInfrastructureService to inlet DeploymentContext.FromInfrastructureService.EnvironmentAnswers
   streamlet EnvironmentEventSplit as split is {
+    outlet EnvironmentEventSplitToFromInfrastructureService is event Environment.EnvironmentArtifactUpdated
     outlet EnvironmentEventSplitToToMonitoringService is type EnvironmentEvent
     inlet EnvironmentEventSplitIn is type EnvironmentEvent
     outlet EnvironmentEventSplitToDeploymentMetricsProjector is type EnvironmentEvent
@@ -1594,6 +1614,7 @@ context DeploymentContext as router is {
         send environmentRegistered to outlet EnvironmentEventSplitToToMonitoringService
       }
       on environmentArtifactUpdated: event Environment.EnvironmentArtifactUpdated is {
+        send environmentArtifactUpdated to outlet EnvironmentEventSplitToFromInfrastructureService
         send environmentArtifactUpdated to outlet EnvironmentEventSplitToDeploymentMetricsProjector
       }
       on other is {

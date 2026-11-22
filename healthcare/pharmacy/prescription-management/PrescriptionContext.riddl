@@ -238,7 +238,8 @@ context PrescriptionContext as router is {
   }
   connector 'PrescriptionCommand Stream Intake' is from outlet PrescriptionContext.PrescriptionCommandStreamOut to inlet PrescriptionContext.Prescription.PrescriptionCommands
   connector 'PrescriptionQueryResult Stream Egress' is from outlet PrescriptionContext.Prescription.PrescriptionReplies to inlet PrescriptionContext.PrescriptionQueryResultStreaIn
-  adaptor FromEPrescribingNetwork from context EPrescribingNetwork as flow is { 
+  adaptor FromEPrescribingNetwork from context EPrescribingNetwork as merge is { 
+    inlet PrescriptionAnswers is type PrescriptionEvent
     inlet FromEPrescribingNetworkIn is type EPrescribingNetwork.EPrescribingNetworkEvent
     outlet FromEPrescribingNetworkToPrescriptionContext is type PrescriptionContext.FromEPrescribingNetworkCommand
     handler FromEPrescribingNetworkHandler is {
@@ -249,6 +250,12 @@ context PrescriptionContext as router is {
       on transferCompleted: event EPrescribingNetwork.TransferCompleted is {
         let item0: type Prescription.TransferPrescription = prompt("translate the transferCompleted event into a TransferPrescription, a transfer the network has completed is what the prescription records")
         send item0 to outlet PrescriptionContext.FromEPrescribingNetwork.FromEPrescribingNetworkToPrescriptionContext
+      }
+      on prescriptionReceived: event Prescription.PrescriptionReceived is {
+        log prescriptionReceived
+      }
+      on prescriptionTransferred: event Prescription.PrescriptionTransferred is {
+        log prescriptionTransferred
       }
       on other is {
         error "Unexpected message for adaptor FromEPrescribingNetwork"
@@ -289,7 +296,8 @@ context PrescriptionContext as router is {
       |The model's side of the InsuranceAdjudication conversation.
     }
   }
-  adaptor FromPrescriberVerification from context PrescriberVerification as flow is { 
+  adaptor FromPrescriberVerification from context PrescriberVerification as merge is { 
+    inlet PrescriptionAnswers is type PrescriptionEvent
     inlet FromPrescriberVerificationIn is type PrescriberVerification.PrescriberVerificationEvent
     outlet FromPrescriberVerificationToPrescriptionContext is type PrescriptionContext.FromPrescriberVerificationCommand
     handler FromPrescriberVerificationHandler is {
@@ -300,6 +308,12 @@ context PrescriptionContext as router is {
       on verificationFailed: event PrescriberVerification.VerificationFailed is {
         let item0: type Prescription.PlaceOnHold = prompt("translate the verificationFailed event into a PlaceOnHold, a prescription whose prescriber cannot be verified must not be filled")
         send item0 to outlet PrescriptionContext.FromPrescriberVerification.FromPrescriberVerificationToPrescriptionContext
+      }
+      on prescriptionVerified: event Prescription.PrescriptionVerified is {
+        log prescriptionVerified
+      }
+      on prescriptionOnHold: event Prescription.PrescriptionOnHold is {
+        log prescriptionOnHold
       }
       on other is {
         error "Unexpected message for adaptor FromPrescriberVerification"
@@ -1858,18 +1872,24 @@ context PrescriptionContext as router is {
       |persistence.
     }
   }
+  connector 'FromEPrescribingNetwork Prescription Answers' is from outlet PrescriptionContext.PrescriptionEventSplit.PrescriptionEventSplitToFromEPrescribingNetwork to inlet PrescriptionContext.FromEPrescribingNetwork.PrescriptionAnswers
+  connector 'FromPrescriberVerification Prescription Answers' is from outlet PrescriptionContext.PrescriptionEventSplit.PrescriptionEventSplitToFromPrescriberVerification to inlet PrescriptionContext.FromPrescriberVerification.PrescriptionAnswers
   streamlet PrescriptionEventSplit as split is {
+    outlet PrescriptionEventSplitToFromEPrescribingNetwork is type PrescriptionEvent
+    outlet PrescriptionEventSplitToFromPrescriberVerification is type PrescriptionEvent
     inlet PrescriptionEventSplitIn is type PrescriptionEvent
     outlet PrescriptionEventSplitToRefillRateProjector is type PrescriptionEvent
     outlet PrescriptionEventSplitToTransferMetricsProjector is type PrescriptionEvent
     outlet PrescriptionEventSplitToHoldAnalysisProjector is type PrescriptionEvent
     handler PrescriptionEventSplitHandler is {
       on prescriptionReceived: event Prescription.PrescriptionReceived is {
+        send prescriptionReceived to outlet PrescriptionEventSplitToFromEPrescribingNetwork
         send prescriptionReceived to outlet PrescriptionEventSplitToRefillRateProjector
         send prescriptionReceived to outlet PrescriptionEventSplitToTransferMetricsProjector
         send prescriptionReceived to outlet PrescriptionEventSplitToHoldAnalysisProjector
       }
       on prescriptionVerified: event Prescription.PrescriptionVerified is {
+        send prescriptionVerified to outlet PrescriptionEventSplitToFromPrescriberVerification
         send prescriptionVerified to outlet PrescriptionEventSplitToRefillRateProjector
         send prescriptionVerified to outlet PrescriptionEventSplitToTransferMetricsProjector
         send prescriptionVerified to outlet PrescriptionEventSplitToHoldAnalysisProjector
@@ -1885,6 +1905,7 @@ context PrescriptionContext as router is {
         send refillApproved to outlet PrescriptionEventSplitToHoldAnalysisProjector
       }
       on prescriptionOnHold: event Prescription.PrescriptionOnHold is {
+        send prescriptionOnHold to outlet PrescriptionEventSplitToFromPrescriberVerification
         send prescriptionOnHold to outlet PrescriptionEventSplitToRefillRateProjector
         send prescriptionOnHold to outlet PrescriptionEventSplitToTransferMetricsProjector
         send prescriptionOnHold to outlet PrescriptionEventSplitToHoldAnalysisProjector
@@ -1895,6 +1916,7 @@ context PrescriptionContext as router is {
         send holdReleased to outlet PrescriptionEventSplitToHoldAnalysisProjector
       }
       on prescriptionTransferred: event Prescription.PrescriptionTransferred is {
+        send prescriptionTransferred to outlet PrescriptionEventSplitToFromEPrescribingNetwork
         send prescriptionTransferred to outlet PrescriptionEventSplitToRefillRateProjector
         send prescriptionTransferred to outlet PrescriptionEventSplitToTransferMetricsProjector
         send prescriptionTransferred to outlet PrescriptionEventSplitToHoldAnalysisProjector

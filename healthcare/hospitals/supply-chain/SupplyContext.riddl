@@ -195,7 +195,8 @@ context SupplyContext as router is {
   }
   connector 'SupplyOrderCommand Stream Intake' is from outlet SupplyContext.SupplyOrderCommandStreamOut to inlet SupplyContext.SupplyOrder.SupplyOrderCommands
   connector 'StockItemResult Stream Egress' is from outlet SupplyContext.InventoryRepository.InventoryRepositoryResponses to inlet SupplyContext.StockItemResultStreamIn
-  adaptor FromClinicalUsage from context ClinicalUsage as flow is { 
+  adaptor FromClinicalUsage from context ClinicalUsage as merge is { 
+    inlet SupplyOrderAnswers is event SupplyOrder.RequisitionCreated
     inlet FromClinicalUsageIn is type ClinicalUsage.ClinicalUsageEvent
     outlet FromClinicalUsageToSupplyContext is command SupplyContext.CreateRequisition
     handler FromClinicalUsageHandler is {
@@ -208,6 +209,9 @@ context SupplyContext as router is {
       }
       on supplyRequested: event ClinicalUsage.SupplyRequested is {
         send command SupplyContext.CreateRequisition(requisitionId = supplyRequested.requestId, requestedBy = supplyRequested.departmentCode, requestDate = supplyRequested.requestedDate, items = prompt("one order line for the requested item and quantity"), justification = prompt("why the clinical area asked for it"), urgency = supplyRequested.priority) to outlet SupplyContext.FromClinicalUsage.FromClinicalUsageToSupplyContext
+      }
+      on requisitionCreated: event SupplyOrder.RequisitionCreated is {
+        log requisitionCreated
       }
       on other is {
         error "Unexpected message for adaptor FromClinicalUsage"
@@ -1117,7 +1121,9 @@ context SupplyContext as router is {
       |persistence.
     }
   }
+  connector 'FromClinicalUsage SupplyOrder Answers' is from outlet SupplyContext.SupplyOrderEventSplit.SupplyOrderEventSplitToFromClinicalUsage to inlet SupplyContext.FromClinicalUsage.SupplyOrderAnswers
   streamlet SupplyOrderEventSplit as split is {
+    outlet SupplyOrderEventSplitToFromClinicalUsage is event SupplyOrder.RequisitionCreated
     outlet SupplyOrderEventSplitToToVendorCatalog is type SupplyOrderEvent
     outlet SupplyOrderEventSplitToToFinanceAP is type SupplyOrderEvent
     outlet SupplyOrderEventSplitToToClinicalUsage is type SupplyOrderEvent
@@ -1125,6 +1131,7 @@ context SupplyContext as router is {
     outlet SupplyOrderEventSplitToInventoryMetricsProjector is type SupplyOrderEvent
     handler SupplyOrderEventSplitHandler is {
       on requisitionCreated: event SupplyOrder.RequisitionCreated is {
+        send requisitionCreated to outlet SupplyOrderEventSplitToFromClinicalUsage
         send requisitionCreated to outlet SupplyOrderEventSplitToInventoryMetricsProjector
         send requisitionCreated to outlet SupplyOrderEventSplitToToVendorCatalog
       }

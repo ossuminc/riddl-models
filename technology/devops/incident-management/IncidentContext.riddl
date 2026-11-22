@@ -209,7 +209,8 @@ context IncidentContext as router is {
   }
   connector 'IncidentCommand Stream Intake' is from outlet IncidentContext.IncidentCommandStreamOut to inlet IncidentContext.Incident.IncidentCommands
   connector 'IncidentQueryResult Stream Egress' is from outlet IncidentContext.Incident.IncidentReplies to inlet IncidentContext.IncidentQueryResultStreamIn
-  adaptor FromPagerDutyIntegration from context PagerDutyIntegration as flow is { 
+  adaptor FromPagerDutyIntegration from context PagerDutyIntegration as merge is { 
+    inlet IncidentAnswers is event Incident.IncidentAcknowledged
     inlet FromPagerDutyIntegrationIn is event PagerDutyIntegration.PageAcknowledged
     outlet FromPagerDutyIntegrationToIncidentContext is type IncidentContext.IncidentRequest
  with {
@@ -222,6 +223,9 @@ context IncidentContext as router is {
     handler InboundPages is {
       on pageAcknowledged: event PagerDutyIntegration.PageAcknowledged is {
         tell command AcknowledgeIncident(incidentId = pageAcknowledged.incidentId, acknowledgedBy = pageAcknowledged.acknowledgedBy, initialAssessment = prompt("the initial assessment of this acknowledge incident")) to context IncidentContext
+      }
+      on incidentAcknowledged: event Incident.IncidentAcknowledged is {
+        log incidentAcknowledged
       }
       on other is {
         error "Unexpected message for adaptor PagerDutyAdapter"
@@ -842,6 +846,9 @@ context IncidentContext as router is {
         let item0: type PagerDutyIntegration.EscalatePage = prompt("translate the incidentEscalated event into a EscalatePage, escalation being what moves it up the policy")
         send item0 to outlet IncidentContext.ToPagerDutyIntegration.ToPagerDutyIntegrationOut
       }
+      on incidentCommanderAssigned: event Incident.IncidentCommanderAssigned is {
+        log incidentCommanderAssigned
+      }
       on other is {
         error "Unexpected message for adaptor ToPagerDutyIntegration"
       }
@@ -857,7 +864,8 @@ context IncidentContext as router is {
       |The model's side of the PagerDutyIntegration conversation.
     }
   }
-  adaptor AlertAdapter from context AlertingService as flow is { 
+  adaptor AlertAdapter from context AlertingService as merge is { 
+    inlet IncidentAnswers is type IncidentEvent
     outlet AlertAdapterToIncidentContext is type IncidentContext.IncidentRequest
  with {
       briefly "What AlertAdapter publishes to IncidentContext"
@@ -878,6 +886,12 @@ context IncidentContext as router is {
           let resolveIncident: type Incident.ResolveIncident = prompt("the resolution the cleared alert implies")
           send resolveIncident to outlet IncidentContext.AlertAdapter.AlertAdapterToIncidentContext
         end
+      }
+      on incidentResolved: event Incident.IncidentResolved is {
+        log incidentResolved
+      }
+      on incidentCreated: event Incident.IncidentCreated is {
+        log incidentCreated
       }
       on other is {
         error "Unexpected message for adaptor AlertAdapter"
@@ -932,7 +946,11 @@ context IncidentContext as router is {
       |persistence.
     }
   }
+  connector 'AlertAdapter Incident Answers' is from outlet IncidentContext.IncidentEventSplit.IncidentEventSplitToAlertAdapter to inlet IncidentContext.AlertAdapter.IncidentAnswers
+  connector 'FromPagerDutyIntegration Incident Answers' is from outlet IncidentContext.IncidentEventSplit.IncidentEventSplitToFromPagerDutyIntegration to inlet IncidentContext.FromPagerDutyIntegration.IncidentAnswers
   streamlet IncidentEventSplit as split is {
+    outlet IncidentEventSplitToAlertAdapter is type IncidentEvent
+    outlet IncidentEventSplitToFromPagerDutyIntegration is event Incident.IncidentAcknowledged
     outlet IncidentEventSplitToToSlackIntegration is type IncidentEvent
     outlet IncidentEventSplitToToPagerDutyIntegration is type IncidentEvent
     inlet IncidentEventSplitIn is type IncidentEvent
@@ -940,12 +958,14 @@ context IncidentContext as router is {
     outlet IncidentEventSplitToIncidentTrendsProjector is type IncidentEvent
     handler IncidentEventSplitHandler is {
       on incidentCreated: event Incident.IncidentCreated is {
+        send incidentCreated to outlet IncidentEventSplitToAlertAdapter
         send incidentCreated to outlet IncidentEventSplitToIncidentMetricsProjector
         send incidentCreated to outlet IncidentEventSplitToIncidentTrendsProjector
         send incidentCreated to outlet IncidentEventSplitToToSlackIntegration
         send incidentCreated to outlet IncidentEventSplitToToPagerDutyIntegration
       }
       on incidentAcknowledged: event Incident.IncidentAcknowledged is {
+        send incidentAcknowledged to outlet IncidentEventSplitToFromPagerDutyIntegration
         send incidentAcknowledged to outlet IncidentEventSplitToIncidentMetricsProjector
         send incidentAcknowledged to outlet IncidentEventSplitToIncidentTrendsProjector
       }
@@ -960,6 +980,7 @@ context IncidentContext as router is {
         send incidentStatusUpdated to outlet IncidentEventSplitToToSlackIntegration
       }
       on incidentCommanderAssigned: event Incident.IncidentCommanderAssigned is {
+        send incidentCommanderAssigned to outlet IncidentEventSplitToToPagerDutyIntegration
         send incidentCommanderAssigned to outlet IncidentEventSplitToIncidentMetricsProjector
         send incidentCommanderAssigned to outlet IncidentEventSplitToIncidentTrendsProjector
       }
@@ -968,6 +989,7 @@ context IncidentContext as router is {
         send timelineEntryAdded to outlet IncidentEventSplitToIncidentTrendsProjector
       }
       on incidentResolved: event Incident.IncidentResolved is {
+        send incidentResolved to outlet IncidentEventSplitToAlertAdapter
         send incidentResolved to outlet IncidentEventSplitToIncidentMetricsProjector
         send incidentResolved to outlet IncidentEventSplitToIncidentTrendsProjector
       }

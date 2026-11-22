@@ -220,7 +220,8 @@ context WarehouseContext as router is {
       |The model's side of the InventoryPlanningContext conversation.
     }
   }
-  adaptor FromOrderManagementContext from context OrderManagementContext as flow is { 
+  adaptor FromOrderManagementContext from context OrderManagementContext as merge is { 
+    inlet InventoryAnswers is type InventoryEvent
     inlet FromOrderManagementContextIn is type OrderManagementContext.OrderManagementContextEvent
     outlet FromOrderManagementContextToWarehouseContext is type WarehouseContext.FromOrderManagementContextCommand
     handler FromOrderManagementContextHandler is {
@@ -234,6 +235,12 @@ context WarehouseContext as router is {
       }
       on orderShipmentRequested: event OrderManagementContext.OrderShipmentRequested is {
         do "order management wants it shipped by the date; the stock leaves when the warehouse ships it"
+      }
+      on reservationReleased: event Inventory.ReservationReleased is {
+        log reservationReleased
+      }
+      on inventoryReserved: event Inventory.InventoryReserved is {
+        log inventoryReserved
       }
       on other is {
         error "Unexpected message for adaptor FromOrderManagementContext"
@@ -261,6 +268,9 @@ context WarehouseContext as router is {
         do "received stock needing the catalogue's dimensions and handling rules"
         send command Inventory.RecordProductDetails(inventoryId = inventoryReceived.inventoryId, productName = askAnswer.productName, sku = askAnswer.sku, weight = askAnswer.weight) to outlet WarehouseContext.ToProductCatalogContext.ToProductCatalogContextToWarehouseContext
       }
+      on productDetailsRecorded: event Inventory.ProductDetailsRecorded is {
+        log productDetailsRecorded
+      }
       on other is {
         error "Unexpected message for adaptor ToProductCatalogContext"
       }
@@ -276,7 +286,8 @@ context WarehouseContext as router is {
       |The model's side of the ProductCatalogContext conversation.
     }
   }
-  adaptor FromPurchasingContext from context PurchasingContext as flow is { 
+  adaptor FromPurchasingContext from context PurchasingContext as merge is { 
+    inlet InventoryAnswers is event Inventory.InventoryReceived
     inlet FromPurchasingContextIn is type PurchasingContext.PurchasingContextEvent
     outlet FromPurchasingContextToWarehouseContext is command WarehouseContext.ReceiveInventory
     handler FromPurchasingContextHandler is {
@@ -286,6 +297,9 @@ context WarehouseContext as router is {
       }
       on purchaseOrderReceived: event PurchasingContext.PurchaseOrderReceived is {
         do "a purchase order is placed; stock is received when the shipment arrives"
+      }
+      on inventoryReceived: event Inventory.InventoryReceived is {
+        log inventoryReceived
       }
       on other is {
         error "Unexpected message for adaptor FromPurchasingContext"
@@ -1307,13 +1321,18 @@ context WarehouseContext as router is {
       |Union of Inventory events for streaming.
     }
   }
+  connector 'FromOrderManagementContext Inventory Answers' is from outlet WarehouseContext.InventoryEventSplit.InventoryEventSplitToFromOrderManagementContext to inlet WarehouseContext.FromOrderManagementContext.InventoryAnswers
+  connector 'FromPurchasingContext Inventory Answers' is from outlet WarehouseContext.InventoryEventSplit.InventoryEventSplitToFromPurchasingContext to inlet WarehouseContext.FromPurchasingContext.InventoryAnswers
   streamlet InventoryEventSplit as split is {
+    outlet InventoryEventSplitToFromOrderManagementContext is type InventoryEvent
+    outlet InventoryEventSplitToFromPurchasingContext is event Inventory.InventoryReceived
     outlet InventoryEventSplitToToShippingContext is type InventoryEvent
     outlet InventoryEventSplitToToProductCatalogContext is type InventoryEvent
     inlet InventoryEventSplitIn is type InventoryEvent
     outlet InventoryEventSplitToInventoryProjector is type InventoryEvent
     handler InventoryEventSplitHandler is {
       on inventoryReceived: event Inventory.InventoryReceived is {
+        send inventoryReceived to outlet InventoryEventSplitToFromPurchasingContext
         send inventoryReceived to outlet InventoryEventSplitToInventoryProjector
         send inventoryReceived to outlet InventoryEventSplitToToProductCatalogContext
       }
@@ -1321,10 +1340,12 @@ context WarehouseContext as router is {
         send inventoryAdjusted to outlet InventoryEventSplitToInventoryProjector
       }
       on inventoryReserved: event Inventory.InventoryReserved is {
+        send inventoryReserved to outlet InventoryEventSplitToFromOrderManagementContext
         send inventoryReserved to outlet InventoryEventSplitToInventoryProjector
         send inventoryReserved to outlet InventoryEventSplitToToShippingContext
       }
       on reservationReleased: event Inventory.ReservationReleased is {
+        send reservationReleased to outlet InventoryEventSplitToFromOrderManagementContext
         send reservationReleased to outlet InventoryEventSplitToInventoryProjector
       }
       on inventoryTransferred: event Inventory.InventoryTransferred is {
@@ -1343,6 +1364,7 @@ context WarehouseContext as router is {
         send inventoryReleasedFromQuarantine to outlet InventoryEventSplitToInventoryProjector
       }
       on productDetailsRecorded: event Inventory.ProductDetailsRecorded is {
+        send productDetailsRecorded to outlet InventoryEventSplitToToProductCatalogContext
         send productDetailsRecorded to outlet InventoryEventSplitToInventoryProjector
       }
       on other is {

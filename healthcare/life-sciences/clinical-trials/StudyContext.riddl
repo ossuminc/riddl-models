@@ -143,7 +143,8 @@ context StudyContext as router is {
   }
   connector 'ClinicalStudyCommand Stream Intake' is from outlet StudyContext.ClinicalStudyCommandStreamOut to inlet StudyContext.ClinicalStudy.ClinicalStudyCommands
   connector 'ClinicalStudyResult Stream Egress' is from outlet StudyContext.ClinicalStudy.ClinicalStudyReplies to inlet StudyContext.ClinicalStudyResultStreamIn
-  adaptor FromCTMSIntegration from context CTMSIntegration as flow is { 
+  adaptor FromCTMSIntegration from context CTMSIntegration as merge is { 
+    inlet ClinicalStudyAnswers is event ClinicalStudy.SiteActivated
     inlet FromCTMSIntegrationIn is type CTMSIntegration.CTMSIntegrationEvent
     outlet FromCTMSIntegrationToStudyContext is command ClinicalStudy.ActivateSite
     handler FromCTMSIntegrationHandler is {
@@ -156,6 +157,9 @@ context StudyContext as router is {
       }
       on paymentProcessed: event CTMSIntegration.PaymentProcessed is {
         do "site payments are finance's business; the study's conduct is unaffected"
+      }
+      on siteActivated: event ClinicalStudy.SiteActivated is {
+        log siteActivated
       }
       on other is {
         error "Unexpected message for adaptor FromCTMSIntegration"
@@ -172,7 +176,8 @@ context StudyContext as router is {
       |The model's side of the CTMSIntegration conversation.
     }
   }
-  adaptor FromEDCSystem from context EDCSystem as flow is { 
+  adaptor FromEDCSystem from context EDCSystem as merge is { 
+    inlet ClinicalStudyAnswers is event ClinicalStudy.DataSubmitted
     inlet FromEDCSystemIn is type EDCSystem.EDCSystemEvent
     outlet FromEDCSystemToStudyContext is command ClinicalStudy.SubmitData
     handler FromEDCSystemHandler is {
@@ -185,6 +190,9 @@ context StudyContext as router is {
       }
       on queryOpened: event EDCSystem.QueryOpened is {
         do "an open query is a question about data already submitted; it changes nothing until answered"
+      }
+      on dataSubmitted: event ClinicalStudy.DataSubmitted is {
+        log dataSubmitted
       }
       on other is {
         error "Unexpected message for adaptor FromEDCSystem"
@@ -823,7 +831,11 @@ context StudyContext as router is {
       |persistence.
     }
   }
-  streamlet ClinicalStudyEventSplit as flow is {
+  connector 'FromCTMSIntegration ClinicalStudy Answers' is from outlet StudyContext.ClinicalStudyEventSplit.ClinicalStudyEventSplitToFromCTMSIntegration to inlet StudyContext.FromCTMSIntegration.ClinicalStudyAnswers
+  connector 'FromEDCSystem ClinicalStudy Answers' is from outlet StudyContext.ClinicalStudyEventSplit.ClinicalStudyEventSplitToFromEDCSystem to inlet StudyContext.FromEDCSystem.ClinicalStudyAnswers
+  streamlet ClinicalStudyEventSplit as split is {
+    outlet ClinicalStudyEventSplitToFromCTMSIntegration is event ClinicalStudy.SiteActivated
+    outlet ClinicalStudyEventSplitToFromEDCSystem is event ClinicalStudy.DataSubmitted
     inlet ClinicalStudyEventSplitIn is type ClinicalStudyEvent
     outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector is type ClinicalStudyEvent
     handler ClinicalStudyEventSplitHandler is {
@@ -831,6 +843,7 @@ context StudyContext as router is {
         send studyCreated to outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector
       }
       on siteActivated: event ClinicalStudy.SiteActivated is {
+        send siteActivated to outlet ClinicalStudyEventSplitToFromCTMSIntegration
         send siteActivated to outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector
       }
       on subjectEnrolled: event ClinicalStudy.SubjectEnrolled is {
@@ -840,6 +853,7 @@ context StudyContext as router is {
         send visitRecorded to outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector
       }
       on dataSubmitted: event ClinicalStudy.DataSubmitted is {
+        send dataSubmitted to outlet ClinicalStudyEventSplitToFromEDCSystem
         send dataSubmitted to outlet ClinicalStudyEventSplitToEnrollmentMetricsProjector
       }
       on studyClosed: event ClinicalStudy.StudyClosed is {

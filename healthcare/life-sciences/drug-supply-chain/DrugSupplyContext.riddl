@@ -230,7 +230,8 @@ context DrugSupplyContext as router is {
   }
   connector 'DrugBatchCommand Stream Intake' is from outlet DrugSupplyContext.DrugBatchCommandStreamOut to inlet DrugSupplyContext.DrugBatch.DrugBatchCommands
   connector 'DrugBatchResult Stream Egress' is from outlet DrugSupplyContext.DrugBatch.DrugBatchReplies to inlet DrugSupplyContext.DrugBatchResultStreamIn
-  adaptor FromManufacturingSystem from context ManufacturingSystem as flow is { 
+  adaptor FromManufacturingSystem from context ManufacturingSystem as merge is { 
+    inlet DrugBatchAnswers is event DrugBatch.BatchManufactured
     inlet FromManufacturingSystemIn is type ManufacturingSystem.ManufacturingSystemEvent
     outlet FromManufacturingSystemToDrugSupplyContext is command DrugSupplyContext.ManufactureBatch
     handler FromManufacturingSystemHandler is {
@@ -240,6 +241,9 @@ context DrugSupplyContext as router is {
       }
       on productionOrderReceived: event ManufacturingSystem.ProductionOrderReceived is {
         do "manufacturing has the order; the batch exists here when it is made"
+      }
+      on batchManufactured: event DrugBatch.BatchManufactured is {
+        log batchManufactured
       }
       on other is {
         error "Unexpected message for adaptor FromManufacturingSystem"
@@ -283,7 +287,8 @@ context DrugSupplyContext as router is {
       |The model's side of the RegulatoryReporting conversation.
     }
   }
-  adaptor FromSerializationProvider from context SerializationProvider as flow is { 
+  adaptor FromSerializationProvider from context SerializationProvider as merge is { 
+    inlet DrugBatchAnswers is type DrugBatchEvent
     inlet FromSerializationProviderIn is type SerializationProvider.SerializationProviderEvent
     outlet FromSerializationProviderToDrugSupplyContext is type DrugSupplyContext.FromSerializationProviderCommand
     handler FromSerializationProviderHandler is {
@@ -294,6 +299,12 @@ context DrugSupplyContext as router is {
       on verificationCompleted: event SerializationProvider.VerificationCompleted is {
         let item0: type DrugBatch.VerifyAuthenticity = prompt("translate the verificationCompleted event into a VerifyAuthenticity, the provider's verification is exactly what the batch's authenticity check records")
         send item0 to outlet DrugSupplyContext.FromSerializationProvider.FromSerializationProviderToDrugSupplyContext
+      }
+      on unitsSerialized: event DrugBatch.UnitsSerialized is {
+        log unitsSerialized
+      }
+      on authenticityVerified: event DrugBatch.AuthenticityVerified is {
+        log authenticityVerified
       }
       on other is {
         error "Unexpected message for adaptor FromSerializationProvider"
@@ -950,16 +961,22 @@ context DrugSupplyContext as router is {
       |persistence.
     }
   }
+  connector 'FromManufacturingSystem DrugBatch Answers' is from outlet DrugSupplyContext.DrugBatchEventSplit.DrugBatchEventSplitToFromManufacturingSystem to inlet DrugSupplyContext.FromManufacturingSystem.DrugBatchAnswers
+  connector 'FromSerializationProvider DrugBatch Answers' is from outlet DrugSupplyContext.DrugBatchEventSplit.DrugBatchEventSplitToFromSerializationProvider to inlet DrugSupplyContext.FromSerializationProvider.DrugBatchAnswers
   streamlet DrugBatchEventSplit as split is {
+    outlet DrugBatchEventSplitToFromManufacturingSystem is event DrugBatch.BatchManufactured
+    outlet DrugBatchEventSplitToFromSerializationProvider is type DrugBatchEvent
     inlet DrugBatchEventSplitIn is type DrugBatchEvent
     outlet DrugBatchEventSplitToSerializationMetricsProjector is type DrugBatchEvent
     outlet DrugBatchEventSplitToTraceabilityDashboardProjector is type DrugBatchEvent
     handler DrugBatchEventSplitHandler is {
       on batchManufactured: event DrugBatch.BatchManufactured is {
+        send batchManufactured to outlet DrugBatchEventSplitToFromManufacturingSystem
         send batchManufactured to outlet DrugBatchEventSplitToSerializationMetricsProjector
         send batchManufactured to outlet DrugBatchEventSplitToTraceabilityDashboardProjector
       }
       on unitsSerialized: event DrugBatch.UnitsSerialized is {
+        send unitsSerialized to outlet DrugBatchEventSplitToFromSerializationProvider
         send unitsSerialized to outlet DrugBatchEventSplitToSerializationMetricsProjector
         send unitsSerialized to outlet DrugBatchEventSplitToTraceabilityDashboardProjector
       }
@@ -972,6 +989,7 @@ context DrugSupplyContext as router is {
         send shipmentReceived to outlet DrugBatchEventSplitToTraceabilityDashboardProjector
       }
       on authenticityVerified: event DrugBatch.AuthenticityVerified is {
+        send authenticityVerified to outlet DrugBatchEventSplitToFromSerializationProvider
         send authenticityVerified to outlet DrugBatchEventSplitToSerializationMetricsProjector
         send authenticityVerified to outlet DrugBatchEventSplitToTraceabilityDashboardProjector
       }

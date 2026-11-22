@@ -162,7 +162,8 @@ context PaymentContext as router is {
   connector 'FromCardNetworkService Intake' is from outlet PaymentContext.FromCardNetworkService.FromCardNetworkServiceToPaymentContext to inlet PaymentContext.PaymentContextFromCardNetworkService with {
     briefly "What FromCardNetworkService makes of that news, on its way in"
   }
-  adaptor FromCardNetworkService from context CardNetworkService as flow is { 
+  adaptor FromCardNetworkService from context CardNetworkService as merge is { 
+    inlet PaymentAnswers is type PaymentEvent
     inlet FromCardNetworkServiceIn is type CardNetworkService.CardNetworkServiceEvent
     outlet FromCardNetworkServiceToPaymentContext is type PaymentContext.FromCardNetworkServiceCommand
     handler FromCardNetworkServiceHandler is {
@@ -175,6 +176,12 @@ context PaymentContext as router is {
       }
       on chargebackReceived: event CardNetworkService.ChargebackReceived is {
         send command Payment.RecordDispute(paymentId = chargebackReceived.paymentId, dispute = chargebackReceived.dispute) to outlet PaymentContext.FromCardNetworkService.FromCardNetworkServiceToPaymentContext
+      }
+      on paymentDeclined: event Payment.PaymentDeclined is {
+        log paymentDeclined
+      }
+      on disputeRecorded: event Payment.DisputeRecorded is {
+        log disputeRecorded
       }
       on other is {
         error "Unexpected message for adaptor FromCardNetworkService"
@@ -268,6 +275,9 @@ context PaymentContext as router is {
         do "a payment starting needing the merchant's terms and account"
         send command PaymentContext.AuthorizePayment(info = prompt("the payment's info with the merchant terms askAnswer carries"), card = paymentInitiated.card) to outlet PaymentContext.ToMerchantService.ToMerchantServiceToPaymentContext
       }
+      on paymentAuthorized: event Payment.PaymentAuthorized is {
+        log paymentAuthorized
+      }
       on other is {
         error "Unexpected message for adaptor ToMerchantService"
       }
@@ -328,7 +338,8 @@ context PaymentContext as router is {
   connector 'FromSettlementService Intake' is from outlet PaymentContext.FromSettlementService.FromSettlementServiceToPaymentContext to inlet PaymentContext.PaymentContextFromSettlementService with {
     briefly "What FromSettlementService makes of that news, on its way in"
   }
-  adaptor FromSettlementService from context SettlementService as flow is { 
+  adaptor FromSettlementService from context SettlementService as merge is { 
+    inlet PaymentAnswers is event Payment.PaymentSettled
     inlet FromSettlementServiceIn is type SettlementService.SettlementServiceEvent
     outlet FromSettlementServiceToPaymentContext is command Payment.SettlePayment
     handler FromSettlementServiceHandler is {
@@ -337,6 +348,9 @@ context PaymentContext as router is {
       }
       on settlementCompleted: event SettlementService.SettlementCompleted is {
         send command Payment.SettlePayment(paymentId = settlementCompleted.paymentId, settlement = settlementCompleted.settlement) to outlet PaymentContext.FromSettlementService.FromSettlementServiceToPaymentContext
+      }
+      on paymentSettled: event Payment.PaymentSettled is {
+        log paymentSettled
       }
       on other is {
         error "Unexpected message for adaptor FromSettlementService"
@@ -376,13 +390,17 @@ context PaymentContext as router is {
       |The model's side of the SettlementService conversation.
     }
   }
-  adaptor FromThreeDSecureService from context ThreeDSecureService as flow is { 
+  adaptor FromThreeDSecureService from context ThreeDSecureService as merge is { 
+    inlet PaymentAnswers is event Payment.PaymentAuthenticated
     inlet FromThreeDSecureServiceIn is event ThreeDSecureService.AuthenticationCompleted
     outlet FromThreeDSecureServiceToPaymentContext is command Payment.RecordAuthentication
     handler FromThreeDSecureServiceHandler is {
       on authenticationCompleted: event ThreeDSecureService.AuthenticationCompleted is {
         let item0: type Payment.RecordAuthentication = prompt("translate the authenticationCompleted event into a RecordAuthentication, the three-domain-secure outcome is exactly what the payment's authentication record holds")
         send item0 to outlet PaymentContext.FromThreeDSecureService.FromThreeDSecureServiceToPaymentContext
+      }
+      on paymentAuthenticated: event Payment.PaymentAuthenticated is {
+        log paymentAuthenticated
       }
       on other is {
         error "Unexpected message for adaptor FromThreeDSecureService"
@@ -1052,7 +1070,13 @@ context PaymentContext as router is {
       |Maintains payment processing analytics data.
     }
   }
+  connector 'FromCardNetworkService Payment Answers' is from outlet PaymentContext.PaymentEventSplit.PaymentEventSplitToFromCardNetworkService to inlet PaymentContext.FromCardNetworkService.PaymentAnswers
+  connector 'FromSettlementService Payment Answers' is from outlet PaymentContext.PaymentEventSplit.PaymentEventSplitToFromSettlementService to inlet PaymentContext.FromSettlementService.PaymentAnswers
+  connector 'FromThreeDSecureService Payment Answers' is from outlet PaymentContext.PaymentEventSplit.PaymentEventSplitToFromThreeDSecureService to inlet PaymentContext.FromThreeDSecureService.PaymentAnswers
   streamlet PaymentEventSplit as split is {
+    outlet PaymentEventSplitToFromCardNetworkService is type PaymentEvent
+    outlet PaymentEventSplitToFromSettlementService is event Payment.PaymentSettled
+    outlet PaymentEventSplitToFromThreeDSecureService is event Payment.PaymentAuthenticated
     outlet PaymentEventSplitToToThreeDSecureService is type PaymentEvent
     outlet PaymentEventSplitToToSettlementService is type PaymentEvent
     outlet PaymentEventSplitToToNotificationService is type PaymentEvent
@@ -1063,6 +1087,7 @@ context PaymentContext as router is {
     outlet PaymentEventSplitToPaymentAnalytics is type PaymentEvent
     handler PaymentEventSplitHandler is {
       on paymentAuthorized: event Payment.PaymentAuthorized is {
+        send paymentAuthorized to outlet PaymentEventSplitToToMerchantService
         send paymentAuthorized to outlet PaymentEventSplitToPaymentAnalytics
         send paymentAuthorized to outlet PaymentEventSplitToToFraudService
       }
@@ -1072,10 +1097,12 @@ context PaymentContext as router is {
         send paymentInitiated to outlet PaymentEventSplitToToMerchantService
       }
       on paymentAuthenticated: event Payment.PaymentAuthenticated is {
+        send paymentAuthenticated to outlet PaymentEventSplitToFromThreeDSecureService
         send paymentAuthenticated to outlet PaymentEventSplitToPaymentAnalytics
         send paymentAuthenticated to outlet PaymentEventSplitToToCardNetworkService
       }
       on paymentDeclined: event Payment.PaymentDeclined is {
+        send paymentDeclined to outlet PaymentEventSplitToFromCardNetworkService
         send paymentDeclined to outlet PaymentEventSplitToPaymentAnalytics
         send paymentDeclined to outlet PaymentEventSplitToToNotificationService
       }
@@ -1091,10 +1118,12 @@ context PaymentContext as router is {
         send paymentRefunded to outlet PaymentEventSplitToToNotificationService
       }
       on paymentSettled: event Payment.PaymentSettled is {
+        send paymentSettled to outlet PaymentEventSplitToFromSettlementService
         send paymentSettled to outlet PaymentEventSplitToPaymentAnalytics
         send paymentSettled to outlet PaymentEventSplitToToNotificationService
       }
       on disputeRecorded: event Payment.DisputeRecorded is {
+        send disputeRecorded to outlet PaymentEventSplitToFromCardNetworkService
         send disputeRecorded to outlet PaymentEventSplitToPaymentAnalytics
         send disputeRecorded to outlet PaymentEventSplitToToNotificationService
       }

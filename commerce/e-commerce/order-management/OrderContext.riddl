@@ -562,7 +562,9 @@ context OrderContext as router is {
       |The model's side of the PaymentGateway conversation.
     }
   }
-  adaptor PaymentAdapter from context PaymentGateway as flow is { 
+  adaptor PaymentAdapter from context PaymentGateway as merge is { 
+    inlet OrderAnswers is event Order.PaymentConfirmed
+    inlet ReturnAnswers is event Return.RefundProcessed
     inlet PaymentAdapterIn is type PaymentGateway.PaymentGatewayEvent
     outlet PaymentAdapterToOrderContext is type OrderContext.PaymentAdapterCommand
  with {
@@ -582,6 +584,12 @@ context OrderContext as router is {
       on refundCompleted: event PaymentGateway.RefundCompleted is {
         send command Return.ProcessRefund(returnId = prompt("the return this refund was issued for, by its transaction"), refundAmount = prompt("the refunded amount, from refundCompleted.paymentRefundAmount"), refundMethod = prompt("the method the refund was paid back by")) to outlet OrderContext.PaymentAdapter.PaymentAdapterToOrderContext
       }
+      on paymentConfirmed: event Order.PaymentConfirmed is {
+        log paymentConfirmed
+      }
+      on refundProcessed: event Return.RefundProcessed is {
+        log refundProcessed
+      }
       on other is {
         error "Unexpected message for adaptor PaymentAdapter"
       }
@@ -598,7 +606,8 @@ context OrderContext as router is {
       | and translates them into commands for the Order entity.
     }
   }
-  adaptor InventoryAdapter from context InventoryService as flow is { 
+  adaptor InventoryAdapter from context InventoryService as merge is { 
+    inlet OrderAnswers is event Order.InventoryAllocated
     inlet InventoryAdapterIn is type InventoryService.InventoryServiceEvent
     outlet InventoryAdapterToOrderContext is type OrderContext.OrderRequest
  with {
@@ -614,6 +623,9 @@ context OrderContext as router is {
       }
       on event InventoryService.StockAllocationFailed is {
         do "Handle inventory shortage - may need to cancel or partial fulfill"
+      }
+      on inventoryAllocated: event Order.InventoryAllocated is {
+        log inventoryAllocated
       }
       on other is {
         error "Unexpected message for adaptor InventoryAdapter"
@@ -631,7 +643,9 @@ context OrderContext as router is {
       | and updates order status accordingly.
     }
   }
-  adaptor ShippingAdapter from context ShippingCarrier as split is { 
+  adaptor ShippingAdapter from context ShippingCarrier as router is { 
+    inlet OrderAnswers is type OrderEvent
+    inlet ShipmentAnswers is type ShipmentStreamEvent
     outlet ShippingAdapterShipmentsToOrderContext is type OrderContext.ShipmentRequest
  with {
       briefly "The Shipment commands ShippingAdapter publishes to OrderContext"
@@ -663,6 +677,24 @@ context OrderContext as router is {
       }
       on deliveryFailedByCarrier: event ShippingCarrier.DeliveryFailedByCarrier is {
         send command Shipment.MarkFailed(shipmentId = deliveryFailedByCarrier.shipmentId, reason = deliveryFailedByCarrier.reason) to outlet OrderContext.ShippingAdapter.ShippingAdapterShipmentsToOrderContext
+      }
+      on orderShipped: event Order.OrderShipped is {
+        log orderShipped
+      }
+      on orderDelivered: event Order.OrderDelivered is {
+        log orderDelivered
+      }
+      on shipmentCreated: event Shipment.ShipmentCreated is {
+        log shipmentCreated
+      }
+      on trackingUpdated: event Shipment.TrackingUpdated is {
+        log trackingUpdated
+      }
+      on shipmentDelivered: event Shipment.ShipmentDelivered is {
+        log shipmentDelivered
+      }
+      on shipmentFailed: event Shipment.ShipmentFailed is {
+        log shipmentFailed
       }
       on other is {
         error "Unexpected message for adaptor ShippingAdapter"
@@ -1947,7 +1979,13 @@ context OrderContext as router is {
       |persistence.
     }
   }
+  connector 'InventoryAdapter Order Answers' is from outlet OrderContext.OrderEventSplit.OrderEventSplitToInventoryAdapter to inlet OrderContext.InventoryAdapter.OrderAnswers
+  connector 'PaymentAdapter Order Answers' is from outlet OrderContext.OrderEventSplit.OrderEventSplitToPaymentAdapter to inlet OrderContext.PaymentAdapter.OrderAnswers
+  connector 'ShippingAdapter Order Answers' is from outlet OrderContext.OrderEventSplit.OrderEventSplitToShippingAdapter to inlet OrderContext.ShippingAdapter.OrderAnswers
   streamlet OrderEventSplit as split is {
+    outlet OrderEventSplitToInventoryAdapter is event Order.InventoryAllocated
+    outlet OrderEventSplitToPaymentAdapter is event Order.PaymentConfirmed
+    outlet OrderEventSplitToShippingAdapter is type OrderEvent
     outlet OrderEventSplitToToShippingCarrier is type OrderEvent
     outlet OrderEventSplitToToCustomerService is type OrderEvent
     outlet OrderEventSplitToToPaymentGateway is type OrderEvent
@@ -1965,16 +2003,20 @@ context OrderContext as router is {
         send orderPlaced to outlet OrderEventSplitToToCustomerService
       }
       on paymentConfirmed: event Order.PaymentConfirmed is {
+        send paymentConfirmed to outlet OrderEventSplitToPaymentAdapter
         send paymentConfirmed to outlet OrderEventSplitToOrderAnalytics
       }
       on inventoryAllocated: event Order.InventoryAllocated is {
+        send inventoryAllocated to outlet OrderEventSplitToInventoryAdapter
         send inventoryAllocated to outlet OrderEventSplitToOrderAnalytics
       }
       on orderShipped: event Order.OrderShipped is {
+        send orderShipped to outlet OrderEventSplitToShippingAdapter
         send orderShipped to outlet OrderEventSplitToOrderAnalytics
         send orderShipped to outlet OrderEventSplitToToCustomerService
       }
       on orderDelivered: event Order.OrderDelivered is {
+        send orderDelivered to outlet OrderEventSplitToShippingAdapter
         send orderDelivered to outlet OrderEventSplitToOrderAnalytics
       }
       on orderCancelled: event Order.OrderCancelled is {
@@ -1999,7 +2041,9 @@ context OrderContext as router is {
       |Fans Order events out to the repository and projectors.
     }
   }
-  streamlet ReturnEventSplit as flow is {
+  connector 'PaymentAdapter Return Answers' is from outlet OrderContext.ReturnEventSplit.ReturnEventSplitToPaymentAdapter to inlet OrderContext.PaymentAdapter.ReturnAnswers
+  streamlet ReturnEventSplit as split is {
+    outlet ReturnEventSplitToPaymentAdapter is event Return.RefundProcessed
     inlet ReturnEventSplitIn is type ReturnEvent
     outlet ReturnEventSplitToOrderAnalytics is type ReturnEvent
     handler ReturnEventSplitHandler is {
@@ -2016,6 +2060,7 @@ context OrderContext as router is {
         send returnReceived to outlet ReturnEventSplitToOrderAnalytics
       }
       on refundProcessed: event Return.RefundProcessed is {
+        send refundProcessed to outlet ReturnEventSplitToPaymentAdapter
         send refundProcessed to outlet ReturnEventSplitToOrderAnalytics
       }
       on other is {
@@ -2033,23 +2078,29 @@ context OrderContext as router is {
       |Fans Return events out to the repository and projectors.
     }
   }
+  connector 'ShippingAdapter Shipment Answers' is from outlet OrderContext.ShipmentEventSplit.ShipmentEventSplitToShippingAdapter to inlet OrderContext.ShippingAdapter.ShipmentAnswers
   streamlet ShipmentEventSplit as split is {
+    outlet ShipmentEventSplitToShippingAdapter is type ShipmentStreamEvent
     outlet ShipmentEventSplitToToShippingCarrier is type ShipmentStreamEvent
     outlet ShipmentEventSplitToToCustomerService is type ShipmentStreamEvent
     inlet ShipmentEventSplitIn is type ShipmentStreamEvent
     outlet ShipmentEventSplitToOrderAnalytics is type ShipmentStreamEvent
     handler ShipmentEventSplitHandler is {
       on shipmentCreated: event Shipment.ShipmentCreated is {
+        send shipmentCreated to outlet ShipmentEventSplitToShippingAdapter
         send shipmentCreated to outlet ShipmentEventSplitToOrderAnalytics
         send shipmentCreated to outlet ShipmentEventSplitToToShippingCarrier
       }
       on trackingUpdated: event Shipment.TrackingUpdated is {
+        send trackingUpdated to outlet ShipmentEventSplitToShippingAdapter
         send trackingUpdated to outlet ShipmentEventSplitToOrderAnalytics
       }
       on shipmentDelivered: event Shipment.ShipmentDelivered is {
+        send shipmentDelivered to outlet ShipmentEventSplitToShippingAdapter
         send shipmentDelivered to outlet ShipmentEventSplitToOrderAnalytics
       }
       on shipmentFailed: event Shipment.ShipmentFailed is {
+        send shipmentFailed to outlet ShipmentEventSplitToShippingAdapter
         send shipmentFailed to outlet ShipmentEventSplitToOrderAnalytics
         send shipmentFailed to outlet ShipmentEventSplitToToCustomerService
       }

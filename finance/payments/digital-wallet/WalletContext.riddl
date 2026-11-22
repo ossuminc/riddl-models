@@ -156,7 +156,8 @@ context WalletContext as router is {
   }
   connector 'WalletCommand Stream Intake' is from outlet WalletContext.WalletCommandStreamOut to inlet WalletContext.Wallet.WalletCommands
   connector 'WalletResult Stream Egress' is from outlet WalletContext.Wallet.WalletReplies to inlet WalletContext.WalletResultStreamIn
-  adaptor FromBankTransferService from context BankTransferService as flow is { 
+  adaptor FromBankTransferService from context BankTransferService as merge is { 
+    inlet WalletAnswers is event Wallet.FundsReceived
     inlet FromBankTransferServiceIn is type BankTransferService.BankTransferServiceEvent
     outlet FromBankTransferServiceToWalletContext is command Wallet.ReceiveFunds
     handler FromBankTransferServiceHandler is {
@@ -166,6 +167,9 @@ context WalletContext as router is {
       }
       on aCHInitiated: event BankTransferService.ACHInitiated is {
         do "the transfer is under way; the wallet records the balance when it lands"
+      }
+      on fundsReceived: event Wallet.FundsReceived is {
+        log fundsReceived
       }
       on other is {
         error "Unexpected message for adaptor FromBankTransferService"
@@ -360,13 +364,17 @@ context WalletContext as router is {
       |The model's side of the PaymentProcessorService conversation.
     }
   }
-  adaptor FromTokenizationService from context TokenizationService as flow is { 
+  adaptor FromTokenizationService from context TokenizationService as merge is { 
+    inlet WalletAnswers is event Wallet.PaymentMethodAdded
     inlet FromTokenizationServiceIn is event TokenizationService.CardTokenized
     outlet FromTokenizationServiceToWalletContext is command Wallet.AddPaymentMethod
     handler FromTokenizationServiceHandler is {
       on cardTokenized: event TokenizationService.CardTokenized is {
         let item0: type Wallet.AddPaymentMethod = prompt("translate the cardTokenized event into a AddPaymentMethod, a tokenised card is what can actually be stored as a payment method")
         send item0 to outlet WalletContext.FromTokenizationService.FromTokenizationServiceToWalletContext
+      }
+      on paymentMethodAdded: event Wallet.PaymentMethodAdded is {
+        log paymentMethodAdded
       }
       on other is {
         error "Unexpected message for adaptor FromTokenizationService"
@@ -1169,7 +1177,11 @@ context WalletContext as router is {
       |Maintains wallet platform analytics data.
     }
   }
+  connector 'FromBankTransferService Wallet Answers' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToFromBankTransferService to inlet WalletContext.FromBankTransferService.WalletAnswers
+  connector 'FromTokenizationService Wallet Answers' is from outlet WalletContext.WalletEventSplit.WalletEventSplitToFromTokenizationService to inlet WalletContext.FromTokenizationService.WalletAnswers
   streamlet WalletEventSplit as split is {
+    outlet WalletEventSplitToFromBankTransferService is event Wallet.FundsReceived
+    outlet WalletEventSplitToFromTokenizationService is event Wallet.PaymentMethodAdded
     outlet WalletEventSplitToToTokenizationService is type WalletEvent
     outlet WalletEventSplitToToPaymentProcessorService is type WalletEvent
     outlet WalletEventSplitToToNotificationService is type WalletEvent
@@ -1184,6 +1196,7 @@ context WalletContext as router is {
         send walletCreated to outlet WalletEventSplitToToIdentityService
       }
       on paymentMethodAdded: event Wallet.PaymentMethodAdded is {
+        send paymentMethodAdded to outlet WalletEventSplitToFromTokenizationService
         send paymentMethodAdded to outlet WalletEventSplitToWalletAnalytics
         send paymentMethodAdded to outlet WalletEventSplitToToTokenizationService
       }
@@ -1207,6 +1220,7 @@ context WalletContext as router is {
         send fundsTransferred to outlet WalletEventSplitToWalletAnalytics
       }
       on fundsReceived: event Wallet.FundsReceived is {
+        send fundsReceived to outlet WalletEventSplitToFromBankTransferService
         send fundsReceived to outlet WalletEventSplitToWalletAnalytics
       }
       on fundsWithdrawn: event Wallet.FundsWithdrawn is {
