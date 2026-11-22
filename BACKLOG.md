@@ -40,11 +40,15 @@ through a context outlet; the direct split route is what clears it (canaried).
    existing route whose type does not admit the answer (reactive-bbq
    `MenuManagement`, `FrontOfHouse`); answers outside the split's inlet type
    (reactive-bbq `OnlineOrdering`). The REFUSED lines of a dry run list them.
-2. **~11 where the CONTEXT yields the answer** -- mostly creation commands
-   (`InitShipment`, `CreateProduct`, `FileClaim`, `CreateIncident`, ...): the
-   boundary handler `create`s the entity and `yield`s, so the answer is on the
-   context's outlets. Shape to try: a context outlet admitting it, connected
-   inside the context to a sender inlet (like `'OrderCommand Stream Intake'`).
+2. **11 creation commands: WAITING ON RIDDL by ruling** (Reid, 2026-11-22,
+   option C). The boundary `create`s the entity and `yield`s the creation
+   event (copy 1, which no outlet admits), and the entity's `on init` sends
+   the same event on its own outlet (copy 2), which already reaches the
+   sender through the split. Deleting copy 1 gives `[error]
+   [msg-yield-undeclared]` and the finding stays; wiring copy 1 (riddlc's
+   tip) would deliver every creation event twice. Filed as
+   `../riddl/task/2026-11-22-creation-answer-is-the-created-entitys-event.md`,
+   which names all 11. Leave them until riddl answers.
    Includes the `OrderCreated` site above.
 3. **12 whose answering entity feeds no streamlet** -- reactive-bbq `Menu`
    context and code-generator's `CodeEmission`/`HoleFilling`, where the sender
