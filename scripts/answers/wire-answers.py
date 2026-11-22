@@ -145,15 +145,16 @@ def main():
             # an existing connector from this split into this sender?
             s_inlets = {n["path"] for n in kids[sp] if n.get("kind") == "inlet"}
             x_outlets = {n["path"]: n for n in kids[xp] if n.get("kind") == "outlet"}
+            def admits(c):
+                o = x_outlets[c["from"]["resolved"]].get("type", {})
+                alt = {a["resolved"] for a in o.get("alternation", [])}
+                return all(e["path"] in alt or e["path"] == o.get("resolved") for e in events)
+            # an existing route that carries something else stays as it is;
+            # the answers get a route of their own
             existing = [c for c in conns if c["from"].get("resolved") in x_outlets
-                        and c["to"].get("resolved") in s_inlets]
+                        and c["to"].get("resolved") in s_inlets and admits(c)]
             if existing:
                 out_name = last(existing[0]["from"]["resolved"])
-                oalt = {a["resolved"] for a in x_outlets[existing[0]["from"]["resolved"]]
-                        .get("type", {}).get("alternation", [])}
-                oref = x_outlets[existing[0]["from"]["resolved"]].get("type", {}).get("resolved")
-                if not all(e["path"] in oalt or e["path"] == oref for e in events):
-                    refused.append((model, sp, "existing route does not admit answers")); continue
             else:
                 out_name = f"{last(xp)}To{last(sp)}"
                 in_name = f"{last(ep)}Answers"
@@ -182,7 +183,19 @@ def main():
             for e in events:
                 cl = next((c for c in xclauses
                            if c.get("message", {}).get("resolved") == e["path"]), None)
-                if not cl or not cl.get("binding"):
+                if not cl:
+                    # the split never routed this event: give it a clause
+                    # whose only job is to carry the answer home
+                    xo = [c for h in xh for c in kids[h["path"]] if c.get("kind") == "on-other"]
+                    anchor = xo[0] if xo else max(xclauses, key=lambda c: c["span"]["start"]["offset"])
+                    at = anchor["span"]["start"]["line"] if xo else anchor["span"]["end"]["line"]
+                    ind = " " * (anchor["span"]["start"]["col"] - 1)
+                    b = lc(e["id"])
+                    red.before(anchor["file"], at,
+                               f"{ind}on {b}: event {last(ep)}.{e['id']} is {{\n"
+                               f"{ind}  send {b} to outlet {out_name}\n{ind}}}")
+                    continue
+                if not cl.get("binding"):
                     refused.append((model, xp, f"no bound clause for {e['id']}")); bad = True; break
                 cs = cl["span"]["start"]
                 red.after(cl["file"], cs["line"],
@@ -194,11 +207,20 @@ def main():
             for e in events:
                 if any(c.get("message", {}).get("resolved") == e["path"] for c in sclauses):
                     continue
-                if not others:
-                    refused.append((model, sp, f"no 'on other' to place {e['id']}")); bad = True; break
-                o = others[0]; os_ = o["span"]["start"]; ind = " " * (os_["col"] - 1)
+                if others:
+                    o = others[0]; at_line = o["span"]["start"]["line"]
+                else:
+                    # no `on other`: after the handler's last clause, whose
+                    # span ends at the next token, the handler's closing brace
+                    allc = [c for h in sh for c in kids[h["path"]]
+                            if c.get("kind") in ("on-event", "onmessageclause")]
+                    if not allc:
+                        refused.append((model, sp, f"no clause to place {e['id']} after")); bad = True; break
+                    o = max(allc, key=lambda c: c["span"]["start"]["offset"])
+                    at_line = o["span"]["end"]["line"]
+                os_ = o["span"]["start"]; ind = " " * (os_["col"] - 1)
                 b = lc(e["id"])
-                red.before(o["file"], os_["line"],
+                red.before(o["file"], at_line,
                           f"{ind}on {b}: event {last(ep)}.{e['id']} is {{\n"
                           f"{ind}  log {b}\n{ind}}}")
             if bad:
