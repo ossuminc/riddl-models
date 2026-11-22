@@ -94,6 +94,14 @@ context CodeEmission as router is {
       |Where peers deliver commands for CodeEmission.
     }
   }
+  inlet ArtifactAnswers is type Artifact.ArtifactEvent with {
+    briefly "Artifact's answers to what the boundary relays"
+    described as {
+      |EmitArtifact, FillArtifact and VerifyArtifact are answered with
+      |ArtifactEmitted, ArtifactFilled and ArtifactVerified; the boundary
+      |that sent each one receives its answer here.
+    }
+  }
   type ArtifactCommand is one of {
     Artifact.EmitArtifact or Artifact.FillArtifact or Artifact.VerifyArtifact
   } with {
@@ -150,6 +158,15 @@ context CodeEmission as router is {
       do "relay VerifyCode's acceptance onto the artifact identified by
          artifactId"
       send command CodeEmission.Artifact.VerifyArtifact(artifactId = VerifyCode.artifactId) to outlet CodeEmission.CodeEmissionCommandsFwd
+    }
+    on artifactEmitted: event Artifact.ArtifactEmitted is {
+      log artifactEmitted
+    }
+    on artifactFilled: event Artifact.ArtifactFilled is {
+      log artifactFilled
+    }
+    on artifactVerified: event Artifact.ArtifactVerified is {
+      log artifactVerified
     }
     on other is {
       error "Unexpected message at the CodeEmission boundary"
@@ -474,7 +491,52 @@ context CodeEmission as router is {
       |them.
     }
   }
-  connector 'ArtifactProjection Feed' is from outlet CodeEmission.Artifact.ArtifactEvents to inlet CodeEmission.ArtifactProjection.ArtifactProjectionFromArtifact with {
+  streamlet ArtifactEventSplit as split is {
+    inlet ArtifactEventSplitIn is type Artifact.ArtifactEvent
+    outlet ArtifactEventSplitToArtifactProjection is type Artifact.ArtifactEvent
+    outlet ArtifactEventSplitToCodeEmission is type Artifact.ArtifactEvent
+    handler ArtifactEventSplitHandler is {
+      on artifactPlanned: event Artifact.ArtifactPlanned is {
+        send artifactPlanned to outlet ArtifactEventSplitToArtifactProjection
+      }
+      on artifactEmitted: event Artifact.ArtifactEmitted is {
+        send artifactEmitted to outlet ArtifactEventSplitToArtifactProjection
+        send artifactEmitted to outlet ArtifactEventSplitToCodeEmission
+      }
+      on artifactFilled: event Artifact.ArtifactFilled is {
+        send artifactFilled to outlet ArtifactEventSplitToArtifactProjection
+        send artifactFilled to outlet ArtifactEventSplitToCodeEmission
+      }
+      on artifactVerified: event Artifact.ArtifactVerified is {
+        send artifactVerified to outlet ArtifactEventSplitToArtifactProjection
+        send artifactVerified to outlet ArtifactEventSplitToCodeEmission
+      }
+      on other is {
+        error "Unexpected message for streamlet ArtifactEventSplit"
+      }
+    }
+  } with {
+    briefly "Fans Artifact's events out to the projection and the boundary"
+    described as {
+      |Every event goes to ArtifactProjection for storage; the three that
+      |answer a relayed command also go back to the CodeEmission boundary.
+    }
+  }
+  connector 'ArtifactEvent Stream' is from outlet CodeEmission.Artifact.ArtifactEvents to inlet CodeEmission.ArtifactEventSplit.ArtifactEventSplitIn with {
+    briefly "Artifact's events on their way to ArtifactEventSplit"
+    described as {
+      |Every Artifact event, before it fans out to the projection and the
+      |boundary.
+    }
+  }
+  connector 'CodeEmission Artifact Answers' is from outlet CodeEmission.ArtifactEventSplit.ArtifactEventSplitToCodeEmission to inlet CodeEmission.ArtifactAnswers with {
+    briefly "Artifact's answers on their way back to the CodeEmission boundary"
+    described as {
+      |The events that answer EmitArtifact, FillArtifact and
+      |VerifyArtifact, back to the boundary that relayed them.
+    }
+  }
+  connector 'ArtifactProjection Feed' is from outlet CodeEmission.ArtifactEventSplit.ArtifactEventSplitToArtifactProjection to inlet CodeEmission.ArtifactProjection.ArtifactProjectionFromArtifact with {
     briefly "Artifact events feeding ArtifactProjection"
     described as {
       |Carries the entity's events to the projection that persists them.

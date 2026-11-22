@@ -68,6 +68,14 @@ context HoleFilling as router is {
       |retry cycle back to HoleFilling rather than to Artifact itself.
     }
   }
+  inlet HoleAnswers is type Hole.HoleEvent with {
+    briefly "Hole's answers to what the boundary relays"
+    described as {
+      |FillHole, ProveHole and ReopenHole are answered with HoleFilled,
+      |HoleProved and HoleReopened; the boundary that sent each one
+      |receives its answer here.
+    }
+  }
   type HoleCommand is one of {
     Hole.FillHole or Hole.ProveHole or Hole.ReopenHole
   } with {
@@ -129,6 +137,15 @@ context HoleFilling as router is {
       when not gateRun.passed then
         tell command HoleFilling.ReopenHoles(holeFillingArtifactId = gateRun.gateArtifactId) to context HoleFilling
       end
+    }
+    on holeFilled: event Hole.HoleFilled is {
+      log holeFilled
+    }
+    on holeProved: event Hole.HoleProved is {
+      log holeProved
+    }
+    on holeReopened: event Hole.HoleReopened is {
+      log holeReopened
     }
     on other is {
       error "Unexpected message at the HoleFilling boundary"
@@ -414,7 +431,52 @@ context HoleFilling as router is {
       |them.
     }
   }
-  connector 'HoleProjection Feed' is from outlet HoleFilling.Hole.HoleEvents to inlet HoleFilling.HoleProjection.HoleProjectionFromHole with {
+  streamlet HoleEventSplit as split is {
+    inlet HoleEventSplitIn is type Hole.HoleEvent
+    outlet HoleEventSplitToHoleProjection is type Hole.HoleEvent
+    outlet HoleEventSplitToHoleFilling is type Hole.HoleEvent
+    handler HoleEventSplitHandler is {
+      on holeOpened: event Hole.HoleOpened is {
+        send holeOpened to outlet HoleEventSplitToHoleProjection
+      }
+      on holeFilled: event Hole.HoleFilled is {
+        send holeFilled to outlet HoleEventSplitToHoleProjection
+        send holeFilled to outlet HoleEventSplitToHoleFilling
+      }
+      on holeProved: event Hole.HoleProved is {
+        send holeProved to outlet HoleEventSplitToHoleProjection
+        send holeProved to outlet HoleEventSplitToHoleFilling
+      }
+      on holeReopened: event Hole.HoleReopened is {
+        send holeReopened to outlet HoleEventSplitToHoleProjection
+        send holeReopened to outlet HoleEventSplitToHoleFilling
+      }
+      on other is {
+        error "Unexpected message for streamlet HoleEventSplit"
+      }
+    }
+  } with {
+    briefly "Fans Hole's events out to the projection and the boundary"
+    described as {
+      |Every event goes to HoleProjection for storage; the three that
+      |answer a relayed command also go back to the HoleFilling boundary.
+    }
+  }
+  connector 'HoleEvent Stream' is from outlet HoleFilling.Hole.HoleEvents to inlet HoleFilling.HoleEventSplit.HoleEventSplitIn with {
+    briefly "Hole's events on their way to HoleEventSplit"
+    described as {
+      |Every Hole event, before it fans out to the projection and the
+      |boundary.
+    }
+  }
+  connector 'HoleFilling Hole Answers' is from outlet HoleFilling.HoleEventSplit.HoleEventSplitToHoleFilling to inlet HoleFilling.HoleAnswers with {
+    briefly "Hole's answers on their way back to the HoleFilling boundary"
+    described as {
+      |The events that answer FillHole, ProveHole and ReopenHole, back to
+      |the boundary that relayed them.
+    }
+  }
+  connector 'HoleProjection Feed' is from outlet HoleFilling.HoleEventSplit.HoleEventSplitToHoleProjection to inlet HoleFilling.HoleProjection.HoleProjectionFromHole with {
     briefly "Hole events feeding HoleProjection"
     described as {
       |Carries the entity's events to the projection that persists them.

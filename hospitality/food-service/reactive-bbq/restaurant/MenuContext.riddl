@@ -137,6 +137,14 @@ context Menu as router is {
       |how it is listed.
     }
   }
+  inlet RestaurantMenuItemAnswers is type RestaurantMenuItem.RestaurantMenuItemEvent with {
+    briefly "The dishes' answers to what the boundary sends them"
+    described as {
+      |ChangeListing, WithdrawListing and RestorePriorListing are answered
+      |with ListingChanged, ListingWithdrawn and PriorListingRestored; the
+      |boundary that applied or rolled back the release receives them here.
+    }
+  }
   inlet MenuReleasesIn is type RestaurantMenuRelease with {
     briefly "Releases forwarded by FrontOfHouse"
     described as {
@@ -259,6 +267,15 @@ context Menu as router is {
     on findMenuListing: query Menu.FindMenuListing is {
       let found: type MenuListingFound = ask query Menu.FindMenuListing(listingItemCode = findMenuListing.listingItemCode) of repository Menu.MenuRepository
       reply found
+    }
+    on listingChanged: event RestaurantMenuItem.ListingChanged is {
+      log listingChanged
+    }
+    on listingWithdrawn: event RestaurantMenuItem.ListingWithdrawn is {
+      log listingWithdrawn
+    }
+    on priorListingRestored: event RestaurantMenuItem.PriorListingRestored is {
+      log priorListingRestored
     }
     on other is {
       error "Unexpected message at the Menu boundary"
@@ -847,7 +864,52 @@ context Menu as router is {
       |What a listing answers, on its way to the boundary.
     }
   }
-  connector 'MenuListingProjection Feed' is from outlet Menu.RestaurantMenuItem.RestaurantMenuItemEvents to inlet Menu.MenuListingProjection.MenuListingProjectionIn with {
+  streamlet RestaurantMenuItemEventSplit as split is {
+    inlet RestaurantMenuItemEventSplitIn is type RestaurantMenuItem.RestaurantMenuItemEvent
+    outlet RestaurantMenuItemEventSplitToMenuListingProjection is type RestaurantMenuItem.RestaurantMenuItemEvent
+    outlet RestaurantMenuItemEventSplitToMenu is type RestaurantMenuItem.RestaurantMenuItemEvent
+    handler RestaurantMenuItemEventSplitHandler is {
+      on menuItemListed: event RestaurantMenuItem.MenuItemListed is {
+        send menuItemListed to outlet RestaurantMenuItemEventSplitToMenuListingProjection
+      }
+      on listingChanged: event RestaurantMenuItem.ListingChanged is {
+        send listingChanged to outlet RestaurantMenuItemEventSplitToMenuListingProjection
+        send listingChanged to outlet RestaurantMenuItemEventSplitToMenu
+      }
+      on listingWithdrawn: event RestaurantMenuItem.ListingWithdrawn is {
+        send listingWithdrawn to outlet RestaurantMenuItemEventSplitToMenuListingProjection
+        send listingWithdrawn to outlet RestaurantMenuItemEventSplitToMenu
+      }
+      on priorListingRestored: event RestaurantMenuItem.PriorListingRestored is {
+        send priorListingRestored to outlet RestaurantMenuItemEventSplitToMenuListingProjection
+        send priorListingRestored to outlet RestaurantMenuItemEventSplitToMenu
+      }
+      on other is {
+        error "Unexpected message for streamlet RestaurantMenuItemEventSplit"
+      }
+    }
+  } with {
+    briefly "Fans the dishes' listing events out to the index and the boundary"
+    described as {
+      |Every listing event goes to MenuListingProjection; the three that
+      |answer a command the boundary sent also go back to the Menu boundary.
+    }
+  }
+  connector 'RestaurantMenuItemEvent Stream' is from outlet Menu.RestaurantMenuItem.RestaurantMenuItemEvents to inlet Menu.RestaurantMenuItemEventSplit.RestaurantMenuItemEventSplitIn with {
+    briefly "The dishes' listing events on their way to the split"
+    described as {
+      |Every dish's listing events, before they fan out to the index and the
+      |boundary.
+    }
+  }
+  connector 'Menu RestaurantMenuItem Answers' is from outlet Menu.RestaurantMenuItemEventSplit.RestaurantMenuItemEventSplitToMenu to inlet Menu.RestaurantMenuItemAnswers with {
+    briefly "The dishes' answers on their way back to the Menu boundary"
+    described as {
+      |The listing events that answer ChangeListing, WithdrawListing and
+      |RestorePriorListing, back to the boundary that sent them.
+    }
+  }
+  connector 'MenuListingProjection Feed' is from outlet Menu.RestaurantMenuItemEventSplit.RestaurantMenuItemEventSplitToMenuListingProjection to inlet Menu.MenuListingProjection.MenuListingProjectionIn with {
     briefly "Listing events on their way to the projection"
     described as {
       |Every dish's listing events feed the index.

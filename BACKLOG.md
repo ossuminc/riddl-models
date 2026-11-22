@@ -5,7 +5,7 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
-## 46. Every command answer reaches its sender (Reid, 2026-11-21) — 54 LEFT, on a staged riddlc
+## 46. Every command answer reaches its sender (Reid, 2026-11-21) — 42 LEFT (11 wait on riddl), on a staged riddlc
 
 **What:** riddl 2.8.2-4 (`5da5db443`, answering our CM 20.4 task) adds
 `msg-answer-unreachable` (completeness): a command that `yields` is answered on
@@ -50,10 +50,13 @@ through a context outlet; the direct split route is what clears it (canaried).
    `../riddl/task/2026-11-22-creation-answer-is-the-created-entitys-event.md`,
    which names all 11. Leave them until riddl answers.
    Includes the `OrderCreated` site above.
-3. **12 whose answering entity feeds no streamlet** -- reactive-bbq `Menu`
-   context and code-generator's `CodeEmission`/`HoleFilling`, where the sender
-   is the context itself. Needs an outlet on the entity routed to a context
-   inlet.
+3. **DONE 2026-11-22: the 12 whose answering entity fed no streamlet**
+   (reactive-bbq `Menu`, code-generator `CodeEmission`/`HoleFilling`; the
+   sender is the context). The entity's one outlet fed its projector
+   directly, so each gained an `<Entity>EventSplit` between them: every event
+   to the projector, the answers also to a context inlet `<Entity>Answers`,
+   where the boundary `log`s them. Canaried: dropping the answers connector
+   brings all three back.
 
 ## 45. reactive-bbq gaps from Synapify's simulated DineIn run (task 2026-11-21) — 2 BLOCKED ON RIDDL
 
