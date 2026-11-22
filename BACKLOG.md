@@ -5,6 +5,52 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
+## 46. Every command answer reaches its sender (Reid, 2026-11-21) — 54 LEFT, on a staged riddlc
+
+**What:** riddl 2.8.2-4 (`5da5db443`, answering our CM 20.4 task) adds
+`msg-answer-unreachable` (completeness): a command that `yields` is answered on
+the yielder's outlets, and a sender with no inlet admitting the answer loses
+it. Reid ruled **(a)**: every answer is wired home; the sender receives it,
+logging it if it has nothing else to do. This reverses #45's ruling to leave
+reactive-bbq's `ReservationEventSplit` -> `CreateOrder` -> `OrderCreated`
+unreached. Same commit adds `stmt-send-duplicates-yield` (style): 134 deleted
+(`7a15e3977`).
+
+**Measured on the STAGED `../bin/riddlc` 2.8.2-5-edaaad87** -- neither rule is
+in the pinned 2.8.2, which stays at sweep 0. Pin at the tag that carries them.
+Caution: that binary writes BAST revision 38, and `verify-bast-roundtrip.sh`
+defaults to it and bastifies BESIDE the source; run it with
+`RIDDLC=~/.cache/riddlc/2.8.2/bin/riddlc`, then `sbt b`.
+
+**Done: 83 of 137** (`edc213ca8`). `scripts/answers/facts.py` classifies the
+sites from `riddlc dump`; `wire-answers.py` wires each (sender, entity) route
+through the entity's event split: split outlet `<Split>To<Sender>`, sender
+inlet `<Entity>Answers`, `on b: event Ent.E is { log b }`, connector
+`'<Sender> <Entity> Answers'`, shape re-derived. riddlc's tip says to route
+through a context outlet; the direct split route is what clears it (canaried).
+
+**Left, 54, in three shapes:**
+1. **27 on 19 refused routes** -- the applier would not place them: a split
+   with two inlets (ticket-sales `TicketEventSplit`, port-operations
+   `BerthEventSplit`, 6 routes, incl. the 4 port-ops sites riddlc words as "no
+   route from Context"); a sender with no `on other` (reactive-bbq sinks
+   `EmployeeUpdateSink`, `PhotoConfirmSink`, `PrintConfirmSink`,
+   `PaymentResultSink`); a split clause with no binding (reactive-bbq
+   `CampaignEventSource`, `MenuItemEventSource`, `MenuReleaseEventSource`); an
+   existing route whose type does not admit the answer (reactive-bbq
+   `MenuManagement`, `FrontOfHouse`); answers outside the split's inlet type
+   (reactive-bbq `OnlineOrdering`). The REFUSED lines of a dry run list them.
+2. **~11 where the CONTEXT yields the answer** -- mostly creation commands
+   (`InitShipment`, `CreateProduct`, `FileClaim`, `CreateIncident`, ...): the
+   boundary handler `create`s the entity and `yield`s, so the answer is on the
+   context's outlets. Shape to try: a context outlet admitting it, connected
+   inside the context to a sender inlet (like `'OrderCommand Stream Intake'`).
+   Includes the `OrderCreated` site above.
+3. **12 whose answering entity feeds no streamlet** -- reactive-bbq `Menu`
+   context and code-generator's `CodeEmission`/`HoleFilling`, where the sender
+   is the context itself. Needs an outlet on the entity routed to a context
+   inlet.
+
 ## 45. reactive-bbq gaps from Synapify's simulated DineIn run (task 2026-11-21) — 2 BLOCKED ON RIDDL
 
 **What:** Synapify's simulator runs one DineInExperience through reactive-bbq

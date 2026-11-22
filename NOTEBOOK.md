@@ -44,6 +44,13 @@ states (C) or an optional target (B) where the domain's order is not fixed.
 See CLAUDE.md § "Carrying an optional into a required field". Next: census
 F3's optional->required sites, then script A.
 
+**In flight: BACKLOG #46** (Reid's (a), 2026-11-21): every command answer
+wired home. 83 of 137 done; 54 left in three shapes, listed there. These rules
+exist only on the STAGED `../bin/riddlc` 2.8.2-5-edaaad87; the pinned 2.8.2
+sweep stays 0. **Trap:** that binary writes BAST revision 38 and
+`verify-bast-roundtrip.sh` defaults to it, rewriting every `.bast` beside the
+source. Pass `RIDDLC=~/.cache/riddlc/2.8.2/bin/riddlc`, then `sbt b`.
+
 **BACKLOG #45** (Synapify's DineIn-run task, still in `task/`): items 2, 3,
 4a done; 1 and 4b wait on riddl (tasks filed there).
 
