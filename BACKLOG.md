@@ -5,7 +5,7 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
-## 46. Every command answer reaches its sender (Reid, 2026-11-21) — 42 LEFT (11 wait on riddl), on a staged riddlc
+## 46. Every command answer reaches its sender (Reid, 2026-11-21) — 11 LEFT, all waiting on riddl, on a staged riddlc
 
 **What:** riddl 2.8.2-4 (`5da5db443`, answering our CM 20.4 task) adds
 `msg-answer-unreachable` (completeness): a command that `yields` is answered on
@@ -29,34 +29,42 @@ inlet `<Entity>Answers`, `on b: event Ent.E is { log b }`, connector
 `'<Sender> <Entity> Answers'`, shape re-derived. riddlc's tip says to route
 through a context outlet; the direct split route is what clears it (canaried).
 
-**Left, 54, in three shapes:**
-1. **27 on 19 refused routes** -- the applier would not place them: a split
-   with two inlets (ticket-sales `TicketEventSplit`, port-operations
-   `BerthEventSplit`, 6 routes, incl. the 4 port-ops sites riddlc words as "no
-   route from Context"); a sender with no `on other` (reactive-bbq sinks
-   `EmployeeUpdateSink`, `PhotoConfirmSink`, `PrintConfirmSink`,
-   `PaymentResultSink`); a split clause with no binding (reactive-bbq
-   `CampaignEventSource`, `MenuItemEventSource`, `MenuReleaseEventSource`); an
-   existing route whose type does not admit the answer (reactive-bbq
-   `MenuManagement`, `FrontOfHouse`); answers outside the split's inlet type
-   (reactive-bbq `OnlineOrdering`). The REFUSED lines of a dry run list them.
-2. **11 creation commands: WAITING ON RIDDL by ruling** (Reid, 2026-11-22,
-   option C). The boundary `create`s the entity and `yield`s the creation
-   event (copy 1, which no outlet admits), and the entity's `on init` sends
-   the same event on its own outlet (copy 2), which already reaches the
-   sender through the split. Deleting copy 1 gives `[error]
-   [msg-yield-undeclared]` and the finding stays; wiring copy 1 (riddlc's
-   tip) would deliver every creation event twice. Filed as
-   `../riddl/task/2026-11-22-creation-answer-is-the-created-entitys-event.md`,
-   which names all 11. Leave them until riddl answers.
-   Includes the `OrderCreated` site above.
-3. **DONE 2026-11-22: the 12 whose answering entity fed no streamlet**
-   (reactive-bbq `Menu`, code-generator `CodeEmission`/`HoleFilling`; the
-   sender is the context). The entity's one outlet fed its projector
-   directly, so each gained an `<Entity>EventSplit` between them: every event
-   to the projector, the answers also to a context inlet `<Entity>Answers`,
-   where the boundary `log`s them. Canaried: dropping the answers connector
-   brings all three back.
+**Left: 11, all waiting on riddl.** 126 of 137 are wired. Since `edc213ca8`:
+- **26 refused routes, DONE 2026-11-22.** The applier now takes the split
+  inlet the answering entity feeds (port-operations, ticket-sales: 9); places
+  a clause after a handler's last clause when there is no `on other`; gives a
+  split a clause for an event it never routed; and gives the answers a route
+  of their own where an existing split -> sender route carries something else
+  (reactive-bbq `MenuManagement`; `FrontOfHouse` <- `NoShowMarked` by hand,
+  its names were taken). `PaymentResultSink` takes a two-member
+  `PaymentResultAnswer`, not all of `TableOrderEvent`, since a sink with no
+  `on other` must otherwise handle every member.
+- **Six reactive-bbq events never left their entity**: yielded, folded, but
+  missing from the entity's event alternation, so no outlet admitted them
+  (`LoyaltyActivityRecorded`, `PhotoShootCompletionRecorded`,
+  `PrintCompletionRecorded`, `MenuDistributed`, `OnlineTicketRouted`,
+  `OnlinePointsAccrualRouted`). Added; the four corporate ones are persisted
+  like their siblings (Reid, 2026-11-22, option A): a `Persist<Event>`, an
+  optional column (`actual<X>` where the event's field has the name), an
+  `update ... set`, and a projector clause.
+- **DONE 2026-11-22: the 12 whose answering entity fed no streamlet**
+  (reactive-bbq `Menu`, code-generator `CodeEmission`/`HoleFilling`; the
+  sender is the context). The entity's one outlet fed its projector
+  directly, so each gained an `<Entity>EventSplit` between them: every event
+  to the projector, the answers also to a context inlet `<Entity>Answers`,
+  where the boundary `log`s them. Canaried: dropping the answers connector
+  brings all three back.
+
+**The 11: creation commands, WAITING ON RIDDL by ruling** (Reid, 2026-11-22,
+option C). The boundary `create`s the entity and `yield`s the creation
+event (copy 1, which no outlet admits), and the entity's `on init` sends
+the same event on its own outlet (copy 2), which already reaches the
+sender through the split. Deleting copy 1 gives `[error]
+[msg-yield-undeclared]` and the finding stays; wiring copy 1 (riddlc's
+tip) would deliver every creation event twice. Filed as
+`../riddl/task/2026-11-22-creation-answer-is-the-created-entitys-event.md`,
+which names all 11. Leave them until riddl answers.
+Includes the `OrderCreated` site above.
 
 ## 45. reactive-bbq gaps from Synapify's simulated DineIn run (task 2026-11-21) — 2 BLOCKED ON RIDDL
 

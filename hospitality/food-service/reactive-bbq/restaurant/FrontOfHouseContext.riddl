@@ -82,6 +82,13 @@ context FrontOfHouse as router is {
       |which the context does itself, or any command for an existing order.
     }
   }
+  inlet FrontOfHouseReservationAnswers is event Reservation.NoShowMarked with {
+    briefly "Reservation's answer to a scheduled no-show"
+    described as {
+      |The boundary schedules MarkNoShow when it takes a reservation; the
+      |NoShowMarked that answers it arrives here.
+    }
+  }
   inlet FrontOfHouseFromReservationEventSplit is command FrontOfHouse.CreateOrder with {
     briefly "Table orders opened by seating a reserved party"
     described as {
@@ -328,6 +335,9 @@ context FrontOfHouse as router is {
     }
     on pointsAccrualRouted: event TableOrder.PointsAccrualRouted is {
       log pointsAccrualRouted
+    }
+    on noShowMarked: event Reservation.NoShowMarked is {
+      log noShowMarked
     }
     on other is {
       error "Unexpected message at the FrontOfHouse boundary"
@@ -1573,7 +1583,17 @@ context FrontOfHouse as router is {
       |applies them inside FrontOfHouse.
     }
   }
-  streamlet PaymentResultSink as flow is {
+  type PaymentResultAnswer is one of {
+    TableOrder.PaymentProcessed or TableOrder.OrderClosed
+  } with {
+    briefly "TableOrder's answers to PaymentResultSink"
+    described as {
+      |ProcessPayment and CloseOrder, which PaymentResultSink sends, are
+      |answered with PaymentProcessed and OrderClosed; nothing else comes back.
+    }
+  }
+  streamlet PaymentResultSink as merge is {
+    inlet TableOrderAnswers is type PaymentResultAnswer
     outlet PaymentResultSinkToTableOrder is type TableOrderCommand
     inlet IncomingPaymentResults is type PaymentGatewayEvent
     handler PaymentResultHandler is {
@@ -1591,6 +1611,12 @@ context FrontOfHouse as router is {
         do "mark payment as fully settled for the matching
           TableOrder using PaymentCaptured
           .captureTransactionId"
+      }
+      on paymentProcessed: event TableOrder.PaymentProcessed is {
+        log paymentProcessed
+      }
+      on orderClosed: event TableOrder.OrderClosed is {
+        log orderClosed
       }
     } with {
       briefly "Payment result handler"
@@ -1932,7 +1958,15 @@ context FrontOfHouse as router is {
       |Wires published table order events to the context's event log.
     }
   }
+  connector 'FrontOfHouse Reservation Answers' is from outlet FrontOfHouse.ReservationEventSplit.ReservationEventSplitToFrontOfHouseAnswers to inlet FrontOfHouse.FrontOfHouseReservationAnswers with {
+    briefly "Reservation's no-show answers on their way back to the boundary"
+    described as {
+      |NoShowMarked, which answers the MarkNoShow the boundary schedules when
+      |it takes a reservation, back to the boundary that sent it.
+    }
+  }
   streamlet ReservationEventSplit as router is {
+    outlet ReservationEventSplitToFrontOfHouseAnswers is event Reservation.NoShowMarked
     inlet TableOrderAnswers is event TableOrder.OrderCreated
     inlet ReservationEventSplitIn is type ReservationEvent
     outlet ReservationEventSplitToReservationEventSource is type ReservationEvent
@@ -1975,6 +2009,7 @@ context FrontOfHouse as router is {
       }
       on noShowMarked: event Reservation.NoShowMarked is {
         send noShowMarked to outlet ReservationEventSplitToReservationRepository
+        send noShowMarked to outlet ReservationEventSplitToFrontOfHouseAnswers
         send noShowMarked to outlet ReservationEventSplitToReservationBoard
         send noShowMarked to outlet ReservationEventSplitToReservationEventSource
       }
@@ -2003,7 +2038,9 @@ context FrontOfHouse as router is {
   }
   connector 'FromKitchen TableOrder Answers' is from outlet FrontOfHouse.TableOrderEventSplit.TableOrderEventSplitToFromKitchen to inlet FrontOfHouse.FromKitchen.TableOrderAnswers
   connector 'ReservationEventSplit TableOrder Answers' is from outlet FrontOfHouse.TableOrderEventSplit.TableOrderEventSplitToReservationEventSplit to inlet FrontOfHouse.ReservationEventSplit.TableOrderAnswers
+  connector 'PaymentResultSink TableOrder Answers' is from outlet FrontOfHouse.TableOrderEventSplit.TableOrderEventSplitToPaymentResultSink to inlet FrontOfHouse.PaymentResultSink.TableOrderAnswers
   streamlet TableOrderEventSplit as split is {
+    outlet TableOrderEventSplitToPaymentResultSink is type PaymentResultAnswer
     outlet TableOrderEventSplitToFromKitchen is event TableOrder.OrderMarkedInPreparation
     outlet TableOrderEventSplitToReservationEventSplit is event TableOrder.OrderCreated
     inlet TableOrderEventSplitIn is type TableOrderEvent
@@ -2030,10 +2067,12 @@ context FrontOfHouse as router is {
         send billPresented to outlet TableOrderEventSplitToTableOrderRepository
       }
       on paymentProcessed: event TableOrder.PaymentProcessed is {
+        send paymentProcessed to outlet TableOrderEventSplitToPaymentResultSink
         send paymentProcessed to outlet TableOrderEventSplitToTableOrderRepository
         send paymentProcessed to outlet TableOrderEventSplitToTableOrderEventSource
       }
       on orderClosed: event TableOrder.OrderClosed is {
+        send orderClosed to outlet TableOrderEventSplitToPaymentResultSink
         send orderClosed to outlet TableOrderEventSplitToTableOrderRepository
         send orderClosed to outlet TableOrderEventSplitToTableOrderEventSource
       }

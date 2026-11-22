@@ -1,5 +1,6 @@
 // Menu Management bounded context
 context MenuManagement as router is {
+  inlet MenuReleaseAnswers is event MenuRelease.MenuDistributed
   inlet MenuManagementFromPrintConfirmSink is command MenuRelease.RecordPrintCompletion with {
     briefly "Print confirmations, on their way to the release they name"
     described as {
@@ -215,6 +216,9 @@ context MenuManagement as router is {
     on menuReleaseResult: result MenuRelease.MenuReleaseResult is {
       send menuReleaseResult to outlet MenuManagement.MenuReleaseResultStreamOut
     }
+    on menuDistributed: event MenuRelease.MenuDistributed is {
+      log menuDistributed
+    }
     on other is {
       error "Unexpected message at the MenuManagement boundary"
     }
@@ -234,7 +238,7 @@ context MenuManagement as router is {
   include "MenuItem.riddl"
   include "MenuRelease.riddl"
   type MenuItemRepositoryCommand is one of {
-    MenuManagement.MenuItemRepository.PersistMenuItemCreated or MenuManagement.MenuItemRepository.PersistMenuItemUpdated or MenuManagement.MenuItemRepository.PersistPriceSet or MenuManagement.MenuItemRepository.PersistMenuItemRetired
+    MenuManagement.MenuItemRepository.PersistMenuItemCreated or MenuManagement.MenuItemRepository.PersistMenuItemUpdated or MenuManagement.MenuItemRepository.PersistPriceSet or MenuManagement.MenuItemRepository.PersistMenuItemRetired or MenuManagement.MenuItemRepository.PersistPhotoShootCompletionRecorded
   } with {
     briefly "Anything that writes the MenuItemRepository"
     described as {
@@ -307,6 +311,18 @@ context MenuManagement as router is {
           |The row's updated recipe, as the persisting projector last wrote it.
         }
       }
+      photoShootId: String(1,50)? with {
+        briefly "photoShootId"
+        described as {
+          |Set from PhotoShootCompletionRecorded.shootId when the projector folds PhotoShootCompletionRecorded; empty until then.
+        }
+      }
+      actualPhotoShootRecordedAt: TimeStamp? with {
+        briefly "actualPhotoShootRecordedAt"
+        described as {
+          |Set from PhotoShootCompletionRecorded.photoShootRecordedAt when the projector folds PhotoShootCompletionRecorded; empty until then.
+        }
+      }
     } with {
       briefly "Stored menuItem row"
       described as {
@@ -354,6 +370,24 @@ context MenuManagement as router is {
         briefly "Actual published at"
         described as {
           |The row's actual published at, as the persisting projector last wrote it.
+        }
+      }
+      actualPrintJobId: String(1,50)? with {
+        briefly "actualPrintJobId"
+        described as {
+          |Set from PrintCompletionRecorded.printJobId when the projector folds PrintCompletionRecorded; empty until then.
+        }
+      }
+      actualPrintRecordedAt: TimeStamp? with {
+        briefly "actualPrintRecordedAt"
+        described as {
+          |Set from PrintCompletionRecorded.printRecordedAt when the projector folds PrintCompletionRecorded; empty until then.
+        }
+      }
+      actualMenuDistributedAt: TimeStamp? with {
+        briefly "actualMenuDistributedAt"
+        described as {
+          |Set from MenuDistributed.menuDistributedAt when the projector folds MenuDistributed; empty until then.
         }
       }
     } with {
@@ -490,9 +524,39 @@ context MenuManagement as router is {
         |because storing a row records no new entity state.
       }
     }
+    command PersistPhotoShootCompletionRecorded is {
+      menuItemId: MenuItemId with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+      shootId: String(1,50) with {
+        briefly "shootId"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+      photoShootRecordedAt: TimeStamp with {
+        briefly "photoShootRecordedAt"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+    } with {
+      briefly "Persist PhotoShootCompletionRecorded"
+      described as {
+        |Instructs this repository to apply PhotoShootCompletionRecorded to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     handler MenuItemPersistence is {
+      on persistPhotoShootCompletionRecorded: command PersistPhotoShootCompletionRecorded is {
+        update MenuItemData.menuItems set photoShootId = persistPhotoShootCompletionRecorded.shootId, actualPhotoShootRecordedAt = persistPhotoShootCompletionRecorded.photoShootRecordedAt where menuItemId == persistPhotoShootCompletionRecorded.menuItemId
+      }
       on persistMenuItemCreated: command PersistMenuItemCreated is {
-        store record StoredMenuItem(menuItemId = persistMenuItemCreated.menuItemId, menuItemName = persistMenuItemCreated.menuItemName, menuItemCategory = persistMenuItemCreated.menuItemCategory, menuItemDescription = persistMenuItemCreated.menuItemDescription, recipe = persistMenuItemCreated.recipe, pricing = persistMenuItemCreated.pricing, menuItemLifecycle = MenuItemLifecycle.DraftLifecycle, updatedDescription = empty, updatedName = empty, updatedRecipe = empty) in MenuItemData.menuItems
+        store record StoredMenuItem(menuItemId = persistMenuItemCreated.menuItemId, menuItemName = persistMenuItemCreated.menuItemName, menuItemCategory = persistMenuItemCreated.menuItemCategory, menuItemDescription = persistMenuItemCreated.menuItemDescription, recipe = persistMenuItemCreated.recipe, pricing = persistMenuItemCreated.pricing, menuItemLifecycle = MenuItemLifecycle.DraftLifecycle, updatedDescription = empty, updatedName = empty, updatedRecipe = empty, photoShootId = empty, actualPhotoShootRecordedAt = empty) in MenuItemData.menuItems
       }
       on persistMenuItemUpdated: command PersistMenuItemUpdated is {
         update MenuItemData.menuItems set updatedName = persistMenuItemUpdated.updatedName, updatedDescription = persistMenuItemUpdated.updatedDescription, updatedRecipe = persistMenuItemUpdated.updatedRecipe where menuItemId == persistMenuItemUpdated.menuItemId
@@ -524,6 +588,9 @@ context MenuManagement as router is {
     inlet MenuItemProjectionFromMenuItem is type MenuItemEvent
     outlet MenuItemProjectionToRepository is type MenuItemRepositoryCommand
     handler MenuItemProjectionHandler is {
+      on photoShootCompletionRecorded: event MenuItem.PhotoShootCompletionRecorded is {
+        tell command MenuManagement.MenuItemRepository.PersistPhotoShootCompletionRecorded(menuItemId = photoShootCompletionRecorded.menuItemId, shootId = photoShootCompletionRecorded.shootId, photoShootRecordedAt = photoShootCompletionRecorded.photoShootRecordedAt) to repository MenuManagement.MenuItemRepository
+      }
       on menuItemCreated: event MenuItem.MenuItemCreated is {
         tell command MenuManagement.MenuItemRepository.PersistMenuItemCreated(menuItemId = menuItemCreated.menuItemId, menuItemName = menuItemCreated.menuItemName, menuItemCategory = menuItemCreated.menuItemCategory, menuItemDescription = menuItemCreated.menuItemDescription, recipe = menuItemCreated.recipe, pricing = menuItemCreated.pricing) to repository MenuManagement.MenuItemRepository
       }
@@ -549,7 +616,7 @@ context MenuManagement as router is {
     }
   }
   type MenuReleaseRepositoryCommand is one of {
-    MenuManagement.MenuReleaseRepository.PersistMenuReleaseCreated or MenuManagement.MenuReleaseRepository.PersistItemAddedToRelease or MenuManagement.MenuReleaseRepository.PersistReleaseFinalized or MenuManagement.MenuReleaseRepository.PersistReleasePublished or MenuManagement.MenuReleaseRepository.PersistReleaseRolledBack
+    MenuManagement.MenuReleaseRepository.PersistMenuReleaseCreated or MenuManagement.MenuReleaseRepository.PersistItemAddedToRelease or MenuManagement.MenuReleaseRepository.PersistReleaseFinalized or MenuManagement.MenuReleaseRepository.PersistReleasePublished or MenuManagement.MenuReleaseRepository.PersistReleaseRolledBack or MenuManagement.MenuReleaseRepository.PersistPrintCompletionRecorded or MenuManagement.MenuReleaseRepository.PersistMenuDistributed
   } with {
     briefly "Anything that writes the MenuReleaseRepository"
     described as {
@@ -679,9 +746,63 @@ context MenuManagement as router is {
         |because storing a row records no new entity state.
       }
     }
+    command PersistPrintCompletionRecorded is {
+      menuReleaseId: MenuReleaseId with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+      printJobId: String(1,50) with {
+        briefly "printJobId"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+      printRecordedAt: TimeStamp with {
+        briefly "printRecordedAt"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+    } with {
+      briefly "Persist PrintCompletionRecorded"
+      described as {
+        |Instructs this repository to apply PrintCompletionRecorded to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
+    command PersistMenuDistributed is {
+      menuReleaseId: MenuReleaseId with {
+        briefly "ID"
+        described as {
+          |The stored row to update.
+        }
+      }
+      menuDistributedAt: TimeStamp with {
+        briefly "menuDistributedAt"
+        described as {
+          |Carried from the event the projector folded, so the row can hold it.
+        }
+      }
+    } with {
+      briefly "Persist MenuDistributed"
+      described as {
+        |Instructs this repository to apply MenuDistributed to the stored row. A
+        |persistence command, not a domain command: it declares no `yields`
+        |because storing a row records no new entity state.
+      }
+    }
     handler MenuReleasePersistence is {
+      on persistMenuDistributed: command PersistMenuDistributed is {
+        update MenuReleaseData.releases set actualMenuDistributedAt = persistMenuDistributed.menuDistributedAt where menuReleaseId == persistMenuDistributed.menuReleaseId
+      }
+      on persistPrintCompletionRecorded: command PersistPrintCompletionRecorded is {
+        update MenuReleaseData.releases set actualPrintJobId = persistPrintCompletionRecorded.printJobId, actualPrintRecordedAt = persistPrintCompletionRecorded.printRecordedAt where menuReleaseId == persistPrintCompletionRecorded.menuReleaseId
+      }
       on persistMenuReleaseCreated: command PersistMenuReleaseCreated is {
-        store record StoredMenuRelease(menuReleaseId = persistMenuReleaseCreated.menuReleaseId, releaseName = persistMenuReleaseCreated.releaseName, releaseDescription = persistMenuReleaseCreated.releaseDescription, effectiveDate = persistMenuReleaseCreated.effectiveDate, actualPublishedAt = empty, menuReleaseStatus = MenuReleaseStatus.ReleaseDraftStatus, releaseItems = empty) in MenuReleaseData.releases
+        store record StoredMenuRelease(menuReleaseId = persistMenuReleaseCreated.menuReleaseId, releaseName = persistMenuReleaseCreated.releaseName, releaseDescription = persistMenuReleaseCreated.releaseDescription, effectiveDate = persistMenuReleaseCreated.effectiveDate, actualPublishedAt = empty, menuReleaseStatus = MenuReleaseStatus.ReleaseDraftStatus, releaseItems = empty, actualPrintJobId = empty, actualPrintRecordedAt = empty, actualMenuDistributedAt = empty) in MenuReleaseData.releases
       }
       on command PersistItemAddedToRelease is {
         do "replace the entry for releasedItem's code in releaseItems, in
@@ -720,6 +841,12 @@ context MenuManagement as router is {
     inlet MenuReleaseProjectionFromMenuRelease is type MenuReleaseEvent
     outlet MenuReleaseProjectionToRepository is type MenuReleaseRepositoryCommand
     handler MenuReleaseProjectionHandler is {
+      on menuDistributed: event MenuRelease.MenuDistributed is {
+        tell command MenuManagement.MenuReleaseRepository.PersistMenuDistributed(menuReleaseId = menuDistributed.menuReleaseId, menuDistributedAt = menuDistributed.menuDistributedAt) to repository MenuManagement.MenuReleaseRepository
+      }
+      on printCompletionRecorded: event MenuRelease.PrintCompletionRecorded is {
+        tell command MenuManagement.MenuReleaseRepository.PersistPrintCompletionRecorded(menuReleaseId = printCompletionRecorded.menuReleaseId, printJobId = printCompletionRecorded.printJobId, printRecordedAt = printCompletionRecorded.printRecordedAt) to repository MenuManagement.MenuReleaseRepository
+      }
       on menuReleaseCreated: event MenuRelease.MenuReleaseCreated is {
         tell command MenuManagement.MenuReleaseRepository.PersistMenuReleaseCreated(menuReleaseId = menuReleaseCreated.menuReleaseId, releaseName = menuReleaseCreated.releaseName, releaseDescription = menuReleaseCreated.releaseDescription, effectiveDate = menuReleaseCreated.effectiveDate) to repository MenuManagement.MenuReleaseRepository
       }
@@ -747,7 +874,9 @@ context MenuManagement as router is {
       |Builds the stored MenuRelease view from the entity's events.
     }
   }
+  connector 'PhotoConfirmSink MenuItem Answers' is from outlet MenuManagement.MenuItemEventSource.MenuItemEventSourceToPhotoConfirmSink to inlet MenuManagement.PhotoConfirmSink.MenuItemAnswers
   streamlet MenuItemEventSource as split is {
+    outlet MenuItemEventSourceToPhotoConfirmSink is event MenuItem.PhotoShootCompletionRecorded
     outlet MenuItemEventSourceToToPhotographyService is type MenuItemEvent
     outlet MenuItemEventSourceToMenuItemProjection is type MenuItemEvent
     inlet MenuItemEventSourceIn is type MenuItemEvent
@@ -755,6 +884,10 @@ context MenuManagement as router is {
     handler MenuItemEventEmitter is {
       on other is {
         error "Unexpected message for source MenuItemEventSource"
+      }
+      on photoShootCompletionRecorded: event MenuItem.PhotoShootCompletionRecorded is {
+        send photoShootCompletionRecorded to outlet MenuItemEventSourceToPhotoConfirmSink
+        send photoShootCompletionRecorded to outlet MenuItemEventSourceToMenuItemProjection
       }
       on menuItemCreated: event MenuItem.MenuItemCreated is {
         send menuItemCreated to outlet MenuItemEvents
@@ -785,7 +918,11 @@ context MenuManagement as router is {
       |Publishes menu item entity events.
     }
   }
+  connector 'PrintConfirmSink MenuRelease Answers' is from outlet MenuManagement.MenuReleaseEventSource.MenuReleaseEventSourceToPrintConfirmSink to inlet MenuManagement.PrintConfirmSink.MenuReleaseAnswers
+  connector 'MenuManagement MenuRelease Answers' is from outlet MenuManagement.MenuReleaseEventSource.MenuReleaseEventSourceToMenuManagement to inlet MenuManagement.MenuReleaseAnswers
   streamlet MenuReleaseEventSource as split is {
+    outlet MenuReleaseEventSourceToMenuManagement is event MenuRelease.MenuDistributed
+    outlet MenuReleaseEventSourceToPrintConfirmSink is event MenuRelease.PrintCompletionRecorded
     outlet MenuReleaseEventSourceToToPrintingService is type MenuReleaseEvent
     outlet MenuReleaseEventSourceToMenuReleaseProjection is type MenuReleaseEvent
     inlet MenuReleaseEventSourceIn is type MenuReleaseEvent
@@ -794,6 +931,14 @@ context MenuManagement as router is {
     handler MenuReleaseEventEmitter is {
       on other is {
         error "Unexpected message for source MenuReleaseEventSource"
+      }
+      on menuDistributed: event MenuRelease.MenuDistributed is {
+        send menuDistributed to outlet MenuReleaseEventSourceToMenuManagement
+        send menuDistributed to outlet MenuReleaseEventSourceToMenuReleaseProjection
+      }
+      on printCompletionRecorded: event MenuRelease.PrintCompletionRecorded is {
+        send printCompletionRecorded to outlet MenuReleaseEventSourceToPrintConfirmSink
+        send printCompletionRecorded to outlet MenuReleaseEventSourceToMenuReleaseProjection
       }
       on menuReleaseCreated: event MenuRelease.MenuReleaseCreated is {
         send menuReleaseCreated to outlet MenuReleaseEvents
@@ -885,7 +1030,8 @@ context MenuManagement as router is {
       |applies them inside MenuManagement.
     }
   }
-  streamlet PrintConfirmSink as flow is {
+  streamlet PrintConfirmSink as merge is {
+    inlet MenuReleaseAnswers is event MenuRelease.PrintCompletionRecorded
     outlet PrintConfirmSinkToMenuManagement is command MenuRelease.RecordPrintCompletion
     inlet IncomingPrintResults is type PrintingEvent
     handler PrintConfirmHandler is {
@@ -894,6 +1040,9 @@ context MenuManagement as router is {
         do "log print job completion for
           MenusPrinted.printJobId completed at
           MenusPrinted.printedAt"
+      }
+      on printCompletionRecorded: event MenuRelease.PrintCompletionRecorded is {
+        log printCompletionRecorded
       }
     } with {
       briefly "Print confirmation handler"
@@ -963,7 +1112,8 @@ context MenuManagement as router is {
       |applies them inside MenuManagement.
     }
   }
-  streamlet PhotoConfirmSink as flow is {
+  streamlet PhotoConfirmSink as merge is {
+    inlet MenuItemAnswers is event MenuItem.PhotoShootCompletionRecorded
     outlet PhotoConfirmSinkToMenuManagement is command MenuItem.RecordPhotoShootCompletion
     inlet IncomingShootResults is type PhotographyEvent
     handler PhotoConfirmHandler is {
@@ -972,6 +1122,9 @@ context MenuManagement as router is {
         do "update menu item images from completed photo
           shoot PhotoShootCompleted.shootId completed at
           PhotoShootCompleted.completedAt"
+      }
+      on photoShootCompletionRecorded: event MenuItem.PhotoShootCompletionRecorded is {
+        log photoShootCompletionRecorded
       }
     } with {
       briefly "Photo confirmation handler"
