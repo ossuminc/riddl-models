@@ -37,11 +37,12 @@ event lacks is `= empty`). S1 DONE (reactive-bbq close-out is `on every
 day at 04:00 in "America/Chicago"`). F9 CLOSED, no arithmetic site;
 G1 DONE (130 args read the ask answer). Trap: an ask's OWN arguments
 cannot read its answer; a first census counted 240 by including them.
-Z1 DONE on 2.8.2 (15 zero guards). **F3 pilot DONE on log-tracking
-(`15004ff28`) and AWAITING REID'S RULING**: `measurement`/`transport` are
-optional in `ActiveLog` and required in the delivered state, and the
-`LogScaled`/`LogLoaded` folds are `do` prose, so nothing sets them. Rule
-before scripting F3's 2,026 sites.
+Z1 DONE on 2.8.2 (15 zero guards). **F3 pilot DONE on log-tracking and
+RULED** (Reid, 2026-11-21): an optional source field feeding a required
+target field is guarded (refuse until present) by default, with explicit
+states (C) or an optional target (B) where the domain's order is not fixed.
+See CLAUDE.md § "Carrying an optional into a required field". Next: census
+F3's optional->required sites, then script A.
 
 **BACKLOG #45** (Synapify's DineIn-run task, still in `task/`): items 2, 3,
 4a done; 1 and 4b wait on riddl (tasks filed there).

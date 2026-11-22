@@ -314,6 +314,30 @@ UTC; absent `at`, midnight. riddlc checks the time but not the zone string
 `send … to <portlet> at <instant>` form exists for a deadline the model can
 name.
 
+**Carrying an optional into a required field: guard the path** (Reid,
+2026-11-21, BACKLOG #44 F3). When a morph carries state forward and the state
+being left holds a field optional (`updatedMeasurement: ScalingMeasurement?`)
+that the target requires (`measurement: ScalingMeasurement`), the straight
+copy draws `[advisory] [value-optional-for-required]`. The default answer is
+to refuse until the value exists, guarding the exact path, since narrowing
+matches the whole path:
+
+```riddl
+when ActiveLogData.updatedMeasurement == empty then
+  error "a log cannot be delivered before it is scaled"
+else
+  morph entity TimberLog to state TimberLog.DeliveredLog with record
+    TimberLog.DeliveredLogData(measurement = ActiveLogData.updatedMeasurement, …)
+end
+```
+
+The guard asserts an ORDER (scale before deliver). Where the domain does not
+fix that order, use explicit intermediate states (`ScaledLog`, `LoadedLog`)
+or make the target field optional instead; never apply the guard blindly. And
+the event that supplies the optional must have a fold that sets it, or the
+guard refuses forever: `set field TimberLog.ActiveLog.updatedMeasurement to
+logScaled.measurement` (`natural-resources/forestry/log-tracking`).
+
 **A state nothing enters and nothing handles is dead** — the same class as
 an event nothing yields. Delete it with its record
 (`scripts/folds/drop-dead-states.py`, which refuses if anything else names
