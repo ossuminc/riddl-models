@@ -1,6 +1,7 @@
 // Ticket Sales - Ticket Context
 // The primary bounded context for ticket sales management
 context TicketContext as router is {
+  inlet LiveEventAnswers is event LiveEvent.TicketsReleased
   command CreateEvent yields event LiveEvent.EventCreated is {
     name: String(1,200) with {
       briefly "Event name"
@@ -287,6 +288,9 @@ context TicketContext as router is {
     on ticketResult: result Ticket.TicketResult is {
       send ticketResult to outlet TicketContext.TicketResultStreamOut
     }
+    on ticketsReleased: event LiveEvent.TicketsReleased is {
+      log ticketsReleased
+    }
     on other is {
       error "Unexpected message at the TicketContext boundary"
     }
@@ -330,7 +334,8 @@ context TicketContext as router is {
       |The model's side of the VenueManagement conversation.
     }
   }
-  adaptor PaymentAdapter from context PaymentGateway as flow is { 
+  adaptor PaymentAdapter from context PaymentGateway as merge is { 
+    inlet TicketAnswers is type TicketEvent
     inlet PaymentAdapterIn is type PaymentGateway.PaymentGatewayEvent
     outlet PaymentAdapterToTicketContext is type TicketCommand
  with {
@@ -351,6 +356,12 @@ context TicketContext as router is {
       }
       on event PaymentGateway.RefundCompleted is {
         do "the ticket already refunded itself when it started the refund, so the gateway's completion changes nothing here"
+      }
+      on ticketPurchased: event Ticket.TicketPurchased is {
+        log ticketPurchased
+      }
+      on reservationCancelled: event Ticket.ReservationCancelled is {
+        log reservationCancelled
       }
       on other is {
         error "Unexpected message for adaptor PaymentAdapter"
@@ -1372,7 +1383,11 @@ context TicketContext as router is {
       | sales velocity, revenue, and inventory levels in real-time.
     }
   }
+  connector 'TicketContext LiveEvent Answers' is from outlet TicketContext.TicketEventSplit.TicketEventSplitToTicketContext to inlet TicketContext.LiveEventAnswers
+  connector 'PaymentAdapter Ticket Answers' is from outlet TicketContext.TicketEventSplit.TicketEventSplitToPaymentAdapter to inlet TicketContext.PaymentAdapter.TicketAnswers
   streamlet TicketEventSplit as router is {
+    outlet TicketEventSplitToTicketContext is event LiveEvent.TicketsReleased
+    outlet TicketEventSplitToPaymentAdapter is type TicketEvent
     inlet TicketEventSplitFromLiveEvent is type LiveEvent.LiveEventEvent
     outlet TicketEventSplitToToVenueManagement is type TicketEvent
     outlet TicketEventSplitToToPaymentGateway is type TicketEvent
@@ -1386,10 +1401,12 @@ context TicketContext as router is {
         send eventCreated to outlet TicketEventSplitToMarketingAdapter
       }
       on ticketsReleased: event LiveEvent.TicketsReleased is {
+        send ticketsReleased to outlet TicketEventSplitToTicketContext
         send ticketsReleased to outlet TicketEventSplitToSalesMetrics
         send ticketsReleased to outlet TicketEventSplitToMarketingAdapter
       }
       on ticketPurchased: event Ticket.TicketPurchased is {
+        send ticketPurchased to outlet TicketEventSplitToPaymentAdapter
         send ticketPurchased to outlet TicketEventSplitToSalesMetrics
         send ticketPurchased to outlet TicketEventSplitToToPaymentGateway
         send ticketPurchased to outlet TicketEventSplitToMarketingAdapter
@@ -1406,6 +1423,7 @@ context TicketContext as router is {
         send ticketRefunded to outlet TicketEventSplitToToPaymentGateway
       }
       on reservationCancelled: event Ticket.ReservationCancelled is {
+        send reservationCancelled to outlet TicketEventSplitToPaymentAdapter
         send reservationCancelled to outlet TicketEventSplitToSalesMetrics
       }
       on ticketScanned: event Ticket.TicketScanned is {

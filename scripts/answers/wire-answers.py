@@ -126,8 +126,15 @@ def main():
                 if ev and ev["path"] not in [e["path"] for e in events]:
                     events.append(ev)
             xin = [n for n in kids[xp] if n.get("kind") == "inlet"]
+            if len(xin) > 1:
+                # several inlets: the one the answering entity's outlet feeds
+                e_outs = {n["path"] for n in kids[ep] if n.get("kind") == "outlet"}
+                fed = {c["to"].get("resolved") for c in conns
+                       if c["from"].get("resolved") in e_outs}
+                xin = [n for n in xin if n["path"] in fed]
             if len(xin) != 1:
-                refused.append((model, xp, "split has %d inlets" % len(xin))); continue
+                refused.append((model, xp, "split has %d inlets fed by %s"
+                                % (len(xin), last(ep)))); continue
             alt = {a["resolved"] for a in xin[0].get("type", {}).get("alternation", [])}
             if len(events) == 1:
                 typ = f"event {last(ep)}.{events[0]['id']}"

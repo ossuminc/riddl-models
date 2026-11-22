@@ -318,7 +318,8 @@ context BerthContext as router is {
       |The model's side of the CustomsService conversation.
     }
   }
-  adaptor FromPilotCoordinationService from context PilotCoordinationService as flow is { 
+  adaptor FromPilotCoordinationService from context PilotCoordinationService as merge is { 
+    inlet PortCallAnswers is event PortCall.PilotAssigned
     inlet FromPilotCoordinationServiceIn is type PilotCoordinationService.PilotCoordinationServiceEvent
     outlet FromPilotCoordinationServiceToBerthContext is command PortCall.AssignPilot
     handler FromPilotCoordinationServiceHandler is {
@@ -331,6 +332,9 @@ context BerthContext as router is {
       }
       on pilotOnBoard: event PilotCoordinationService.PilotOnBoard is {
         do "the pilot is aboard; mooring is recorded when the lines are fast"
+      }
+      on pilotAssigned: event PortCall.PilotAssigned is {
+        log pilotAssigned
       }
       on other is {
         error "Unexpected message for adaptor FromPilotCoordinationService"
@@ -363,6 +367,9 @@ context BerthContext as router is {
       on berthAssignmentConfirmed: event PortCall.BerthAssignmentConfirmed is {
         let item0: type PilotCoordinationService.RequestPilot = prompt("translate the berthAssignmentConfirmed event into a RequestPilot, a confirmed berth being what a pilot brings the vessel to")
         send item0 to outlet BerthContext.ToPilotCoordinationService.ToPilotCoordinationServiceOut
+      }
+      on pilotAssigned: event PortCall.PilotAssigned is {
+        log pilotAssigned
       }
       on other is {
         error "Unexpected message for adaptor ToPilotCoordinationService"
@@ -467,6 +474,9 @@ context BerthContext as router is {
         let item0: type TerminalOperatingSystem.ScheduleCargoOperation = prompt("translate the mooringCompleted event into a ScheduleCargoOperation, mooring being when work on the hatches can be planned")
         send item0 to outlet BerthContext.ToTerminalOperatingSystem.ToTerminalOperatingSystemOut
       }
+      on cargoOperationsCompleted: event PortCall.CargoOperationsCompleted is {
+        log cargoOperationsCompleted
+      }
       on other is {
         error "Unexpected message for adaptor ToTerminalOperatingSystem"
       }
@@ -482,7 +492,8 @@ context BerthContext as router is {
       |The model's side of the TerminalOperatingSystem conversation.
     }
   }
-  adaptor FromTowageService from context TowageService as flow is { 
+  adaptor FromTowageService from context TowageService as merge is { 
+    inlet PortCallAnswers is event PortCall.TugsOrdered
     inlet FromTowageServiceIn is type TowageService.TowageServiceEvent
     outlet FromTowageServiceToBerthContext is command PortCall.OrderTugs
     handler FromTowageServiceHandler is {
@@ -495,6 +506,9 @@ context BerthContext as router is {
       on tugsConfirmed: event TowageService.TugsConfirmed is {
         let item0: type PortCall.OrderTugs = prompt("translate the tugsConfirmed event into a OrderTugs, the tugs the towage service confirms are the ones the port call records as ordered")
         send item0 to outlet BerthContext.FromTowageService.FromTowageServiceToBerthContext
+      }
+      on tugsOrdered: event PortCall.TugsOrdered is {
+        log tugsOrdered
       }
       on other is {
         error "Unexpected message for adaptor FromTowageService"
@@ -527,6 +541,9 @@ context BerthContext as router is {
       on berthAssignmentConfirmed: event PortCall.BerthAssignmentConfirmed is {
         let item0: type TowageService.OrderTugs = prompt("translate the berthAssignmentConfirmed event into a OrderTugs, the same confirmation being when tugs must be ordered")
         send item0 to outlet BerthContext.ToTowageService.ToTowageServiceOut
+      }
+      on tugsOrdered: event PortCall.TugsOrdered is {
+        log tugsOrdered
       }
       on other is {
         error "Unexpected message for adaptor ToTowageService"
@@ -577,6 +594,9 @@ context BerthContext as router is {
         let askAnswer: type VesselTrafficService.VesselPositionResult = ask query VesselTrafficService.GetVesselPosition(vesselId = prompt("the vessel id this asks about")) of context VesselTrafficService
         do "a berth request needing to know where the vessel actually is"
         send command PortCall.ConfirmBerthAssignment(berthId = berthRequested.berthId, portCallId = berthRequested.request.portCallId, assignment = prompt("the berth assignment timed from askAnswer.position and askAnswer.speed")) to outlet BerthContext.ToVesselTrafficService.ToVesselTrafficServiceToBerthContext
+      }
+      on berthAssignmentConfirmed: event PortCall.BerthAssignmentConfirmed is {
+        log berthAssignmentConfirmed
       }
       on other is {
         error "Unexpected message for adaptor ToVesselTrafficService"
@@ -1153,7 +1173,11 @@ context BerthContext as router is {
       |persistence.
     }
   }
+  connector 'FromPilotCoordinationService PortCall Answers' is from outlet BerthContext.BerthEventSplit.BerthEventSplitToFromPilotCoordinationService to inlet BerthContext.FromPilotCoordinationService.PortCallAnswers
+  connector 'FromTowageService PortCall Answers' is from outlet BerthContext.BerthEventSplit.BerthEventSplitToFromTowageService to inlet BerthContext.FromTowageService.PortCallAnswers
   streamlet BerthEventSplit as router is {
+    outlet BerthEventSplitToFromPilotCoordinationService is event PortCall.PilotAssigned
+    outlet BerthEventSplitToFromTowageService is event PortCall.TugsOrdered
     outlet BerthEventSplitToBerthContext is type BerthContext.BerthRequest
     outlet BerthEventSplitToToVesselTrafficService is type BerthEvent
     outlet BerthEventSplitToToTowageService is type BerthEvent
@@ -1177,15 +1201,20 @@ context BerthContext as router is {
         send berthRequested to outlet BerthEventSplitToToPilotCoordinationService
       }
       on berthAssignmentConfirmed: event PortCall.BerthAssignmentConfirmed is {
+        send berthAssignmentConfirmed to outlet BerthEventSplitToToVesselTrafficService
         send berthAssignmentConfirmed to outlet BerthEventSplitToPortAnalytics
         send berthAssignmentConfirmed to outlet BerthEventSplitToToTowageService
         send berthAssignmentConfirmed to outlet BerthEventSplitToToPilotCoordinationService
         send command Berth.ReserveBerth(berthId = berthAssignmentConfirmed.berthId, portCallId = berthAssignmentConfirmed.portCallId, assignment = berthAssignmentConfirmed.assignment) to outlet BerthContext.BerthEventSplit.BerthEventSplitToBerthContext
       }
       on pilotAssigned: event PortCall.PilotAssigned is {
+        send pilotAssigned to outlet BerthEventSplitToFromPilotCoordinationService
+        send pilotAssigned to outlet BerthEventSplitToToPilotCoordinationService
         send pilotAssigned to outlet BerthEventSplitToPortAnalytics
       }
       on tugsOrdered: event PortCall.TugsOrdered is {
+        send tugsOrdered to outlet BerthEventSplitToFromTowageService
+        send tugsOrdered to outlet BerthEventSplitToToTowageService
         send tugsOrdered to outlet BerthEventSplitToPortAnalytics
       }
       on vesselArrived: event PortCall.VesselArrived is {
@@ -1203,6 +1232,7 @@ context BerthContext as router is {
         send cargoOperationsStarted to outlet BerthEventSplitToToTerminalOperatingSystem
       }
       on cargoOperationsCompleted: event PortCall.CargoOperationsCompleted is {
+        send cargoOperationsCompleted to outlet BerthEventSplitToToTerminalOperatingSystem
         send cargoOperationsCompleted to outlet BerthEventSplitToPortAnalytics
       }
       on vesselDeparted: event PortCall.VesselDeparted is {
