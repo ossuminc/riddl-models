@@ -4,11 +4,16 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.8.1`, PUBLISHED, override OFF** (2026-11-21, riddl's upgrade task,
-now in `task/done/`). The build runs `~/.cache/riddlc/2.8.1/bin/riddlc`; pass
+**Pin `2.8.2`, PUBLISHED, override OFF** (2026-11-21, riddl's upgrade task,
+now in `task/done/`). The build runs `~/.cache/riddlc/2.8.2/bin/riddlc`; pass
 that as `RIDDLC` for manual evidence runs, since `../bin/riddlc` drifts the
-moment riddl restages. The bump changed nothing: prettify and `.bast`
-byte-identical to 2.8.0, checkAll green, sweep 0, BAST 189/189, unsent 0.
+moment riddl restages. 2.8.2 exempts zero from the literal-comparison lint,
+so the 15 Z1 ask guards are now `> 0`/`== 0`; it also checks schedule zones
+(`America/Chicago` passes, a scratch `Mars/Olympus` is refused).
+
+**A power outage on 2026-11-21 lost the session context, not work.** The
+scratchpad went with it, including `f4.py`; the 15 guards were found again by
+grep. Scratch scripts that a later step depends on belong in `scripts/`.
 
 **riddl's census WRITES into this tree** (`census.py`, run from riddl's
 session): it rewrote `prototype-management.bast` and touched
@@ -18,7 +23,7 @@ stray one (e10112fef; restored in the 2.8.1 bump). **Stage by path, never
 
 **BACKLOG #43 is CLOSED at zero** (2026-11-20): the sweep
 (`./scripts/collect-warnings.py --include-patterns`) reports 0 findings of
-every severity on 2.8.1. Hold it there. `checkAll` does not enforce the zero;
+every severity on 2.8.2. Hold it there. `checkAll` does not enforce the zero;
 only the sweep does.
 
 **In flight: BACKLOG #44**, the 2.8.0 opportunities survey. It is filed and
@@ -32,7 +37,14 @@ event lacks is `= empty`). S1 DONE (reactive-bbq close-out is `on every
 day at 04:00 in "America/Chicago"`). F9 CLOSED, no arithmetic site;
 G1 DONE (130 args read the ask answer). Trap: an ask's OWN arguments
 cannot read its answer; a first census counted 240 by including them.
-Next: an F3 pilot.
+Z1 DONE on 2.8.2 (15 zero guards). **F3 pilot DONE on log-tracking
+(`15004ff28`) and AWAITING REID'S RULING**: `measurement`/`transport` are
+optional in `ActiveLog` and required in the delivered state, and the
+`LogScaled`/`LogLoaded` folds are `do` prose, so nothing sets them. Rule
+before scripting F3's 2,026 sites.
+
+**BACKLOG #45** (Synapify's DineIn-run task, still in `task/`): items 2, 3,
+4a done; 1 and 4b wait on riddl (tasks filed there).
 
 - **Asking Reid**: ONE question at a time, each with context, alternatives,
   consequences and a recommendation. A table of 18 rows was rejected as
@@ -72,18 +84,19 @@ Next: an F3 pilot.
 
 ### Certainty
 
-Verified on 2.8.1 (2026-11-21): sweep 0, checkAll green, BAST 189/189,
-unsent 0. #44's counts come from a regex census joined to `riddlc dump`
+Verified on 2.8.2 (2026-11-21): sweep 0 (canaried: a guard against `10`
+was the one finding), checkAll green, BAST 189/189, unsent 0. #44's counts come from a regex census joined to `riddlc dump`
 (8,602 of 8,617 fills joined); family boundaries are heuristic, so treat them
 as a sizing, not a work list.
 
 ### task/
 
-Empty. riddl's 2.8.0 upgrade task is in `task/done/` with Results.
+One open: the Synapify DineIn-run task (#45), waiting on riddl for items 1
+and 4b. The 2.8.2 upgrade task is in `task/done/` with Results.
 
 ### Pointers
 
-Open work: **BACKLOG.md** #44 first; also #42, #40 (`query one`), #30, #1,
+Open work: **BACKLOG.md** #44 (F3 ruling) first, #45; also #42, #40 (`query one`), #30, #1,
 #23, #34. Durable facts: **CLAUDE.md**. Lessons: § 2026-11-20 below.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
