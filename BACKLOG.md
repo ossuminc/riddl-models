@@ -66,6 +66,17 @@ tip) would deliver every creation event twice. Filed as
 which names all 11. Leave them until riddl answers.
 Includes the `OrderCreated` site above.
 
+**The 2.8.3 bump is PARKED on local branch `riddl-2.8.3`** (`7c3a253fb`,
+Reid, 2026-11-23: wait for 2.8.4, no temporary workaround). 2.8.3 carries
+`msg-answer-unreachable`, so the reactive-bbq creation site turns R10 red;
+the corpus will skip 2.8.3 and pin 2.8.4 once it carries riddl's answer.
+The branch holds the pin, the `.bast` files at revision 38, and the three
+reactive-bbq intakes on `each of ... yielding record` (which also closes
+#45 items 1 and 4b). On 2.8.3 it measured canonical, round trip 189/189,
+sweep 11 (the 11 above). When 2.8.4 ships: rebase it, bump to 2.8.4, run
+`sbt b` again, and re-measure. Open beside it: `ticketItemDietary` is still a
+`prompt`, because neither `OrderLine` nor `CartItem` carries dietary flags.
+
 ## 45. reactive-bbq gaps from Synapify's simulated DineIn run (task 2026-11-21) — 2 BLOCKED ON RIDDL
 
 **What:** Synapify's simulator runs one DineInExperience through reactive-bbq
