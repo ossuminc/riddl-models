@@ -4,108 +4,86 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Pin `2.8.2`, PUBLISHED, override OFF** (2026-11-21, riddl's upgrade task,
-now in `task/done/`). The build runs `~/.cache/riddlc/2.8.2/bin/riddlc`; pass
-that as `RIDDLC` for manual evidence runs, since `../bin/riddlc` drifts the
-moment riddl restages. 2.8.2 exempts zero from the literal-comparison lint,
-so the 15 Z1 ask guards are now `> 0`/`== 0`; it also checks schedule zones
-(`America/Chicago` passes, a scratch `Mars/Olympus` is refused).
+**`main`, pin `2.8.2` PUBLISHED, override OFF** (verified 2026-11-23:
+`~/.cache/riddlc/2.8.2/bin/riddlc info` -> 2.8.2; `.bast` revision 37). The
+staged `../bin/riddlc` is `2.8.2-5-edaaad87`. It writes revision 38 and
+carries `msg-answer-unreachable`, so it is NOT the build's binary. Pass
+`RIDDLC=~/.cache/riddlc/2.8.2/bin/riddlc` for evidence runs, including
+`verify-bast-roundtrip.sh`; its default bastifies beside the source.
 
-**A power outage on 2026-11-21 lost the session context, not work.** The
-scratchpad went with it, including `f4.py`; the 15 guards were found again by
-grep. Scratch scripts that a later step depends on belong in `scripts/`.
+**WAITING ON riddl 2.8.4 (Reid, 2026-11-23: no temporary workaround).** The
+corpus skips 2.8.3. On 2.8.3, the FrontOfHouse `CreateOrder` creation site
+turns reactive-bbq R10 red, and Reid ruled against exempting it. The finished
+upgrade is parked on the LOCAL, unpushed branch **`riddl-2.8.3`**
+(`7c3a253fb`). It holds the pin, every `.bast` at revision 38, and the three
+reactive-bbq intakes on `each of ... where ... yielding record ...`. On 2.8.3
+it measured canonical, round trip 189/189, and sweep 11 (the 11 creation
+sites). When 2.8.4 ships, rebase the branch, set the pin to 2.8.4, run
+`sbt b`, and re-measure. The riddl task asking for the fix in 2.8.4 is
+`../riddl/task/2026-11-22-creation-answer-is-the-created-entitys-event.md`;
+its Results are still empty. **Do not delete the branch.**
 
-**riddl's census WRITES into this tree** (`census.py`, run from riddl's
-session): it rewrote `prototype-management.bast` and touched
-`deployment-pipeline.bast` while it ran, and a `git add -A` committed the
-stray one (e10112fef; restored in the 2.8.1 bump). **Stage by path, never
-`-A`,** and check `ps` for a running census before trusting `git status`.
+**In flight:**
+- **BACKLOG #46** (every answer wired home). 126 of 137 are done. The 11 left
+  are creation commands waiting on riddl (ruling C).
+- **#44** (the 2.8.0 survey). Next is a census of F3's optional->required
+  sites, then script option A.
+- **#45** (DineIn). It closes when the `riddl-2.8.3` branch lands.
+- **Open beside the branch:** `ticketItemDietary` is a `prompt`, because
+  `OrderLine` and `CartItem` carry no dietary flags. Whether the lines should
+  carry them has not been asked.
 
-**BACKLOG #43 is CLOSED at zero** (2026-11-20): the sweep
-(`./scripts/collect-warnings.py --include-patterns`) reports 0 findings of
-every severity on 2.8.2. Hold it there. `checkAll` does not enforce the zero;
-only the sweep does.
+**Standing rules:**
+- Ask Reid ONE question at a time, with context, options and a
+  recommendation.
+- Push only with his approval.
+- Stage by path, never `-A`: riddl's census writes `.bast` files into this
+  tree.
+- Never delete files in another project's `task/`.
+- Never wait on a consumer.
 
-**In flight: BACKLOG #44**, the 2.8.0 opportunities survey. It is filed and
-awaiting Reid's rulings, one family at a time. **F1 DONE** (F1a, 1,250
-timestamp fills -> `system.now`, sweep still 0). **F4a DONE** (64 ask
-conditions are real Booleans; 30 put back, see BACKLOG #44 F4). E1 DONE (15 reply
-lists `T+` -> `T*`). Z1: literal-zero guards wait on
-riddl (task filed). F6 T1 DONE (73 adaptor translations are
-constructors; a constructor must name EVERY field, so an optional the
-event lacks is `= empty`). S1 DONE (reactive-bbq close-out is `on every
-day at 04:00 in "America/Chicago"`). F9 CLOSED, no arithmetic site;
-G1 DONE (130 args read the ask answer). Trap: an ask's OWN arguments
-cannot read its answer; a first census counted 240 by including them.
-Z1 DONE on 2.8.2 (15 zero guards). **F3 pilot DONE on log-tracking and
-RULED** (Reid, 2026-11-21): an optional source field feeding a required
-target field is guarded (refuse until present) by default, with explicit
-states (C) or an optional target (B) where the domain's order is not fixed.
-See CLAUDE.md § "Carrying an optional into a required field". Next: census
-F3's optional->required sites, then script A.
+### Traps that bit recently
 
-**In flight: BACKLOG #46** (Reid's (a), 2026-11-21): every command answer
-wired home. 83 of 137 done; 54 left in three shapes, listed there. These rules
-exist only on the STAGED `../bin/riddlc` 2.8.2-5-edaaad87; the pinned 2.8.2
-sweep stays 0. **Trap:** that binary writes BAST revision 38 and
-`verify-bast-roundtrip.sh` defaults to it, rewriting every `.bast` beside the
-source. Pass `RIDDLC=~/.cache/riddlc/2.8.2/bin/riddlc`, then `sbt b`.
-
-**BACKLOG #45** (Synapify's DineIn-run task, still in `task/`): items 2, 3,
-4a done; 1 and 4b wait on riddl (tasks filed there).
-
-- **Asking Reid**: ONE question at a time, each with context, alternatives,
-  consequences and a recommendation. A table of 18 rows was rejected as
-  unanswerable.
-- **Never wait on a consumer** (riddlg, Synapify): drop a notice in their
-  `task/`, close ours.
-- **Never delete a file in another project's `task/`**; moving our own to
-  its `done/` is the most allowed.
-
-### Traps that bit this session
-
-- **A riddlc restage changes what is true mid-run.** -25 turned clean models
-  into 8 Errors between two gate runs. If counts jump, check the binary first.
-- **Prettify refuses a model with errors** (`riddlcPrettify ... failed`), so
-  fix errors before `sbt r`.
-- **Agents' summaries miscount; per-model sweep deltas don't.** Reconcile
-  against the sweep. Also re-run an agent's claimed riddlc GAP before filing:
-  one of two did not reproduce.
-- **A yield and the `send event` echoing it must match**: check the pairs
-  after rewriting yields: `scripts/yield-prompts/align-sends.py` (dry run;
-  `--apply` copies the yield's args onto a send that still prompts).
-- **A field path through a `let` binding is not resolved**: a misspelling
-  there validates at 0 (filed with riddl). Canary `let`-path reads by eye.
-- **Value spellings that work** (canaried RED): `<Entity>.<State>.<f>` reads
-  current state; `record Money(...)`; `count of`; `any of xs as e where p`;
-  `Date + 31 days`, `date + 1 month`; `create` inside `foreach`; `sum of xs
-  as e by <expr>`; `one of xs as e where p` (gives `T?`); `x otherwise y`
-  (binds loosest, so parenthesise it inside `by`); `when c then a else b end`
-  as a value; `minutes of d`; `system.now` only in a command clause. NOT
-  available: `Duration / Duration`; `otherwise 0` on a `Natural` is
-  `value-not-natural`.
-- **Narrowing matches the WHOLE path** (riddl [1.34]): a guard on `line` does
-  not cover `line.quantity`. Guard the path itself (`when line.quantity ==
-  empty`); through optional chaining it means the same thing.
-- **A command declaring `yields` must yield (or refuse) on EVERY path.**
+- **`../bin/riddlc` relative paths break inside a model directory.** Use the
+  absolute path. The python scripts resolve `RIDDLC` against the repo root.
+- **Adding an event to an alternation reddens every receiver** whose inlet
+  admits it and has no `on other` (`stream-inlet-not-received`). Each
+  receiver gains a clause (persisted or logged).
+- **A constructor names EVERY field**, including new optional columns
+  (`= empty`). A filtered collection map has a minimum of 0. Guard it with
+  `when xs != empty`, which narrows, rather than living with the advisory.
+- **Prettify refuses a model with errors**, so fix errors before `sbt r`.
+- **Narrowing matches the WHOLE path** (riddl [1.34]).
+- **A command declaring `yields` must yield (or refuse) on every path.**
 - **`Natural` is positive**: a counter starting at 0 is `Whole`.
+- **A field path through a `let` is not resolved**: a misspelling there
+  validates at 0. Canary it by eye.
 
 ### Certainty
 
-Verified on 2.8.2 (2026-11-21): sweep 0 (canaried: a guard against `10`
-was the one finding), checkAll green, BAST 189/189, unsent 0. #44's counts come from a regex census joined to `riddlc dump`
-(8,602 of 8,617 fills joined); family boundaries are heuristic, so treat them
-as a sizing, not a work list.
+- **Verified on 2.8.2 at `cce729517`/`23ff9bac8`:** sweep 0, checkAll
+  green, BAST 189/189, unsent 0.
+- **The 2.8.3 figures** (sweep 11, R10 the only red test) were measured on
+  the branch, 2026-11-23.
+- **#44's counts are a regex census** joined to `riddlc dump`. Treat them as
+  a sizing, not a work list.
 
 ### task/
 
-One open: the Synapify DineIn-run task (#45), waiting on riddl for items 1
-and 4b. The 2.8.2 upgrade task is in `task/done/` with Results.
+Three files are open; none can complete before 2.8.4.
+- `upgrade-riddl-2.8.3.md`: partial. Its Results are appended. Criteria 1
+  and 3 are met on the branch; criterion 2 fails on R10.
+- `2026-11-21-reactive-bbq-gaps-from-synapify-dinein-run.md` (#45): items 1
+  and 4b land with the branch.
+- `2026-11-21-reactive-bbq-yield-and-send-publish-twice.md`: item 1 is done
+  (`7a15e3977`, rechecked at 0 pairs). Item 2 (Reporting refuses
+  `OrderCreated`) is the same creation site, so it waits on riddl.
 
 ### Pointers
 
-Open work: **BACKLOG.md** #44 (F3 ruling) first, #45; also #42, #40 (`query one`), #30, #1,
-#23, #34. Durable facts: **CLAUDE.md**. Lessons: § 2026-11-20 below.
+- **Open work:** BACKLOG.md #46 and #45 (both wait on 2.8.4), then #44, #42,
+  #40, #30, #1, #23, #34.
+- **Durable facts:** CLAUDE.md.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
