@@ -58,11 +58,11 @@ enablePlugins(RiddlSbtPlugin)
 // Whenever a rule the corpus needs lands after a tag, the override goes back
 // on -- and comes off at the first published tag that carries it, which is
 // this edit.
-// 2.8.3-5-3ca36aef is a STAGED build (2026-11-23): 2.8.3 plus riddl
-// 59435d128, which lets a create deliver a creation command's answer, and the
-// T{n,m} cardinality range (BAST revision 39). It ships as 2.8.4; set the pin
-// to 2.8.4 and riddlcPath back to None the moment that tag is published.
-lazy val riddlVersion = "2.8.3-5-3ca36aef"
+// 2.8.6 (2026-11-23): a create delivers a creation command's answer
+// (stmt-yield-duplicates-creation, 2.8.4); a delegating create's id is exempt
+// from stmt-initiate-id-unused when every sender handles the creation event
+// (2.8.5); value-optional-operand and T{n,m} ranges. BAST revision 39.
+lazy val riddlVersion = "2.8.6"
 
 lazy val verifyTemplates = taskKey[Unit](
   "Check patterns/: validate the examples, and parse the templates after " +
@@ -122,7 +122,7 @@ lazy val riddlModels = Root("riddl-models", startYr = 2026, spdx = "Apache-2.0")
     // is published -- a stale override is indistinguishable from a clean
     // corpus. While an override is on, this path WINS over riddlVersion, so
     // verify `riddlc info` against the pin rather than trusting the pin.
-    riddlcPath := Some(file("../bin/riddlc")),
+    riddlcPath := None,
     riddlcSourceDir := baseDirectory.value,
     riddlcConfExclusions := Seq("patterns"),
     riddlcOptions := Seq("--show-times", "--no-ansi-messages"),
