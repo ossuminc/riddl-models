@@ -4,24 +4,23 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**`main`, pin `2.8.2` PUBLISHED, override OFF** (verified 2026-11-23:
-`~/.cache/riddlc/2.8.2/bin/riddlc info` -> 2.8.2; `.bast` revision 37). The
-staged `../bin/riddlc` is `2.8.2-5-edaaad87`. It writes revision 38 and
-carries `msg-answer-unreachable`, so it is NOT the build's binary. Pass
-`RIDDLC=~/.cache/riddlc/2.8.2/bin/riddlc` for evidence runs, including
-`verify-bast-roundtrip.sh`; its default bastifies beside the source.
+**Branch `riddl-2.8.4` (pushed), pin `2.8.6` PUBLISHED, override OFF**
+(verified 2026-11-24: `riddlcInfo` -> 2.8.6; `.bast` revision 39). `main` is
+still on 2.8.2; the branch merges when the sweep is 0.
 
-**WAITING ON riddl 2.8.4 (Reid, 2026-11-23: no temporary workaround).** The
-corpus skips 2.8.3. On 2.8.3, the FrontOfHouse `CreateOrder` creation site
-turns reactive-bbq R10 red, and Reid ruled against exempting it. The finished
-upgrade is parked on the LOCAL, unpushed branch **`riddl-2.8.3`**
-(`7c3a253fb`). It holds the pin, every `.bast` at revision 38, and the three
-reactive-bbq intakes on `each of ... where ... yielding record ...`. On 2.8.3
-it measured canonical, round trip 189/189, and sweep 11 (the 11 creation
-sites). When 2.8.4 ships, rebase the branch, set the pin to 2.8.4, run
-`sbt b`, and re-measure. The riddl task asking for the fix in 2.8.4 is
-`../riddl/task/2026-11-22-creation-answer-is-the-created-entitys-event.md`;
-its Results are still empty. **Do not delete the branch.**
+**riddlc 2.8.6 is now on the PATH** (`/opt/homebrew/bin/riddlc`, Homebrew),
+and it is the same version as the build's `~/.cache/riddlc/2.8.6/bin/riddlc`.
+A bare `riddlc` is therefore a valid evidence binary for now. **The staged
+`../bin/riddlc` is BEHIND**: it is `2.8.3-5-3ca36aef`, the pre-2.8.4
+snapshot, which lacks 2.8.5's exemption and 2.8.6's `value-optional-operand`.
+Do not pass it as `RIDDLC`. Re-check both with `riddlc info` the moment
+either moves.
+
+**Remaining on the branch:** `task/2026-11-23-use-the-created-id.md`. There
+are 37 `stmt-initiate-id-unused` in the corpus plus 2 in the `patterns/`
+examples, each naming an application context with no `on event` clause for
+the creation event. `checkAll` stays red on those pattern examples until
+it's done. **Do not delete the branch.**
 
 **In flight:**
 - **BACKLOG #46** (every answer wired home). 126 of 137 are done. The 11 left
