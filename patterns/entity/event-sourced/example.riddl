@@ -57,7 +57,15 @@ domain Banking is {
     outlet AccountQueriesOut is query Account.GetAccount
     inlet AccountResultStreamIn is result Account.AccountResult
     outlet AccountResultStreamOut is result Account.AccountResult
+    inlet AccountOpenedAnswerIn is event Account.AccountOpened
+    outlet AccountOpenedAnswerOut is event Account.AccountOpened
+    connector 'AccountOpened Answer Relay' is from outlet Accounts.AccountEventSource.AccountEventSourceToAccountOpenedAnswer to inlet Accounts.AccountOpenedAnswerIn with {
+      briefly "The account opened answer, on its way out of Accounts"
+    }
     handler AccountsBoundary is {
+      on accountOpened: event Account.AccountOpened is {
+        send accountOpened to outlet Accounts.AccountOpenedAnswerOut
+      }
       on accountResult: result Account.AccountResult is {
         send accountResult to outlet Accounts.AccountResultStreamOut
       }
@@ -591,6 +599,7 @@ domain Banking is {
       }
     }
     streamlet AccountEventSource as split is {
+      outlet AccountEventSourceToAccountOpenedAnswer is event Banking.Accounts.Account.AccountOpened
       inlet AccountEventsToPublish is type Account.AccountEvent
       outlet AccountEventsForProjection is type Account.AccountEvent
       outlet PublishedAccountEvents is type Account.AccountEvent
@@ -598,6 +607,7 @@ domain Banking is {
         on accountOpened: event Account.AccountOpened is {
           send accountOpened to outlet Accounts.AccountEventSource.AccountEventsForProjection
           send accountOpened to outlet Accounts.AccountEventSource.PublishedAccountEvents
+          send accountOpened to outlet AccountEventSourceToAccountOpenedAnswer
         }
         on moneyDeposited: event Account.MoneyDeposited is {
           send moneyDeposited to outlet Accounts.AccountEventSource.AccountEventsForProjection
@@ -684,7 +694,7 @@ domain Banking is {
       |The bounded context owning account behaviour and its persistence.
     }
   }
-  application context BankingApp as flow is {
+  application context BankingApp as merge is {
     inlet ErrorSink is record Riddl.GeneratorError with {
       option error-sink()
       briefly "Hard error destination"
@@ -701,7 +711,13 @@ domain Banking is {
           |The control through which a customer opens an account.
         }
       }
-      input DepositInput acquires command Accounts.Account.Deposit with {
+            output AccountOpenedView presents event Accounts.Account.AccountOpened with {
+        briefly "The account opened answer"
+        described as {
+          |What OpenAccount brought into being, with the id it was given.
+        }
+      }
+input DepositInput acquires command Accounts.Account.Deposit with {
         briefly "Deposit control"
         described as {
           |The control through which a customer pays money in.
@@ -732,7 +748,11 @@ domain Banking is {
         |The screen through which customers act on accounts.
       }
     }
+    inlet AppAccountOpenedAnswer is event Accounts.Account.AccountOpened
     handler BankingAppHandler is {
+      on accountOpened: event Accounts.Account.AccountOpened is {
+        put accountOpened to output BankingApp.AccountScreen.AccountOpenedView
+      }
       on accountResult: result Accounts.Account.AccountResult is {
         do "show the account on the screen that asked for it"
       }
@@ -753,6 +773,9 @@ domain Banking is {
   }
   persistent connector 'AccountResult Stream' is from outlet Accounts.AccountResultStreamOut to inlet BankingApp.AppAccountResults with {
     briefly "Query results back to the application"
+  }
+  persistent connector 'AccountOpened Answer' is from outlet Accounts.AccountOpenedAnswerOut to inlet BankingApp.AppAccountOpenedAnswer with {
+    briefly "The account opened answer, back to the screen that issued OpenAccount"
   }
   persistent connector AppCommandsToAccount is {
     from outlet BankingApp.AppAccountCommands to
