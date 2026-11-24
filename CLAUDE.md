@@ -267,7 +267,9 @@ is mechanical and scripted — `scripts/folds/event-source.py <model> <Entity>`
 
 - the `on command` clause only **yields** (`yield event E(f = cmd.f, …)`);
   a self-`tell event … to entity <Self>` is that same yield, spelled the old
-  way, and a send-only clause needs the yield beside the send
+  way, and a send-only clause becomes a yield **instead of** the send: the
+  yield publishes on every outlet of the entity that admits the event, so a
+  `send` beside it publishes twice (`stmt-send-duplicates-yield`)
 - the **fold** does the mutation: `on e: event E is { morph … with record
   R(f = e.f, …) }` or `set field <Entity>.<State>.<f> to e.f`. An event that
   does not carry what the fold needs GAINS the field — the alternative is a

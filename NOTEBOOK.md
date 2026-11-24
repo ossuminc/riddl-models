@@ -15,8 +15,6 @@ BEHIND** (`2.8.3-5-3ca36aef`): it lacks 2.8.5's exemption and 2.8.6's
 `value-optional-operand`. Do not pass it as `RIDDLC`.
 
 **In flight:**
-- **#47.** One CLAUDE.md sentence is stale ("a send-only clause needs the
-  yield beside the send"). It waits on Reid.
 - **#44** (the 2.8.0 survey). Next is a census of F3's optional->required
   sites, then script option A.
 
@@ -65,7 +63,7 @@ Empty. Every 2026-11-21..23 task is in `task/done/` with Results.
 
 ### Pointers
 
-- **Open work:** BACKLOG.md #47, then #44, #42, #40, #30, #1, #23, #34.
+- **Open work:** BACKLOG.md #44, #42, #40, #30, #1, #23, #34.
 - **Creation answers:** `scripts/creation-answers/wire-creation-answers.py`.
 - **Durable facts:** CLAUDE.md.
 
@@ -100,6 +98,9 @@ Empty. Every 2026-11-21..23 task is in `task/done/` with Results.
 - **Lesson:** this session's two near-misses were both caught by gates the
   sweep does not cover: `checkAll`'s R2 and the BAST round trip. A sweep at
   0 is not the whole gate.
+- **#47 closed** (Reid): CLAUDE.md now says a send-only clause becomes a
+  yield *instead of* the send, naming `stmt-send-duplicates-yield`. The
+  corpus already complied; only the sentence was stale.
 
 ## 2026-11-20 — 2.8.0 pinned, #43 closed at zero, the 2.8.0 survey
 

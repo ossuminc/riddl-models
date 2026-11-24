@@ -5,21 +5,6 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
-## 47. CLAUDE.md still says a send-only clause needs a yield beside the send (2026-11-24)
-
-**What:** CLAUDE.md § "Which entities are event-sourced" says "a send-only
-clause needs the yield beside the send". Since riddl 2.8.2-4
-(`stmt-send-duplicates-yield`, `5da5db443`), a `yield` publishes on every
-admitting outlet of the yielder, so a `send` of the same event beside it is
-the defect. The corpus already complies: `7a15e3977` removed 134 such sends,
-and the 2.8.6 sweep is 0. Only the sentence is stale.
-**Carried from** BACKLOG #45's follow-on, which said to wait for the CM text.
-riddl has since landed both the rule and the CM text.
-**Next:** reword the sentence. This needs Reid's go-ahead, since CLAUDE.md
-records his rulings.
-
----
-
 ## 44. What riddl 2.8.0 can remove, purify or schedule (Reid, 2026-11-20) — AWAITING RULINGS
 
 **What:** Reid asked for a canvass of the corpus for places where 2.8.0's
