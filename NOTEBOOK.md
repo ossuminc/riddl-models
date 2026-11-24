@@ -4,10 +4,10 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch `riddl-2.8.4` (pushed through `edaa2cb1b`; later commits are
-local), pin `2.8.6` PUBLISHED, override OFF** (verified 2026-11-24:
-`riddlcInfo` -> 2.8.6; `.bast` revision 39). **The branch is green and
-ready to merge to `main`; merging waits on Reid.** `main` is still on 2.8.2.
+**`main`, pin `2.8.6` PUBLISHED, override OFF** (verified 2026-11-24:
+`riddlcInfo` -> 2.8.6; `.bast` revision 39). The `riddl-2.8.4` branch was
+fast-forwarded into `main` and pushed on 2026-11-24. The branch is kept,
+local and on `origin`, until Reid says to delete it.
 
 **riddlc 2.8.6 is on the PATH** (`/opt/homebrew/bin/riddlc`), matching the
 build's `~/.cache/riddlc/2.8.6/bin/riddlc`. **The staged `../bin/riddlc` is
