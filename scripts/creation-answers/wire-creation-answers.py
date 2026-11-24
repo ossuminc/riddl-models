@@ -177,7 +177,11 @@ def plan_model(model, sites, nodes):
                 f"{ind}outlet {co} is event {eC}\n"
                 f"{ind}connector '{relay}' is from outlet {rel(split['path'], C.rsplit('.', 1)[0])}.{so} "
                 f"to inlet {cname}.{ci} with {{\n"
-                f"{ind}  briefly \"The {word} answer, on its way out of {cname}\"\n{ind}}}\n"))
+                f"{ind}  briefly \"The {word} answer, on its way out of {cname}\"\n"
+                f"{ind}  described as {{\n"
+                f"{ind}    |Carries {ev} from the entity's event fan-out to the context\n"
+                f"{ind}    |boundary, which relays it to the application that asked.\n"
+                f"{ind}  }}\n{ind}}}\n"))
             edits[f].append((after_header(hC),
                 f"{ind}  on {bound}: event {eC} is {{\n"
                 f"{ind}    send {bound} to outlet {cname}.{co}\n{ind}  }}\n"))
@@ -202,7 +206,11 @@ def plan_model(model, sites, nodes):
         edits[f].append((line_start(f, anchor["span"]["start"]["offset"]),
             f"{ind}persistent connector '{xconn}' is from outlet {rel(C, D)}.{co} "
             f"to inlet {rel(A, D)}.{ai} with {{\n"
-            f"{ind}  briefly \"The {word} answer, back to the screen that issued {cmd}\"\n{ind}}}\n"))
+            f"{ind}  briefly \"The {word} answer, back to the screen that issued {cmd}\"\n"
+            f"{ind}  described as {{\n"
+            f"{ind}    |Carries {ev}, and with it the id the new instance was given,\n"
+            f"{ind}    |to the application whose screen issued the command.\n"
+            f"{ind}  }}\n{ind}}}\n"))
         ids.update((so, ci, co, ai, out, relay, xconn))
         planned.append((site, f"{C.split('.')[-1]} -> {app}: {ev} via {split['id']}"))
     return edits, planned, refused, src_cache
