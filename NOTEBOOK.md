@@ -19,8 +19,6 @@ BEHIND** (`2.8.3-5-3ca36aef`): it lacks 2.8.5's exemption and 2.8.6's
   yield beside the send"). It waits on Reid.
 - **#44** (the 2.8.0 survey). Next is a census of F3's optional->required
   sites, then script option A.
-- **Open question, not yet asked:** `ticketItemDietary` is a `prompt`
-  because `OrderLine` and `CartItem` carry no dietary flags.
 
 **Standing rules:**
 - Ask Reid ONE question at a time, with context, options and a
@@ -96,6 +94,9 @@ Empty. Every 2026-11-21..23 task is in `task/done/` with Results.
   entity outlet would have published the event twice.
 - **#45 closed.** `MenuRepository` answers from its table, now that
   prettify keeps the parentheses (riddl `21fbb4381`).
+- **Dietary flags** (Reid): `OrderLine` and `CartItem` now carry
+  `DietaryFlags`, which moved up to the Restaurant domain. The Kitchen
+  intakes copy the flags instead of prompting.
 - **Lesson:** this session's two near-misses were both caught by gates the
   sweep does not cover: `checkAll`'s R2 and the BAST round trip. A sweep at
   0 is not the whole gate.
