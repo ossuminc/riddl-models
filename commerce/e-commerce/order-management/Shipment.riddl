@@ -514,6 +514,18 @@ event-sourced entity Shipment as router is {
         let shipmentResult: type ShipmentResult = prompt("read the shipment from the store")
         reply shipmentResult
       }
+      on shipmentDelivered: event ShipmentDelivered is {
+        morph entity Shipment to state Shipment.DeliveryComplete with record Shipment.DeliveredShipmentData(shipmentId = shipmentDelivered.shipmentId, deliveredAt = shipmentDelivered.deliveredAt, signedBy = shipmentDelivered.signedBy, orderId = shipmentDelivered.orderId, carrier = ActiveShipmentData.carrier, trackingNumber = ActiveShipmentData.trackingNumber)
+      }
+      on shipmentFailed: event ShipmentFailed is {
+        morph entity Shipment to state Shipment.DeliveryFailedState with record Shipment.FailedShipmentData(shipmentId = shipmentFailed.shipmentId, reason = shipmentFailed.reason, orderId = shipmentFailed.orderId, carrier = ActiveShipmentData.carrier, trackingNumber = ActiveShipmentData.trackingNumber, failedAt = shipmentFailed.failedAt)
+      }
+      on markDelivered: command MarkDelivered is {
+        yield event ShipmentDelivered(shipmentId = markDelivered.shipmentId, deliveredAt = markDelivered.deliveredAt, signedBy = markDelivered.signedBy, orderId = Shipment.Active.orderId)
+      }
+      on markFailed: command MarkFailed is {
+        yield event ShipmentFailed(shipmentId = markFailed.shipmentId, reason = markFailed.reason, orderId = Shipment.Active.orderId, failedAt = system.now)
+      }
     } with {
       briefly "Active init handler"
       described as {
@@ -544,12 +556,6 @@ event-sourced entity Shipment as router is {
       morph entity Shipment to state Shipment.Active with record Shipment.ActiveShipmentData(shipmentId = self.id, orderId = orderId, carrier = carrier, trackingNumber = trackingNumber, shippingAddress = shippingAddress, items = items, status = prompt("the status of this active shipment data"), trackingHistory = prompt("the tracking history of this active shipment data"), createdAt = prompt("the created at of this active shipment data"), lastLocation = empty, lastTrackingUpdateAt = empty)
       send event ShipmentCreated(shipmentId = self.id, orderId = orderId, carrier = carrier, trackingNumber = trackingNumber, shippingAddress = shippingAddress, createdAt = createdAt, items = items) to outlet OrderContext.Shipment.ShipmentEvents2
     }
-    on shipmentDelivered: event ShipmentDelivered is {
-      morph entity Shipment to state Shipment.DeliveryComplete with record Shipment.DeliveredShipmentData(shipmentId = shipmentDelivered.shipmentId, deliveredAt = shipmentDelivered.deliveredAt, signedBy = shipmentDelivered.signedBy, orderId = prompt("the order id of this delivered shipment data"), carrier = prompt("the carrier of this delivered shipment data"), trackingNumber = prompt("the tracking number of this delivered shipment data"))
-    }
-    on shipmentFailed: event ShipmentFailed is {
-      morph entity Shipment to state Shipment.DeliveryFailedState with record Shipment.FailedShipmentData(shipmentId = shipmentFailed.shipmentId, reason = shipmentFailed.reason, orderId = prompt("the order id of this failed shipment data"), carrier = prompt("the carrier of this failed shipment data"), trackingNumber = prompt("the tracking number of this failed shipment data"), failedAt = prompt("the failed at of this failed shipment data"))
-    }
     on trackingUpdated: event TrackingUpdated is {
       set field Shipment.Active.status to trackingUpdated.status
       append prompt("a ShipmentEvent of status, location, description and updatedAt") to field Shipment.Active.trackingHistory
@@ -558,12 +564,6 @@ event-sourced entity Shipment as router is {
     }
     on updateTracking: command UpdateTracking is {
       yield event TrackingUpdated(shipmentId = updateTracking.shipmentId, status = updateTracking.status, location = updateTracking.location, description = updateTracking.description, updatedAt = system.now)
-    }
-    on markDelivered: command MarkDelivered is {
-      yield event ShipmentDelivered(shipmentId = markDelivered.shipmentId, deliveredAt = markDelivered.deliveredAt, signedBy = markDelivered.signedBy, orderId = Shipment.Active.orderId)
-    }
-    on markFailed: command MarkFailed is {
-      yield event ShipmentFailed(shipmentId = markFailed.shipmentId, reason = markFailed.reason, orderId = Shipment.Active.orderId, failedAt = system.now)
     }
   } with {
     briefly "Processes shipment lifecycle commands"

@@ -800,19 +800,73 @@ event-sourced entity Ticket as router is {
     }
   }
   // States
-  state AvailableState of record Ticket.AvailableTicketData with {
+  state AvailableState of record Ticket.AvailableTicketData is {
+    initial handler AvailableStateHandler is {
+      on ticketReserved: event TicketReserved is {
+        morph entity Ticket to state Ticket.ReservedState with record Ticket.ReservedTicketData(ticketId = ticketReserved.ticketId, buyerId = ticketReserved.buyerId, expiresAt = ticketReserved.expiresAt, eventId = AvailableTicketData.eventId, seatId = AvailableTicketData.seatId, section = AvailableTicketData.section, row = empty, seatNumber = empty, pricingTier = AvailableTicketData.pricingTier, faceValue = AvailableTicketData.faceValue, reservedAt = ticketReserved.reservedAt)
+      }
+      on reserveTicket: command ReserveTicket is {
+        yield event TicketReserved(ticketId = reserveTicket.ticketId, buyerId = reserveTicket.buyerId, expiresAt = reserveTicket.expiresAt, reservedAt = system.now)
+      }
+    } with {
+      briefly "While AvailableState"
+      described as {
+        |The commands and folds accepted while the entity is in AvailableState.
+      }
+    }
+  } with {
     briefly "Available state"
     described as {
       |Ticket is available for purchase.
     }
   }
-  state ReservedState of record Ticket.ReservedTicketData with {
+  state ReservedState of record Ticket.ReservedTicketData is {
+    initial handler ReservedStateHandler is {
+      on reservationCancelled: event ReservationCancelled is {
+        morph entity Ticket to state Ticket.AvailableState with record Ticket.AvailableTicketData(ticketId = reservationCancelled.ticketId, eventId = ReservedTicketData.eventId, seatId = ReservedTicketData.seatId, section = ReservedTicketData.section, row = empty, seatNumber = empty, pricingTier = ReservedTicketData.pricingTier, faceValue = ReservedTicketData.faceValue, createdAt = prompt("the created at of this available ticket data"), releasedAt = empty)
+      }
+      on ticketPurchased: event TicketPurchased is {
+        morph entity Ticket to state Ticket.SoldState with record Ticket.SoldTicketData(ticketId = ticketPurchased.ticketId, buyerId = ticketPurchased.buyerId, amountPaid = ticketPurchased.amountPaid, paymentTransactionId = ticketPurchased.paymentTransactionId, eventId = ticketPurchased.eventId, seatId = ticketPurchased.seatId, section = ticketPurchased.section, row = empty, seatNumber = empty, pricingTier = ticketPurchased.pricingTier, faceValue = ReservedTicketData.faceValue, purchasedAt = ticketPurchased.purchasedAt, transferHistory = prompt("the transfer history of this sold ticket data"))
+      }
+      on cancelReservation: command CancelReservation is {
+        yield event ReservationCancelled(ticketId = cancelReservation.ticketId, cancelledAt = system.now)
+      }
+      on purchaseTicket: command PurchaseTicket is {
+        yield event TicketPurchased(ticketId = purchaseTicket.ticketId, buyerId = purchaseTicket.buyerId, amountPaid = purchaseTicket.amountPaid, eventId = Ticket.ReservedState.eventId, seatId = Ticket.ReservedState.seatId, section = Ticket.ReservedState.section, pricingTier = Ticket.ReservedState.pricingTier, purchasedAt = system.now, paymentTransactionId = purchaseTicket.paymentTransactionId)
+      }
+    } with {
+      briefly "While ReservedState"
+      described as {
+        |The commands and folds accepted while the entity is in ReservedState.
+      }
+    }
+  } with {
     briefly "Reserved state"
     described as {
       |Ticket is reserved pending purchase.
     }
   }
-  state SoldState of record Ticket.SoldTicketData with {
+  state SoldState of record Ticket.SoldTicketData is {
+    initial handler SoldStateHandler is {
+      on ticketRefunded: event TicketRefunded is {
+        morph entity Ticket to state Ticket.RefundedState with record Ticket.RefundedTicketData(ticketId = ticketRefunded.ticketId, eventId = ticketRefunded.eventId, seatId = SoldTicketData.seatId, section = SoldTicketData.section, pricingTier = SoldTicketData.pricingTier, faceValue = SoldTicketData.faceValue, originalBuyerId = prompt("the original buyer id of this refunded ticket data"), refundAmount = ticketRefunded.refundAmount, refundReason = prompt("the refund reason of this refunded ticket data"), refundedAt = ticketRefunded.refundedAt)
+      }
+      on ticketScanned: event TicketScanned is {
+        morph entity Ticket to state Ticket.UsedState with record Ticket.UsedTicketData(ticketId = ticketScanned.ticketId, gateId = ticketScanned.gateId, scannedAt = ticketScanned.scannedAt, eventId = ticketScanned.eventId, seatId = SoldTicketData.seatId, section = SoldTicketData.section, row = empty, seatNumber = empty, buyerId = ticketScanned.buyerId)
+      }
+      on refundTicket: command RefundTicket is {
+        yield event TicketRefunded(ticketId = refundTicket.ticketId, buyerId = refundTicket.buyerId, reason = refundTicket.reason, eventId = Ticket.SoldState.eventId, refundAmount = refundTicket.refundAmount, refundedAt = system.now)
+      }
+      on scanTicket: command ScanTicket is {
+        yield event TicketScanned(ticketId = scanTicket.ticketId, gateId = scanTicket.gateId, scannedAt = scanTicket.scannedAt, eventId = Ticket.SoldState.eventId, buyerId = Ticket.SoldState.buyerId)
+      }
+    } with {
+      briefly "While SoldState"
+      described as {
+        |The commands and folds accepted while the entity is in SoldState.
+      }
+    }
+  } with {
     briefly "Sold state"
     described as {
       |Ticket has been purchased.
@@ -835,42 +889,12 @@ event-sourced entity Ticket as router is {
     on init(eventId: type EventId, seatId: type SeatId, section: String(1,50), row: String(1,20)?, seatNumber: String(1,20)?, pricingTier: String(1,50), faceValue: type Money, releasedAt: TimeStamp) is {
       morph entity Ticket to state Ticket.AvailableState with record Ticket.AvailableTicketData(ticketId = self.id, eventId = eventId, seatId = seatId, section = section, row = row, seatNumber = seatNumber, pricingTier = pricingTier, faceValue = faceValue, createdAt = releasedAt, releasedAt = releasedAt)
     }
-    on reservationCancelled: event ReservationCancelled is {
-      morph entity Ticket to state Ticket.AvailableState with record Ticket.AvailableTicketData(ticketId = reservationCancelled.ticketId, eventId = prompt("the event id of this available ticket data"), seatId = prompt("the seat id of this available ticket data"), section = prompt("the section of this available ticket data"), row = empty, seatNumber = empty, pricingTier = prompt("the pricing tier of this available ticket data"), faceValue = prompt("the face value of this available ticket data"), createdAt = prompt("the created at of this available ticket data"), releasedAt = empty)
-    }
-    on ticketPurchased: event TicketPurchased is {
-      morph entity Ticket to state Ticket.SoldState with record Ticket.SoldTicketData(ticketId = ticketPurchased.ticketId, buyerId = ticketPurchased.buyerId, amountPaid = ticketPurchased.amountPaid, paymentTransactionId = ticketPurchased.paymentTransactionId, eventId = prompt("the event id of this sold ticket data"), seatId = prompt("the seat id of this sold ticket data"), section = prompt("the section of this sold ticket data"), row = empty, seatNumber = empty, pricingTier = prompt("the pricing tier of this sold ticket data"), faceValue = prompt("the face value of this sold ticket data"), purchasedAt = prompt("the purchased at of this sold ticket data"), transferHistory = prompt("the transfer history of this sold ticket data"))
-    }
-    on ticketRefunded: event TicketRefunded is {
-      morph entity Ticket to state Ticket.RefundedState with record Ticket.RefundedTicketData(ticketId = ticketRefunded.ticketId, eventId = prompt("the event id of this refunded ticket data"), seatId = prompt("the seat id of this refunded ticket data"), section = prompt("the section of this refunded ticket data"), pricingTier = prompt("the pricing tier of this refunded ticket data"), faceValue = prompt("the face value of this refunded ticket data"), originalBuyerId = prompt("the original buyer id of this refunded ticket data"), refundAmount = prompt("the refund amount of this refunded ticket data"), refundReason = prompt("the refund reason of this refunded ticket data"), refundedAt = prompt("the refunded at of this refunded ticket data"))
-    }
-    on ticketReserved: event TicketReserved is {
-      morph entity Ticket to state Ticket.ReservedState with record Ticket.ReservedTicketData(ticketId = ticketReserved.ticketId, buyerId = ticketReserved.buyerId, expiresAt = ticketReserved.expiresAt, eventId = prompt("the event id of this reserved ticket data"), seatId = prompt("the seat id of this reserved ticket data"), section = prompt("the section of this reserved ticket data"), row = empty, seatNumber = empty, pricingTier = prompt("the pricing tier of this reserved ticket data"), faceValue = prompt("the face value of this reserved ticket data"), reservedAt = prompt("the reserved at of this reserved ticket data"))
-    }
-    on ticketScanned: event TicketScanned is {
-      morph entity Ticket to state Ticket.UsedState with record Ticket.UsedTicketData(ticketId = ticketScanned.ticketId, gateId = ticketScanned.gateId, scannedAt = ticketScanned.scannedAt, eventId = prompt("the event id of this used ticket data"), seatId = prompt("the seat id of this used ticket data"), section = prompt("the section of this used ticket data"), row = empty, seatNumber = empty, buyerId = prompt("the buyer id of this used ticket data"))
-    }
     on ticketTransferred: event TicketTransferred is {
       set field Ticket.SoldState.buyerId to ticketTransferred.toBuyerId
       append prompt("a TransferRecord of fromBuyerId, toBuyerId and transferredAt") to field Ticket.SoldState.transferHistory
     }
-    on reserveTicket: command ReserveTicket is {
-      yield event TicketReserved(ticketId = reserveTicket.ticketId, buyerId = reserveTicket.buyerId, expiresAt = reserveTicket.expiresAt, reservedAt = system.now)
-    }
-    on purchaseTicket: command PurchaseTicket is {
-      yield event TicketPurchased(ticketId = purchaseTicket.ticketId, buyerId = purchaseTicket.buyerId, amountPaid = purchaseTicket.amountPaid, eventId = Ticket.ReservedState.eventId, seatId = Ticket.ReservedState.seatId, section = Ticket.ReservedState.section, pricingTier = Ticket.ReservedState.pricingTier, purchasedAt = system.now, paymentTransactionId = purchaseTicket.paymentTransactionId)
-    }
     on transferTicket: command TransferTicket is {
       yield event TicketTransferred(ticketId = transferTicket.ticketId, fromBuyerId = transferTicket.fromBuyerId, toBuyerId = transferTicket.toBuyerId, eventId = Ticket.SoldState.eventId, transferredAt = system.now)
-    }
-    on refundTicket: command RefundTicket is {
-      yield event TicketRefunded(ticketId = refundTicket.ticketId, buyerId = refundTicket.buyerId, reason = refundTicket.reason, eventId = Ticket.SoldState.eventId, refundAmount = refundTicket.refundAmount, refundedAt = system.now)
-    }
-    on cancelReservation: command CancelReservation is {
-      yield event ReservationCancelled(ticketId = cancelReservation.ticketId, cancelledAt = system.now)
-    }
-    on scanTicket: command ScanTicket is {
-      yield event TicketScanned(ticketId = scanTicket.ticketId, gateId = scanTicket.gateId, scannedAt = scanTicket.scannedAt, eventId = Ticket.SoldState.eventId, buyerId = Ticket.SoldState.buyerId)
     }
     on getTicket: query GetTicket is {
       reply result TicketResult(eventId = getTicket.eventId, ticketId = prompt("the ticket id of this ticket result"))

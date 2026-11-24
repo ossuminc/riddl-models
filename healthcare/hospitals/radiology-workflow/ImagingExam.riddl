@@ -374,6 +374,12 @@ aggregate event-sourced entity ImagingExam as router is {
         let imagingExamResult: type ImagingExamResult = prompt("read the imaging exam from the store")
         reply imagingExamResult
       }
+      on examScheduled: event ExamScheduled is {
+        morph entity ImagingExam to state ImagingExam.ScheduledState with record ImagingExam.ScheduledStateData(examId = examScheduled.examId, scheduledDateTime = examScheduled.scheduledDateTime, modalityId = examScheduled.modalityId, roomLocation = examScheduled.roomLocation, protocol = examScheduled.protocol, order = OrderedStateData.order)
+      }
+      on scheduleExam: command ScheduleExam is {
+        yield event ExamScheduled(examId = scheduleExam.examId, scheduledDateTime = scheduleExam.scheduledDateTime, modalityId = scheduleExam.modalityId, roomLocation = scheduleExam.roomLocation, protocol = scheduleExam.protocol, scheduledBy = scheduleExam.scheduledBy)
+      }
     } with {
       briefly "OrderedState init handler"
       described as {
@@ -386,19 +392,61 @@ aggregate event-sourced entity ImagingExam as router is {
       |The OrderedState state of the ImagingExam.
     }
   }
-  state ScheduledState of record ImagingExam.ScheduledStateData with {
+  state ScheduledState of record ImagingExam.ScheduledStateData is {
+    initial handler ScheduledStateHandler is {
+      on patientCheckedIn: event PatientCheckedIn is {
+        morph entity ImagingExam to state ImagingExam.AcquisitionState with record ImagingExam.AcquisitionStateData(examId = patientCheckedIn.examId, checkedInAt = patientCheckedIn.checkedInAt, order = ScheduledStateData.order, scheduledDateTime = ScheduledStateData.scheduledDateTime, modalityId = ScheduledStateData.modalityId, technicianId = empty, acquisitionStartedAt = empty)
+      }
+      on checkInPatient: command CheckInPatient is {
+        yield event PatientCheckedIn(examId = checkInPatient.examId, checkedInAt = checkInPatient.checkedInAt, screeningCompleted = checkInPatient.screeningCompleted)
+      }
+    } with {
+      briefly "While ScheduledState"
+      described as {
+        |The commands and folds accepted while the entity is in ScheduledState.
+      }
+    }
+  } with {
     briefly "ScheduledState state"
     described as {
       |The ScheduledState state of the ImagingExam.
     }
   }
-  state AcquisitionState of record ImagingExam.AcquisitionStateData with {
+  state AcquisitionState of record ImagingExam.AcquisitionStateData is {
+    initial handler AcquisitionStateHandler is {
+      on acquisitionCompleted: event AcquisitionCompleted is {
+        morph entity ImagingExam to state ImagingExam.InterpretationState with record ImagingExam.InterpretationStateData(examId = acquisitionCompleted.examId, studyInfo = acquisitionCompleted.studyInfo, completedAt = acquisitionCompleted.completedAt, order = AcquisitionStateData.order, draftReport = empty, criticalFinding = empty, criticalFindingReportedAt = empty)
+      }
+      on completeAcquisition: command CompleteAcquisition is {
+        yield event AcquisitionCompleted(examId = completeAcquisition.examId, studyInfo = completeAcquisition.studyInfo, completedAt = completeAcquisition.completedAt, technicianNotes = completeAcquisition.technicianNotes)
+      }
+    } with {
+      briefly "While AcquisitionState"
+      described as {
+        |The commands and folds accepted while the entity is in AcquisitionState.
+      }
+    }
+  } with {
     briefly "AcquisitionState state"
     described as {
       |The AcquisitionState state of the ImagingExam.
     }
   }
-  state InterpretationState of record ImagingExam.InterpretationStateData with {
+  state InterpretationState of record ImagingExam.InterpretationStateData is {
+    initial handler InterpretationStateHandler is {
+      on reportFinalized: event ReportFinalized is {
+        morph entity ImagingExam to state ImagingExam.FinalizedState with record ImagingExam.FinalizedStateData(examId = reportFinalized.examId, order = InterpretationStateData.order, studyInfo = InterpretationStateData.studyInfo, report = prompt("the report of this finalized state data"), finalizedAt = prompt("the finalized at of this finalized state data"), addendums = empty, lastAddendumAt = empty, lastAddendumBy = empty)
+      }
+      on finalizeReport: command FinalizeReport is {
+        yield event ReportFinalized(examId = finalizeReport.examId, reportId = finalizeReport.reportId, radiologistId = finalizeReport.radiologistId, signedAt = finalizeReport.signedAt)
+      }
+    } with {
+      briefly "While InterpretationState"
+      described as {
+        |The commands and folds accepted while the entity is in InterpretationState.
+      }
+    }
+  } with {
     briefly "InterpretationState state"
     described as {
       |The InterpretationState state of the ImagingExam.
@@ -418,25 +466,13 @@ aggregate event-sourced entity ImagingExam as router is {
       morph entity ImagingExam to state ImagingExam.OrderedState with record ImagingExam.OrderedStateData(examId = self.id, order = order, orderedAt = orderedAt)
       send event ExamOrdered(examId = self.id, order = order, orderedAt = orderedAt) to outlet RadiologyContext.ImagingExam.ImagingExamEvents2
     }
-    on scheduleExam: command ScheduleExam is {
-      yield event ExamScheduled(examId = scheduleExam.examId, scheduledDateTime = scheduleExam.scheduledDateTime, modalityId = scheduleExam.modalityId, roomLocation = scheduleExam.roomLocation, protocol = scheduleExam.protocol, scheduledBy = scheduleExam.scheduledBy)
-    }
-    on checkInPatient: command CheckInPatient is {
-      yield event PatientCheckedIn(examId = checkInPatient.examId, checkedInAt = checkInPatient.checkedInAt, screeningCompleted = checkInPatient.screeningCompleted)
-    }
     on startAcquisition: command StartAcquisition is {
       yield event AcquisitionStarted(examId = startAcquisition.examId, technicianId = startAcquisition.technicianId, modalityId = startAcquisition.modalityId, startedAt = startAcquisition.startedAt)
       do "Begin image acquisition"
     }
-    on completeAcquisition: command CompleteAcquisition is {
-      yield event AcquisitionCompleted(examId = completeAcquisition.examId, studyInfo = completeAcquisition.studyInfo, completedAt = completeAcquisition.completedAt, technicianNotes = completeAcquisition.technicianNotes)
-    }
     on createDraftReport: command CreateDraftReport is {
       yield event DraftReportCreated(examId = createDraftReport.examId, radiologistId = createDraftReport.radiologistId, findings = createDraftReport.findings, impression = createDraftReport.impression, recommendations = createDraftReport.recommendations, reportId = createDraftReport.reportId, createdAt = system.now)
       do "Draft report created, awaiting signature"
-    }
-    on finalizeReport: command FinalizeReport is {
-      yield event ReportFinalized(examId = finalizeReport.examId, reportId = finalizeReport.reportId, radiologistId = finalizeReport.radiologistId, signedAt = finalizeReport.signedAt)
     }
     on addAddendum: command AddAddendum is {
       yield event AddendumAdded(examId = addAddendum.examId, reportId = addAddendum.reportId, radiologistId = addAddendum.radiologistId, addendumText = addAddendum.addendumText, addendumReason = addAddendum.addendumReason, addedAt = system.now)
@@ -449,24 +485,12 @@ aggregate event-sourced entity ImagingExam as router is {
     on other is {
       error "Unknown command received"
     }
-    on examScheduled: event ExamScheduled is {
-      morph entity ImagingExam to state ImagingExam.ScheduledState with record ImagingExam.ScheduledStateData(examId = examScheduled.examId, scheduledDateTime = examScheduled.scheduledDateTime, modalityId = examScheduled.modalityId, roomLocation = examScheduled.roomLocation, protocol = examScheduled.protocol, order = prompt("the order of this scheduled state data"))
-    }
-    on patientCheckedIn: event PatientCheckedIn is {
-      morph entity ImagingExam to state ImagingExam.AcquisitionState with record ImagingExam.AcquisitionStateData(examId = patientCheckedIn.examId, checkedInAt = patientCheckedIn.checkedInAt, order = prompt("the order of this acquisition state data"), scheduledDateTime = prompt("the scheduled date time of this acquisition state data"), modalityId = prompt("the modality id of this acquisition state data"), technicianId = empty, acquisitionStartedAt = empty)
-    }
     on acquisitionStarted: event AcquisitionStarted is {
       set field ImagingExam.AcquisitionState.technicianId to acquisitionStarted.technicianId
       set field ImagingExam.AcquisitionState.acquisitionStartedAt to acquisitionStarted.startedAt
     }
-    on acquisitionCompleted: event AcquisitionCompleted is {
-      morph entity ImagingExam to state ImagingExam.InterpretationState with record ImagingExam.InterpretationStateData(examId = acquisitionCompleted.examId, studyInfo = acquisitionCompleted.studyInfo, completedAt = acquisitionCompleted.completedAt, order = prompt("the order of this interpretation state data"), draftReport = empty, criticalFinding = empty, criticalFindingReportedAt = empty)
-    }
     on draftReportCreated: event DraftReportCreated is {
       set field ImagingExam.InterpretationState.draftReport to record RadiologyReport(reportId = draftReportCreated.reportId, examId = draftReportCreated.examId, studyId = prompt("the study id from studyInfo"), patientId = prompt("the patient id from the order"), radiologistId = draftReportCreated.radiologistId, reportStatus = ReportStatus.Draft, findings = draftReportCreated.findings, impression = draftReportCreated.impression, recommendations = draftReportCreated.recommendations, comparisonStudies = empty, criticalFinding = empty, dictatedAt = draftReportCreated.createdAt, signedAt = empty, transcribedBy = empty)
-    }
-    on reportFinalized: event ReportFinalized is {
-      morph entity ImagingExam to state ImagingExam.FinalizedState with record ImagingExam.FinalizedStateData(examId = reportFinalized.examId, order = prompt("the order of this finalized state data"), studyInfo = prompt("the study info of this finalized state data"), report = prompt("the report of this finalized state data"), finalizedAt = prompt("the finalized at of this finalized state data"), addendums = empty, lastAddendumAt = empty, lastAddendumBy = empty)
     }
     on addendumAdded: event AddendumAdded is {
       set field ImagingExam.FinalizedState.lastAddendumAt to addendumAdded.addedAt

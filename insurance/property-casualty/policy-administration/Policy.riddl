@@ -678,13 +678,48 @@ event-sourced entity Policy as router is {
       |Policy is in quoted/proposed status.
     }
   }
-  state ActiveState of record Policy.ActiveStateData with {
+  state ActiveState of record Policy.ActiveStateData is {
+    initial handler ActiveStateHandler is {
+      on policyCancelled: event PolicyCancelled is {
+        morph entity PolicyContext.Policy to state PolicyContext.Policy.CancelledState with record Policy.CancelledStateData(policyId = policyCancelled.policyId, cancellationDate = policyCancelled.cancellationDate, reason = policyCancelled.reason, details = ActiveStateData.details, returnPremium = policyCancelled.returnPremium, cancelledAt = policyCancelled.cancelledAt)
+      }
+      on renewalDeclined: event RenewalDeclined is {
+        morph entity PolicyContext.Policy to state PolicyContext.Policy.ExpiredState with record Policy.ExpiredStateData(policyId = renewalDeclined.policyId, details = ActiveStateData.details, expiredAt = prompt("the end of the current term, when the declined policy expires"), renewalOffered = prompt("true: an offer was made and declined"))
+      }
+      on cancelPolicy: command CancelPolicy is {
+        let quote: type RatingEngine.ReturnPremiumQuote = ask query RatingEngine.ComputeReturnPremium(policyId = cancelPolicy.policyId, cancellationDate = cancelPolicy.cancellationDate) of context RatingEngine
+        yield event PolicyCancelled(policyId = cancelPolicy.policyId, cancellationDate = cancelPolicy.cancellationDate, reason = cancelPolicy.reason, returnPremium = quote.returnPremium, cancelledAt = system.now, cancelledBy = cancelPolicy.requestedBy)
+      }
+      on declineRenewal: command DeclineRenewal is {
+        yield event RenewalDeclined(policyId = declineRenewal.policyId, renewalId = declineRenewal.renewalId, declinedAt = system.now, declineReason = declineRenewal.declineReason)
+      }
+    } with {
+      briefly "While ActiveState"
+      described as {
+        |The commands and folds accepted while the entity is in ActiveState.
+      }
+    }
+  } with {
     briefly "Active state"
     described as {
       |Policy is active and in force.
     }
   }
-  state CancelledState of record Policy.CancelledStateData with {
+  state CancelledState of record Policy.CancelledStateData is {
+    initial handler CancelledStateHandler is {
+      on policyReinstated: event PolicyReinstated is {
+        morph entity PolicyContext.Policy to state PolicyContext.Policy.ActiveState with record Policy.ActiveStateData(policyId = policyReinstated.policyId, details = CancelledStateData.details, billingSchedule = prompt("the billing schedule of this active state data"), endorsements = empty, renewalHistory = empty, createdAt = prompt("the created at of this active state data"), lastModifiedAt = prompt("the last modified at of this active state data"), renewedToPolicyId = empty)
+      }
+      on reinstatPolicy: command ReinstatPolicy is {
+        yield event PolicyReinstated(policyId = reinstatPolicy.policyId, reinstatementDate = reinstatPolicy.reinstatementDate, approvedBy = reinstatPolicy.approvedBy, reinstatedAt = system.now)
+      }
+    } with {
+      briefly "While CancelledState"
+      described as {
+        |The commands and folds accepted while the entity is in CancelledState.
+      }
+    }
+  } with {
     briefly "Cancelled state"
     described as {
       |Policy has been cancelled.
@@ -702,21 +737,11 @@ event-sourced entity Policy as router is {
       morph entity PolicyContext.Policy to state PolicyContext.Policy.ActiveState with record Policy.ActiveStateData(policyId = self.id, details = details, billingSchedule = billingSchedule, endorsements = empty, renewalHistory = empty, createdAt = prompt("the created at of this active state data"), lastModifiedAt = prompt("the last modified at of this active state data"), renewedToPolicyId = empty)
       send event PolicyIssued(policyId = self.id, details = details, billingSchedule = billingSchedule, issuedAt = issuedAt, issuedBy = issuedBy) to outlet PolicyContext.Policy.PolicyEvents2
     }
-    on declineRenewal: command DeclineRenewal is {
-      yield event RenewalDeclined(policyId = declineRenewal.policyId, renewalId = declineRenewal.renewalId, declinedAt = system.now, declineReason = declineRenewal.declineReason)
-    }
     on addEndorsement: command AddEndorsement is {
       yield event EndorsementAdded(policyId = addEndorsement.policyId, endorsement = addEndorsement.endorsement, updatedDetails = record PolicyDetails(policyNumber = Policy.ActiveState.details.policyNumber, effectiveDate = Policy.ActiveState.details.effectiveDate, expirationDate = Policy.ActiveState.details.expirationDate, insuredName = Policy.ActiveState.details.insuredName, insuredAddress = Policy.ActiveState.details.insuredAddress, coverageType = Policy.ActiveState.details.coverageType, totalPremium = Policy.ActiveState.details.totalPremium + addEndorsement.endorsement.premiumChange, deductible = Policy.ActiveState.details.deductible, coverageLimit = Policy.ActiveState.details.coverageLimit, status = Policy.ActiveState.details.status), addedAt = system.now)
     }
     on processRenewal: command ProcessRenewal is {
       yield event RenewalProcessed(policyId = processRenewal.policyId, renewalOffer = processRenewal.renewalOffer, newPolicyId = processRenewal.newPolicyId, processedAt = system.now)
-    }
-    on cancelPolicy: command CancelPolicy is {
-      let quote: type RatingEngine.ReturnPremiumQuote = ask query RatingEngine.ComputeReturnPremium(policyId = cancelPolicy.policyId, cancellationDate = cancelPolicy.cancellationDate) of context RatingEngine
-      yield event PolicyCancelled(policyId = cancelPolicy.policyId, cancellationDate = cancelPolicy.cancellationDate, reason = cancelPolicy.reason, returnPremium = quote.returnPremium, cancelledAt = system.now, cancelledBy = cancelPolicy.requestedBy)
-    }
-    on reinstatPolicy: command ReinstatPolicy is {
-      yield event PolicyReinstated(policyId = reinstatPolicy.policyId, reinstatementDate = reinstatPolicy.reinstatementDate, approvedBy = reinstatPolicy.approvedBy, reinstatedAt = system.now)
     }
     on updateBilling: command UpdateBilling is {
       yield event BillingUpdated(policyId = updateBilling.policyId, newSchedule = updateBilling.newSchedule, previousSchedule = Policy.ActiveState.billingSchedule, updatedAt = system.now)
@@ -735,15 +760,6 @@ event-sourced entity Policy as router is {
       append endorsementAdded.endorsement to field Policy.ActiveState.endorsements
       set field Policy.ActiveState.details to endorsementAdded.updatedDetails
       set field Policy.ActiveState.lastModifiedAt to endorsementAdded.addedAt
-    }
-    on policyCancelled: event PolicyCancelled is {
-      morph entity PolicyContext.Policy to state PolicyContext.Policy.CancelledState with record Policy.CancelledStateData(policyId = policyCancelled.policyId, cancellationDate = policyCancelled.cancellationDate, reason = policyCancelled.reason, details = prompt("the details of this cancelled state data"), returnPremium = prompt("the return premium of this cancelled state data"), cancelledAt = prompt("the cancelled at of this cancelled state data"))
-    }
-    on policyReinstated: event PolicyReinstated is {
-      morph entity PolicyContext.Policy to state PolicyContext.Policy.ActiveState with record Policy.ActiveStateData(policyId = policyReinstated.policyId, details = prompt("the details of this active state data"), billingSchedule = prompt("the billing schedule of this active state data"), endorsements = empty, renewalHistory = empty, createdAt = prompt("the created at of this active state data"), lastModifiedAt = prompt("the last modified at of this active state data"), renewedToPolicyId = empty)
-    }
-    on renewalDeclined: event RenewalDeclined is {
-      morph entity PolicyContext.Policy to state PolicyContext.Policy.ExpiredState with record Policy.ExpiredStateData(policyId = renewalDeclined.policyId, details = prompt("the details of the policy as it stood when the renewal was declined"), expiredAt = prompt("the end of the current term, when the declined policy expires"), renewalOffered = prompt("true: an offer was made and declined"))
     }
     on renewalOfferGenerated: event RenewalOfferGenerated is {
       append renewalOfferGenerated.renewalOffer to field Policy.ActiveState.renewalHistory

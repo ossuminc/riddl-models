@@ -829,13 +829,55 @@ event-sourced entity LifePolicy as router is {
       |Policy application is being processed.
     }
   }
-  state ActiveState of record LifePolicy.ActiveStateData with {
+  state ActiveState of record LifePolicy.ActiveStateData is {
+    initial handler ActiveStateHandler is {
+      on deathClaimInitiated: event DeathClaimInitiated is {
+        morph entity LifePolicy to state LifePolicy.DeathClaimState with record LifePolicy.DeathClaimStateData(claimInfo = deathClaimInitiated.claimInfo, policyInfo = ActiveStateData.policyInfo, beneficiaries = ActiveStateData.beneficiaries, riders = ActiveStateData.riders, totalBenefitCalculated = prompt("the total benefit calculated of this death claim state data"))
+      }
+      on policyLapsed: event PolicyLapsed is {
+        morph entity LifePolicy to state LifePolicy.LapsedState with record LifePolicy.LapsedStateData(lapseDate = policyLapsed.lapseDate, policyInfo = ActiveStateData.policyInfo, beneficiaries = ActiveStateData.beneficiaries, riders = ActiveStateData.riders, cashValue = ActiveStateData.cashValue, reinstatementDeadline = prompt("the reinstatement deadline of this lapsed state data"))
+      }
+      on policySurrendered: event PolicySurrendered is {
+        let surrenderedStateData: type LifePolicy.SurrenderedStateData = prompt("the surrendered state data that results from surrender policy")
+        morph entity LifePolicy to state LifePolicy.SurrenderedState with surrenderedStateData
+      }
+      on processDeath: command ProcessDeath is {
+        yield event DeathClaimInitiated(policyId = processDeath.policyId, claimInfo = processDeath.claimInfo, initiatedDate = system.now)
+      }
+      on lapsePolicy: command LapsePolicy is {
+        yield event PolicyLapsed(policyId = lapsePolicy.policyId, lapseDate = lapsePolicy.lapseDate, reason = lapsePolicy.reason, gracePeriodEnd = LifePolicy.ActiveState.paidToDate + 31 days)
+      }
+      on surrenderPolicy: command SurrenderPolicy is {
+        yield event PolicySurrendered(policyId = surrenderPolicy.policyId, surrenderDate = system.now, surrenderValue = LifePolicy.ActiveState.cashValue.surrenderValue, reason = surrenderPolicy.surrenderReason)
+      }
+    } with {
+      briefly "While ActiveState"
+      described as {
+        |The commands and folds accepted while the entity is in ActiveState.
+      }
+    }
+  } with {
     briefly "Active state"
     described as {
       |Policy is active and in force.
     }
   }
-  state LapsedState of record LifePolicy.LapsedStateData with {
+  state LapsedState of record LifePolicy.LapsedStateData is {
+    initial handler LapsedStateHandler is {
+      on policyReinstated: event PolicyReinstated is {
+        let activeStateData: type LifePolicy.ActiveStateData = prompt("the active state data that results from reinstate policy from lapse")
+        morph entity LifePolicy to state LifePolicy.ActiveState with activeStateData
+      }
+      on reinstatePolicyFromLapse: command ReinstatePolicyFromLapse is {
+        yield event PolicyReinstated(policyId = reinstatePolicyFromLapse.policyId, reinstateDate = reinstatePolicyFromLapse.reinstateDate, premiumsPaid = record Money(amount = reinstatePolicyFromLapse.backPremiums.amount + reinstatePolicyFromLapse.interestDue.amount, currency = reinstatePolicyFromLapse.backPremiums.currency))
+      }
+    } with {
+      briefly "While LapsedState"
+      described as {
+        |The commands and folds accepted while the entity is in LapsedState.
+      }
+    }
+  } with {
     briefly "Lapsed state"
     described as {
       |Policy has lapsed due to non-payment.
@@ -868,9 +910,6 @@ event-sourced entity LifePolicy as router is {
       remove from field LifePolicy.ActiveState.beneficiaries where beneficiaryId == beneficiaryRemoved.beneficiaryId
       set field LifePolicy.ActiveState.lastBeneficiaryChangeOn to beneficiaryRemoved.removedDate
     }
-    on deathClaimInitiated: event DeathClaimInitiated is {
-      morph entity LifePolicy to state LifePolicy.DeathClaimState with record LifePolicy.DeathClaimStateData(claimInfo = deathClaimInitiated.claimInfo, policyInfo = prompt("the policy info of this death claim state data"), beneficiaries = prompt("the beneficiaries of this death claim state data"), riders = prompt("the riders of this death claim state data"), totalBenefitCalculated = prompt("the total benefit calculated of this death claim state data"))
-    }
     on loanDisbursed: event LoanDisbursed is {
       set field LifePolicy.ActiveState.loanHistory to prompt("the loan history with loanTransaction appended")
       set field LifePolicy.ActiveState.cashValue.loanBalance to record Money(amount = LifePolicy.ActiveState.cashValue.loanBalance.amount + loanDisbursed.loanTransaction.transactionAmount.amount, currency = LifePolicy.ActiveState.cashValue.loanBalance.currency)
@@ -879,17 +918,6 @@ event-sourced entity LifePolicy as router is {
     on loanRepaid: event LoanRepaid is {
       set field LifePolicy.ActiveState.loanHistory to prompt("the loan history with loanTransaction appended")
       set field LifePolicy.ActiveState.cashValue.loanBalance to loanRepaid.remainingBalance
-    }
-    on policyLapsed: event PolicyLapsed is {
-      morph entity LifePolicy to state LifePolicy.LapsedState with record LifePolicy.LapsedStateData(lapseDate = policyLapsed.lapseDate, policyInfo = prompt("the policy info of this lapsed state data"), beneficiaries = prompt("the beneficiaries of this lapsed state data"), riders = prompt("the riders of this lapsed state data"), cashValue = prompt("the cash value of this lapsed state data"), reinstatementDeadline = prompt("the reinstatement deadline of this lapsed state data"))
-    }
-    on policyReinstated: event PolicyReinstated is {
-      let activeStateData: type LifePolicy.ActiveStateData = prompt("the active state data that results from reinstate policy from lapse")
-      morph entity LifePolicy to state LifePolicy.ActiveState with activeStateData
-    }
-    on policySurrendered: event PolicySurrendered is {
-      let surrenderedStateData: type LifePolicy.SurrenderedStateData = prompt("the surrendered state data that results from surrender policy")
-      morph entity LifePolicy to state LifePolicy.SurrenderedState with surrenderedStateData
     }
     on premiumProcessed: event PremiumProcessed is {
       append premiumProcessed.payment to field LifePolicy.ActiveState.premiumHistory
@@ -936,18 +964,6 @@ event-sourced entity LifePolicy as router is {
     }
     on repayLoan: command RepayLoan is {
       yield event LoanRepaid(policyId = repayLoan.policyId, loanTransaction = record LoanTransaction(transactionDate = system.now, transactionType = "Repayment", transactionAmount = repayLoan.repaymentAmount, interestRate = LifePolicy.ActiveState.cashValue.loanInterestRate, balance = record Money(amount = LifePolicy.ActiveState.cashValue.loanBalance.amount - repayLoan.repaymentAmount.amount, currency = LifePolicy.ActiveState.cashValue.loanBalance.currency)), remainingBalance = record Money(amount = LifePolicy.ActiveState.cashValue.loanBalance.amount - repayLoan.repaymentAmount.amount, currency = LifePolicy.ActiveState.cashValue.loanBalance.currency))
-    }
-    on surrenderPolicy: command SurrenderPolicy is {
-      yield event PolicySurrendered(policyId = surrenderPolicy.policyId, surrenderDate = system.now, surrenderValue = LifePolicy.ActiveState.cashValue.surrenderValue, reason = surrenderPolicy.surrenderReason)
-    }
-    on processDeath: command ProcessDeath is {
-      yield event DeathClaimInitiated(policyId = processDeath.policyId, claimInfo = processDeath.claimInfo, initiatedDate = system.now)
-    }
-    on lapsePolicy: command LapsePolicy is {
-      yield event PolicyLapsed(policyId = lapsePolicy.policyId, lapseDate = lapsePolicy.lapseDate, reason = lapsePolicy.reason, gracePeriodEnd = LifePolicy.ActiveState.paidToDate + 31 days)
-    }
-    on reinstatePolicyFromLapse: command ReinstatePolicyFromLapse is {
-      yield event PolicyReinstated(policyId = reinstatePolicyFromLapse.policyId, reinstateDate = reinstatePolicyFromLapse.reinstateDate, premiumsPaid = record Money(amount = reinstatePolicyFromLapse.backPremiums.amount + reinstatePolicyFromLapse.interestDue.amount, currency = reinstatePolicyFromLapse.backPremiums.currency))
     }
     on getLifePolicy: query GetLifePolicy is {
       reply result LifePolicyResult(policyId = getLifePolicy.policyId, info = prompt("the info of this life policy result"), status = prompt("the status of this life policy result"))

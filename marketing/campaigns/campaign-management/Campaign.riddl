@@ -309,6 +309,14 @@ aggregate event-sourced entity Campaign as router is {
         let campaignQueryResult: type CampaignQueryResult = prompt("read the campaign query from the store")
         reply campaignQueryResult
       }
+      on event CampaignScheduled is {
+        let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign scheduled")
+        morph entity CampaignContext.Campaign to state CampaignContext.Campaign.ScheduledState with campaignStateRecord
+      }
+      on event CampaignArchived is {
+        let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign archived")
+        morph entity CampaignContext.Campaign to state CampaignContext.Campaign.ArchivedState with campaignStateRecord
+      }
     } with {
       briefly "DraftState initialization"
       described as {
@@ -322,25 +330,90 @@ aggregate event-sourced entity Campaign as router is {
       |The draft state of the Campaign entity, carrying CampaignStateRecord.
     }
   }
-  state ScheduledState of record Campaign.CampaignStateRecord with {
+  state ScheduledState of record Campaign.CampaignStateRecord is {
+    initial handler ScheduledStateHandler is {
+      on event CampaignLaunched is {
+        let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign launched")
+        morph entity CampaignContext.Campaign to state CampaignContext.Campaign.ActiveState with campaignStateRecord
+      }
+    } with {
+      briefly "While ScheduledState"
+      described as {
+        |The commands and folds accepted while the entity is in ScheduledState.
+      }
+    }
+  } with {
     briefly "Scheduled state"
     described as {
       |The scheduled state of the Campaign entity, carrying CampaignStateRecord.
     }
   }
-  state ActiveState of record Campaign.CampaignStateRecord with {
+  state ActiveState of record Campaign.CampaignStateRecord is {
+    initial handler ActiveStateHandler is {
+      on event CampaignPaused is {
+        let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign paused")
+        morph entity CampaignContext.Campaign to state CampaignContext.Campaign.PausedState with campaignStateRecord
+      }
+      on event CampaignCompleted is {
+        let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign completed")
+        morph entity CampaignContext.Campaign to state CampaignContext.Campaign.CompletedState with campaignStateRecord
+      }
+      on pauseCampaign: command Campaign.PauseCampaign is {
+        yield event CampaignPaused(campaignId = pauseCampaign.campaignId, reason = pauseCampaign.reason, pausedAt = system.now)
+      }
+      on completeCampaign: command Campaign.CompleteCampaign is {
+        yield event CampaignCompleted(campaignId = completeCampaign.campaignId, finalMetrics = completeCampaign.finalMetrics, completedAt = system.now)
+      }
+    } with {
+      briefly "While ActiveState"
+      described as {
+        |The commands and folds accepted while the entity is in ActiveState.
+      }
+    }
+  } with {
     briefly "Active state"
     described as {
       |The active state of the Campaign entity, carrying CampaignStateRecord.
     }
   }
-  state PausedState of record Campaign.CampaignStateRecord with {
+  state PausedState of record Campaign.CampaignStateRecord is {
+    initial handler PausedStateHandler is {
+      on event CampaignResumed is {
+        let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign resumed")
+        morph entity CampaignContext.Campaign to state CampaignContext.Campaign.ActiveState with campaignStateRecord
+      }
+      on event CampaignCompleted is {
+        let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign completed")
+        morph entity CampaignContext.Campaign to state CampaignContext.Campaign.CompletedState with campaignStateRecord
+      }
+      on completeCampaign: command Campaign.CompleteCampaign is {
+        yield event CampaignCompleted(campaignId = completeCampaign.campaignId, finalMetrics = completeCampaign.finalMetrics, completedAt = system.now)
+      }
+    } with {
+      briefly "While PausedState"
+      described as {
+        |The commands and folds accepted while the entity is in PausedState.
+      }
+    }
+  } with {
     briefly "Paused state"
     described as {
       |The paused state of the Campaign entity, carrying CampaignStateRecord.
     }
   }
-  state CompletedState of record Campaign.CampaignStateRecord with {
+  state CompletedState of record Campaign.CampaignStateRecord is {
+    initial handler CompletedStateHandler is {
+      on event CampaignArchived is {
+        let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign archived")
+        morph entity CampaignContext.Campaign to state CampaignContext.Campaign.ArchivedState with campaignStateRecord
+      }
+    } with {
+      briefly "While CompletedState"
+      described as {
+        |The commands and folds accepted while the entity is in CompletedState.
+      }
+    }
+  } with {
     briefly "Completed state"
     described as {
       |The completed state of the Campaign entity, carrying CampaignStateRecord.
@@ -379,18 +452,12 @@ aggregate event-sourced entity Campaign as router is {
       let campaignLaunched: type CampaignLaunched = prompt("the campaign launched that results from launch campaign")
       yield campaignLaunched
     }
-    on pauseCampaign: command Campaign.PauseCampaign is {
-      yield event CampaignPaused(campaignId = pauseCampaign.campaignId, reason = pauseCampaign.reason, pausedAt = system.now)
-    }
     on command ResumeCampaign is {
       let campaignResumed: type CampaignResumed = prompt("the campaign resumed that results from resume campaign")
       yield campaignResumed
     }
     on recordPerformanceUpdate: command RecordPerformanceUpdate is {
       yield event PerformanceMetricsRecorded(campaignId = recordPerformanceUpdate.campaignId, channelPerformance = recordPerformanceUpdate.channelPerformance, recordedAt = system.now)
-    }
-    on completeCampaign: command Campaign.CompleteCampaign is {
-      yield event CampaignCompleted(campaignId = completeCampaign.campaignId, finalMetrics = completeCampaign.finalMetrics, completedAt = system.now)
     }
     on command ArchiveCampaign is {
       let campaignArchived: type CampaignArchived = prompt("the campaign archived that results from archive campaign")
@@ -412,35 +479,11 @@ aggregate event-sourced entity Campaign as router is {
     on targetAudienceRemoved: event TargetAudienceRemoved is {
       remove from field Campaign.DraftState.targetAudiences where audienceId == targetAudienceRemoved.audienceId
     }
-    on event CampaignScheduled is {
-      let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign scheduled")
-      morph entity CampaignContext.Campaign to state CampaignContext.Campaign.ScheduledState with campaignStateRecord
-    }
-    on event CampaignLaunched is {
-      let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign launched")
-      morph entity CampaignContext.Campaign to state CampaignContext.Campaign.ActiveState with campaignStateRecord
-    }
-    on event CampaignPaused is {
-      let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign paused")
-      morph entity CampaignContext.Campaign to state CampaignContext.Campaign.PausedState with campaignStateRecord
-    }
-    on event CampaignResumed is {
-      let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign resumed")
-      morph entity CampaignContext.Campaign to state CampaignContext.Campaign.ActiveState with campaignStateRecord
-    }
     on performanceMetricsRecorded: event PerformanceMetricsRecorded is {
       remove from field Campaign.ActiveState.channelMetrics where channelId == performanceMetricsRecorded.channelPerformance.channelId
       append performanceMetricsRecorded.channelPerformance to field Campaign.ActiveState.channelMetrics
       set field Campaign.ActiveState.aggregateMetrics to prompt("the aggregate metrics re-summed over channelMetrics")
       set field Campaign.ActiveState.info.spentBudget to prompt("spentBudget plus channelPerformance.metrics.spend")
-    }
-    on event CampaignCompleted is {
-      let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign completed")
-      morph entity CampaignContext.Campaign to state CampaignContext.Campaign.CompletedState with campaignStateRecord
-    }
-    on event CampaignArchived is {
-      let campaignStateRecord: type Campaign.CampaignStateRecord = prompt("the campaign state record that results from campaign archived")
-      morph entity CampaignContext.Campaign to state CampaignContext.Campaign.ArchivedState with campaignStateRecord
     }
   } with {
     briefly "Processes campaign commands"

@@ -363,25 +363,81 @@ aggregate event-sourced entity SupplyOrder as router is {
       |The DraftState state of the SupplyOrder.
     }
   }
-  state PendingApprovalState of record SupplyOrder.PendingApprovalStateData with {
+  state PendingApprovalState of record SupplyOrder.PendingApprovalStateData is {
+    initial handler PendingApprovalStateHandler is {
+      on requisitionApproved: event RequisitionApproved is {
+        morph entity SupplyOrder to state SupplyOrder.ApprovedState with record SupplyOrder.ApprovedStateData(requisitionId = requisitionApproved.requisitionId, approvedBy = requisitionApproved.approvedBy, approvalDate = requisitionApproved.approvalDate, approvalNotes = requisitionApproved.approvalNotes, requestedBy = PendingApprovalStateData.requestedBy, items = PendingApprovalStateData.items)
+      }
+      on approveRequisition: command ApproveRequisition is {
+        yield event RequisitionApproved(requisitionId = approveRequisition.requisitionId, approvedBy = approveRequisition.approvedBy, approvalDate = approveRequisition.approvalDate, approvalNotes = approveRequisition.approvalNotes, supplyOrderId = approveRequisition.supplyOrderId)
+      }
+    } with {
+      briefly "While PendingApprovalState"
+      described as {
+        |The commands and folds accepted while the entity is in PendingApprovalState.
+      }
+    }
+  } with {
     briefly "PendingApprovalState state"
     described as {
       |The PendingApprovalState state of the SupplyOrder.
     }
   }
-  state ApprovedState of record SupplyOrder.ApprovedStateData with {
+  state ApprovedState of record SupplyOrder.ApprovedStateData is {
+    initial handler ApprovedStateHandler is {
+      on orderPlaced: event OrderPlaced is {
+        morph entity SupplyOrder to state SupplyOrder.OrderedState with record SupplyOrder.OrderedStateData(purchaseOrderId = orderPlaced.purchaseOrderId, requisitionId = orderPlaced.requisitionId, vendorId = orderPlaced.vendorId, orderDate = orderPlaced.orderDate, expectedDeliveryDate = orderPlaced.expectedDeliveryDate, totalAmount = orderPlaced.totalAmount, lines = prompt("the lines of this ordered state data"))
+      }
+      on placeOrder: command PlaceOrder is {
+        yield event OrderPlaced(purchaseOrderId = placeOrder.purchaseOrderId, requisitionId = placeOrder.requisitionId, vendorId = placeOrder.vendorId, expectedDeliveryDate = placeOrder.expectedDeliveryDate, orderDate = system.now, totalAmount = sum of SupplyOrder.ApprovedState.items as l by l.extendedCost)
+      }
+    } with {
+      briefly "While ApprovedState"
+      described as {
+        |The commands and folds accepted while the entity is in ApprovedState.
+      }
+    }
+  } with {
     briefly "ApprovedState state"
     described as {
       |The ApprovedState state of the SupplyOrder.
     }
   }
-  state OrderedState of record SupplyOrder.OrderedStateData with {
+  state OrderedState of record SupplyOrder.OrderedStateData is {
+    initial handler OrderedStateHandler is {
+      on shipmentReceived: event ShipmentReceived is {
+        morph entity SupplyOrder to state SupplyOrder.FullyReceivedState with record SupplyOrder.FullyReceivedStateData(purchaseOrderId = shipmentReceived.purchaseOrderId, vendorId = OrderedStateData.vendorId, lines = OrderedStateData.lines, receipts = prompt("the receipts of this fully received state data"), completionDate = prompt("the completion date of this fully received state data"), lastIssueId = empty, lastIssuedItemId = empty, lastIssuedQuantity = empty, lastIssuedAt = empty, lastDepartmentCharged = empty)
+      }
+      on receiveShipment: command ReceiveShipment is {
+        yield event ShipmentReceived(receiptId = receiveShipment.receiptId, purchaseOrderId = receiveShipment.purchaseOrderId, receiptDate = receiveShipment.receiptDate, receivedBy = receiveShipment.receivedBy, linesReceived = count of receiveShipment.lines, totalQuantityReceived = sum of receiveShipment.lines as l by l.quantityReceived, hasDiscrepancies = receiveShipment.discrepancyNotes != empty)
+      }
+    } with {
+      briefly "While OrderedState"
+      described as {
+        |The commands and folds accepted while the entity is in OrderedState.
+      }
+    }
+  } with {
     briefly "OrderedState state"
     described as {
       |The OrderedState state of the SupplyOrder.
     }
   }
-  state PartiallyReceivedState of record SupplyOrder.PartiallyReceivedStateData with {
+  state PartiallyReceivedState of record SupplyOrder.PartiallyReceivedStateData is {
+    initial handler PartiallyReceivedStateHandler is {
+      on shipmentReceived: event ShipmentReceived is {
+        morph entity SupplyOrder to state SupplyOrder.FullyReceivedState with record SupplyOrder.FullyReceivedStateData(purchaseOrderId = shipmentReceived.purchaseOrderId, vendorId = PartiallyReceivedStateData.vendorId, lines = PartiallyReceivedStateData.lines, receipts = prompt("the receipts of this fully received state data"), completionDate = prompt("the completion date of this fully received state data"), lastIssueId = empty, lastIssuedItemId = empty, lastIssuedQuantity = empty, lastIssuedAt = empty, lastDepartmentCharged = empty)
+      }
+      on receiveShipment: command ReceiveShipment is {
+        yield event ShipmentReceived(receiptId = receiveShipment.receiptId, purchaseOrderId = receiveShipment.purchaseOrderId, receiptDate = receiveShipment.receiptDate, receivedBy = receiveShipment.receivedBy, linesReceived = count of receiveShipment.lines, totalQuantityReceived = sum of receiveShipment.lines as l by l.quantityReceived, hasDiscrepancies = receiveShipment.discrepancyNotes != empty)
+      }
+    } with {
+      briefly "While PartiallyReceivedState"
+      described as {
+        |The commands and folds accepted while the entity is in PartiallyReceivedState.
+      }
+    }
+  } with {
     briefly "PartiallyReceivedState state"
     described as {
       |The PartiallyReceivedState state of the SupplyOrder.
@@ -407,15 +463,6 @@ aggregate event-sourced entity SupplyOrder as router is {
       morph entity SupplyOrder to state SupplyOrder.PendingApprovalState with record SupplyOrder.PendingApprovalStateData(requisitionId = requisitionId, requestedBy = requestedBy, requestDate = requestDate, items = items, justification = justification, urgency = urgency, submittedDate = prompt("the submitted date of this pending approval state data"))
       send event RequisitionCreated(supplyOrderId = self.id, requisitionId = requisitionId, requestedBy = requestedBy, requestDate = requestDate, items = items, justification = justification, urgency = urgency) to outlet SupplyContext.SupplyOrder.SupplyOrderEvents2
     }
-    on approveRequisition: command ApproveRequisition is {
-      yield event RequisitionApproved(requisitionId = approveRequisition.requisitionId, approvedBy = approveRequisition.approvedBy, approvalDate = approveRequisition.approvalDate, approvalNotes = approveRequisition.approvalNotes, supplyOrderId = approveRequisition.supplyOrderId)
-    }
-    on placeOrder: command PlaceOrder is {
-      yield event OrderPlaced(purchaseOrderId = placeOrder.purchaseOrderId, requisitionId = placeOrder.requisitionId, vendorId = placeOrder.vendorId, expectedDeliveryDate = placeOrder.expectedDeliveryDate, orderDate = system.now, totalAmount = sum of SupplyOrder.ApprovedState.items as l by l.extendedCost)
-    }
-    on receiveShipment: command ReceiveShipment is {
-      yield event ShipmentReceived(receiptId = receiveShipment.receiptId, purchaseOrderId = receiveShipment.purchaseOrderId, receiptDate = receiveShipment.receiptDate, receivedBy = receiveShipment.receivedBy, linesReceived = count of receiveShipment.lines, totalQuantityReceived = sum of receiveShipment.lines as l by l.quantityReceived, hasDiscrepancies = receiveShipment.discrepancyNotes != empty)
-    }
     on issueSupplies: command IssueSupplies is {
       let line = one of SupplyOrder.FullyReceivedState.lines as l where l.itemId == issueSupplies.itemId
       when line == empty then
@@ -427,15 +474,6 @@ aggregate event-sourced entity SupplyOrder as router is {
     }
     on other is {
       error "Unknown command received"
-    }
-    on requisitionApproved: event RequisitionApproved is {
-      morph entity SupplyOrder to state SupplyOrder.ApprovedState with record SupplyOrder.ApprovedStateData(requisitionId = requisitionApproved.requisitionId, approvedBy = requisitionApproved.approvedBy, approvalDate = requisitionApproved.approvalDate, approvalNotes = requisitionApproved.approvalNotes, requestedBy = prompt("the requested by of this approved state data"), items = prompt("the items of this approved state data"))
-    }
-    on orderPlaced: event OrderPlaced is {
-      morph entity SupplyOrder to state SupplyOrder.OrderedState with record SupplyOrder.OrderedStateData(purchaseOrderId = orderPlaced.purchaseOrderId, requisitionId = orderPlaced.requisitionId, vendorId = orderPlaced.vendorId, orderDate = orderPlaced.orderDate, expectedDeliveryDate = orderPlaced.expectedDeliveryDate, totalAmount = orderPlaced.totalAmount, lines = prompt("the lines of this ordered state data"))
-    }
-    on shipmentReceived: event ShipmentReceived is {
-      morph entity SupplyOrder to state SupplyOrder.FullyReceivedState with record SupplyOrder.FullyReceivedStateData(purchaseOrderId = shipmentReceived.purchaseOrderId, vendorId = prompt("the vendor id of this fully received state data"), lines = prompt("the lines of this fully received state data"), receipts = prompt("the receipts of this fully received state data"), completionDate = prompt("the completion date of this fully received state data"), lastIssueId = empty, lastIssuedItemId = empty, lastIssuedQuantity = empty, lastIssuedAt = empty, lastDepartmentCharged = empty)
     }
     on suppliesIssued: event SuppliesIssued is {
       set field SupplyOrder.FullyReceivedState.lastIssueId to suppliesIssued.issueId

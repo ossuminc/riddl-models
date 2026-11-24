@@ -658,6 +658,18 @@ event-sourced entity Return as router is {
         let returnResult: type ReturnResult = prompt("read the return from the store")
         reply returnResult
       }
+      on returnDenied: event ReturnDenied is {
+        morph entity Return to state Return.Denied with record Return.DeniedReturnData(returnId = returnDenied.returnId, deniedBy = returnDenied.deniedBy, reason = returnDenied.reason, stateValue = RequestedReturnData.stateValue, orderId = RequestedReturnData.orderId, customerId = RequestedReturnData.customerId, deniedAt = returnDenied.deniedAt)
+      }
+      on returnApproved: event ReturnApproved is {
+        morph entity Return to state Return.Approved with record Return.ApprovedReturnData(returnId = returnApproved.returnId, returnLabel = returnApproved.returnLabel, approvedBy = returnApproved.approvedBy, stateValue = RequestedReturnData.stateValue, orderId = RequestedReturnData.orderId, customerId = RequestedReturnData.customerId, returnItems = RequestedReturnData.returnItems, approvedAt = returnApproved.approvedAt)
+      }
+      on denyReturn: command DenyReturn is {
+        yield event ReturnDenied(returnId = denyReturn.returnId, deniedBy = denyReturn.deniedBy, reason = denyReturn.reason, deniedAt = system.now)
+      }
+      on approveReturn: command ApproveReturn is {
+        yield event ReturnApproved(returnId = approveReturn.returnId, approvedBy = approveReturn.approvedBy, returnLabel = approveReturn.returnLabel, approvedAt = system.now)
+      }
     } with {
       briefly "Requested init handler"
       described as {
@@ -670,13 +682,47 @@ event-sourced entity Return as router is {
       |The Requested state of the Return.
     }
   }
-  state Approved of record Return.ApprovedReturnData with {
+  state Approved of record Return.ApprovedReturnData is {
+    initial handler ApprovedHandler is {
+      on returnReceived: event ReturnReceived is {
+        morph entity Return to state Return.Received with record Return.ReceivedReturnData(returnId = returnReceived.returnId, receivedAt = returnReceived.receivedAt, condition = returnReceived.condition, stateValue = ApprovedReturnData.stateValue, orderId = ApprovedReturnData.orderId, customerId = ApprovedReturnData.customerId, returnItems = ApprovedReturnData.returnItems)
+      }
+      on receiveReturn: command ReceiveReturn is {
+        yield event ReturnReceived(returnId = receiveReturn.returnId, receivedAt = receiveReturn.receivedAt, condition = receiveReturn.condition, allItemsReceived = receiveReturn.allItemsReceived)
+      }
+    } with {
+      briefly "While Approved"
+      described as {
+        |The commands and folds accepted while the entity is in Approved.
+      }
+    }
+  } with {
     briefly "Approved state"
     described as {
       |The Approved state of the Return.
     }
   }
-  state Received of record Return.ReceivedReturnData with {
+  state Received of record Return.ReceivedReturnData is {
+    initial handler ReceivedHandler is {
+      on refundProcessed: event RefundProcessed is {
+        morph entity Return to state Return.Refunded with record Return.RefundedReturnData(returnId = refundProcessed.returnId, refundAmount = refundProcessed.refundAmount, refundMethod = refundProcessed.refundMethod, stateValue = ReceivedReturnData.stateValue, orderId = refundProcessed.orderId, customerId = ReceivedReturnData.customerId, refundedAt = prompt("the refunded at of this refunded return data"))
+      }
+      on returnDenied: event ReturnDenied is {
+        morph entity Return to state Return.Denied with record Return.DeniedReturnData(returnId = returnDenied.returnId, deniedBy = returnDenied.deniedBy, reason = returnDenied.reason, stateValue = ReceivedReturnData.stateValue, orderId = ReceivedReturnData.orderId, customerId = ReceivedReturnData.customerId, deniedAt = returnDenied.deniedAt)
+      }
+      on processRefund: command ProcessRefund is {
+        yield event RefundProcessed(returnId = processRefund.returnId, refundAmount = processRefund.refundAmount, refundMethod = processRefund.refundMethod, orderId = Return.Received.orderId, processedAt = system.now)
+      }
+      on denyReturn: command DenyReturn is {
+        yield event ReturnDenied(returnId = denyReturn.returnId, deniedBy = denyReturn.deniedBy, reason = denyReturn.reason, deniedAt = system.now)
+      }
+    } with {
+      briefly "While Received"
+      described as {
+        |The commands and folds accepted while the entity is in Received.
+      }
+    }
+  } with {
     briefly "Received state"
     described as {
       |The Received state of the Return.
@@ -699,30 +745,6 @@ event-sourced entity Return as router is {
     on init(orderId: type OrderId, customerId: type CustomerId, returnItems: type ReturnItemRecord+, returnReason: type ReturnReason, requestedAt: TimeStamp, comments: String(1,1000)?) is {
       morph entity Return to state Return.Requested with record Return.RequestedReturnData(returnId = self.id, orderId = orderId, customerId = customerId, returnItems = returnItems, returnReason = returnReason, comments = comments, stateValue = prompt("the state value of this requested return data"), requestedAt = prompt("the requested at of this requested return data"))
       send event ReturnRequested(returnId = self.id, orderId = orderId, customerId = customerId, returnItems = returnItems, returnReason = returnReason, requestedAt = requestedAt, comments = comments) to outlet OrderContext.Return.ReturnEvents2
-    }
-    on approveReturn: command ApproveReturn is {
-      yield event ReturnApproved(returnId = approveReturn.returnId, approvedBy = approveReturn.approvedBy, returnLabel = approveReturn.returnLabel, approvedAt = system.now)
-    }
-    on denyReturn: command DenyReturn is {
-      yield event ReturnDenied(returnId = denyReturn.returnId, deniedBy = denyReturn.deniedBy, reason = denyReturn.reason, deniedAt = system.now)
-    }
-    on receiveReturn: command ReceiveReturn is {
-      yield event ReturnReceived(returnId = receiveReturn.returnId, receivedAt = receiveReturn.receivedAt, condition = receiveReturn.condition, allItemsReceived = receiveReturn.allItemsReceived)
-    }
-    on processRefund: command ProcessRefund is {
-      yield event RefundProcessed(returnId = processRefund.returnId, refundAmount = processRefund.refundAmount, refundMethod = processRefund.refundMethod, orderId = Return.Received.orderId, processedAt = system.now)
-    }
-    on refundProcessed: event RefundProcessed is {
-      morph entity Return to state Return.Refunded with record Return.RefundedReturnData(returnId = refundProcessed.returnId, refundAmount = refundProcessed.refundAmount, refundMethod = refundProcessed.refundMethod, stateValue = prompt("the state value of this refunded return data"), orderId = prompt("the order id of this refunded return data"), customerId = prompt("the customer id of this refunded return data"), refundedAt = prompt("the refunded at of this refunded return data"))
-    }
-    on returnReceived: event ReturnReceived is {
-      morph entity Return to state Return.Received with record Return.ReceivedReturnData(returnId = returnReceived.returnId, receivedAt = returnReceived.receivedAt, condition = returnReceived.condition, stateValue = prompt("the state value of this received return data"), orderId = prompt("the order id of this received return data"), customerId = prompt("the customer id of this received return data"), returnItems = prompt("the return items of this received return data"))
-    }
-    on returnDenied: event ReturnDenied is {
-      morph entity Return to state Return.Denied with record Return.DeniedReturnData(returnId = returnDenied.returnId, deniedBy = returnDenied.deniedBy, reason = returnDenied.reason, stateValue = prompt("the state value of this denied return data"), orderId = prompt("the order id of this denied return data"), customerId = prompt("the customer id of this denied return data"), deniedAt = prompt("the denied at of this denied return data"))
-    }
-    on returnApproved: event ReturnApproved is {
-      morph entity Return to state Return.Approved with record Return.ApprovedReturnData(returnId = returnApproved.returnId, returnLabel = returnApproved.returnLabel, approvedBy = returnApproved.approvedBy, stateValue = prompt("the state value of this approved return data"), orderId = prompt("the order id of this approved return data"), customerId = prompt("the customer id of this approved return data"), returnItems = prompt("the return items of this approved return data"), approvedAt = prompt("the approved at of this approved return data"))
     }
   } with {
     briefly "Processes return lifecycle commands"

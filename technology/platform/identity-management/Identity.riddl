@@ -800,6 +800,10 @@ entity Identity as router is {
         let identityQueryResult: type IdentityQueryResult = prompt("read the identity query from the store")
         reply identityQueryResult
       }
+      on verifyIdentity: command VerifyIdentity is {
+        morph entity IdentityContext.Identity to state IdentityContext.Identity.ActiveState with record Identity.ActiveStateData(identityId = verifyIdentity.identityId, email = PendingStateData.email, displayName = PendingStateData.displayName, status = prompt("the status of this active state data"), credentials = PendingStateData.credentials, activeSessions = empty, grants = empty, createdAt = PendingStateData.createdAt, verifiedAt = prompt("the verified at of this active state data"))
+        tell event IdentityVerified(identityId = verifyIdentity.identityId, verificationMethod = verifyIdentity.verificationMethod, verifiedAt = system.now) to entity IdentityContext.Identity
+      }
     } with {
       briefly "PendingState initialization"
       described as {
@@ -813,13 +817,45 @@ entity Identity as router is {
       |The pending state of the Identity entity, carrying PendingStateData.
     }
   }
-  state ActiveState of record Identity.ActiveStateData with {
+  state ActiveState of record Identity.ActiveStateData is {
+    initial handler ActiveStateHandler is {
+      on suspendIdentity: command SuspendIdentity is {
+        morph entity IdentityContext.Identity to state IdentityContext.Identity.SuspendedState with record Identity.SuspendedStateData(identityId = suspendIdentity.identityId, suspendedBy = suspendIdentity.suspendedBy, email = ActiveStateData.email, displayName = ActiveStateData.displayName, credentials = ActiveStateData.credentials, suspendedAt = prompt("the suspended at of this suspended state data"), suspensionReason = prompt("the suspension reason of this suspended state data"))
+        tell event IdentitySuspended(identityId = suspendIdentity.identityId, reason = suspendIdentity.reason, suspendedBy = suspendIdentity.suspendedBy, suspendedAt = system.now) to entity IdentityContext.Identity by identityId
+      }
+      on deactivateIdentity: command DeactivateIdentity is {
+        morph entity IdentityContext.Identity to state IdentityContext.Identity.DeactivatedState with record Identity.DeactivatedStateData(identityId = deactivateIdentity.identityId, deactivatedBy = deactivateIdentity.deactivatedBy, email = ActiveStateData.email, displayName = ActiveStateData.displayName, deactivatedAt = prompt("the deactivated at of this deactivated state data"), deactivationReason = prompt("the deactivation reason of this deactivated state data"))
+        tell event IdentityDeactivated(identityId = deactivateIdentity.identityId, reason = deactivateIdentity.reason, deactivatedBy = deactivateIdentity.deactivatedBy, deactivatedAt = system.now) to entity IdentityContext.Identity by identityId
+      }
+    } with {
+      briefly "While ActiveState"
+      described as {
+        |The commands and folds accepted while the entity is in ActiveState.
+      }
+    }
+  } with {
     briefly "Active state"
     described as {
       |The active state of the Identity entity, carrying ActiveStateData.
     }
   }
-  state SuspendedState of record Identity.SuspendedStateData with {
+  state SuspendedState of record Identity.SuspendedStateData is {
+    initial handler SuspendedStateHandler is {
+      on reactivateIdentity: command ReactivateIdentity is {
+        morph entity IdentityContext.Identity to state IdentityContext.Identity.ActiveState with record Identity.ActiveStateData(identityId = reactivateIdentity.identityId, email = SuspendedStateData.email, displayName = SuspendedStateData.displayName, status = prompt("the status of this active state data"), credentials = SuspendedStateData.credentials, activeSessions = empty, grants = empty, createdAt = prompt("the created at of this active state data"), verifiedAt = prompt("the verified at of this active state data"))
+        tell event IdentityReactivated(identityId = reactivateIdentity.identityId, reactivatedBy = reactivateIdentity.reactivatedBy, reactivatedAt = system.now) to entity IdentityContext.Identity by identityId
+      }
+      on deactivateIdentity: command DeactivateIdentity is {
+        morph entity IdentityContext.Identity to state IdentityContext.Identity.DeactivatedState with record Identity.DeactivatedStateData(identityId = deactivateIdentity.identityId, deactivatedBy = deactivateIdentity.deactivatedBy, email = SuspendedStateData.email, displayName = SuspendedStateData.displayName, deactivatedAt = prompt("the deactivated at of this deactivated state data"), deactivationReason = prompt("the deactivation reason of this deactivated state data"))
+        tell event IdentityDeactivated(identityId = deactivateIdentity.identityId, reason = deactivateIdentity.reason, deactivatedBy = deactivateIdentity.deactivatedBy, deactivatedAt = system.now) to entity IdentityContext.Identity by identityId
+      }
+    } with {
+      briefly "While SuspendedState"
+      described as {
+        |The commands and folds accepted while the entity is in SuspendedState.
+      }
+    }
+  } with {
     briefly "Suspended state"
     described as {
       |The suspended state of the Identity entity, carrying SuspendedStateData.
@@ -837,10 +873,6 @@ entity Identity as router is {
       morph entity IdentityContext.Identity to state IdentityContext.Identity.PendingState with record Identity.PendingStateData(identityId = self.id, email = email, displayName = displayName, credentials = prompt("the credentials of this pending state data"), createdAt = prompt("the created at of this pending state data"))
       tell event IdentityCreated(identityId = self.id, email = email, displayName = displayName, createdAt = prompt("the created at of this identity created")) to entity IdentityContext.Identity
     }
-    on verifyIdentity: command VerifyIdentity is {
-      morph entity IdentityContext.Identity to state IdentityContext.Identity.ActiveState with record Identity.ActiveStateData(identityId = verifyIdentity.identityId, email = prompt("the email of this active state data"), displayName = prompt("the display name of this active state data"), status = prompt("the status of this active state data"), credentials = prompt("the credentials of this active state data"), activeSessions = empty, grants = empty, createdAt = prompt("the created at of this active state data"), verifiedAt = prompt("the verified at of this active state data"))
-      tell event IdentityVerified(identityId = verifyIdentity.identityId, verificationMethod = verifyIdentity.verificationMethod, verifiedAt = system.now) to entity IdentityContext.Identity
-    }
     on addCredential: command AddCredential is {
       tell event CredentialAdded(identityId = addCredential.identityId, credentialType = addCredential.credentialType, credentialId = prompt("the credential id of this credential added"), addedAt = system.now) to entity IdentityContext.Identity
     }
@@ -856,18 +888,6 @@ entity Identity as router is {
     }
     on revokeSession: command RevokeSession is {
       tell event SessionRevoked(sessionId = revokeSession.sessionId, identityId = revokeSession.identityId, reason = revokeSession.reason, revokedAt = system.now) to entity IdentityContext.Identity
-    }
-    on suspendIdentity: command SuspendIdentity is {
-      morph entity IdentityContext.Identity to state IdentityContext.Identity.SuspendedState with record Identity.SuspendedStateData(identityId = suspendIdentity.identityId, suspendedBy = suspendIdentity.suspendedBy, email = prompt("the email of this suspended state data"), displayName = prompt("the display name of this suspended state data"), credentials = prompt("the credentials of this suspended state data"), suspendedAt = prompt("the suspended at of this suspended state data"), suspensionReason = prompt("the suspension reason of this suspended state data"))
-      tell event IdentitySuspended(identityId = suspendIdentity.identityId, reason = suspendIdentity.reason, suspendedBy = suspendIdentity.suspendedBy, suspendedAt = system.now) to entity IdentityContext.Identity by identityId
-    }
-    on reactivateIdentity: command ReactivateIdentity is {
-      morph entity IdentityContext.Identity to state IdentityContext.Identity.ActiveState with record Identity.ActiveStateData(identityId = reactivateIdentity.identityId, email = prompt("the email of this active state data"), displayName = prompt("the display name of this active state data"), status = prompt("the status of this active state data"), credentials = prompt("the credentials of this active state data"), activeSessions = empty, grants = empty, createdAt = prompt("the created at of this active state data"), verifiedAt = prompt("the verified at of this active state data"))
-      tell event IdentityReactivated(identityId = reactivateIdentity.identityId, reactivatedBy = reactivateIdentity.reactivatedBy, reactivatedAt = system.now) to entity IdentityContext.Identity by identityId
-    }
-    on deactivateIdentity: command DeactivateIdentity is {
-      morph entity IdentityContext.Identity to state IdentityContext.Identity.DeactivatedState with record Identity.DeactivatedStateData(identityId = deactivateIdentity.identityId, deactivatedBy = deactivateIdentity.deactivatedBy, email = prompt("the email of this deactivated state data"), displayName = prompt("the display name of this deactivated state data"), deactivatedAt = prompt("the deactivated at of this deactivated state data"), deactivationReason = prompt("the deactivation reason of this deactivated state data"))
-      tell event IdentityDeactivated(identityId = deactivateIdentity.identityId, reason = deactivateIdentity.reason, deactivatedBy = deactivateIdentity.deactivatedBy, deactivatedAt = system.now) to entity IdentityContext.Identity by identityId
     }
     on authenticationFailed: event AuthenticationFailed is {
       do "apply AuthenticationFailed to the identity so it can be persisted and replayed"

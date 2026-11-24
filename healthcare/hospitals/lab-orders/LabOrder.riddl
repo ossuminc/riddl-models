@@ -873,19 +873,69 @@ entity LabOrder as router is {
     }
   }
   // States
-  state OrderedState of record LabOrder.OrderedStateData with {
+  state OrderedState of record LabOrder.OrderedStateData is {
+    initial handler OrderedStateHandler is {
+      on collectSpecimen: command LabContext.LabOrder.CollectSpecimen is {
+        morph entity LabContext.LabOrder to state LabContext.LabOrder.CollectionState with record LabOrder.CollectionStateData(orderId = collectSpecimen.orderId, specimen = collectSpecimen.specimen, patient = OrderedStateData.patient, orderingProvider = OrderedStateData.orderingProvider, facilityId = OrderedStateData.facilityId, orderDetails = OrderedStateData.orderDetails, status = OrderedStateData.status, orderedAt = OrderedStateData.orderedAt)
+        tell event SpecimenCollected(orderId = collectSpecimen.orderId, specimen = collectSpecimen.specimen) to entity LabContext.LabOrder
+      }
+      on cancelOrder: command CancelOrder is {
+        morph entity LabContext.LabOrder to state LabContext.LabOrder.CancelledState with record LabOrder.CancelledStateData(orderId = cancelOrder.orderId, cancelledBy = cancelOrder.cancelledBy, cancelledAt = cancelOrder.cancelledAt, reason = cancelOrder.reason, patient = OrderedStateData.patient, orderingProvider = OrderedStateData.orderingProvider, orderDetails = OrderedStateData.orderDetails, status = OrderedStateData.status)
+        tell event OrderCancelled(orderId = cancelOrder.orderId, cancelledBy = cancelOrder.cancelledBy, cancelledAt = cancelOrder.cancelledAt, reason = cancelOrder.reason) to entity LabContext.LabOrder
+      }
+    } with {
+      briefly "While OrderedState"
+      described as {
+        |The commands and folds accepted while the entity is in OrderedState.
+      }
+    }
+  } with {
     briefly "Ordered state"
     described as {
       |State for a newly placed lab order.
     }
   }
-  state CollectionState of record LabOrder.CollectionStateData with {
+  state CollectionState of record LabOrder.CollectionStateData is {
+    initial handler CollectionStateHandler is {
+      on receiveSpecimen: command ReceiveSpecimen is {
+        morph entity LabContext.LabOrder to state LabContext.LabOrder.TestingState with record LabOrder.TestingStateData(orderId = receiveSpecimen.orderId, receivedAt = receiveSpecimen.receivedAt, patient = CollectionStateData.patient, orderingProvider = CollectionStateData.orderingProvider, facilityId = CollectionStateData.facilityId, orderDetails = CollectionStateData.orderDetails, specimen = CollectionStateData.specimen, testingStartedAt = empty, pendingResults = empty, status = CollectionStateData.status, orderedAt = CollectionStateData.orderedAt)
+        tell event SpecimenReceived(orderId = receiveSpecimen.orderId, specimenId = receiveSpecimen.specimenId, receivedBy = receiveSpecimen.receivedBy, receivedAt = receiveSpecimen.receivedAt, specimenCondition = receiveSpecimen.specimenCondition) to entity LabContext.LabOrder
+      }
+      on cancelOrder: command CancelOrder is {
+        morph entity LabContext.LabOrder to state LabContext.LabOrder.CancelledState with record LabOrder.CancelledStateData(orderId = cancelOrder.orderId, cancelledBy = cancelOrder.cancelledBy, cancelledAt = cancelOrder.cancelledAt, reason = cancelOrder.reason, patient = CollectionStateData.patient, orderingProvider = CollectionStateData.orderingProvider, orderDetails = CollectionStateData.orderDetails, status = CollectionStateData.status)
+        tell event OrderCancelled(orderId = cancelOrder.orderId, cancelledBy = cancelOrder.cancelledBy, cancelledAt = cancelOrder.cancelledAt, reason = cancelOrder.reason) to entity LabContext.LabOrder
+      }
+    } with {
+      briefly "While CollectionState"
+      described as {
+        |The commands and folds accepted while the entity is in CollectionState.
+      }
+    }
+  } with {
     briefly "Collection state"
     described as {
       |State for specimen collection.
     }
   }
-  state TestingState of record LabOrder.TestingStateData with {
+  state TestingState of record LabOrder.TestingStateData is {
+    initial handler TestingStateHandler is {
+      on verifyResult: command VerifyResult is {
+        morph entity LabContext.LabOrder to state LabContext.LabOrder.ResultedState with record LabOrder.ResultedStateData(orderId = verifyResult.orderId, patient = TestingStateData.patient, orderingProvider = TestingStateData.orderingProvider, facilityId = TestingStateData.facilityId, orderDetails = TestingStateData.orderDetails, specimen = TestingStateData.specimen, results = prompt("the results of this resulted state data"), criticalValues = empty, status = TestingStateData.status, orderedAt = TestingStateData.orderedAt, completedAt = prompt("the completed at of this resulted state data"))
+        tell event ResultVerified(orderId = verifyResult.orderId, resultId = verifyResult.resultId, verifiedBy = verifyResult.verifiedBy, verifiedAt = verifyResult.verifiedAt, comments = verifyResult.comments) to entity LabContext.LabOrder
+        let sendResultNotification: type PhysicianNotificationService.SendResultNotification = prompt("a SendResultNotification telling the ordering provider their patient's result is verified and available, naming the test and summarising what it showed")
+        send sendResultNotification to outlet LabOrderToPhysicianNotification
+      }
+      on cancelOrder: command CancelOrder is {
+        morph entity LabContext.LabOrder to state LabContext.LabOrder.CancelledState with record LabOrder.CancelledStateData(orderId = cancelOrder.orderId, cancelledBy = cancelOrder.cancelledBy, cancelledAt = cancelOrder.cancelledAt, reason = cancelOrder.reason, patient = TestingStateData.patient, orderingProvider = TestingStateData.orderingProvider, orderDetails = TestingStateData.orderDetails, status = TestingStateData.status)
+        tell event OrderCancelled(orderId = cancelOrder.orderId, cancelledBy = cancelOrder.cancelledBy, cancelledAt = cancelOrder.cancelledAt, reason = cancelOrder.reason) to entity LabContext.LabOrder
+      }
+    } with {
+      briefly "While TestingState"
+      described as {
+        |The commands and folds accepted while the entity is in TestingState.
+      }
+    }
+  } with {
     briefly "Testing state"
     described as {
       |State for active testing.
@@ -909,25 +959,11 @@ entity LabOrder as router is {
       morph entity LabContext.LabOrder to state LabContext.LabOrder.OrderedState with record LabOrder.OrderedStateData(orderId = self.id, patient = patient, orderingProvider = orderingProvider, facilityId = facilityId, orderDetails = orderDetails, orderedAt = orderedAt, status = prompt("the status of this ordered state data"))
       tell event LabOrderPlaced(orderId = self.id, patient = patient, orderingProvider = orderingProvider, facilityId = facilityId, orderDetails = orderDetails, orderedAt = orderedAt) to entity LabContext.LabOrder
     }
-    on collectSpecimen: command LabContext.LabOrder.CollectSpecimen is {
-      morph entity LabContext.LabOrder to state LabContext.LabOrder.CollectionState with record LabOrder.CollectionStateData(orderId = collectSpecimen.orderId, specimen = collectSpecimen.specimen, patient = prompt("the patient of this collection state data"), orderingProvider = prompt("the ordering provider of this collection state data"), facilityId = prompt("the facility id of this collection state data"), orderDetails = prompt("the order details of this collection state data"), status = prompt("the status of this collection state data"), orderedAt = prompt("the ordered at of this collection state data"))
-      tell event SpecimenCollected(orderId = collectSpecimen.orderId, specimen = collectSpecimen.specimen) to entity LabContext.LabOrder
-    }
-    on receiveSpecimen: command ReceiveSpecimen is {
-      morph entity LabContext.LabOrder to state LabContext.LabOrder.TestingState with record LabOrder.TestingStateData(orderId = receiveSpecimen.orderId, receivedAt = receiveSpecimen.receivedAt, patient = prompt("the patient of this testing state data"), orderingProvider = prompt("the ordering provider of this testing state data"), facilityId = prompt("the facility id of this testing state data"), orderDetails = prompt("the order details of this testing state data"), specimen = prompt("the specimen of this testing state data"), testingStartedAt = empty, pendingResults = empty, status = prompt("the status of this testing state data"), orderedAt = prompt("the ordered at of this testing state data"))
-      tell event SpecimenReceived(orderId = receiveSpecimen.orderId, specimenId = receiveSpecimen.specimenId, receivedBy = receiveSpecimen.receivedBy, receivedAt = receiveSpecimen.receivedAt, specimenCondition = receiveSpecimen.specimenCondition) to entity LabContext.LabOrder
-    }
     on startTesting: command StartTesting is {
       tell event TestingStarted(orderId = startTesting.orderId, testId = startTesting.testId, startedBy = startTesting.startedBy, startedAt = startTesting.startedAt, analyzerId = startTesting.analyzerId) to entity LabContext.LabOrder
     }
     on recordResult: command RecordResult is {
       tell event ResultRecorded(orderId = recordResult.orderId, result = recordResult.result) to entity LabContext.LabOrder
-    }
-    on verifyResult: command VerifyResult is {
-      morph entity LabContext.LabOrder to state LabContext.LabOrder.ResultedState with record LabOrder.ResultedStateData(orderId = verifyResult.orderId, patient = prompt("the patient of this resulted state data"), orderingProvider = prompt("the ordering provider of this resulted state data"), facilityId = prompt("the facility id of this resulted state data"), orderDetails = prompt("the order details of this resulted state data"), specimen = prompt("the specimen of this resulted state data"), results = prompt("the results of this resulted state data"), criticalValues = empty, status = prompt("the status of this resulted state data"), orderedAt = prompt("the ordered at of this resulted state data"), completedAt = prompt("the completed at of this resulted state data"))
-      tell event ResultVerified(orderId = verifyResult.orderId, resultId = verifyResult.resultId, verifiedBy = verifyResult.verifiedBy, verifiedAt = verifyResult.verifiedAt, comments = verifyResult.comments) to entity LabContext.LabOrder
-      let sendResultNotification: type PhysicianNotificationService.SendResultNotification = prompt("a SendResultNotification telling the ordering provider their patient's result is verified and available, naming the test and summarising what it showed")
-      send sendResultNotification to outlet LabOrderToPhysicianNotification
     }
     on reportCriticalValue: command ReportCriticalValue is {
       tell event CriticalValueReported(orderId = reportCriticalValue.orderId, criticalValue = reportCriticalValue.criticalValue) to entity LabContext.LabOrder
@@ -938,10 +974,6 @@ entity LabOrder as router is {
       tell event CriticalValueReadBack(orderId = confirmCriticalValueReadBack.orderId, resultId = confirmCriticalValueReadBack.resultId, confirmedBy = confirmCriticalValueReadBack.confirmedBy, confirmedAt = confirmCriticalValueReadBack.confirmedAt) to entity LabContext.LabOrder
       let recordReadBack: type PhysicianNotificationService.RecordReadBack = prompt("a RecordReadBack telling the notification service who repeated the critical value back and when, so its record of the alert is closed")
       send recordReadBack to outlet LabOrderToPhysicianNotification
-    }
-    on cancelOrder: command CancelOrder is {
-      morph entity LabContext.LabOrder to state LabContext.LabOrder.CancelledState with record LabOrder.CancelledStateData(orderId = cancelOrder.orderId, cancelledBy = cancelOrder.cancelledBy, cancelledAt = cancelOrder.cancelledAt, reason = cancelOrder.reason, patient = prompt("the patient of this cancelled state data"), orderingProvider = prompt("the ordering provider of this cancelled state data"), orderDetails = prompt("the order details of this cancelled state data"), status = prompt("the status of this cancelled state data"))
-      tell event OrderCancelled(orderId = cancelOrder.orderId, cancelledBy = cancelOrder.cancelledBy, cancelledAt = cancelOrder.cancelledAt, reason = cancelOrder.reason) to entity LabContext.LabOrder
     }
     on getLabOrder: query GetLabOrder is {
       reply result LabOrderResult(orderId = getLabOrder.orderId, status = prompt("the status of this lab order result"))

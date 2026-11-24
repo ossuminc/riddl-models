@@ -677,13 +677,41 @@ event-sourced entity Payment as router is {
     }
   }
   // States
-  state AuthorizedState of record Payment.AuthorizedStateData with {
+  state AuthorizedState of record Payment.AuthorizedStateData is {
+    initial handler AuthorizedStateHandler is {
+      on paymentCaptured: event PaymentCaptured is {
+        morph entity PaymentContext.Payment to state PaymentContext.Payment.CapturedState with record Payment.CapturedStateData(paymentId = paymentCaptured.paymentId, info = AuthorizedStateData.info, card = AuthorizedStateData.card, status = AuthorizedStateData.status, capturedAmount = paymentCaptured.capturedAmount, refunds = prompt("the refunds of this captured state data"), disputes = prompt("the disputes of this captured state data"), capturedAt = paymentCaptured.capturedAt, lastDisputeResolvedAt = empty, lastRefundedAt = empty)
+      }
+      on capturePayment: command CapturePayment is {
+        yield event PaymentCaptured(paymentId = capturePayment.paymentId, capturedAmount = capturePayment.captureAmount otherwise Payment.AuthorizedState.info.amount, capturedAt = system.now)
+      }
+    } with {
+      briefly "While AuthorizedState"
+      described as {
+        |The commands and folds accepted while the entity is in AuthorizedState.
+      }
+    }
+  } with {
     briefly "Authorized state"
     described as {
       |Payment has been authorized.
     }
   }
-  state CapturedState of record Payment.CapturedStateData with {
+  state CapturedState of record Payment.CapturedStateData is {
+    initial handler CapturedStateHandler is {
+      on paymentSettled: event PaymentSettled is {
+        morph entity PaymentContext.Payment to state PaymentContext.Payment.SettledState with record Payment.SettledStateData(paymentId = paymentSettled.paymentId, settlement = paymentSettled.settlement, info = CapturedStateData.info, settledAt = paymentSettled.settledAt)
+      }
+      on settlePayment: command SettlePayment is {
+        yield event PaymentSettled(paymentId = settlePayment.paymentId, settlement = settlePayment.settlement, settledAt = system.now)
+      }
+    } with {
+      briefly "While CapturedState"
+      described as {
+        |The commands and folds accepted while the entity is in CapturedState.
+      }
+    }
+  } with {
     briefly "Captured state"
     described as {
       |Payment has been captured for settlement.
@@ -718,17 +746,11 @@ event-sourced entity Payment as router is {
     on declinePayment: command DeclinePayment is {
       yield event PaymentDeclined(paymentId = declinePayment.paymentId, info = Payment.AuthorizedState.info, result = declinePayment.result, declinedAt = system.now)
     }
-    on capturePayment: command CapturePayment is {
-      yield event PaymentCaptured(paymentId = capturePayment.paymentId, capturedAmount = capturePayment.captureAmount otherwise Payment.AuthorizedState.info.amount, capturedAt = system.now)
-    }
     on voidPayment: command VoidPayment is {
       yield event PaymentVoided(paymentId = voidPayment.paymentId, reason = voidPayment.reason, voidedAt = system.now)
     }
     on refundPayment: command RefundPayment is {
       yield event PaymentRefunded(paymentId = refundPayment.paymentId, refund = refundPayment.refund, refundedAt = system.now)
-    }
-    on settlePayment: command SettlePayment is {
-      yield event PaymentSettled(paymentId = settlePayment.paymentId, settlement = settlePayment.settlement, settledAt = system.now)
     }
     on recordDispute: command RecordDispute is {
       yield event DisputeRecorded(paymentId = recordDispute.paymentId, dispute = recordDispute.dispute, recordedAt = system.now)
@@ -748,9 +770,6 @@ event-sourced entity Payment as router is {
       set field Payment.CapturedState.disputes to prompt("the disputes with disputeId marked resolved with resolution")
       set field Payment.CapturedState.lastDisputeResolvedAt to disputeResolved.resolvedAt
     }
-    on paymentCaptured: event PaymentCaptured is {
-      morph entity PaymentContext.Payment to state PaymentContext.Payment.CapturedState with record Payment.CapturedStateData(paymentId = paymentCaptured.paymentId, info = prompt("the info of this captured state data"), card = prompt("the card of this captured state data"), status = prompt("the status of this captured state data"), capturedAmount = prompt("the captured amount of this captured state data"), refunds = prompt("the refunds of this captured state data"), disputes = prompt("the disputes of this captured state data"), capturedAt = prompt("the captured at of this captured state data"), lastDisputeResolvedAt = empty, lastRefundedAt = empty)
-    }
     on paymentDeclined: event PaymentDeclined is {
       set field Payment.AuthorizedState.status to PaymentStatus.Declined
       set field Payment.AuthorizedState.authResult to paymentDeclined.result
@@ -760,9 +779,6 @@ event-sourced entity Payment as router is {
       set field Payment.CapturedState.status to PaymentStatus.Refunded
       append paymentRefunded.refund to field Payment.CapturedState.refunds
       set field Payment.CapturedState.lastRefundedAt to paymentRefunded.refundedAt
-    }
-    on paymentSettled: event PaymentSettled is {
-      morph entity PaymentContext.Payment to state PaymentContext.Payment.SettledState with record Payment.SettledStateData(paymentId = paymentSettled.paymentId, settlement = paymentSettled.settlement, info = prompt("the info of this settled state data"), settledAt = prompt("the settled at of this settled state data"))
     }
     on paymentVoided: event PaymentVoided is {
       set field Payment.AuthorizedState.status to PaymentStatus.Voided

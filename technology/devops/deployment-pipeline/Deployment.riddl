@@ -912,31 +912,125 @@ event-sourced entity Deployment as router is {
     }
   }
   // States
-  state PendingState of record Deployment.PendingData with {
+  state PendingState of record Deployment.PendingData is {
+    initial handler PendingStateHandler is {
+      on deploymentAwaitingApproval: event DeploymentAwaitingApproval is {
+        morph entity Deployment to state Deployment.AwaitingApprovalState with record Deployment.AwaitingApprovalData(deploymentId = deploymentAwaitingApproval.deploymentId, targetEnvironment = deploymentAwaitingApproval.targetEnvironment, awaitingApprovalSince = deploymentAwaitingApproval.requestedAt, artifactId = PendingData.artifactId, deploymentStrategy = PendingData.deploymentStrategy, healthCheckUrl = PendingData.healthCheckUrl, timeoutMinutes = PendingData.timeoutMinutes, initiatedBy = PendingData.initiatedBy, initiatedAt = PendingData.initiatedAt)
+      }
+      on requestDeploymentApproval: command RequestDeploymentApproval is {
+        yield event DeploymentAwaitingApproval(deploymentId = requestDeploymentApproval.deploymentId, targetEnvironment = requestDeploymentApproval.targetEnvironment, requestedAt = system.now)
+      }
+    } with {
+      briefly "While PendingState"
+      described as {
+        |The commands and folds accepted while the entity is in PendingState.
+      }
+    }
+  } with {
     briefly "Pending state"
     described as {
       |The entity in Pending state.
     }
   }
-  state AwaitingApprovalState of record Deployment.AwaitingApprovalData with {
+  state AwaitingApprovalState of record Deployment.AwaitingApprovalData is {
+    initial handler AwaitingApprovalStateHandler is {
+      on deploymentApproved: event DeploymentApproved is {
+        morph entity Deployment to state Deployment.ApprovedState with record Deployment.ApprovedData(deploymentId = deploymentApproved.deploymentId, approvedBy = deploymentApproved.approvedBy, approvalNotes = deploymentApproved.approvalNotes, artifactId = AwaitingApprovalData.artifactId, targetEnvironment = AwaitingApprovalData.targetEnvironment, deploymentStrategy = AwaitingApprovalData.deploymentStrategy, healthCheckUrl = AwaitingApprovalData.healthCheckUrl, timeoutMinutes = AwaitingApprovalData.timeoutMinutes, initiatedBy = AwaitingApprovalData.initiatedBy, approvedAt = deploymentApproved.approvedAt)
+      }
+      on approveDeployment: command ApproveDeployment is {
+        yield event DeploymentApproved(deploymentId = approveDeployment.deploymentId, approvedBy = approveDeployment.approvedBy, approvalNotes = approveDeployment.approvalNotes, approvedAt = system.now)
+      }
+    } with {
+      briefly "While AwaitingApprovalState"
+      described as {
+        |The commands and folds accepted while the entity is in AwaitingApprovalState.
+      }
+    }
+  } with {
     briefly "AwaitingApproval state"
     described as {
       |The entity in AwaitingApproval state.
     }
   }
-  state ApprovedState of record Deployment.ApprovedData with {
+  state ApprovedState of record Deployment.ApprovedData is {
+    initial handler ApprovedStateHandler is {
+      on deploymentStarted: event DeploymentStarted is {
+        morph entity Deployment to state Deployment.InProgressState with record Deployment.InProgressData(deploymentId = deploymentStarted.deploymentId, artifactId = deploymentStarted.artifactId, targetEnvironment = deploymentStarted.targetEnvironment, deploymentStrategy = ApprovedData.deploymentStrategy, healthCheckUrl = ApprovedData.healthCheckUrl, timeoutMinutes = ApprovedData.timeoutMinutes, initiatedBy = ApprovedData.initiatedBy, updatedApprovedBy = empty, startedAt = deploymentStarted.startedAt, updatedPreviousArtifactId = empty)
+      }
+      on executeDeployment: command ExecuteDeployment is {
+        yield event DeploymentStarted(deploymentId = executeDeployment.deploymentId, artifactId = Deployment.ApprovedState.artifactId, targetEnvironment = Deployment.ApprovedState.targetEnvironment, startedAt = system.now)
+      }
+    } with {
+      briefly "While ApprovedState"
+      described as {
+        |The commands and folds accepted while the entity is in ApprovedState.
+      }
+    }
+  } with {
     briefly "Approved state"
     described as {
       |The entity in Approved state.
     }
   }
-  state InProgressState of record Deployment.InProgressData with {
+  state InProgressState of record Deployment.InProgressData is {
+    initial handler InProgressStateHandler is {
+      on deploymentRolledBack: event DeploymentRolledBack is {
+        morph entity Deployment to state Deployment.RolledBackState with record Deployment.RolledBackData(deploymentId = deploymentRolledBack.deploymentId, rolledBackBy = deploymentRolledBack.rolledBackBy, artifactId = InProgressData.artifactId, targetEnvironment = InProgressData.targetEnvironment, previousArtifactId = deploymentRolledBack.previousArtifactId, rollbackReason = deploymentRolledBack.rollbackReason, rolledBackAt = deploymentRolledBack.rolledBackAt)
+      }
+      on deploymentVerified: event DeploymentVerified is {
+        morph entity Deployment to state Deployment.VerifyingState with record Deployment.VerifyingData(deploymentId = deploymentVerified.deploymentId, artifactId = InProgressData.artifactId, targetEnvironment = InProgressData.targetEnvironment, healthCheckUrl = InProgressData.healthCheckUrl, startedAt = InProgressData.startedAt, deployedAt = prompt("the deployed at of this verifying data"), updatedPreviousArtifactId = empty)
+      }
+      on deploymentFailed: event DeploymentFailed is {
+        morph entity Deployment to state Deployment.FailedState with record Deployment.FailedData(deploymentId = deploymentFailed.deploymentId, failureReason = deploymentFailed.failureReason, failedAt = deploymentFailed.failedAt, artifactId = InProgressData.artifactId, targetEnvironment = InProgressData.targetEnvironment)
+      }
+      on rollbackDeployment: command RollbackDeployment is {
+        yield event DeploymentRolledBack(deploymentId = rollbackDeployment.deploymentId, rolledBackBy = rollbackDeployment.rolledBackBy, previousArtifactId = rollbackDeployment.restoreArtifactId, rollbackReason = rollbackDeployment.reason, rolledBackAt = system.now)
+      }
+      on verifyDeployment: command VerifyDeployment is {
+        yield event DeploymentVerified(deploymentId = verifyDeployment.deploymentId, healthCheckPassed = verifyDeployment.healthCheckPassed, verifiedAt = system.now)
+      }
+      on failDeployment: command FailDeployment is {
+        yield event DeploymentFailed(deploymentId = failDeployment.deploymentId, failureReason = failDeployment.failureReason, failedAt = system.now)
+      }
+    } with {
+      briefly "While InProgressState"
+      described as {
+        |The commands and folds accepted while the entity is in InProgressState.
+      }
+    }
+  } with {
     briefly "InProgress state"
     described as {
       |The entity in InProgress state.
     }
   }
-  state VerifyingState of record Deployment.VerifyingData with {
+  state VerifyingState of record Deployment.VerifyingData is {
+    initial handler VerifyingStateHandler is {
+      on deploymentCompleted: event DeploymentCompleted is {
+        morph entity Deployment to state Deployment.CompletedState with record Deployment.CompletedData(deploymentId = deploymentCompleted.deploymentId, completedAt = deploymentCompleted.completedAt, artifactId = VerifyingData.artifactId, targetEnvironment = VerifyingData.targetEnvironment, startedAt = VerifyingData.startedAt, durationMinutes = deploymentCompleted.durationMinutes, healthCheckPassed = prompt("the health check passed of this completed data"))
+      }
+      on deploymentRolledBack: event DeploymentRolledBack is {
+        morph entity Deployment to state Deployment.RolledBackState with record Deployment.RolledBackData(deploymentId = deploymentRolledBack.deploymentId, rolledBackBy = deploymentRolledBack.rolledBackBy, artifactId = VerifyingData.artifactId, targetEnvironment = VerifyingData.targetEnvironment, previousArtifactId = deploymentRolledBack.previousArtifactId, rollbackReason = deploymentRolledBack.rollbackReason, rolledBackAt = deploymentRolledBack.rolledBackAt)
+      }
+      on deploymentFailed: event DeploymentFailed is {
+        morph entity Deployment to state Deployment.FailedState with record Deployment.FailedData(deploymentId = deploymentFailed.deploymentId, failureReason = deploymentFailed.failureReason, failedAt = deploymentFailed.failedAt, artifactId = VerifyingData.artifactId, targetEnvironment = VerifyingData.targetEnvironment)
+      }
+      on completeDeployment: command CompleteDeployment is {
+        yield event DeploymentCompleted(deploymentId = completeDeployment.deploymentId, completedAt = completeDeployment.completedAt, durationMinutes = minutes of (completeDeployment.completedAt - Deployment.VerifyingState.startedAt))
+      }
+      on rollbackDeployment: command RollbackDeployment is {
+        yield event DeploymentRolledBack(deploymentId = rollbackDeployment.deploymentId, rolledBackBy = rollbackDeployment.rolledBackBy, previousArtifactId = rollbackDeployment.restoreArtifactId, rollbackReason = rollbackDeployment.reason, rolledBackAt = system.now)
+      }
+      on failDeployment: command FailDeployment is {
+        yield event DeploymentFailed(deploymentId = failDeployment.deploymentId, failureReason = failDeployment.failureReason, failedAt = system.now)
+      }
+    } with {
+      briefly "While VerifyingState"
+      described as {
+        |The commands and folds accepted while the entity is in VerifyingState.
+      }
+    }
+  } with {
     briefly "Verifying state"
     described as {
       |The entity in Verifying state.
@@ -948,7 +1042,21 @@ event-sourced entity Deployment as router is {
       |The entity in Completed state.
     }
   }
-  state FailedState of record Deployment.FailedData with {
+  state FailedState of record Deployment.FailedData is {
+    initial handler FailedStateHandler is {
+      on deploymentRolledBack: event DeploymentRolledBack is {
+        morph entity Deployment to state Deployment.RolledBackState with record Deployment.RolledBackData(deploymentId = deploymentRolledBack.deploymentId, rolledBackBy = deploymentRolledBack.rolledBackBy, artifactId = FailedData.artifactId, targetEnvironment = FailedData.targetEnvironment, previousArtifactId = deploymentRolledBack.previousArtifactId, rollbackReason = deploymentRolledBack.rollbackReason, rolledBackAt = deploymentRolledBack.rolledBackAt)
+      }
+      on rollbackDeployment: command RollbackDeployment is {
+        yield event DeploymentRolledBack(deploymentId = rollbackDeployment.deploymentId, rolledBackBy = rollbackDeployment.rolledBackBy, previousArtifactId = rollbackDeployment.restoreArtifactId, rollbackReason = rollbackDeployment.reason, rolledBackAt = system.now)
+      }
+    } with {
+      briefly "While FailedState"
+      described as {
+        |The commands and folds accepted while the entity is in FailedState.
+      }
+    }
+  } with {
     briefly "Failed state"
     described as {
       |The entity in Failed state.
@@ -966,50 +1074,8 @@ event-sourced entity Deployment as router is {
       morph entity Deployment to state Deployment.PendingState with record Deployment.PendingData(deploymentId = self.id, artifactId = artifactId, targetEnvironment = targetEnvironment, deploymentStrategy = deploymentStrategy, healthCheckUrl = healthCheckUrl, timeoutMinutes = timeoutMinutes, requiresApproval = requiresApproval, initiatedBy = initiatedBy, initiatedAt = prompt("the initiated at of this pending data"))
       send event DeploymentInitiated(deploymentId = self.id, artifactId = artifactId, targetEnvironment = targetEnvironment, initiatedBy = initiatedBy, initiatedAt = initiatedAt, deploymentStrategy = deploymentStrategy, healthCheckUrl = healthCheckUrl, timeoutMinutes = timeoutMinutes, requiresApproval = requiresApproval) to outlet DeploymentContext.Deployment.DeploymentEvents
     }
-    on deploymentApproved: event DeploymentApproved is {
-      morph entity Deployment to state Deployment.ApprovedState with record Deployment.ApprovedData(deploymentId = deploymentApproved.deploymentId, approvedBy = deploymentApproved.approvedBy, approvalNotes = deploymentApproved.approvalNotes, artifactId = prompt("the artifact id of this approved data"), targetEnvironment = prompt("the target environment of this approved data"), deploymentStrategy = prompt("the deployment strategy of this approved data"), healthCheckUrl = prompt("the health check url of this approved data"), timeoutMinutes = prompt("the timeout minutes of this approved data"), initiatedBy = prompt("the initiated by of this approved data"), approvedAt = prompt("the approved at of this approved data"))
-    }
-    on deploymentCompleted: event DeploymentCompleted is {
-      morph entity Deployment to state Deployment.CompletedState with record Deployment.CompletedData(deploymentId = deploymentCompleted.deploymentId, completedAt = deploymentCompleted.completedAt, artifactId = prompt("the artifact id of this completed data"), targetEnvironment = prompt("the target environment of this completed data"), startedAt = prompt("the started at of this completed data"), durationMinutes = prompt("the duration minutes of this completed data"), healthCheckPassed = prompt("the health check passed of this completed data"))
-    }
-    on deploymentRolledBack: event DeploymentRolledBack is {
-      morph entity Deployment to state Deployment.RolledBackState with record Deployment.RolledBackData(deploymentId = deploymentRolledBack.deploymentId, rolledBackBy = deploymentRolledBack.rolledBackBy, artifactId = prompt("the artifact id of this rolled back data"), targetEnvironment = prompt("the target environment of this rolled back data"), previousArtifactId = prompt("the previous artifact id of this rolled back data"), rollbackReason = prompt("the rollback reason of this rolled back data"), rolledBackAt = prompt("the rolled back at of this rolled back data"))
-    }
-    on deploymentStarted: event DeploymentStarted is {
-      morph entity Deployment to state Deployment.InProgressState with record Deployment.InProgressData(deploymentId = deploymentStarted.deploymentId, artifactId = prompt("the artifact id of this in progress data"), targetEnvironment = prompt("the target environment of this in progress data"), deploymentStrategy = prompt("the deployment strategy of this in progress data"), healthCheckUrl = prompt("the health check url of this in progress data"), timeoutMinutes = prompt("the timeout minutes of this in progress data"), initiatedBy = prompt("the initiated by of this in progress data"), updatedApprovedBy = empty, startedAt = prompt("the started at of this in progress data"), updatedPreviousArtifactId = empty)
-    }
-    on deploymentVerified: event DeploymentVerified is {
-      morph entity Deployment to state Deployment.VerifyingState with record Deployment.VerifyingData(deploymentId = deploymentVerified.deploymentId, artifactId = prompt("the artifact id of this verifying data"), targetEnvironment = prompt("the target environment of this verifying data"), healthCheckUrl = prompt("the health check url of this verifying data"), startedAt = prompt("the started at of this verifying data"), deployedAt = prompt("the deployed at of this verifying data"), updatedPreviousArtifactId = empty)
-    }
-    on approveDeployment: command ApproveDeployment is {
-      yield event DeploymentApproved(deploymentId = approveDeployment.deploymentId, approvedBy = approveDeployment.approvedBy, approvalNotes = approveDeployment.approvalNotes, approvedAt = system.now)
-    }
-    on executeDeployment: command ExecuteDeployment is {
-      yield event DeploymentStarted(deploymentId = executeDeployment.deploymentId, artifactId = Deployment.ApprovedState.artifactId, targetEnvironment = Deployment.ApprovedState.targetEnvironment, startedAt = system.now)
-    }
-    on verifyDeployment: command VerifyDeployment is {
-      yield event DeploymentVerified(deploymentId = verifyDeployment.deploymentId, healthCheckPassed = verifyDeployment.healthCheckPassed, verifiedAt = system.now)
-    }
-    on completeDeployment: command CompleteDeployment is {
-      yield event DeploymentCompleted(deploymentId = completeDeployment.deploymentId, completedAt = completeDeployment.completedAt, durationMinutes = minutes of (completeDeployment.completedAt - Deployment.VerifyingState.startedAt))
-    }
-    on requestDeploymentApproval: command RequestDeploymentApproval is {
-      yield event DeploymentAwaitingApproval(deploymentId = requestDeploymentApproval.deploymentId, targetEnvironment = requestDeploymentApproval.targetEnvironment, requestedAt = system.now)
-    }
-    on failDeployment: command FailDeployment is {
-      yield event DeploymentFailed(deploymentId = failDeployment.deploymentId, failureReason = failDeployment.failureReason, failedAt = system.now)
-    }
-    on rollbackDeployment: command RollbackDeployment is {
-      yield event DeploymentRolledBack(deploymentId = rollbackDeployment.deploymentId, rolledBackBy = rollbackDeployment.rolledBackBy, previousArtifactId = rollbackDeployment.restoreArtifactId, rollbackReason = rollbackDeployment.reason, rolledBackAt = system.now)
-    }
     on getDeployment: query GetDeployment is {
       reply result DeploymentQueryResult(deploymentId = getDeployment.deploymentId)
-    }
-    on deploymentAwaitingApproval: event DeploymentAwaitingApproval is {
-      morph entity Deployment to state Deployment.AwaitingApprovalState with record Deployment.AwaitingApprovalData(deploymentId = deploymentAwaitingApproval.deploymentId, targetEnvironment = deploymentAwaitingApproval.targetEnvironment, awaitingApprovalSince = deploymentAwaitingApproval.requestedAt, artifactId = prompt("the artifact id of the pending deployment"), deploymentStrategy = prompt("the deployment strategy of the pending deployment"), healthCheckUrl = prompt("the health check url of the pending deployment"), timeoutMinutes = prompt("the timeout minutes of the pending deployment"), initiatedBy = prompt("who initiated the pending deployment"), initiatedAt = prompt("when the pending deployment was initiated"))
-    }
-    on deploymentFailed: event DeploymentFailed is {
-      morph entity Deployment to state Deployment.FailedState with record Deployment.FailedData(deploymentId = deploymentFailed.deploymentId, failureReason = deploymentFailed.failureReason, failedAt = deploymentFailed.failedAt, artifactId = prompt("the artifact id of the deployment that failed"), targetEnvironment = prompt("the target environment of the deployment that failed"))
     }
   } with {
     briefly "Handles deployment lifecycle commands"

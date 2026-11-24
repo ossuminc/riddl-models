@@ -728,7 +728,26 @@ entity AssemblyOrder as router is {
     }
   }
   // States
-  state ActiveState of record AssemblyOrder.ActiveStateData with {
+  state ActiveState of record AssemblyOrder.ActiveStateData is {
+    initial handler ActiveStateHandler is {
+      on completeAssembly: command CompleteAssembly is {
+        morph entity AssemblyContext.AssemblyOrder to state AssemblyContext.AssemblyOrder.CompletedState with record AssemblyOrder.CompletedStateData(assemblyOrderId = completeAssembly.assemblyOrderId, completion = completeAssembly.completion, qualityChecks = completeAssembly.qualityChecks, workOrderId = ActiveStateData.workOrderId, product = ActiveStateData.product, workStation = ActiveStateData.workStation, defects = empty, totalSteps = prompt("the total steps of this completed state data"), completedSteps = prompt("the completed steps of this completed state data"))
+        tell event AssemblyCompleted(assemblyOrderId = completeAssembly.assemblyOrderId, completion = completeAssembly.completion, qualityCheckCount = prompt("the quality check count of this assembly completed"), defectCount = prompt("the defect count of this assembly completed")) to entity AssemblyContext.AssemblyOrder
+        send command WorkOrderService.ReportAssemblyComplete(assemblyOrderId = completeAssembly.assemblyOrderId, workOrderId = prompt("the work order id of this report assembly complete"), completedQuantity = prompt("the completed quantity of this report assembly complete"), passedQuality = prompt("the passed quality of this report assembly complete")) to outlet AssemblyOrderToWorkOrder
+      }
+      on failAssembly: command FailAssembly is {
+        morph entity AssemblyContext.AssemblyOrder to state AssemblyContext.AssemblyOrder.CompletedState with record AssemblyOrder.CompletedStateData(assemblyOrderId = failAssembly.assemblyOrderId, workOrderId = ActiveStateData.workOrderId, product = ActiveStateData.product, workStation = ActiveStateData.workStation, completion = prompt("the completion of this completed state data"), qualityChecks = prompt("the quality checks of this completed state data"), defects = empty, totalSteps = prompt("the total steps of this completed state data"), completedSteps = prompt("the completed steps of this completed state data"))
+        tell event AssemblyFailed(assemblyOrderId = failAssembly.assemblyOrderId, reason = failAssembly.reason, failedBy = failAssembly.failedBy, failedAt = system.now) to entity AssemblyContext.AssemblyOrder
+        send command WorkOrderService.ReportAssemblyFailure(workOrderId = prompt("the work order the failed assembly belongs to"), assemblyOrderId = failAssembly.assemblyOrderId, reason = failAssembly.reason) to outlet AssemblyOrderToWorkOrder
+        send command QualityService.RecordFailure(assemblyOrderId = failAssembly.assemblyOrderId, reason = failAssembly.reason, defects = empty) to outlet AssemblyOrderToQuality
+      }
+    } with {
+      briefly "While ActiveState"
+      described as {
+        |The commands and folds accepted while the entity is in ActiveState.
+      }
+    }
+  } with {
     briefly "Active state"
     described as {
       |The entity in Active state.
@@ -785,22 +804,11 @@ entity AssemblyOrder as router is {
       tell event DefectRecorded(assemblyOrderId = recordDefect.assemblyOrderId, defect = recordDefect.defect) to entity AssemblyContext.AssemblyOrder
       send command QualityService.RecordDefect(assemblyOrderId = recordDefect.assemblyOrderId, defect = recordDefect.defect) to outlet AssemblyOrderToQuality
     }
-    on completeAssembly: command CompleteAssembly is {
-      morph entity AssemblyContext.AssemblyOrder to state AssemblyContext.AssemblyOrder.CompletedState with record AssemblyOrder.CompletedStateData(assemblyOrderId = completeAssembly.assemblyOrderId, completion = completeAssembly.completion, qualityChecks = completeAssembly.qualityChecks, workOrderId = prompt("the work order id of this completed state data"), product = prompt("the product of this completed state data"), workStation = prompt("the work station of this completed state data"), defects = empty, totalSteps = prompt("the total steps of this completed state data"), completedSteps = prompt("the completed steps of this completed state data"))
-      tell event AssemblyCompleted(assemblyOrderId = completeAssembly.assemblyOrderId, completion = completeAssembly.completion, qualityCheckCount = prompt("the quality check count of this assembly completed"), defectCount = prompt("the defect count of this assembly completed")) to entity AssemblyContext.AssemblyOrder
-      send command WorkOrderService.ReportAssemblyComplete(assemblyOrderId = completeAssembly.assemblyOrderId, workOrderId = prompt("the work order id of this report assembly complete"), completedQuantity = prompt("the completed quantity of this report assembly complete"), passedQuality = prompt("the passed quality of this report assembly complete")) to outlet AssemblyOrderToWorkOrder
-    }
     on holdAssembly: command HoldAssembly is {
       tell event AssemblyHeld(assemblyOrderId = holdAssembly.assemblyOrderId, hold = holdAssembly.hold) to entity AssemblyContext.AssemblyOrder
     }
     on releaseHold: command ReleaseHold is {
       tell event HoldReleased(assemblyOrderId = releaseHold.assemblyOrderId, releasedBy = releaseHold.releasedBy, releasedAt = system.now) to entity AssemblyContext.AssemblyOrder
-    }
-    on failAssembly: command FailAssembly is {
-      morph entity AssemblyContext.AssemblyOrder to state AssemblyContext.AssemblyOrder.CompletedState with record AssemblyOrder.CompletedStateData(assemblyOrderId = failAssembly.assemblyOrderId, workOrderId = prompt("the work order id of this completed state data"), product = prompt("the product of this completed state data"), workStation = prompt("the work station of this completed state data"), completion = prompt("the completion of this completed state data"), qualityChecks = prompt("the quality checks of this completed state data"), defects = empty, totalSteps = prompt("the total steps of this completed state data"), completedSteps = prompt("the completed steps of this completed state data"))
-      tell event AssemblyFailed(assemblyOrderId = failAssembly.assemblyOrderId, reason = failAssembly.reason, failedBy = failAssembly.failedBy, failedAt = system.now) to entity AssemblyContext.AssemblyOrder
-      send command WorkOrderService.ReportAssemblyFailure(workOrderId = prompt("the work order the failed assembly belongs to"), assemblyOrderId = failAssembly.assemblyOrderId, reason = failAssembly.reason) to outlet AssemblyOrderToWorkOrder
-      send command QualityService.RecordFailure(assemblyOrderId = failAssembly.assemblyOrderId, reason = failAssembly.reason, defects = empty) to outlet AssemblyOrderToQuality
     }
     on recordWorkOrderDetails: command RecordWorkOrderDetails is {
       tell event WorkOrderDetailsRecorded(assemblyOrderId = recordWorkOrderDetails.assemblyOrderId, quantity = recordWorkOrderDetails.quantity, priority = recordWorkOrderDetails.priority, workOrderStatus = recordWorkOrderDetails.workOrderStatus, recordedAt = system.now) to entity AssemblyContext.AssemblyOrder

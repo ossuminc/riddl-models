@@ -532,6 +532,12 @@ aggregate event-sourced entity LegalCase as router is {
         let legalCaseResult: type LegalCaseResult = prompt("read the legal case from the store")
         reply legalCaseResult
       }
+      on caseClosed: event CaseClosed is {
+        morph entity CaseContext.LegalCase to state CaseContext.LegalCase.ClosedState with record LegalCase.ClosedStateData(caseId = caseClosed.caseId, resolution = caseClosed.resolution, closingNotes = caseClosed.closingNotes, closedAt = caseClosed.closedAt, matterId = prompt("the matter id of this closed state data"), title = prompt("the title of this closed state data"), clientInfo = prompt("the client info of this closed state data"), practiceArea = prompt("the practice area of this closed state data"), billingType = prompt("the billing type of this closed state data"), description = prompt("the description of this closed state data"), status = prompt("the status of this closed state data"), teamMembers = empty, timeEntries = empty, expenses = empty, documents = empty, courtDates = empty, notes = empty, createdAt = IntakeStateData.createdAt)
+      }
+      on closeCase: command CloseCase is {
+        yield event CaseClosed(caseId = closeCase.caseId, resolution = closeCase.resolution, closingNotes = closeCase.closingNotes, closedAt = system.now)
+      }
     } with {
       briefly "IntakeState initialization"
       described as {
@@ -545,19 +551,70 @@ aggregate event-sourced entity LegalCase as router is {
       |The intake state of the LegalCase entity, carrying IntakeStateData.
     }
   }
-  state ActiveState of record LegalCase.ActiveStateData with {
+  state ActiveState of record LegalCase.ActiveStateData is {
+    initial handler ActiveStateHandler is {
+      on casePlacedOnHold: event CasePlacedOnHold is {
+        morph entity CaseContext.LegalCase to state CaseContext.LegalCase.OnHoldState with record LegalCase.OnHoldStateData(caseId = casePlacedOnHold.caseId, heldAt = casePlacedOnHold.heldAt, matterId = ActiveStateData.matterId, title = ActiveStateData.title, clientInfo = ActiveStateData.clientInfo, practiceArea = ActiveStateData.practiceArea, billingType = ActiveStateData.billingType, description = ActiveStateData.description, status = ActiveStateData.status, priority = ActiveStateData.priority, teamMembers = empty, timeEntries = empty, expenses = empty, documents = empty, courtDates = empty, notes = empty, holdReason = prompt("the hold reason of this on hold state data"), createdAt = ActiveStateData.createdAt, lastUpdated = ActiveStateData.lastUpdated)
+      }
+      on caseClosed: event CaseClosed is {
+        morph entity CaseContext.LegalCase to state CaseContext.LegalCase.ClosedState with record LegalCase.ClosedStateData(caseId = caseClosed.caseId, resolution = caseClosed.resolution, closingNotes = caseClosed.closingNotes, closedAt = caseClosed.closedAt, matterId = ActiveStateData.matterId, title = ActiveStateData.title, clientInfo = ActiveStateData.clientInfo, practiceArea = ActiveStateData.practiceArea, billingType = ActiveStateData.billingType, description = ActiveStateData.description, status = ActiveStateData.status, teamMembers = empty, timeEntries = empty, expenses = empty, documents = empty, courtDates = empty, notes = empty, createdAt = ActiveStateData.createdAt)
+      }
+      on placeCaseOnHold: command PlaceCaseOnHold is {
+        yield event CasePlacedOnHold(caseId = placeCaseOnHold.caseId, reason = placeCaseOnHold.reason, heldAt = system.now)
+      }
+      on closeCase: command CloseCase is {
+        yield event CaseClosed(caseId = closeCase.caseId, resolution = closeCase.resolution, closingNotes = closeCase.closingNotes, closedAt = system.now)
+      }
+    } with {
+      briefly "While ActiveState"
+      described as {
+        |The commands and folds accepted while the entity is in ActiveState.
+      }
+    }
+  } with {
     briefly "Active state"
     described as {
       |The active state of the LegalCase entity, carrying ActiveStateData.
     }
   }
-  state OnHoldState of record LegalCase.OnHoldStateData with {
+  state OnHoldState of record LegalCase.OnHoldStateData is {
+    initial handler OnHoldStateHandler is {
+      on caseReactivated: event CaseReactivated is {
+        morph entity CaseContext.LegalCase to state CaseContext.LegalCase.ActiveState with record LegalCase.ActiveStateData(caseId = caseReactivated.caseId, matterId = OnHoldStateData.matterId, title = OnHoldStateData.title, clientInfo = OnHoldStateData.clientInfo, practiceArea = OnHoldStateData.practiceArea, billingType = OnHoldStateData.billingType, description = OnHoldStateData.description, status = OnHoldStateData.status, priority = OnHoldStateData.priority, teamMembers = empty, timeEntries = empty, expenses = empty, documents = empty, courtDates = empty, notes = empty, createdAt = OnHoldStateData.createdAt, lastUpdated = OnHoldStateData.lastUpdated, lastPaymentAmount = empty, lastPaymentReceivedOn = empty, lastPaymentTender = empty, conflictWaivingParty = empty, conflictWaiverBasis = empty, lastTeamMemberAssignedOn = empty, lastTimeEntryOn = empty, lastExpenseOn = empty, nextCourtDate = empty)
+      }
+      on caseClosed: event CaseClosed is {
+        morph entity CaseContext.LegalCase to state CaseContext.LegalCase.ClosedState with record LegalCase.ClosedStateData(caseId = caseClosed.caseId, resolution = caseClosed.resolution, closingNotes = caseClosed.closingNotes, closedAt = caseClosed.closedAt, matterId = OnHoldStateData.matterId, title = OnHoldStateData.title, clientInfo = OnHoldStateData.clientInfo, practiceArea = OnHoldStateData.practiceArea, billingType = OnHoldStateData.billingType, description = OnHoldStateData.description, status = OnHoldStateData.status, teamMembers = empty, timeEntries = empty, expenses = empty, documents = empty, courtDates = empty, notes = empty, createdAt = OnHoldStateData.createdAt)
+      }
+      on reactivateCase: command ReactivateCase is {
+        yield event CaseReactivated(caseId = reactivateCase.caseId, reason = reactivateCase.reason, reactivatedAt = system.now)
+      }
+      on closeCase: command CloseCase is {
+        yield event CaseClosed(caseId = closeCase.caseId, resolution = closeCase.resolution, closingNotes = closeCase.closingNotes, closedAt = system.now)
+      }
+    } with {
+      briefly "While OnHoldState"
+      described as {
+        |The commands and folds accepted while the entity is in OnHoldState.
+      }
+    }
+  } with {
     briefly "On hold state"
     described as {
       |The on hold state of the LegalCase entity, carrying OnHoldStateData.
     }
   }
-  state ClosedState of record LegalCase.ClosedStateData with {
+  state ClosedState of record LegalCase.ClosedStateData is {
+    initial handler ClosedStateHandler is {
+      on caseArchived: event CaseArchived is {
+        morph entity CaseContext.LegalCase to state CaseContext.LegalCase.ArchivedState with record LegalCase.ArchivedStateData(caseId = caseArchived.caseId, archivedAt = caseArchived.archivedAt, matterId = ClosedStateData.matterId, title = ClosedStateData.title, clientName = prompt("the client name of this archived state data"), practiceArea = ClosedStateData.practiceArea, resolution = ClosedStateData.resolution, createdAt = ClosedStateData.createdAt, closedAt = ClosedStateData.closedAt)
+      }
+    } with {
+      briefly "While ClosedState"
+      described as {
+        |The commands and folds accepted while the entity is in ClosedState.
+      }
+    }
+  } with {
     briefly "Closed state"
     described as {
       |The closed state of the LegalCase entity, carrying ClosedStateData.
@@ -620,15 +677,6 @@ aggregate event-sourced entity LegalCase as router is {
     on setCasePriority: command SetCasePriority is {
       yield event CasePrioritySet(caseId = setCasePriority.caseId, oldPriority = LegalCase.ActiveState.priority, newPriority = setCasePriority.priority)
     }
-    on placeCaseOnHold: command PlaceCaseOnHold is {
-      yield event CasePlacedOnHold(caseId = placeCaseOnHold.caseId, reason = placeCaseOnHold.reason, heldAt = system.now)
-    }
-    on reactivateCase: command ReactivateCase is {
-      yield event CaseReactivated(caseId = reactivateCase.caseId, reason = reactivateCase.reason, reactivatedAt = system.now)
-    }
-    on closeCase: command CloseCase is {
-      yield event CaseClosed(caseId = closeCase.caseId, resolution = closeCase.resolution, closingNotes = closeCase.closingNotes, closedAt = system.now)
-    }
     on command ArchiveCase is {
       let caseArchived: type CaseArchived = prompt("the case archived that results from archive case")
       yield caseArchived
@@ -671,18 +719,6 @@ aggregate event-sourced entity LegalCase as router is {
     }
     on casePrioritySet: event CasePrioritySet is {
       set field LegalCase.ActiveState.priority to casePrioritySet.newPriority
-    }
-    on casePlacedOnHold: event CasePlacedOnHold is {
-      morph entity CaseContext.LegalCase to state CaseContext.LegalCase.OnHoldState with record LegalCase.OnHoldStateData(caseId = casePlacedOnHold.caseId, heldAt = casePlacedOnHold.heldAt, matterId = prompt("the matter id of this on hold state data"), title = prompt("the title of this on hold state data"), clientInfo = prompt("the client info of this on hold state data"), practiceArea = prompt("the practice area of this on hold state data"), billingType = prompt("the billing type of this on hold state data"), description = prompt("the description of this on hold state data"), status = prompt("the status of this on hold state data"), priority = prompt("the priority of this on hold state data"), teamMembers = empty, timeEntries = empty, expenses = empty, documents = empty, courtDates = empty, notes = empty, holdReason = prompt("the hold reason of this on hold state data"), createdAt = prompt("the created at of this on hold state data"), lastUpdated = prompt("the last updated of this on hold state data"))
-    }
-    on caseReactivated: event CaseReactivated is {
-      morph entity CaseContext.LegalCase to state CaseContext.LegalCase.ActiveState with record LegalCase.ActiveStateData(caseId = caseReactivated.caseId, matterId = prompt("the matter id of this active state data"), title = prompt("the title of this active state data"), clientInfo = prompt("the client info of this active state data"), practiceArea = prompt("the practice area of this active state data"), billingType = prompt("the billing type of this active state data"), description = prompt("the description of this active state data"), status = prompt("the status of this active state data"), priority = prompt("the priority of this active state data"), teamMembers = empty, timeEntries = empty, expenses = empty, documents = empty, courtDates = empty, notes = empty, createdAt = prompt("the created at of this active state data"), lastUpdated = prompt("the last updated of this active state data"), lastPaymentAmount = empty, lastPaymentReceivedOn = empty, lastPaymentTender = empty, conflictWaivingParty = empty, conflictWaiverBasis = empty, lastTeamMemberAssignedOn = empty, lastTimeEntryOn = empty, lastExpenseOn = empty, nextCourtDate = empty)
-    }
-    on caseClosed: event CaseClosed is {
-      morph entity CaseContext.LegalCase to state CaseContext.LegalCase.ClosedState with record LegalCase.ClosedStateData(caseId = caseClosed.caseId, resolution = caseClosed.resolution, closingNotes = caseClosed.closingNotes, closedAt = caseClosed.closedAt, matterId = prompt("the matter id of this closed state data"), title = prompt("the title of this closed state data"), clientInfo = prompt("the client info of this closed state data"), practiceArea = prompt("the practice area of this closed state data"), billingType = prompt("the billing type of this closed state data"), description = prompt("the description of this closed state data"), status = prompt("the status of this closed state data"), teamMembers = empty, timeEntries = empty, expenses = empty, documents = empty, courtDates = empty, notes = empty, createdAt = prompt("the created at of this closed state data"))
-    }
-    on caseArchived: event CaseArchived is {
-      morph entity CaseContext.LegalCase to state CaseContext.LegalCase.ArchivedState with record LegalCase.ArchivedStateData(caseId = caseArchived.caseId, archivedAt = caseArchived.archivedAt, matterId = prompt("the matter id of this archived state data"), title = prompt("the title of this archived state data"), clientName = prompt("the client name of this archived state data"), practiceArea = prompt("the practice area of this archived state data"), resolution = prompt("the resolution of this archived state data"), createdAt = prompt("the created at of this archived state data"), closedAt = prompt("the closed at of this archived state data"))
     }
   } with {
     briefly "Processes case lifecycle commands"

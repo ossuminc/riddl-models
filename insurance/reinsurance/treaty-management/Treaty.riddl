@@ -954,6 +954,12 @@ aggregate event-sourced entity Treaty as router is {
         let treatyQueryResult: type TreatyQueryResult = prompt("read the treaty query from the store")
         reply treatyQueryResult
       }
+      on treatyRenewed: event TreatyRenewed is {
+        morph entity Treaty to state Treaty.ExpiredState with record Treaty.ExpiredData(treatyId = treatyRenewed.treatyId, cedingCompanyId = prompt("the ceding company id of this expired data"), reinsurerId = prompt("the reinsurer id of this expired data"), terms = prompt("the terms of this expired data"), expirationDate = prompt("the expiration date of this expired data"), totalCessions = prompt("the total cessions of this expired data"), totalCededPremium = prompt("the total ceded premium of this expired data"), totalPaidLosses = prompt("the total paid losses of this expired data"), outstandingReserves = prompt("the outstanding reserves of this expired data"), renewedToTreatyId = empty, finalSettlementDue = empty)
+      }
+      on renewTreaty: command RenewTreaty is {
+        yield event TreatyRenewed(treatyId = renewTreaty.treatyId, renewalTerms = renewTreaty.renewalTerms, newCoveragePeriod = renewTreaty.newCoveragePeriod, newTreatyId = renewTreaty.newTreatyId, timestamp = system.now)
+      }
     } with {
       briefly "Draft state init handler"
       described as {
@@ -966,19 +972,79 @@ aggregate event-sourced entity Treaty as router is {
       |Treaty is in draft form.
     }
   }
-  state NegotiatingState of record Treaty.NegotiatingData with {
+  state NegotiatingState of record Treaty.NegotiatingData is {
+    initial handler NegotiatingStateHandler is {
+      on treatyExecuted: event TreatyExecuted is {
+        morph entity Treaty to state Treaty.ExecutedState with record Treaty.ExecutedData(treatyId = treatyExecuted.treatyId, executionDate = treatyExecuted.executionDate, signatories = treatyExecuted.signatories, cedingCompanyId = NegotiatingData.cedingCompanyId, reinsurerId = NegotiatingData.reinsurerId, terms = prompt("the terms of this executed data"), commission = prompt("the commission of this executed data"), lastBordereauId = empty, lastBordereauPeriodEnd = empty, lastBordereauReceivedAt = empty, cessions = empty, remainingCapacity = empty, lastCessionAt = empty, lastSettlement = empty, lastSettlementAt = empty)
+      }
+      on treatyRenewed: event TreatyRenewed is {
+        morph entity Treaty to state Treaty.ExpiredState with record Treaty.ExpiredData(treatyId = treatyRenewed.treatyId, cedingCompanyId = NegotiatingData.cedingCompanyId, reinsurerId = NegotiatingData.reinsurerId, terms = prompt("the terms of this expired data"), expirationDate = prompt("the expiration date of this expired data"), totalCessions = prompt("the total cessions of this expired data"), totalCededPremium = prompt("the total ceded premium of this expired data"), totalPaidLosses = prompt("the total paid losses of this expired data"), outstandingReserves = prompt("the outstanding reserves of this expired data"), renewedToTreatyId = empty, finalSettlementDue = empty)
+      }
+      on executeTreaty: command ExecuteTreaty is {
+        yield event TreatyExecuted(treatyId = executeTreaty.treatyId, finalTerms = executeTreaty.finalTerms, finalCommission = executeTreaty.finalCommission, executionDate = executeTreaty.executionDate, signatories = executeTreaty.signatories, timestamp = system.now)
+      }
+      on renewTreaty: command RenewTreaty is {
+        yield event TreatyRenewed(treatyId = renewTreaty.treatyId, renewalTerms = renewTreaty.renewalTerms, newCoveragePeriod = renewTreaty.newCoveragePeriod, newTreatyId = renewTreaty.newTreatyId, timestamp = system.now)
+      }
+    } with {
+      briefly "While NegotiatingState"
+      described as {
+        |The commands and folds accepted while the entity is in NegotiatingState.
+      }
+    }
+  } with {
     briefly "Negotiating state"
     described as {
       |Treaty is under negotiation.
     }
   }
-  state ExecutedState of record Treaty.ExecutedData with {
+  state ExecutedState of record Treaty.ExecutedData is {
+    initial handler ExecutedStateHandler is {
+      on treatyRenewed: event TreatyRenewed is {
+        morph entity Treaty to state Treaty.ExpiredState with record Treaty.ExpiredData(treatyId = treatyRenewed.treatyId, cedingCompanyId = ExecutedData.cedingCompanyId, reinsurerId = ExecutedData.reinsurerId, terms = ExecutedData.terms, expirationDate = prompt("the expiration date of this expired data"), totalCessions = prompt("the total cessions of this expired data"), totalCededPremium = prompt("the total ceded premium of this expired data"), totalPaidLosses = prompt("the total paid losses of this expired data"), outstandingReserves = prompt("the outstanding reserves of this expired data"), renewedToTreatyId = empty, finalSettlementDue = empty)
+      }
+      on treatySuspended: event TreatySuspended is {
+        morph entity Treaty to state Treaty.SuspendedState with record Treaty.SuspendedData(treatyId = treatySuspended.treatyId, suspensionDate = treatySuspended.suspensionDate, cedingCompanyId = ExecutedData.cedingCompanyId, reinsurerId = ExecutedData.reinsurerId, terms = ExecutedData.terms, suspensionReason = prompt("the suspension reason of this suspended data"), priorState = prompt("the prior state of this suspended data"))
+      }
+      on treatyTerminated: event TreatyTerminated is {
+        morph entity Treaty to state Treaty.TerminatedState with record Treaty.TerminatedData(treatyId = treatyTerminated.treatyId, terminationDate = treatyTerminated.terminationDate, runoffTerms = treatyTerminated.runoffTerms, cedingCompanyId = ExecutedData.cedingCompanyId, reinsurerId = ExecutedData.reinsurerId, terminationReason = prompt("the termination reason of this terminated data"), outstandingObligations = prompt("the outstanding obligations of this terminated data"))
+      }
+      on renewTreaty: command RenewTreaty is {
+        yield event TreatyRenewed(treatyId = renewTreaty.treatyId, renewalTerms = renewTreaty.renewalTerms, newCoveragePeriod = renewTreaty.newCoveragePeriod, newTreatyId = renewTreaty.newTreatyId, timestamp = system.now)
+      }
+      on suspendTreaty: command SuspendTreaty is {
+        yield event TreatySuspended(treatyId = suspendTreaty.treatyId, reason = suspendTreaty.reason, suspensionDate = suspendTreaty.suspensionDate, timestamp = system.now)
+      }
+      on terminateTreaty: command TerminateTreaty is {
+        yield event TreatyTerminated(treatyId = terminateTreaty.treatyId, terminationDate = terminateTreaty.terminationDate, reason = terminateTreaty.reason, runoffTerms = terminateTreaty.runoffTerms, timestamp = system.now)
+      }
+    } with {
+      briefly "While ExecutedState"
+      described as {
+        |The commands and folds accepted while the entity is in ExecutedState.
+      }
+    }
+  } with {
     briefly "Executed state"
     described as {
       |Treaty has been executed by all parties.
     }
   }
-  state SuspendedState of record Treaty.SuspendedData with {
+  state SuspendedState of record Treaty.SuspendedData is {
+    initial handler SuspendedStateHandler is {
+      on treatyTerminated: event TreatyTerminated is {
+        morph entity Treaty to state Treaty.TerminatedState with record Treaty.TerminatedData(treatyId = treatyTerminated.treatyId, terminationDate = treatyTerminated.terminationDate, runoffTerms = treatyTerminated.runoffTerms, cedingCompanyId = SuspendedData.cedingCompanyId, reinsurerId = SuspendedData.reinsurerId, terminationReason = prompt("the termination reason of this terminated data"), outstandingObligations = prompt("the outstanding obligations of this terminated data"))
+      }
+      on terminateTreaty: command TerminateTreaty is {
+        yield event TreatyTerminated(treatyId = terminateTreaty.treatyId, terminationDate = terminateTreaty.terminationDate, reason = terminateTreaty.reason, runoffTerms = terminateTreaty.runoffTerms, timestamp = system.now)
+      }
+    } with {
+      briefly "While SuspendedState"
+      described as {
+        |The commands and folds accepted while the entity is in SuspendedState.
+      }
+    }
+  } with {
     briefly "Suspended state"
     described as {
       |Treaty is temporarily suspended.
@@ -1016,21 +1082,6 @@ aggregate event-sourced entity Treaty as router is {
       set field Treaty.ExecutedState.lastSettlement to settlementProcessed.settlement
       set field Treaty.ExecutedState.lastSettlementAt to settlementProcessed.timestamp
     }
-    on treatyExecuted: event TreatyExecuted is {
-      morph entity Treaty to state Treaty.ExecutedState with record Treaty.ExecutedData(treatyId = treatyExecuted.treatyId, executionDate = treatyExecuted.executionDate, signatories = treatyExecuted.signatories, cedingCompanyId = prompt("the ceding company id of this executed data"), reinsurerId = prompt("the reinsurer id of this executed data"), terms = prompt("the terms of this executed data"), commission = prompt("the commission of this executed data"), lastBordereauId = empty, lastBordereauPeriodEnd = empty, lastBordereauReceivedAt = empty, cessions = empty, remainingCapacity = empty, lastCessionAt = empty, lastSettlement = empty, lastSettlementAt = empty)
-    }
-    on treatyRenewed: event TreatyRenewed is {
-      morph entity Treaty to state Treaty.ExpiredState with record Treaty.ExpiredData(treatyId = treatyRenewed.treatyId, cedingCompanyId = prompt("the ceding company id of this expired data"), reinsurerId = prompt("the reinsurer id of this expired data"), terms = prompt("the terms of this expired data"), expirationDate = prompt("the expiration date of this expired data"), totalCessions = prompt("the total cessions of this expired data"), totalCededPremium = prompt("the total ceded premium of this expired data"), totalPaidLosses = prompt("the total paid losses of this expired data"), outstandingReserves = prompt("the outstanding reserves of this expired data"), renewedToTreatyId = empty, finalSettlementDue = empty)
-    }
-    on treatySuspended: event TreatySuspended is {
-      morph entity Treaty to state Treaty.SuspendedState with record Treaty.SuspendedData(treatyId = treatySuspended.treatyId, suspensionDate = treatySuspended.suspensionDate, cedingCompanyId = prompt("the ceding company id of this suspended data"), reinsurerId = prompt("the reinsurer id of this suspended data"), terms = prompt("the terms of this suspended data"), suspensionReason = prompt("the suspension reason of this suspended data"), priorState = prompt("the prior state of this suspended data"))
-    }
-    on treatyTerminated: event TreatyTerminated is {
-      morph entity Treaty to state Treaty.TerminatedState with record Treaty.TerminatedData(treatyId = treatyTerminated.treatyId, terminationDate = treatyTerminated.terminationDate, runoffTerms = treatyTerminated.runoffTerms, cedingCompanyId = prompt("the ceding company id of this terminated data"), reinsurerId = prompt("the reinsurer id of this terminated data"), terminationReason = prompt("the termination reason of this terminated data"), outstandingObligations = prompt("the outstanding obligations of this terminated data"))
-    }
-    on executeTreaty: command ExecuteTreaty is {
-      yield event TreatyExecuted(treatyId = executeTreaty.treatyId, finalTerms = executeTreaty.finalTerms, finalCommission = executeTreaty.finalCommission, executionDate = executeTreaty.executionDate, signatories = executeTreaty.signatories, timestamp = system.now)
-    }
     on expireTreaty: command ExpireTreaty is {
       when prompt("the treaty is still in force on the coverage period this message was scheduled for, and was not since renewed, suspended or terminated") then
         yield event TreatyExpired(treatyId = expireTreaty.treatyId, expirationDate = expireTreaty.expirationDate, finalSettlementDue = expireTreaty.finalSettlementDue, timestamp = system.now)
@@ -1051,15 +1102,6 @@ aggregate event-sourced entity Treaty as router is {
       else
         yield event SettlementProcessed(treatyId = processSettlement.treatyId, settlement = record SettlementInfo(settlementDate = system.now, periodStart = processSettlement.settlementPeriodStart, periodEnd = processSettlement.settlementPeriodEnd, grossPremium = statement.grossPremium, cededPremium = statement.cededPremium, commissionAmount = statement.commissionAmount, paidLosses = statement.paidLosses, outstandingReserves = statement.outstandingReserves, netBalance = record MonetaryAmount(amount = statement.commissionAmount.amount + statement.paidLosses.amount - statement.cededPremium.amount, currency = statement.cededPremium.currency), paymentDirection = PaymentDirection.DueToCedent), timestamp = system.now)
       end
-    }
-    on renewTreaty: command RenewTreaty is {
-      yield event TreatyRenewed(treatyId = renewTreaty.treatyId, renewalTerms = renewTreaty.renewalTerms, newCoveragePeriod = renewTreaty.newCoveragePeriod, newTreatyId = renewTreaty.newTreatyId, timestamp = system.now)
-    }
-    on suspendTreaty: command SuspendTreaty is {
-      yield event TreatySuspended(treatyId = suspendTreaty.treatyId, reason = suspendTreaty.reason, suspensionDate = suspendTreaty.suspensionDate, timestamp = system.now)
-    }
-    on terminateTreaty: command TerminateTreaty is {
-      yield event TreatyTerminated(treatyId = terminateTreaty.treatyId, terminationDate = terminateTreaty.terminationDate, reason = terminateTreaty.reason, runoffTerms = terminateTreaty.runoffTerms, timestamp = system.now)
     }
     on treatyExpired: event TreatyExpired is {
       set field Treaty.ExpiredState.expirationDate to treatyExpired.expirationDate

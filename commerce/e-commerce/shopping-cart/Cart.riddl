@@ -802,6 +802,19 @@ event-sourced entity Cart as router is {
       on quiescence "30 minutes" is {
         tell command AbandonCart(cartId = self.id) to entity CartContext.Cart
       }
+      on cartAbandoned: event CartAbandoned is {
+        morph entity Cart to state Cart.AbandonedState with record Cart.AbandonedCartData(cartId = cartAbandoned.cartId, customerId = empty, items = ActiveCartData.items, cartValue = cartAbandoned.cartValue, abandonedAt = cartAbandoned.abandonedAt)
+      }
+      on cartCheckedOut: event CartCheckedOut is {
+        morph entity Cart to state Cart.CheckedOutState with record Cart.CheckedOutCartData(cartId = cartCheckedOut.cartId, orderId = empty, total = cartCheckedOut.total, checkedOutAt = cartCheckedOut.checkedOutAt)
+      }
+      on abandonCart: command AbandonCart is {
+        yield event CartAbandoned(cartId = abandonCart.cartId, itemCount = Cart.ActiveState.summary.itemCount, cartValue = Cart.ActiveState.summary.subtotal, abandonedAt = system.now)
+        terminate self.id
+      }
+      on checkout: command Checkout is {
+        yield event CartCheckedOut(cartId = checkout.cartId, total = Cart.ActiveState.summary.estimatedTotal, checkedOutAt = system.now)
+      }
     } with {
       briefly "Active state init handler"
       described as {
@@ -831,12 +844,6 @@ event-sourced entity Cart as router is {
     on init(customerId: type CustomerId?, sessionId: type SessionId, createdAt: TimeStamp) is {
       morph entity Cart to state Cart.ActiveState with record Cart.ActiveCartData(cartId = self.id, customerId = customerId, sessionId = sessionId, items = prompt("the items of this active cart data"), discounts = prompt("the discounts of this active cart data"), shippingAddress = empty, summary = prompt("the summary of this active cart data"), createdAt = prompt("the created at of this active cart data"), lastUpdatedAt = prompt("the last updated at of this active cart data"), shippingEstimate = empty)
       send event CartCreated(cartId = self.id, customerId = customerId, sessionId = sessionId, createdAt = createdAt) to outlet CartContext.Cart.CartEvents2
-    }
-    on cartAbandoned: event CartAbandoned is {
-      morph entity Cart to state Cart.AbandonedState with record Cart.AbandonedCartData(cartId = cartAbandoned.cartId, customerId = empty, items = prompt("the items of this abandoned cart data"), cartValue = prompt("the cart value of this abandoned cart data"), abandonedAt = prompt("the abandoned at of this abandoned cart data"))
-    }
-    on cartCheckedOut: event CartCheckedOut is {
-      morph entity Cart to state Cart.CheckedOutState with record Cart.CheckedOutCartData(cartId = cartCheckedOut.cartId, orderId = empty, total = prompt("the total of this checked out cart data"), checkedOutAt = prompt("the checked out at of this checked out cart data"))
     }
     on cartsMerged: event CartsMerged is {
       foreach mergedItem in field Cart.CartsMerged.mergedItems {
@@ -912,15 +919,8 @@ event-sourced entity Cart as router is {
     on mergeCart: command MergeCart is {
       yield event CartsMerged(targetCartId = mergeCart.targetCartId, sourceCartId = mergeCart.sourceCartId, mergedItems = mergeCart.sourceItems, addedItems = count of mergeCart.sourceItems, mergedAt = system.now)
     }
-    on checkout: command Checkout is {
-      yield event CartCheckedOut(cartId = checkout.cartId, total = Cart.ActiveState.summary.estimatedTotal, checkedOutAt = system.now)
-    }
     on recordOrder: command RecordOrder is {
       yield event OrderLinked(cartId = recordOrder.cartId, orderId = recordOrder.orderId, linkedAt = system.now)
-    }
-    on abandonCart: command AbandonCart is {
-      yield event CartAbandoned(cartId = abandonCart.cartId, itemCount = Cart.ActiveState.summary.itemCount, cartValue = Cart.ActiveState.summary.subtotal, abandonedAt = system.now)
-      terminate self.id
     }
     on term is {
       do "release every inventory reservation this cart was holding, so stock

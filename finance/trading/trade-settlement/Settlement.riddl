@@ -673,13 +673,45 @@ entity Settlement as router is {
     }
   }
   // States
-  state PendingState of record Settlement.PendingStateData with {
+  state PendingState of record Settlement.PendingStateData is {
+    initial handler PendingStateHandler is {
+      on sendInstructions: command SendInstructions is {
+        morph entity SettlementContext.Settlement to state SettlementContext.Settlement.InProcessState with record Settlement.InProcessStateData(settlementId = sendInstructions.settlementId, instructions = sendInstructions.instructions, trade = PendingStateData.trade, status = PendingStateData.status, settledQuantity = prompt("the settled quantity of this in process state data"), settledAmount = prompt("the settled amount of this in process state data"), instructionsSentAt = prompt("the instructions sent at of this in process state data"))
+        tell event InstructionsSent(settlementId = sendInstructions.settlementId, instructions = sendInstructions.instructions, sentAt = system.now) to entity SettlementContext.Settlement
+      }
+      on cancelSettlement: command CancelSettlement is {
+        morph entity SettlementContext.Settlement to state SettlementContext.Settlement.FailedState with record Settlement.FailedStateData(settlementId = cancelSettlement.settlementId, trade = PendingStateData.trade, failure = prompt("the failure of this failed state data"), settledQuantity = prompt("the settled quantity of this failed state data"), retryCount = prompt("the retry count of this failed state data"))
+        tell event SettlementCanceled(settlementId = cancelSettlement.settlementId, reason = cancelSettlement.reason, canceledAt = system.now) to entity SettlementContext.Settlement
+      }
+    } with {
+      briefly "While PendingState"
+      described as {
+        |The commands and folds accepted while the entity is in PendingState.
+      }
+    }
+  } with {
     briefly "Pending state"
     described as {
       |Settlement is pending matching and affirmation.
     }
   }
-  state InProcessState of record Settlement.InProcessStateData with {
+  state InProcessState of record Settlement.InProcessStateData is {
+    initial handler InProcessStateHandler is {
+      on confirmSettlement: command ConfirmSettlement is {
+        morph entity SettlementContext.Settlement to state SettlementContext.Settlement.SettledState with record Settlement.SettledStateData(settlementId = confirmSettlement.settlementId, confirmation = confirmSettlement.confirmation, trade = InProcessStateData.trade, totalSettledQuantity = prompt("the total settled quantity of this settled state data"), totalSettledAmount = prompt("the total settled amount of this settled state data"))
+        tell event SettlementConfirmed(settlementId = confirmSettlement.settlementId, confirmation = confirmSettlement.confirmation) to entity SettlementContext.Settlement
+      }
+      on failSettlement: command FailSettlement is {
+        morph entity SettlementContext.Settlement to state SettlementContext.Settlement.FailedState with record Settlement.FailedStateData(settlementId = failSettlement.settlementId, failure = failSettlement.failure, trade = InProcessStateData.trade, settledQuantity = InProcessStateData.settledQuantity, retryCount = prompt("the retry count of this failed state data"))
+        tell event SettlementFailed(settlementId = failSettlement.settlementId, failure = failSettlement.failure) to entity SettlementContext.Settlement
+      }
+    } with {
+      briefly "While InProcessState"
+      described as {
+        |The commands and folds accepted while the entity is in InProcessState.
+      }
+    }
+  } with {
     briefly "In process state"
     described as {
       |Settlement instructions have been sent for processing.
@@ -691,7 +723,19 @@ entity Settlement as router is {
       |Settlement has been confirmed and completed.
     }
   }
-  state FailedState of record Settlement.FailedStateData with {
+  state FailedState of record Settlement.FailedStateData is {
+    initial handler FailedStateHandler is {
+      on retrySettlement: command RetrySettlement is {
+        morph entity SettlementContext.Settlement to state SettlementContext.Settlement.PendingState with record Settlement.PendingStateData(settlementId = retrySettlement.settlementId, trade = FailedStateData.trade, status = prompt("the status of this pending state data"), matchingResult = empty, affirmed = prompt("the affirmed of this pending state data"), initiatedAt = prompt("the initiated at of this pending state data"))
+        tell event SettlementRetried(settlementId = retrySettlement.settlementId, newSettlementDate = retrySettlement.newSettlementDate, retriedAt = system.now) to entity SettlementContext.Settlement
+      }
+    } with {
+      briefly "While FailedState"
+      described as {
+        |The commands and folds accepted while the entity is in FailedState.
+      }
+    }
+  } with {
     briefly "Failed state"
     described as {
       |Settlement has failed or been canceled.
@@ -709,28 +753,8 @@ entity Settlement as router is {
     on affirmTrade: command AffirmTrade is {
       tell event TradeAffirmed(settlementId = affirmTrade.settlementId, affirmedBy = affirmTrade.affirmedBy, affirmedAt = system.now) to entity SettlementContext.Settlement
     }
-    on sendInstructions: command SendInstructions is {
-      morph entity SettlementContext.Settlement to state SettlementContext.Settlement.InProcessState with record Settlement.InProcessStateData(settlementId = sendInstructions.settlementId, instructions = sendInstructions.instructions, trade = prompt("the trade of this in process state data"), status = prompt("the status of this in process state data"), settledQuantity = prompt("the settled quantity of this in process state data"), settledAmount = prompt("the settled amount of this in process state data"), instructionsSentAt = prompt("the instructions sent at of this in process state data"))
-      tell event InstructionsSent(settlementId = sendInstructions.settlementId, instructions = sendInstructions.instructions, sentAt = system.now) to entity SettlementContext.Settlement
-    }
-    on confirmSettlement: command ConfirmSettlement is {
-      morph entity SettlementContext.Settlement to state SettlementContext.Settlement.SettledState with record Settlement.SettledStateData(settlementId = confirmSettlement.settlementId, confirmation = confirmSettlement.confirmation, trade = prompt("the trade of this settled state data"), totalSettledQuantity = prompt("the total settled quantity of this settled state data"), totalSettledAmount = prompt("the total settled amount of this settled state data"))
-      tell event SettlementConfirmed(settlementId = confirmSettlement.settlementId, confirmation = confirmSettlement.confirmation) to entity SettlementContext.Settlement
-    }
     on recordPartialSettlement: command RecordPartialSettlement is {
       tell event PartialSettlementRecorded(settlementId = recordPartialSettlement.settlementId, partialConfirmation = recordPartialSettlement.partialConfirmation, remainingQuantity = prompt("the remaining quantity of this partial settlement recorded"), remainingAmount = prompt("the remaining amount of this partial settlement recorded")) to entity SettlementContext.Settlement
-    }
-    on failSettlement: command FailSettlement is {
-      morph entity SettlementContext.Settlement to state SettlementContext.Settlement.FailedState with record Settlement.FailedStateData(settlementId = failSettlement.settlementId, failure = failSettlement.failure, trade = prompt("the trade of this failed state data"), settledQuantity = prompt("the settled quantity of this failed state data"), retryCount = prompt("the retry count of this failed state data"))
-      tell event SettlementFailed(settlementId = failSettlement.settlementId, failure = failSettlement.failure) to entity SettlementContext.Settlement
-    }
-    on retrySettlement: command RetrySettlement is {
-      morph entity SettlementContext.Settlement to state SettlementContext.Settlement.PendingState with record Settlement.PendingStateData(settlementId = retrySettlement.settlementId, trade = prompt("the trade of this pending state data"), status = prompt("the status of this pending state data"), matchingResult = empty, affirmed = prompt("the affirmed of this pending state data"), initiatedAt = prompt("the initiated at of this pending state data"))
-      tell event SettlementRetried(settlementId = retrySettlement.settlementId, newSettlementDate = retrySettlement.newSettlementDate, retriedAt = system.now) to entity SettlementContext.Settlement
-    }
-    on cancelSettlement: command CancelSettlement is {
-      morph entity SettlementContext.Settlement to state SettlementContext.Settlement.FailedState with record Settlement.FailedStateData(settlementId = cancelSettlement.settlementId, trade = prompt("the trade of this failed state data"), failure = prompt("the failure of this failed state data"), settledQuantity = prompt("the settled quantity of this failed state data"), retryCount = prompt("the retry count of this failed state data"))
-      tell event SettlementCanceled(settlementId = cancelSettlement.settlementId, reason = cancelSettlement.reason, canceledAt = system.now) to entity SettlementContext.Settlement
     }
     on holdSettlement: command HoldSettlement is {
       tell event SettlementOnHold(settlementId = holdSettlement.settlementId, reason = holdSettlement.reason, heldAt = system.now) to entity SettlementContext.Settlement

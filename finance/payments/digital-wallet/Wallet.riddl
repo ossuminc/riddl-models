@@ -811,13 +811,47 @@ event-sourced entity Wallet as router is {
   }
   // Initialize command for source streamlet
   // States
-  state ActiveState of record Wallet.ActiveStateData with {
+  state ActiveState of record Wallet.ActiveStateData is {
+    initial handler ActiveStateHandler is {
+      on walletClosed: event WalletClosed is {
+        morph entity WalletContext.Wallet to state WalletContext.Wallet.ClosedState with record Wallet.ClosedStateData(walletId = walletClosed.walletId, userId = ActiveStateData.userId, closureReason = prompt("the closure reason of this closed state data"), closedAt = walletClosed.closedAt)
+      }
+      on walletSuspended: event WalletSuspended is {
+        morph entity WalletContext.Wallet to state WalletContext.Wallet.SuspendedState with record Wallet.SuspendedStateData(walletId = walletSuspended.walletId, userId = ActiveStateData.userId, balance = ActiveStateData.balance, currency = ActiveStateData.currency, paymentMethods = empty, suspensionReason = prompt("the suspension reason of this suspended state data"), suspendedAt = walletSuspended.suspendedAt)
+      }
+      on closeWallet: command CloseWallet is {
+        yield event WalletClosed(walletId = closeWallet.walletId, reason = closeWallet.reason, closedAt = system.now)
+      }
+      on suspendWallet: command SuspendWallet is {
+        yield event WalletSuspended(walletId = suspendWallet.walletId, reason = suspendWallet.reason, suspendedAt = system.now)
+      }
+    } with {
+      briefly "While ActiveState"
+      described as {
+        |The commands and folds accepted while the entity is in ActiveState.
+      }
+    }
+  } with {
     briefly "Active state"
     described as {
       |Wallet is active and operational.
     }
   }
-  state SuspendedState of record Wallet.SuspendedStateData with {
+  state SuspendedState of record Wallet.SuspendedStateData is {
+    initial handler SuspendedStateHandler is {
+      on walletReactivated: event WalletReactivated is {
+        morph entity WalletContext.Wallet to state WalletContext.Wallet.ActiveState with record Wallet.ActiveStateData(walletId = walletReactivated.walletId, userId = SuspendedStateData.userId, balance = SuspendedStateData.balance, currency = SuspendedStateData.currency, paymentMethods = empty, defaultMethodId = empty, transactions = empty, status = prompt("the status of this active state data"), createdAt = prompt("the created at of this active state data"))
+      }
+      on reactivateWallet: command ReactivateWallet is {
+        yield event WalletReactivated(walletId = reactivateWallet.walletId, reactivatedAt = system.now)
+      }
+    } with {
+      briefly "While SuspendedState"
+      described as {
+        |The commands and folds accepted while the entity is in SuspendedState.
+      }
+    }
+  } with {
     briefly "Suspended state"
     described as {
       |Wallet is suspended pending review.
@@ -859,15 +893,6 @@ event-sourced entity Wallet as router is {
     on withdrawFunds: command WithdrawFunds is {
       yield event FundsWithdrawn(walletId = withdrawFunds.walletId, withdrawal = withdrawFunds.withdrawal, transactionId = withdrawFunds.transactionId, newBalance = Wallet.ActiveState.balance - withdrawFunds.withdrawal.amount, withdrawnAt = system.now)
     }
-    on suspendWallet: command SuspendWallet is {
-      yield event WalletSuspended(walletId = suspendWallet.walletId, reason = suspendWallet.reason, suspendedAt = system.now)
-    }
-    on reactivateWallet: command ReactivateWallet is {
-      yield event WalletReactivated(walletId = reactivateWallet.walletId, reactivatedAt = system.now)
-    }
-    on closeWallet: command CloseWallet is {
-      yield event WalletClosed(walletId = closeWallet.walletId, reason = closeWallet.reason, closedAt = system.now)
-    }
     on getWallet: query GetWallet is {
       reply result WalletResult(walletId = getWallet.walletId, balance = prompt("the balance of this wallet result"), status = prompt("the status of this wallet result"))
     }
@@ -900,15 +925,6 @@ event-sourced entity Wallet as router is {
     on paymentMethodRemoved: event PaymentMethodRemoved is {
       remove from field Wallet.ActiveState.paymentMethods where methodId == paymentMethodRemoved.methodId
       set field Wallet.ActiveState.defaultMethodId to prompt("empty when methodId was the default, else unchanged")
-    }
-    on walletClosed: event WalletClosed is {
-      morph entity WalletContext.Wallet to state WalletContext.Wallet.ClosedState with record Wallet.ClosedStateData(walletId = walletClosed.walletId, userId = prompt("the user id of this closed state data"), closureReason = prompt("the closure reason of this closed state data"), closedAt = prompt("the closed at of this closed state data"))
-    }
-    on walletReactivated: event WalletReactivated is {
-      morph entity WalletContext.Wallet to state WalletContext.Wallet.ActiveState with record Wallet.ActiveStateData(walletId = walletReactivated.walletId, userId = prompt("the user id of this active state data"), balance = prompt("the balance of this active state data"), currency = prompt("the currency of this active state data"), paymentMethods = empty, defaultMethodId = empty, transactions = empty, status = prompt("the status of this active state data"), createdAt = prompt("the created at of this active state data"))
-    }
-    on walletSuspended: event WalletSuspended is {
-      morph entity WalletContext.Wallet to state WalletContext.Wallet.SuspendedState with record Wallet.SuspendedStateData(walletId = walletSuspended.walletId, userId = prompt("the user id of this suspended state data"), balance = prompt("the balance of this suspended state data"), currency = prompt("the currency of this suspended state data"), paymentMethods = empty, suspensionReason = prompt("the suspension reason of this suspended state data"), suspendedAt = prompt("the suspended at of this suspended state data"))
     }
   } with {
     briefly "Processes wallet commands"

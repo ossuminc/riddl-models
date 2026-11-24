@@ -774,37 +774,141 @@ aggregate event-sourced entity DrugBatch as router is {
       |The PlannedState state of the DrugBatch.
     }
   }
-  state InProductionState of record DrugBatch.InProductionData with {
+  state InProductionState of record DrugBatch.InProductionData is {
+    initial handler InProductionStateHandler is {
+      on batchPlacedOnHold: event BatchPlacedOnHold is {
+        morph entity DrugBatch to state DrugBatch.QualityHoldState with record DrugBatch.QualityHoldData(holdReason = batchPlacedOnHold.holdReason, holdInitiatedBy = batchPlacedOnHold.holdInitiatedBy, holdTimestamp = batchPlacedOnHold.holdTimestamp, batch = InProductionData.batch)
+      }
+      on placeOnQualityHold: command PlaceOnQualityHold is {
+        yield event BatchPlacedOnHold(batchId = placeOnQualityHold.batchId, holdReason = placeOnQualityHold.holdReason, holdInitiatedBy = placeOnQualityHold.holdInitiatedBy, holdTimestamp = system.now)
+      }
+    } with {
+      briefly "While InProductionState"
+      described as {
+        |The commands and folds accepted while the entity is in InProductionState.
+      }
+    }
+  } with {
     briefly "InProductionState state"
     described as {
       |The InProductionState state of the DrugBatch.
     }
   }
-  state QualityHoldState of record DrugBatch.QualityHoldData with {
+  state QualityHoldState of record DrugBatch.QualityHoldData is {
+    initial handler QualityHoldStateHandler is {
+      on batchReleased: event BatchReleased is {
+        morph entity DrugBatch to state DrugBatch.ReleasedState with record DrugBatch.ReleasedData(releaseAuthorization = batchReleased.releaseAuthorization, releaseTimestamp = batchReleased.releaseTimestamp, batch = QualityHoldData.batch)
+      }
+      on releaseBatch: command ReleaseBatch is {
+        yield event BatchReleased(batchId = releaseBatch.batchId, releaseAuthorization = releaseBatch.releaseAuthorization, releaseDate = releaseBatch.releaseDate, releaseTimestamp = system.now)
+      }
+    } with {
+      briefly "While QualityHoldState"
+      described as {
+        |The commands and folds accepted while the entity is in QualityHoldState.
+      }
+    }
+  } with {
     briefly "QualityHoldState state"
     described as {
       |The QualityHoldState state of the DrugBatch.
     }
   }
-  state ReleasedState of record DrugBatch.ReleasedData with {
+  state ReleasedState of record DrugBatch.ReleasedData is {
+    initial handler ReleasedStateHandler is {
+      on unitsSerialized: event UnitsSerialized is {
+        morph entity DrugBatch to state DrugBatch.SerializedState with record DrugBatch.SerializedData(serializations = unitsSerialized.serializations, serializationTimestamp = unitsSerialized.serializationTimestamp, batch = ReleasedData.batch)
+      }
+      on recallInitiated: event RecallInitiated is {
+        morph entity DrugBatch to state DrugBatch.RecalledState with record DrugBatch.RecalledData(recallInfo = recallInitiated.recallInfo, recallTimestamp = recallInitiated.recallTimestamp, batch = ReleasedData.batch, recallProgress = prompt("the recall progress of this recalled data"))
+      }
+      on serializeUnits: command SerializeUnits is {
+        yield event UnitsSerialized(batchId = serializeUnits.batchId, serializations = serializeUnits.serializations, serializationTimestamp = system.now, totalUnitsSerialized = count of serializeUnits.serializations)
+      }
+      on initiateRecall: command InitiateRecall is {
+        yield event RecallInitiated(batchId = initiateRecall.batchId, recallInfo = initiateRecall.recallInfo, recallTimestamp = system.now)
+      }
+    } with {
+      briefly "While ReleasedState"
+      described as {
+        |The commands and folds accepted while the entity is in ReleasedState.
+      }
+    }
+  } with {
     briefly "ReleasedState state"
     described as {
       |The ReleasedState state of the DrugBatch.
     }
   }
-  state SerializedState of record DrugBatch.SerializedData with {
+  state SerializedState of record DrugBatch.SerializedData is {
+    initial handler SerializedStateHandler is {
+      on event ProductShipped is {
+        let inTransitData: type DrugBatch.InTransitData = prompt("the in transit data that results from product shipped")
+        morph entity DrugBatch to state DrugBatch.InTransitState with inTransitData
+      }
+      on recallInitiated: event RecallInitiated is {
+        morph entity DrugBatch to state DrugBatch.RecalledState with record DrugBatch.RecalledData(recallInfo = recallInitiated.recallInfo, recallTimestamp = recallInitiated.recallTimestamp, batch = SerializedData.batch, recallProgress = prompt("the recall progress of this recalled data"))
+      }
+      on shipProduct: command ShipProduct is {
+        yield event ProductShipped(batchId = shipProduct.batchId, shipmentInfo = shipProduct.shipmentInfo, serialNumbers = shipProduct.serialNumbers, traceabilityRecord = shipProduct.traceabilityRecord, shippingTimestamp = system.now)
+      }
+      on initiateRecall: command InitiateRecall is {
+        yield event RecallInitiated(batchId = initiateRecall.batchId, recallInfo = initiateRecall.recallInfo, recallTimestamp = system.now)
+      }
+    } with {
+      briefly "While SerializedState"
+      described as {
+        |The commands and folds accepted while the entity is in SerializedState.
+      }
+    }
+  } with {
     briefly "SerializedState state"
     described as {
       |The SerializedState state of the DrugBatch.
     }
   }
-  state InTransitState of record DrugBatch.InTransitData with {
+  state InTransitState of record DrugBatch.InTransitData is {
+    initial handler InTransitStateHandler is {
+      on event ShipmentReceived is {
+        let receivedData: type DrugBatch.ReceivedData = prompt("the received data that results from shipment received")
+        morph entity DrugBatch to state DrugBatch.ReceivedState with receivedData
+      }
+      on recallInitiated: event RecallInitiated is {
+        morph entity DrugBatch to state DrugBatch.RecalledState with record DrugBatch.RecalledData(recallInfo = recallInitiated.recallInfo, recallTimestamp = recallInitiated.recallTimestamp, batch = InTransitData.batch, recallProgress = prompt("the recall progress of this recalled data"))
+      }
+      on receiveShipment: command ReceiveShipment is {
+        yield event ShipmentReceived(batchId = receiveShipment.batchId, shipmentId = receiveShipment.shipmentId, receivedDate = receiveShipment.receivedDate, receivedBy = receiveShipment.receivedBy, verifiedSerialNumbers = receiveShipment.serialNumbersVerified, receiptTimestamp = system.now)
+      }
+      on initiateRecall: command InitiateRecall is {
+        yield event RecallInitiated(batchId = initiateRecall.batchId, recallInfo = initiateRecall.recallInfo, recallTimestamp = system.now)
+      }
+    } with {
+      briefly "While InTransitState"
+      described as {
+        |The commands and folds accepted while the entity is in InTransitState.
+      }
+    }
+  } with {
     briefly "InTransitState state"
     described as {
       |The InTransitState state of the DrugBatch.
     }
   }
-  state ReceivedState of record DrugBatch.ReceivedData with {
+  state ReceivedState of record DrugBatch.ReceivedData is {
+    initial handler ReceivedStateHandler is {
+      on recallInitiated: event RecallInitiated is {
+        morph entity DrugBatch to state DrugBatch.RecalledState with record DrugBatch.RecalledData(recallInfo = recallInitiated.recallInfo, recallTimestamp = recallInitiated.recallTimestamp, batch = ReceivedData.batch, recallProgress = prompt("the recall progress of this recalled data"))
+      }
+      on initiateRecall: command InitiateRecall is {
+        yield event RecallInitiated(batchId = initiateRecall.batchId, recallInfo = initiateRecall.recallInfo, recallTimestamp = system.now)
+      }
+    } with {
+      briefly "While ReceivedState"
+      described as {
+        |The commands and folds accepted while the entity is in ReceivedState.
+      }
+    }
+  } with {
     briefly "ReceivedState state"
     described as {
       |The ReceivedState state of the DrugBatch.
@@ -822,15 +926,6 @@ aggregate event-sourced entity DrugBatch as router is {
       morph entity DrugBatch to state DrugBatch.PlannedState with record DrugBatch.PlannedData(batch = batch)
       send event BatchManufactured(drugBatchId = self.id, batch = batch, manufacturingTimestamp = manufacturingTimestamp) to outlet DrugSupplyContext.DrugBatch.DrugBatchEvents2
     }
-    on serializeUnits: command SerializeUnits is {
-      yield event UnitsSerialized(batchId = serializeUnits.batchId, serializations = serializeUnits.serializations, serializationTimestamp = system.now, totalUnitsSerialized = count of serializeUnits.serializations)
-    }
-    on shipProduct: command ShipProduct is {
-      yield event ProductShipped(batchId = shipProduct.batchId, shipmentInfo = shipProduct.shipmentInfo, serialNumbers = shipProduct.serialNumbers, traceabilityRecord = shipProduct.traceabilityRecord, shippingTimestamp = system.now)
-    }
-    on receiveShipment: command ReceiveShipment is {
-      yield event ShipmentReceived(batchId = receiveShipment.batchId, shipmentId = receiveShipment.shipmentId, receivedDate = receiveShipment.receivedDate, receivedBy = receiveShipment.receivedBy, verifiedSerialNumbers = receiveShipment.serialNumbersVerified, receiptTimestamp = system.now)
-    }
     on verifyAuthenticity: command VerifyAuthenticity is {
       when any of DrugBatch.ReceivedState.serializations as s where s.serialNumber == verifyAuthenticity.serialNumber then
         yield event AuthenticityVerified(batchId = verifyAuthenticity.batchId, verificationResult = record VerificationResult(serialNumber = verifyAuthenticity.serialNumber, verified = true, verificationTimestamp = system.now, verificationSource = "batch serialization register", suspectFlag = false, suspectReason = empty), verificationTimestamp = system.now)
@@ -838,38 +933,9 @@ aggregate event-sourced entity DrugBatch as router is {
         yield event AuthenticityVerified(batchId = verifyAuthenticity.batchId, verificationResult = record VerificationResult(serialNumber = verifyAuthenticity.serialNumber, verified = false, verificationTimestamp = system.now, verificationSource = "batch serialization register", suspectFlag = true, suspectReason = "serial number not serialized in this batch"), verificationTimestamp = system.now)
       end
     }
-    on initiateRecall: command InitiateRecall is {
-      yield event RecallInitiated(batchId = initiateRecall.batchId, recallInfo = initiateRecall.recallInfo, recallTimestamp = system.now)
-    }
-    on placeOnQualityHold: command PlaceOnQualityHold is {
-      yield event BatchPlacedOnHold(batchId = placeOnQualityHold.batchId, holdReason = placeOnQualityHold.holdReason, holdInitiatedBy = placeOnQualityHold.holdInitiatedBy, holdTimestamp = system.now)
-    }
-    on releaseBatch: command ReleaseBatch is {
-      yield event BatchReleased(batchId = releaseBatch.batchId, releaseAuthorization = releaseBatch.releaseAuthorization, releaseDate = releaseBatch.releaseDate, releaseTimestamp = system.now)
-    }
-    on unitsSerialized: event UnitsSerialized is {
-      morph entity DrugBatch to state DrugBatch.SerializedState with record DrugBatch.SerializedData(serializations = unitsSerialized.serializations, serializationTimestamp = unitsSerialized.serializationTimestamp, batch = prompt("the batch of this serialized data"))
-    }
-    on event ProductShipped is {
-      let inTransitData: type DrugBatch.InTransitData = prompt("the in transit data that results from product shipped")
-      morph entity DrugBatch to state DrugBatch.InTransitState with inTransitData
-    }
-    on event ShipmentReceived is {
-      let receivedData: type DrugBatch.ReceivedData = prompt("the received data that results from shipment received")
-      morph entity DrugBatch to state DrugBatch.ReceivedState with receivedData
-    }
     on authenticityVerified: event AuthenticityVerified is {
       set field DrugBatch.ReceivedState.lastVerification to authenticityVerified.verificationResult
       set field DrugBatch.ReceivedState.lastVerifiedAt to authenticityVerified.verificationTimestamp
-    }
-    on recallInitiated: event RecallInitiated is {
-      morph entity DrugBatch to state DrugBatch.RecalledState with record DrugBatch.RecalledData(recallInfo = recallInitiated.recallInfo, recallTimestamp = recallInitiated.recallTimestamp, batch = prompt("the batch of this recalled data"), recallProgress = prompt("the recall progress of this recalled data"))
-    }
-    on batchPlacedOnHold: event BatchPlacedOnHold is {
-      morph entity DrugBatch to state DrugBatch.QualityHoldState with record DrugBatch.QualityHoldData(holdReason = batchPlacedOnHold.holdReason, holdInitiatedBy = batchPlacedOnHold.holdInitiatedBy, holdTimestamp = batchPlacedOnHold.holdTimestamp, batch = prompt("the batch of this quality hold data"))
-    }
-    on batchReleased: event BatchReleased is {
-      morph entity DrugBatch to state DrugBatch.ReleasedState with record DrugBatch.ReleasedData(releaseAuthorization = batchReleased.releaseAuthorization, releaseTimestamp = batchReleased.releaseTimestamp, batch = prompt("the batch of this released data"))
     }
   } with {
     briefly "Command handler for DrugBatch entity"

@@ -836,19 +836,79 @@ event-sourced entity MaintenanceOrder as router is {
     }
   }
   // States
-  state PendingState of record MaintenanceOrder.PendingStateData with {
+  state PendingState of record MaintenanceOrder.PendingStateData is {
+    initial handler PendingStateHandler is {
+      on orderCancelled: event OrderCancelled is {
+        morph entity MaintenanceOrder to state MaintenanceOrder.CancelledState with record MaintenanceOrder.CancelledStateData(orderId = orderCancelled.orderId, reason = orderCancelled.reason, cancelledBy = orderCancelled.cancelledBy, equipmentId = PendingStateData.equipmentId, equipmentName = PendingStateData.equipmentName, maintenanceType = PendingStateData.maintenanceType, cancelledAt = orderCancelled.cancelledAt)
+      }
+      on technicianAssigned: event TechnicianAssigned is {
+        morph entity MaintenanceOrder to state MaintenanceOrder.AssignedState with record MaintenanceOrder.AssignedStateData(orderId = technicianAssigned.orderId, technicianId = technicianAssigned.technicianId, technicianName = technicianAssigned.technicianName, hourlyRate = technicianAssigned.hourlyRate, equipmentId = PendingStateData.equipmentId, equipmentName = PendingStateData.equipmentName, maintenanceType = PendingStateData.maintenanceType, priority = PendingStateData.priority, description = PendingStateData.description, scheduledDate = PendingStateData.scheduledDate, estimatedDuration = PendingStateData.estimatedDuration, tasks = PendingStateData.tasks, assignedAt = technicianAssigned.assignedAt)
+      }
+      on cancelOrder: command CancelOrder is {
+        yield event OrderCancelled(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledBy = cancelOrder.cancelledBy, cancelledAt = system.now)
+      }
+      on assignTechnician: command AssignTechnician is {
+        yield event TechnicianAssigned(orderId = assignTechnician.orderId, technicianId = assignTechnician.technicianId, technicianName = assignTechnician.technicianName, assignedAt = system.now, hourlyRate = assignTechnician.hourlyRate)
+      }
+    } with {
+      briefly "While PendingState"
+      described as {
+        |The commands and folds accepted while the entity is in PendingState.
+      }
+    }
+  } with {
     briefly "Pending state"
     described as {
       |The entity in Pending state.
     }
   }
-  state AssignedState of record MaintenanceOrder.AssignedStateData with {
+  state AssignedState of record MaintenanceOrder.AssignedStateData is {
+    initial handler AssignedStateHandler is {
+      on maintenanceStarted: event MaintenanceStarted is {
+        morph entity MaintenanceOrder to state MaintenanceOrder.InProgressState with record MaintenanceOrder.InProgressStateData(orderId = maintenanceStarted.orderId, startedAt = maintenanceStarted.startedAt, downtimeStart = maintenanceStarted.downtimeStart, stateValue = prompt("the state value of this in progress state data"), equipmentId = AssignedStateData.equipmentId, equipmentName = AssignedStateData.equipmentName, maintenanceType = AssignedStateData.maintenanceType, priority = AssignedStateData.priority, description = AssignedStateData.description, tasks = AssignedStateData.tasks, technicianId = maintenanceStarted.technicianId, technicianName = AssignedStateData.technicianName, hourlyRate = AssignedStateData.hourlyRate, partsUsed = prompt("the parts used of this in progress state data"), laborRecords = prompt("the labor records of this in progress state data"), lastSpareRecordedAt = empty)
+      }
+      on orderCancelled: event OrderCancelled is {
+        morph entity MaintenanceOrder to state MaintenanceOrder.CancelledState with record MaintenanceOrder.CancelledStateData(orderId = orderCancelled.orderId, reason = orderCancelled.reason, cancelledBy = orderCancelled.cancelledBy, equipmentId = AssignedStateData.equipmentId, equipmentName = AssignedStateData.equipmentName, maintenanceType = AssignedStateData.maintenanceType, cancelledAt = orderCancelled.cancelledAt)
+      }
+      on startMaintenance: command StartMaintenance is {
+        yield event MaintenanceStarted(orderId = startMaintenance.orderId, startedAt = startMaintenance.startedAt, downtimeStart = startMaintenance.downtimeStart, technicianId = MaintenanceOrder.AssignedState.technicianId)
+      }
+      on cancelOrder: command CancelOrder is {
+        yield event OrderCancelled(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledBy = cancelOrder.cancelledBy, cancelledAt = system.now)
+      }
+    } with {
+      briefly "While AssignedState"
+      described as {
+        |The commands and folds accepted while the entity is in AssignedState.
+      }
+    }
+  } with {
     briefly "Assigned state"
     described as {
       |The entity in Assigned state.
     }
   }
-  state InProgressState of record MaintenanceOrder.InProgressStateData with {
+  state InProgressState of record MaintenanceOrder.InProgressStateData is {
+    initial handler InProgressStateHandler is {
+      on maintenanceCompleted: event MaintenanceCompleted is {
+        morph entity MaintenanceOrder to state MaintenanceOrder.CompletedState with record MaintenanceOrder.CompletedStateData(orderId = maintenanceCompleted.orderId, completedAt = maintenanceCompleted.completedAt, completionNotes = maintenanceCompleted.completionNotes, equipmentStatus = maintenanceCompleted.equipmentStatus, stateValue = InProgressStateData.stateValue, equipmentId = maintenanceCompleted.equipmentId, equipmentName = InProgressStateData.equipmentName, maintenanceType = InProgressStateData.maintenanceType, technicianId = InProgressStateData.technicianId, technicianName = InProgressStateData.technicianName, startedAt = InProgressStateData.startedAt, totalLaborMinutes = maintenanceCompleted.totalLaborMinutes, partsUsed = InProgressStateData.partsUsed, totalPartsCost = maintenanceCompleted.totalPartsCost, downtimeMinutes = empty)
+      }
+      on orderCancelled: event OrderCancelled is {
+        morph entity MaintenanceOrder to state MaintenanceOrder.CancelledState with record MaintenanceOrder.CancelledStateData(orderId = orderCancelled.orderId, reason = orderCancelled.reason, cancelledBy = orderCancelled.cancelledBy, equipmentId = InProgressStateData.equipmentId, equipmentName = InProgressStateData.equipmentName, maintenanceType = InProgressStateData.maintenanceType, cancelledAt = orderCancelled.cancelledAt)
+      }
+      on completeMaintenance: command CompleteMaintenance is {
+        yield event MaintenanceCompleted(orderId = completeMaintenance.orderId, completedAt = completeMaintenance.completedAt, equipmentStatus = completeMaintenance.equipmentStatus, equipmentId = MaintenanceOrder.InProgressState.equipmentId, totalLaborMinutes = sum of MaintenanceOrder.InProgressState.laborRecords as r by minutes of ((r.endTime otherwise completeMaintenance.completedAt) - r.startTime), totalPartsCost = sum of MaintenanceOrder.InProgressState.partsUsed as p by p.quantity * p.unitCost, downtimeMinutes = empty, completionNotes = completeMaintenance.completionNotes)
+      }
+      on cancelOrder: command CancelOrder is {
+        yield event OrderCancelled(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledBy = cancelOrder.cancelledBy, cancelledAt = system.now)
+      }
+    } with {
+      briefly "While InProgressState"
+      described as {
+        |The commands and folds accepted while the entity is in InProgressState.
+      }
+    }
+  } with {
     briefly "InProgress state"
     described as {
       |The entity in InProgress state.
@@ -898,39 +958,15 @@ event-sourced entity MaintenanceOrder as router is {
       morph entity MaintenanceOrder to state MaintenanceOrder.PendingState with record MaintenanceOrder.PendingStateData(orderId = self.id, equipmentId = equipmentId, equipmentName = equipmentName, maintenanceType = maintenanceType, priority = priority, description = description, scheduledDate = scheduledDate, estimatedDuration = estimatedDuration, tasks = tasks, createdAt = prompt("the created at of this pending state data"))
       send event MaintenanceOrderCreated(orderId = self.id, equipmentId = equipmentId, equipmentName = equipmentName, maintenanceType = maintenanceType, priority = priority, scheduledDate = scheduledDate, createdAt = createdAt, description = description, estimatedDuration = estimatedDuration, tasks = tasks) to outlet MaintenanceContext.MaintenanceOrder.MaintenanceOrderEvents2
     }
-    on maintenanceCompleted: event MaintenanceCompleted is {
-      morph entity MaintenanceOrder to state MaintenanceOrder.CompletedState with record MaintenanceOrder.CompletedStateData(orderId = maintenanceCompleted.orderId, completedAt = maintenanceCompleted.completedAt, completionNotes = maintenanceCompleted.completionNotes, equipmentStatus = maintenanceCompleted.equipmentStatus, stateValue = prompt("the state value of this completed state data"), equipmentId = prompt("the equipment id of this completed state data"), equipmentName = prompt("the equipment name of this completed state data"), maintenanceType = prompt("the maintenance type of this completed state data"), technicianId = prompt("the technician id of this completed state data"), technicianName = prompt("the technician name of this completed state data"), startedAt = prompt("the started at of this completed state data"), totalLaborMinutes = prompt("the total labor minutes of this completed state data"), partsUsed = prompt("the parts used of this completed state data"), totalPartsCost = prompt("the total parts cost of this completed state data"), downtimeMinutes = empty)
-    }
-    on maintenanceStarted: event MaintenanceStarted is {
-      morph entity MaintenanceOrder to state MaintenanceOrder.InProgressState with record MaintenanceOrder.InProgressStateData(orderId = maintenanceStarted.orderId, startedAt = maintenanceStarted.startedAt, downtimeStart = maintenanceStarted.downtimeStart, stateValue = prompt("the state value of this in progress state data"), equipmentId = prompt("the equipment id of this in progress state data"), equipmentName = prompt("the equipment name of this in progress state data"), maintenanceType = prompt("the maintenance type of this in progress state data"), priority = prompt("the priority of this in progress state data"), description = prompt("the description of this in progress state data"), tasks = prompt("the tasks of this in progress state data"), technicianId = prompt("the technician id of this in progress state data"), technicianName = prompt("the technician name of this in progress state data"), hourlyRate = prompt("the hourly rate of this in progress state data"), partsUsed = prompt("the parts used of this in progress state data"), laborRecords = prompt("the labor records of this in progress state data"), lastSpareRecordedAt = empty)
-    }
-    on orderCancelled: event OrderCancelled is {
-      morph entity MaintenanceOrder to state MaintenanceOrder.CancelledState with record MaintenanceOrder.CancelledStateData(orderId = orderCancelled.orderId, reason = orderCancelled.reason, cancelledBy = orderCancelled.cancelledBy, equipmentId = prompt("the equipment id of this cancelled state data"), equipmentName = prompt("the equipment name of this cancelled state data"), maintenanceType = prompt("the maintenance type of this cancelled state data"), cancelledAt = prompt("the cancelled at of this cancelled state data"))
-    }
     on spareUsageRecorded: event SpareUsageRecorded is {
       append prompt("a SparePartUsage of sparePartId, partNumber, quantity and totalCost") to field MaintenanceOrder.InProgressState.partsUsed
       set field MaintenanceOrder.InProgressState.lastSpareRecordedAt to spareUsageRecorded.recordedAt
     }
-    on technicianAssigned: event TechnicianAssigned is {
-      morph entity MaintenanceOrder to state MaintenanceOrder.AssignedState with record MaintenanceOrder.AssignedStateData(orderId = technicianAssigned.orderId, technicianId = technicianAssigned.technicianId, technicianName = technicianAssigned.technicianName, hourlyRate = technicianAssigned.hourlyRate, equipmentId = prompt("the equipment id of this assigned state data"), equipmentName = prompt("the equipment name of this assigned state data"), maintenanceType = prompt("the maintenance type of this assigned state data"), priority = prompt("the priority of this assigned state data"), description = prompt("the description of this assigned state data"), scheduledDate = prompt("the scheduled date of this assigned state data"), estimatedDuration = prompt("the estimated duration of this assigned state data"), tasks = prompt("the tasks of this assigned state data"), assignedAt = prompt("the assigned at of this assigned state data"))
-    }
     on getMaintenanceOrder: query GetMaintenanceOrder is {
       reply result MaintenanceOrderResult(maintenanceOrderId = getMaintenanceOrder.maintenanceOrderId)
     }
-    on assignTechnician: command AssignTechnician is {
-      yield event TechnicianAssigned(orderId = assignTechnician.orderId, technicianId = assignTechnician.technicianId, technicianName = assignTechnician.technicianName, assignedAt = system.now, hourlyRate = assignTechnician.hourlyRate)
-    }
-    on startMaintenance: command StartMaintenance is {
-      yield event MaintenanceStarted(orderId = startMaintenance.orderId, startedAt = startMaintenance.startedAt, downtimeStart = startMaintenance.downtimeStart, technicianId = MaintenanceOrder.AssignedState.technicianId)
-    }
     on recordSpareUsage: command RecordSpareUsage is {
       yield event SpareUsageRecorded(orderId = recordSpareUsage.orderId, sparePartId = recordSpareUsage.sparePartId, partNumber = recordSpareUsage.partNumber, quantity = recordSpareUsage.quantity, totalCost = recordSpareUsage.unitCost * recordSpareUsage.quantity, recordedAt = system.now)
-    }
-    on completeMaintenance: command CompleteMaintenance is {
-      yield event MaintenanceCompleted(orderId = completeMaintenance.orderId, completedAt = completeMaintenance.completedAt, equipmentStatus = completeMaintenance.equipmentStatus, equipmentId = MaintenanceOrder.InProgressState.equipmentId, totalLaborMinutes = sum of MaintenanceOrder.InProgressState.laborRecords as r by minutes of ((r.endTime otherwise completeMaintenance.completedAt) - r.startTime), totalPartsCost = sum of MaintenanceOrder.InProgressState.partsUsed as p by p.quantity * p.unitCost, downtimeMinutes = empty, completionNotes = completeMaintenance.completionNotes)
-    }
-    on cancelOrder: command CancelOrder is {
-      yield event OrderCancelled(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledBy = cancelOrder.cancelledBy, cancelledAt = system.now)
     }
   } with {
     briefly "Processes maintenance order commands"

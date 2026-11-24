@@ -107,6 +107,13 @@ Empty. Every 2026-11-21..23 task is in `task/done/` with Results.
   `Order`'s clauses into their states; 31 -> 6 fills, gates green.
   riddlc rejects a read of another state's record, which is what makes
   the move scriptable; which states accept a command is not.
+- **F3 placement, corpus-wide.** 388 clauses in 150 models moved into the
+  states that accept them, from a reviewed TSV; 875 prompts gone, gates
+  green. Lessons: "every non-terminal state" was wrong for 78 of 117
+  terminal rows (no expiring a filled order), so a name heuristic is a
+  proposal, never a decision; and a state listed as its own source draws
+  `stmt-morph-to-current-state`. riddlc misses nested out-of-state reads
+  (filed with riddl).
 
 ## 2026-11-20 — 2.8.0 pinned, #43 closed at zero, the 2.8.0 survey
 

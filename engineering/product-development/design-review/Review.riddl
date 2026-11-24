@@ -782,6 +782,14 @@ entity Review as router is {
         let reviewResult: type ReviewResult = prompt("read the review from the store")
         reply reviewResult
       }
+      on startReview: command StartReview is {
+        morph entity ReviewContext.Review to state ReviewContext.Review.ActiveState with record Review.ActiveStateData(reviewId = startReview.reviewId, info = DraftStateData.info, reviewStatus = prompt("the review status of this active state data"), documents = DraftStateData.documents, reviewers = prompt("the reviewers of this active state data"), comments = prompt("the comments of this active state data"), decisions = prompt("the decisions of this active state data"), revisionCount = prompt("the revision count of this active state data"), startedAt = prompt("the started at of this active state data"))
+        tell event ReviewStarted(reviewId = startReview.reviewId, startedBy = startReview.startedBy, startedAt = system.now) to entity ReviewContext.Review
+      }
+      on cancelReview: command CancelReview is {
+        morph entity ReviewContext.Review to state ReviewContext.Review.CancelledState with record Review.CancelledStateData(reviewId = cancelReview.reviewId, reason = cancelReview.reason, info = DraftStateData.info, cancelledAt = prompt("the cancelled at of this cancelled state data"))
+        tell event ReviewCancelled(reviewId = cancelReview.reviewId, reason = cancelReview.reason, cancelledAt = system.now) to entity ReviewContext.Review
+      }
     } with {
       briefly "DraftState init handler"
       described as {
@@ -794,7 +802,23 @@ entity Review as router is {
       |The DraftState state of the Review.
     }
   }
-  state ActiveState of record Review.ActiveStateData with {
+  state ActiveState of record Review.ActiveStateData is {
+    initial handler ActiveStateHandler is {
+      on finalizeReview: command FinalizeReview is {
+        morph entity ReviewContext.Review to state ReviewContext.Review.CompletedState with record Review.CompletedStateData(reviewId = finalizeReview.reviewId, outcome = finalizeReview.outcome, summary = finalizeReview.summary, info = ActiveStateData.info, comments = ActiveStateData.comments, decisions = ActiveStateData.decisions, finalizedAt = prompt("the finalized at of this completed state data"))
+        tell event ReviewFinalized(reviewId = finalizeReview.reviewId, outcome = finalizeReview.outcome, summary = finalizeReview.summary, finalizedAt = system.now) to entity ReviewContext.Review
+      }
+      on cancelReview: command CancelReview is {
+        morph entity ReviewContext.Review to state ReviewContext.Review.CancelledState with record Review.CancelledStateData(reviewId = cancelReview.reviewId, reason = cancelReview.reason, info = ActiveStateData.info, cancelledAt = prompt("the cancelled at of this cancelled state data"))
+        tell event ReviewCancelled(reviewId = cancelReview.reviewId, reason = cancelReview.reason, cancelledAt = system.now) to entity ReviewContext.Review
+      }
+    } with {
+      briefly "While ActiveState"
+      described as {
+        |The commands and folds accepted while the entity is in ActiveState.
+      }
+    }
+  } with {
     briefly "ActiveState state"
     described as {
       |The ActiveState state of the Review.
@@ -821,10 +845,6 @@ entity Review as router is {
     on assignReviewer: command AssignReviewer is {
       tell event ReviewerAssigned(reviewId = assignReviewer.reviewId, assignment = assignReviewer.assignment, assignedAt = system.now) to entity ReviewContext.Review
     }
-    on startReview: command StartReview is {
-      morph entity ReviewContext.Review to state ReviewContext.Review.ActiveState with record Review.ActiveStateData(reviewId = startReview.reviewId, info = prompt("the info of this active state data"), reviewStatus = prompt("the review status of this active state data"), documents = prompt("the documents of this active state data"), reviewers = prompt("the reviewers of this active state data"), comments = prompt("the comments of this active state data"), decisions = prompt("the decisions of this active state data"), revisionCount = prompt("the revision count of this active state data"), startedAt = prompt("the started at of this active state data"))
-      tell event ReviewStarted(reviewId = startReview.reviewId, startedBy = startReview.startedBy, startedAt = system.now) to entity ReviewContext.Review
-    }
     on addComment: command AddComment is {
       tell event CommentAdded(reviewId = addComment.reviewId, comment = addComment.comment, addedAt = system.now) to entity ReviewContext.Review
     }
@@ -842,14 +862,6 @@ entity Review as router is {
     }
     on submitRevision: command SubmitRevision is {
       tell event RevisionSubmitted(reviewId = submitRevision.reviewId, newVersion = submitRevision.newVersion, changes = submitRevision.changes, submittedAt = system.now) to entity ReviewContext.Review
-    }
-    on finalizeReview: command FinalizeReview is {
-      morph entity ReviewContext.Review to state ReviewContext.Review.CompletedState with record Review.CompletedStateData(reviewId = finalizeReview.reviewId, outcome = finalizeReview.outcome, summary = finalizeReview.summary, info = prompt("the info of this completed state data"), comments = prompt("the comments of this completed state data"), decisions = prompt("the decisions of this completed state data"), finalizedAt = prompt("the finalized at of this completed state data"))
-      tell event ReviewFinalized(reviewId = finalizeReview.reviewId, outcome = finalizeReview.outcome, summary = finalizeReview.summary, finalizedAt = system.now) to entity ReviewContext.Review
-    }
-    on cancelReview: command CancelReview is {
-      morph entity ReviewContext.Review to state ReviewContext.Review.CancelledState with record Review.CancelledStateData(reviewId = cancelReview.reviewId, reason = cancelReview.reason, info = prompt("the info of this cancelled state data"), cancelledAt = prompt("the cancelled at of this cancelled state data"))
-      tell event ReviewCancelled(reviewId = cancelReview.reviewId, reason = cancelReview.reason, cancelledAt = system.now) to entity ReviewContext.Review
     }
     on commentAdded: event CommentAdded is {
       do "apply CommentAdded to the review so it can be persisted and replayed"

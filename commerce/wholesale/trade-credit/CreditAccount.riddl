@@ -676,6 +676,14 @@ entity CreditAccount as router is {
         let creditAccountResult: type CreditAccountResult = prompt("read the credit account from the store")
         reply creditAccountResult
       }
+      on approveCredit: command ApproveCredit is {
+        morph entity CreditContext.CreditAccount to state CreditContext.CreditAccount.ActiveState with record CreditAccount.ActiveAccountData(creditAccountId = approveCredit.creditAccountId, creditLimit = approveCredit.creditLimit, terms = approveCredit.terms, riskLevel = approveCredit.riskLevel, customerId = PendingAccountData.customerId, balance = prompt("the balance of this active account data"), invoices = prompt("the invoices of this active account data"), collectionActions = prompt("the collection actions of this active account data"), approvedAt = prompt("the approved at of this active account data"))
+        tell event CreditApproved(creditAccountId = approveCredit.creditAccountId, creditLimit = approveCredit.creditLimit, terms = approveCredit.terms, riskLevel = approveCredit.riskLevel, approvedAt = system.now) to entity CreditContext.CreditAccount
+      }
+      on denyCredit: command DenyCredit is {
+        morph entity CreditContext.CreditAccount to state CreditContext.CreditAccount.DeniedState with record CreditAccount.DeniedAccountData(creditAccountId = denyCredit.creditAccountId, reason = denyCredit.reason, customerId = PendingAccountData.customerId, deniedAt = prompt("the denied at of this denied account data"))
+        tell event CreditDenied(creditAccountId = denyCredit.creditAccountId, reason = denyCredit.reason, deniedAt = system.now) to entity CreditContext.CreditAccount
+      }
     } with {
       briefly "PendingState init handler"
       described as {
@@ -688,13 +696,37 @@ entity CreditAccount as router is {
       |The PendingState state of the CreditAccount.
     }
   }
-  state ActiveState of record CreditAccount.ActiveAccountData with {
+  state ActiveState of record CreditAccount.ActiveAccountData is {
+    initial handler ActiveStateHandler is {
+      on suspendAccount: command SuspendAccount is {
+        morph entity CreditContext.CreditAccount to state CreditContext.CreditAccount.SuspendedState with record CreditAccount.SuspendedAccountData(creditAccountId = suspendAccount.creditAccountId, reason = suspendAccount.reason, customerId = ActiveAccountData.customerId, balance = ActiveAccountData.balance, suspendedAt = prompt("the suspended at of this suspended account data"))
+        tell event AccountSuspended(creditAccountId = suspendAccount.creditAccountId, reason = suspendAccount.reason, suspendedAt = system.now) to entity CreditContext.CreditAccount
+      }
+    } with {
+      briefly "While ActiveState"
+      described as {
+        |The commands and folds accepted while the entity is in ActiveState.
+      }
+    }
+  } with {
     briefly "ActiveState state"
     described as {
       |The ActiveState state of the CreditAccount.
     }
   }
-  state SuspendedState of record CreditAccount.SuspendedAccountData with {
+  state SuspendedState of record CreditAccount.SuspendedAccountData is {
+    initial handler SuspendedStateHandler is {
+      on reinstateAccount: command ReinstateAccount is {
+        morph entity CreditContext.CreditAccount to state CreditContext.CreditAccount.ActiveState with record CreditAccount.ActiveAccountData(creditAccountId = reinstateAccount.creditAccountId, customerId = SuspendedAccountData.customerId, creditLimit = prompt("the credit limit of this active account data"), terms = prompt("the terms of this active account data"), riskLevel = prompt("the risk level of this active account data"), balance = SuspendedAccountData.balance, invoices = prompt("the invoices of this active account data"), collectionActions = prompt("the collection actions of this active account data"), approvedAt = prompt("the approved at of this active account data"))
+        tell event AccountReinstated(creditAccountId = reinstateAccount.creditAccountId, reinstatedAt = system.now) to entity CreditContext.CreditAccount
+      }
+    } with {
+      briefly "While SuspendedState"
+      described as {
+        |The commands and folds accepted while the entity is in SuspendedState.
+      }
+    }
+  } with {
     briefly "SuspendedState state"
     described as {
       |The SuspendedState state of the CreditAccount.
@@ -712,14 +744,6 @@ entity CreditAccount as router is {
       morph entity CreditContext.CreditAccount to state CreditContext.CreditAccount.PendingState with record CreditAccount.PendingAccountData(creditAccountId = self.id, customerId = customerId, requestedLimit = requestedLimit, requestedTerms = requestedTerms, appliedAt = prompt("the applied at of this pending account data"))
       tell event CreditApplied(creditAccountId = self.id, customerId = customerId, requestedLimit = requestedLimit, appliedAt = prompt("the applied at of this credit applied")) to entity CreditContext.CreditAccount
     }
-    on approveCredit: command ApproveCredit is {
-      morph entity CreditContext.CreditAccount to state CreditContext.CreditAccount.ActiveState with record CreditAccount.ActiveAccountData(creditAccountId = approveCredit.creditAccountId, creditLimit = approveCredit.creditLimit, terms = approveCredit.terms, riskLevel = approveCredit.riskLevel, customerId = prompt("the customer id of this active account data"), balance = prompt("the balance of this active account data"), invoices = prompt("the invoices of this active account data"), collectionActions = prompt("the collection actions of this active account data"), approvedAt = prompt("the approved at of this active account data"))
-      tell event CreditApproved(creditAccountId = approveCredit.creditAccountId, creditLimit = approveCredit.creditLimit, terms = approveCredit.terms, riskLevel = approveCredit.riskLevel, approvedAt = system.now) to entity CreditContext.CreditAccount
-    }
-    on denyCredit: command DenyCredit is {
-      morph entity CreditContext.CreditAccount to state CreditContext.CreditAccount.DeniedState with record CreditAccount.DeniedAccountData(creditAccountId = denyCredit.creditAccountId, reason = denyCredit.reason, customerId = prompt("the customer id of this denied account data"), deniedAt = prompt("the denied at of this denied account data"))
-      tell event CreditDenied(creditAccountId = denyCredit.creditAccountId, reason = denyCredit.reason, deniedAt = system.now) to entity CreditContext.CreditAccount
-    }
     on postInvoice: command PostInvoice is {
       tell event InvoicePosted(creditAccountId = postInvoice.creditAccountId, invoice = postInvoice.invoice, newBalance = prompt("the new balance of this invoice posted"), postedAt = system.now) to entity CreditContext.CreditAccount
     }
@@ -728,14 +752,6 @@ entity CreditAccount as router is {
     }
     on adjustCreditLimit: command AdjustCreditLimit is {
       tell event CreditLimitAdjusted(creditAccountId = adjustCreditLimit.creditAccountId, newLimit = adjustCreditLimit.newLimit, oldLimit = prompt("the old limit of this credit limit adjusted"), adjustedAt = system.now) to entity CreditContext.CreditAccount
-    }
-    on suspendAccount: command SuspendAccount is {
-      morph entity CreditContext.CreditAccount to state CreditContext.CreditAccount.SuspendedState with record CreditAccount.SuspendedAccountData(creditAccountId = suspendAccount.creditAccountId, reason = suspendAccount.reason, customerId = prompt("the customer id of this suspended account data"), balance = prompt("the balance of this suspended account data"), suspendedAt = prompt("the suspended at of this suspended account data"))
-      tell event AccountSuspended(creditAccountId = suspendAccount.creditAccountId, reason = suspendAccount.reason, suspendedAt = system.now) to entity CreditContext.CreditAccount
-    }
-    on reinstateAccount: command ReinstateAccount is {
-      morph entity CreditContext.CreditAccount to state CreditContext.CreditAccount.ActiveState with record CreditAccount.ActiveAccountData(creditAccountId = reinstateAccount.creditAccountId, customerId = prompt("the customer id of this active account data"), creditLimit = prompt("the credit limit of this active account data"), terms = prompt("the terms of this active account data"), riskLevel = prompt("the risk level of this active account data"), balance = prompt("the balance of this active account data"), invoices = prompt("the invoices of this active account data"), collectionActions = prompt("the collection actions of this active account data"), approvedAt = prompt("the approved at of this active account data"))
-      tell event AccountReinstated(creditAccountId = reinstateAccount.creditAccountId, reinstatedAt = system.now) to entity CreditContext.CreditAccount
     }
     on recordCollectionAction: command RecordCollectionAction is {
       tell event CollectionActionRecorded(creditAccountId = recordCollectionAction.creditAccountId, action = recordCollectionAction.action, recordedAt = system.now) to entity CreditContext.CreditAccount

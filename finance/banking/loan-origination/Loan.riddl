@@ -821,19 +821,79 @@ entity Loan as router is {
   }
   // Initialize command for source streamlet
   // States
-  state SubmittedState of record Loan.SubmittedStateData with {
+  state SubmittedState of record Loan.SubmittedStateData is {
+    initial handler SubmittedStateHandler is {
+      on sendToUnderwriting: command SendToUnderwriting is {
+        morph entity LoanContext.Loan to state LoanContext.Loan.UnderwritingState with record Loan.UnderwritingStateData(loanId = sendToUnderwriting.loanId, borrower = SubmittedStateData.borrower, request = SubmittedStateData.request, documents = empty, status = SubmittedStateData.status, sentToUnderwritingAt = prompt("the sent to underwriting at of this underwriting state data"))
+        tell event SentToUnderwriting(loanId = sendToUnderwriting.loanId, sentAt = system.now) to entity LoanContext.Loan
+      }
+      on declineLoan: command DeclineLoan is {
+        morph entity LoanContext.Loan to state LoanContext.Loan.ClosedState with record Loan.ClosedStateData(loanId = declineLoan.loanId, borrower = SubmittedStateData.borrower, reason = prompt("the reason of this closed state data"), closedAt = prompt("the closed at of this closed state data"))
+        tell event LoanDeclined(loanId = declineLoan.loanId, reasons = declineLoan.reasons, declinedBy = declineLoan.declinedBy, declinedAt = system.now) to entity LoanContext.Loan
+      }
+      on withdrawApplication: command WithdrawApplication is {
+        morph entity LoanContext.Loan to state LoanContext.Loan.ClosedState with record Loan.ClosedStateData(loanId = withdrawApplication.loanId, reason = withdrawApplication.reason, borrower = SubmittedStateData.borrower, closedAt = prompt("the closed at of this closed state data"))
+        tell event ApplicationWithdrawn(loanId = withdrawApplication.loanId, reason = withdrawApplication.reason, withdrawnAt = system.now) to entity LoanContext.Loan
+      }
+    } with {
+      briefly "While SubmittedState"
+      described as {
+        |The commands and folds accepted while the entity is in SubmittedState.
+      }
+    }
+  } with {
     briefly "Submitted state"
     described as {
       |Loan application has been submitted.
     }
   }
-  state UnderwritingState of record Loan.UnderwritingStateData with {
+  state UnderwritingState of record Loan.UnderwritingStateData is {
+    initial handler UnderwritingStateHandler is {
+      on approveLoan: command ApproveLoan is {
+        morph entity LoanContext.Loan to state LoanContext.Loan.ApprovedState with record Loan.ApprovedStateData(loanId = approveLoan.loanId, terms = approveLoan.terms, borrower = UnderwritingStateData.borrower, request = UnderwritingStateData.request, documents = empty, status = UnderwritingStateData.status, approvedAt = prompt("the approved at of this approved state data"))
+        tell event LoanApproved(loanId = approveLoan.loanId, terms = approveLoan.terms, approvedBy = approveLoan.approvedBy, approvedAt = system.now) to entity LoanContext.Loan
+      }
+      on conditionallyApproveLoan: command ConditionallyApproveLoan is {
+        morph entity LoanContext.Loan to state LoanContext.Loan.ApprovedState with record Loan.ApprovedStateData(loanId = conditionallyApproveLoan.loanId, terms = conditionallyApproveLoan.terms, borrower = UnderwritingStateData.borrower, request = UnderwritingStateData.request, documents = empty, status = UnderwritingStateData.status, approvedAt = prompt("the approved at of this approved state data"))
+        tell event LoanConditionallyApproved(loanId = conditionallyApproveLoan.loanId, terms = conditionallyApproveLoan.terms, conditions = conditionallyApproveLoan.conditions, approvedAt = system.now) to entity LoanContext.Loan
+      }
+      on declineLoan: command DeclineLoan is {
+        morph entity LoanContext.Loan to state LoanContext.Loan.ClosedState with record Loan.ClosedStateData(loanId = declineLoan.loanId, borrower = UnderwritingStateData.borrower, reason = prompt("the reason of this closed state data"), closedAt = prompt("the closed at of this closed state data"))
+        tell event LoanDeclined(loanId = declineLoan.loanId, reasons = declineLoan.reasons, declinedBy = declineLoan.declinedBy, declinedAt = system.now) to entity LoanContext.Loan
+      }
+      on withdrawApplication: command WithdrawApplication is {
+        morph entity LoanContext.Loan to state LoanContext.Loan.ClosedState with record Loan.ClosedStateData(loanId = withdrawApplication.loanId, reason = withdrawApplication.reason, borrower = UnderwritingStateData.borrower, closedAt = prompt("the closed at of this closed state data"))
+        tell event ApplicationWithdrawn(loanId = withdrawApplication.loanId, reason = withdrawApplication.reason, withdrawnAt = system.now) to entity LoanContext.Loan
+      }
+    } with {
+      briefly "While UnderwritingState"
+      described as {
+        |The commands and folds accepted while the entity is in UnderwritingState.
+      }
+    }
+  } with {
     briefly "Underwriting state"
     described as {
       |Loan is under review by underwriting.
     }
   }
-  state ApprovedState of record Loan.ApprovedStateData with {
+  state ApprovedState of record Loan.ApprovedStateData is {
+    initial handler ApprovedStateHandler is {
+      on fundLoan: command FundLoan is {
+        morph entity LoanContext.Loan to state LoanContext.Loan.FundedState with record Loan.FundedStateData(loanId = fundLoan.loanId, funding = fundLoan.funding, borrower = ApprovedStateData.borrower, terms = ApprovedStateData.terms, status = ApprovedStateData.status)
+        tell event LoanFunded(loanId = fundLoan.loanId, funding = fundLoan.funding) to entity LoanContext.Loan
+      }
+      on withdrawApplication: command WithdrawApplication is {
+        morph entity LoanContext.Loan to state LoanContext.Loan.ClosedState with record Loan.ClosedStateData(loanId = withdrawApplication.loanId, reason = withdrawApplication.reason, borrower = ApprovedStateData.borrower, closedAt = prompt("the closed at of this closed state data"))
+        tell event ApplicationWithdrawn(loanId = withdrawApplication.loanId, reason = withdrawApplication.reason, withdrawnAt = system.now) to entity LoanContext.Loan
+      }
+    } with {
+      briefly "While ApprovedState"
+      described as {
+        |The commands and folds accepted while the entity is in ApprovedState.
+      }
+    }
+  } with {
     briefly "Approved state"
     described as {
       |Loan has been approved for funding.
@@ -866,35 +926,11 @@ entity Loan as router is {
     on reviewDocument: command ReviewDocument is {
       tell event DocumentReviewed(loanId = reviewDocument.loanId, documentId = reviewDocument.documentId, accepted = reviewDocument.accepted, rejectionReason = reviewDocument.rejectionReason, reviewedAt = system.now) to entity LoanContext.Loan
     }
-    on sendToUnderwriting: command SendToUnderwriting is {
-      morph entity LoanContext.Loan to state LoanContext.Loan.UnderwritingState with record Loan.UnderwritingStateData(loanId = sendToUnderwriting.loanId, borrower = prompt("the borrower of this underwriting state data"), request = prompt("the request of this underwriting state data"), documents = empty, status = prompt("the status of this underwriting state data"), sentToUnderwritingAt = prompt("the sent to underwriting at of this underwriting state data"))
-      tell event SentToUnderwriting(loanId = sendToUnderwriting.loanId, sentAt = system.now) to entity LoanContext.Loan
-    }
-    on approveLoan: command ApproveLoan is {
-      morph entity LoanContext.Loan to state LoanContext.Loan.ApprovedState with record Loan.ApprovedStateData(loanId = approveLoan.loanId, terms = approveLoan.terms, borrower = prompt("the borrower of this approved state data"), request = prompt("the request of this approved state data"), documents = empty, status = prompt("the status of this approved state data"), approvedAt = prompt("the approved at of this approved state data"))
-      tell event LoanApproved(loanId = approveLoan.loanId, terms = approveLoan.terms, approvedBy = approveLoan.approvedBy, approvedAt = system.now) to entity LoanContext.Loan
-    }
-    on conditionallyApproveLoan: command ConditionallyApproveLoan is {
-      morph entity LoanContext.Loan to state LoanContext.Loan.ApprovedState with record Loan.ApprovedStateData(loanId = conditionallyApproveLoan.loanId, terms = conditionallyApproveLoan.terms, borrower = prompt("the borrower of this approved state data"), request = prompt("the request of this approved state data"), documents = empty, status = prompt("the status of this approved state data"), approvedAt = prompt("the approved at of this approved state data"))
-      tell event LoanConditionallyApproved(loanId = conditionallyApproveLoan.loanId, terms = conditionallyApproveLoan.terms, conditions = conditionallyApproveLoan.conditions, approvedAt = system.now) to entity LoanContext.Loan
-    }
-    on declineLoan: command DeclineLoan is {
-      morph entity LoanContext.Loan to state LoanContext.Loan.ClosedState with record Loan.ClosedStateData(loanId = declineLoan.loanId, borrower = prompt("the borrower of this closed state data"), reason = prompt("the reason of this closed state data"), closedAt = prompt("the closed at of this closed state data"))
-      tell event LoanDeclined(loanId = declineLoan.loanId, reasons = declineLoan.reasons, declinedBy = declineLoan.declinedBy, declinedAt = system.now) to entity LoanContext.Loan
-    }
     on acceptOffer: command AcceptOffer is {
       tell event OfferAccepted(loanId = acceptOffer.loanId, acceptedAt = acceptOffer.acceptedAt) to entity LoanContext.Loan
     }
     on scheduleClosing: command ScheduleClosing is {
       tell event ClosingScheduled(loanId = scheduleClosing.loanId, closing = scheduleClosing.closing, scheduledAt = prompt("the scheduled at of this closing scheduled")) to entity LoanContext.Loan
-    }
-    on fundLoan: command FundLoan is {
-      morph entity LoanContext.Loan to state LoanContext.Loan.FundedState with record Loan.FundedStateData(loanId = fundLoan.loanId, funding = fundLoan.funding, borrower = prompt("the borrower of this funded state data"), terms = prompt("the terms of this funded state data"), status = prompt("the status of this funded state data"))
-      tell event LoanFunded(loanId = fundLoan.loanId, funding = fundLoan.funding) to entity LoanContext.Loan
-    }
-    on withdrawApplication: command WithdrawApplication is {
-      morph entity LoanContext.Loan to state LoanContext.Loan.ClosedState with record Loan.ClosedStateData(loanId = withdrawApplication.loanId, reason = withdrawApplication.reason, borrower = prompt("the borrower of this closed state data"), closedAt = prompt("the closed at of this closed state data"))
-      tell event ApplicationWithdrawn(loanId = withdrawApplication.loanId, reason = withdrawApplication.reason, withdrawnAt = system.now) to entity LoanContext.Loan
     }
     on getLoan: query GetLoan is {
       reply result LoanResult(loanId = getLoan.loanId, borrower = prompt("the borrower of this loan result"), status = prompt("the status of this loan result"))

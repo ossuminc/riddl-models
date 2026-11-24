@@ -527,6 +527,14 @@ entity DistributionOrder as router is {
         let distributionOrderResult: type DistributionOrderResult = prompt("read the distribution order from the store")
         reply distributionOrderResult
       }
+      on confirmOrder: command ConfirmOrder is {
+        morph entity DistributionContext.DistributionOrder to state DistributionContext.DistributionOrder.ConfirmedState with record DistributionOrder.ConfirmedOrderData(orderId = confirmOrder.orderId, customerId = PendingOrderData.customerId, lines = PendingOrderData.lines, shippingAddress = PendingOrderData.shippingAddress, totalAmount = PendingOrderData.totalAmount, confirmedAt = prompt("the confirmed at of this confirmed order data"))
+        tell event OrderConfirmed(orderId = confirmOrder.orderId, confirmedBy = confirmOrder.confirmedBy, confirmedAt = system.now) to entity DistributionContext.DistributionOrder
+      }
+      on cancelOrder: command CancelOrder is {
+        morph entity DistributionContext.DistributionOrder to state DistributionContext.DistributionOrder.CancelledState with record DistributionOrder.CancelledOrderData(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledAt = prompt("the cancelled at of this cancelled order data"))
+        tell event OrderCancelled(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledAt = system.now) to entity DistributionContext.DistributionOrder
+      }
     } with {
       briefly "PendingState init handler"
       described as {
@@ -539,13 +547,41 @@ entity DistributionOrder as router is {
       |The PendingState state of the DistributionOrder.
     }
   }
-  state ConfirmedState of record DistributionOrder.ConfirmedOrderData with {
+  state ConfirmedState of record DistributionOrder.ConfirmedOrderData is {
+    initial handler ConfirmedStateHandler is {
+      on shipOrder: command ShipOrder is {
+        morph entity DistributionContext.DistributionOrder to state DistributionContext.DistributionOrder.ShippedState with record DistributionOrder.ShippedOrderData(orderId = shipOrder.orderId, shipment = shipOrder.shipment, customerId = ConfirmedOrderData.customerId, totalAmount = ConfirmedOrderData.totalAmount, shippedAt = prompt("the shipped at of this shipped order data"))
+        tell event OrderShipped(orderId = shipOrder.orderId, shipment = shipOrder.shipment, shippedAt = system.now) to entity DistributionContext.DistributionOrder
+      }
+      on cancelOrder: command CancelOrder is {
+        morph entity DistributionContext.DistributionOrder to state DistributionContext.DistributionOrder.CancelledState with record DistributionOrder.CancelledOrderData(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledAt = prompt("the cancelled at of this cancelled order data"))
+        tell event OrderCancelled(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledAt = system.now) to entity DistributionContext.DistributionOrder
+      }
+    } with {
+      briefly "While ConfirmedState"
+      described as {
+        |The commands and folds accepted while the entity is in ConfirmedState.
+      }
+    }
+  } with {
     briefly "ConfirmedState state"
     described as {
       |The ConfirmedState state of the DistributionOrder.
     }
   }
-  state ShippedState of record DistributionOrder.ShippedOrderData with {
+  state ShippedState of record DistributionOrder.ShippedOrderData is {
+    initial handler ShippedStateHandler is {
+      on deliverOrder: command DeliverOrder is {
+        morph entity DistributionContext.DistributionOrder to state DistributionContext.DistributionOrder.DeliveredState with record DistributionOrder.DeliveredOrderData(orderId = deliverOrder.orderId, deliveredAt = deliverOrder.deliveredAt, customerId = ShippedOrderData.customerId, totalAmount = ShippedOrderData.totalAmount)
+        tell event OrderDelivered(orderId = deliverOrder.orderId, deliveredAt = deliverOrder.deliveredAt, receivedBy = deliverOrder.receivedBy) to entity DistributionContext.DistributionOrder
+      }
+    } with {
+      briefly "While ShippedState"
+      described as {
+        |The commands and folds accepted while the entity is in ShippedState.
+      }
+    }
+  } with {
     briefly "ShippedState state"
     described as {
       |The ShippedState state of the DistributionOrder.
@@ -571,22 +607,6 @@ entity DistributionOrder as router is {
     }
     on allocateInventory: command AllocateInventory is {
       tell event InventoryAllocated(orderId = allocateInventory.orderId, allocations = allocateInventory.allocations, fullyAllocated = prompt("the fully allocated of this inventory allocated"), allocatedAt = system.now) to entity DistributionContext.DistributionOrder
-    }
-    on confirmOrder: command ConfirmOrder is {
-      morph entity DistributionContext.DistributionOrder to state DistributionContext.DistributionOrder.ConfirmedState with record DistributionOrder.ConfirmedOrderData(orderId = confirmOrder.orderId, customerId = prompt("the customer id of this confirmed order data"), lines = prompt("the lines of this confirmed order data"), shippingAddress = prompt("the shipping address of this confirmed order data"), totalAmount = prompt("the total amount of this confirmed order data"), confirmedAt = prompt("the confirmed at of this confirmed order data"))
-      tell event OrderConfirmed(orderId = confirmOrder.orderId, confirmedBy = confirmOrder.confirmedBy, confirmedAt = system.now) to entity DistributionContext.DistributionOrder
-    }
-    on shipOrder: command ShipOrder is {
-      morph entity DistributionContext.DistributionOrder to state DistributionContext.DistributionOrder.ShippedState with record DistributionOrder.ShippedOrderData(orderId = shipOrder.orderId, shipment = shipOrder.shipment, customerId = prompt("the customer id of this shipped order data"), totalAmount = prompt("the total amount of this shipped order data"), shippedAt = prompt("the shipped at of this shipped order data"))
-      tell event OrderShipped(orderId = shipOrder.orderId, shipment = shipOrder.shipment, shippedAt = system.now) to entity DistributionContext.DistributionOrder
-    }
-    on deliverOrder: command DeliverOrder is {
-      morph entity DistributionContext.DistributionOrder to state DistributionContext.DistributionOrder.DeliveredState with record DistributionOrder.DeliveredOrderData(orderId = deliverOrder.orderId, deliveredAt = deliverOrder.deliveredAt, customerId = prompt("the customer id of this delivered order data"), totalAmount = prompt("the total amount of this delivered order data"))
-      tell event OrderDelivered(orderId = deliverOrder.orderId, deliveredAt = deliverOrder.deliveredAt, receivedBy = deliverOrder.receivedBy) to entity DistributionContext.DistributionOrder
-    }
-    on cancelOrder: command CancelOrder is {
-      morph entity DistributionContext.DistributionOrder to state DistributionContext.DistributionOrder.CancelledState with record DistributionOrder.CancelledOrderData(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledAt = prompt("the cancelled at of this cancelled order data"))
-      tell event OrderCancelled(orderId = cancelOrder.orderId, reason = cancelOrder.reason, cancelledAt = system.now) to entity DistributionContext.DistributionOrder
     }
     on inventoryAllocated: event InventoryAllocated is {
       do "apply InventoryAllocated to the distributionOrder so it can be persisted and replayed"

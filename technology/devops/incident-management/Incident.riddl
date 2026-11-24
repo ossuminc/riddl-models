@@ -759,6 +759,12 @@ aggregate event-sourced entity Incident as router is {
       on quiescence "30 minutes" is {
         tell command EscalateIncident(incidentId = self.id, newSeverity = prompt("the severity one step above the incident's current one"), escalatedBy = prompt("the escalation policy that fired, since no person acted"), reason = prompt("that the incident was never acknowledged"), additionalServices = prompt("the services the escalation policy adds at this level")) to entity IncidentContext.Incident
       }
+      on incidentAcknowledged: event IncidentAcknowledged is {
+        morph entity Incident to state Incident.ActiveState with record Incident.ActiveStateData(acknowledgedAt = incidentAcknowledged.acknowledgedAt, acknowledgedBy = incidentAcknowledged.acknowledgedBy, info = TriggeredStateData.info, timeline = TriggeredStateData.timeline, incidentCommander = empty, commanderAssignedAt = empty, lastTimelineEntryAt = empty)
+      }
+      on acknowledgeIncident: command AcknowledgeIncident is {
+        yield event IncidentAcknowledged(incidentId = acknowledgeIncident.incidentId, acknowledgedBy = acknowledgeIncident.acknowledgedBy, initialAssessment = acknowledgeIncident.initialAssessment, acknowledgedAt = system.now)
+      }
     } with {
       briefly "TriggeredState initialization"
       described as {
@@ -772,13 +778,41 @@ aggregate event-sourced entity Incident as router is {
       |The triggered state of the Incident entity, carrying TriggeredStateData.
     }
   }
-  state ActiveState of record Incident.ActiveStateData with {
+  state ActiveState of record Incident.ActiveStateData is {
+    initial handler ActiveStateHandler is {
+      on incidentResolved: event IncidentResolved is {
+        morph entity Incident to state Incident.ResolvedState with record Incident.ResolvedStateData(resolvedAt = incidentResolved.resolvedAt, resolvedBy = incidentResolved.resolvedBy, resolutionSummary = incidentResolved.resolutionSummary, updatedRootCause = incidentResolved.updatedRootCause, info = ActiveStateData.info, timeline = ActiveStateData.timeline, postMortem = empty)
+      }
+      on resolveIncident: command ResolveIncident is {
+        yield event IncidentResolved(incidentId = resolveIncident.incidentId, resolvedBy = resolveIncident.resolvedBy, resolutionSummary = resolveIncident.resolutionSummary, updatedRootCause = resolveIncident.updatedRootCause, resolvedAt = system.now, timeToResolve = system.now - Incident.ActiveState.info.createdAt)
+      }
+    } with {
+      briefly "While ActiveState"
+      described as {
+        |The commands and folds accepted while the entity is in ActiveState.
+      }
+    }
+  } with {
     briefly "Active state"
     described as {
       |The active state of the Incident entity, carrying ActiveStateData.
     }
   }
-  state ResolvedState of record Incident.ResolvedStateData with {
+  state ResolvedState of record Incident.ResolvedStateData is {
+    initial handler ResolvedStateHandler is {
+      on incidentClosed: event IncidentClosed is {
+        morph entity Incident to state Incident.ClosedState with record Incident.ClosedStateData(closedAt = incidentClosed.closedAt, info = ResolvedStateData.info, timeline = ResolvedStateData.timeline, postMortem = prompt("the post mortem of this closed state data"))
+      }
+      on closeIncident: command CloseIncident is {
+        yield event IncidentClosed(incidentId = closeIncident.incidentId, closedBy = closeIncident.closedBy, closedAt = system.now)
+      }
+    } with {
+      briefly "While ResolvedState"
+      described as {
+        |The commands and folds accepted while the entity is in ResolvedState.
+      }
+    }
+  } with {
     briefly "Resolved state"
     described as {
       |The resolved state of the Incident entity, carrying ResolvedStateData.
@@ -796,9 +830,6 @@ aggregate event-sourced entity Incident as router is {
       morph entity Incident to state Incident.TriggeredState with record Incident.TriggeredStateData(info = info, timeline = empty)
       send event IncidentCreated(incidentId = self.id, info = info) to outlet IncidentContext.Incident.IncidentEvents2
     }
-    on acknowledgeIncident: command AcknowledgeIncident is {
-      yield event IncidentAcknowledged(incidentId = acknowledgeIncident.incidentId, acknowledgedBy = acknowledgeIncident.acknowledgedBy, initialAssessment = acknowledgeIncident.initialAssessment, acknowledgedAt = system.now)
-    }
     on escalateIncident: command EscalateIncident is {
       yield event IncidentEscalated(incidentId = escalateIncident.incidentId, newSeverity = escalateIncident.newSeverity, escalatedBy = escalateIncident.escalatedBy, reason = escalateIncident.reason, additionalServices = escalateIncident.additionalServices, previousSeverity = Incident.ActiveState.info.severity)
     }
@@ -811,17 +842,8 @@ aggregate event-sourced entity Incident as router is {
     on addTimelineEntry: command AddTimelineEntry is {
       yield event TimelineEntryAdded(incidentId = addTimelineEntry.incidentId, entry = record TimelineEntry(timestamp = system.now, author = addTimelineEntry.author, action = addTimelineEntry.action, details = addTimelineEntry.details))
     }
-    on resolveIncident: command ResolveIncident is {
-      yield event IncidentResolved(incidentId = resolveIncident.incidentId, resolvedBy = resolveIncident.resolvedBy, resolutionSummary = resolveIncident.resolutionSummary, updatedRootCause = resolveIncident.updatedRootCause, resolvedAt = system.now, timeToResolve = system.now - Incident.ActiveState.info.createdAt)
-    }
     on createPostMortem: command CreatePostMortem is {
       yield event PostMortemCreated(incidentId = createPostMortem.incidentId, postMortem = record PostMortem(incidentId = createPostMortem.incidentId, summary = createPostMortem.summary, rootCause = createPostMortem.rootCause, impact = createPostMortem.impact, timeline = Incident.ResolvedState.timeline, lessonsLearned = createPostMortem.lessonsLearned, actionItems = createPostMortem.actionItems, preventionMeasures = createPostMortem.preventionMeasures, createdAt = system.now, author = createPostMortem.author))
-    }
-    on closeIncident: command CloseIncident is {
-      yield event IncidentClosed(incidentId = closeIncident.incidentId, closedBy = closeIncident.closedBy, closedAt = system.now)
-    }
-    on incidentAcknowledged: event IncidentAcknowledged is {
-      morph entity Incident to state Incident.ActiveState with record Incident.ActiveStateData(acknowledgedAt = incidentAcknowledged.acknowledgedAt, acknowledgedBy = incidentAcknowledged.acknowledgedBy, info = prompt("the info of this active state data"), timeline = prompt("the timeline of this active state data"), incidentCommander = empty, commanderAssignedAt = empty, lastTimelineEntryAt = empty)
     }
     on incidentEscalated: event IncidentEscalated is {
       set field Incident.ActiveState.info.severity to incidentEscalated.newSeverity
@@ -840,14 +862,8 @@ aggregate event-sourced entity Incident as router is {
       append timelineEntryAdded.entry to field Incident.ActiveState.timeline
       set field Incident.ActiveState.lastTimelineEntryAt to timelineEntryAdded.entry.timestamp
     }
-    on incidentResolved: event IncidentResolved is {
-      morph entity Incident to state Incident.ResolvedState with record Incident.ResolvedStateData(resolvedAt = incidentResolved.resolvedAt, resolvedBy = incidentResolved.resolvedBy, resolutionSummary = incidentResolved.resolutionSummary, updatedRootCause = incidentResolved.updatedRootCause, info = prompt("the info of this resolved state data"), timeline = prompt("the timeline of this resolved state data"), postMortem = empty)
-    }
     on postMortemCreated: event PostMortemCreated is {
       set field Incident.ResolvedState.postMortem to postMortemCreated.postMortem
-    }
-    on incidentClosed: event IncidentClosed is {
-      morph entity Incident to state Incident.ClosedState with record Incident.ClosedStateData(closedAt = incidentClosed.closedAt, info = prompt("the info of this closed state data"), timeline = prompt("the timeline of this closed state data"), postMortem = prompt("the post mortem of this closed state data"))
     }
   } with {
     briefly "Handles all incident lifecycle commands"

@@ -676,6 +676,18 @@ entity Transaction as router is {
         let transactionResult: type TransactionResult = prompt("read the transaction from the store")
         reply transactionResult
       }
+      on completeTransaction: command CompleteTransaction is {
+        morph entity POSContext.Transaction to state POSContext.Transaction.CompletedState with record Transaction.CompletedTransactionData(transactionId = completeTransaction.transactionId, terminalId = ActiveTransactionData.terminalId, cashierId = ActiveTransactionData.cashierId, lineItems = ActiveTransactionData.lineItems, payments = ActiveTransactionData.payments, totals = ActiveTransactionData.totals, completedAt = prompt("the completed at of this completed transaction data"))
+        tell event TransactionCompleted(transactionId = completeTransaction.transactionId, totals = prompt("the totals of this transaction completed"), completedAt = system.now) to entity POSContext.Transaction
+      }
+      on voidTransaction: command VoidTransaction is {
+        morph entity POSContext.Transaction to state POSContext.Transaction.VoidedState with record Transaction.VoidedTransactionData(transactionId = voidTransaction.transactionId, reason = voidTransaction.reason, voidedAt = prompt("the voided at of this voided transaction data"))
+        tell event TransactionVoided(transactionId = voidTransaction.transactionId, reason = voidTransaction.reason, voidedAt = system.now) to entity POSContext.Transaction
+      }
+      on suspendTransaction: command SuspendTransaction is {
+        morph entity POSContext.Transaction to state POSContext.Transaction.SuspendedState with record Transaction.SuspendedTransactionData(transactionId = suspendTransaction.transactionId, lineItems = ActiveTransactionData.lineItems, totals = ActiveTransactionData.totals, suspendedAt = prompt("the suspended at of this suspended transaction data"))
+        tell event TransactionSuspended(transactionId = suspendTransaction.transactionId, suspendedAt = system.now) to entity POSContext.Transaction
+      }
     } with {
       briefly "ActiveState init handler"
       described as {
@@ -700,7 +712,19 @@ entity Transaction as router is {
       |The VoidedState state of the Transaction.
     }
   }
-  state SuspendedState of record Transaction.SuspendedTransactionData with {
+  state SuspendedState of record Transaction.SuspendedTransactionData is {
+    initial handler SuspendedStateHandler is {
+      on resumeTransaction: command ResumeTransaction is {
+        morph entity POSContext.Transaction to state POSContext.Transaction.ActiveState with record Transaction.ActiveTransactionData(transactionId = resumeTransaction.transactionId, terminalId = resumeTransaction.terminalId, cashierId = prompt("the cashier id of this active transaction data"), lineItems = SuspendedTransactionData.lineItems, discounts = prompt("the discounts of this active transaction data"), payments = prompt("the payments of this active transaction data"), totals = SuspendedTransactionData.totals, startedAt = prompt("the started at of this active transaction data"))
+        tell event TransactionResumed(transactionId = resumeTransaction.transactionId, terminalId = resumeTransaction.terminalId, resumedAt = system.now) to entity POSContext.Transaction
+      }
+    } with {
+      briefly "While SuspendedState"
+      described as {
+        |The commands and folds accepted while the entity is in SuspendedState.
+      }
+    }
+  } with {
     briefly "SuspendedState state"
     described as {
       |The SuspendedState state of the Transaction.
@@ -723,22 +747,6 @@ entity Transaction as router is {
     }
     on processPayment: command ProcessPayment is {
       tell event PaymentProcessed(transactionId = processPayment.transactionId, tender = processPayment.tender, remainingBalance = prompt("the remaining balance of this payment processed"), processedAt = system.now) to entity POSContext.Transaction
-    }
-    on completeTransaction: command CompleteTransaction is {
-      morph entity POSContext.Transaction to state POSContext.Transaction.CompletedState with record Transaction.CompletedTransactionData(transactionId = completeTransaction.transactionId, terminalId = prompt("the terminal id of this completed transaction data"), cashierId = prompt("the cashier id of this completed transaction data"), lineItems = prompt("the line items of this completed transaction data"), payments = prompt("the payments of this completed transaction data"), totals = prompt("the totals of this completed transaction data"), completedAt = prompt("the completed at of this completed transaction data"))
-      tell event TransactionCompleted(transactionId = completeTransaction.transactionId, totals = prompt("the totals of this transaction completed"), completedAt = system.now) to entity POSContext.Transaction
-    }
-    on voidTransaction: command VoidTransaction is {
-      morph entity POSContext.Transaction to state POSContext.Transaction.VoidedState with record Transaction.VoidedTransactionData(transactionId = voidTransaction.transactionId, reason = voidTransaction.reason, voidedAt = prompt("the voided at of this voided transaction data"))
-      tell event TransactionVoided(transactionId = voidTransaction.transactionId, reason = voidTransaction.reason, voidedAt = system.now) to entity POSContext.Transaction
-    }
-    on suspendTransaction: command SuspendTransaction is {
-      morph entity POSContext.Transaction to state POSContext.Transaction.SuspendedState with record Transaction.SuspendedTransactionData(transactionId = suspendTransaction.transactionId, lineItems = prompt("the line items of this suspended transaction data"), totals = prompt("the totals of this suspended transaction data"), suspendedAt = prompt("the suspended at of this suspended transaction data"))
-      tell event TransactionSuspended(transactionId = suspendTransaction.transactionId, suspendedAt = system.now) to entity POSContext.Transaction
-    }
-    on resumeTransaction: command ResumeTransaction is {
-      morph entity POSContext.Transaction to state POSContext.Transaction.ActiveState with record Transaction.ActiveTransactionData(transactionId = resumeTransaction.transactionId, terminalId = resumeTransaction.terminalId, cashierId = prompt("the cashier id of this active transaction data"), lineItems = prompt("the line items of this active transaction data"), discounts = prompt("the discounts of this active transaction data"), payments = prompt("the payments of this active transaction data"), totals = prompt("the totals of this active transaction data"), startedAt = prompt("the started at of this active transaction data"))
-      tell event TransactionResumed(transactionId = resumeTransaction.transactionId, terminalId = resumeTransaction.terminalId, resumedAt = system.now) to entity POSContext.Transaction
     }
     on discountApplied: event DiscountApplied is {
       do "apply DiscountApplied to the transaction so it can be persisted and replayed"
