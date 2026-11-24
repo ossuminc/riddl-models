@@ -52,7 +52,15 @@ context Intake as router is {
   connector 'GenerationRunReply Egress' is from outlet Intake.GenerationRun.GenerationRunReplies to inlet Intake.GenerationRunRepliesIn with {
     briefly "The generation run's answers on their way to the boundary"
   }
+  inlet RunStartedAnswerIn is event GenerationRun.RunStarted
+  outlet RunStartedAnswerOut is event GenerationRun.RunStarted
+  connector 'RunStarted Answer Relay' is from outlet Intake.GenerationRunEventSplit.GenerationRunEventSplitToRunStartedAnswer to inlet Intake.RunStartedAnswerIn with {
+    briefly "The run started answer, on its way out of Intake"
+  }
   handler IntakeBoundary is {
+    on runStarted: event GenerationRun.RunStarted is {
+      send runStarted to outlet Intake.RunStartedAnswerOut
+    }
     on getGenerationRun: query GenerationRun.GetGenerationRun is {
       forward getGenerationRun to outlet Intake.GenerationRunQueriesOut
     }
@@ -90,6 +98,39 @@ context Intake as router is {
     briefly "GenerationRun repository command alternation"
     described as {
       |Persistence commands accepted by GenerationRunRepository.
+    }
+  }
+  streamlet GenerationRunEventSplit as split is {
+    outlet GenerationRunEventSplitToRunStartedAnswer is event CodeGeneration.Intake.GenerationRun.RunStarted
+    inlet GenerationRunEventSplitIn is type GenerationRun.GenerationRunEvent
+    outlet GenerationRunEventSplitToGenerationRunProjection is type GenerationRun.GenerationRunEvent
+    handler GenerationRunEventSplitHandler is {
+      on runStarted: event GenerationRun.RunStarted is {
+        send runStarted to outlet GenerationRunEventSplitToGenerationRunProjection
+        send runStarted to outlet GenerationRunEventSplitToRunStartedAnswer
+      }
+      on modelAdmitted: event GenerationRun.ModelAdmitted is {
+        send modelAdmitted to outlet GenerationRunEventSplitToGenerationRunProjection
+      }
+      on modelRefused: event GenerationRun.ModelRefused is {
+        send modelRefused to outlet GenerationRunEventSplitToGenerationRunProjection
+      }
+      on other is {
+        error "Unexpected message for streamlet GenerationRunEventSplit"
+      }
+    }
+  } with {
+    briefly "Fans GenerationRun's events out to the projection and the boundary"
+    described as {
+      |Every event goes to GenerationRunProjection for storage; RunStarted,
+      |which answers StartRun, also goes back out to the driver that asked.
+    }
+  }
+  connector 'GenerationRunEvent Stream' is from outlet Intake.GenerationRun.GenerationRunEvents to inlet Intake.GenerationRunEventSplit.GenerationRunEventSplitIn with {
+    briefly "GenerationRun's events on their way to GenerationRunEventSplit"
+    described as {
+      |Every GenerationRun event, before it fans out to the projection and
+      |the boundary.
     }
   }
   projector GenerationRunProjection as flow is {
@@ -252,7 +293,7 @@ context Intake as router is {
       |them.
     }
   }
-  connector 'GenerationRunProjection Feed' is from outlet Intake.GenerationRun.GenerationRunEvents to inlet Intake.GenerationRunProjection.GenerationRunProjectionFromGenerationRun with {
+  connector 'GenerationRunProjection Feed' is from outlet Intake.GenerationRunEventSplit.GenerationRunEventSplitToGenerationRunProjection to inlet Intake.GenerationRunProjection.GenerationRunProjectionFromGenerationRun with {
     briefly "GenerationRun events feeding GenerationRunProjection"
     described as {
       |Carries the entity's events to the projection that persists them.

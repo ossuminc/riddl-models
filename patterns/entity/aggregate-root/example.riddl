@@ -44,7 +44,15 @@ domain Commerce is {
     outlet CartQueriesOut is query Cart.GetCart
     inlet CartResultStreamIn is result Cart.CartResult
     outlet CartResultStreamOut is result Cart.CartResult
+    inlet CartOpenedAnswerIn is event Cart.CartOpened
+    outlet CartOpenedAnswerOut is event Cart.CartOpened
+    connector 'CartOpened Answer Relay' is from outlet Shopping.CartEventSplit.CartEventSplitToCartOpenedAnswer to inlet Shopping.CartOpenedAnswerIn with {
+      briefly "The cart opened answer, on its way out of Shopping"
+    }
     handler ShoppingBoundary is {
+      on cartOpened: event Cart.CartOpened is {
+        send cartOpened to outlet Shopping.CartOpenedAnswerOut
+      }
       on cartResult: result Cart.CartResult is {
         send cartResult to outlet Shopping.CartResultStreamOut
       }
@@ -594,6 +602,41 @@ domain Commerce is {
         |Persists carts and answers cart queries.
       }
     }
+    streamlet CartEventSplit as split is {
+      outlet CartEventSplitToCartOpenedAnswer is event Commerce.Shopping.Cart.CartOpened
+      inlet CartEventSplitIn is type Cart.CartEvent
+      outlet CartEventSplitToCartProjection is type Cart.CartEvent
+      handler CartEventSplitHandler is {
+        on cartOpened: event Cart.CartOpened is {
+          send cartOpened to outlet CartEventSplitToCartProjection
+          send cartOpened to outlet CartEventSplitToCartOpenedAnswer
+        }
+        on lineItemAdded: event Cart.LineItemAdded is {
+          send lineItemAdded to outlet CartEventSplitToCartProjection
+        }
+        on quantityUpdated: event Cart.QuantityUpdated is {
+          send quantityUpdated to outlet CartEventSplitToCartProjection
+        }
+        on lineItemRemoved: event Cart.LineItemRemoved is {
+          send lineItemRemoved to outlet CartEventSplitToCartProjection
+        }
+        on cartCleared: event Cart.CartCleared is {
+          send cartCleared to outlet CartEventSplitToCartProjection
+        }
+        on other is {
+          error "Unexpected message for streamlet CartEventSplit"
+        }
+      }
+    } with {
+      briefly "Fans the cart's events out to the projection and the boundary"
+      described as {
+        |Every event goes to CartProjection for storage; CartOpened, which
+        |answers OpenCart, also goes back out to the application that asked.
+      }
+    }
+    connector 'CartEvent Stream' is from outlet Shopping.Cart.CartEvents to inlet Shopping.CartEventSplit.CartEventSplitIn with {
+      briefly "The cart's events on their way to CartEventSplit"
+    }
     projector CartProjection as flow is {
       updates repository Shopping.CartRepository
       inlet CartProjectionFromCart is type Cart.CartEvent
@@ -638,7 +681,7 @@ domain Commerce is {
       }
     }
     connector CartEventsToProjection is {
-      from outlet Shopping.Cart.CartEvents to
+      from outlet Shopping.CartEventSplit.CartEventSplitToCartProjection to
         inlet Shopping.CartProjection.CartProjectionFromCart
     } with {
       briefly "Cart events to repository"
@@ -652,7 +695,7 @@ domain Commerce is {
       |The bounded context owning the cart aggregate and its persistence.
     }
   }
-  application context CommerceApp as flow is {
+  application context CommerceApp as merge is {
     inlet ErrorSink is record Riddl.GeneratorError with {
       option error-sink()
       briefly "Hard error destination"
@@ -669,7 +712,13 @@ domain Commerce is {
           |The control through which a shopper starts a cart.
         }
       }
-      input UpdateQuantityInput acquires command Shopping.Cart.UpdateQuantity with {
+            output CartOpenedView presents event Shopping.Cart.CartOpened with {
+        briefly "The cart opened answer"
+        described as {
+          |What OpenCart brought into being, with the id it was given.
+        }
+      }
+input UpdateQuantityInput acquires command Shopping.Cart.UpdateQuantity with {
         briefly "Change quantity control"
         described as {
           |The control through which a shopper changes how many of a line
@@ -712,7 +761,11 @@ domain Commerce is {
         |The screen through which shoppers act on their cart.
       }
     }
+    inlet AppCartOpenedAnswer is event Shopping.Cart.CartOpened
     handler CommerceAppHandler is {
+      on cartOpened: event Shopping.Cart.CartOpened is {
+        put cartOpened to output CommerceApp.CartScreen.CartOpenedView
+      }
       on cartResult: result Shopping.Cart.CartResult is {
         do "show the cart on the screen that asked for it"
       }
@@ -733,6 +786,9 @@ domain Commerce is {
   }
   persistent connector 'CartResult Stream' is from outlet Shopping.CartResultStreamOut to inlet CommerceApp.AppCartResults with {
     briefly "Query results back to the application"
+  }
+  persistent connector 'CartOpened Answer' is from outlet Shopping.CartOpenedAnswerOut to inlet CommerceApp.AppCartOpenedAnswer with {
+    briefly "The cart opened answer, back to the screen that issued OpenCart"
   }
   persistent connector AppCommandsToCart is {
     from outlet CommerceApp.AppCartCommands to
