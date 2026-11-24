@@ -101,6 +101,12 @@ Empty. Every 2026-11-21..23 task is in `task/done/` with Results.
 - **#47 closed** (Reid): CLAUDE.md now says a send-only clause becomes a
   yield *instead of* the send, naming `stmt-send-duplicates-yield`. The
   corpus already complied; only the sentence was stale.
+- **#44 F3 census and pilot 2.** 1,590 carry-forward fills: 572 straight
+  carries, 448 held by some states, 47 narrowings, 523 with no source.
+  1,585 sit in entity-level handlers. Pilot on order-management moved
+  `Order`'s clauses into their states; 31 -> 6 fills, gates green.
+  riddlc rejects a read of another state's record, which is what makes
+  the move scriptable; which states accept a command is not.
 
 ## 2026-11-20 — 2.8.0 pinned, #43 closed at zero, the 2.8.0 survey
 
