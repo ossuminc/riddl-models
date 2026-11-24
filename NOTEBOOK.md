@@ -4,33 +4,23 @@ Development journal for active work on the riddl-models repository.
 
 ## HANDOFF
 
-**Branch `riddl-2.8.4` (pushed), pin `2.8.6` PUBLISHED, override OFF**
-(verified 2026-11-24: `riddlcInfo` -> 2.8.6; `.bast` revision 39). `main` is
-still on 2.8.2; the branch merges when the sweep is 0.
+**Branch `riddl-2.8.4` (pushed through `edaa2cb1b`; later commits are
+local), pin `2.8.6` PUBLISHED, override OFF** (verified 2026-11-24:
+`riddlcInfo` -> 2.8.6; `.bast` revision 39). **The branch is green and
+ready to merge to `main`; merging waits on Reid.** `main` is still on 2.8.2.
 
-**riddlc 2.8.6 is now on the PATH** (`/opt/homebrew/bin/riddlc`, Homebrew),
-and it is the same version as the build's `~/.cache/riddlc/2.8.6/bin/riddlc`.
-A bare `riddlc` is therefore a valid evidence binary for now. **The staged
-`../bin/riddlc` is BEHIND**: it is `2.8.3-5-3ca36aef`, the pre-2.8.4
-snapshot, which lacks 2.8.5's exemption and 2.8.6's `value-optional-operand`.
-Do not pass it as `RIDDLC`. Re-check both with `riddlc info` the moment
-either moves.
-
-**Remaining on the branch:** `task/2026-11-23-use-the-created-id.md`. There
-are 37 `stmt-initiate-id-unused` in the corpus plus 2 in the `patterns/`
-examples, each naming an application context with no `on event` clause for
-the creation event. `checkAll` stays red on those pattern examples until
-it's done. **Do not delete the branch.**
+**riddlc 2.8.6 is on the PATH** (`/opt/homebrew/bin/riddlc`), matching the
+build's `~/.cache/riddlc/2.8.6/bin/riddlc`. **The staged `../bin/riddlc` is
+BEHIND** (`2.8.3-5-3ca36aef`): it lacks 2.8.5's exemption and 2.8.6's
+`value-optional-operand`. Do not pass it as `RIDDLC`.
 
 **In flight:**
-- **BACKLOG #46** (every answer wired home). 126 of 137 are done. The 11 left
-  are creation commands waiting on riddl (ruling C).
+- **#47.** One CLAUDE.md sentence is stale ("a send-only clause needs the
+  yield beside the send"). It waits on Reid.
 - **#44** (the 2.8.0 survey). Next is a census of F3's optional->required
   sites, then script option A.
-- **#45** (DineIn). It closes when the `riddl-2.8.3` branch lands.
-- **Open beside the branch:** `ticketItemDietary` is a `prompt`, because
-  `OrderLine` and `CartItem` carry no dietary flags. Whether the lines should
-  carry them has not been asked.
+- **Open question, not yet asked:** `ticketItemDietary` is a `prompt`
+  because `OrderLine` and `CartItem` carry no dietary flags.
 
 **Standing rules:**
 - Ask Reid ONE question at a time, with context, options and a
@@ -43,50 +33,72 @@ it's done. **Do not delete the branch.**
 
 ### Traps that bit recently
 
-- **`../bin/riddlc` relative paths break inside a model directory.** Use the
-  absolute path. The python scripts resolve `RIDDLC` against the repo root.
-- **Adding an event to an alternation reddens every receiver** whose inlet
-  admits it and has no `on other` (`stream-inlet-not-received`). Each
-  receiver gains a clause (persisted or logged).
-- **A constructor names EVERY field**, including new optional columns
-  (`= empty`). A filtered collection map has a minimum of 0. Guard it with
-  `when xs != empty`, which narrows, rather than living with the advisory.
+- **`RIDDLC` must be ABSOLUTE for the python scripts.** They resolve it
+  against the repo root, so `RIDDLC=riddlc` failed with "not found"
+  (2026-11-24). It printed an error, so it was not silent this time.
+- **A `let` annotation is always `type`**, even for a record:
+  `let r: type StoredX = query one ...`. riddlc and prettify accept
+  `record`, but BAST writes `type`, so `record` fails the round trip.
+- **Gate a commit on the round trip, not just on validate.**
+  `4faaeeafe` went in while `verify-bast-roundtrip.sh` reported a
+  discrepancy; `657239dfc` fixed it.
+- **A new inlet or outlet changes the ascription.** riddlc names the right
+  shape (`stream-ascribed-shape-mismatch`); apply it.
+- **reactive-bbq R2 requires `described as` on every definition**, including
+  connectors. The sweep does not check this; `checkAll` does.
 - **Prettify refuses a model with errors**, so fix errors before `sbt r`.
-- **Narrowing matches the WHOLE path** (riddl [1.34]).
-- **A command declaring `yields` must yield (or refuse) on every path.**
-- **`Natural` is positive**: a counter starting at 0 is `Whole`.
 - **A field path through a `let` is not resolved**: a misspelling there
   validates at 0. Canary it by eye.
 
 ### Certainty
 
-- **Verified on 2.8.2 at `cce729517`/`23ff9bac8`:** sweep 0, checkAll
-  green, BAST 189/189, unsent 0.
-- **The 2.8.3 figures** (sweep 11, R10 the only red test) were measured on
-  the branch, 2026-11-23.
+- **Verified on 2.8.6 at `657239dfc`:**
+  - corpus sweep 0 (`collect-warnings.py`, every severity);
+  - both `patterns/` examples at 0;
+  - `checkAll` exit 0, 192 cases, 0 FAILED;
+  - BAST round trip 189/189;
+  - `uc` 0 unsent of 900.
 - **#44's counts are a regex census** joined to `riddlc dump`. Treat them as
   a sizing, not a work list.
 
 ### task/
 
-Three files are open; none can complete before 2.8.4.
-- `upgrade-riddl-2.8.3.md`: partial. Its Results are appended. Criteria 1
-  and 3 are met on the branch; criterion 2 fails on R10.
-- `2026-11-21-reactive-bbq-gaps-from-synapify-dinein-run.md` (#45): items 1
-  and 4b land with the branch.
-- `2026-11-21-reactive-bbq-yield-and-send-publish-twice.md`: item 1 is done
-  (`7a15e3977`, rechecked at 0 pairs). Item 2 (Reporting refuses
-  `OrderCreated`) is the same creation site, so it waits on riddl.
+Empty. Every 2026-11-21..23 task is in `task/done/` with Results.
 
 ### Pointers
 
-- **Open work:** BACKLOG.md #46 and #45 (both wait on 2.8.4), then #44, #42,
-  #40, #30, #1, #23, #34.
+- **Open work:** BACKLOG.md #47, then #44, #42, #40, #30, #1, #23, #34.
+- **Creation answers:** `scripts/creation-answers/wire-creation-answers.py`.
 - **Durable facts:** CLAUDE.md.
 
 **Run `/ossuminc-skills:check-tasks` in the new session.**
 
 ---
+
+## 2026-11-24 — 2.8.6, creation answers wired home, five tasks closed
+
+- **Moved to 2.8.6, skipping 2.8.3 through 2.8.5.**
+  - 2.8.4: a delegating `create` delivers the answer, so 44 duplicate
+    `yield`s were deleted.
+  - 2.8.5: the id is exempt only when every sender handles the creation
+    event.
+  - 2.8.6: `value-optional-operand`. The two `InventoryItem` threshold
+    comparisons now use `otherwise 0`.
+- **39 creation ids routed back to the application that asked**, as Reid
+  ruled. Each answer goes out through the creating context's boundary
+  relay, and the app `put`s it on a group output beside the issuing input.
+  - We asked riddl to let `create` stand as a statement; that was declined.
+    The exemption was granted with the every-sender condition.
+  - A bare clause in the app is not enough: it draws
+    `msg-clause-undeliverable` until the event is actually wired.
+- **Two entities fed a projector directly** (code-generator `Intake`,
+  aggregate-root example). Each gained an `<Entity>EventSplit`; a second
+  entity outlet would have published the event twice.
+- **#45 closed.** `MenuRepository` answers from its table, now that
+  prettify keeps the parentheses (riddl `21fbb4381`).
+- **Lesson:** this session's two near-misses were both caught by gates the
+  sweep does not cover: `checkAll`'s R2 and the BAST round trip. A sweep at
+  0 is not the whole gate.
 
 ## 2026-11-20 — 2.8.0 pinned, #43 closed at zero, the 2.8.0 survey
 

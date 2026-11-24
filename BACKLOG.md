@@ -5,116 +5,19 @@ CLAUDE.md. Verified claims carry their evidence so nothing is re-derived.
 
 ---
 
-## 46. Every command answer reaches its sender (Reid, 2026-11-21) — 11 LEFT, all waiting on riddl, on a staged riddlc
+## 47. CLAUDE.md still says a send-only clause needs a yield beside the send (2026-11-24)
 
-**What:** riddl 2.8.2-4 (`5da5db443`, answering our CM 20.4 task) adds
-`msg-answer-unreachable` (completeness): a command that `yields` is answered on
-the yielder's outlets, and a sender with no inlet admitting the answer loses
-it. Reid ruled **(a)**: every answer is wired home; the sender receives it,
-logging it if it has nothing else to do. This reverses #45's ruling to leave
-reactive-bbq's `ReservationEventSplit` -> `CreateOrder` -> `OrderCreated`
-unreached. Same commit adds `stmt-send-duplicates-yield` (style): 134 deleted
-(`7a15e3977`).
+**What:** CLAUDE.md § "Which entities are event-sourced" says "a send-only
+clause needs the yield beside the send". Since riddl 2.8.2-4
+(`stmt-send-duplicates-yield`, `5da5db443`), a `yield` publishes on every
+admitting outlet of the yielder, so a `send` of the same event beside it is
+the defect. The corpus already complies: `7a15e3977` removed 134 such sends,
+and the 2.8.6 sweep is 0. Only the sentence is stale.
+**Carried from** BACKLOG #45's follow-on, which said to wait for the CM text.
+riddl has since landed both the rule and the CM text.
+**Next:** reword the sentence. This needs Reid's go-ahead, since CLAUDE.md
+records his rulings.
 
-**Measured on the STAGED `../bin/riddlc` 2.8.2-5-edaaad87** -- neither rule is
-in the pinned 2.8.2, which stays at sweep 0. Pin at the tag that carries them.
-Caution: that binary writes BAST revision 38, and `verify-bast-roundtrip.sh`
-defaults to it and bastifies BESIDE the source; run it with
-`RIDDLC=~/.cache/riddlc/2.8.2/bin/riddlc`, then `sbt b`.
-
-**Done: 83 of 137** (`edc213ca8`). `scripts/answers/facts.py` classifies the
-sites from `riddlc dump`; `wire-answers.py` wires each (sender, entity) route
-through the entity's event split: split outlet `<Split>To<Sender>`, sender
-inlet `<Entity>Answers`, `on b: event Ent.E is { log b }`, connector
-`'<Sender> <Entity> Answers'`, shape re-derived. riddlc's tip says to route
-through a context outlet; the direct split route is what clears it (canaried).
-
-**Left: 11, all waiting on riddl.** 126 of 137 are wired. Since `edc213ca8`:
-- **26 refused routes, DONE 2026-11-22.** The applier now takes the split
-  inlet the answering entity feeds (port-operations, ticket-sales: 9); places
-  a clause after a handler's last clause when there is no `on other`; gives a
-  split a clause for an event it never routed; and gives the answers a route
-  of their own where an existing split -> sender route carries something else
-  (reactive-bbq `MenuManagement`; `FrontOfHouse` <- `NoShowMarked` by hand,
-  its names were taken). `PaymentResultSink` takes a two-member
-  `PaymentResultAnswer`, not all of `TableOrderEvent`, since a sink with no
-  `on other` must otherwise handle every member.
-- **Six reactive-bbq events never left their entity**: yielded, folded, but
-  missing from the entity's event alternation, so no outlet admitted them
-  (`LoyaltyActivityRecorded`, `PhotoShootCompletionRecorded`,
-  `PrintCompletionRecorded`, `MenuDistributed`, `OnlineTicketRouted`,
-  `OnlinePointsAccrualRouted`). Added; the four corporate ones are persisted
-  like their siblings (Reid, 2026-11-22, option A): a `Persist<Event>`, an
-  optional column (`actual<X>` where the event's field has the name), an
-  `update ... set`, and a projector clause.
-- **DONE 2026-11-22: the 12 whose answering entity fed no streamlet**
-  (reactive-bbq `Menu`, code-generator `CodeEmission`/`HoleFilling`; the
-  sender is the context). The entity's one outlet fed its projector
-  directly, so each gained an `<Entity>EventSplit` between them: every event
-  to the projector, the answers also to a context inlet `<Entity>Answers`,
-  where the boundary `log`s them. Canaried: dropping the answers connector
-  brings all three back.
-
-**The 11: creation commands, WAITING ON RIDDL by ruling** (Reid, 2026-11-22,
-option C). The boundary `create`s the entity and `yield`s the creation
-event (copy 1, which no outlet admits), and the entity's `on init` sends
-the same event on its own outlet (copy 2), which already reaches the
-sender through the split. Deleting copy 1 gives `[error]
-[msg-yield-undeclared]` and the finding stays; wiring copy 1 (riddlc's
-tip) would deliver every creation event twice. Filed as
-`../riddl/task/2026-11-22-creation-answer-is-the-created-entitys-event.md`,
-which names all 11. Leave them until riddl answers.
-Includes the `OrderCreated` site above.
-
-**The 2.8.3 bump is PARKED on local branch `riddl-2.8.3`** (`7c3a253fb`,
-Reid, 2026-11-23: wait for 2.8.4, no temporary workaround). 2.8.3 carries
-`msg-answer-unreachable`, so the reactive-bbq creation site turns R10 red;
-the corpus will skip 2.8.3 and pin 2.8.4 once it carries riddl's answer.
-The branch holds the pin, the `.bast` files at revision 38, and the three
-reactive-bbq intakes on `each of ... yielding record` (which also closes
-#45 items 1 and 4b). On 2.8.3 it measured canonical, round trip 189/189,
-sweep 11 (the 11 above). When 2.8.4 ships: rebase it, bump to 2.8.4, run
-`sbt b` again, and re-measure. Open beside it: `ticketItemDietary` is still a
-`prompt`, because neither `OrderLine` nor `CartItem` carries dietary flags.
-
-## 45. reactive-bbq gaps from Synapify's simulated DineIn run (task 2026-11-21) — 2 BLOCKED ON RIDDL
-
-**What:** Synapify's simulator runs one DineInExperience through reactive-bbq
-and stopped at the Kitchen (`task/2026-11-21-reactive-bbq-gaps-from-
-synapify-dinein-run.md`). riddlc reported none of the four gaps.
-
-- **3, the blocker, DONE 2026-11-21.** `KitchenTicket` marked an item ready in
-  `do` prose, so `all of ticketItems ... where item.ticketItemReady` could
-  never hold. riddl has no element update for a state collection, so
-  `KitchenTicketData` gained `readyMenuItemIds: String(1,50)*`, the fold
-  appends to it, and the test is `item.ticketMenuItemId ==
-  itemMarkedReady.readyMenuItemId or KitchenTicketData.readyMenuItemIds
-  contains item.ticketMenuItemId`, which holds whether or not the append is
-  visible to the same clause. `TicketItem.ticketItemReady` is now a flag
-  nothing sets.
-- **4a DONE.** `FromKitchen` passes `preparationStarted.sourceOrderId` (the
-  Kitchen sends only DineIn tickets there, `KitchenContext.riddl:73-77`).
-- **4b, waits on riddl.** The ticket and drink items are a collection mapped
-  from the order's lines; riddl has no collection-valued map. Filed
-  `../riddl/task/2026-11-21-no-value-maps-one-collection-into-another.md`.
-- **1, waits on riddl.** The find-by-key read works as `when any of (query
-  MenuListings.listings) as stored where ...`, but prettify drops the
-  parentheses and the result does not parse (`../riddl/task/2026-11-21-
-  prettify-drops-parentheses-a-query-operand-needs.md`), and `query one`
-  cannot be tested for absence. Stays a prompt.
-- **2 DONE 2026-11-21 (Reid's ruling).** A yield publishes on the yielder's
-  admitting outlets, which is how the answer reaches the teller; there is no
-  unwired return channel (riddlc's `deliveries` walk already says so; the CM
-  did not, filed `../riddl/task/2026-11-21-cm-yield-publishes-on-outlets.md`).
-  The three events never reached FrontOfHouse because `TableOrderEventSplit`
-  sent them only to the repository. It now also feeds them to
-  `TableOrderEventSource`, which sends them on `...ToReporting` to the
-  boundary, which `log`s each. The `send` beside each `yield` in TableOrder
-  was redundant and is gone.
-- **Follow-on, NOT STARTED:** about 128 such redundant `yield event X(...)` +
-  `send event X(...) to outlet` pairs remain in 8 models (101 in
-  reactive-bbq; adjacent-line count), and CLAUDE.md's "a send-only clause
-  needs the yield beside the send" needs rewording. Wait for the CM text.
 ---
 
 ## 44. What riddl 2.8.0 can remove, purify or schedule (Reid, 2026-11-20) — AWAITING RULINGS
